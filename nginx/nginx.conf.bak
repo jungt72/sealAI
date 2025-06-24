@@ -1,0 +1,156 @@
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    resolver 127.0.0.11 valid=30s;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+    error_log  /var/log/nginx/error.log warn;
+
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   65;
+    types_hash_max_size 2048;
+
+    # Upstream für das FastAPI-Backend
+    upstream backend {
+        server backend:8000;
+    }
+
+    # ---------------------------
+    # 1) HTTP auf HTTPS umleiten
+    # ---------------------------
+    server {
+        listen 80;
+        server_name sealai.net www.sealai.net auth.sealai.net;
+        return 301 https://$host$request_uri;
+    }
+
+    # ---------------------------
+    # 2) HTTPS-Server für Hauptseite (Frontend & API)
+    # ---------------------------
+    server {
+        listen 443 ssl http2;
+        server_name sealai.net www.sealai.net;
+
+        ssl_certificate     /etc/letsencrypt/live/www.sealai.net/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/www.sealai.net/privkey.pem;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        ssl_ciphers         HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers off;
+
+        # 🔹 AI API → FastAPI Backend
+        location /ai/ {
+            resolver 127.0.0.11 valid=30s;
+            set $backend "backend:8000";
+            proxy_pass http://$backend;  # Fix: Kein doppelter Slash
+
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_buffering off;
+            proxy_cache off;
+            chunked_transfer_encoding on;
+        }
+
+        # 🔹 Chat API → FastAPI Backend
+        location /chat/ {
+            resolver 127.0.0.11 valid=30s;
+            set $backend "backend:8000";
+            proxy_pass http://$backend/;  # Fix: Kein doppelter Slash
+
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_buffering off;
+            proxy_cache off;
+            chunked_transfer_encoding on;
+        }
+
+        # 🔹 Health-Check Endpoint für Monitoring
+        location /ai/health {
+            resolver 127.0.0.11 valid=30s;
+            set $backend "backend:8000";
+            proxy_pass http://$backend/health;
+
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_buffering off;
+            proxy_cache off;
+            chunked_transfer_encoding on;
+        }
+
+        # 🔹 Alle übrigen Requests → Next.js-Frontend (Port 3000)
+        location / {
+            resolver 127.0.0.11 valid=30s;
+            set $frontend "frontend:3000";
+            proxy_pass http://$frontend;
+
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+
+        # 🔹 WebSocket-Unterstützung für Echtzeit-Kommunikation
+        location /ws/ {
+            resolver 127.0.0.11 valid=30s;
+            set $backend "backend:8000";
+            proxy_pass http://$backend;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+        }
+
+        access_log /var/log/nginx/access.log;
+        error_log  /var/log/nginx/error.log;
+    }
+
+    # ---------------------------
+    # 3) Auth-Server für Keycloak
+    # ---------------------------
+    server {
+        listen 443 ssl http2;
+        server_name auth.sealai.net;
+
+        ssl_certificate     /etc/letsencrypt/live/www.sealai.net/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/www.sealai.net/privkey.pem;
+
+        resolver 127.0.0.11 valid=30s;
+        set $keycloak "keycloak:8080";
+
+        location / {
+            proxy_pass http://$keycloak;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+
+        access_log /var/log/nginx/auth_access.log;
+        error_log  /var/log/nginx/auth_error.log;
+    }
+}

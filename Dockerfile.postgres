@@ -1,0 +1,18 @@
+FROM postgres:16
+
+# Installiere benötigte Tools
+RUN apt-get update && apt-get install -y \
+    postgresql-contrib \
+    postgresql-server-dev-16 \
+    build-essential \
+    wget
+
+# PgVector von der offiziellen Quelle herunterladen und installieren
+RUN cd /tmp && \
+    wget https://github.com/pgvector/pgvector/archive/refs/tags/v0.5.1.tar.gz && \
+    tar -xzf v0.5.1.tar.gz && \
+    cd pgvector-0.5.1 && \
+    make && make install
+
+# PgVector in der PostgreSQL-Config aktivieren
+RUN echo "shared_preload_libraries = 'vector'" >> /usr/share/postgresql/postgresql.conf.sample
