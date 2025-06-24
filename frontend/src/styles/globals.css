@@ -1,0 +1,49 @@
+/* Import der Inter–Webfont */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+/* Tailwind‑Direktiven */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Globale Styles */
+html {
+  /* 1:1 wie ChatGPT: Inter, 16px Basis */
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+}
+
+body {
+  /* sehr helles Grau als Seitenhintergrund */
+  @apply bg-gray-50 text-gray-800 antialiased;
+}
+
+/* Schmale, dezente Scrollbar – wie bei ChatGPT */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thumb-blue-200::-webkit-scrollbar-thumb {
+  background-color: #bfdbfe;
+}
+
+.scrollbar-thumb-blue-200::-webkit-scrollbar {
+  width: 8px;
+}
+
+/* Optional: Scrollbar immer sichtbar für Chatbereich */
+.chat-scroll-container {
+  scrollbar-gutter: stable both-edges;
+}
+/* Scrollbar für alle Chatbereiche ausblenden */
+::-webkit-scrollbar {
+  width: 0px !important;
+  background: transparent !important;
+}
+.chat-scroll-hide {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.chat-scroll-hide::-webkit-scrollbar {
+  display: none !important;
+}
