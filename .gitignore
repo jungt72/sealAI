@@ -32,3 +32,19 @@ nginx/combined.conf/
 *.tx_
 [nextauth (1).json
 langgraph_local/
+
+# Ignore leftover scratch placeholders
+=
+CACHED
+[frontend
+[internal]
+exporting/
+migrate_structure.sh
+langgraph_local/
+next/
+nginx-certbot/
+*.json
+*.js
+*.py
+transferring/
+writing/
