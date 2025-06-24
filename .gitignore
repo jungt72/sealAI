@@ -23,3 +23,12 @@ node_modules/
 *.docx
 *.sql
 *save
+
+# Ignore remaining scratch content
+backend/docs/
+backend/test/
+nginx/**/renewal*/
+nginx/combined.conf/
+*.tx_
+[nextauth (1).json
+langgraph_local/
