@@ -1,3 +1,11 @@
 .env
 .env*
 !.env.example
+
+# ⛔ ENV-Dateien
+.env*
+!.env.example
+
+# Ignore Python byte-code
+__pycache__/
+*.py[cod]
