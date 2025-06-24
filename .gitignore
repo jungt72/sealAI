@@ -9,3 +9,9 @@
 # Ignore Python byte-code
 __pycache__/
 *.py[cod]
+
+# Ignore common build artifacts
+.venv/
+backend/.venv/
+node_modules/
+.next/
