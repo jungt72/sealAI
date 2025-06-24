@@ -1,0 +1,13 @@
+{
+  "realm": "sealAI",
+  "enabled": true,
+  "displayName": "SealAI Realm",
+  "users": [],
+  "clients": [],
+  "identityProviders": [],
+  "identityProviderMappers": [],
+  "roles": {
+    "realm": [],
+    "client": {}
+  }
+}
