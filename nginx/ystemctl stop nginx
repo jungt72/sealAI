@@ -1,0 +1,1071 @@
+Mar 02 06:17:01 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 34637.[0m
+Mar 02 06:17:01 ubuntu-8gb-nbg1-1 nginx[278648]: 2025/03/02 06:17:01 [emerg] 278648#278648: host not found in upstream "backend" in /etc/nginx/conf.d/default.conf:14
+Mar 02 06:17:01 ubuntu-8gb-nbg1-1 nginx[278648]: nginx: configuration file /etc/nginx/nginx.conf test failed
+Mar 02 06:17:01 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStartPre= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 02 06:17:01 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 02 06:17:01 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 34637 and the job result is failed.[0m
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 34740.[0m
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278984]: 2025/03/02 06:18:57 [warn] 278984#278984: conflicting server name "sealai.net" on 0.0.0.0:80, ignored
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278984]: 2025/03/02 06:18:57 [warn] 278984#278984: conflicting server name "www.sealai.net" on 0.0.0.0:80, ignored
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278987]: 2025/03/02 06:18:57 [warn] 278987#278987: conflicting server name "sealai.net" on 0.0.0.0:80, ignored
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278987]: 2025/03/02 06:18:57 [warn] 278987#278987: conflicting server name "www.sealai.net" on 0.0.0.0:80, ignored
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:18:57 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:18:58 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:18:58 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:18:58 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:18:58 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:18:58 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:18:58 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:18:59 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:18:59 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:18:59 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:18:59 ubuntu-8gb-nbg1-1 nginx[278987]: nginx: [emerg] still could not bind()
+Mar 02 06:18:59 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 02 06:18:59 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 02 06:18:59 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 34740 and the job result is failed.[0m
+Mar 02 06:19:35 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 34843.[0m
+Mar 02 06:19:35 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:19:35 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:19:35 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:19:36 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:19:36 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:19:36 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:19:36 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:19:36 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:19:36 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:19:37 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:19:37 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:19:37 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:19:37 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 02 06:19:37 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 02 06:19:37 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 02 06:19:38 ubuntu-8gb-nbg1-1 nginx[279081]: nginx: [emerg] still could not bind()
+Mar 02 06:19:38 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 02 06:19:38 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 02 06:19:38 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 34843 and the job result is failed.[0m
+Mar 03 07:13:41 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Unit cannot be reloaded because it is inactive.[0m
+Mar 03 07:13:59 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52481.[0m
+Mar 03 07:13:59 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 07:13:59 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 07:13:59 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 07:13:59 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 07:13:59 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 07:13:59 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 07:14:00 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 07:14:00 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 07:14:00 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 07:14:00 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 07:14:00 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 07:14:00 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 07:14:01 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 07:14:01 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 07:14:01 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 07:14:01 ubuntu-8gb-nbg1-1 nginx[458656]: nginx: [emerg] still could not bind()
+Mar 03 07:14:01 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 03 07:14:01 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 03 07:14:01 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52481 and the job result is failed.[0m
+Mar 03 07:15:41 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52584.[0m
+Mar 03 07:15:41 ubuntu-8gb-nbg1-1 systemd[1]: Started nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has finished successfully[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished successfully.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52584.[0m
+Mar 03 07:17:41 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52687.[0m
+Mar 03 07:17:41 ubuntu-8gb-nbg1-1 nginx[459147]: 2025/03/03 07:17:41 [notice] 459147#459147: signal process started
+Mar 03 07:17:41 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52687 and the job result is done.[0m
+Mar 03 07:19:08 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52688.[0m
+Mar 03 07:19:08 ubuntu-8gb-nbg1-1 nginx[459345]: 2025/03/03 07:19:08 [notice] 459345#459345: signal process started
+Mar 03 07:19:08 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52688 and the job result is done.[0m
+Mar 03 07:22:01 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52792.[0m
+Mar 03 07:22:01 ubuntu-8gb-nbg1-1 nginx[459684]: 2025/03/03 07:22:01 [notice] 459684#459684: signal process started
+Mar 03 07:22:01 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52792 and the job result is done.[0m
+Mar 03 07:25:27 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52793.[0m
+Mar 03 07:25:27 ubuntu-8gb-nbg1-1 nginx[460088]: 2025/03/03 07:25:27 [notice] 460088#460088: signal process started
+Mar 03 07:25:27 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52793 and the job result is done.[0m
+Mar 03 07:27:39 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52794.[0m
+Mar 03 07:27:40 ubuntu-8gb-nbg1-1 nginx[460378]: 2025/03/03 07:27:39 [notice] 460378#460378: signal process started
+Mar 03 07:27:40 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52794 and the job result is done.[0m
+Mar 03 07:30:16 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52898.[0m
+Mar 03 07:30:16 ubuntu-8gb-nbg1-1 nginx[460689]: 2025/03/03 07:30:16 [notice] 460689#460689: signal process started
+Mar 03 07:30:16 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52898 and the job result is done.[0m
+Mar 03 07:34:31 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52899.[0m
+Mar 03 07:34:31 ubuntu-8gb-nbg1-1 nginx[461190]: 2025/03/03 07:34:31 [notice] 461190#461190: signal process started
+Mar 03 07:34:31 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52899 and the job result is done.[0m
+Mar 03 07:37:24 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52900.[0m
+Mar 03 07:37:24 ubuntu-8gb-nbg1-1 nginx[461534]: 2025/03/03 07:37:24 [notice] 461534#461534: signal process started
+Mar 03 07:37:24 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 52900 and the job result is done.[0m
+Mar 03 07:40:22 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 53004.[0m
+Mar 03 07:40:22 ubuntu-8gb-nbg1-1 nginx[461901]: 2025/03/03 07:40:22 [notice] 461901#461901: signal process started
+Mar 03 07:40:22 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 53004 and the job result is done.[0m
+Mar 03 08:34:47 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 53666.[0m
+Mar 03 08:34:47 ubuntu-8gb-nbg1-1 nginx[472955]: 2025/03/03 08:34:47 [notice] 472955#472955: signal process started
+Mar 03 08:34:47 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 53666 and the job result is done.[0m
+Mar 03 08:39:08 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 53676.[0m
+Mar 03 08:39:08 ubuntu-8gb-nbg1-1 nginx[474160]: 2025/03/03 08:39:08 [notice] 474160#474160: signal process started
+Mar 03 08:39:08 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 53676 and the job result is done.[0m
+Mar 03 13:05:51 ubuntu-8gb-nbg1-1 systemd[1]: Stopping nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 57505.[0m
+Mar 03 13:05:51 ubuntu-8gb-nbg1-1 systemd[1]: nginx.service: Deactivated successfully.
+[0;38;5;245m░░ [0m[0;32mSubject: Unit succeeded[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has successfully entered the 'dead' state.[0m
+Mar 03 13:05:51 ubuntu-8gb-nbg1-1 systemd[1]: Stopped nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 57505 and the job result is done.[0m
+Mar 03 13:05:51 ubuntu-8gb-nbg1-1 systemd[1]: nginx.service: Consumed 1.502s CPU time, 2.9M memory peak, 0B memory swap peak.
+[0;38;5;245m░░ [0m[0;32mSubject: Resources consumed by unit runtime[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service completed and consumed the indicated resources.[0m
+Mar 03 14:29:34 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 60124.[0m
+Mar 03 14:29:34 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 14:29:34 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 14:29:34 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 14:29:34 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 14:29:34 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 14:29:34 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 14:29:35 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 14:29:35 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 14:29:35 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 14:29:35 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 14:29:35 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 14:29:35 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 14:29:36 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 03 14:29:36 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 03 14:29:36 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 03 14:29:36 ubuntu-8gb-nbg1-1 nginx[553821]: nginx: [emerg] still could not bind()
+Mar 03 14:29:36 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 03 14:29:36 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 03 14:29:36 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 60124 and the job result is failed.[0m
+Mar 03 14:30:49 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 60336.[0m
+Mar 03 14:30:49 ubuntu-8gb-nbg1-1 systemd[1]: Started nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has finished successfully[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished successfully.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 60336.[0m
+Mar 03 15:03:05 ubuntu-8gb-nbg1-1 systemd[1]: Stopping nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 60954.[0m
+Mar 03 15:03:05 ubuntu-8gb-nbg1-1 systemd[1]: nginx.service: Deactivated successfully.
+[0;38;5;245m░░ [0m[0;32mSubject: Unit succeeded[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has successfully entered the 'dead' state.[0m
+Mar 03 15:03:05 ubuntu-8gb-nbg1-1 systemd[1]: Stopped nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 60954 and the job result is done.[0m
+Mar 04 10:31:44 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Unit cannot be reloaded because it is inactive.[0m
+Mar 04 11:23:52 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 79190.[0m
+Mar 04 11:23:52 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:23:52 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:23:52 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:23:53 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:23:53 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:23:53 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:23:53 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:23:53 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:23:53 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:23:54 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:23:54 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:23:54 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:23:54 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:23:54 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:23:54 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:23:55 ubuntu-8gb-nbg1-1 nginx[806910]: nginx: [emerg] still could not bind()
+Mar 04 11:23:55 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 04 11:23:55 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 04 11:23:55 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 79190 and the job result is failed.[0m
+Mar 04 11:25:25 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 79309.[0m
+Mar 04 11:25:25 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:25:25 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:25:25 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:25:26 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:25:26 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:25:26 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:25:26 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:25:26 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:25:26 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:25:27 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:25:27 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:25:27 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:25:27 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 04 11:25:27 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 04 11:25:27 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 04 11:25:28 ubuntu-8gb-nbg1-1 nginx[807991]: nginx: [emerg] still could not bind()
+Mar 04 11:25:28 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 04 11:25:28 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 04 11:25:28 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 79309 and the job result is failed.[0m
+Mar 07 09:18:29 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 193563.[0m
+Mar 07 09:18:29 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:18:29 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:18:30 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:18:30 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:18:30 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:18:30 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:18:31 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:18:31 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:18:31 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:18:31 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:18:32 ubuntu-8gb-nbg1-1 nginx[1941896]: nginx: [emerg] still could not bind()
+Mar 07 09:18:32 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 07 09:18:32 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 07 09:18:32 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 193563 and the job result is failed.[0m
+Mar 07 09:21:42 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 193770.[0m
+Mar 07 09:21:42 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:21:42 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:21:42 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:21:42 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:21:43 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:21:43 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:21:43 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:21:43 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:21:44 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 09:21:44 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 09:21:44 ubuntu-8gb-nbg1-1 nginx[1942419]: nginx: [emerg] still could not bind()
+Mar 07 09:21:44 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 07 09:21:44 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 07 09:21:44 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 193770 and the job result is failed.[0m
+Mar 07 09:24:07 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 193889.[0m
+Mar 07 09:24:07 ubuntu-8gb-nbg1-1 systemd[1]: Started nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has finished successfully[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished successfully.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 193889.[0m
+Mar 07 09:27:17 ubuntu-8gb-nbg1-1 systemd[1]: Stopping nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194099.[0m
+Mar 07 09:27:17 ubuntu-8gb-nbg1-1 systemd[1]: nginx.service: Deactivated successfully.
+[0;38;5;245m░░ [0m[0;32mSubject: Unit succeeded[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has successfully entered the 'dead' state.[0m
+Mar 07 09:27:17 ubuntu-8gb-nbg1-1 systemd[1]: Stopped nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194099 and the job result is done.[0m
+Mar 07 09:27:17 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194099.[0m
+Mar 07 09:27:18 ubuntu-8gb-nbg1-1 systemd[1]: Started nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has finished successfully[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished successfully.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194099.[0m
+Mar 07 09:36:30 ubuntu-8gb-nbg1-1 systemd[1]: Stopping nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194531.[0m
+Mar 07 09:36:30 ubuntu-8gb-nbg1-1 systemd[1]: nginx.service: Deactivated successfully.
+[0;38;5;245m░░ [0m[0;32mSubject: Unit succeeded[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has successfully entered the 'dead' state.[0m
+Mar 07 09:36:30 ubuntu-8gb-nbg1-1 systemd[1]: Stopped nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194531 and the job result is done.[0m
+Mar 07 09:36:30 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194531.[0m
+Mar 07 09:36:30 ubuntu-8gb-nbg1-1 systemd[1]: Started nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has finished successfully[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished successfully.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194531.[0m
+Mar 07 09:49:03 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194844.[0m
+Mar 07 09:49:03 ubuntu-8gb-nbg1-1 nginx[1948253]: 2025/03/07 09:49:03 [emerg] 1948253#1948253: "user" directive is not allowed here in /etc/nginx/conf.d/sealai.conf:1
+Mar 07 09:49:03 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecReload= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 07 09:49:03 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mReload failed for nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194844 and the job result is failed.[0m
+Mar 07 09:50:15 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194948.[0m
+Mar 07 09:50:15 ubuntu-8gb-nbg1-1 nginx[1948401]: 2025/03/07 09:50:15 [emerg] 1948401#1948401: "worker_processes" directive is not allowed here in /etc/nginx/conf.d/sealai.conf:2
+Mar 07 09:50:15 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecReload= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 07 09:50:15 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mReload failed for nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 194948 and the job result is failed.[0m
+Mar 07 09:53:10 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 195056.[0m
+Mar 07 09:53:10 ubuntu-8gb-nbg1-1 nginx[1948823]: 2025/03/07 09:53:10 [emerg] 1948823#1948823: host not found in upstream "backend" in /etc/nginx/conf.d/sealai.conf:28
+Mar 07 09:53:10 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecReload= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 07 09:53:10 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mReload failed for nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 195056 and the job result is failed.[0m
+Mar 07 09:54:37 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 195057.[0m
+Mar 07 09:54:37 ubuntu-8gb-nbg1-1 nginx[1949018]: 2025/03/07 09:54:37 [emerg] 1949018#1949018: host not found in upstream "backend" in /etc/nginx/conf.d/sealai.conf:28
+Mar 07 09:54:37 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecReload= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 07 09:54:37 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mReload failed for nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 195057 and the job result is failed.[0m
+Mar 07 09:55:31 ubuntu-8gb-nbg1-1 systemd[1]: Reloading nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 195058.[0m
+Mar 07 09:55:31 ubuntu-8gb-nbg1-1 nginx[1949137]: 2025/03/07 09:55:31 [notice] 1949137#1949137: signal process started
+Mar 07 09:55:31 ubuntu-8gb-nbg1-1 systemd[1]: Reloaded nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A reload job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA reload job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 195058 and the job result is done.[0m
+Mar 07 09:58:16 ubuntu-8gb-nbg1-1 systemd[1]: Stopping nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 195166.[0m
+Mar 07 09:58:16 ubuntu-8gb-nbg1-1 systemd[1]: nginx.service: Deactivated successfully.
+[0;38;5;245m░░ [0m[0;32mSubject: Unit succeeded[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has successfully entered the 'dead' state.[0m
+Mar 07 09:58:16 ubuntu-8gb-nbg1-1 systemd[1]: Stopped nginx.service - A high performance web server and a reverse proxy server.
+[0;38;5;245m░░ [0m[0;32mSubject: A stop job for unit nginx.service has finished[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA stop job for unit nginx.service has finished.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 195166 and the job result is done.[0m
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 199607.[0m
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:8080 failed (98: Address already in use)
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:8080 failed (98: Address already in use)
+Mar 07 15:10:33 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 15:10:34 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 15:10:34 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 07 15:10:34 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:8080 failed (98: Address already in use)
+Mar 07 15:10:34 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 15:10:34 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 15:10:34 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 07 15:10:34 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:8080 failed (98: Address already in use)
+Mar 07 15:10:34 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 15:10:35 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 07 15:10:35 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 07 15:10:35 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to 0.0.0.0:8080 failed (98: Address already in use)
+Mar 07 15:10:35 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 07 15:10:35 ubuntu-8gb-nbg1-1 nginx[1990765]: nginx: [emerg] still could not bind()
+Mar 07 15:10:35 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 07 15:10:35 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 07 15:10:35 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 199607 and the job result is failed.[0m
+Mar 12 11:37:26 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 290634.[0m
+Mar 12 11:37:26 ubuntu-8gb-nbg1-1 nginx[3431666]: 2025/03/12 11:37:26 [emerg] 3431666#3431666: host not found in upstream "backend" in /etc/nginx/conf.d/sealai.conf:28
+Mar 12 11:37:26 ubuntu-8gb-nbg1-1 nginx[3431666]: nginx: configuration file /etc/nginx/nginx.conf test failed
+Mar 12 11:37:26 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStartPre= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 12 11:37:26 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 12 11:37:26 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 290634 and the job result is failed.[0m
+Mar 12 11:41:11 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 291150.[0m
+Mar 12 11:41:11 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 12 11:41:11 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 12 11:41:11 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 12 11:41:11 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 12 11:41:11 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 12 11:41:11 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 12 11:41:12 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 12 11:41:12 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 12 11:41:12 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 12 11:41:12 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 12 11:41:12 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 12 11:41:12 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 12 11:41:13 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 12 11:41:13 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 12 11:41:13 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 12 11:41:13 ubuntu-8gb-nbg1-1 nginx[3432936]: nginx: [emerg] still could not bind()
+Mar 12 11:41:13 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 12 11:41:13 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 12 11:41:13 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 291150 and the job result is failed.[0m
+Mar 13 08:34:28 ubuntu-8gb-nbg1-1 systemd[1]: Starting nginx.service - A high performance web server and a reverse proxy server...
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has begun execution[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has begun execution.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 314066.[0m
+Mar 13 08:34:28 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 13 08:34:28 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 13 08:34:28 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 13 08:34:28 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 13 08:34:28 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 13 08:34:28 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 13 08:34:29 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 13 08:34:29 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 13 08:34:29 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 13 08:34:29 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 13 08:34:29 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 13 08:34:29 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 13 08:34:30 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+Mar 13 08:34:30 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to 0.0.0.0:443 failed (98: Address already in use)
+Mar 13 08:34:30 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+Mar 13 08:34:30 ubuntu-8gb-nbg1-1 nginx[3990863]: nginx: [emerg] still could not bind()
+Mar 13 08:34:30 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;39m[0;1;31m[0;1;39mnginx.service: Control process exited, code=exited, status=1/FAILURE[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit process exited[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mAn ExecStart= process belonging to unit nginx.service has exited.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe process' exit code is 'exited' and its exit status is 1.[0m
+Mar 13 08:34:30 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185mnginx.service: Failed with result 'exit-code'.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: Unit failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe unit nginx.service has entered the 'failed' state with result 'exit-code'.[0m
+Mar 13 08:34:30 ubuntu-8gb-nbg1-1 systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start nginx.service - A high performance web server and a reverse proxy server.[0m
+[0;38;5;245m░░ [0m[0;32mSubject: A start job for unit nginx.service has failed[0m
+[0;38;5;245m░░[0m [0;32mDefined-By: systemd[0m
+[0;38;5;245m░░[0m [0;32mSupport: http://www.ubuntu.com/support[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mA start job for unit nginx.service has finished with a failure.[0m
+[0;38;5;245m░░[0m [0;32m[0m
+[0;38;5;245m░░[0m [0;32mThe job identifier is 314066 and the job result is failed.[0m
