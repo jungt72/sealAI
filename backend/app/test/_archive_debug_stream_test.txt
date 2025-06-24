@@ -1,0 +1,14 @@
+# 📁 backend/test/debug_stream_test.py
+
+import asyncio
+from app.services.langgraph.graph_chat import run_graph_chat_stream
+
+async def test_stream():
+    async for chunk in run_graph_chat_stream({
+        "input_text": "Ich brauche eine Dichtung für 120 Grad Celsius und 3 bar",
+        "chat_id": "debug123",
+        "user": "test_user"
+    }):
+        print(">>", chunk)
+
+asyncio.run(test_stream())
