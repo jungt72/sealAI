@@ -1,0 +1,16 @@
+{# Flow für komplexe RAG-gestützte Beratung #}
+System: Dieser Beratungsflow integriert dokumentenbasiertes Wissen, Expertenlogik und dialogische Klärung offener Punkte.
+
+1. Nutzerfrage analysieren
+2. Relevante Dokumente suchen und filtern
+3. Expertenwissen einbinden
+4. Parameter-Vollständigkeit prüfen und Rückfragen stellen
+5. Klare, technische Antwort mit Begründung und Quellenangabe ausgeben
+
+Aktuelle Frage: {{ current_input }}
+Technische Parameter: {{ parameters }}
+Gefundene Dokumente: {{ retrieved_docs }}
+Expertenhinweise: {{ expert_knowledge }}
+Offene Fragen: {{ missing_critical_params }}
+
+Formuliere eine vollständige, nachvollziehbare und normgerechte Empfehlung.

@@ -1,13 +1,34 @@
 # backend/app/core/config.py
-
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+import structlog
+
+# Initialisierung von structlog für strukturiertes Logging
+structlog.configure(
+    processors=[
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.stdlib.add_log_level,
+        structlog.processors.JSONRenderer(),
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
 
 class Settings(BaseSettings):
     # Datenbank / SQLAlchemy
+    postgres_user: str
+    postgres_password: str
+    postgres_host: str
+    postgres_port: int
+    postgres_db: str
     database_url: str
     debug_sql: bool = False
+
+    # Neu: Postgres-Sync-URL (basierend auf database_url oder explizit)
+    POSTGRES_SYNC_URL: str
 
     # OpenAI / LLM / LangChain
     openai_api_key: str
@@ -18,20 +39,20 @@ class Settings(BaseSettings):
 
     # Qdrant RAG
     qdrant_url: str
-    qdrant_api_key: Optional[str] = None
     qdrant_collection: str
     rag_k: int = 4
+    qdrant_filter_metadata: Optional[dict] = None  # Neu: Optionale Filter für Metadata
     debug_qdrant: bool = False
 
     # Redis Memory & Sessions
     redis_host: str = "redis"
     redis_port: int = 6379
+    redis_url: str
     redis_db: int = 0
     redis_ttl: int = 60 * 60 * 24  # 24h
 
-    @property
-    def redis_url(self) -> str:
-        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+    # Neu: Redis-URL (bereits vorhanden, aber explizit für Konsistenz)
+    REDIS_URL: str = "redis://redis:6379/0"  # Default-Wert hartcodiert, um NameError zu vermeiden
 
     # Auth / Keycloak / NextAuth
     nextauth_url: str
@@ -39,13 +60,15 @@ class Settings(BaseSettings):
     keycloak_issuer: str
     keycloak_jwks_url: str
     keycloak_client_id: str
+    keycloak_client_secret: str
     keycloak_expected_azp: str
+    backend_keycloak_issuer: str
 
     # LangChain Tracing etc.
-    langchain_tracing_v2: bool = False
-    langchain_endpoint: Optional[str] = None
+    langchain_tracing_v2: bool = True  # Neu: Standardmäßig aktiviert
+    langchain_endpoint: Optional[str] = "https://api.smith.langchain.com"
     langchain_api_key: Optional[str] = None
-    langchain_project: Optional[str] = None
+    langchain_project: Optional[str] = "sealai"
 
     model_config = SettingsConfigDict(
         env_file=".env",

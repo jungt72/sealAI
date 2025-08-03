@@ -18,7 +18,7 @@ from app.core.config import settings
 
 # Qdrant/Embedding-Config aus zentraler settings.py
 QDRANT_URL = settings.qdrant_url
-QDRANT_API_KEY = settings.qdrant_api_key
+QDRANT_API_KEY = getattr(settings, "qdrant_api_key", None)
 QDRANT_COLLECTION = settings.qdrant_collection
 EMBEDDING_MODEL = settings.embedding_model
 

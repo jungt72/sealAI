@@ -12,7 +12,7 @@ RUN npm install --legacy-peer-deps
 # Quellcode
 COPY src ./src
 COPY public ./public
-COPY .env.local .env.local
+COPY .env .env 
 
 # Build
 RUN npm run build

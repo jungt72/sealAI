@@ -1,0 +1,10 @@
+{# followup.j2 – Nachfragen und Iteration, falls noch Infos fehlen #}
+
+System: Es fehlen noch wichtige Angaben, um eine fundierte Empfehlung zu geben.
+
+Noch fehlende Parameter:
+{% for param in missing_params %}
+- {{ param.description }} {% if param.unit %}[{{ param.unit }}]{% endif %}
+{% endfor %}
+
+Bitte erfrage die fehlenden Werte nacheinander. Wenn Konflikte oder widersprüchliche Angaben auftauchen, erläutere dies höflich und schlage plausible Korrekturen vor.

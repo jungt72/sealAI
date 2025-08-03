@@ -1,4 +1,4 @@
-import Chat from "./components/Chat/Chat";
+import Chat from "./components/Chat/ChatContainer";
 // import FormResultsCards from "./components/FormResultsCards";
 // import SidebarForm from "./components/Sidebar/SidebarForm";
 
