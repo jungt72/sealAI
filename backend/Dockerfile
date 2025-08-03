@@ -1,35 +1,50 @@
-# --- Build Stage ---
+###############################################################################
+#                         ─── Build Stage (“builder”) ──                      #
+###############################################################################
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# System-Abhängigkeiten FÜR BUILD (inkl. git für pip install von GitHub!)
-RUN apt-get update && \
-    apt-get install -y gcc libpq-dev curl git && \
-    rm -rf /var/lib/apt/lists/*
+# System-Abhängigkeiten
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      gcc \
+      libpq-dev \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
-# Python-Abhängigkeiten vorbereiten
+# ── requirements.txt liegt direkt im Build-Kontext (./backend) ──
 COPY requirements.txt .
-RUN python -m venv /venv && \
-    /venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /venv/bin/pip install --no-cache-dir -r requirements.txt
+RUN python -m venv /venv \
+ && /venv/bin/pip install --no-cache-dir --upgrade pip \
+ && /venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# --- Runtime Stage ---
+###############################################################################
+#                        ─── Runtime Stage (final) ───                         #
+###############################################################################
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# System-Abhängigkeiten zur Laufzeit (minimal, kein git mehr nötig)
-RUN apt-get update && \
-    apt-get install -y libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      libpq5 \
+      curl \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
-# Virtuelle Umgebung übernehmen
+# vorinstallierte Pakete aus dem Builder übernehmen
 COPY --from=builder /venv /venv
-ENV PATH="/venv/bin:$PATH"
+ENV PATH="/venv/bin:${PATH}"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH="/app"
 
-# App-Code übernehmen
-COPY . .
+# ── Code kopieren (alle Pfade OHNE "backend/"-Vorsatz) ──
+COPY app ./app
+COPY alembic.ini .
+COPY alembic ./alembic
+# falls vorhanden, sonst diesen COPY-Befehl entfernen
+COPY docs ./docs
 
-# Starte FastAPI-App korrekt von main.py im Root, EIN Worker für Streaming!
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--workers", "1"]
+# ── Start-Befehl (eine einzelne JSON-Zeile) ──
+CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--workers","2","--proxy-headers"]

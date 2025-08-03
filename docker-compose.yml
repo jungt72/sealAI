@@ -1,162 +1,191 @@
-version: '3.8'
+version: "3.8"
 
 services:
+  # ------------------------------------------------------------------
+  #  PostgreSQL
+  # ------------------------------------------------------------------
   postgres:
     image: postgres:15
     container_name: postgres
     restart: always
-    env_file: .env
+    env_file: ./backend/.env
     environment:
-      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - sealai_postgres_data:/var/lib/postgresql/data
-    networks:
-      - sealai_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks: [sealai_network]
 
+  # ------------------------------------------------------------------
+  #  Redis Stack – nur Server, ohne Insight-UI
+  # ------------------------------------------------------------------
   redis:
-    image: redis/redis-stack:latest
+    image: redis/redis-stack-server:7.4.0-v6
     container_name: redis
-    restart: always
-    networks:
-      - sealai_network
+    restart: unless-stopped
+    ports:
+      - "6379:6379"         # Insight-Port 8001 aus Security-Gründen weggelassen
+    environment:
+      - REDIS_ARGS=--appendonly yes
+    volumes:
+      - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    networks: [sealai_network]
 
+  # ------------------------------------------------------------------
+  #  Einmaliger Init-Job – legt RediSearch-Indizes an
+  # ------------------------------------------------------------------
+  redis-init:
+    image: sealai-backend
+    container_name: redis-init
+    command: >
+      python - <<'PY'
+      import asyncio, os
+      from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+      async def main():
+          saver = AsyncRedisSaver(redis_url=os.environ["REDIS_URL"], index_name="checkpoints")
+          await saver.asetup()      # idempotent
+          print("✅  RediSearch-Index 'checkpoints' angelegt/aktualisiert")
+      asyncio.run(main())
+      PY
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: "no"
+    networks: [sealai_network]
+
+  # ------------------------------------------------------------------
+  #  Qdrant Vektor-DB
+  # ------------------------------------------------------------------
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.15.0
     container_name: qdrant
     restart: always
+    env_file: ./backend/.env
     ports:
       - "6333:6333"
     volumes:
       - sealai_qdrant_storage:/qdrant/storage
-    networks:
-      - sealai_network
+    networks: [sealai_network]
 
+  # ------------------------------------------------------------------
+  #  Keycloak (IdP)
+  # ------------------------------------------------------------------
   keycloak:
-    build:
-      context: ./keycloak
+    build: ./keycloak
     container_name: keycloak
     restart: always
-    env_file:
-      - .env
-      - .env.keycloak
+    env_file: ./backend/.env
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
       KC_DB: postgres
-      KC_DB_URL_HOST: postgres
-      KC_DB_URL_PORT: 5432
-      KC_DB_URL_DATABASE: keycloak
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KC_HOSTNAME: auth.sealai.net
-      KC_PROXY: edge
-      KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
-      KC_LOG_LEVEL: info
-    command: ["start", "--import-realm"]
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTPS_CERTIFICATE_FILE: /etc/x509/https/tls.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /etc/x509/https/tls.key
     ports:
       - "8080:8080"
+      - "8443:8443"
     volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
-      - ./keycloak/themes:/opt/keycloak/themes
-    networks:
-      - sealai_network
+      - ./certs/tls.crt:/etc/x509/https/tls.crt:ro
+      - ./certs/tls.key:/etc/x509/https/tls.key:ro
     depends_on:
       postgres:
         condition: service_healthy
+    networks: [sealai_network]
 
+  # ------------------------------------------------------------------
+  #  FastAPI Backend
+  # ------------------------------------------------------------------
   backend:
-    build:
-      context: ./backend
+    build: ./backend
     container_name: backend
     restart: always
-    env_file:
-      - .env
-      - .env.backend
+    env_file: ./backend/.env
     environment:
-      QDRANT_URL: http://qdrant:6333
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/app:/app/app
-      - ./backend/main.py:/app/main.py
-      - ./backend/alembic.ini:/app/alembic.ini
-      - ./backend/alembic:/app/alembic
-      - ./backend/docs:/app/docs
-      - ./backend/requirements.txt:/app/requirements.txt
-      - sentence_transformers_cache:/root/.cache/torch/sentence_transformers
-    networks:
-      - sealai_network
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
       qdrant:
         condition: service_started
+      redis-init:
+        condition: service_completed_successfully
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import sys,urllib.request; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/health').status==200 else sys.exit(1)"
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks: [sealai_network]
 
+  # ------------------------------------------------------------------
+  #  Next.js Frontend
+  # ------------------------------------------------------------------
   frontend:
-    build:
-      context: ./frontend
+    build: ./frontend
     container_name: frontend
     restart: always
-    env_file:
-      - .env
-      - ./frontend/.env.local
+    env_file: ./frontend/.env.local
     ports:
       - "3000:3000"
-    networks:
-      - sealai_network
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
+    networks: [sealai_network]
 
+  # ------------------------------------------------------------------
+  #  Nginx – TLS-Terminator & Reverse-Proxy
+  # ------------------------------------------------------------------
   nginx:
     image: nginx:latest
     container_name: nginx
     restart: always
     depends_on:
-      - backend
-      - frontend
-      - keycloak
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+      keycloak:
+        condition: service_started
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
-    networks:
-      - sealai_network
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./nginx/docker-entrypoint-wait.sh:/docker-entrypoint.d/00-wait-backend.sh:ro
+    networks: [sealai_network]
 
+# --------------------------------------------------------------------
+#  Netzwerke & Volumes
+# --------------------------------------------------------------------
 networks:
   sealai_network:
     driver: bridge
 
 volumes:
   sealai_postgres_data:
+  redis_data:
   sealai_qdrant_storage:
-  sentence_transformers_cache:

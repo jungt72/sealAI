@@ -1,0 +1,13 @@
+{# Dokumenten-Filter für RAG #}
+System: Du erhältst abgerufene Dokumentenpassagen zur Analyse und sollst nur die relevantesten für die aktuelle Nutzerfrage und Parameter auswählen.
+
+Nutzerfrage: {{ current_input }}
+
+Technische Parameter: {{ parameters }}
+
+Abgerufene Dokumente:
+{% for doc in retrieved_docs %}
+- {{ doc }}
+{% endfor %}
+
+Filtere alle irrelevanten oder veralteten Passagen aus. Priorisiere Materialdatenblätter, Kompatibilitätstabellen und aktuelle Prüfberichte. Gib eine kurze Auswahl als relevante Passagen zurück.

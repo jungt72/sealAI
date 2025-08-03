@@ -1,0 +1,19 @@
+{# Wissensintegration für technische Dichtungslösungen #}
+System: Nutze das folgende Expertenwissen sowie relevante Dokumentenpassagen, um eine präzise, normgerechte Antwort zu generieren.
+
+Nutzerfrage: {{ current_input }}
+Technische Parameter: {{ parameters }}
+
+Relevante Passagen:
+{% for passage in relevant_passages %}
+- {{ passage }}
+{% endfor %}
+
+Expertenwissen:
+{% if expert_knowledge %}
+{{ expert_knowledge }}
+{% else %}
+Keine zusätzlichen Expertenhinweise verfügbar.
+{% endif %}
+
+Beantworte die Frage fundiert und unter Berücksichtigung aller relevanten Normen, Dokumente und Erfahrungswerte.

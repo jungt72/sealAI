@@ -1,0 +1,9 @@
+*-c
+*.sock
+*.socket
+__pycache__
+*.pyc
+.venv
+/venv
+.env
+*.log
