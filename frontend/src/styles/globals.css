@@ -1,57 +1,39 @@
-/* Import der Inter–Webfont */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+/* Inter – leicht, kompakt */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* Tailwind‑Direktiven */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Globale Styles */
+/* Basistypo: minimal kleiner für “Grok-Look” */
 html {
-  /* 1:1 wie ChatGPT: Inter, 16px Basis */
-  font-family: 'Inter', sans-serif;
-  font-size: 16px;
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+  font-size: 15px;                 /* ↓ von 16px */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "liga","calt","ss01","cv05";
+  font-variation-settings: normal;
 }
 
 body {
-  @apply bg-white text-gray-800 antialiased;
+  @apply bg-white text-gray-800;
 }
 
-/* Schmale, dezente Scrollbar – wie bei ChatGPT */
-.scrollbar-thin {
-  scrollbar-width: thin;
-}
+/* Scrollbar dezent */
+.scrollbar-thin { scrollbar-width: thin; }
+.scrollbar-thumb-blue-200::-webkit-scrollbar-thumb { background-color: #bfdbfe; }
+.scrollbar-thumb-blue-200::-webkit-scrollbar { width: 8px; }
 
-.scrollbar-thumb-blue-200::-webkit-scrollbar-thumb {
-  background-color: #bfdbfe;
-}
+.chat-scroll-container { scrollbar-gutter: stable both-edges; }
 
-.scrollbar-thumb-blue-200::-webkit-scrollbar {
-  width: 8px;
-}
+/* Optional generelles Ausblenden der Scrollbar im Chatbereich */
+::-webkit-scrollbar { width: 0px !important; background: transparent !important; }
+.chat-scroll-hide { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+.chat-scroll-hide::-webkit-scrollbar { display: none !important; }
 
-/* Optional: Scrollbar immer sichtbar für Chatbereich */
-.chat-scroll-container {
-  scrollbar-gutter: stable both-edges;
-}
-/* Scrollbar für alle Chatbereiche ausblenden */
-::-webkit-scrollbar {
-  width: 0px !important;
-  background: transparent !important;
-}
-.chat-scroll-hide {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-.chat-scroll-hide::-webkit-scrollbar {
-  display: none !important;
-}
-
-/* ---------- Markdown- und Listen-Reset für perfektes ChatGPT-Spacing ---------- */
-.markdown-body,
-.markdown-content {
-  font-family: inherit;
-}
+/* Markdown-Reset: kompakte Abstände (falls andere Render-Pfade) */
+.markdown-body, .markdown-content { font-family: inherit; }
 
 .markdown-body p,
 .markdown-body ul,
@@ -63,84 +45,49 @@ body {
 .markdown-content ol,
 .markdown-content li,
 .markdown-content blockquote {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.45;
 }
 
-/* ChatGPT-like List Padding/Spacing */
 .markdown-body ul,
 .markdown-body ol,
 .markdown-content ul,
 .markdown-content ol {
-  padding-left: 1.5rem !important;    /* 24px, wie ChatGPT */
-  margin-left: 0 !important;
+  padding-left: 1.25rem !important;
 }
 
 .markdown-body li,
 .markdown-content li {
   display: list-item !important;
-  margin-left: 0 !important;
-  padding-left: 0 !important;
-  
-  line-height: 1.25;
+  margin: 0.18rem 0 !important;
 }
 
-/* Headings in Markdown noch kompakter */
-.markdown-body h1,
-.markdown-body h2,
-.markdown-body h3,
-.markdown-content h1,
-.markdown-content h2,
-.markdown-content h3 {
-  margin-top: 0.5em !important;
-  margin-bottom: 0.2em !important;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-/* Tabellen: Minimalistisch */
-.markdown-body table,
-.markdown-content table {
-  border-collapse: collapse;
-  margin: 0.5em 0 !important;
-}
-.markdown-body th,
-.markdown-content th {
-  background: #f4f4f4;
-  font-weight: 500;
-}
-
-/* Blockquote: dezenter */
-.markdown-body blockquote,
-.markdown-content blockquote {
-  border-left: 4px solid #93c5fd;
-  color: #64748b;
-  padding-left: 1em;
-  margin-left: 0;
-  font-style: italic;
-  background: transparent;
-}
-
-/* Optional: Code kompakter */
-.markdown-body code,
-.markdown-content code {
+/* Optional kompakter Code außerhalb von cm-Styles */
+.markdown-body code, .markdown-content code {
   font-size: 90%;
-  padding: 0.2em 0.4em;
+  padding: 0.15em 0.35em;
   border-radius: 0.3em;
   background: #f3f4f6;
-  color: #3b3b3b;
+  color: #374151;
 }
 
-/* Optional: Pre (Codeblock) */
-.markdown-body pre,
-.markdown-content pre {
+.markdown-body pre, .markdown-content pre {
   background: #111827;
   color: #f3f4f6;
-  border-radius: 0.6em;
-  padding: 1em;
-  margin: 0.5em 0;
-  font-size: 95%;
+  border-radius: 8px;
+  padding: 0.9em;
+  margin: 0.45em 0;
+  font-size: 92%;
   overflow-x: auto;
+}
+
+/* Kleinere, angenehm dichte Tabellen global */
+.markdown-body table, .markdown-content table {
+  border-collapse: collapse;
+  margin: 0.45em 0 !important;
+}
+.markdown-body th, .markdown-content th {
+  background: #f4f4f4;
+  font-weight: 600;
 }

@@ -2,16 +2,39 @@
 
 import { signOut } from "next-auth/react"
 
-export const handleLogout = async (idToken?: string) => {
-  const redirectUri = encodeURIComponent("https://sealai.net")
+const CLIENT_ID =
+  process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ||
+  process.env.KEYCLOAK_CLIENT_ID ||
+  "nextauth"
 
-  // Local session cleanup
+const ISSUER =
+  process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ||
+  process.env.KEYCLOAK_ISSUER ||
+  "https://auth.sealai.net/realms/sealAI"
+
+export const logout = async (idToken?: string, redirectTo = "/") => {
+  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  const safePath = redirectTo.startsWith("/") ? redirectTo : "/"
+  const postLogout = `${origin}${safePath}`
+
+  // 1) lokale NextAuth-Session beenden
   await signOut({ redirect: false })
 
-  // Redirect to Keycloak logout
-  const logoutUrl = idToken
-    ? `https://auth.sealai.net/realms/sealAI/protocol/openid-connect/logout?id_token_hint=${idToken}&post_logout_redirect_uri=${redirectUri}`
-    : `/api/auth/custom-logout`
+  // 2) RP-initiated logout URL bauen
+  const base = `${ISSUER}/protocol/openid-connect/logout`
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    post_logout_redirect_uri: postLogout,
+  })
 
-  window.location.href = logoutUrl
+  // Nur ein id_token_hint mitsenden, wenn wirklich vorhanden
+  if (idToken && idToken.split(".").length === 3) {
+    params.set("id_token_hint", idToken)
+  }
+
+  // 3) Browser zu Keycloak umleiten
+  window.location.href = `${base}?${params.toString()}`
 }
+
+// Alias für alte Importe
+export const handleLogout = logout

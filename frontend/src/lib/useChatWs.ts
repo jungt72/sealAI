@@ -1,121 +1,113 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
+import * as React from "react";
+import ChatWsClient from "./ws";
+import { useAccessToken, fetchFreshAccessToken } from "./useAccessToken";
 
-/* -------------------------------------------------
-   Nachricht‑Typen
---------------------------------------------------*/
-export interface ChatMessage {
-  role: 'user' | 'assistant';        // ← *tool* wird unten in 'assistant' gemappt
-  content: string;
-}
+export type UseChatWsArgs = { chatId: string; endpoint?: string };
 
-/* -------------------------------------------------
-   Heuristik: Ist es ein einfacher Klartext‑Chunk?
---------------------------------------------------*/
-function isSingleChunk(str: string): boolean {
-  return (
-    typeof str === 'string' &&
-    str.length > 0 &&                 // ✓ bool statt number
-    !str.includes('additional_kwargs') &&
-    !str.includes('response_metadata') &&
-    !str.includes("content='") &&
-    !str.includes("id='run-")
-  );
-}
+type UseChatWsState = {
+  connected: boolean;
+  streaming: boolean;
+  threadId?: string;
+  agent?: string;
+  text: string;            // transient Streaming-Puffer (wird nach DONE geleert)
+  lastError?: string;
+};
 
-/* -------------------------------------------------
-   WebSocket‑Hook
---------------------------------------------------*/
-export function useChatWs(token?: string) {
-  const [ws,        setWs]        = useState<WebSocket | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [messages,  setMessages]  = useState<ChatMessage[]>([]);
-  const chatIdRef                 = useRef('default');
+export function useChatWs({ chatId, endpoint }: UseChatWsArgs) {
+  const { token } = useAccessToken();
+  const [state, setState] = React.useState<UseChatWsState>({
+    connected: false,
+    streaming: false,
+    text: "",
+  });
 
-  /* -------- Verbindungs‑Lifecycle -------- */
-  useEffect(() => {
-    if (!token) { setConnected(false); setWs(null); return; }
+  const clientRef = React.useRef<ChatWsClient>();
+  // Nur wenn wir aktiv send() aufrufen, darf ein "starting" den Stream starten.
+  const awaitingSendRef = React.useRef(false);
 
-    const url  = buildWsUrl(
-      `/api/v1/ai/ws?token=${encodeURIComponent(token)}&json_stream=1`
-    );
-    const sock = new WebSocket(url, 'json');
-    setWs(sock);
-
-    sock.onopen  = () => setConnected(true);
-    sock.onclose = () => { setConnected(false); setWs(null); };
-    sock.onerror = e  => console.error('❌  WS‑Error', e);
-
-    /* -------- eingehende Nachrichten -------- */
-    sock.onmessage = e => {
-      try {
-        const parsed = JSON.parse(e.data);
-
-        if (parsed.type === 'error') {
-          console.error('WS‑Error‑Payload', parsed);
-          return;
-        }
-
-        /* ----- OpenAI‑Fallback (alt) ----- */
-        if (parsed.choices?.[0]?.delta) {
-          const chunk = parsed.choices[0].delta.content;
-          if (isSingleChunk(chunk)) pushChunk(chunk);
-          return;
-        }
-
-        /* ----- SealAI‑Chunk ----- */
-        if (parsed.type === 'chunk' && typeof parsed.content === 'string') {
-          pushChunk(parsed.content);          // agent egal ⇒ assistant
-          return;
-        }
-
-      } catch {
-        /* Fallback: Plain‑Text‑Streaming */
-        pushChunk(e.data as string);
-      }
-    };
-
-    return () => {
-      if (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING) {
-        sock.close(1000, 'client closed');
-      }
-      setConnected(false);
-      setWs(null);
-    };
+  // bei jedem Connect frischen Token holen (Fallback: letzter bekannter)
+  const getToken = React.useCallback(async () => {
+    const fresh = await fetchFreshAccessToken();
+    return fresh ?? token;
   }, [token]);
 
-  /* -------- Helper: Chunk anhängen -------- */
-  function pushChunk(text: string) {
-    setMessages(prev => {
-      if (prev.length && prev.at(-1)!.role === 'assistant') {
-        const next = [...prev];
-        next[next.length - 1].content += text;
-        return next;
-      }
-      return [...prev, { role: 'assistant', content: text }];
+  React.useEffect(() => {
+    let mounted = true;
+    if (!token) return;
+
+    const client = new ChatWsClient({
+      url: endpoint ?? "/api/v1/ai/ws",
+      getToken,
+      onOpen: () => mounted && setState((s) => ({ ...s, connected: true })),
+      onClose: () =>
+        mounted && setState((s) => ({ ...s, connected: false, streaming: false })),
+      onError: (ev: Event) =>
+        mounted &&
+        setState((s) => ({
+          ...s,
+          lastError: String((ev as any)?.message ?? "WebSocket error"),
+        })),
+
+      // "starting" nur akzeptieren, wenn wir selbst gesendet haben.
+      onStreamStart: ({ threadId, agent }: { threadId: string; agent?: string }) => {
+        if (!mounted) return;
+        if (!awaitingSendRef.current) return; // späte/duplizierte Events ignorieren
+        setState((s) => ({
+          ...s,
+          streaming: true,
+          threadId,
+          agent,
+          text: "", // neuer Stream -> Puffer leeren
+        }));
+      },
+
+      onStreamDelta: ({ delta }: { delta: string }) =>
+        mounted &&
+        setState((s) => ({
+          ...s,
+          text: (s.text ?? "") + String(delta),
+        })),
+
+      onStreamDone: () => {
+        if (!mounted) return;
+        awaitingSendRef.current = false;
+        // Wichtig gegen Doppelanzeige:
+        // Der Stream-Text ist nur transient. Nach DONE wird er geleert,
+        // damit anschließend NUR die persistierte Final-Nachricht angezeigt wird.
+        setState((s) => ({ ...s, streaming: false, text: "" }));
+      },
     });
-  }
 
-  /* -------- Senden -------- */
-  function send(text: string) {
-    if (!ws || !connected || !text.trim()) return;
-    ws.send(JSON.stringify({ chat_id: chatIdRef.current, input: text.trim() }));
-    setMessages(p => [
-      ...p,
-      { role: 'user',      content: text.trim() },
-      { role: 'assistant', content: '' },       // Platzhalter für Stream
-    ]);
-  }
+    clientRef.current = client;
 
-  return { connected, messages, send };
-}
+    client.connect().catch((e: any) => {
+      if (!mounted) return;
+      setState((s) => ({ ...s, lastError: String(e?.message ?? e) }));
+    });
 
-/* -------------------------------------------------
-   Absoluten WS‑Pfad bauen
---------------------------------------------------*/
-export function buildWsUrl(path: string) {
-  if (typeof window === 'undefined') return path;  // SSR
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${window.location.host}${path}`;
+    return () => {
+      mounted = false;
+      client.close();
+      clientRef.current = undefined;
+    };
+  }, [token, endpoint, getToken]);
+
+  const send = React.useCallback(
+    (input: string, extra?: Record<string, unknown>) => {
+      if (!input?.trim()) return;
+      awaitingSendRef.current = true;
+      clientRef.current?.request(input, chatId, extra);
+    },
+    [chatId],
+  );
+
+  const cancel = React.useCallback(() => {
+    clientRef.current?.cancel(state.threadId);
+    awaitingSendRef.current = false;
+    setState((s) => ({ ...s, streaming: false, text: "" }));
+  }, [state.threadId]);
+
+  return { ...state, send, cancel };
 }

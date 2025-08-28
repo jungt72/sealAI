@@ -1,31 +1,29 @@
-# frontend/Dockerfile
-# ─────────────────────────────────────────────────────────────
-FROM node:18-alpine AS builder
+# Multi-stage build that IGNORES any lockfiles and installs with legacy peer deps
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Basisdateien
-COPY package.json tsconfig.json next.config.js postcss.config.js tailwind.config.js ./
+# Only copy package.json to avoid bringing in a broken lockfile
+COPY package.json ./
 
-# Dependencies (Tailwind v3)
-RUN npm install --legacy-peer-deps
+# Always install with legacy peer deps to smooth R3F/Drei/React 18
+RUN npm config set legacy-peer-deps true \
+ && npm install
 
-# Quellcode
-COPY src ./src
-COPY public ./public
-COPY .env .env 
-
-# Build
+# Now bring the rest of the app and build
+COPY . .
 RUN npm run build
 
-# ─────────────────────────────────────────────────────────────
-FROM node:18-alpine
+# ── Runtime ──────────────────────────────────────────────────────────
+FROM node:20-alpine AS runner
 WORKDIR /app
+ENV NODE_ENV=production
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
+# Reuse node_modules from builder to avoid reinstall
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/next.config.js ./next.config.js
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
 
-ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["npx", "next", "start"]
+CMD ["npx", "next", "start", "-p", "3000"]

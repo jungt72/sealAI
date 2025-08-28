@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   # ------------------------------------------------------------------
-  #  PostgreSQL
+  # PostgreSQL
   # ------------------------------------------------------------------
   postgres:
     image: postgres:15
@@ -21,18 +21,19 @@ services:
       timeout: 5s
       retries: 5
     networks: [sealai_network]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   # ------------------------------------------------------------------
-  #  Redis Stack – nur Server, ohne Insight-UI
+  # Redis Stack (RediSearch inkl.)
   # ------------------------------------------------------------------
   redis:
     image: redis/redis-stack-server:7.4.0-v6
     container_name: redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"         # Insight-Port 8001 aus Security-Gründen weggelassen
     environment:
-      - REDIS_ARGS=--appendonly yes
+      - REDIS_ARGS=--appendonly no --save 900 1 300 10 60 10000
     volumes:
       - redis_data:/data
     healthcheck:
@@ -42,47 +43,27 @@ services:
       retries: 5
       start_period: 30s
     networks: [sealai_network]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   # ------------------------------------------------------------------
-  #  Einmaliger Init-Job – legt RediSearch-Indizes an
-  # ------------------------------------------------------------------
-  redis-init:
-    image: sealai-backend
-    container_name: redis-init
-    command: >
-      python - <<'PY'
-      import asyncio, os
-      from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-      async def main():
-          saver = AsyncRedisSaver(redis_url=os.environ["REDIS_URL"], index_name="checkpoints")
-          await saver.asetup()      # idempotent
-          print("✅  RediSearch-Index 'checkpoints' angelegt/aktualisiert")
-      asyncio.run(main())
-      PY
-    environment:
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: "no"
-    networks: [sealai_network]
-
-  # ------------------------------------------------------------------
-  #  Qdrant Vektor-DB
+  # Qdrant (Vektor-DB für RAG)
   # ------------------------------------------------------------------
   qdrant:
     image: qdrant/qdrant:v1.15.0
     container_name: qdrant
     restart: always
     env_file: ./backend/.env
-    ports:
-      - "6333:6333"
     volumes:
       - sealai_qdrant_storage:/qdrant/storage
     networks: [sealai_network]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   # ------------------------------------------------------------------
-  #  Keycloak (IdP)
+  # Keycloak (IdP)
   # ------------------------------------------------------------------
   keycloak:
     build: ./keycloak
@@ -95,23 +76,22 @@ services:
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KC_HOSTNAME: auth.sealai.net
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTPS_CERTIFICATE_FILE: /etc/x509/https/tls.crt
       KC_HTTPS_CERTIFICATE_KEY_FILE: /etc/x509/https/tls.key
-    ports:
-      - "8080:8080"
-      - "8443:8443"
+      KC_PROXY: edge
+      PROXY_ADDRESS_FORWARDING: "true"
     volumes:
       - ./certs/tls.crt:/etc/x509/https/tls.crt:ro
       - ./certs/tls.key:/etc/x509/https/tls.key:ro
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
     networks: [sealai_network]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   # ------------------------------------------------------------------
-  #  FastAPI Backend
+  # FastAPI Backend
   # ------------------------------------------------------------------
   backend:
     build: ./backend
@@ -119,55 +99,66 @@ services:
     restart: always
     env_file: ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379/0
+      # ✅ WebSocket-Origin-Policy & JWT Audience
+      ALLOW_WS_ORIGIN_ANY: "1"
+      ALLOW_WS_ORIGIN_EMPTY: "1"
+      ALLOWED_ORIGIN: "http://localhost:3000,http://localhost,http://127.0.0.1:3000,https://sealai.net,https://www.sealai.net,*"
+      ALLOWED_AUDIENCES: "account,nextauth,sealai-backend-api"
+      KEYCLOAK_REALM_URL: "https://auth.sealai.net/realms/sealAI"
+      # ✅ WS-Streaming Tuning (wirken jetzt im Container)
+      WS_COALESCE_MIN_CHARS: "8"
+      WS_COALESCE_MAX_LAT_MS: "35"
+      WS_IDLE_TIMEOUT_SEC: "15"
+      WS_STREAM_NODES: "recommend,explain"
     ports:
       - "8000:8000"
     depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-      redis-init:
-        condition: service_completed_successfully
+      - redis
+      - postgres
+      - qdrant
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - hf_cache:/cache
     networks: [sealai_network]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   # ------------------------------------------------------------------
-  #  Next.js Frontend
+  # Next.js Frontend
   # ------------------------------------------------------------------
   frontend:
     build: ./frontend
     container_name: frontend
     restart: always
     env_file: ./frontend/.env.local
+    environment:
+      BACKEND_URL: "http://backend:8000"
     ports:
       - "3000:3000"
     depends_on:
-      backend:
-        condition: service_started
+      - backend
     networks: [sealai_network]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   # ------------------------------------------------------------------
-  #  Nginx – TLS-Terminator & Reverse-Proxy
+  # Nginx (TLS Terminator & Reverse Proxy)
   # ------------------------------------------------------------------
   nginx:
     image: nginx:latest
     container_name: nginx
     restart: always
     depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_started
-      keycloak:
-        condition: service_started
+      - backend
+      - frontend
+      - keycloak
     ports:
       - "80:80"
       - "443:443"
@@ -176,10 +167,22 @@ services:
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - ./nginx/docker-entrypoint-wait.sh:/docker-entrypoint.d/00-wait-backend.sh:ro
-    networks: [sealai_network]
+    networks:
+      - sealai_network
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  calculix:
+    build: ./calculix
+    container_name: calculix
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    networks: [sealai_network]   # <— hinzugefügt
 
 # --------------------------------------------------------------------
-#  Netzwerke & Volumes
+# Netzwerke & Volumes
 # --------------------------------------------------------------------
 networks:
   sealai_network:
@@ -189,3 +192,4 @@ volumes:
   sealai_postgres_data:
   redis_data:
   sealai_qdrant_storage:
+  hf_cache:

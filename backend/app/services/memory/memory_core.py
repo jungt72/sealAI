@@ -1,63 +1,159 @@
-# backend/app/services/memory/memory_core.py
-
 """
-Memory Core: Multi-Layer-Architektur für Kurzzeit-, Mittel- und Langzeitgedächtnis.
-Short-Term: Sliding Window in Redis. 
-Mid-Term: LLM-basierte Zusammenfassung als Anchor.
-Long-Term: Persistente Speicherung in Vektorstore (Qdrant).
+Memory Core: Kapselt Long-Term-Memory (Qdrant) für Export/Löschen.
+Kurz-/Mittelzeit (Redis/Summary) laufen separat über LangGraph-Checkpointer.
+
+Payload-Felder pro Eintrag:
+- user: str                  (Pflicht für Filterung pro Benutzer)
+- chat_id: str               (optional; für Export/Löschen pro Chat)
+- kind: str                  (z. B. "preference", "fact", "note", …)
+- text: str                  (Inhalt)
+- created_at: float|int|str  (optional: Unix-Zeit oder ISO)
+Weitere Felder erlaubt – werden unverändert mit exportiert.
 """
 
-from langchain_community.chat_message_histories import RedisChatMessageHistory
-from langchain.memory import ConversationSummaryMemory
-from langchain_community.vectorstores import Qdrant
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from qdrant_client import QdrantClient
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Tuple
+
+from qdrant_client import QdrantClient, models
+from qdrant_client.http.models import FilterSelector
+
 from app.core.config import settings
-from app.services.llm.llm_factory import get_llm  # Dein LLM-Lader; ggf. anpassen
 
-def get_redis_history_key(username: str, chat_id: str) -> str:
-    return f"chat_history:{username}:{chat_id}"
 
-def get_memory_for_thread(session_id: str, window_size: int = 10) -> RedisChatMessageHistory:
+# ---------------------------------------------------------------------------
+# Qdrant Client & Collection
+# ---------------------------------------------------------------------------
+
+def _get_qdrant_client() -> QdrantClient:
+    kwargs = {"url": settings.qdrant_url}
+    if settings.qdrant_api_key:
+        kwargs["api_key"] = settings.qdrant_api_key
+    return QdrantClient(**kwargs)
+
+
+def _ltm_collection_name() -> str:
+    """
+    Eigene LTM-Collection verwenden, um keine Vektorgrößen-Konflikte mit der
+    RAG-Collection zu riskieren. Fallback: "<qdrant_collection>-ltm".
+    """
+    return (settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm").strip()
+
+
+def ensure_ltm_collection(client: QdrantClient) -> None:
+    """
+    Stellt sicher, dass die LTM-Collection existiert. Wir verwenden einen
+    Dummy-Vektor (size=1), da wir nur Payload-basierte Scroll/Filter-Operationen
+    benötigen. (Qdrant verlangt einen Vektorspace pro Collection.)
+    """
+    coll = _ltm_collection_name()
     try:
-        username, chat_id = session_id.split(":", 1)
-    except ValueError:
-        username = session_id
-        chat_id = "default"
-    return RedisChatMessageHistory(
-        session_id=get_redis_history_key(username, chat_id),
-        url=settings.redis_url,
-        ttl=None,
-        # window_size (falls von deiner LangChain-Version unterstützt; sonst aufrufen: memory.messages[-window_size:])
-    )
+        client.get_collection(coll)
+    except Exception:
+        client.recreate_collection(
+            collection_name=coll,
+            vectors_config=models.VectorParams(size=1, distance=models.Distance.COSINE),
+        )
 
-def build_summary_memory(session_id: str) -> ConversationSummaryMemory:
-    try:
-        username, chat_id = session_id.split(":", 1)
-    except ValueError:
-        username = session_id
-        chat_id = "default"
-    chat_memory = RedisChatMessageHistory(
-        session_id=f"chat_history:{username}:{chat_id}",
-        url=settings.redis_url,
-    )
-    return ConversationSummaryMemory(
-        llm=get_llm(),
-        chat_memory=chat_memory,
-        return_messages=True,
-        memory_key="chat_history",
-        summary_message_key="summary",
-        moving_summary_buffer="",
-    )
 
-def get_longterm_vectorstore():
-    embeddings = HuggingFaceEmbeddings(model_name=settings.embedding_model)
-    qdrant_client = QdrantClient(
-        url=settings.qdrant_url,
-        api_key=settings.qdrant_api_key,
+# ---------------------------------------------------------------------------
+# Export / Delete
+# ---------------------------------------------------------------------------
+
+def _build_user_filter(user: str, chat_id: Optional[str] = None) -> models.Filter:
+    must: List[models.FieldCondition] = [
+        models.FieldCondition(key="user", match=models.MatchValue(value=user))
+    ]
+    if chat_id:
+        must.append(models.FieldCondition(key="chat_id", match=models.MatchValue(value=chat_id)))
+    return models.Filter(must=must)
+
+
+def ltm_export_all(
+    user: str,
+    chat_id: Optional[str] = None,
+    limit: int = 10000,
+) -> List[Dict[str, Any]]:
+    """
+    Exportiert bis zu `limit` LTM-Items für den User (optional gefiltert nach chat_id).
+    Liefert Liste aus {id, payload}.
+    """
+    if not settings.ltm_enable:
+        return []
+
+    client = _get_qdrant_client()
+    ensure_ltm_collection(client)
+
+    flt = _build_user_filter(user, chat_id)
+    out: List[Dict[str, Any]] = []
+
+    next_page = None
+    fetched = 0
+    page_size = 512
+    coll = _ltm_collection_name()
+
+    while fetched < limit:
+        points, next_page = client.scroll(
+            collection_name=coll,
+            scroll_filter=flt,
+            with_payload=True,
+            with_vectors=False,
+            limit=min(page_size, limit - fetched),
+            offset=next_page,
+        )
+        if not points:
+            break
+        for p in points:
+            out.append({
+                "id": str(p.id),
+                "payload": dict(p.payload or {}),
+            })
+        fetched += len(points)
+        if next_page is None:
+            break
+
+    return out
+
+
+def ltm_delete_all(
+    user: str,
+    chat_id: Optional[str] = None,
+) -> int:
+    """
+    Löscht alle LTM-Items für User (optional gefiltert nach chat_id).
+    Gibt die Anzahl der gelöschten Punkte (approx.) zurück.
+    """
+    if not settings.ltm_enable:
+        return 0
+
+    client = _get_qdrant_client()
+    ensure_ltm_collection(client)
+
+    flt = _build_user_filter(user, chat_id)
+    coll = _ltm_collection_name()
+
+    # Vorab zählen (für Response)
+    to_delete = 0
+    next_page = None
+    while True:
+        points, next_page = client.scroll(
+            collection_name=coll,
+            scroll_filter=flt,
+            with_payload=False,
+            with_vectors=False,
+            limit=1024,
+            offset=next_page,
+        )
+        if not points:
+            break
+        to_delete += len(points)
+        if next_page is None:
+            break
+
+    # Delete via Filter (serverseitig)
+    client.delete(
+        collection_name=coll,
+        points_selector=FilterSelector(filter=flt),
+        wait=True,
     )
-    return Qdrant(
-        client=qdrant_client,
-        collection_name=settings.qdrant_collection,
-        embeddings=embeddings,
-    )
+    return to_delete

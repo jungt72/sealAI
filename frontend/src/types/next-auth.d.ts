@@ -1,11 +1,10 @@
-/* eslint-disable no-unused-vars */
-import NextAuth from 'next-auth'
+import 'next-auth';
 
 declare module 'next-auth' {
   interface Session {
-    /** Access-Token (Keycloak / JWT) */
-    accessToken?: string
-    /** Optional: separat ausgespieltes ID-Token */
-    idToken?: string
+    accessToken?: string;
+    idToken?: string;
   }
 }
+
+export {};

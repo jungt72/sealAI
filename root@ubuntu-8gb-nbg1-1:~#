@@ -1,0 +1,379 @@
+# backend/app/api/v1/endpoints/chat_ws.py
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import os
+import logging
+import traceback
+from typing import Any, Dict, Iterable, List, Optional
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.websockets import WebSocketState
+from langchain_core.messages import HumanMessage, AIMessage
+
+router = APIRouter()
+
+# ─────────────────────────────────────────────────────────────
+# Konfiguration
+# ─────────────────────────────────────────────────────────────
+ALLOWED_ORIGINS = {o.strip() for o in os.getenv("ALLOWED_ORIGIN", "").split(",") if o.strip()}
+ALLOW_WS_ORIGIN_ANY = os.getenv("ALLOW_WS_ORIGIN_ANY", "0") == "1"
+IGNORE_EMPTY_INPUTS = os.getenv("IGNORE_EMPTY_INPUTS", "true").lower() == "true"
+
+# Coalescing (Bandbreite vs. Latenz)
+COALESCE_MIN_CHARS = int(os.getenv("WS_COALESCE_MIN_CHARS", "24"))
+COALESCE_MAX_LAT_MS = float(os.getenv("WS_COALESCE_MAX_LAT_MS", "60"))
+HEARTBEAT_SEC = int(os.getenv("WS_HEARTBEAT_SEC", "25"))
+
+# Optionales Event-Logging
+WS_LOG_EVENTS = os.getenv("WS_LOG_EVENTS", "0") == "1"
+log = logging.getLogger(__name__)
+
+# Welche Nodes sollen live gestreamt werden?
+def _env_ws_stream_nodes() -> set[str]:
+    raw = os.getenv("WS_STREAM_NODES") or os.getenv("SSE_STREAM_NODES", "")
+    if not raw:
+        return {"recommend", "explain"}
+    return {x.strip().lower() for x in raw.split(",") if x.strip()}
+
+STREAM_NODES = _env_ws_stream_nodes()
+
+# Non-Stream Timeout (harte Kante, bevor Fallback greift)
+NON_STREAM_TIMEOUT_SEC = float(os.getenv("WS_NON_STREAM_TIMEOUT_SEC", "8"))
+
+# ─────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────
+def _origin_allowed(origin: Optional[str]) -> bool:
+    if ALLOW_WS_ORIGIN_ANY:
+        return True
+    if not origin:
+        return False
+    return origin in ALLOWED_ORIGINS
+
+
+async def _send_json(ws: WebSocket, payload: Dict[str, Any]) -> None:
+    if ws.client_state == WebSocketState.CONNECTED:
+        await ws.send_text(json.dumps(payload))
+
+
+async def _close(ws: WebSocket, code: int, reason: str) -> None:
+    if ws.client_state == WebSocketState.CONNECTED:
+        await ws.close(code=code, reason=reason)
+
+
+def _iter_text_from_chunk(chunk: Any) -> Iterable[str]:
+    """
+    Robuste Text-Extraktion aus einem einzelnen LLM-Chunk.
+    Deckt LangGraph/LC v1/v2 und verschiedene Backends ab.
+    """
+    # Dict-Form: content / delta
+    if isinstance(chunk, dict):
+        for k in ("content", "delta", "text", "token"):
+            v = chunk.get(k)
+            if isinstance(v, str) and v:
+                yield v
+        return
+
+    # Objekt mit .content (str | list[part])
+    content = getattr(chunk, "content", None)
+    if isinstance(content, str) and content:
+        yield content
+        return
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, str):
+                yield part
+            elif isinstance(part, dict):
+                t = part.get("text")
+                if isinstance(t, str) and t:
+                    yield t
+
+    # additional_kwargs (manche Backends legen deltas hier ab)
+    ak = getattr(chunk, "additional_kwargs", None)
+    if isinstance(ak, dict):
+        for k in ("delta", "content", "text", "token"):
+            v = ak.get(k)
+            if isinstance(v, str) and v:
+                yield v
+
+    return
+
+
+def _extract_piece_from_event(ev: dict) -> Optional[str]:
+    """
+    Holt Text-Piece aus einem Event-Datensatz (v1/v2).
+    Prüft mehrere Felder, damit auch exotische Backends supportet sind.
+    """
+    if not isinstance(ev, dict):
+        return None
+    data = ev.get("data") or {}
+
+    # Häufig: data["chunk"] (Objekt/Dict)
+    v = data.get("chunk")
+    if v is not None:
+        for piece in _iter_text_from_chunk(v):
+            if piece:
+                return piece
+
+    # Alternativen
+    for key in ("delta", "content", "token", "text"):
+        vv = data.get(key)
+        if isinstance(vv, str) and vv:
+            return vv
+
+    return None
+
+
+def _is_relevant_node(ev: Dict[str, Any]) -> bool:
+    # nur relevante LangGraph-Knoten streamen
+    if {"all", "*" } & STREAM_NODES:
+        return True
+    meta = ev.get("metadata") or {}
+    node = str(meta.get("langgraph_node") or "").lower()
+    run  = str(meta.get("run_name") or meta.get("run", {}).get("name") or "").lower()
+
+    # ev['name'] ignorieren (meist Modell-/Toolname)
+    # „intent“-Preambel filtern
+    chunk = ((ev.get("delta") or {}).get("content") or "").lstrip()
+    if chunk.startswith('{"intent"') or '"intent":' in chunk:
+        return False
+    return (node in STREAM_NODES) or (run in STREAM_NODES)
+
+
+async def _heartbeat(ws: WebSocket):
+    try:
+        while True:
+            await asyncio.sleep(HEARTBEAT_SEC)
+            await _send_json(ws, {"type": "ping"})
+    except asyncio.CancelledError:
+        return
+
+
+async def _stream_graph_text(ws_app, user_input: str, thread_id: str) -> Iterable[str]:
+    """
+    Streamt reine Text-Deltas aus LangGraph.astream_events().
+    Filtert auf Nodes in STREAM_NODES, damit keine Triage/JSON-Fragmente im UI landen.
+    Unterstützt v1/v2 und diverse Eventnamen.
+    """
+    g_async = getattr(ws_app.state, "graph_async", None)
+    if g_async is None:
+        raise RuntimeError("graph_async ist nicht gesetzt – Graph wurde nicht initialisiert")
+
+    cfg = {
+        "configurable": {
+            "thread_id": thread_id,
+            "checkpoint_ns": getattr(ws_app.state, "checkpoint_ns", None),
+        }
+    }
+    initial = {"messages": [HumanMessage(content=user_input)]}
+
+    try_versions = ("v2", "v1")
+    event_names = {
+        "on_chat_model_stream",
+        "on_chat_model_delta",
+        "on_llm_stream",
+        "on_llm_new_token",
+    }
+
+    for ver in try_versions:
+        try:
+            async for ev in g_async.astream_events(initial, config=cfg, version=ver):
+                ev_name = ev.get("event")
+                if WS_LOG_EVENTS:
+                    try:
+                        log.info("ws ev=%s meta=%s", ev_name, (ev.get("metadata") or {}))
+                    except Exception:
+                        pass
+
+                if ev_name in event_names and _is_relevant_node(ev):
+                    piece = _extract_piece_from_event(ev)
+                    if piece:
+                        yield piece
+            break
+        except Exception:
+            continue
+
+
+def _extract_last_ai_text(result: Dict[str, Any]) -> str:
+    text = ""
+    for m in (result or {}).get("messages", []):
+        if isinstance(m, AIMessage) and getattr(m, "content", None):
+            text = m.content  # letzte AIMessage gewinnt
+    return (text or "").strip()
+
+
+async def _ws_send_final(ws: WebSocket, *, chat_id: str, seq_last: int):
+    """Finalen Abschluss-Block im üblichen Format (leerem Content) schicken."""
+    await _send_json(ws, {
+        "message": {
+            "type": "ai",
+            "data": {"content": "", "type": "ai", "name": "material_agent", "id": f"run--{chat_id}"},
+        },
+        "meta": {"thread_id": chat_id, "seq_last": seq_last, "done": True}
+    })
+
+
+async def _ws_send_fallback_stream(ws: WebSocket, *, chat_id: str, text: str):
+    """Fallback als Stream: ein Delta-Chunk mit kompletter Antwort, dann finaler Block."""
+    await _send_json(ws, {"delta": {"content": text, "seq": 1}, "meta": {"thread_id": chat_id}})
+    await _ws_send_final(ws, chat_id=chat_id, seq_last=1)
+
+
+async def _ws_send_ai(ws: WebSocket, *, chat_id: str, content: str, stream: bool):
+    """Einheitliche AI-Message-Hülle (Start/Final oder Non-Stream)."""
+    await _send_json(ws, {
+        "message": {
+            "type": "ai",
+            "data": {
+                "content": content,
+                "metadata": {"stream": stream, "chat_id": chat_id, "user": "unknown"},
+                "type": "ai",
+                "name": "material_agent",
+                "id": f"run--{chat_id}",
+            }
+        },
+        "meta": {"thread_id": chat_id}
+    })
+
+
+def _local_fallback_reply(user_text: str) -> str:
+    return (
+        "🔎 **Meine Empfehlung – präzise und transparent:**\n\n"
+        "**Typ:** BA 25x47x7\n"
+        "**Werkstoff:** FKM\n\n"
+        "**Vorteile:** hohe Temperaturbeständigkeit, gute Ölbeständigkeit, lange Lebensdauer\n"
+        "**Einschränkungen:** teurer als NBR\n\n"
+        "**Begründung:** FKM beständig für Öl und bis ca. 80 °C geeignet; bei ~2 bar und ~1500 U/min üblich.\n\n"
+        "**Alternativen:**\n- BA 25x47x7 (NBR)\n"
+        "_Hinweis: Lokale Fallback-Antwort (LLM derzeit nicht verfügbar/Timeout)._"
+    )
+
+# ─────────────────────────────────────────────────────────────
+# WebSocket Chat-Endpunkt
+# ─────────────────────────────────────────────────────────────
+@router.websocket("/ai/ws")
+async def ws_chat(websocket: WebSocket) -> None:
+    # Origin-Check
+    origin = websocket.headers.get("origin")
+    if not _origin_allowed(origin):
+        await websocket.accept()
+        await _close(websocket, code=1008, reason="Forbidden origin")
+        return
+
+    # Subprotocol spiegeln (bspw. "json" von wscat -s json)
+    requested_proto = websocket.headers.get("sec-websocket-protocol")
+    if requested_proto:
+        await websocket.accept(subprotocol=requested_proto)
+    else:
+        await websocket.accept()
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                await _send_json(websocket, {"error": {"code": "bad_request", "message": "Invalid JSON"}})
+                continue
+
+            if data.get("kind") == "ping":
+                await _send_json(websocket, {"kind": "pong"})
+                continue
+
+            chat_id = str(data.get("chat_id") or "default")
+            user_input = str(data.get("input") or data.get("input_text") or "")
+            wants_stream = bool(data.get("stream", False))
+            username = "unknown"
+            thread_id = f"{username}:{chat_id}"
+
+            if IGNORE_EMPTY_INPUTS and not user_input.strip():
+                await _send_json(websocket, {"kind": "noop", "reason": "empty_input", "chat_id": chat_id})
+                continue
+
+            if wants_stream:
+                # Stream-Startsignalisierung
+                await _ws_send_ai(websocket, chat_id=chat_id, content="", stream=True)
+
+                hb_task = asyncio.create_task(_heartbeat(websocket))
+                loop = asyncio.get_event_loop()
+                last_flush = loop.time()
+                buf: List[str] = []
+                seq = 0
+                streamed_any = False
+
+                async def flush():
+                    nonlocal buf, seq, last_flush, streamed_any
+                    if not buf:
+                        return
+                    seq += 1
+                    chunk = "".join(buf)
+                    buf.clear()
+                    last_flush = loop.time()
+                    streamed_any = True
+                    await _send_json(websocket, {"delta": {"content": chunk, "seq": seq}, "meta": {"thread_id": chat_id}})
+
+                try:
+                    async for piece in _stream_graph_text(websocket.app, user_input, thread_id):
+                        buf.append(piece)
+                        enough = sum(len(x) for x in buf) >= COALESCE_MIN_CHARS
+                        natural = piece.endswith((" ", "\n", ".", ",", "!", "?", ":", ";", "…", "–"))
+                        too_old = (loop.time() - last_flush) * 1000.0 >= COALESCE_MAX_LAT_MS
+                        if enough or natural or too_old:
+                            await flush()
+                    await flush()
+
+                    # Falls keine Streams aus relevanten Nodes kamen → synchrones Ergebnis senden.
+                    if not streamed_any:
+                        g_sync = getattr(websocket.app.state, "graph_sync", None)
+                        if g_sync is not None:
+                            cfg = {
+                                "configurable": {
+                                    "thread_id": thread_id,
+                                    "checkpoint_ns": getattr(websocket.app.state, "checkpoint_ns", None),
+                                }
+                            }
+                            initial = {"messages": [HumanMessage(content=user_input)]}
+                            result = g_sync.invoke(initial, config=cfg)
+                            await _ws_send_fallback_stream(websocket, chat_id=chat_id, text=_extract_last_ai_text(result) or "")
+                        else:
+                            await _ws_send_fallback_stream(websocket, chat_id=chat_id, text=_local_fallback_reply(user_input))
+                except WebSocketDisconnect:
+                    with contextlib.suppress(Exception):
+                        hb_task.cancel()
+                    return
+                except Exception:
+                    await _ws_send_fallback_stream(websocket, chat_id=chat_id, text=_local_fallback_reply(user_input))
+                finally:
+                    with contextlib.suppress(Exception):
+                        hb_task.cancel()
+                    await _ws_send_final(websocket, chat_id=chat_id, seq_last=seq)
+            else:
+                # Non-Stream-Modus
+                try:
+                    g_sync = getattr(websocket.app.state, "graph_sync", None)
+                    if g_sync is None:
+                        await _ws_send_ai(websocket, chat_id=chat_id, content=_local_fallback_reply(user_input), stream=False)
+                    else:
+                        cfg = {
+                            "configurable": {
+                                "thread_id": thread_id,
+                                "checkpoint_ns": getattr(websocket.app.state, "checkpoint_ns", None),
+                            }
+                        }
+                        initial = {"messages": [HumanMessage(content=user_input)]}
+                        result = g_sync.invoke(initial, config=cfg)
+                        await _ws_send_ai(websocket, chat_id=chat_id, content=_extract_last_ai_text(result) or "", stream=False)
+                except Exception:
+                    await _ws_send_ai(websocket, chat_id=chat_id, content=_local_fallback_reply(user_input), stream=False)
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        try:
+            await _send_json(websocket, {"error": {"code": "internal", "trace": traceback.format_exc(limit=2)}})
+        except Exception:
+            pass
+        finally:
+            await _close(websocket, code=1011, reason="internal error")
