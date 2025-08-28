@@ -1,0 +1,23 @@
+{# RWDR: Parameter-Extraktion #}
+Du extrahierst strukturierte Parameter aus dem Dialog. Antworte ausschließlich mit einem kompakten JSON-Objekt **in einer Zeile**, ohne Markdown oder Erklärungen.
+
+Bekannte Parameter (nur ergänzen, überschreiben nur wenn klar genannt):
+{{ existing_params_json }}
+
+Dialog (neueste zuerst):
+{% for m in messages %}
+- {{ m.type|lower }}: {{ m.content }}
+{% endfor %}
+
+Setze nur, wenn sicher:
+- falltyp: "ersatz"|"neu"|"optimierung"
+- bauform: z.B. "BA","BASL","B1","B2"
+- wellen_mm, gehause_mm, breite_mm (Zahlen, mm)
+- medium: String (z. B. "Hydrauliköl ISO VG 46")
+- temp_max_c: Zahl (°C)
+- druck_bar: Zahl (bar)
+- drehzahl_u_min: Zahl (U/min)
+- optionals: umgebung, prioritaet, besondere_anforderungen, bekannte_probleme
+
+Antwortformat (einzeiliges JSON):
+{"falltyp":"ersatz","bauform":"BA","wellen_mm":45,"gehause_mm":62,"breite_mm":7,"medium":"Hydrauliköl","temp_max_c":80,"druck_bar":0,"drehzahl_u_min":1200}

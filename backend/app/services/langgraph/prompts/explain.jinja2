@@ -1,0 +1,30 @@
+{# Textausgabe, nur aus belegten Zahlen (params/derived) #}
+{% set p = params %}
+{% set c = derived.calculated if derived and derived.calculated is defined else {} %}
+
+🔎 **Meine Empfehlung – präzise und transparent:**
+
+**Typ:** {{ main.typ or "–" }}
+**Werkstoff:** {{ main.werkstoff or "–" }}
+
+{% if main.vorteile %}
+**Vorteile:** {{ ", ".join(main.vorteile) }}
+{% endif %}
+{% if main.einschraenkungen %}
+**Einschränkungen:** {{ ", ".join(main.einschraenkungen) }}
+{% endif %}
+
+**Begründung:** {{ main.begruendung or "" }}
+
+{% if c.umfangsgeschwindigkeit_m_s is defined %}
+**Abgeleiteter Wert:** v = {{ "%.3f"|format(c.umfangsgeschwindigkeit_m_s) }} m/s (aus Welle/Drehzahl berechnet)
+{% endif %}
+
+{% if alternativen and alternativen|length > 0 %}
+**Alternativen:**
+{% for a in alternativen %}
+- {{ a.typ }}{% if a.werkstoff %} ({{ a.werkstoff }}){% endif %}
+{% endfor %}
+{% endif %}
+
+Möchten Sie ein **Angebot** anfordern, eine **Zeichnung/Datenblatt** erhalten oder die **Alternative** genauer vergleichen?

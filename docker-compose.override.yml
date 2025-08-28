@@ -1,0 +1,7 @@
+version: "3.8"
+services:
+  frontend:
+    environment:
+      - JOB_FILES_DIR=/app/public/files
+    volumes:
+      - ./frontend/public/files:/app/public/files:ro
