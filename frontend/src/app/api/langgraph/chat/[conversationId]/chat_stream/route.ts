@@ -1,51 +1,56 @@
-export const runtime = 'edge'
-export const dynamic = 'force-dynamic'
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from 'next/server'
+//
+// Proxy für LangGraph-SSE (konversationsspezifisch)
+// Erwartet Authorization: Bearer <JWT>
+//
 
-export async function POST(request: NextRequest, context: any) {
-  const conversationId = context?.params?.conversationId
-
+export async function POST(request: Request, context: any) {
+  const conversationId: string | undefined = context?.params?.conversationId;
   if (!conversationId) {
-    return NextResponse.json(
-      { error: 'Missing conversationId in route context' },
-      { status: 400 }
-    )
+    return new Response(JSON.stringify({ error: "Missing conversationId" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const authHeader = request.headers.get('authorization')
-  const token = authHeader?.split(' ')[1]
-
+  // Auth-Header durchreichen
+  const authHeader = request.headers.get("authorization");
+  const token = authHeader?.split(" ")[1];
   if (!token) {
-    return NextResponse.json(
-      { error: 'Unauthorized – token missing' },
-      { status: 401 }
-    )
+    return new Response(JSON.stringify({ error: "Unauthorized – token missing" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const body = await request.json()
+  const body = await request.text();
 
-  // Nutze absolute Backend-URL aus ENV
-  const backendUrl =
-    (process.env.BACKEND_URL || 'http://localhost:8000') +
-    `/api/v1/langgraph/chat/${conversationId}/chat_stream`
+  const base =
+    (process.env.BACKEND_URL ||
+      process.env.NEXT_PUBLIC_BACKEND_URL ||
+      "http://localhost:8000").replace(/\/$/, "");
+
+  const backendUrl = `${base}/api/v1/langgraph/chat/${conversationId}/chat_stream`;
 
   const backendRes = await fetch(backendUrl, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
       Authorization: `Bearer ${token}`,
-      Accept: 'text/event-stream',
     },
-    body: JSON.stringify(body),
-  })
+    body,
+  });
 
-  return new NextResponse(backendRes.body, {
+  return new Response(backendRes.body, {
     status: backendRes.status,
     headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
-  })
+  });
 }

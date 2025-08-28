@@ -1,10 +1,9 @@
-# backend/app/core/config.py
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 import structlog
 
-# Initialisierung von structlog für strukturiertes Logging
+# Strukturiertes Logging (JSON)
 structlog.configure(
     processors=[
         structlog.processors.TimeStamper(fmt="iso"),
@@ -37,11 +36,14 @@ class Settings(BaseSettings):
     # Embeddings
     embedding_model: str = "BAAI/bge-base-en-v1.5"
 
-    # Qdrant RAG
-    qdrant_url: str
-    qdrant_collection: str
+    # Qdrant (RAG & LTM)
+    qdrant_url: str                     # z.B. "http://qdrant:6333"
+    qdrant_collection: str              # z.B. "sealai-docs-bge-m3" (RAG)
+    # ► NEU: eigene Collection nur für Long-Term-Memory (vermeidet Vektorgrößen-Konflikte)
+    qdrant_collection_ltm: Optional[str] = None
+    qdrant_api_key: Optional[str] = None
     rag_k: int = 4
-    qdrant_filter_metadata: Optional[dict] = None  # Neu: Optionale Filter für Metadata
+    qdrant_filter_metadata: Optional[dict] = None
     debug_qdrant: bool = False
 
     # Redis Memory & Sessions
@@ -51,8 +53,8 @@ class Settings(BaseSettings):
     redis_db: int = 0
     redis_ttl: int = 60 * 60 * 24  # 24h
 
-    # Neu: Redis-URL (bereits vorhanden, aber explizit für Konsistenz)
-    REDIS_URL: str = "redis://redis:6379/0"  # Default-Wert hartcodiert, um NameError zu vermeiden
+    # Explizite REDIS_URL (Fallback für andere Komponenten)
+    REDIS_URL: str = "redis://redis:6379/0"
 
     # Auth / Keycloak / NextAuth
     nextauth_url: str
@@ -65,10 +67,13 @@ class Settings(BaseSettings):
     backend_keycloak_issuer: str
 
     # LangChain Tracing etc.
-    langchain_tracing_v2: bool = True  # Neu: Standardmäßig aktiviert
+    langchain_tracing_v2: bool = True
     langchain_endpoint: Optional[str] = "https://api.smith.langchain.com"
     langchain_api_key: Optional[str] = None
     langchain_project: Optional[str] = "sealai"
+
+    # Memory-Feature-Flags
+    ltm_enable: bool = True  # Long-Term-Memory aktiv/inaktiv schaltbar
 
     model_config = SettingsConfigDict(
         env_file=".env",

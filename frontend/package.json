@@ -2,8 +2,9 @@
   "name": "sealai-frontend",
   "version": "0.1.0",
   "private": true,
-  "installConfig": {
-    "legacy-peer-deps": true
+  "installConfig": { "legacy-peer-deps": true },
+  "overrides": {
+    "@react-three/fiber": "8.15.16"
   },
   "scripts": {
     "dev": "next dev",
@@ -14,8 +15,8 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "@microsoft/fetch-event-source": "^2.0.1",
-    "@react-three/drei": "^10.5.1",
-    "@react-three/fiber": "^9.2.0",
+    "@react-three/drei": "9.122.0",
+    "@react-three/fiber": "8.15.16",
     "@tailwindcss/typography": "^0.5.16",
     "clsx": "^2.1.1",
     "highlight.js": "^11.8.0",
@@ -24,7 +25,7 @@
     "next-auth": "^4.24.11",
     "node-extend": "^0.2.0",
     "react": "18.2.0",
-    "react-dom": "^18.2.0",
+    "react-dom": "18.2.0",
     "react-icons": "^4.10.1",
     "react-markdown": "^10.1.0",
     "react-textarea-autosize": "^8.5.9",

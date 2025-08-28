@@ -1,27 +1,41 @@
 # backend/app/api/v1/api.py
-
 from fastapi import APIRouter
 
-# Import aller v1-Endpoints
-from .endpoints import (
-    auth,
-    memory,
+# Endpoints
+from app.api.v1.endpoints import (
+    ai,
     users,
     system,
     chat_ws,
-    ai,
+    langgraph_sse,  # besitzt internen Prefix "/langgraph"
+    sse_test,
+    memory,         # besitzt eigenen Prefix (z. B. "/memory")
+    auth,
 )
 
+# Optional: nur wenn vorhanden
+try:
+    from .endpoints import consult_invoke  # type: ignore
+except Exception:  # pragma: no cover
+    consult_invoke = None  # type: ignore
+
+# Hauptrouter mit einheitlichem API-Prefix
 api_router = APIRouter(prefix="/api/v1")
 
-# WebSocket-Endpoint für AI-Chat als erstes registrieren
-api_router.include_router(chat_ws.router, prefix="/ai")
+# REST
+api_router.include_router(ai.router,       prefix="/ai",    tags=["ai"])
+api_router.include_router(auth.router,     prefix="/auth",  tags=["auth"])
+api_router.include_router(users.router,    prefix="/users", tags=["users"])
+api_router.include_router(system.router,   prefix="/system", tags=["system"])
 
-# REST-Endpoints unter demselben /ai-Prefix (falls nötig)
-api_router.include_router(ai.router,     prefix="/ai")
+# Module mit eigenem Prefix nicht doppelt praeﬁxen
+api_router.include_router(langgraph_sse.router,            tags=["sse"])
+api_router.include_router(memory.router,                   tags=["memory"])
+api_router.include_router(sse_test.router, prefix="/debug", tags=["debug"])
 
-# Die übrigen REST-Endpoints
-api_router.include_router(auth.router,   prefix="/auth")
-api_router.include_router(memory.router, prefix="/memory")
-api_router.include_router(users.router,  prefix="/users")
-api_router.include_router(system.router, prefix="/system")
+# Optionaler Sync-Consult-Test
+if consult_invoke:
+    api_router.include_router(consult_invoke.router, prefix="/test", tags=["test"])
+
+# WebSocket (z. B. /api/v1/ai/ws, abhängig vom internen Prefix des Moduls)
+api_router.include_router(chat_ws.router,                 tags=["ws"])
