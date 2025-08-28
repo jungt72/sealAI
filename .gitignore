@@ -79,3 +79,6 @@ backups/
 
 # Test artefacts
 tests/e2e_consult*.sh
+
+# Local cleanup scripts
+CLEAN_*.sh
