@@ -48,3 +48,34 @@ nginx-certbot/
 *.py
 transferring/
 writing/
+# === Auto-generated ignore rules ===
+# Audit & Trash
+AUDIT_*/
+CLEANUP_PLAN_*.sh
+TRASH_*/
+audits/
+ERROR
+
+# Backups & Saves
+*.bak
+*.bak.*
+*.save
+*.orig
+docker-compose.yml.bak.*
+
+# Build & Temp
+.next/
+next
+sealai-frontend@0.1.0
+
+# Simulation / Job Artefakte
+mein_job.*
+JOBNAME.*
+export.fbd
+frontend/public/files/mein_job.*
+
+# Backups
+backups/
+
+# Test artefacts
+tests/e2e_consult*.sh
