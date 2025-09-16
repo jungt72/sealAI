@@ -83,3 +83,11 @@ tests/e2e_consult*.sh
 # Local cleanup scripts
 CLEAN_*.sh
 sealai_inventory_*.tar.gz
+.env
+.env.*
+node_modules/
+frontend/.next/
+__pycache__/
+logs/
+dist/
+build/
