@@ -4,18 +4,19 @@ import * as React from "react";
 import ChatWsClient from "./ws";
 import { useAccessToken, fetchFreshAccessToken } from "./useAccessToken";
 
-export type UseChatWsArgs = { chatId: string; endpoint?: string };
+export type UseChatWsArgs = { chatId?: string; endpoint?: string };
 
 type UseChatWsState = {
   connected: boolean;
   streaming: boolean;
   threadId?: string;
   agent?: string;
-  text: string;            // transient Streaming-Puffer (wird nach DONE geleert)
+  text: string;             // transient Stream-Puffer (wird nach DONE geleert)
   lastError?: string;
+  lastUiAction?: any;       // zuletzt empfangenes UI-Event
 };
 
-export function useChatWs({ chatId, endpoint }: UseChatWsArgs) {
+export function useChatWs({ chatId = "default", endpoint }: UseChatWsArgs = {}) {
   const { token } = useAccessToken();
   const [state, setState] = React.useState<UseChatWsState>({
     connected: false,
@@ -24,12 +25,10 @@ export function useChatWs({ chatId, endpoint }: UseChatWsArgs) {
   });
 
   const clientRef = React.useRef<ChatWsClient>();
-  // Nur wenn wir aktiv send() aufrufen, darf ein "starting" den Stream starten.
   const awaitingSendRef = React.useRef(false);
 
-  // bei jedem Connect frischen Token holen (Fallback: letzter bekannter)
   const getToken = React.useCallback(async () => {
-    const fresh = await fetchFreshAccessToken();
+    const fresh = await fetchFreshAccessToken().catch(() => undefined);
     return fresh ?? token;
   }, [token]);
 
@@ -49,39 +48,36 @@ export function useChatWs({ chatId, endpoint }: UseChatWsArgs) {
           ...s,
           lastError: String((ev as any)?.message ?? "WebSocket error"),
         })),
-
-      // "starting" nur akzeptieren, wenn wir selbst gesendet haben.
-      onStreamStart: ({ threadId, agent }: { threadId: string; agent?: string }) => {
-        if (!mounted) return;
-        if (!awaitingSendRef.current) return; // späte/duplizierte Events ignorieren
+      onStreamStart: ({ threadId, agent }) => {
+        if (!mounted || !awaitingSendRef.current) return;
         setState((s) => ({
           ...s,
           streaming: true,
           threadId,
           agent,
-          text: "", // neuer Stream -> Puffer leeren
+          text: "",
         }));
       },
-
-      onStreamDelta: ({ delta }: { delta: string }) =>
+      onStreamDelta: ({ delta }) =>
         mounted &&
         setState((s) => ({
           ...s,
           text: (s.text ?? "") + String(delta),
         })),
-
       onStreamDone: () => {
         if (!mounted) return;
         awaitingSendRef.current = false;
-        // Wichtig gegen Doppelanzeige:
-        // Der Stream-Text ist nur transient. Nach DONE wird er geleert,
-        // damit anschließend NUR die persistierte Final-Nachricht angezeigt wird.
         setState((s) => ({ ...s, streaming: false, text: "" }));
+      },
+      onUiAction: (ua) => {
+        if (!mounted) return;
+        setState((s) => ({ ...s, lastUiAction: ua }));
+        // globales Event, damit Shell den linken Drawer öffnen kann
+        window.dispatchEvent(new CustomEvent("sealai:ui_action", { detail: ua }));
       },
     });
 
     clientRef.current = client;
-
     client.connect().catch((e: any) => {
       if (!mounted) return;
       setState((s) => ({ ...s, lastError: String(e?.message ?? e) }));
@@ -96,9 +92,10 @@ export function useChatWs({ chatId, endpoint }: UseChatWsArgs) {
 
   const send = React.useCallback(
     (input: string, extra?: Record<string, unknown>) => {
-      if (!input?.trim()) return;
+      const trimmed = input?.trim();
+      if (!trimmed) return;
       awaitingSendRef.current = true;
-      clientRef.current?.request(input, chatId, extra);
+      clientRef.current?.request(trimmed, chatId, extra);
     },
     [chatId],
   );
@@ -109,5 +106,10 @@ export function useChatWs({ chatId, endpoint }: UseChatWsArgs) {
     setState((s) => ({ ...s, streaming: false, text: "" }));
   }, [state.threadId]);
 
-  return { ...state, send, cancel };
+  const reset = React.useCallback(() => {
+    awaitingSendRef.current = false;
+    setState({ connected: !!state.connected, streaming: false, text: "" });
+  }, [state.connected]);
+
+  return { ...state, send, cancel, reset };
 }

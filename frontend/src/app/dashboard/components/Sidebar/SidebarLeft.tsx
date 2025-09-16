@@ -1,87 +1,39 @@
-// frontend/src/app/dashboard/components/Sidebar/SidebarLeft.tsx
-'use client';
+"use client";
 
-import { useState, ReactNode } from 'react';
-import {
-  FileText as FormIcon,
-  MessagesSquare as ChatIcon,
-  Settings as SettingsIcon,
-} from 'lucide-react';
+import SidebarForm from "./SidebarForm";
 
-interface SidebarLeftProps {
-  isOpen: boolean;
-}
+type Props = { open: boolean; onOpenChange: (open: boolean) => void };
 
-export default function SidebarLeft({ isOpen }: SidebarLeftProps) {
-  type TabKey = 'form' | 'history' | 'settings';
-  const [active, setActive] = useState<TabKey>('form');
-
-  /* ------------ Tab-Definition ------------ */
-  const tabs: { key: TabKey; label: string; icon: ReactNode }[] = [
-    { key: 'form',    label: 'Formular',     icon: <FormIcon  className="h-5 w-5" /> },
-    { key: 'history', label: 'Chat-History', icon: <ChatIcon  className="h-5 w-5" /> },
-    { key: 'settings',label: 'Settings',     icon: <SettingsIcon className="h-5 w-5" /> },
-  ];
-
-  /* ------------ Inhalte Platzhalter ------------ */
-  function renderContent() {
-    switch (active) {
-      case 'form':
-        return (
-          <form className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <input className="border rounded px-3 py-2" placeholder="Feld A" />
-            <input className="border rounded px-3 py-2" placeholder="Feld B" />
-            <input className="border rounded px-3 py-2" placeholder="Feld C" />
-            <textarea
-              className="border rounded px-3 py-2 col-span-full"
-              rows={4}
-              placeholder="Beschreibung"
-            />
-            <button className="col-span-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition">
-              Speichern
-            </button>
-          </form>
-        );
-      case 'history':
-        return (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-500">Hier könnte deine Chat-History stehen …</p>
-          </div>
-        );
-      case 'settings':
-        return <p className="text-sm text-gray-500">Settings-Panel (Demo-Platzhalter)</p>;
-      default:
-        return null;
-    }
-  }
-
-  /* Sidebar geschlossen? — gar nichts rendern */
-  if (!isOpen) return null;
-
+export default function SidebarLeft({ open, onOpenChange }: Props) {
   return (
-    <div className="mt-12 flex h-full w-full overflow-hidden">
-      {/* ---------- Tab-Leiste ---------- */}
-      <nav className="flex flex-col shrink-0 w-14 border-r">
-        {tabs.map(t => (
+    <>
+      {/* Kein Backdrop mehr. Chat bleibt voll klickbar. */}
+      <aside
+        className={[
+          "fixed top-0 left-0 z-50 h-full",
+          "w-[86vw] max-w-[360px]",
+          "bg-white shadow-2xl rounded-r-2xl",
+          "transform transition-[transform,opacity,box-shadow] duration-300 ease-out will-change-transform",
+          open ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0 pointer-events-none",
+        ].join(" ")}
+        role="dialog"
+        aria-modal="false"
+        aria-label="Beratungs-Formular"
+      >
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="font-semibold">Beratungs-Formular</h2>
           <button
-            key={t.key}
-            onClick={() => setActive(t.key)}
-            className={`flex flex-col items-center gap-1 py-4 text-xs hover:bg-gray-100 
-              ${t.key === active ? 'bg-gray-100 font-semibold text-blue-600' : 'text-gray-500'}`}
+            type="button"
+            className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
+            onClick={() => onOpenChange(false)}
           >
-            {t.icon}
-            {t.label}
+            Schließen
           </button>
-        ))}
-      </nav>
-
-      {/* ---------- Panel-Inhalt ---------- */}
-      <div className="flex-1 overflow-y-auto px-4">
-        <h2 className="text-lg font-semibold text-gray-700 mb-4">
-          {tabs.find(t => t.key === active)?.label}
-        </h2>
-        {renderContent()}
-      </div>
-    </div>
+        </div>
+        <div className="p-4 h-[calc(100%-56px)] overflow-y-auto">
+          <SidebarForm embedded />
+        </div>
+      </aside>
+    </>
   );
 }

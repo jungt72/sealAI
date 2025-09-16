@@ -30,13 +30,13 @@ backend/test/
 nginx/**/renewal*/
 nginx/combined.conf/
 *.tx_
-[nextauth (1).json
+nextauth (1).json
 langgraph_local/
 
 # Ignore leftover scratch placeholders
 =
 CACHED
-[frontend
+frontend
 [internal]
 exporting/
 migrate_structure.sh

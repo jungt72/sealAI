@@ -1,0 +1,19 @@
+{# backend/app/services/langgraph/prompts/ask_missing.jinja2 #}
+{% set de = (lang or 'de')[:2].lower() == 'de' %}
+{% if de %}
+Prima – das hilft mir schon deutlich weiter und macht die Aufgabe viel klarer. 😊
+Für eine **präzise, punktgenaue Empfehlung** brauche ich noch kurz:
+
+{{ friendly }}
+
+Pack die Werte gern **in eine Zeile**, z. B.:
+`{{ example }}`
+{% else %}
+Great — that already helps a lot. 😊
+For a **precise, spot-on recommendation**, I still need:
+
+{{ friendly }}
+
+Best in **one line**, e.g.:
+`{{ example }}`
+{% endif %}

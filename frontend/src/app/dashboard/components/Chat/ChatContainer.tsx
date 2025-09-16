@@ -11,9 +11,8 @@ export default function ChatContainer() {
   const { data: session, status } = useSession();
   const isAuthed = status === "authenticated";
 
-  // --- WebSocket Hook (verbindet automatisch, wenn Token vorhanden) ---
   const chatId = "default";
-  const { connected, streaming, text, lastError, send } = useChatWs({ chatId });
+  const { connected, streaming, text, lastError, send, cancel } = useChatWs({ chatId });
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -24,7 +23,7 @@ export default function ChatContainer() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages, text, streaming]);
 
-  // WebSocket-Delta in die letzte Assistant-Message mergen
+  // Stream in letzte Assistant-Message mergen
   useEffect(() => {
     if (!streaming && !text) return;
     setMessages((prev) => {
@@ -33,13 +32,25 @@ export default function ChatContainer() {
       if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
         next[lastIdx] = { ...next[lastIdx], content: text };
         return next;
-        }
+      }
       return [...next, { role: "assistant", content: text }];
     });
   }, [text, streaming]);
 
+  // Externe Chat-Add-Events (z. B. Formular-Übernahme)
+  useEffect(() => {
+    const onAdd = (ev: Event) => {
+      const detail: any = (ev as CustomEvent).detail;
+      const t = (detail?.text ?? detail ?? "").toString().trim();
+      if (!t) return;
+      setMessages((m) => [...m, { role: "user", content: t }]);
+    };
+    window.addEventListener("sealai:chat:add", onAdd as EventListener);
+    return () => window.removeEventListener("sealai:chat:add", onAdd as EventListener);
+  }, []);
+
   const firstName = session?.user?.name?.split(" ")[0];
-  const sendingDisabled = !isAuthed || !connected; // senden nur mit Auth + WS-Connect
+  const sendingDisabled = !isAuthed || !connected;
   const isInitial = messages.length === 0 && !hasStarted;
 
   const handleSend = (msg: string) => {
@@ -48,20 +59,16 @@ export default function ChatContainer() {
     if (!content) return;
     setMessages((m) => [...m, { role: "user", content }]);
     setHasStarted(true);
-    // Startet den WS-Request; Deltas kommen über `text` rein
     send(content);
     setInputValue("");
   };
 
-  const handleStop = () => {
-    // optional: WS-Abbruch implementieren (z.B. spezielles Control-Frame)
-    // aktuell: noop
-  };
+  const handleStop = () => cancel();
 
   if (isInitial) {
     return (
-      <div className="flex h-full w-full">
-        <div className="m-auto w-full max-w-[768px] px-4">
+      <div className="flex min-h-[80vh] w-full items-center justify-center">
+        <div className="w-full max-w-[768px] px-4">
           <div className="text-2xl md:text-3xl font-bold text-gray-800 text-center leading-tight select-none">
             Willkommen zurück{firstName ? `, ${firstName}` : ""}!
           </div>
@@ -88,11 +95,7 @@ export default function ChatContainer() {
             disabled={sendingDisabled}
             streaming={streaming}
             placeholder={
-              isAuthed
-                ? connected
-                  ? "Was möchtest du wissen?"
-                  : "Verbinde…"
-                : "Bitte anmelden, um zu schreiben"
+              isAuthed ? (connected ? "Was möchtest du wissen?" : "Verbinde…") : "Bitte anmelden, um zu schreiben"
             }
           />
 
@@ -113,50 +116,34 @@ export default function ChatContainer() {
 
   return (
     <div className="flex flex-col h-full w-full bg-transparent relative">
-      <div className="flex-1 flex justify-center overflow-hidden">
-        <div className="w-full max-w-[768px] mx-auto flex flex-col h-full">
-          <div className="flex items-center justify-between px-1 pb-1 text-xs text-gray-500">
-            <span>
-              {connected ? "WS: verbunden" : "WS: verbinden…"}
-              {streaming ? " · streamt…" : ""}
-            </span>
-            {lastError ? <span className="text-red-500">Fehler: {lastError}</span> : null}
-          </div>
+      <div className="flex-1 overflow-y-auto w-full pb-36" style={{ minHeight: 0 }}>
+        <ChatHistory messages={messages} />
+        <div ref={endRef} />
+      </div>
 
-          <div className="flex-1 overflow-y-auto w-full pb-36" style={{ minHeight: 0 }}>
-            <ChatHistory messages={messages} />
-            <div ref={endRef} />
-          </div>
-
-          <div className="sticky bottom-0 left-0 right-0 z-20 flex justify-center bg-transparent pb-0 w-full">
-            <div className="w-full max-w-[768px] pointer-events-auto">
-              <ChatInput
-                value={inputValue}
-                setValue={setInputValue}
-                onSend={handleSend}
-                onStop={handleStop}
-                disabled={sendingDisabled}
-                streaming={streaming}
-                placeholder={
-                  isAuthed
-                    ? connected
-                      ? "Was möchtest du wissen?"
-                      : "Verbinde…"
-                    : "Bitte anmelden, um zu schreiben"
-                }
-              />
-              {!isAuthed && (
-                <div className="mt-2 text-xs text-gray-500">
-                  Du musst angemeldet sein, um Nachrichten zu senden.
-                </div>
-              )}
-              {lastError && (
-                <div className="mt-2 text-xs text-red-500 select-none">
-                  Fehler: {lastError}
-                </div>
-              )}
+      <div className="sticky bottom-0 left-0 right-0 z-20 flex justify-center bg-transparent pb-0 w-full">
+        <div className="w-full max-w-[768px] pointer-events-auto">
+          <ChatInput
+            value={inputValue}
+            setValue={setInputValue}
+            onSend={handleSend}
+            onStop={handleStop}
+            disabled={sendingDisabled}
+            streaming={streaming}
+            placeholder={
+              isAuthed ? (connected ? "Was möchtest du wissen?" : "Verbinde…") : "Bitte anmelden, um zu schreiben"
+            }
+          />
+          {!isAuthed && (
+            <div className="mt-2 text-xs text-gray-500">
+              Du musst angemeldet sein, um Nachrichten zu senden.
             </div>
-          </div>
+          )}
+          {lastError && (
+            <div className="mt-2 text-xs text-red-500 select-none">
+              Fehler: {lastError}
+            </div>
+          )}
         </div>
       </div>
     </div>

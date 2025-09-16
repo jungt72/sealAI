@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, DateTime, JSON
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
-Base = declarative_base()
+# ✅ Gemeinsame Base aus app.database verwenden (keine eigene deklarieren)
+from app.database import Base
 
 class Beratungsergebnis(Base):
     __tablename__ = "beratungsergebnisse"

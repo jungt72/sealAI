@@ -1,27 +1,21 @@
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
-//
-// Proxy für LangGraph-SSE (konversationsspezifisch)
-// Erwartet Authorization: Bearer <JWT>
-//
-
 export async function POST(request: Request, context: any) {
   const conversationId: string | undefined = context?.params?.conversationId;
   if (!conversationId) {
     return new Response(JSON.stringify({ error: "Missing conversationId" }), {
       status: 400,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   }
 
-  // Auth-Header durchreichen
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.split(" ")[1];
   if (!token) {
     return new Response(JSON.stringify({ error: "Unauthorized – token missing" }), {
       status: 401,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   }
 
@@ -48,7 +42,7 @@ export async function POST(request: Request, context: any) {
     status: backendRes.status,
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
+      "Cache-Control": "no-cache, no-transform, no-store",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
     },

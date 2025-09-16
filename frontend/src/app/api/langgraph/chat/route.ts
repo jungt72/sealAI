@@ -3,10 +3,6 @@ import { getToken } from "next-auth/jwt";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Allgemeiner SSE-Proxy auf /api/v1/langgraph/chat/stream.
- * Nutzt BACKEND_URL (Docker) oder NEXT_PUBLIC_BACKEND_URL als Fallback.
- */
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   let accessToken: string | undefined = undefined;
@@ -21,7 +17,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!accessToken) {
-    return new Response("Unauthorized", { status: 401 });
+    return new Response("Unauthorized", { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 
   const json = await req.text();
@@ -45,7 +41,7 @@ export async function POST(req: NextRequest) {
     status: backendRes.status,
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
+      "Cache-Control": "no-cache, no-transform, no-store",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
     },

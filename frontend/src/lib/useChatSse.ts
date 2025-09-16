@@ -19,7 +19,8 @@ export function useChatSse(endpoint: string = "/api/langgraph/chat") {
       setState((s) => ({ ...s, error: "unauthenticated" }));
       return;
     }
-    if (!input.trim()) return;
+    const trimmed = input.trim();
+    if (!trimmed) return;
 
     controllerRef.current?.abort();
     controllerRef.current = new AbortController();
@@ -32,7 +33,7 @@ export function useChatSse(endpoint: string = "/api/langgraph/chat") {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       },
-      body: JSON.stringify({ input, stream: true, ...(bodyExtra || {}) }),
+      body: JSON.stringify({ input: trimmed, stream: true, ...(bodyExtra || {}) }),
       signal: controllerRef.current.signal,
     }).catch((e) => {
       setState({ streaming: false, text: "", error: String(e?.message || "network_error") });
@@ -54,11 +55,9 @@ export function useChatSse(endpoint: string = "/api/langgraph/chat") {
         if (done) break;
         buf += decoder.decode(value, { stream: true });
 
-        // SSE frames are separated by double newlines
         const frames = buf.split("\n\n");
         buf = frames.pop() ?? "";
         for (const frame of frames) {
-          // Each frame may contain multiple lines; we care about "data: "
           const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
           if (!dataLine) continue;
           try {
@@ -66,7 +65,6 @@ export function useChatSse(endpoint: string = "/api/langgraph/chat") {
             if (typeof payload?.delta === "string" && payload.delta.length) {
               setState((s) => ({ ...s, text: s.text + payload.delta }));
             } else if (payload?.final?.text) {
-              // Falls der Server am Ende ein final.text sendet
               setState((s) => ({ ...s, text: payload.final.text }));
             } else if (payload?.error) {
               setState((s) => ({ ...s, error: String(payload.error) }));
