@@ -19,5 +19,5 @@ fi
 
 # Rebuild, wenn Pull oder Commit den HEAD geändert hat
 if [[ "$before" != "$after" || "$changed" == true ]]; then
-  docker compose -f /root/sealai/docker-compose.yml up -d --build backend frontend
+  docker compose -f /root/sealai/docker-compose.yml up -d --no-deps --build backend frontend
 fi
