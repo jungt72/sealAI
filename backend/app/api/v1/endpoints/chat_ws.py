@@ -17,6 +17,7 @@ from app.api.v1.dependencies.auth import guard_websocket  # ⬅️ Token & Origi
 from app.services.langgraph.llm_factory import get_llm as make_llm
 from app.services.langgraph.redis_lifespan import get_redis_checkpointer
 from app.services.langgraph.prompt_registry import get_agent_prompt
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.services.langgraph.graph.consult.memory_utils import (
     read_history as stm_read_history,
@@ -185,7 +186,57 @@ def _ensure_graph(app) -> None:
         saver = get_redis_checkpointer(app)
     except Exception:
         saver = None
-    g = build_graph()
+    def _force_streaming_on_llms(obj) -> None:
+        """Ensure every BaseChatModel in the graph streams tokens."""
+        seen: set[int] = set()
+        stack = [obj]
+        while stack:
+            cur = stack.pop()
+            if not cur:
+                continue
+            ident = id(cur)
+            if ident in seen:
+                continue
+            seen.add(ident)
+
+            if isinstance(cur, BaseChatModel):
+                for attr in ("stream", "streaming", "_stream", "_streaming"):
+                    if hasattr(cur, attr):
+                        try:
+                            setattr(cur, attr, True)
+                        except Exception:
+                            pass
+
+            if isinstance(cur, dict):
+                stack.extend(cur.values())
+            elif isinstance(cur, (list, tuple, set)):
+                stack.extend(cur)
+            else:
+                for value in getattr(cur, "__dict__", {}).values():
+                    if isinstance(value, (dict, list, tuple, set)) or hasattr(value, "__dict__"):
+                        stack.append(value)
+
+    build_kwargs = {}
+    shared_llm = getattr(app.state, "llm", None)
+    if isinstance(shared_llm, BaseChatModel):
+        build_kwargs.setdefault("llm", shared_llm)
+
+    def _invoke_builder(**extra):
+        try:
+            return build_graph(**extra)
+        except TypeError:
+            return build_graph()
+
+    g = None
+    try:
+        if build_kwargs:
+            g = _invoke_builder(**build_kwargs)
+        else:
+            g = _invoke_builder(streaming=True)
+    except Exception:
+        g = build_graph()
+
+    _force_streaming_on_llms(g)
     try:
         compiled = g.compile(checkpointer=saver) if saver else g.compile()
     except Exception:
