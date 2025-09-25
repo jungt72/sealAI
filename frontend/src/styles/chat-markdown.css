@@ -251,3 +251,23 @@
 }
 .cm-th{ background:#F8FAFC; font-weight:600; }
 
+
+/* --- Assistant ohne Rahmen + Letterpress-Optik --- */
+.cm-assistant{
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #1f2937;        /* slate-800 */
+  font-weight: 500;
+  /* sanfte Prägung: Licht von oben, Mini-Schatten unten */
+  text-shadow:
+    0 1px 0 rgba(255,255,255,0.92),
+    0 -1px 0 rgba(0,0,0,0.03);
+}
+
+/* optional: Headings beim Assistant minimal dichter setzen */
+.cm-assistant .cm-h1,
+.cm-assistant .cm-h2,
+.cm-assistant .cm-h3,
+.cm-assistant .cm-h4 {
+  letter-spacing: -0.003em;
+}

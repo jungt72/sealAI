@@ -1,0 +1,1984 @@
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/ask_missing.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/ask_missing.py
+     2	from __future__ import annotations
+     3	
+     4	import logging
+     5	from typing import Any, Dict, List
+     6	
+     7	from langchain_core.messages import AIMessage
+     8	from app.services.langgraph.prompting import render_template
+     9	from ..utils import missing_by_domain, anomaly_messages, normalize_messages
+    10	
+    11	log = logging.getLogger(__name__)
+    12	
+    13	# ---------- Feldlabels ----------
+    14	FIELD_LABELS_RWDR = {
+    15	    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
+    16	    "wellen_mm": "Welle (mm)",
+    17	    "gehause_mm": "Gehäuse (mm)",
+    18	    "breite_mm": "Breite (mm)",
+    19	    "bauform": "Bauform/Profil",
+    20	    "medium": "Medium",
+    21	    "temp_min_c": "Temperatur min (°C)",
+    22	    "temp_max_c": "Temperatur max (°C)",
+    23	    "druck_bar": "Druck (bar)",
+    24	    "drehzahl_u_min": "Drehzahl (U/min)",
+    25	    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
+    26	    "umgebung": "Umgebung",
+    27	    "prioritaet": "Priorität (z. B. Preis, Lebensdauer)",
+    28	    "besondere_anforderungen": "Besondere Anforderungen",
+    29	    "bekannte_probleme": "Bekannte Probleme",
+    30	}
+    31	DISPLAY_ORDER_RWDR = [
+    32	    "falltyp","wellen_mm","gehause_mm","breite_mm","bauform","medium",
+    33	    "temp_min_c","temp_max_c","druck_bar","drehzahl_u_min","geschwindigkeit_m_s",
+    34	    "umgebung","prioritaet","besondere_anforderungen","bekannte_probleme",
+    35	]
+    36	
+    37	FIELD_LABELS_HYD = {
+    38	    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
+    39	    "stange_mm": "Stange (mm)",
+    40	    "nut_d_mm": "Nut-Ø D (mm)",
+    41	    "nut_b_mm": "Nutbreite B (mm)",
+    42	    "medium": "Medium",
+    43	    "temp_max_c": "Temperatur max (°C)",
+    44	    "druck_bar": "Druck (bar)",
+    45	    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
+    46	}
+    47	DISPLAY_ORDER_HYD = [
+    48	    "falltyp","stange_mm","nut_d_mm","nut_b_mm","medium","temp_max_c","druck_bar","geschwindigkeit_m_s",
+    49	]
+    50	
+    51	def _friendly_list(keys: List[str], domain: str) -> str:
+    52	    if domain == "hydraulics_rod":
+    53	        labels, order = FIELD_LABELS_HYD, DISPLAY_ORDER_HYD
+    54	    else:
+    55	        labels, order = FIELD_LABELS_RWDR, DISPLAY_ORDER_RWDR
+    56	    ordered = [k for k in order if k in keys]
+    57	    return ", ".join(f"**{labels.get(k, k)}**" for k in ordered)
+    58	
+    59	# ---------- Node ----------
+    60	def ask_missing_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    61	    """
+    62	    Stellt Rückfragen nur bei Beratungsbedarf.
+    63	    Liefert zusätzlich ein UI-Event zum Öffnen des Formular-Drawers.
+    64	    """
+    65	    consult_required = bool(state.get("consult_required", True))
+    66	    if not consult_required:
+    67	        return {**state, "messages": [], "phase": "ask_missing"}
+    68	
+    69	    _ = normalize_messages(state.get("messages", []))
+    70	    params: Dict[str, Any] = state.get("params") or {}
+    71	    domain: str = (state.get("domain") or "rwdr").strip().lower()
+    72	    derived: Dict[str, Any] = state.get("derived") or {}
+    73	
+    74	    # Sprache (Fallback de)
+    75	    lang = (params.get("lang") or state.get("lang") or "de").lower()
+    76	
+    77	    missing = missing_by_domain(domain, params)
+    78	    log.info("[ask_missing_node] fehlend=%s domain=%s consult_required=%s", missing, domain, consult_required)
+    79	
+    80	    if missing:
+    81	        friendly = _friendly_list(missing, domain)
+    82	        # Einzeilenbeispiel je Domäne
+    83	        example = (
+    84	            "Welle 25, Gehäuse 47, Breite 7, Medium Öl, Tmax 80, Druck 2 bar, n 1500"
+    85	            if domain != "hydraulics_rod"
+    86	            else "Stange 25, Nut D 32, Nut B 6, Medium Öl, Tmax 80, Druck 160 bar, v 0,3 m/s"
+    87	        )
+    88	
+    89	        content = render_template(
+    90	            "ask_missing.jinja2",
+    91	            domain=domain,
+    92	            friendly=friendly,
+    93	            example=example,
+    94	            lang=lang,
+    95	        )
+    96	
+    97	        ui_event = {
+    98	            "ui_action": "open_form",
+    99	            "form_id": f"{domain}_params_v1",
+   100	            "schema_ref": f"domains/{domain}/params@1.0.0",
+   101	            "missing": missing,
+   102	            "prefill": {k: v for k, v in params.items() if v not in (None, "", [])},
+   103	        }
+   104	        return {
+   105	            **state,
+   106	            "messages": [AIMessage(content=content)],
+   107	            "phase": "ask_missing",
+   108	            "ui_event": ui_event,
+   109	            "missing_fields": missing,
+   110	        }
+   111	
+   112	    followups = anomaly_messages(domain, params, derived)
+   113	    if followups:
+   114	        content = render_template("ask_missing_followups.jinja2", followups=followups[:2], lang=lang)
+   115	        ui_event = {
+   116	            "ui_action": "open_form",
+   117	            "form_id": f"{domain}_params_v1",
+   118	            "schema_ref": f"domains/{domain}/params@1.0.0",
+   119	            "missing": [],
+   120	            "prefill": {k: v for k, v in params.items() if v not in (None, "", [])},
+   121	        }
+   122	        return {
+   123	            **state,
+   124	            "messages": [AIMessage(content=content)],
+   125	            "phase": "ask_missing",
+   126	            "ui_event": ui_event,
+   127	            "missing_fields": [],
+   128	        }
+   129	
+   130	    return {**state, "messages": [], "phase": "ask_missing"}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/utils.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/utils.py
+     2	from __future__ import annotations
+     3	
+     4	import logging
+     5	import re
+     6	from typing import Any, Dict, Iterable, List, Optional
+     7	
+     8	from langgraph.graph.message import add_messages
+     9	from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, SystemMessage
+    10	
+    11	log = logging.getLogger(__name__)
+    12	
+    13	# -------------------------------------------------------------------
+    14	# Message utilities
+    15	# -------------------------------------------------------------------
+    16	
+    17	def deserialize_message(x: Any) -> AnyMessage:
+    18	    """Robuste Konvertierung nach LangChain-Message-Objekten."""
+    19	    if isinstance(x, (HumanMessage, AIMessage, SystemMessage)):
+    20	        return x
+    21	    if isinstance(x, dict) and "role" in x:
+    22	        role = (x.get("role") or "").lower()
+    23	        content = x.get("content") or ""
+    24	        if role in ("user", "human"):
+    25	            return HumanMessage(content=content)
+    26	        if role in ("assistant", "ai"):
+    27	            return AIMessage(content=content)
+    28	        if role == "system":
+    29	            return SystemMessage(content=content)
+    30	    if isinstance(x, str):
+    31	        return HumanMessage(content=x)
+    32	    return HumanMessage(content=str(x))
+    33	
+    34	
+    35	def normalize_messages(seq: Iterable[Any]) -> List[AnyMessage]:
+    36	    return [deserialize_message(m) for m in (seq or [])]
+    37	
+    38	
+    39	def merge_messages(left: Iterable[Any], right: Iterable[Any]) -> List[AnyMessage]:
+    40	    return add_messages(normalize_messages(left), normalize_messages(right))
+    41	
+    42	
+    43	def last_user_text(msgs: List[AnyMessage]) -> str:
+    44	    for m in reversed(msgs or []):
+    45	        if isinstance(m, HumanMessage):
+    46	            return (m.content or "").strip()
+    47	    return ""
+    48	
+    49	
+    50	def messages_text(msgs: List[AnyMessage], *, only_user: bool = False) -> str:
+    51	    """
+    52	    Verkettet Text aller Messages.
+    53	    - only_user=True -> nur HumanMessage.
+    54	    """
+    55	    parts: List[str] = []
+    56	    for m in msgs or []:
+    57	        if only_user and not isinstance(m, HumanMessage):
+    58	            continue
+    59	        c = getattr(m, "content", None)
+    60	        if isinstance(c, str) and c:
+    61	            parts.append(c)
+    62	    return "\n".join(parts)
+    63	
+    64	
+    65	# Kompatibilitäts-Alias (einige Module importieren 'msgs_text')
+    66	msgs_text = messages_text
+    67	
+    68	
+    69	def only_user_text(msgs: List[AnyMessage]) -> str:
+    70	    """Nur die User-Texte zusammengefasst (ohne Lowercasing)."""
+    71	    return messages_text(msgs, only_user=True)
+    72	
+    73	
+    74	def only_user_text_lower(msgs: List[AnyMessage]) -> str:
+    75	    """Nur die User-Texte, zu Kleinbuchstaben normalisiert."""
+    76	    return only_user_text(msgs).lower()
+    77	
+    78	
+    79	# -------------------------------------------------------------------
+    80	# Numeric parsing & heuristics
+    81	# -------------------------------------------------------------------
+    82	
+    83	def _num_from_str(raw: str) -> Optional[float]:
+    84	    """Float aus Strings wie '1 200,5' oder '1.200,5' oder '1200.5' extrahieren."""
+    85	    try:
+    86	        s = (raw or "").replace(" ", "").replace(".", "").replace(",", ".")
+    87	        return float(s)
+    88	    except Exception:
+    89	        return None
+    90	
+    91	
+    92	def apply_heuristics_from_text(params: Dict[str, Any], text: str) -> Dict[str, Any]:
+    93	    """
+    94	    Deterministische Fallbacks, falls das LLM Werte nicht gesetzt hat:
+    95	      - 'kein/ohne Überdruck/Druck' -> druck_bar = 0
+    96	      - '... Druck: 5 bar'          -> druck_bar = 5
+    97	      - 'Drehzahl 1.200 U/min'      -> drehzahl_u_min = 1200
+    98	      - 'dauerhaft X U/min'         -> drehzahl_u_min = X
+    99	      - 'Geschwindigkeit 0.5 m/s'   -> geschwindigkeit_m_s = 0.5
+   100	    """
+   101	    t = (text or "").lower()
+   102	    merged: Dict[str, Any] = dict(params or {})
+   103	
+   104	    # Druck
+   105	    if merged.get("druck_bar") in (None, "", "unknown"):
+   106	        if re.search(r"\b(kein|ohne)\s+(überdruck|ueberdruck|druck)\b", t, re.I):
+   107	            merged["druck_bar"] = 0.0
+   108	        else:
+   109	            m = re.search(r"(?:überdruck|ueberdruck|druck)\s*[:=]?\s*([0-9][\d\.\s,]*)\s*bar\b", t, re.I)
+   110	            if m:
+   111	                val = _num_from_str(m.group(1))
+   112	                if val is not None:
+   113	                    merged["druck_bar"] = val
+   114	
+   115	    # Drehzahl (generisch)
+   116	    if merged.get("drehzahl_u_min") in (None, "", "unknown"):
+   117	        m = re.search(r"drehzahl[^0-9]{0,12}([0-9][\d\.\s,]*)\s*(?:u\s*/?\s*min|rpm)\b", t, re.I)
+   118	        if m:
+   119	            val = _num_from_str(m.group(1))
+   120	            if val is not None:
+   121	                merged["drehzahl_u_min"] = int(round(val))
+   122	
+   123	    # Spezifisch „dauerhaft“
+   124	    m_dauer = re.search(
+   125	        r"(dauerhaft|kontinuierlich)[^0-9]{0,12}([0-9][\d\.\s,]*)\s*(?:u\s*/?\s*min|rpm)\b",
+   126	        t,
+   127	        re.I,
+   128	    )
+   129	    if m_dauer:
+   130	        val = _num_from_str(m_dauer.group(2))
+   131	        if val is not None:
+   132	            merged["drehzahl_u_min"] = int(round(val))
+   133	
+   134	    # Relativgeschwindigkeit in m/s
+   135	    if merged.get("geschwindigkeit_m_s") in (None, "", "unknown"):
+   136	        m_speed = re.search(r"(geschwindigkeit|v)[^0-9]{0,12}([0-9][\d\.\s,]*)\s*m\s*/\s*s", t, re.I)
+   137	        if m_speed:
+   138	            val = _num_from_str(m_speed.group(2))
+   139	            if val is not None:
+   140	                merged["geschwindigkeit_m_s"] = float(val)
+   141	
+   142	    return merged
+   143	
+   144	
+   145	# -------------------------------------------------------------------
+   146	# Validation & anomaly messages
+   147	# -------------------------------------------------------------------
+   148	
+   149	def _is_missing_value(key: str, val: Any) -> bool:
+   150	    if val is None or val == "" or val == "unknown":
+   151	        return True
+   152	    # 0 bar ist gültig
+   153	    if key == "druck_bar":
+   154	        try:
+   155	            float(val)
+   156	            return False
+   157	        except Exception:
+   158	            return True
+   159	    # Positive Größen brauchen > 0
+   160	    if key in (
+   161	        "wellen_mm", "gehause_mm", "breite_mm", "drehzahl_u_min", "geschwindigkeit_m_s",
+   162	        "stange_mm", "nut_d_mm", "nut_b_mm"
+   163	    ):
+   164	        try:
+   165	            return float(val) <= 0
+   166	        except Exception:
+   167	            return True
+   168	    # temp_max_c: nur presence check
+   169	    if key == "temp_max_c":
+   170	        try:
+   171	            float(val)
+   172	            return False
+   173	        except Exception:
+   174	            return True
+   175	    return False
+   176	
+   177	
+   178	def _required_fields_by_domain(domain: str) -> List[str]:
+   179	    # Hydraulik-Stange nutzt stange_mm / nut_d_mm / nut_b_mm
+   180	    if (domain or "rwdr") == "hydraulics_rod":
+   181	        return [
+   182	            "falltyp",
+   183	            "stange_mm",
+   184	            "nut_d_mm",
+   185	            "nut_b_mm",
+   186	            "medium",
+   187	            "temp_max_c",
+   188	            "druck_bar",
+   189	            "geschwindigkeit_m_s",
+   190	        ]
+   191	    # default: rwdr
+   192	    return [
+   193	        "falltyp",
+   194	        "wellen_mm",
+   195	        "gehause_mm",
+   196	        "breite_mm",
+   197	        "medium",
+   198	        "temp_max_c",
+   199	        "druck_bar",
+   200	        "drehzahl_u_min",
+   201	    ]
+   202	
+   203	
+   204	def _missing_by_domain(domain: str, params: Dict[str, Any]) -> List[str]:
+   205	    req = _required_fields_by_domain(domain or "rwdr")
+   206	    return [k for k in req if _is_missing_value(k, (params or {}).get(k))]
+   207	
+   208	
+   209	# Öffentlicher Alias (manche Module importieren ohne Unterstrich)
+   210	missing_by_domain = _missing_by_domain
+   211	
+   212	
+   213	def _anomaly_messages(domain: str, params: Dict[str, Any], derived: Dict[str, Any]) -> List[str]:
+   214	    """
+   215	    Erzeugt Rückfragen basierend auf abgeleiteten Flags (domainabhängig).
+   216	    Erwartet 'derived' z. B.: {"flags": {...}, "warnings": [...], "requirements": [...]}
+   217	    """
+   218	    msgs: List[str] = []
+   219	    flags = (derived.get("flags") or {})
+   220	
+   221	    # RWDR – Druckstufenfreigabe
+   222	    if flags.get("requires_pressure_stage") and not flags.get("pressure_stage_ack"):
+   223	        msgs.append(
+   224	            "Ein Überdruck >2 bar ist für Standard-Radialdichtringe kritisch. "
+   225	            "Dürfen Druckstufenlösungen geprüft werden?"
+   226	        )
+   227	
+   228	    # Hohe Drehzahl/Geschwindigkeit
+   229	    if flags.get("speed_high"):
+   230	        msgs.append("Die Drehzahl/Umfangsgeschwindigkeit ist hoch – ist sie dauerhaft oder nur kurzzeitig (Spitzen)?")
+   231	
+   232	    # Sehr hohe Temperatur
+   233	    if flags.get("temp_very_high"):
+   234	        msgs.append("Die Temperatur ist sehr hoch. Handelt es sich um Dauer- oder Spitzentemperaturen?")
+   235	
+   236	    # Hydraulik Stange – Extrusions-/Back-up-Ring-Freigabe
+   237	    if (domain or "") == "hydraulics_rod" and flags.get("extrusion_risk") and not flags.get("extrusion_risk_ack"):
+   238	        msgs.append("Bei dem Druck besteht Extrusionsrisiko. Darf eine Stütz-/Back-up-Ring-Lösung geprüft werden?")
+   239	
+   240	    return msgs
+   241	
+   242	
+   243	# Öffentlicher Alias
+   244	anomaly_messages = _anomaly_messages
+   245	
+   246	# --- Output-Cleaner: Leading-Meta entfernen, Suffix-Echos entfernen, De-Dupe --
+   247	
+   248	def _strip(s: str) -> str:
+   249	    return (s or "").strip()
+   250	
+   251	def _normalize_newlines(text: str) -> str:
+   252	    """Normalisiert Zeilenenden und trimmt überflüssige Leerzeichen am Zeilenende."""
+   253	    if not isinstance(text, str):
+   254	        return text
+   255	    t = re.sub(r"\r\n?|\r", "\n", text)
+   256	    t = "\n".join(line.rstrip() for line in t.split("\n"))
+   257	    return t
+   258	
+   259	def strip_leading_meta_blocks(text: str) -> str:
+   260	    """
+   261	    Entfernt am *Anfang* der Antwort Meta-Blöcke wie:
+   262	      - führende JSON-/YAML-Objekte
+   263	      - ```…``` fenced code blocks
+   264	      - '# QA-Notiz …' bis zur nächsten Leerzeile
+   265	    Wir iterieren, bis kein solcher Block mehr vorne steht.
+   266	    """
+   267	    if not isinstance(text, str) or not text.strip():
+   268	        return text
+   269	    t = text.lstrip()
+   270	
+   271	    changed = True
+   272	    # max. 5 Durchläufe als Sicherung
+   273	    for _ in range(5):
+   274	        if not changed:
+   275	            break
+   276	        changed = False
+   277	
+   278	        # Fenced code block (beliebiges fence, inkl. json/yaml)
+   279	        m = re.match(r"^\s*```[\s\S]*?```\s*", t)
+   280	        if m:
+   281	            t = t[m.end():].lstrip()
+   282	            changed = True
+   283	            continue
+   284	
+   285	        # Führendes JSON-/YAML-Objekt (heuristisch, nicht perfekt balanciert)
+   286	        m = re.match(r"^\s*\{[\s\S]*?\}\s*(?=\n|$)", t)
+   287	        if m:
+   288	            t = t[m.end():].lstrip()
+   289	            changed = True
+   290	            continue
+   291	        m = re.match(r"^\s*---[\s\S]*?---\s*(?=\n|$)", t)  # YAML frontmatter
+   292	        if m:
+   293	            t = t[m.end():].lstrip()
+   294	            changed = True
+   295	            continue
+   296	
+   297	        # QA-Notiz-Block bis zur nächsten Leerzeile
+   298	        m = re.match(r"^\s*#\s*QA-Notiz[^\n]*\n[\s\S]*?(?:\n\s*\n|$)", t, flags=re.IGNORECASE)
+   299	        if m:
+   300	            t = t[m.end():].lstrip()
+   301	            changed = True
+   302	            continue
+   303	
+   304	    return t
+   305	
+   306	def clean_ai_output(ai_text: str, recent_user_texts: List[str]) -> str:
+   307	    """
+   308	    Entfernt angehängte Echos zuletzt gesagter User-Texte am Ende der AI-Ausgabe.
+   309	    - vergleicht trim-normalisiert (Suffix)
+   310	    - entfernt ganze trailing Blöcke, falls sie exakt einem der recent_user_texts entsprechen
+   311	    """
+   312	    if not isinstance(ai_text, str) or not ai_text:
+   313	        return ai_text
+   314	
+   315	    out = ai_text.rstrip()
+   316	
+   317	    # Prüfe Kandidaten in abnehmender Länge (stabil gegen Teilmengen)
+   318	    for u in sorted(set(recent_user_texts or []), key=len, reverse=True):
+   319	        u_s = _strip(u)
+   320	        if not u_s:
+   321	            continue
+   322	
+   323	        # Work on a normalized working copy for suffix check
+   324	        norm_out = _strip(out)
+   325	        if norm_out.endswith(u_s):
+   326	            # schneide die letzte (nicht-normalisierte) Vorkommen-Stelle am Ende ab
+   327	            raw_idx = out.rstrip().rfind(u_s)
+   328	            if raw_idx != -1:
+   329	                out = out[:raw_idx].rstrip()
+   330	
+   331	    return out
+   332	
+   333	def _norm_key(block: str) -> str:
+   334	    """Normierungs-Schlüssel für Block-Vergleich (whitespace-/case-insensitiv)."""
+   335	    return re.sub(r"\s+", " ", (block or "").strip()).lower()
+   336	
+   337	def dedupe_text_blocks(text: str) -> str:
+   338	    """
+   339	    Entfernt doppelte inhaltlich identische Absätze/Blöcke, robust gegen CRLF
+   340	    und gemischte Leerzeilen. Als Absatztrenner gilt: ≥1 (auch nur whitespace-) Leerzeile.
+   341	    Zusätzlich werden identische, aufeinanderfolgende Einzelzeilen entfernt.
+   342	    """
+   343	    if not isinstance(text, str) or not text.strip():
+   344	        return text
+   345	
+   346	    t = _normalize_newlines(text)
+   347	
+   348	    # Absätze anhand *mindestens* einer Leerzeile trennen (auch wenn nur Whitespace in der Leerzeile steht)
+   349	    parts = [p.strip() for p in re.split(r"\n\s*\n+", t.strip()) if p.strip()]
+   350	
+   351	    seen = set()
+   352	    out_blocks = []
+   353	    for p in parts:
+   354	        k = _norm_key(p)
+   355	        if k in seen:
+   356	            continue
+   357	        seen.add(k)
+   358	        out_blocks.append(p)
+   359	
+   360	    # Zusammensetzen mit Leerzeile zwischen Absätzen
+   361	    merged = "\n\n".join(out_blocks)
+   362	
+   363	    # Zusätzlicher Schutz: identische direkt aufeinanderfolgende Zeilen entfernen
+   364	    final_lines = []
+   365	    prev_key = None
+   366	    for line in merged.split("\n"):
+   367	        key = _norm_key(line)
+   368	        if key and key == prev_key:
+   369	            continue
+   370	        final_lines.append(line)
+   371	        prev_key = key
+   372	
+   373	    return "\n".join(final_lines)
+   374	
+   375	def clean_and_dedupe(ai_text: str, recent_user_texts: List[str]) -> str:
+   376	    """
+   377	    Reihenfolge:
+   378	      1) Führende Meta-Blöcke entfernen
+   379	      2) Trailing User-Echos abschneiden
+   380	      3) Identische Absätze/Zeilen de-dupen
+   381	    """
+   382	    head_clean = strip_leading_meta_blocks(ai_text)
+   383	    tail_clean = clean_ai_output(head_clean, recent_user_texts)
+   384	    return dedupe_text_blocks(tail_clean)
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/state.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/state.py
+     2	from __future__ import annotations
+     3	
+     4	from typing import Any, Dict, List, Optional, TypedDict
+     5	from typing_extensions import Annotated
+     6	from langchain_core.messages import AnyMessage
+     7	from langgraph.graph import add_messages
+     8	
+     9	
+    10	# ---- Parameter- & Derived-Typen -------------------------------------------------
+    11	class Parameters(TypedDict, total=False):
+    12	    # Kernparameter
+    13	    temp_max_c: float
+    14	    druck_bar: float
+    15	    drehzahl_u_min: float
+    16	    wellen_mm: float
+    17	    relativgeschwindigkeit_ms: float
+    18	    # Aliasse / Harmonisierung
+    19	    tmax_c: float
+    20	    pressure_bar: float
+    21	    n_u_min: float
+    22	    rpm: float
+    23	    v_ms: float
+    24	    # optionale Filter/Routing
+    25	    material: str
+    26	    profile: str
+    27	    domain: str
+    28	    norm: str
+    29	    lang: str
+    30	
+    31	
+    32	class Derived(TypedDict, total=False):
+    33	    relativgeschwindigkeit_ms: float
+    34	    # Platzhalter für weitere abgeleitete Größen
+    35	    # z. B. reibleistung_w: float
+    36	
+    37	
+    38	# ---- Graph-State ----------------------------------------------------------------
+    39	class ConsultState(TypedDict, total=False):
+    40	    # Dialog
+    41	    messages: Annotated[List[AnyMessage], add_messages]
+    42	    query: str
+    43	
+    44	    # Parameter
+    45	    params: Parameters
+    46	    derived: Derived
+    47	
+    48	    # Routing / Kontext
+    49	    user_id: Optional[str]
+    50	    tenant: Optional[str]
+    51	    domain: Optional[str]
+    52	    phase: Optional[str]
+    53	    consult_required: Optional[bool]   # <-- aufgenommen, da im Flow genutzt
+    54	
+    55	    # ---- UI/Frontend-Integration (muss explizit im State sein!) -------------------
+    56	    ui_event: Dict[str, Any]           # <-- NEW: Formular-/Sidebar-Trigger
+    57	    missing_fields: List[str]          # <-- NEW: für Frontend-Anzeige
+    58	
+    59	    # --- RAG-Ergebnis (muss hier definiert sein, sonst wird es vom Graph gedroppt!) ---
+    60	    retrieved_docs: List[Dict[str, Any]]   # Hybrid-Treffer inkl. Scores/Quellen
+    61	    context: str                            # kompakter Prompt-Kontext aus Treffern
+    62	
+    63	    # Empfehlungen / Ergebnis
+    64	    empfehlungen: List[Dict[str, Any]]
+    65	
+    66	    # Qualitäts-/Validierungsinfos
+    67	    validation: Dict[str, Any]
+    68	    confidence: float
+    69	    needs_more_params: bool
+    70	
+    71	    # --- Legacy-Felder (Kompatibilität; werden vom aktuellen Flow nicht aktiv gesetzt) ---
+    72	    docs: List[Dict[str, Any]]
+    73	    citations: List[str]
+    74	    answer: Optional[str]
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/build.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/build.py
+     2	from __future__ import annotations
+     3	
+     4	import logging
+     5	from typing import Any, Dict, List
+     6	from langgraph.graph import StateGraph, END
+     7	
+     8	from .state import ConsultState
+     9	from .utils import normalize_messages
+    10	from .domain_router import detect_domain
+    11	from .domain_runtime import compute_domain
+    12	
+    13	from .nodes.intake import intake_node
+    14	from .nodes.ask_missing import ask_missing_node
+    15	from .nodes.validate import validate_node
+    16	from .nodes.recommend import recommend_node
+    17	from .nodes.explain import explain_node
+    18	from .nodes.calc_agent import calc_agent_node
+    19	from .nodes.rag import run_rag_node
+    20	from .nodes.validate_answer import validate_answer
+    21	
+    22	# NEU
+    23	from .nodes.smalltalk import smalltalk_node
+    24	from .nodes.lite_router import lite_router_node
+    25	
+    26	from .heuristic_extract import pre_extract_params
+    27	from .extract import extract_params_with_llm
+    28	from .config import create_llm
+    29	
+    30	log = logging.getLogger("uvicorn.error")
+    31	
+    32	
+    33	def _join_user_text(msgs: List) -> str:
+    34	    out: List[str] = []
+    35	    for m in msgs:
+    36	        role = (getattr(m, "type", "") or getattr(m, "role", "")).lower()
+    37	        content = getattr(m, "content", "")
+    38	        if isinstance(m, dict):
+    39	            role = (m.get("type") or m.get("role") or "").lower()
+    40	            content = m.get("content")
+    41	        if role in ("human", "user") and isinstance(content, str) and content.strip():
+    42	            out.append(content.strip())
+    43	    return "\n".join(out)
+    44	
+    45	
+    46	def _merge_seed_first(seed: Dict[str, Any], llm_out: Dict[str, Any]) -> Dict[str, Any]:
+    47	    out = dict(llm_out or {})
+    48	    for k, v in (seed or {}).items():
+    49	        if v not in (None, "", []):
+    50	            out[k] = v
+    51	    return out
+    52	
+    53	
+    54	def _compact_param_summary(domain: str, params: Dict[str, Any]) -> str:
+    55	    p = params or {}
+    56	    parts: List[str] = []
+    57	
+    58	    if domain == "rwdr":
+    59	        parts.append("RWDR")
+    60	        if p.get("abmessung"):
+    61	            parts.append(str(p["abmessung"]))
+    62	        elif p.get("wellen_mm") and p.get("gehause_mm") and p.get("breite_mm"):
+    63	            parts.append(f'{p["wellen_mm"]}x{p["gehause_mm"]}x{p["breite_mm"]}')
+    64	    elif domain == "hydraulics_rod":
+    65	        parts.append("Hydraulik Stangendichtung")
+    66	
+    67	    if p.get("medium"):
+    68	        parts.append(str(p["medium"]))
+    69	    if p.get("temp_max_c") or p.get("tmax_c"):
+    70	        parts.append(f'Tmax {int(p.get("temp_max_c") or p.get("tmax_c"))} °C')
+    71	    if p.get("druck_bar"):
+    72	        parts.append(f'Druck {p["druck_bar"]} bar')
+    73	    if p.get("drehzahl_u_min"):
+    74	        parts.append(f'{int(p["drehzahl_u_min"])} U/min')
+    75	    if p.get("relativgeschwindigkeit_ms"):
+    76	        parts.append(f'v≈{float(p["relativgeschwindigkeit_ms"]):.2f} m/s')
+    77	
+    78	    bl = p.get("material_blacklist") or p.get("vermeide_materialien")
+    79	    wl = p.get("material_whitelist") or p.get("bevorzugte_materialien")
+    80	    if bl:
+    81	        parts.append(f'Vermeide: {bl}')
+    82	    if wl:
+    83	        parts.append(f'Bevorzugt: {wl}')
+    84	
+    85	    return ", ".join(parts)
+    86	
+    87	
+    88	def _extract_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    89	    msgs = normalize_messages(state.get("messages", []))
+    90	    params = dict(state.get("params") or {})
+    91	    user_text = _join_user_text(msgs)
+    92	
+    93	    heur = pre_extract_params(user_text)
+    94	    seed = {**params, **{k: v for k, v in heur.items() if v not in (None, "", [])}}
+    95	
+    96	    llm_params = extract_params_with_llm(user_text)
+    97	    final_params = _merge_seed_first(seed, llm_params)
+    98	    return {**state, "params": final_params, "phase": "extract"}
+    99	
+   100	
+   101	def _domain_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   102	    msgs = normalize_messages(state.get("messages", []))
+   103	    params = dict(state.get("params") or {})
+   104	    try:
+   105	        domain = detect_domain(None, msgs, params) or "rwdr"
+   106	        domain = domain.strip().lower()
+   107	    except Exception:
+   108	        domain = "rwdr"
+   109	    return {**state, "domain": domain, "phase": "domain_router"}
+   110	
+   111	
+   112	def _compute_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   113	    domain = (state.get("domain") or "rwdr").strip().lower()
+   114	    params = dict(state.get("params") or {})
+   115	    derived = compute_domain(domain, params) or {}
+   116	
+   117	    alias_map = {
+   118	        "tmax_c": params.get("temp_max_c"),
+   119	        "temp_c": params.get("temp_max_c"),
+   120	        "druck": params.get("druck_bar"),
+   121	        "pressure_bar": params.get("druck_bar"),
+   122	        "n_u_min": params.get("drehzahl_u_min"),
+   123	        "rpm": params.get("drehzahl_u_min"),
+   124	        "v_ms": params.get("relativgeschwindigkeit_ms"),
+   125	    }
+   126	    for k, v in alias_map.items():
+   127	        if k not in params and v not in (None, "", []):
+   128	            params[k] = v
+   129	
+   130	    return {**state, "params": params, "derived": derived, "phase": "compute"}
+   131	
+   132	
+   133	def _prepare_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   134	    if (state.get("query") or "").strip():
+   135	        return {**state, "phase": "prepare_query"}
+   136	
+   137	    msgs = normalize_messages(state.get("messages", []))
+   138	    params = dict(state.get("params") or {})
+   139	    domain = (state.get("domain") or "rwdr").strip().lower()
+   140	
+   141	    user_text = _join_user_text(msgs)
+   142	    param_str = _compact_param_summary(domain, params)
+   143	    prefix = "RWDR" if domain == "rwdr" else "Hydraulik"
+   144	    query = ", ".join([s for s in [prefix, user_text, param_str] if s])
+   145	
+   146	    new_state = dict(state)
+   147	    new_state["query"] = query
+   148	    return {**new_state, "phase": "prepare_query"}
+   149	
+   150	
+   151	def _respond_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   152	    return {**state, "phase": "respond"}
+   153	
+   154	
+   155	# ---- Conditional helpers ----
+   156	def _route_key(state: Dict[str, Any]) -> str:
+   157	    return (state.get("route") or "default").strip().lower() or "default"
+   158	
+   159	
+   160	def _ask_or_ok(state: Dict[str, Any]) -> str:
+   161	    p = state.get("params") or {}
+   162	
+   163	    def has(v: Any) -> bool:
+   164	        if v is None: return False
+   165	        if isinstance(v, (list, dict)) and not v: return False
+   166	        if isinstance(v, str) and not v.strip(): return False
+   167	        return True
+   168	
+   169	    base_ok = has(p.get("temp_max_c")) and has(p.get("druck_bar"))
+   170	    rel_ok  = has(p.get("relativgeschwindigkeit_ms")) or (has(p.get("wellen_mm")) and has(p.get("drehzahl_u_min")))
+   171	
+   172	    msgs = normalize_messages(state.get("messages", []))
+   173	    user = (_join_user_text(msgs) or "").lower()
+   174	    info_triggers = (
+   175	        "was weißt du", "was weisst du", "what do you know", "info",
+   176	        "rag", "rag:", "kyrolon", "ptfe", "datenblatt", "sds"
+   177	    )
+   178	    if not (base_ok and rel_ok) and any(t in user for t in info_triggers):
+   179	        return "info"
+   180	
+   181	    return "ok" if (base_ok and rel_ok) else "ask"
+   182	
+   183	
+   184	def _after_rag(state: Dict[str, Any]) -> str:
+   185	    p = state.get("params") or {}
+   186	
+   187	    def has(v: Any) -> bool:
+   188	        if v is None: return False
+   189	        if isinstance(v, (list, dict)) and not v: return False
+   190	        if isinstance(v, str) and not v.strip(): return False
+   191	        return True
+   192	
+   193	    base_ok = has(p.get("temp_max_c")) and has(p.get("druck_bar"))
+   194	    rel_ok  = has(p.get("relativgeschwindigkeit_ms")) or (has(p.get("wellen_mm")) and has(p.get("drehzahl_u_min")))
+   195	    docs    = state.get("retrieved_docs") or state.get("docs") or []
+   196	    ctx_ok  = bool(docs) or bool(state.get("context"))
+   197	
+   198	    return "recommend" if (base_ok and rel_ok and ctx_ok) else "explain"
+   199	
+   200	
+   201	def build_graph() -> StateGraph:
+   202	    log.info("[ConsultGraph] Initialisierung…")
+   203	    g = StateGraph(ConsultState)
+   204	
+   205	    # --- Nodes ---
+   206	    g.add_node("lite_router", lite_router_node)  # NEU
+   207	    g.add_node("smalltalk", smalltalk_node)      # NEU
+   208	
+   209	    g.add_node("intake", intake_node)
+   210	    g.add_node("extract", _extract_node)
+   211	    g.add_node("domain_router", _domain_router_node)
+   212	    g.add_node("compute", _compute_node)
+   213	    g.add_node("calc_agent", calc_agent_node)
+   214	    g.add_node("ask_missing", ask_missing_node)
+   215	    g.add_node("validate", validate_node)
+   216	    g.add_node("prepare_query", _prepare_query_node)
+   217	    g.add_node("rag", run_rag_node)
+   218	    g.add_node("recommend", recommend_node)
+   219	    g.add_node("validate_answer", validate_answer)
+   220	    g.add_node("explain", explain_node)
+   221	    g.add_node("respond", _respond_node)
+   222	
+   223	    # --- Entry & Routing ---
+   224	    g.set_entry_point("lite_router")
+   225	    g.add_conditional_edges("lite_router", _route_key, {
+   226	        "smalltalk": "smalltalk",
+   227	        "info": "prepare_query",
+   228	        "default": "intake",
+   229	    })
+   230	
+   231	    # --- Main flow ---
+   232	    g.add_edge("intake", "extract")
+   233	    g.add_edge("extract", "domain_router")
+   234	    g.add_edge("domain_router", "compute")
+   235	    g.add_edge("compute", "calc_agent")
+   236	    g.add_edge("calc_agent", "ask_missing")
+   237	
+   238	    g.add_conditional_edges("ask_missing", _ask_or_ok, {
+   239	        "ask":  "respond",
+   240	        "ok":   "validate",
+   241	        "info": "prepare_query",
+   242	    })
+   243	
+   244	    g.add_edge("validate", "prepare_query")
+   245	    g.add_edge("prepare_query", "rag")
+   246	    g.add_conditional_edges("rag", _after_rag, {
+   247	        "recommend": "recommend",
+   248	        "explain":   "explain",
+   249	    })
+   250	    g.add_edge("recommend", "validate_answer")
+   251	    g.add_edge("validate_answer", "explain")
+   252	    g.add_edge("explain", "respond")
+   253	    g.add_edge("respond", END)
+   254	
+   255	    log.info("[ConsultGraph] erfolgreich erstellt.")
+   256	    return g
+   257	
+   258	
+   259	def build_consult_graph() -> StateGraph:
+   260	    return build_graph()
+
+###############################################################################
+# FILE: backend/app/services/langgraph/prompts/ask_missing.jinja2
+###############################################################################
+     1	{# backend/app/services/langgraph/prompts/ask_missing.jinja2 #}
+     2	{% set de = (lang or 'de')[:2].lower() == 'de' %}
+     3	{% if de %}
+     4	Prima – das hilft mir schon deutlich weiter und macht die Aufgabe viel klarer. 😊
+     5	Für eine **präzise, punktgenaue Empfehlung** brauche ich noch kurz:
+     6	
+     7	{{ friendly }}
+     8	
+     9	Pack die Werte gern **in eine Zeile**, z. B.:
+    10	`{{ example }}`
+    11	{% else %}
+    12	Great — that already helps a lot. 😊
+    13	For a **precise, spot-on recommendation**, I still need:
+    14	
+    15	{{ friendly }}
+    16	
+    17	Best in **one line**, e.g.:
+    18	`{{ example }}`
+    19	{% endif %}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/prompts/ask_missing_followups.jinja2
+###############################################################################
+     1	{# backend/app/services/langgraph/prompts/ask_missing_followups.jinja2 #}
+     2	{% set de = (lang or 'de')[:2].lower() == 'de' %}
+     3	{% if de %}
+     4	Danke dir – das Bild wird richtig gut! Zwei kurze Punkte noch, damit die Empfehlung **wirklich sitzt**:
+     5	{% for q in followups %}- {{ q }}
+     6	{% endfor %}
+     7	Wenn das passt, lege ich direkt los. Oder ergänze es fix **in einer Zeile** (z. B. „Tmax 80 °C, Medium Öl, n 1500“). 🙂
+     8	{% else %}
+     9	Thanks — this is shaping up nicely! Two quick checks so the recommendation is **spot-on**:
+    10	{% for q in followups %}- {{ q }}
+    11	{% endfor %}
+    12	If that’s correct, I’ll proceed right away. Or add it briefly **in one line** (e.g. “Tmax 80 °C, medium oil, n 1500”). 🙂
+    13	{% endif %}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/prompts/recommend.jinja2
+###############################################################################
+     1	{# Empfehlungen – striktes JSON nur hier #}
+     2	Du bist ein industrieller Dichtungsberater.
+     3	ANTWORTE AUSSCHLIESSLICH mit VALIDEM JSON in EINER Zeile (keine Backticks, kein Markdown, keine Zeilenumbrüche).
+     4	
+     5	Kontext:
+     6	- Domain: {{ domain }}
+     7	- Parameter: {{ params | tojson_compact }}
+     8	- Abgeleitete Werte/Flags: {{ derived | tojson_compact }}
+     9	- Technischer Kontext (RAG/LTM): {{ context | default("", true) }}
+    10	- Letzte Nutzereingabe: {{ recent_user | default("", true) }}
+    11	
+    12	Ausgabeformat (EXAKT so, nur Inhalte anpassen):
+    13	{"empfehlungen":[{"typ":"<Typ>","werkstoff":"<Werkstoff>","begruendung":"<kurz>","vorteile":["..."],"einschraenkungen":["..."],"geeignet_fuer":["..."]}]}
+    14	
+    15	Regeln:
+    16	- Gib 1–3 Elemente in `empfehlungen` aus.
+    17	- Domain-Grenzen strikt:
+    18	  - Wenn Domain "rwdr": `typ` MUSS wie "BA 45x62x7" o. ä. sein; KEINE Stangendichtungen.
+    19	  - Wenn Domain "hydraulics_rod": `typ` MUSS Stangendichtung sein; KEIN RWDR.
+    20	- Nutze den Kontext (z. B. Marken wie "Kyrolon 79X") in `begruendung` und verweise kurz auf Quellen (z. B. "siehe PTFE.docx"), sofern vorhanden.
+    21	- Keine Freitexte außerhalb des JSON; keine Zeilenumbrüche innerhalb der JSON-Zeile.
+
+###############################################################################
+# FILE: backend/app/services/langgraph/prompts/explain.jinja2
+###############################################################################
+     1	{# explain.jinja2 — sauber formatierte Markdown-Ausgabe, robust gegen fehlende Felder #}
+     2	
+     3	{% set _main = main if (main is defined and main) else {} %}
+     4	{% set _d    = derived if (derived is defined and derived) else {} %}
+     5	{% set c     = _d.get('calculated', {}) %}
+     6	{% set vorteile = _main.get('vorteile') or [] %}
+     7	{% set einschraenkungen = _main.get('einschraenkungen') or [] %}
+     8	{% set geeignet_fuer = _main.get('geeignet_fuer') or [] %}
+     9	{% set altern = alternativen if (alternativen is defined and alternativen) else [] %}
+    10	{% set tips   = hinweise if (hinweise is defined and hinweise) else [] %}
+    11	
+    12	**Sehr gern – hier ist meine fachliche Empfehlung für Ihren Anwendungsfall:**
+    13	
+    14	## Empfehlung
+    15	
+    16	**Typ:** {{ _main.get('typ', '–') }}
+    17	{% if _main.get('werkstoff') %}
+    18	**Werkstoff:** {{ _main.get('werkstoff') }}
+    19	{% endif %}
+    20	
+    21	{% if _main.get('begruendung') %}
+    22	**Begründung (kurz):** {{ _main.get('begruendung') }}
+    23	{% endif %}
+    24	
+    25	{% if 'umfangsgeschwindigkeit_m_s' in c %}
+    26	**Abgeleiteter Wert:** v = {{ "%.3f"|format(c['umfangsgeschwindigkeit_m_s']) }} m/s
+    27	{% endif %}
+    28	
+    29	{% if vorteile %}
+    30	**Warum diese Wahl überzeugt**
+    31	{% for v in vorteile %}
+    32	- {{ v }}
+    33	{% endfor %}
+    34	{% endif %}
+    35	
+    36	{% if einschraenkungen %}
+    37	**Worauf wir achten sollten**
+    38	{% for e in einschraenkungen %}
+    39	- {{ e }}
+    40	{% endfor %}
+    41	{% endif %}
+    42	
+    43	{% if geeignet_fuer %}
+    44	**Besonders geeignet für**
+    45	{% for g in geeignet_fuer %}
+    46	- {{ g }}
+    47	{% endfor %}
+    48	{% endif %}
+    49	
+    50	{% if altern %}
+    51	**Sinnvolle Alternativen**
+    52	{% for a in altern %}
+    53	- {{ a.get('typ','–') }}{% if a.get('werkstoff') %} ({{ a.get('werkstoff') }}){% endif %}{% if a.get('kurzbegruendung') %}: {{ a.get('kurzbegruendung') }}{% endif %}
+    54	{% endfor %}
+    55	{% endif %}
+    56	
+    57	{% if tips %}
+    58	**Hinweise aus der Praxis**
+    59	{% for h in tips %}
+    60	- {{ h }}
+    61	{% endfor %}
+    62	{% endif %}
+    63	
+    64	---
+    65	
+    66	*Passt das für Sie? Wenn Medium, Temperaturfenster oder Drehzahl variieren, justiere ich die Empfehlung gern – zielgerichtet, sicher und langlebig.*
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/domain_runtime.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/domain_runtime.py
+     2	from __future__ import annotations
+     3	import importlib
+     4	import logging
+     5	from typing import Any, Dict, List
+     6	from .state import Parameters, Derived
+     7	
+     8	log = logging.getLogger(__name__)
+     9	
+    10	def compute_domain(domain: str, params: Parameters) -> Derived:
+    11	    try:
+    12	        mod = importlib.import_module(f"app.services.langgraph.domains.{domain}.calculator")
+    13	        compute = getattr(mod, "compute")
+    14	        out = compute(params)  # type: ignore
+    15	        return {
+    16	            "calculated": dict(out.get("calculated", {})),
+    17	            "flags": dict(out.get("flags", {})),
+    18	            "warnings": list(out.get("warnings", [])),
+    19	            "requirements": list(out.get("requirements", [])),
+    20	        }
+    21	    except Exception as e:
+    22	        log.warning("Domain compute failed (%s): %s", domain, e)
+    23	        return {"calculated": {}, "flags": {}, "warnings": [], "requirements": []}
+    24	
+    25	def missing_by_domain(domain: str, p: Parameters) -> List[str]:
+    26	    # ✅ Hydraulik-Stange nutzt stange_mm / nut_d_mm / nut_b_mm
+    27	    if domain == "hydraulics_rod":
+    28	        req = [
+    29	            "falltyp",
+    30	            "stange_mm",
+    31	            "nut_d_mm",
+    32	            "nut_b_mm",
+    33	            "medium",
+    34	            "temp_max_c",
+    35	            "druck_bar",
+    36	            "geschwindigkeit_m_s",
+    37	        ]
+    38	    else:
+    39	        req = [
+    40	            "falltyp",
+    41	            "wellen_mm",
+    42	            "gehause_mm",
+    43	            "breite_mm",
+    44	            "medium",
+    45	            "temp_max_c",
+    46	            "druck_bar",
+    47	            "drehzahl_u_min",
+    48	        ]
+    49	
+    50	    def _is_missing(key: str, val: Any) -> bool:
+    51	        if val is None or val == "" or val == "unknown":
+    52	            return True
+    53	        if key == "druck_bar":
+    54	            try: float(val); return False
+    55	            except Exception: return True
+    56	        if key in ("wellen_mm", "gehause_mm", "breite_mm", "drehzahl_u_min", "geschwindigkeit_m_s",
+    57	                   "stange_mm", "nut_d_mm", "nut_b_mm"):
+    58	            try: return float(val) <= 0
+    59	            except Exception: return True
+    60	        if key == "temp_max_c":
+    61	            try: float(val); return False
+    62	            except Exception: return True
+    63	        return False
+    64	
+    65	    return [k for k in req if _is_missing(k, p.get(k))]
+    66	
+    67	def anomaly_messages(domain: str, params: Parameters, derived: Derived) -> List[str]:
+    68	    msgs: List[str] = []
+    69	    flags = (derived.get("flags") or {})
+    70	    if flags.get("requires_pressure_stage") and not flags.get("pressure_stage_ack"):
+    71	        msgs.append("Ein Überdruck >2 bar ist für Standard-Radialdichtringe kritisch. Dürfen Druckstufenlösungen geprüft werden?")
+    72	    if flags.get("speed_high"):
+    73	        msgs.append("Die Drehzahl/Umfangsgeschwindigkeit ist hoch – ist sie dauerhaft oder nur kurzzeitig (Spitzen)?")
+    74	    if flags.get("temp_very_high"):
+    75	        msgs.append("Die Temperatur ist sehr hoch. Handelt es sich um Dauer- oder Spitzentemperaturen?")
+    76	    if domain == "hydraulics_rod" and flags.get("extrusion_risk") and not flags.get("extrusion_risk_ack"):
+    77	        msgs.append("Bei dem Druck besteht Extrusionsrisiko. Darf eine Stütz-/Back-up-Ring-Lösung geprüft werden?")
+    78	    return msgs
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/base.py
+###############################################################################
+     1	# -*- coding: utf-8 -*-
+     2	from __future__ import annotations
+     3	import os
+     4	import yaml
+     5	from dataclasses import dataclass
+     6	from typing import Dict, Any, Tuple, List, Optional, Callable
+     7	
+     8	
+     9	@dataclass
+    10	class DomainSpec:
+    11	    id: str
+    12	    name: str
+    13	    base_dir: str            # Ordner der Domain (für Prompts/Schema)
+    14	    schema_file: str         # relativer Pfad
+    15	    calculator: Callable[[dict], Dict[str, Any]]  # compute(params) -> {'calculated': ..., 'flags': ...}
+    16	    ask_order: List[str]     # Reihenfolge der Nachfragen (falls fehlt)
+    17	
+    18	    def template_dir(self) -> str:
+    19	        return os.path.join(self.base_dir, "prompts")
+    20	
+    21	    def schema_path(self) -> str:
+    22	        return os.path.join(self.base_dir, self.schema_file)
+    23	
+    24	_REGISTRY: Dict[str, DomainSpec] = {}
+    25	
+    26	def register_domain(spec: DomainSpec) -> None:
+    27	    _REGISTRY[spec.id] = spec
+    28	    # Domain-Prompts dem Jinja-Loader bekannt machen
+    29	
+    30	def get_domain(domain_id: str) -> Optional[DomainSpec]:
+    31	    return _REGISTRY.get(domain_id)
+    32	
+    33	def list_domains() -> List[str]:
+    34	    return list(_REGISTRY.keys())
+    35	
+    36	# -------- YAML Schema Laden & Validieren (leichtgewichtig) ----------
+    37	def load_schema(spec: DomainSpec) -> Dict[str, Any]:
+    38	    with open(spec.schema_path(), "r", encoding="utf-8") as f:
+    39	        return yaml.safe_load(f) or {}
+    40	
+    41	def validate_params(spec: DomainSpec, params: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    42	    """
+    43	    Gibt (errors, warnings) zurück.
+    44	    YAML-Schema Felder:
+    45	      fields:
+    46	        <name>:
+    47	          required: bool
+    48	          type: str ('int'|'float'|'str'|'enum')
+    49	          min: float
+    50	          max: float
+    51	          enum: [..]
+    52	          ask_if: optional (Dependency-Hinweis, nur Info)
+    53	    """
+    54	    schema = load_schema(spec)
+    55	    fields = schema.get("fields", {})
+    56	    errors: List[str] = []
+    57	    warnings: List[str] = []
+    58	
+    59	    def _typename(x):
+    60	        if isinstance(x, bool):   # bool ist auch int in Python
+    61	            return "bool"
+    62	        if isinstance(x, int):
+    63	            return "int"
+    64	        if isinstance(x, float):
+    65	            return "float"
+    66	        if isinstance(x, str):
+    67	            return "str"
+    68	        return type(x).__name__
+    69	
+    70	    for key, rule in fields.items():
+    71	        req = bool(rule.get("required", False))
+    72	        if req and (key not in params or params.get(key) in (None, "")):
+    73	            errors.append(f"Pflichtfeld fehlt: {key}")
+    74	            continue
+    75	        if key not in params or params.get(key) in (None, ""):
+    76	            continue
+    77	
+    78	        val = params.get(key)
+    79	        typ = rule.get("type")
+    80	        if typ == "enum":
+    81	            allowed = rule.get("enum", [])
+    82	            if val not in allowed:
+    83	                errors.append(f"{key}: ungültiger Wert '{val}', erlaubt: {allowed}")
+    84	        elif typ == "int":
+    85	            if not isinstance(val, int):
+    86	                # ints können als float ankommen (LLM) – tolerant casten
+    87	                try:
+    88	                    params[key] = int(float(val))
+    89	                except Exception:
+    90	                    errors.append(f"{key}: erwartet int, erhalten {_typename(val)}")
+    91	            else:
+    92	                # ok
+    93	                pass
+    94	        elif typ == "float":
+    95	            if isinstance(val, (int, float)):
+    96	                params[key] = float(val)
+    97	            else:
+    98	                try:
+    99	                    params[key] = float(str(val).replace(",", "."))
+   100	                except Exception:
+   101	                    errors.append(f"{key}: erwartet float, erhalten {_typename(val)}")
+   102	        elif typ == "str":
+   103	            if not isinstance(val, str):
+   104	                params[key] = str(val)
+   105	
+   106	        # Ranges
+   107	        if isinstance(params.get(key), (int, float)):
+   108	            v = float(params[key])
+   109	            if "min" in rule and v < float(rule["min"]):
+   110	                errors.append(f"{key}: {v} < min {rule['min']}")
+   111	            if "max" in rule and v > float(rule["max"]):
+   112	                warnings.append(f"{key}: {v} > empfohlene Obergrenze {rule['max']}")
+   113	
+   114	    return errors, warnings
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/__init__.py
+###############################################################################
+     1	# -*- coding: utf-8 -*-
+     2	# Stellt sicher, dass Domains beim Import registriert werden.
+     3	from .rwdr import register as register_rwdr
+     4	from .hydraulics_rod import register as register_hydraulics_rod
+     5	
+     6	def register_all_domains() -> None:
+     7	    register_rwdr()
+     8	    register_hydraulics_rod()
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/schema.yaml
+###############################################################################
+     1	# RWDR Param-Schema (leichtgewichtig)
+     2	fields:
+     3	  falltyp:
+     4	    required: true
+     5	    type: enum
+     6	    enum: ["ersatz", "neu", "optimierung"]
+     7	  bauform:
+     8	    required: false
+     9	    type: str
+    10	  wellen_mm:
+    11	    required: true
+    12	    type: float
+    13	    min: 1
+    14	    max: 500
+    15	  gehause_mm:
+    16	    required: true
+    17	    type: float
+    18	    min: 1
+    19	    max: 800
+    20	  breite_mm:
+    21	    required: true
+    22	    type: float
+    23	    min: 1
+    24	    max: 50
+    25	  medium:
+    26	    required: true
+    27	    type: str
+    28	  temp_max_c:
+    29	    required: true
+    30	    type: float
+    31	    min: -60
+    32	    max: 250
+    33	  druck_bar:
+    34	    required: true
+    35	    type: float
+    36	    min: 0
+    37	    max: 25
+    38	  drehzahl_u_min:
+    39	    required: true
+    40	    type: int
+    41	    min: 1
+    42	    max: 30000
+    43	  umgebung:
+    44	    required: false
+    45	    type: str
+    46	  prioritaet:
+    47	    required: false
+    48	    type: str
+    49	  besondere_anforderungen:
+    50	    required: false
+    51	    type: str
+    52	  bekannte_probleme:
+    53	    required: false
+    54	    type: str
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/calculator.py
+###############################################################################
+     1	# backend/app/services/langgraph/domains/rwdr/calculator.py
+     2	from __future__ import annotations
+     3	from typing import Dict, Any
+     4	import math
+     5	
+     6	
+     7	def _to_float(x, default=0.0):
+     8	    try:
+     9	        if x is None:
+    10	            return default
+    11	        if isinstance(x, (int, float)):
+    12	            return float(x)
+    13	        s = str(x).replace(" ", "").replace(".", "").replace(",", ".")
+    14	        return float(s)
+    15	    except Exception:
+    16	        return default
+    17	
+    18	
+    19	def compute(params: Dict[str, Any]) -> Dict[str, Any]:
+    20	    p = params or {}
+    21	    out = {"calculated": {}, "flags": {}, "warnings": [], "requirements": []}
+    22	
+    23	    d_mm = _to_float(p.get("wellen_mm"))
+    24	    rpm = _to_float(p.get("drehzahl_u_min"))
+    25	    t_max = _to_float(p.get("temp_max_c"))
+    26	    press_bar = _to_float(p.get("druck_bar"))
+    27	    medium = (p.get("medium") or "").lower()
+    28	    bauform = (p.get("bauform") or "").upper()
+    29	
+    30	    # Umfangsgeschwindigkeit [m/s]
+    31	    v = 0.0
+    32	    if d_mm > 0 and rpm > 0:
+    33	        v = math.pi * (d_mm / 1000.0) * (rpm / 60.0)
+    34	    v = round(v, 3)
+    35	
+    36	    # Beide Keys setzen (Deutsch+Englisch), damit Templates/Alt-Code beides finden
+    37	    out["calculated"]["umfangsgeschwindigkeit_m_s"] = v
+    38	    out["calculated"]["surface_speed_m_s"] = v
+    39	
+    40	    # Flags
+    41	    if press_bar > 2.0:
+    42	        out["flags"]["requires_pressure_stage"] = True
+    43	    if v >= 20.0:
+    44	        out["flags"]["speed_high"] = True
+    45	    if t_max >= 120.0:
+    46	        out["flags"]["temp_very_high"] = True
+    47	
+    48	    # Material-Guidance (Whitelist/Blacklist)
+    49	    whitelist, blacklist = set(), set()
+    50	
+    51	    # RWDR Bauform BA: Standard ist Elastomer-Lippe (NBR/FKM). PTFE nur Spezialprofile.
+    52	    if bauform.startswith("BA"):
+    53	        blacklist.add("PTFE")
+    54	        if any(k in medium for k in ("hydraulik", "öl", "oel", "oil")):
+    55	            if t_max <= 100:
+    56	                whitelist.update(["NBR", "FKM"])   # NBR präferiert, FKM ok
+    57	            else:
+    58	                whitelist.add("FKM")
+    59	                blacklist.add("NBR")
+    60	        else:
+    61	            whitelist.update(["FKM", "NBR"])
+    62	
+    63	    # Druckrestriktion für PTFE (Standard-RWDR): ab ~0.5 bar vermeiden
+    64	    if press_bar > 0.5:
+    65	        blacklist.add("PTFE")
+    66	
+    67	    # Chemie / sehr hohe Temp → PTFE als mögliche Alternative zulassen
+    68	    if any(k in medium for k in ("chem", "lösemittel", "loesemittel", "solvent")) or t_max > 180:
+    69	        whitelist.add("PTFE")
+    70	
+    71	    out["calculated"]["material_whitelist"] = sorted(whitelist) if whitelist else []
+    72	    out["calculated"]["material_blacklist"] = sorted(blacklist) if blacklist else []
+    73	
+    74	    # Anforderungen (menschlich lesbar)
+    75	    if whitelist:
+    76	        out["requirements"].append("Bevorzuge Materialien: " + ", ".join(sorted(whitelist)))
+    77	    if blacklist:
+    78	        out["requirements"].append("Vermeide Materialien: " + ", ".join(sorted(blacklist)))
+    79	    if out["flags"].get("requires_pressure_stage"):
+    80	        out["requirements"].append("Druckstufe oder Drucktaugliches Profil erforderlich (>2 bar).")
+    81	    if out["flags"].get("speed_high"):
+    82	        out["requirements"].append("Hohe Umfangsgeschwindigkeit (>= 20 m/s) berücksichtigen.")
+    83	
+    84	    return out
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/__init__.py
+###############################################################################
+     1	# -*- coding: utf-8 -*-
+     2	import os
+     3	from typing import Dict, Any
+     4	from app.services.langgraph.domains.base import DomainSpec, register_domain
+     5	from .calculator import compute as rwdr_compute
+     6	
+     7	def register() -> None:
+     8	    base_dir = os.path.dirname(os.path.abspath(__file__))
+     9	    spec = DomainSpec(
+    10	        id="rwdr",
+    11	        name="Radialwellendichtring",
+    12	        base_dir=base_dir,
+    13	        schema_file="schema.yaml",
+    14	        calculator=rwdr_compute,
+    15	        ask_order=[
+    16	            "falltyp", "bauform", "wellen_mm", "gehause_mm", "breite_mm",
+    17	            "medium", "temp_max_c", "druck_bar", "drehzahl_u_min"
+    18	        ],
+    19	    )
+    20	    register_domain(spec)
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/prompts/extract_params.jinja2
+###############################################################################
+     1	{# RWDR: Parameter-Extraktion #}
+     2	Du extrahierst strukturierte Parameter aus dem Dialog. Antworte ausschließlich mit einem kompakten JSON-Objekt **in einer Zeile**, ohne Markdown oder Erklärungen.
+     3	
+     4	Bekannte Parameter (nur ergänzen, überschreiben nur wenn klar genannt):
+     5	{{ existing_params_json }}
+     6	
+     7	Dialog (neueste zuerst):
+     8	{% for m in messages %}
+     9	- {{ m.type|lower }}: {{ m.content }}
+    10	{% endfor %}
+    11	
+    12	Setze nur, wenn sicher:
+    13	- falltyp: "ersatz"|"neu"|"optimierung"
+    14	- bauform: z.B. "BA","BASL","B1","B2"
+    15	- wellen_mm, gehause_mm, breite_mm (Zahlen, mm)
+    16	- medium: String (z. B. "Hydrauliköl ISO VG 46")
+    17	- temp_max_c: Zahl (°C)
+    18	- druck_bar: Zahl (bar)
+    19	- drehzahl_u_min: Zahl (U/min)
+    20	- optionals: umgebung, prioritaet, besondere_anforderungen, bekannte_probleme
+    21	
+    22	Antwortformat (einzeiliges JSON):
+    23	{"falltyp":"ersatz","bauform":"BA","wellen_mm":45,"gehause_mm":62,"breite_mm":7,"medium":"Hydrauliköl","temp_max_c":80,"druck_bar":0,"drehzahl_u_min":1200}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/prompts/material.jinja2
+###############################################################################
+     1	Du bist Materialexperte für RWDR.
+     2	Eingaben:
+     3	- Parameter: {{ params }}
+     4	- Berechnungen/Flags: {{ derived }}
+     5	
+     6	Aufgabe:
+     7	- Empfiehl 1–3 plausible Werkstoffe (z. B. NBR, FKM, PTFE …) passend zu Medium, Temperatur, Umfangsgeschwindigkeit, Druck.
+     8	- Kurze Begründung je Werkstoff.
+     9	Antworte als JSON (einzeilig):
+    10	{"materiale":[{"werkstoff":"FKM","begruendung":"..."}]}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/prompts/profile.jinja2
+###############################################################################
+     1	Du bist Profil-Agent für RWDR.
+     2	Gegeben:
+     3	- Parameter: {{ params }}
+     4	- Berechnungen/Flags: {{ derived }}
+     5	
+     6	Aufgabe:
+     7	- Schlage 1–2 Profile/Bauformen (z. B. BA, BASL, B1/B2) vor.
+     8	- Kurze Begründung.
+     9	Antwort (einzeiliges JSON):
+    10	{"profile":[{"bauform":"BA","begruendung":"..."}]}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/prompts/type.jinja2
+###############################################################################
+     1	Du bist Typ/Serien-Agent für RWDR.
+     2	Gegeben:
+     3	- Parameter: {{ params }}
+     4	- Berechnungen/Flags: {{ derived }}
+     5	- Ausgewähltes Profil/Werkstoffe (falls vorhanden): {{ prior }}
+     6	
+     7	Aufgabe:
+     8	- Benenne 1–2 konkrete Typangaben (z. B. "BA 45x62x7") basierend auf Abmessungen + Profil.
+     9	Antwort (einzeiliges JSON):
+    10	{"typen":[{"typ":"BA {{params.wellen_mm}}x{{params.gehause_mm}}x{{params.breite_mm}}","begruendung":"..."}]}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/schema.yaml
+###############################################################################
+     1	fields:
+     2	  falltyp:
+     3	    required: true
+     4	    type: enum
+     5	    enum: ["ersatz", "neu", "optimierung"]
+     6	  stange_mm:
+     7	    required: true
+     8	    type: float
+     9	    min: 4
+    10	    max: 400
+    11	  nut_d_mm:
+    12	    required: true
+    13	    type: float
+    14	    min: 6
+    15	    max: 500
+    16	  nut_b_mm:
+    17	    required: true
+    18	    type: float
+    19	    min: 2
+    20	    max: 50
+    21	  druck_bar:
+    22	    required: true
+    23	    type: float
+    24	    min: 0
+    25	    max: 500
+    26	  geschwindigkeit_m_s:
+    27	    required: false
+    28	    type: float
+    29	    min: 0
+    30	    max: 15
+    31	  medium:
+    32	    required: true
+    33	    type: str
+    34	  temp_max_c:
+    35	    required: true
+    36	    type: float
+    37	    min: -60
+    38	    max: 200
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/calculator.py
+###############################################################################
+     1	# Hydraulik – Stangendichtung: deterministische Checks
+     2	from typing import Dict, Any
+     3	
+     4	def _to_float(v, default=None):
+     5	    try:
+     6	        if v is None or v == "" or v == "unknown":
+     7	            return default
+     8	        return float(v)
+     9	    except Exception:
+    10	        return default
+    11	
+    12	def compute(params: Dict[str, Any]) -> Dict[str, Any]:
+    13	    # Pflicht-/Kernparameter
+    14	    p_bar   = _to_float(params.get("druck_bar"))
+    15	    t_max   = _to_float(params.get("temp_max_c"))
+    16	    speed   = _to_float(params.get("geschwindigkeit_m_s"))  # optional
+    17	    bore    = _to_float(params.get("nut_d_mm"))              # ✅ Nut-Ø D (mm)
+    18	    rod     = _to_float(params.get("stange_mm"))             # ✅ Stangen-Ø (mm)
+    19	
+    20	    flags = {}
+    21	    warnings = []
+    22	    reqs = []
+    23	
+    24	    # Extrusionsrisiko grob ab ~160–200 bar (ohne Stützring / je nach Spalt)
+    25	    if p_bar is not None and p_bar >= 160:
+    26	        flags["extrusion_risk"] = True
+    27	        reqs.append("Stütz-/Back-up-Ring prüfen (≥160 bar).")
+    28	
+    29	    if t_max is not None and t_max > 100:
+    30	        warnings.append(f"Hohe Temperatur ({t_max:.0f} °C) – Werkstoffwahl prüfen.")
+    31	
+    32	    if speed is not None and speed > 0.6:
+    33	        warnings.append(f"Hohe Stangengeschwindigkeit ({speed:.2f} m/s) – Reibung/Stick-Slip beachten.")
+    34	
+    35	    # Plausibilitäts-Hinweis (Spaltmaß sehr klein)
+    36	    if bore and rod and bore - rod < 2.0:
+    37	        warnings.append("Sehr kleiner Spalt zwischen Bohrung und Stange (< 2 mm).")
+    38	
+    39	    return {
+    40	        "calculated": {
+    41	            "druck_bar": p_bar,
+    42	            "temp_max_c": t_max,
+    43	            "geschwindigkeit_m_s": speed,
+    44	            "bohrung_mm": bore,
+    45	            "stange_mm": rod,
+    46	        },
+    47	        "flags": flags,
+    48	        "warnings": warnings,
+    49	        "requirements": reqs,
+    50	    }
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/__init__.py
+###############################################################################
+     1	# -*- coding: utf-8 -*-
+     2	import os
+     3	from typing import Dict, Any
+     4	from app.services.langgraph.domains.base import DomainSpec, register_domain
+     5	from .calculator import compute as hyd_rod_compute
+     6	
+     7	def register() -> None:
+     8	    base_dir = os.path.dirname(os.path.abspath(__file__))
+     9	    spec = DomainSpec(
+    10	        id="hydraulics_rod",
+    11	        name="Hydraulik – Stangendichtung",
+    12	        base_dir=base_dir,
+    13	        schema_file="schema.yaml",
+    14	        calculator=hyd_rod_compute,
+    15	        ask_order=[
+    16	            "falltyp", "stange_mm", "nut_d_mm", "nut_b_mm", "druck_bar",
+    17	            "geschwindigkeit_m_s", "medium", "temp_max_c"
+    18	        ],
+    19	    )
+    20	    register_domain(spec)
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/prompts/extract_params.jinja2
+###############################################################################
+     1	{# Hydraulik Stange – Param-Extraktion #}
+     2	Antworte ausschließlich mit einem kompakten JSON in einer Zeile, ohne Markdown/Erklärung.
+     3	
+     4	Bekannte Parameter:
+     5	{{ existing_params_json }}
+     6	
+     7	Dialog:
+     8	{% for m in messages %}
+     9	- {{ m.type|lower }}: {{ m.content }}
+    10	{% endfor %}
+    11	
+    12	Setze nur wenn sicher:
+    13	- falltyp: "ersatz"|"neu"|"optimierung"
+    14	- stange_mm, nut_d_mm, nut_b_mm (Zahlen, mm)
+    15	- druck_bar (Zahl)
+    16	- geschwindigkeit_m_s (Zahl)
+    17	- medium (String)
+    18	- temp_max_c (Zahl)
+    19	
+    20	Beispiel:
+    21	{"falltyp":"ersatz","stange_mm":50,"nut_d_mm":60,"nut_b_mm":7,"druck_bar":180,"geschwindigkeit_m_s":0.25,"medium":"Hydrauliköl","temp_max_c":80}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/prompts/material.jinja2
+###############################################################################
+     1	Du bist Materialexperte für Hydraulik-Stangendichtungen.
+     2	- Parameter: {{ params }}
+     3	- Berechnungen/Flags: {{ derived }}
+     4	
+     5	Empfiehl 1–3 Werkstoffe/Kombis (z. B. PU, PTFE+Bronze, NBR Stützring).
+     6	Begründe kurz.
+     7	Antwort JSON einzeilig:
+     8	{"materiale":[{"werkstoff":"PU","begruendung":"..."}]}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/prompts/profile.jinja2
+###############################################################################
+     1	Du bist Profil-Agent für Hydraulik-Stangendichtungen.
+     2	- Parameter: {{ params }}
+     3	- Berechnungen/Flags: {{ derived }}
+     4	
+     5	Schlage 1–2 Profilfamilien vor (z. B. U-Ring PU, PTFE-Kombiring mit O-Ring-Vorspann).
+     6	Kurz begründen.
+     7	Antwort (einzeilig):
+     8	{"profile":[{"profil":"PU-U-Ring","begruendung":"..."}]}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/prompts/type.jinja2
+###############################################################################
+     1	Du bist Typ/Serien-Agent (Hydraulik Stange).
+     2	- Parameter: {{ params }}
+     3	- Abgeleitete Werte/Flags: {{ derived }}
+     4	- Profil/Werkstoff (falls vorhanden): {{ prior }}
+     5	
+     6	Nenne 1–2 konkrete Typen/Serien (Herstellerneutral beschreiben).
+     7	Antwort (einzeilig):
+     8	{"typen":[{"typ":"PU U-Ring für {{params.stange_mm}} mm / Nut {{params.nut_d_mm}}x{{params.nut_b_mm}}","begruendung":"..."}]}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/domain_router.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/domain_router.py
+     2	from __future__ import annotations
+     3	import json
+     4	from typing import List
+     5	from langchain_openai import ChatOpenAI
+     6	from app.services.langgraph.llm_router import get_router_llm, get_router_fallback_llm
+     7	from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+     8	from app.services.langgraph.prompting import render_template, messages_for_template, strip_json_fence
+     9	from .config import ENABLED_DOMAINS
+    10	
+    11	def detect_domain(llm: ChatOpenAI, msgs: List[AnyMessage], params: dict) -> str:
+    12	    router = llm or get_router_llm()
+    13	    prompt = render_template(
+    14	        "domain_router.jinja2",
+    15	        messages=messages_for_template(msgs),
+    16	        params_json=json.dumps(params, ensure_ascii=False),
+    17	        enabled_domains=ENABLED_DOMAINS,
+    18	    )
+    19	    # 1st pass
+    20	    resp = router.invoke([HumanMessage(content=prompt)])
+    21	    domain, conf = None, 0.0
+    22	    try:
+    23	        data = json.loads(strip_json_fence(resp.content or ""))
+    24	        domain = str((data.get("domain") or "")).strip().lower()
+    25	        conf = float(data.get("confidence") or 0.0)
+    26	    except Exception:
+    27	        domain, conf = None, 0.0
+    28	
+    29	    # Fallback, wenn unsicher
+    30	    if (domain not in ENABLED_DOMAINS) or (conf < 0.70):
+    31	        fb = get_router_fallback_llm()
+    32	        try:
+    33	            resp2 = fb.invoke([HumanMessage(content=prompt)])
+    34	            data2 = json.loads(strip_json_fence(resp2.content or ""))
+    35	            d2 = str((data2.get("domain") or "")).strip().lower()
+    36	            c2 = float(data2.get("confidence") or 0.0)
+    37	            if (d2 in ENABLED_DOMAINS) and (c2 >= conf):
+    38	                domain, conf = d2, c2
+    39	        except Exception:
+    40	            pass
+    41	
+    42	    # Heuristische Fallbacks – nur Nutzertext
+    43	    if (domain not in ENABLED_DOMAINS) or (conf < 0.40):
+    44	        utter = ""
+    45	        for m in reversed(msgs or []):
+    46	            if hasattr(m, "content") and getattr(m, "content"):
+    47	                if isinstance(m, HumanMessage):
+    48	                    utter = (m.content or "").lower().strip()
+    49	                    break
+    50	        if "wellendichtring" in utter or "rwdr" in utter:
+    51	            domain = "rwdr"
+    52	        elif "stangendichtung" in utter or "kolbenstange" in utter or "hydraulik" in utter:
+    53	            domain = "hydraulics_rod"
+    54	        elif (params.get("bauform") or "").upper().startswith("BA"):
+    55	            domain = "rwdr"
+    56	        elif ENABLED_DOMAINS:
+    57	            domain = ENABLED_DOMAINS[0]
+    58	        else:
+    59	            domain = "rwdr"
+    60	    return domain
+
+###############################################################################
+# FILE: backend/app/services/langgraph/prompting.py
+###############################################################################
+     1	# backend/app/services/langgraph/prompting.py
+     2	from __future__ import annotations
+     3	
+     4	import json
+     5	import logging
+     6	import os
+     7	import re
+     8	from pathlib import Path
+     9	from typing import Any, Iterable, List, Dict
+    10	
+    11	from jinja2 import Environment, FileSystemLoader, StrictUndefined
+    12	from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+    13	
+    14	log = logging.getLogger(__name__)
+    15	
+    16	# -------------------------------------------------------------------
+    17	# Template-Verzeichnisse einsammeln (mit ENV-Override)
+    18	# -------------------------------------------------------------------
+    19	_BASE = Path(__file__).resolve().parent
+    20	_GLOBAL_PROMPTS = _BASE / "prompts"
+    21	_GLOBAL_PROMPT_TEMPLATES = _BASE / "prompt_templates"
+    22	_GRAPH_CONSULT_PROMPTS = _BASE / "graph" / "consult" / "prompts"
+    23	_DOMAINS_ROOT = _BASE / "domains"
+    24	
+    25	
+    26	def _collect_template_dirs() -> List[Path]:
+    27	    # Optional: zusätzliche Pfade per ENV (z. B. "/app/custom_prompts:/mnt/prompts")
+    28	    env_paths: List[Path] = []
+    29	    raw = os.getenv("SEALAI_TEMPLATE_DIRS", "").strip()
+    30	    if raw:
+    31	        for p in raw.split(":"):
+    32	            pp = Path(p).resolve()
+    33	            if pp.is_dir():
+    34	                env_paths.append(pp)
+    35	
+    36	    fixed: List[Path] = [
+    37	        _GLOBAL_PROMPTS,
+    38	        _GLOBAL_PROMPT_TEMPLATES,
+    39	        _GRAPH_CONSULT_PROMPTS,
+    40	    ]
+    41	
+    42	    domain_prompts: List[Path] = []
+    43	    if _DOMAINS_ROOT.is_dir():
+    44	        for p in _DOMAINS_ROOT.glob("**/prompts"):
+    45	            if p.is_dir():
+    46	                domain_prompts.append(p)
+    47	
+    48	    all_candidates = env_paths + fixed + domain_prompts
+    49	
+    50	    seen = set()
+    51	    result: List[Path] = []
+    52	    for p in all_candidates:
+    53	        try:
+    54	            rp = p.resolve()
+    55	        except Exception:
+    56	            rp = p
+    57	        if rp.is_dir():
+    58	            key = str(rp)
+    59	            if key not in seen:
+    60	                seen.add(key)
+    61	                result.append(rp)
+    62	
+    63	    if not result:
+    64	        result = [_BASE]
+    65	        log.warning("[prompting] Keine Template-Verzeichnisse gefunden; Fallback=%s", _BASE)
+    66	
+    67	    try:
+    68	        log.info("[prompting] template search dirs: %s", ", ".join(str(p) for p in result))
+    69	    except Exception:
+    70	        pass
+    71	
+    72	    return result
+    73	
+    74	
+    75	_ENV = Environment(
+    76	    loader=FileSystemLoader([str(p) for p in _collect_template_dirs()]),
+    77	    autoescape=False,
+    78	    undefined=StrictUndefined,  # Fail-fast
+    79	    trim_blocks=True,
+    80	    lstrip_blocks=True,
+    81	)
+    82	
+    83	# -------------------------------------------------------------------
+    84	# Jinja2 Filter
+    85	# -------------------------------------------------------------------
+    86	def _regex_search(value: Any, pattern: str) -> bool:
+    87	    try:
+    88	        return re.search(pattern, str(value or ""), flags=re.I) is not None
+    89	    except Exception:
+    90	        return False
+    91	
+    92	
+    93	def _tojson_compact(value: Any) -> str:
+    94	    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    95	
+    96	
+    97	def _tojson_pretty(value: Any) -> str:
+    98	    return json.dumps(value, ensure_ascii=False, indent=2)
+    99	
+   100	
+   101	_ENV.filters["regex_search"] = _regex_search
+   102	_ENV.filters["tojson_compact"] = _tojson_compact
+   103	_ENV.filters["tojson_pretty"] = _tojson_pretty
+   104	
+   105	# -------------------------------------------------------------------
+   106	# Public API
+   107	# -------------------------------------------------------------------
+   108	def render_template(name: str, /, **kwargs: Any) -> str:
+   109	    """Rendert ein Jinja2-Template und loggt die Quelle; fügt params_json automatisch hinzu."""
+   110	    if "params" in kwargs and "params_json" not in kwargs:
+   111	        try:
+   112	            kwargs["params_json"] = safe_json(kwargs["params"])
+   113	        except Exception:
+   114	            kwargs["params_json"] = "{}"
+   115	
+   116	    tpl = _ENV.get_template(name)
+   117	    src_file = getattr(tpl, "filename", None)
+   118	    log.info("[prompting] loaded template '%s' from '%s'", name, src_file or "?")
+   119	    return tpl.render(**kwargs)
+   120	
+   121	
+   122	def messages_for_template(seq: Iterable[Any]) -> List[Dict[str, str]]:
+   123	    """Normalisiert Nachrichten in [{type, content}]."""
+   124	    out: List[Dict[str, str]] = []
+   125	
+   126	    def _norm_one(m: Any) -> Dict[str, str]:
+   127	        if isinstance(m, HumanMessage):
+   128	            return {"type": "user", "content": (m.content or "").strip()}
+   129	        if isinstance(m, AIMessage):
+   130	            return {"type": "ai", "content": (m.content or "").strip()}
+   131	        if isinstance(m, SystemMessage):
+   132	            return {"type": "system", "content": (m.content or "").strip()}
+   133	
+   134	        if isinstance(m, dict):
+   135	            role = (m.get("role") or m.get("type") or "").lower()
+   136	            content = (m.get("content") or "").strip()
+   137	            if role in ("user", "human"):
+   138	                t = "user"
+   139	            elif role in ("assistant", "ai"):
+   140	                t = "ai"
+   141	            elif role == "system":
+   142	                t = "system"
+   143	            else:
+   144	                t = "user"
+   145	            return {"type": t, "content": content}
+   146	
+   147	        return {"type": "user", "content": (str(m) if m is not None else "").strip()}
+   148	
+   149	    for m in (seq or []):
+   150	        norm = _norm_one(m)
+   151	        if norm["content"]:
+   152	            out.append(norm)
+   153	    return out
+   154	
+   155	
+   156	# -------------------------------------------------------------------
+   157	# JSON-Utilities
+   158	# -------------------------------------------------------------------
+   159	_CODE_FENCE_RX = re.compile(r"^```(?:json|JSON)?\s*(.*?)\s*```$", re.DOTALL)
+   160	
+   161	
+   162	def _extract_balanced_json(s: str) -> str:
+   163	    """Extrahiert den ersten ausgewogenen JSON-Block ({...} oder [...]) aus s."""
+   164	    if not s:
+   165	        return ""
+   166	    start_idx = None
+   167	    opener = None
+   168	    closer = None
+   169	    for i, ch in enumerate(s):
+   170	        if ch in "{[":
+   171	            start_idx = i
+   172	            opener = ch
+   173	            closer = "}" if ch == "{" else "]"
+   174	            break
+   175	    if start_idx is None:
+   176	        return s.strip()
+   177	
+   178	    depth = 0
+   179	    in_string = False
+   180	    escape = False
+   181	    for j in range(start_idx, len(s)):
+   182	        ch = s[j]
+   183	        if in_string:
+   184	            if escape:
+   185	                escape = False
+   186	            elif ch == "\\":
+   187	                escape = True
+   188	            elif ch == '"':
+   189	                in_string = False
+   190	        else:
+   191	            if ch == '"':
+   192	                in_string = True
+   193	            elif ch == opener:
+   194	                depth += 1
+   195	            elif ch == closer:
+   196	                depth -= 1
+   197	                if depth == 0:
+   198	                    return s[start_idx : j + 1].strip()
+   199	    return s[start_idx:].strip()
+   200	
+   201	
+   202	def strip_json_fence(text: str) -> str:
+   203	    """Entfernt ```json fences``` ODER extrahiert den ersten ausgewogenen JSON-Block."""
+   204	    if not isinstance(text, str):
+   205	        return ""
+   206	    s = text.strip()
+   207	
+   208	    m = _CODE_FENCE_RX.match(s)
+   209	    if m:
+   210	        inner = m.group(1).strip()
+   211	        if inner.startswith("{") or inner.startswith("["):
+   212	            return _extract_balanced_json(inner)
+   213	        return inner
+   214	
+   215	    if s.startswith("{") or s.startswith("["):
+   216	        return _extract_balanced_json(s)
+   217	
+   218	    return _extract_balanced_json(s)
+   219	
+   220	
+   221	def safe_json(obj: Any) -> str:
+   222	    """Kompaktes JSON (UTF-8) für Prompt-Übergaben."""
+   223	    return json.dumps(obj or {}, ensure_ascii=False, separators=(",", ":"))
+
+###############################################################################
+# FILE: backend/app/services/langgraph/prompts/registry.yaml
+###############################################################################
+     1	agents:
+     2	  supervisor:
+     3	    lang: de
+     4	    files:
+     5	      - partials/tone.de.md
+     6	      - partials/safety.de.md
+     7	      - agents/consult_supervisor.de.md
+     8	
+     9	  rwdr:
+    10	    lang: de
+    11	    files:
+    12	      - partials/tone.de.md
+    13	      - agents/rwdr_agent.de.md
+    14	
+    15	  hydraulics_rod:
+    16	    lang: de
+    17	    files:
+    18	      - partials/tone.de.md
+    19	      - agents/hyd_rod_agent.de.md
+
+###############################################################################
+# FILE: backend/app/services/langgraph/prompt_registry.py
+###############################################################################
+     1	from __future__ import annotations
+     2	import functools
+     3	from pathlib import Path
+     4	from typing import Dict, List
+     5	import yaml
+     6	
+     7	_BASE = Path(__file__).resolve().parent / "prompts"
+     8	
+     9	@functools.lru_cache(maxsize=64)
+    10	def _load_registry() -> Dict:
+    11	    p = _BASE / "registry.yaml"
+    12	    if not p.exists():
+    13	        return {"agents": {}}
+    14	    with p.open("r", encoding="utf-8") as f:
+    15	        return yaml.safe_load(f) or {"agents": {}}
+    16	
+    17	def _read(path: Path) -> str:
+    18	    try:
+    19	        return path.read_text(encoding="utf-8").strip()
+    20	    except Exception:
+    21	        return ""
+    22	
+    23	@functools.lru_cache(maxsize=256)
+    24	def get_agent_prompt(agent_id: str, lang: str = "de") -> str:
+    25	    reg = _load_registry()
+    26	    agent = (reg.get("agents") or {}).get(agent_id) or (reg.get("agents") or {}).get("supervisor")
+    27	    if not agent:
+    28	        return ""
+    29	    files: List[str] = agent.get("files") or []
+    30	    parts: List[str] = []
+    31	    for rel in files:
+    32	        p = _BASE / rel
+    33	        if p.suffix.lower() in {".md", ".txt", ".jinja2"} and p.exists():
+    34	            parts.append(_read(p))
+    35	    return "\n\n".join(x for x in parts if x)
+

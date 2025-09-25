@@ -1,0 +1,29 @@
+{# backend/app/services/langgraph/prompts/ask_missing.jinja2 #}
+{% set de = (lang or 'de')[:2].lower() == 'de' %}
+{% if de %}
+Prima – das hilft mir schon deutlich weiter. 😊
+
+**Pflicht für eine belastbare Empfehlung**  
+{% if friendly_required %}{{ friendly_required }}{% else %}– keine offenen Pflichtangaben –{% endif %}
+
+{% if friendly_optional %}
+**Zusätzlich sehr empfehlenswert** (für Material-/Profilwahl, Toleranz- und Normen-Check)  
+{{ friendly_optional }}
+{% endif %}
+
+Gerne **in einer Zeile**, z. B.:  
+`{{ example }}`
+{% else %}
+Great — this already helps. 😊
+
+**Required for a reliable recommendation**  
+{% if friendly_required %}{{ friendly_required }}{% else %}- no required fields missing -{% endif %}
+
+{% if friendly_optional %}
+**Strongly recommended as well** (material/profile choice, tolerances/norms verification)  
+{{ friendly_optional }}
+{% endif %}
+
+Best **in one line**, e.g.:  
+`{{ example }}`
+{% endif %}

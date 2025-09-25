@@ -1,30 +1,66 @@
-{# Textausgabe, nur aus belegten Zahlen (params/derived) #}
-{% set p = params %}
-{% set c = derived.calculated if derived and derived.calculated is defined else {} %}
+{# explain.jinja2 — sauber formatierte Markdown-Ausgabe, robust gegen fehlende Felder #}
 
-🔎 **Meine Empfehlung – präzise und transparent:**
+{% set _main = main if (main is defined and main) else {} %}
+{% set _d    = derived if (derived is defined and derived) else {} %}
+{% set c     = _d.get('calculated', {}) %}
+{% set vorteile = _main.get('vorteile') or [] %}
+{% set einschraenkungen = _main.get('einschraenkungen') or [] %}
+{% set geeignet_fuer = _main.get('geeignet_fuer') or [] %}
+{% set altern = alternativen if (alternativen is defined and alternativen) else [] %}
+{% set tips   = hinweise if (hinweise is defined and hinweise) else [] %}
 
-**Typ:** {{ main.typ or "–" }}
-**Werkstoff:** {{ main.werkstoff or "–" }}
+**Sehr gern – hier ist meine fachliche Empfehlung für Ihren Anwendungsfall:**
 
-{% if main.vorteile %}
-**Vorteile:** {{ ", ".join(main.vorteile) }}
-{% endif %}
-{% if main.einschraenkungen %}
-**Einschränkungen:** {{ ", ".join(main.einschraenkungen) }}
-{% endif %}
+## Empfehlung
 
-**Begründung:** {{ main.begruendung or "" }}
-
-{% if c.umfangsgeschwindigkeit_m_s is defined %}
-**Abgeleiteter Wert:** v = {{ "%.3f"|format(c.umfangsgeschwindigkeit_m_s) }} m/s (aus Welle/Drehzahl berechnet)
+**Typ:** {{ _main.get('typ', '–') }}
+{% if _main.get('werkstoff') %}
+**Werkstoff:** {{ _main.get('werkstoff') }}
 {% endif %}
 
-{% if alternativen and alternativen|length > 0 %}
-**Alternativen:**
-{% for a in alternativen %}
-- {{ a.typ }}{% if a.werkstoff %} ({{ a.werkstoff }}){% endif %}
+{% if _main.get('begruendung') %}
+**Begründung (kurz):** {{ _main.get('begruendung') }}
+{% endif %}
+
+{% if 'umfangsgeschwindigkeit_m_s' in c %}
+**Abgeleiteter Wert:** v = {{ "%.3f"|format(c['umfangsgeschwindigkeit_m_s']) }} m/s
+{% endif %}
+
+{% if vorteile %}
+**Warum diese Wahl überzeugt**
+{% for v in vorteile %}
+- {{ v }}
 {% endfor %}
 {% endif %}
 
-Möchten Sie ein **Angebot** anfordern, eine **Zeichnung/Datenblatt** erhalten oder die **Alternative** genauer vergleichen?
+{% if einschraenkungen %}
+**Worauf wir achten sollten**
+{% for e in einschraenkungen %}
+- {{ e }}
+{% endfor %}
+{% endif %}
+
+{% if geeignet_fuer %}
+**Besonders geeignet für**
+{% for g in geeignet_fuer %}
+- {{ g }}
+{% endfor %}
+{% endif %}
+
+{% if altern %}
+**Sinnvolle Alternativen**
+{% for a in altern %}
+- {{ a.get('typ','–') }}{% if a.get('werkstoff') %} ({{ a.get('werkstoff') }}){% endif %}{% if a.get('kurzbegruendung') %}: {{ a.get('kurzbegruendung') }}{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if tips %}
+**Hinweise aus der Praxis**
+{% for h in tips %}
+- {{ h }}
+{% endfor %}
+{% endif %}
+
+---
+
+*Passt das für Sie? Wenn Medium, Temperaturfenster oder Drehzahl variieren, justiere ich die Empfehlung gern – zielgerichtet, sicher und langlebig.*

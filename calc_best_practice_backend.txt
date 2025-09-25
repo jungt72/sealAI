@@ -1,0 +1,1441 @@
+
+
+===== FILE: backend/app/services/langgraph/graph/consult/nodes/validate_answer.py =====
+# backend/app/services/langgraph/graph/consult/nodes/validate_answer.py
+from __future__ import annotations
+
+import math
+from typing import Any, Dict, List
+import structlog
+
+from ..state import ConsultState
+
+log = structlog.get_logger(__name__)
+
+def _sigmoid(x: float) -> float:
+    try:
+        return 1.0 / (1.0 + math.exp(-x))
+    except Exception:
+        return 0.5
+
+def _confidence_from_docs(docs: List[Dict[str, Any]]) -> float:
+    """
+    Grobe Konfidenzabschätzung aus RAG-Scores.
+    Nutzt fused_score, sonst max(vector_score, keyword_score/100).
+    Falls Score bereits [0..1], direkt verwenden – sonst sigmoid.
+    """
+    if not docs:
+        return 0.15
+
+    vals: List[float] = []
+    for d in docs[:6]:
+        vs = d.get("vector_score")
+        ks = d.get("keyword_score")
+        fs = d.get("fused_score")
+        try:
+            base = float(fs if fs is not None else max(float(vs or 0.0), float(ks or 0.0) / 100.0))
+        except Exception:
+            base = 0.0
+
+        if 0.0 <= base <= 1.0:
+            vals.append(base)
+        else:
+            vals.append(_sigmoid(base))
+
+    conf = sum(vals) / max(1, len(vals))
+    return max(0.05, min(0.98, conf))
+
+def _top_source(d: Dict[str, Any]) -> str:
+    return (d.get("source")
+            or (d.get("metadata") or {}).get("source")
+            or "")
+
+def validate_answer(state: ConsultState) -> ConsultState:
+    """
+    Bewertet die Antwortqualität (Konfidenz/Quellen) und MERGT den State,
+    ohne RAG-Felder zu verlieren.
+    """
+    retrieved_docs: List[Dict[str, Any]] = state.get("retrieved_docs") or state.get("docs") or []
+    context: str = state.get("context") or ""
+
+    conf = _confidence_from_docs(retrieved_docs)
+    needs_more = bool(state.get("needs_more_params")) or conf < 0.35
+
+    validation: Dict[str, Any] = {
+        "n_docs": len(retrieved_docs),
+        "confidence": round(conf, 3),
+        "top_source": _top_source(retrieved_docs[0]) if retrieved_docs else "",
+    }
+
+    log.info(
+        "validate_answer",
+        confidence=validation["confidence"],
+        needs_more_params=needs_more,
+        n_docs=validation["n_docs"],
+        top_source=validation["top_source"],
+    )
+
+    return {
+        **state,
+        "phase": "validate_answer",
+        "validation": validation,
+        "confidence": conf,
+        "needs_more_params": needs_more,
+        # explizit erhalten
+        "retrieved_docs": retrieved_docs,
+        "docs": retrieved_docs,
+        "context": context,
+    }
+
+
+===== FILE: backend/app/services/langgraph/graph/consult/nodes/ask_missing.py =====
+# backend/app/services/langgraph/graph/consult/nodes/ask_missing.py
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List
+
+from langchain_core.messages import AIMessage
+from app.services.langgraph.prompting import render_template
+
+try:
+    from ..utils import missing_by_domain, anomaly_messages, normalize_messages
+except ImportError:
+    from ..utils import missing_by_domain, normalize_messages
+    from ..domain_runtime import anomaly_messages
+
+log = logging.getLogger(__name__)
+
+FIELD_LABELS_RWDR = {
+    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
+    "wellen_mm": "Welle (mm)",
+    "gehause_mm": "Gehäuse (mm)",
+    "breite_mm": "Breite (mm)",
+    "bauform": "Bauform/Profil",
+    "medium": "Medium",
+    "temp_min_c": "Temperatur min (°C)",
+    "temp_max_c": "Temperatur max (°C)",
+    "druck_bar": "Druck (bar)",
+    "drehzahl_u_min": "Drehzahl (U/min)",
+    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
+    "umgebung": "Umgebung",
+    "prioritaet": "Priorität (z. B. Preis, Lebensdauer)",
+    "besondere_anforderungen": "Besondere Anforderungen",
+    "bekannte_probleme": "Bekannte Probleme",
+}
+DISPLAY_ORDER_RWDR = [
+    "falltyp","wellen_mm","gehause_mm","breite_mm","bauform","medium",
+    "temp_min_c","temp_max_c","druck_bar","drehzahl_u_min","geschwindigkeit_m_s",
+    "umgebung","prioritaet","besondere_anforderungen","bekannte_probleme",
+]
+
+FIELD_LABELS_HYD = {
+    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
+    "stange_mm": "Stange (mm)",
+    "nut_d_mm": "Nut-Ø D (mm)",
+    "nut_b_mm": "Nutbreite B (mm)",
+    "medium": "Medium",
+    "temp_max_c": "Temperatur max (°C)",
+    "druck_bar": "Druck (bar)",
+    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
+}
+DISPLAY_ORDER_HYD = [
+    "falltyp","stange_mm","nut_d_mm","nut_b_mm","medium","temp_max_c","druck_bar","geschwindigkeit_m_s",
+]
+
+def _friendly_list(keys: List[str], domain: str) -> str:
+    if domain == "hydraulics_rod":
+        labels, order = FIELD_LABELS_HYD, DISPLAY_ORDER_HYD
+    else:
+        labels, order = FIELD_LABELS_RWDR, DISPLAY_ORDER_RWDR
+    ordered = [k for k in order if k in keys]
+    return ", ".join(f"**{labels.get(k, k)}**" for k in ordered)
+
+def ask_missing_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Rückfragen & UI-Event (Formular öffnen) bei fehlenden Angaben."""
+    consult_required = bool(state.get("consult_required", True))
+    if not consult_required:
+        return {**state, "messages": [], "phase": "ask_missing"}
+
+    _ = normalize_messages(state.get("messages", []))
+    params: Dict[str, Any] = state.get("params") or {}
+    domain: str = (state.get("domain") or "rwdr").strip().lower()
+    derived: Dict[str, Any] = state.get("derived") or {}
+
+    lang = (params.get("lang") or state.get("lang") or "de").lower()
+
+    missing = missing_by_domain(domain, params)
+    log.info("[ask_missing_node] fehlend=%s domain=%s consult_required=%s", missing, domain, consult_required)
+
+    if missing:
+        friendly = _friendly_list(missing, domain)
+        example = (
+            "Welle 25, Gehäuse 47, Breite 7, Medium Öl, Tmax 80, Druck 2 bar, n 1500"
+            if domain != "hydraulics_rod"
+            else "Stange 25, Nut D 32, Nut B 6, Medium Öl, Tmax 80, Druck 160 bar, v 0,3 m/s"
+        )
+
+        content = render_template("ask_missing.jinja2", domain=domain, friendly=friendly, example=example, lang=lang)
+
+        ui_event = {
+            "ui_action": "open_form",
+            "form_id": f"{domain}_params_v1",
+            "schema_ref": f"domains/{domain}/params@1.0.0",
+            "missing": missing,
+            "prefill": {k: v for k, v in params.items() if v not in (None, "", [])},
+        }
+        log.info("[ask_missing_node] ui_event=%s", ui_event)
+        return {**state, "messages": [AIMessage(content=content)], "phase": "ask_missing", "ui_event": ui_event, "missing_fields": missing}
+
+    followups = anomaly_messages(domain, params, derived)
+    if followups:
+        content = render_template("ask_missing_followups.jinja2", followups=followups[:2], lang=lang)
+        ui_event = {
+            "ui_action": "open_form",
+            "form_id": f"{domain}_params_v1",
+            "schema_ref": f"domains/{domain}/params@1.0.0",
+            "missing": [],
+            "prefill": {k: v for k, v in params.items() if v not in (None, "", [])},
+        }
+        log.info("[ask_missing_node] ui_event_followups=%s", ui_event)
+        return {**state, "messages": [AIMessage(content=content)], "phase": "ask_missing", "ui_event": ui_event, "missing_fields": []}
+
+    return {**state, "messages": [], "phase": "ask_missing"}
+
+
+===== FILE: backend/app/services/langgraph/graph/consult/nodes/deterministic_calc.py =====
+# backend/app/services/langgraph/graph/consult/nodes/deterministic_calc.py
+from __future__ import annotations
+
+import math
+from typing import Any, Dict
+
+def _to_float(x, default=None):
+    try:
+        if x is None or x == "" or x == "unknown":
+            return default
+        if isinstance(x, (int, float)):
+            return float(x)
+        s = str(x).replace(" ", "").replace(",", ".")
+        return float(s)
+    except Exception:
+        return default
+
+def _max_defined(*vals):
+    # first non-None from list
+    for v in vals:
+        if v is not None:
+            return v
+    return None
+
+def deterministic_calc_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Führt deterministische Kernberechnungen aus (kein LLM):
+      - Umfangsgeschwindigkeit v
+      - Winkelgeschwindigkeit ω
+      - Druck in Pa/MPa
+      - PV-Kennzahl in bar·m/s und MPa·m/s
+      - Optionale Reibkraft & Reibleistung (nur wenn Parameter vorhanden)
+
+    Greift robust auf Felder/Aliasse zu und ergänzt state['derived'].
+    """
+    params: Dict[str, Any] = dict(state.get("params") or {})
+    derived: Dict[str, Any] = dict(state.get("derived") or {})
+    domain = (state.get("domain") or "rwdr").strip().lower()
+
+    # ---- Eingänge auflösen (robust) ----
+    d_mm   = _max_defined(_to_float(params.get("wellen_mm")), _to_float(params.get("stange_mm")))
+    rpm    = _max_defined(_to_float(params.get("drehzahl_u_min")), _to_float(params.get("n_u_min")), _to_float(params.get("rpm")))
+    v_ms   = _max_defined(_to_float(params.get("relativgeschwindigkeit_ms")), _to_float(params.get("geschwindigkeit_m_s")), _to_float(params.get("v_ms")))
+    p_bar  = _max_defined(_to_float(params.get("druck_bar")), _to_float(params.get("pressure_bar")))
+    width_mm = _to_float(params.get("width_mm"))
+    mu     = _to_float(params.get("mu"))
+    p_contact_mpa = _to_float(params.get("contact_pressure_mpa"))
+    axial_force_n = _to_float(params.get("axial_force_n"))
+
+    # ---- Umfangsgeschwindigkeit v ----
+    # Falls rpm & d_mm vorhanden → v berechnen; sonst vorhandene v_ms verwenden
+    if v_ms is None:
+        if d_mm is not None and rpm is not None and d_mm > 0 and rpm > 0:
+            v_ms = math.pi * (d_mm / 1000.0) * (rpm / 60.0)  # m/s
+
+    # ---- Winkelgeschwindigkeit ω ----
+    omega = None
+    if rpm is not None:
+        omega = 2.0 * math.pi * (rpm / 60.0)  # rad/s
+
+    # ---- Druck in Pa/MPa ----
+    p_pa = p_mpa = None
+    if p_bar is not None:
+        p_pa = p_bar * 1e5
+        p_mpa = p_bar / 10.0
+
+    # ---- PV-Kennzahl ----
+    pv_bar_ms = pv_mpa_ms = None
+    if (p_bar is not None) and (v_ms is not None):
+        pv_bar_ms = p_bar * v_ms
+        pv_mpa_ms = (p_bar / 10.0) * v_ms
+
+    # ---- Optionale Reib-/Leistungsgrößen ----
+    # Variante A: über axial_force_n (Hydraulik/Kontaktlast)
+    friction_force_n = None
+    friction_power_w = None
+
+    if axial_force_n is not None and mu is not None and v_ms is not None:
+        friction_force_n = mu * axial_force_n
+        friction_power_w = friction_force_n * v_ms
+
+    # Variante B: über Kontaktpressung p_contact_mpa * Fläche (z. B. Umfang * Breite)
+    # grobe Annahme der wirksamen Fläche: A ≈ π * d * b  (b in m)
+    elif (p_contact_mpa is not None) and (d_mm is not None) and (width_mm is not None) and (mu is not None) and (v_ms is not None):
+        d_m = d_mm / 1000.0
+        b_m = width_mm / 1000.0
+        area_m2 = math.pi * d_m * b_m
+        normal_force_n = (p_contact_mpa * 1e6) * area_m2
+        friction_force_n = mu * normal_force_n
+        friction_power_w = friction_force_n * v_ms
+
+    # ---- Ablegen im Derived-Block (nicht zerstörerisch) ----
+    calc = dict(derived.get("calculated") or {})
+
+    # Primärgrößen
+    if v_ms is not None:
+        calc["umfangsgeschwindigkeit_m_s"] = round(v_ms, 6)
+        calc["surface_speed_m_s"] = round(v_ms, 6)
+    if omega is not None:
+        calc["omega_rad_s"] = round(omega, 6)
+    if p_bar is not None:
+        calc["p_bar"] = round(p_bar, 6)
+    if p_pa is not None:
+        calc["p_pa"] = round(p_pa, 3)
+    if p_mpa is not None:
+        calc["p_mpa"] = round(p_mpa, 6)
+    if pv_bar_ms is not None:
+        calc["pv_bar_ms"] = round(pv_bar_ms, 6)
+    if pv_mpa_ms is not None:
+        calc["pv_mpa_ms"] = round(pv_mpa_ms, 6)
+    if friction_force_n is not None:
+        calc["friction_force_n"] = round(friction_force_n, 6)
+    if friction_power_w is not None:
+        calc["friction_power_w"] = round(friction_power_w, 6)
+
+    # Flags/Warnungen ergänzen (nicht überschreiben)
+    flags = dict(derived.get("flags") or {})
+    warnings = list(derived.get("warnings") or [])
+
+    # einfache Grenzchecks
+    if pv_mpa_ms is not None and pv_mpa_ms > 0.5:  # heuristischer Hinweis, material-/herstellerspezifisch
+        warnings.append(f"PV-Kennzahl hoch ({pv_mpa_ms:.3f} MPa·m/s) – Material/Profil prüfen.")
+
+    # Ergebnis zurück in State
+    new_derived = dict(derived)
+    new_derived["calculated"] = calc
+    new_derived["flags"] = flags
+    new_derived["warnings"] = warnings
+
+    return {**state, "derived": new_derived, "phase": "deterministic_calc"}
+
+
+===== FILE: backend/app/services/langgraph/graph/consult/nodes/calc_agent.py =====
+# backend/app/services/langgraph/graph/consult/nodes/calc_agent.py
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict
+
+log = logging.getLogger(__name__)
+
+
+def _num(x: Any) -> float | None:
+    try:
+        if x in (None, "", []):
+            return None
+        if isinstance(x, bool):
+            return None
+        return float(x)
+    except Exception:
+        return None
+
+
+def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    flache & verschachtelte Dicts zusammenführen (b gewinnt),
+    nützlich um 'derived.calculated' nicht zu überschreiben.
+    """
+    out = dict(a or {})
+    for k, v in (b or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def _calc_rwdr(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Berechnungen für Radial-Wellendichtringe (RWDR)."""
+    d_mm = _num(params.get("wellen_mm"))
+    n_rpm = _num(params.get("drehzahl_u_min"))
+    p_bar = _num(params.get("druck_bar"))
+    tmax = _num(params.get("temp_max_c"))
+
+    calc: Dict[str, Any] = {}
+
+    # Umfangsgeschwindigkeit v = π * d[m] * n[1/s]
+    if d_mm is not None and n_rpm is not None and d_mm > 0 and n_rpm >= 0:
+        d_m = d_mm / 1000.0
+        v_ms = 3.141592653589793 * d_m * (n_rpm / 60.0)
+        calc["umfangsgeschwindigkeit_m_s"] = v_ms
+        # kompatibel zu älteren Keys
+        calc["surface_speed_m_s"] = round(v_ms, 3)
+
+    # PV-Indikator (einfaches Produkt) → Orientierung für thermische Last
+    if p_bar is not None and calc.get("umfangsgeschwindigkeit_m_s") is not None:
+        calc["pv_indicator_bar_ms"] = p_bar * calc["umfangsgeschwindigkeit_m_s"]
+
+    # Material-Hinweise (leichtgewichtig / erweiterbar)
+    mat_whitelist: list[str] = []
+    mat_blacklist: list[str] = []
+
+    medium = (params.get("medium") or "").strip().lower()
+    # WICHTIG: PTFE nicht pauschal bei Wasser ausschließen – hängt von Ausführung/Schmierung ab.
+    # Für Wasser geben wir nur eine weiche Präferenz vor (keine Blacklist).
+    if "wasser" in medium:
+        mat_whitelist.extend(["EPDM", "FKM", "PTFE"])
+
+    if tmax is not None:
+        if tmax > 120:
+            mat_whitelist.append("FKM")
+        if tmax > 200:
+            # sehr hohe T → PTFE grundsätzlich denkbar
+            mat_whitelist.append("PTFE")
+
+    reqs: list[str] = []
+
+    flags: Dict[str, Any] = {}
+    if p_bar is not None and p_bar > 1.0:
+        flags["druckbelastet"] = True
+
+    out = {
+        "calculated": calc,
+        "material_whitelist": mat_whitelist,
+        "material_blacklist": mat_blacklist,
+        "requirements": reqs,
+        "flags": flags,
+    }
+    return out
+
+
+def _calc_hydraulics_rod(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Berechnungen für Hydraulik-Stangendichtungen."""
+    p_bar = _num(params.get("druck_bar"))
+    v_lin = _num(params.get("geschwindigkeit_m_s"))  # lineare Stangengeschwindigkeit
+    tmax = _num(params.get("temp_max_c"))
+
+    calc: Dict[str, Any] = {}
+    if p_bar is not None and v_lin is not None:
+        # einfacher PV-Indikator (lineare Geschwindigkeit)
+        calc["pv_indicator_bar_ms"] = p_bar * v_lin
+
+    # kleine Heuristik zur Extrusionsgefahr bei hohen Drücken
+    flags: Dict[str, Any] = {}
+    reqs: list[str] = []
+    if p_bar is not None and p_bar >= 160:
+        flags["extrusion_risk"] = True
+        reqs.append("Stütz-/Back-up-Ring prüfen (≥160 bar).")
+
+    # Materialpräferenz bei hohen Temperaturen
+    mat_whitelist: list[str] = []
+    if tmax is not None and tmax > 100:
+        mat_whitelist.append("FKM")
+
+    out = {
+        "calculated": calc,
+        "flags": flags,
+        "requirements": reqs,
+        "material_whitelist": mat_whitelist,
+        "material_blacklist": [],
+    }
+    return out
+
+
+def calc_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Dedizierter Kalkulations-Node:
+    - führt domänenspezifische Rechen- & Heuristikschritte aus,
+    - schreibt Ergebnisse nach state['derived'] (nicht destruktiv),
+    - hinterlässt 'phase': 'calc_agent'.
+    """
+    domain = (state.get("domain") or "rwdr").strip().lower()
+    params = dict(state.get("params") or {})
+    derived_existing = dict(state.get("derived") or {})
+
+    try:
+        if domain == "hydraulics_rod":
+            derived_new = _calc_hydraulics_rod(params)
+        else:
+            # Default: RWDR
+            derived_new = _calc_rwdr(params)
+    except Exception as e:
+        log.warning("[calc_agent] calc_failed", exc=str(e))
+        # Fehler nicht eskalieren – einfach Phase setzen
+        return {**state, "phase": "calc_agent"}
+
+    # nicht-destruktiv zusammenführen
+    derived_merged = _deep_merge(derived_existing, derived_new)
+
+    # Kompatibilität: einzelner Key für v [m/s], falls benötigt
+    v = (
+        derived_merged.get("calculated", {}).get("umfangsgeschwindigkeit_m_s")
+        or params.get("relativgeschwindigkeit_ms")
+    )
+    if v is not None:
+        derived_merged["relativgeschwindigkeit_ms"] = v
+
+    new_state = {**state, "derived": derived_merged, "phase": "calc_agent"}
+    return new_state
+
+
+===== FILE: backend/app/services/langgraph/graph/consult/nodes/explain.py =====
+# backend/app/services/langgraph/graph/consult/nodes/explain.py
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Callable
+import json
+import structlog
+from langchain_core.messages import AIMessage
+from app.services.langgraph.prompting import render_template
+
+log = structlog.get_logger(__name__)
+
+def _top_sources(docs: List[Dict[str, Any]], k: int = 3) -> List[str]:
+    if not docs:
+        return []
+    def _score(d: Dict[str, Any]) -> float:
+        try:
+            if d.get("fused_score") is not None:
+                return float(d["fused_score"])
+            return max(float(d.get("vector_score") or 0.0),
+                       float(d.get("keyword_score") or 0.0) / 100.0)
+        except Exception:
+            return 0.0
+    tops = sorted(docs, key=_score, reverse=True)[:k]
+    out: List[str] = []
+    for d in tops:
+        src = d.get("source") or (d.get("metadata") or {}).get("source") or ""
+        if src:
+            out.append(str(src))
+    seen, uniq = set(), []
+    for s in out:
+        if s not in seen:
+            seen.add(s)
+            uniq.append(s)
+    return uniq
+
+def _emit_text(events: Optional[Callable[[Dict[str, Any]], None]],
+               node: str, text: str, chunk_size: int = 180) -> None:
+    if not events or not text:
+        return
+    for i in range(0, len(text), chunk_size):
+        events({"type": "stream_text", "node": node, "text": text[i:i+chunk_size]})
+
+def _last_ai_text(state: Dict[str, Any]) -> str:
+    """Zieht den Text der letzten AIMessage (string oder tool-structured)."""
+    msgs = state.get("messages") or []
+    last_ai = None
+    for m in reversed(msgs):
+        t = (getattr(m, "type", "") or getattr(m, "role", "") or "").lower()
+        if t in ("ai", "assistant"):
+            last_ai = m
+            break
+    if not last_ai:
+        return ""
+    content = getattr(last_ai, "content", None)
+    if isinstance(content, str):
+        return content.strip()
+    # LangChain kann Liste aus {"type":"text","text":"..."} liefern
+    out_parts: List[str] = []
+    if isinstance(content, list):
+        for p in content:
+            if isinstance(p, str):
+                out_parts.append(p)
+            elif isinstance(p, dict) and isinstance(p.get("text"), str):
+                out_parts.append(p["text"])
+    return "\n".join(out_parts).strip()
+
+def _parse_recommendation(text: str) -> Dict[str, Any]:
+    """
+    Akzeptiert:
+      1) {"empfehlungen":[{typ, werkstoff, begruendung, vorteile, einschraenkungen, ...}, ...]}
+      2) {"main": {...}, "alternativen": [...], "hinweise":[...]}
+      3) {"text": "<JSON string>"}  -> wird rekursiv geparst
+    """
+    if not text:
+        return {}
+
+    def _loads_maybe(s: str):
+        try:
+            return json.loads(s)
+        except Exception:
+            return None
+
+    obj = _loads_maybe(text)
+    if isinstance(obj, dict) and "text" in obj and isinstance(obj["text"], str):
+        obj2 = _loads_maybe(obj["text"])
+        if isinstance(obj2, dict):
+            obj = obj2
+
+    if not isinstance(obj, dict):
+        return {}
+
+    # Form 2
+    if "main" in obj or "alternativen" in obj:
+        main = obj.get("main") or {}
+        alternativen = obj.get("alternativen") or []
+        hinweise = obj.get("hinweise") or []
+        return {"main": main, "alternativen": alternativen, "hinweise": hinweise}
+
+    # Form 1
+    if isinstance(obj.get("empfehlungen"), list) and obj["empfehlungen"]:
+        recs = obj["empfehlungen"]
+        main = recs[0] if isinstance(recs[0], dict) else {}
+        alternativen = [r for r in recs[1:] if isinstance(r, dict)]
+        return {"main": main, "alternativen": alternativen, "hinweise": obj.get("hinweise") or []}
+
+    return {}
+
+def explain_node(state: Dict[str, Any], *, events: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
+    """
+    Rendert die Empfehlung als freundliches Markdown (explain.jinja2),
+    streamt Chunks (falls WS-Events übergeben werden) und hängt eine AIMessage an.
+    Holt sich – falls nötig – main/alternativen automatisch aus der letzten AI-JSON.
+    """
+    params: Dict[str, Any] = state.get("params") or {}
+    docs: List[Dict[str, Any]] = state.get("retrieved_docs") or state.get("docs") or []
+    sources = _top_sources(docs, k=3)
+
+    # Falls main/alternativen/hinweise fehlen, aus der letzten AI-Message extrahieren
+    main = state.get("main") or {}
+    alternativen = state.get("alternativen") or []
+    hinweise = state.get("hinweise") or []
+    if not main and not alternativen:
+        parsed = _parse_recommendation(_last_ai_text(state))
+        if parsed:
+            main = parsed.get("main") or main
+            alternativen = parsed.get("alternativen") or alternativen
+            if not hinweise:
+                hinweise = parsed.get("hinweise") or []
+
+    md = render_template(
+        "explain.jinja2",
+        main=main or {},
+        alternativen=alternativen or [],
+        derived=state.get("derived") or {},
+        hinweise=hinweise or [],
+        params=params,
+        sources=sources,
+    ).strip()
+
+    _emit_text(events, node="explain", text=md)
+
+    msgs = (state.get("messages") or []) + [AIMessage(content=md)]
+    return {
+        **state,
+        "main": main,
+        "alternativen": alternativen,
+        "hinweise": hinweise,
+        "phase": "explain",
+        "messages": msgs,
+        "explanation": md,
+        "retrieved_docs": docs,
+    }
+
+
+===== FILE: backend/app/services/langgraph/graph/consult/build.py =====
+# backend/app/services/langgraph/graph/consult/build.py
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List
+from langgraph.graph import StateGraph, END  # END aktuell ungenutzt, bleibt für spätere Flows
+
+from .state import ConsultState
+from .utils import normalize_messages
+from .domain_router import detect_domain
+from .domain_runtime import compute_domain
+
+from .nodes.intake import intake_node
+from .nodes.ask_missing import ask_missing_node
+from .nodes.validate import validate_node
+from .nodes.recommend import recommend_node
+from .nodes.explain import explain_node
+from .nodes.calc_agent import calc_agent_node
+from .nodes.rag import run_rag_node
+from .nodes.validate_answer import validate_answer
+
+# NEU
+from .nodes.smalltalk import smalltalk_node
+from .nodes.lite_router import lite_router_node
+from .nodes.deterministic_calc import deterministic_calc_node  # NEW
+
+from .heuristic_extract import pre_extract_params
+from .extract import extract_params_with_llm
+from .config import create_llm  # ggf. später genutzt
+
+log = logging.getLogger("uvicorn.error")
+
+
+def _join_user_text(msgs: List) -> str:
+    out: List[str] = []
+    for m in msgs:
+        role = (getattr(m, "type", "") or getattr(m, "role", "")).lower()
+        content = getattr(m, "content", "")
+        if isinstance(m, dict):
+            role = (m.get("type") or m.get("role") or "").lower()
+            content = m.get("content")
+        if role in ("human", "user") and isinstance(content, str) and content.strip():
+            out.append(content.strip())
+    return "\n".join(out)
+
+
+def _merge_seed_first(seed: Dict[str, Any], llm_out: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(llm_out or {})
+    for k, v in (seed or {}).items():
+        if v not in (None, "", []):
+            out[k] = v
+    return out
+
+
+def _compact_param_summary(domain: str, params: Dict[str, Any]) -> str:
+    p = params or {}
+    parts: List[str] = []
+
+    if domain == "rwdr":
+        parts.append("RWDR")
+        if p.get("abmessung"):
+            parts.append(str(p["abmessung"]))
+        elif p.get("wellen_mm") and p.get("gehause_mm") and p.get("breite_mm"):
+            parts.append(f'{p["wellen_mm"]}x{p["gehause_mm"]}x{p["breite_mm"]}')
+    elif domain == "hydraulics_rod":
+        parts.append("Hydraulik Stangendichtung")
+
+    if p.get("medium"):
+        parts.append(str(p["medium"]))
+    if p.get("temp_max_c") or p.get("tmax_c"):
+        parts.append(f'Tmax {int(p.get("temp_max_c") or p.get("tmax_c"))} °C')
+    if p.get("druck_bar"):
+        parts.append(f'Druck {p["druck_bar"]} bar')
+    if p.get("drehzahl_u_min"):
+        parts.append(f'{int(p["drehzahl_u_min"])} U/min')
+    if p.get("relativgeschwindigkeit_ms") or p.get("geschwindigkeit_m_s"):
+        v = p.get("relativgeschwindigkeit_ms") or p.get("geschwindigkeit_m_s")
+        parts.append(f'v≈{float(v):.2f} m/s')
+
+    bl = p.get("material_blacklist") or p.get("vermeide_materialien")
+    wl = p.get("material_whitelist") or p.get("bevorzugte_materialien")
+    if bl:
+        parts.append(f'Vermeide: {bl}')
+    if wl:
+        parts.append(f'Bevorzugt: {wl}')
+
+    return ", ".join(parts)
+
+
+def _extract_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    msgs = normalize_messages(state.get("messages", []))
+    params = dict(state.get("params") or {})
+    user_text = _join_user_text(msgs)
+
+    heur = pre_extract_params(user_text)
+    seed = {**params, **{k: v for k, v in heur.items() if v not in (None, "", [])}}
+
+    llm_params = extract_params_with_llm(user_text)
+    final_params = _merge_seed_first(seed, llm_params)
+    return {**state, "params": final_params, "phase": "extract"}
+
+
+def _domain_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    msgs = normalize_messages(state.get("messages", []))
+    params = dict(state.get("params") or {})
+    try:
+        domain = detect_domain(None, msgs, params) or "rwdr"
+        domain = domain.strip().lower()
+    except Exception:
+        domain = "rwdr"
+    return {**state, "domain": domain, "phase": "domain_router"}
+
+
+def _compute_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    domain = (state.get("domain") or "rwdr").strip().lower()
+    params = dict(state.get("params") or {})
+    derived = compute_domain(domain, params) or {}
+
+    alias_map = {
+        "tmax_c": params.get("temp_max_c"),
+        "temp_c": params.get("temp_max_c"),
+        "druck": params.get("druck_bar"),
+        "pressure_bar": params.get("druck_bar"),
+        "n_u_min": params.get("drehzahl_u_min"),
+        "rpm": params.get("drehzahl_u_min"),
+        "v_ms": params.get("relativgeschwindigkeit_ms") or params.get("geschwindigkeit_m_s"),
+    }
+    for k, v in alias_map.items():
+        if k not in params and v not in (None, "", []):
+            params[k] = v
+
+    return {**state, "params": params, "derived": derived, "phase": "compute"}
+
+
+def _prepare_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    if (state.get("query") or "").strip():
+        return {**state, "phase": "prepare_query"}
+
+    params = dict(state.get("params") or {})
+    domain = (state.get("domain") or "rwdr").strip().lower()
+
+    user_text = ""  # Query ist rein technisch – daher kompakter Param-String
+    param_str = _compact_param_summary(domain, params)
+    prefix = "RWDR" if domain == "rwdr" else "Hydraulik"
+    query = ", ".join([s for s in [prefix, user_text, param_str] if s])
+
+    new_state = dict(state)
+    new_state["query"] = query
+    return {**new_state, "phase": "prepare_query"}
+
+
+def _respond_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    return {**state, "phase": "respond"}
+
+
+# ---- Conditional helpers ----
+def _route_key(state: Dict[str, Any]) -> str:
+    return (state.get("route") or "default").strip().lower() or "default"
+
+
+def _ask_or_ok(state: Dict[str, Any]) -> str:
+    p = state.get("params") or {}
+
+    def has(v: Any) -> bool:
+        if v is None:
+            return False
+        if isinstance(v, (list, dict)) and not v:
+            return False
+        if isinstance(v, str) and not v.strip():
+            return False
+        return True
+
+    base_ok = has(p.get("temp_max_c")) and has(p.get("druck_bar"))
+    rel_ok = has(p.get("relativgeschwindigkeit_ms") or p.get("geschwindigkeit_m_s")) or (
+        has(p.get("wellen_mm")) and has(p.get("drehzahl_u_min"))
+    )
+
+    if not (base_ok and rel_ok):
+        return "ask"
+
+    return "ok"
+
+
+def _after_rag(state: Dict[str, Any]) -> str:
+    p = state.get("params") or {}
+
+    def has(v: Any) -> bool:
+        if v is None:
+            return False
+        if isinstance(v, (list, dict)) and not v:
+            return False
+        if isinstance(v, str) and not v.strip():
+            return False
+        return True
+
+    base_ok = has(p.get("temp_max_c")) and has(p.get("druck_bar"))
+    rel_ok = has(p.get("relativgeschwindigkeit_ms") or p.get("geschwindigkeit_m_s")) or (
+        has(p.get("wellen_mm")) and has(p.get("drehzahl_u_min"))
+    )
+    docs = state.get("retrieved_docs") or state.get("docs") or []
+    ctx_ok = bool(docs) or bool(state.get("context"))
+
+    return "recommend" if (base_ok and rel_ok and ctx_ok) else "explain"
+
+
+def build_graph() -> StateGraph:
+    log.info("[ConsultGraph] Initialisierung…")
+    g = StateGraph(ConsultState)
+
+    # --- Nodes ---
+    g.add_node("lite_router", lite_router_node)   # NEU
+    g.add_node("smalltalk", smalltalk_node)       # NEU
+
+    g.add_node("intake", intake_node)
+    g.add_node("extract", _extract_node)
+    g.add_node("domain_router", _domain_router_node)
+    g.add_node("compute", _compute_node)
+
+    # NEW: deterministische Physik vor dem LLM-Calc-Agent
+    g.add_node("deterministic_calc", deterministic_calc_node)
+
+    g.add_node("calc_agent", calc_agent_node)
+    g.add_node("ask_missing", ask_missing_node)
+    g.add_node("validate", validate_node)
+    g.add_node("prepare_query", _prepare_query_node)
+    g.add_node("rag", run_rag_node)
+    g.add_node("recommend", recommend_node)
+    g.add_node("validate_answer", validate_answer)
+    g.add_node("explain", explain_node)
+    g.add_node("respond", _respond_node)
+
+    # --- Entry & Routing ---
+    g.set_entry_point("lite_router")
+    g.add_conditional_edges("lite_router", _route_key, {
+        "smalltalk": "smalltalk",
+        "default": "intake",
+    })
+
+    # Smalltalk direkt abschließen
+    g.add_edge("smalltalk", "respond")
+
+    # --- Main flow ---
+    g.add_edge("intake", "extract")
+    g.add_edge("extract", "domain_router")
+    g.add_edge("domain_router", "compute")
+    g.add_edge("compute", "deterministic_calc")
+    g.add_edge("deterministic_calc", "calc_agent")
+    g.add_edge("calc_agent", "ask_missing")
+
+    g.add_conditional_edges("ask_missing", _ask_or_ok, {
+        "ask": "respond",
+        "ok": "validate",
+    })
+
+    g.add_edge("validate", "prepare_query")
+    g.add_edge("prepare_query", "rag")
+
+    g.add_conditional_edges("rag", _after_rag, {
+        "recommend": "recommend",
+        "explain": "explain",
+    })
+
+    g.add_edge("recommend", "validate_answer")
+    g.add_edge("validate_answer", "respond")
+    g.add_edge("explain", "respond")
+
+    return g
+
+
+# ---- Alias für io.py (erwartet build_consult_graph) ----
+def build_consult_graph() -> StateGraph:
+    """Kompatibilitäts-Alias – liefert denselben StateGraph wie build_graph()."""
+    return build_graph()
+
+
+__all__ = ["build_graph", "build_consult_graph"]
+
+
+===== FILE: backend/app/services/langgraph/graph/consult/utils.py =====
+# backend/app/services/langgraph/graph/consult/utils.py
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any, Dict, Iterable, List, Optional
+
+from langgraph.graph.message import add_messages
+from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, SystemMessage
+
+log = logging.getLogger(__name__)
+
+# -------------------------------------------------------------------
+# Message utilities
+# -------------------------------------------------------------------
+
+def deserialize_message(x: Any) -> AnyMessage:
+    """Robuste Konvertierung nach LangChain-Message-Objekten."""
+    if isinstance(x, (HumanMessage, AIMessage, SystemMessage)):
+        return x
+    if isinstance(x, dict) and "role" in x:
+        role = (x.get("role") or "").lower()
+        content = x.get("content") or ""
+        if role in ("user", "human"):
+            return HumanMessage(content=content)
+        if role in ("assistant", "ai"):
+            return AIMessage(content=content)
+        if role == "system":
+            return SystemMessage(content=content)
+    if isinstance(x, str):
+        return HumanMessage(content=x)
+    return HumanMessage(content=str(x))
+
+
+def normalize_messages(seq: Iterable[Any]) -> List[AnyMessage]:
+    return [deserialize_message(m) for m in (seq or [])]
+
+
+def merge_messages(left: Iterable[Any], right: Iterable[Any]) -> List[AnyMessage]:
+    return add_messages(normalize_messages(left), normalize_messages(right))
+
+
+def last_user_text(msgs: List[AnyMessage]) -> str:
+    for m in reversed(msgs or []):
+        if isinstance(m, HumanMessage):
+            return (m.content or "").strip()
+    return ""
+
+
+def messages_text(msgs: List[AnyMessage], *, only_user: bool = False) -> str:
+    """
+    Verkettet Text aller Messages.
+    - only_user=True -> nur HumanMessage.
+    """
+    parts: List[str] = []
+    for m in msgs or []:
+        if only_user and not isinstance(m, HumanMessage):
+            continue
+        c = getattr(m, "content", None)
+        if isinstance(c, str) and c:
+            parts.append(c)
+    return "\n".join(parts)
+
+# Kompatibilitäts-Alias (einige Module importieren 'msgs_text')
+msgs_text = messages_text
+
+def only_user_text(msgs: List[AnyMessage]) -> str:
+    """Nur die User-Texte zusammengefasst (ohne Lowercasing)."""
+    return messages_text(msgs, only_user=True)
+
+def only_user_text_lower(msgs: List[AnyMessage]) -> str:
+    """Nur die User-Texte, zu Kleinbuchstaben normalisiert."""
+    return only_user_text(msgs).lower()
+
+# -------------------------------------------------------------------
+# Numeric parsing & heuristics
+# -------------------------------------------------------------------
+
+def _num_from_str(raw: str) -> Optional[float]:
+    """Float aus Strings wie '1 200,5' oder '1.200,5' oder '1200.5' extrahieren."""
+    try:
+        s = (raw or "").replace(" ", "").replace(".", "").replace(",", ".")
+        return float(s)
+    except Exception:
+        return None
+
+
+def apply_heuristics_from_text(params: Dict[str, Any], text: str) -> Dict[str, Any]:
+    """
+    Deterministische Fallbacks, falls das LLM Werte nicht gesetzt hat:
+      - 'kein/ohne Überdruck/Druck' -> druck_bar = 0
+      - '... Druck: 5 bar'          -> druck_bar = 5
+      - 'Drehzahl 1.200 U/min'      -> drehzahl_u_min = 1200
+      - 'dauerhaft X U/min'         -> drehzahl_u_min = X
+      - 'Geschwindigkeit 0.5 m/s'   -> geschwindigkeit_m_s = 0.5
+    """
+    t = (text or "").lower()
+    merged: Dict[str, Any] = dict(params or {})
+
+    # Druck
+    if merged.get("druck_bar") in (None, "", "unknown"):
+        if re.search(r"\b(kein|ohne)\s+(überdruck|ueberdruck|druck)\b", t, re.I):
+            merged["druck_bar"] = 0.0
+        else:
+            m = re.search(r"(?:überdruck|ueberdruck|druck)\s*[:=]?\s*([0-9][\d\.\s,]*)\s*bar\b", t, re.I)
+            if m:
+                val = _num_from_str(m.group(1))
+                if val is not None:
+                    merged["druck_bar"] = val
+
+    # Drehzahl (generisch)
+    if merged.get("drehzahl_u_min") in (None, "", "unknown"):
+        m = re.search(r"drehzahl[^0-9]{0,12}([0-9][\d\.\s,]*)\s*(?:u\s*/?\s*min|rpm)\b", t, re.I)
+        if m:
+            val = _num_from_str(m.group(1))
+            if val is not None:
+                merged["drehzahl_u_min"] = int(round(val))
+
+    # Spezifisch „dauerhaft“
+    m_dauer = re.search(
+        r"(dauerhaft|kontinuierlich)[^0-9]{0,12}([0-9][\d\.\s,]*)\s*(?:u\s*/?\s*min|rpm)\b",
+        t,
+        re.I,
+    )
+    if m_dauer:
+        val = _num_from_str(m_dauer.group(2))
+        if val is not None:
+            merged["drehzahl_u_min"] = int(round(val))
+
+    # Relativgeschwindigkeit in m/s
+    if merged.get("geschwindigkeit_m_s") in (None, "", "unknown"):
+        m_speed = re.search(r"(geschwindigkeit|v)[^0-9]{0,12}([0-9][\d\.\s,]*)\s*m\s*/\s*s", t, re.I)
+        if m_speed:
+            val = _num_from_str(m_speed.group(2))
+            if val is not None:
+                merged["geschwindigkeit_m_s"] = float(val)
+
+    return merged
+
+# -------------------------------------------------------------------
+# Validation & anomaly messages
+# -------------------------------------------------------------------
+
+def _is_missing_value(key: str, val: Any) -> bool:
+    if val is None or val == "" or val == "unknown":
+        return True
+    # 0 bar ist gültig
+    if key == "druck_bar":
+        try:
+            float(val)
+            return False
+        except Exception:
+            return True
+    # Positive Größen brauchen > 0
+    if key in (
+        "wellen_mm", "gehause_mm", "breite_mm", "drehzahl_u_min", "geschwindigkeit_m_s",
+        "stange_mm", "nut_d_mm", "nut_b_mm"
+    ):
+        try:
+            return float(val) <= 0
+        except Exception:
+            return True
+    # temp_max_c: nur presence check
+    if key == "temp_max_c":
+        try:
+            float(val)
+            return False
+        except Exception:
+            return True
+    return False
+
+
+def _required_fields_by_domain(domain: str) -> List[str]:
+    # Hydraulik-Stange nutzt stange_mm / nut_d_mm / nut_b_mm
+    if (domain or "rwdr") == "hydraulics_rod":
+        return [
+            "falltyp",
+            "stange_mm",
+            "nut_d_mm",
+            "nut_b_mm",
+            "medium",
+            "temp_max_c",
+            "druck_bar",
+            "geschwindigkeit_m_s",
+        ]
+    # default: rwdr
+    return [
+        "falltyp",
+        "wellen_mm",
+        "gehause_mm",
+        "breite_mm",
+        "medium",
+        "temp_max_c",
+        "druck_bar",
+        "drehzahl_u_min",
+    ]
+
+
+def _missing_by_domain(domain: str, params: Dict[str, Any]) -> List[str]:
+    req = _required_fields_by_domain(domain or "rwdr")
+    return [k for k in req if _is_missing_value(k, (params or {}).get(k))]
+
+# Öffentlicher Alias (Pflicht)
+missing_by_domain = _missing_by_domain
+
+# ---------- Optional/empfohlen ----------
+# Domänenspezifische Empfehl-Felder, die Qualität/Tragfähigkeit deutlich erhöhen
+_RWDR_OPTIONAL = [
+    "bauform", "werkstoff_pref",
+    "welle_iso", "gehause_iso",
+    "ra_welle_um", "rz_welle_um",
+    "wellenwerkstoff", "gehausewerkstoff",
+    "normen", "umgebung", "prioritaet", "besondere_anforderungen", "bekannte_probleme",
+]
+_HYD_OPTIONAL = [
+    "profil", "werkstoff_pref",
+    "stange_iso", "nut_toleranz",
+    "ra_stange_um", "rz_stange_um",
+    "stangenwerkstoff",
+    "normen", "umgebung", "prioritaet", "besondere_anforderungen", "bekannte_probleme",
+]
+
+def _is_unset(x: Any) -> bool:
+    return x in (None, "", [], "unknown")
+
+def optional_missing_by_domain(domain: str, params: Dict[str, Any]) -> List[str]:
+    p = params or {}
+    fields = _HYD_OPTIONAL if (domain or "") == "hydraulics_rod" else _RWDR_OPTIONAL
+    missing: List[str] = []
+    for k in fields:
+        if _is_unset(p.get(k)):
+            missing.append(k)
+    return missing
+
+# ---- Anomalie-/Follow-up-Meldungen (FEHLTE zuvor!) --------------------------
+
+def _anomaly_messages(domain: str, params: Dict[str, Any], derived: Dict[str, Any]) -> List[str]:
+    """
+    Erzeugt Rückfragen basierend auf abgeleiteten Flags (domainabhängig).
+    Erwartet 'derived' z. B.: {"flags": {...}, "warnings": [...], "requirements": [...]}
+    """
+    msgs: List[str] = []
+    flags = (derived.get("flags") or {})
+
+    # RWDR – Druckstufenfreigabe
+    if flags.get("requires_pressure_stage") and not flags.get("pressure_stage_ack"):
+        msgs.append(
+            "Ein Überdruck >2 bar ist für Standard-Radialdichtringe kritisch. "
+            "Dürfen Druckstufenlösungen geprüft werden?"
+        )
+
+    # Hohe Drehzahl/Geschwindigkeit
+    if flags.get("speed_high"):
+        msgs.append("Die Drehzahl/Umfangsgeschwindigkeit ist hoch – ist sie dauerhaft oder nur kurzzeitig (Spitzen)?")
+
+    # Sehr hohe Temperatur
+    if flags.get("temp_very_high"):
+        msgs.append("Die Temperatur ist sehr hoch. Handelt es sich um Dauer- oder Spitzentemperaturen?")
+
+    # Hydraulik Stange – Extrusions-/Back-up-Ring-Freigabe
+    if (domain or "") == "hydraulics_rod" and flags.get("extrusion_risk") and not flags.get("extrusion_risk_ack"):
+        msgs.append("Bei dem Druck besteht Extrusionsrisiko. Darf eine Stütz-/Back-up-Ring-Lösung geprüft werden?")
+
+    return msgs
+
+# --- Output-Cleaner etc. (unverändert) --------------------------------------
+
+def _strip(s: str) -> str:
+    return (s or "").strip()
+
+def _normalize_newlines(text: str) -> str:
+    """Normalisiert Zeilenenden und trimmt überflüssige Leerzeichen am Zeilenende."""
+    if not isinstance(text, str):
+        return text
+    t = re.sub(r"\r\n?|\r", "\n", text)
+    t = "\n".join(line.rstrip() for line in t.split("\n"))
+    return t
+
+def strip_leading_meta_blocks(text: str) -> str:
+    """
+    Entfernt am *Anfang* der Antwort Meta-Blöcke wie:
+      - führende JSON-/YAML-Objekte
+      - ```…``` fenced code blocks
+      - '# QA-Notiz …' bis zur nächsten Leerzeile
+    Wir iterieren, bis kein solcher Block mehr vorne steht.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return text
+    t = text.lstrip()
+
+    changed = True
+    # max. 5 Durchläufe als Sicherung
+    for _ in range(5):
+        if not changed:
+            break
+        changed = False
+
+        # Fenced code block (beliebiges fence, inkl. json/yaml)
+        m = re.match(r"^\s*```[\s\S]*?```\s*", t)
+        if m:
+            t = t[m.end():].lstrip()
+            changed = True
+            continue
+
+        # Führendes JSON-/YAML-Objekt (heuristisch, nicht perfekt balanciert)
+        m = re.match(r"^\s*\{[\s\S]*?\}\s*(?=\n|$)", t)
+        if m:
+            t = t[m.end():].lstrip()
+            changed = True
+            continue
+        m = re.match(r"^\s*---[\s\S]*?---\s*(?=\n|$)", t)  # YAML frontmatter
+        if m:
+            t = t[m.end():].lstrip()
+            changed = True
+            continue
+
+        # QA-Notiz-Block bis zur nächsten Leerzeile
+        m = re.match(r"^\s*#\s*QA-Notiz[^\n]*\n[\s\S]*?(?:\n\s*\n|$)", t, flags=re.IGNORECASE)
+        if m:
+            t = t[m.end():].lstrip()
+            changed = True
+            continue
+
+    return t
+
+def clean_ai_output(ai_text: str, recent_user_texts: List[str]) -> str:
+    """
+    Entfernt angehängte Echos zuletzt gesagter User-Texte am Ende der AI-Ausgabe.
+    - vergleicht trim-normalisiert (Suffix)
+    - entfernt ganze trailing Blöcke, falls sie exakt einem der recent_user_texts entsprechen
+    """
+    if not isinstance(ai_text, str) or not ai_text:
+        return ai_text
+
+    out = ai_text.rstrip()
+
+    # Prüfe Kandidaten in abnehmender Länge (stabil gegen Teilmengen)
+    for u in sorted(set(recent_user_texts or []), key=len, reverse=True):
+        u_s = _strip(u)
+        if not u_s:
+            continue
+
+        # Work on a normalized working copy for suffix check
+        norm_out = _strip(out)
+        if norm_out.endswith(u_s):
+            # schneide die letzte (nicht-normalisierte) Vorkommen-Stelle am Ende ab
+            raw_idx = out.rstrip().rfind(u_s)
+            if raw_idx != -1:
+                out = out[:raw_idx].rstrip()
+
+    return out
+
+def _norm_key(block: str) -> str:
+    """Normierungs-Schlüssel für Block-Vergleich (whitespace-/case-insensitiv)."""
+    return re.sub(r"\s+", " ", (block or "").strip()).lower()
+
+def dedupe_text_blocks(text: str) -> str:
+    """
+    Entfernt doppelte inhaltlich identische Absätze/Blöcke, robust gegen CRLF
+    und gemischte Leerzeilen. Als Absatztrenner gilt: ≥1 (auch nur whitespace-) Leerzeile.
+    Zusätzlich werden identische, aufeinanderfolgende Einzelzeilen entfernt.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return text
+
+    t = _normalize_newlines(text)
+
+    # Absätze anhand *mindestens* einer Leerzeile trennen (auch wenn nur Whitespace in der Leerzeile steht)
+    parts = [p.strip() for p in re.split(r"\n\s*\n+", t.strip()) if p.strip()]
+
+    seen = set()
+    out_blocks = []
+    for p in parts:
+        k = _norm_key(p)
+        if k in seen:
+            continue
+        seen.add(k)
+        out_blocks.append(p)
+
+    # Zusammensetzen mit Leerzeile zwischen Absätzen
+    merged = "\n\n".join(out_blocks)
+
+    # Zusätzlicher Schutz: identische direkt aufeinanderfolgende Zeilen entfernen
+    final_lines = []
+    prev_key = None
+    for line in merged.split("\n"):
+        key = _norm_key(line)
+        if key and key == prev_key:
+            continue
+        final_lines.append(line)
+        prev_key = key
+
+    return "\n".join(final_lines)
+
+def clean_and_dedupe(ai_text: str, recent_user_texts: List[str]) -> str:
+    """
+    Reihenfolge:
+      1) Führende Meta-Blöcke entfernen
+      2) Trailing User-Echos abschneiden
+      3) Identische Absätze/Zeilen de-dupen
+    """
+    head_clean = strip_leading_meta_blocks(ai_text)
+    tail_clean = clean_ai_output(head_clean, recent_user_texts)
+    return dedupe_text_blocks(tail_clean)
+
+# Öffentlicher Alias
+anomaly_messages = _anomaly_messages
+
+
+===== FILE: backend/app/services/langgraph/graph/consult/state.py =====
+# backend/app/services/langgraph/graph/consult/state.py
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, TypedDict
+from typing_extensions import Annotated
+from langchain_core.messages import AnyMessage
+from langgraph.graph import add_messages
+
+
+# ---- Parameter- & Derived-Typen -------------------------------------------------
+class Parameters(TypedDict, total=False):
+    # Kernparameter
+    temp_max_c: float
+    druck_bar: float
+    drehzahl_u_min: float
+    wellen_mm: float
+    relativgeschwindigkeit_ms: float  # alias für geschwindigkeit_m_s
+    geschwindigkeit_m_s: float
+    # Hydraulik
+    stange_mm: float
+    nut_d_mm: float
+    nut_b_mm: float
+    # Aliasse / Harmonisierung
+    tmax_c: float
+    pressure_bar: float
+    n_u_min: float
+    rpm: float
+    v_ms: float
+    # optionale Filter/Routing
+    material: str
+    profile: str
+    domain: str
+    norm: str
+    lang: str
+    # optionale physikalische Parameter (falls bekannt; sonst werden optionale Berechnungen übersprungen)
+    mu: float                     # Reibkoeffizient
+    contact_pressure_mpa: float   # Kontaktpressung an der Dichtkante
+    axial_force_n: float          # Axialkraft (Hydraulik)
+    width_mm: float               # wirksame Dichtbreite (für Reib-/Leistungsabschätzung)
+
+
+class Derived(TypedDict, total=False):
+    # Allgemeine berechnete Größen
+    surface_speed_m_s: float              # v
+    umfangsgeschwindigkeit_m_s: float     # v (de)
+    omega_rad_s: float                    # ω
+    p_bar: float                          # Druck [bar]
+    p_pa: float                           # Druck [Pa]
+    p_mpa: float                          # Druck [MPa]
+    pv_bar_ms: float                      # PV in bar·m/s
+    pv_mpa_ms: float                      # PV in MPa·m/s
+    # Optional – nur wenn genug Parameter vorliegen
+    friction_force_n: float               # F_f = μ * N (wenn N/Kontaktpressung bekannt)
+    friction_power_w: float               # P = F_f * v
+    # Vorhandene Felder bleiben erhalten
+    relativgeschwindigkeit_ms: float
+    calculated: Dict[str, Any]
+    flags: Dict[str, Any]
+    warnings: List[str]
+    requirements: List[str]
+
+
+# ---- Graph-State ----------------------------------------------------------------
+class ConsultState(TypedDict, total=False):
+    # Dialog
+    messages: Annotated[List[AnyMessage], add_messages]
+    query: str
+
+    # Parameter
+    params: Parameters
+    derived: Derived
+
+    # Routing / Kontext
+    user_id: Optional[str]
+    tenant: Optional[str]
+    domain: Optional[str]
+    phase: Optional[str]
+    consult_required: Optional[bool]
+
+    # ---- UI/Frontend-Integration ----
+    ui_event: Dict[str, Any]
+    missing_fields: List[str]
+
+    # --- RAG-Ergebnis ---
+    retrieved_docs: List[Dict[str, Any]]
+    context: str
+
+    # Empfehlungen / Ergebnis
+    empfehlungen: List[Dict[str, Any]]
+
+    # Qualitäts-/Validierungsinfos
+    validation: Dict[str, Any]
+    confidence: float
+    needs_more_params: bool
+
+    # --- Legacy-Felder ---
+    docs: List[Dict[str, Any]]
+    citations: List[str]
+    answer: Optional[str]

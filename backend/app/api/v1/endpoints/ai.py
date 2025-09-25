@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional
+import json
+import logging
+from typing import Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect, Query
+from starlette.websockets import WebSocketState
 from pydantic import BaseModel, Field
 from redis import Redis
 
-# Nur die Consult-Funktion nutzen; Checkpointer holen wir aus app.state
+# Nur die Consult-Funktion nutzen; Checkpointer wird im Consult-Modul intern gehandhabt.
 from app.services.langgraph.graph.consult.io import invoke_consult as _invoke_consult
+
+log = logging.getLogger("uvicorn.error")
 
 # ─────────────────────────────────────────────────────────────
 # ENV / Redis STM (Short-Term Memory)
@@ -18,6 +23,7 @@ from app.services.langgraph.graph.consult.io import invoke_consult as _invoke_co
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 STM_PREFIX = os.getenv("STM_PREFIX", "chat:stm")
 STM_TTL_SEC = int(os.getenv("STM_TTL_SEC", "604800"))  # 7 Tage
+WS_AUTH_OPTIONAL = os.getenv("WS_AUTH_OPTIONAL", "1") == "1"
 
 def _stm_key(thread_id: str) -> str:
     return f"{STM_PREFIX}:{thread_id}"
@@ -78,7 +84,28 @@ def _maybe_handle_memory_intent(text: str, thread_id: str) -> Optional[str]:
     return None
 
 # ─────────────────────────────────────────────────────────────
-# API
+# Helpers
+# ─────────────────────────────────────────────────────────────
+def _extract_text_from_consult_out(out: Dict[str, Any]) -> str:
+    # 1) letzte Assistant-Message
+    msgs = out.get("messages") or []
+    if msgs:
+        last = msgs[-1]
+        # LangChain-Objekt oder dict
+        content = getattr(last, "content", None)
+        if isinstance(last, dict):
+            content = last.get("content", content)
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+    # 2) strukturierte Felder (JSON/Explain)
+    for k in ("answer", "explanation", "text", "response"):
+        v = out.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return "OK."
+
+# ─────────────────────────────────────────────────────────────
+# API (HTTP)
 # ─────────────────────────────────────────────────────────────
 router = APIRouter()  # KEIN prefix hier – der übergeordnete Router hängt '/ai' an.
 
@@ -92,8 +119,7 @@ class ChatResponse(BaseModel):
 @router.post("/beratung", response_model=ChatResponse)
 async def beratung(request: Request, payload: ChatRequest) -> ChatResponse:
     """
-    Einstieg in den Consult-Flow. Nutzt (falls vorhanden) den Checkpointer aus app.state.
-    Zusätzlich: einfache STM-Merkfunktion (merke dir … / welche Zahl …?).
+    Einstieg in den Consult-Flow.
     """
     user_text = (payload.input_text or "").strip()
     if not user_text:
@@ -106,7 +132,94 @@ async def beratung(request: Request, payload: ChatRequest) -> ChatResponse:
     if mem:
         return ChatResponse(text=mem)
 
-    # 2) Consult-Flow aufrufen (mit optionalem Checkpointer)
-    checkpointer = getattr(request.app.state, "swarm_checkpointer", None)
-    out = _invoke_consult(user_text, thread_id=thread_id, checkpointer=checkpointer)
-    return ChatResponse(text=out)
+    # 2) Consult-Flow korrekt mit State aufrufen
+    state = {
+        "messages": [{"role": "user", "content": user_text}],
+        "input": user_text,
+        "chat_id": thread_id,
+    }
+    try:
+        out = _invoke_consult(state)  # returns dict-like ConsultState
+    except Exception as e:
+        log.exception("consult invoke failed: %r", e)
+        raise HTTPException(status_code=500, detail="consult_failed")
+
+    return ChatResponse(text=_extract_text_from_consult_out(out))
+
+# ─────────────────────────────────────────────────────────────
+# API (WebSocket) – zuerst accept(), dann prüfen/antworten
+# ─────────────────────────────────────────────────────────────
+@router.websocket("/ws")
+@router.websocket("/chat/ws")
+@router.websocket("/v1/ws")
+@router.websocket("/ws_chat")   # Backwards-compat
+@router.websocket("/api/v1/ai/ws")  # aktueller Pfad im Frontend
+async def chat_ws(
+    websocket: WebSocket,
+    token: str | None = Query(default=None),
+) -> None:
+    """
+    Robuster WS-Handler:
+      - Erst 'accept()', dann (optionale) Token/Origin-Prüfung
+      - Erwartet Textframes mit JSON wie: {"chat_id":"default","input":"hallo","mode":"graph"}
+    """
+    await websocket.accept()
+
+    try:
+        if not WS_AUTH_OPTIONAL and not token:
+            if websocket.application_state == WebSocketState.CONNECTED:
+                await websocket.send_text('{"error":"unauthorized"}')
+            await websocket.close(code=1008)
+            return
+
+        while True:
+            msg = await websocket.receive_text()
+            try:
+                data = json.loads(msg)
+            except Exception:
+                data = {"input": msg}
+
+            if isinstance(data, dict) and data.get("type") == "ping":
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.send_text('{"type":"pong"}')
+                continue
+
+            chat_id = (data.get("chat_id") or "default") if isinstance(data, dict) else "default"
+            user_input = (data.get("input") or "").strip() if isinstance(data, dict) else str(data)
+            thread_id = f"api:{chat_id}"
+
+            if not user_input:
+                continue
+
+            mem = _maybe_handle_memory_intent(user_input, thread_id)
+            if mem:
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.send_text(json.dumps({"event": "final", "text": mem}))
+                continue
+
+            # Consult-Flow korrekt mit State aufrufen
+            state = {
+                "messages": [{"role": "user", "content": user_input}],
+                "input": user_input,
+                "chat_id": thread_id,
+            }
+            try:
+                out = _invoke_consult(state)
+                out_text = _extract_text_from_consult_out(out)
+            except Exception as e:
+                log.exception("consult error: %r", e)
+                out_text = "Entschuldige, da ist gerade ein Fehler passiert."
+
+            if websocket.application_state == WebSocketState.CONNECTED:
+                await websocket.send_text(json.dumps({"event": "final", "text": out_text}))
+
+    except WebSocketDisconnect:
+        log.info("ws: client disconnected")
+    except Exception as e:
+        log.exception("ws_chat error: %r", e)
+        try:
+            if websocket.application_state == WebSocketState.CONNECTED:
+                await websocket.send_text('{"error":"internal"}')
+                await websocket.close(code=1011)
+        except Exception:
+            pass

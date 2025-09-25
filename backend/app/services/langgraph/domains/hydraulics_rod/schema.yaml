@@ -3,6 +3,7 @@ fields:
     required: true
     type: enum
     enum: ["ersatz", "neu", "optimierung"]
+
   stange_mm:
     required: true
     type: float
@@ -18,21 +19,69 @@ fields:
     type: float
     min: 2
     max: 50
+
   druck_bar:
     required: true
     type: float
     min: 0
     max: 500
+
   geschwindigkeit_m_s:
     required: false
     type: float
     min: 0
     max: 15
+
   medium:
     required: true
     type: str
+
   temp_max_c:
     required: true
     type: float
     min: -60
     max: 200
+
+  # Umgebung/Präferenzen
+  umgebung:
+    required: false
+    type: str
+  prioritaet:
+    required: false
+    type: str
+  besondere_anforderungen:
+    required: false
+    type: str
+  bekannte_probleme:
+    required: false
+    type: str
+
+  # NEW – Qualitätssichernde Zusatzinfos
+  profil:
+    required: false
+    type: str
+  werkstoff_pref:
+    required: false
+    type: str
+  stange_iso:
+    required: false
+    type: str
+  nut_toleranz:
+    required: false
+    type: str
+  ra_stange_um:
+    required: false
+    type: float
+    min: 0
+    max: 5
+  rz_stange_um:
+    required: false
+    type: float
+    min: 0
+    max: 50
+  stangenwerkstoff:
+    required: false
+    type: str
+  normen:
+    required: false
+    type: str

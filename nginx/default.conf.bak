@@ -1,0 +1,131 @@
+##
+## NGINX Reverse Proxy für SealAI
+##
+
+# HTTP: ACME + Redirect
+server {
+  listen 80;
+  listen [::]:80;
+  server_name sealai.net www.sealai.net auth.sealai.net;
+
+  # ACME HTTP-01
+  location ^~ /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+    default_type "text/plain";
+  }
+
+  location = /health { return 200 'ok'; add_header Content-Type text/plain; }
+
+  # alles andere → HTTPS
+  location / { return 301 https://$host$request_uri; }
+}
+
+# HTTPS Hauptdomain: sealai.net
+server {
+  listen 443 ssl;
+  listen [::]:443 ssl;
+  http2 on;
+  server_name sealai.net www.sealai.net;
+
+  ssl_certificate     /etc/letsencrypt/live/sealai.net/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/sealai.net/privkey.pem;
+
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  # Frontend (Next.js)
+  location / {
+    proxy_http_version 1.1;
+    proxy_set_header Host                $host;
+    proxy_set_header X-Real-IP           $remote_addr;
+    proxy_set_header X-Forwarded-For     $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto   $scheme;
+    proxy_set_header Upgrade             $http_upgrade;
+    proxy_set_header Connection          $connection_upgrade;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+    proxy_pass http://frontend:3000;
+  }
+
+  # Backend API (REST)
+  location ^~ /api/v1/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host                $host;
+    proxy_set_header X-Real-IP           $remote_addr;
+    proxy_set_header X-Forwarded-For     $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto   $scheme;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+    proxy_pass http://backend:8000/api/v1/;
+  }
+
+  # WebSocket zum Backend
+  location ^~ /api/v1/ai/ws {
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade             $http_upgrade;
+    proxy_set_header Connection          $connection_upgrade;
+    proxy_set_header Host                $host;
+    proxy_set_header X-Real-IP           $remote_addr;
+    proxy_set_header X-Forwarded-For     $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto   $scheme;
+    proxy_read_timeout 86400s;
+    proxy_send_timeout 86400s;
+    proxy_buffering off;
+    proxy_pass http://backend:8000/api/v1/ai/ws;
+  }
+
+  # Server-Sent Events / Streaming
+  location ^~ /api/v1/langgraph/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host                $host;
+    proxy_set_header X-Real-IP           $remote_addr;
+    proxy_set_header X-Forwarded-For     $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto   $scheme;
+    proxy_read_timeout 86400s;
+    proxy_send_timeout 86400s;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    chunked_transfer_encoding on;
+    add_header X-Accel-Buffering no;
+    add_header Cache-Control "no-cache, no-transform";
+    proxy_pass http://backend:8000/api/v1/langgraph/;
+  }
+
+  # Health passthrough (optional)
+  location = /health { proxy_pass http://backend:8000/health; }
+}
+
+# HTTPS Auth-Subdomain → Keycloak
+server {
+  listen 443 ssl;
+  listen [::]:443 ssl;
+  http2 on;
+  server_name auth.sealai.net;
+
+  ssl_certificate     /etc/letsencrypt/live/auth.sealai.net/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/auth.sealai.net/privkey.pem;
+
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  location / {
+    proxy_http_version 1.1;
+
+    # Forwarded-Header, damit Keycloak korrekte URLs baut
+    proxy_set_header Host                $host;
+    proxy_set_header X-Forwarded-Host    $host;
+    proxy_set_header X-Forwarded-Proto   https;
+    proxy_set_header X-Forwarded-Port    443;
+    proxy_set_header X-Real-IP           $remote_addr;
+    proxy_set_header X-Forwarded-For     $proxy_add_x_forwarded_for;
+
+    proxy_set_header Upgrade             $http_upgrade;
+    proxy_set_header Connection          $connection_upgrade;
+
+    proxy_read_timeout 300s;
+    proxy_redirect off;
+
+    # ⚠️ KEINE weiteren proxy_redirect-Zeilen (Vermeidet die Duplikat-Fehler)
+    # Falls Keycloak jemals Location: https://localhost/... schickt, bitte KC_HOSTNAME/KC_HOSTNAME_URL korrekt setzen.
+
+    proxy_pass http://keycloak:8080;
+  }
+}

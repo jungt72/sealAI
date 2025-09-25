@@ -1,29 +1,51 @@
-# Multi-stage build that IGNORES any lockfiles and installs with legacy peer deps
+# =========================================
+# SealAI Frontend – Production Dockerfile
+# Next.js 15, Standalone-Output
+# =========================================
+
+# ---- Builder ----
 FROM node:20-alpine AS builder
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+
 WORKDIR /app
 
-# Only copy package.json to avoid bringing in a broken lockfile
-COPY package.json ./
+# 1) Dependencies
+COPY package.json package-lock.json* ./
+# robust gegen veraltete Locks
+RUN if [ -f package-lock.json ]; then \
+      npm ci --include=dev || (echo "Lockfile out of sync – regenerating" && rm -f package-lock.json && npm install --include=dev); \
+    else \
+      npm install --include=dev; \
+    fi
 
-# Always install with legacy peer deps to smooth R3F/Drei/React 18
-RUN npm config set legacy-peer-deps true \
- && npm install
-
-# Now bring the rest of the app and build
+# 2) App-Code
 COPY . .
+
+# 3) Build (erzeugt .next/standalone dank output:'standalone')
 RUN npm run build
 
-# ── Runtime ──────────────────────────────────────────────────────────
+# ---- Runner ----
 FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
 
-# Reuse node_modules from builder to avoid reinstall
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/next.config.js ./next.config.js
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+WORKDIR /app
+
+# Minimaler Runtime-Footprint aus dem Standalone-Build
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
+
+# Nicht-root User
+RUN addgroup -g 10001 -S app && adduser -S app -u 10001 -G app
+USER app
 
 EXPOSE 3000
-CMD ["npx", "next", "start", "-p", "3000"]
+
+# Der Standalone-Build bringt server.js mit
+CMD ["node", "server.js"]

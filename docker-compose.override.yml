@@ -1,7 +1,27 @@
-version: "3.8"
+version: "3.9"
+
 services:
-  frontend:
+  postgres:
+    env_file:
+      - .env.dev
+
+  keycloak:
+    env_file:
+      - .env.dev
+
+  backend:
+    env_file:
+      - backend/.env
+      - .env.dev
     environment:
-      - JOB_FILES_DIR=/app/public/files
-    volumes:
-      - ./frontend/public/files:/app/public/files:ro
+      REDIS_URL: "redis://redis:6379/0"
+      RAG_BM25_ENABLED: "0"
+      RAG_BM25_INDEX: "sealai:bm25"
+
+  frontend:
+    # absichtlich kein env_file, damit .env.dev NICHT greift
+    environment: {}
+
+  nginx:
+    env_file:
+      - .env.dev

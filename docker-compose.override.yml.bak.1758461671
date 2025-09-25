@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  postgres:
+    env_file:
+      - .env.dev
+
+  keycloak:
+    env_file:
+      - .env.dev
+
+  backend:
+    env_file:
+      - backend/.env    # Defaults ohne Secrets
+      - .env.dev        # Dev-Secrets/URLs überschreiben
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      RAG_BM25_ENABLED: "0"
+      RAG_BM25_INDEX: "sealai:bm25"
+
+  frontend:
+
+  nginx:
+    env_file:
+      - .env.dev

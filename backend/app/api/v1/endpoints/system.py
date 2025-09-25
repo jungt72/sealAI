@@ -1,11 +1,14 @@
-# --- Test: Consult-Sync-Invoke ---------------------------------------------
+from __future__ import annotations
+
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
-from fastapi import Request
+from fastapi import APIRouter, Request
 import json
 
 from app.services.langgraph.graph.consult.io import invoke_consult
 from app.services.langgraph.redis_lifespan import get_redis_checkpointer
+
+router = APIRouter()  # Prefix und Tags werden im übergeordneten Router gesetzt
 
 class _ConsultInvokeIn(BaseModel):
     text: str = Field(..., min_length=1)

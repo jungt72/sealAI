@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "dependencies": {
+    "@langchain/core": "^0.3.40",
+    "@langchain/langgraph": "^0.2.49",
+    "@langchain/langgraph-sdk": "^0.0.66",
+    "jose": "^6.0.10"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.1.1"
+  }
+}

@@ -3,22 +3,18 @@
 import React, { ReactNode, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
-import rehypeHighlight from 'rehype-highlight';
-
-// dezentes Dark-Theme für Code (grok/chatgpt-ähnlich)
-import 'highlight.js/styles/github-dark-dimmed.css';
-
-// Chat-Markdown Styles (angepasst, kompakter)
 import '@/styles/chat-markdown.css';
 
-interface CodeProps {
+function CodeBlock({
+  inline,
+  className,
+  children,
+  ...rest
+}: {
   inline?: boolean;
   className?: string;
   children?: ReactNode;
-}
-
-function CodeBlock({ inline, className, children, ...rest }: CodeProps) {
+}) {
   const [copied, setCopied] = useState(false);
 
   if (inline) {
@@ -44,9 +40,7 @@ function CodeBlock({ inline, className, children, ...rest }: CodeProps) {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1100);
-    } catch {
-      /* noop */
-    }
+    } catch {}
   };
 
   return (
@@ -75,12 +69,19 @@ export default function MarkdownMessage({
   isUser?: boolean;
   isTool?: boolean;
 }) {
-  const content =
+  // 1) Rohtext ermitteln
+  const raw =
     typeof children === 'string'
       ? children
       : Array.isArray(children)
       ? children.filter(Boolean).join('')
       : String(children ?? '');
+
+  // 2) Nur OPTISCH vornweg „…denke nach…“ entfernen (u2026 = Ellipse …)
+  const content = raw.replace(
+    /^\s*(?:\u2026|\.)*\s*denke\s*nach(?:\s*(?:\u2026|\.))*\s*[:\-–]?\s*/i,
+    ''
+  );
 
   const toneClass = isTool ? 'cm-tool' : isUser ? 'cm-user' : 'cm-assistant';
 
@@ -88,16 +89,14 @@ export default function MarkdownMessage({
     <div className={`chat-markdown ${toneClass}`} aria-live="polite">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, rehypeHighlight]}
+        rehypePlugins={[]}
         components={{
           h1: (p) => <h1 className="cm-h1" {...p} />,
           h2: (p) => <h2 className="cm-h2" {...p} />,
           h3: (p) => <h3 className="cm-h3" {...p} />,
           h4: (p) => <h4 className="cm-h4" {...p} />,
           p: ({ node, ...props }) => <p className="cm-p" {...props} />,
-          a: ({ node, ...props }) => (
-            <a className="cm-a" target="_blank" rel="noreferrer" {...props} />
-          ),
+          a: ({ node, ...props }) => <a className="cm-a" target="_blank" rel="noreferrer" {...props} />,
           ul: (p) => <ul className="cm-ul" {...p} />,
           ol: (p) => <ol className="cm-ol" {...p} />,
           li: (p) => <li className="cm-li" {...p} />,
