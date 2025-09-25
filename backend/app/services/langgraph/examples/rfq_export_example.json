@@ -1,0 +1,32 @@
+{
+  "params": {
+    "shaft_d": 16,
+    "housing_d": 22,
+    "width": 4,
+    "medium": "water",
+    "pressure_bar": 1.5,
+    "temp_max_c": 80,
+    "speed_rpm": 450
+  },
+  "derived": {
+    "v_m_s": 0.377,
+    "dn_value": 7200,
+    "pv_indicator_bar_ms": 0.5655
+  },
+  "candidates": [
+    {
+      "doc_id": "rwdr-0001",
+      "vendor_id": "VEND_A",
+      "title": "RWDR TC 16x22x4 FKM",
+      "profile": "TC",
+      "material": "FKM",
+      "paid_tier": "gold",
+      "contract_valid_until": "2026-12-31",
+      "active": true,
+      "score": 0.92,
+      "url": "https://partner-a.example/rwdr-tc-16x22x4"
+    }
+  ],
+  "sources": ["Partner A Datenblatt RWDR TC 16x22x4 v1.3"],
+  "legal_notice": "Verbindliche Eignungszusage obliegt dem Hersteller."
+}

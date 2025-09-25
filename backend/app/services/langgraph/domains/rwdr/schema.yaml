@@ -4,9 +4,12 @@ fields:
     required: true
     type: enum
     enum: ["ersatz", "neu", "optimierung"]
+
+  # Optional/Profil
   bauform:
     required: false
     type: str
+
   wellen_mm:
     required: true
     type: float
@@ -22,24 +25,30 @@ fields:
     type: float
     min: 1
     max: 50
+
   medium:
     required: true
     type: str
+
   temp_max_c:
     required: true
     type: float
     min: -60
     max: 250
+
   druck_bar:
     required: true
     type: float
     min: 0
     max: 25
+
   drehzahl_u_min:
     required: true
     type: int
     min: 1
     max: 30000
+
+  # Umgebung/Präferenzen
   umgebung:
     required: false
     type: str
@@ -50,5 +59,35 @@ fields:
     required: false
     type: str
   bekannte_probleme:
+    required: false
+    type: str
+
+  # NEW – Qualitätssichernde Zusatzinfos
+  werkstoff_pref:
+    required: false
+    type: str
+  welle_iso:
+    required: false
+    type: str
+  gehause_iso:
+    required: false
+    type: str
+  ra_welle_um:
+    required: false
+    type: float
+    min: 0
+    max: 5
+  rz_welle_um:
+    required: false
+    type: float
+    min: 0
+    max: 50
+  wellenwerkstoff:
+    required: false
+    type: str
+  gehausewerkstoff:
+    required: false
+    type: str
+  normen:
     required: false
     type: str

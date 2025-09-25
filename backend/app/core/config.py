@@ -1,3 +1,4 @@
+# backend/app/core/config.py
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
@@ -37,9 +38,8 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-base-en-v1.5"
 
     # Qdrant (RAG & LTM)
-    qdrant_url: str                     # z.B. "http://qdrant:6333"
-    qdrant_collection: str              # z.B. "sealai-docs-bge-m3" (RAG)
-    # ► NEU: eigene Collection nur für Long-Term-Memory (vermeidet Vektorgrößen-Konflikte)
+    qdrant_url: str
+    qdrant_collection: str
     qdrant_collection_ltm: Optional[str] = None
     qdrant_api_key: Optional[str] = None
     rag_k: int = 4
@@ -64,7 +64,6 @@ class Settings(BaseSettings):
     keycloak_client_id: str
     keycloak_client_secret: str
     keycloak_expected_azp: str
-    backend_keycloak_issuer: str
 
     # LangChain Tracing etc.
     langchain_tracing_v2: bool = True
@@ -72,16 +71,24 @@ class Settings(BaseSettings):
     langchain_api_key: Optional[str] = None
     langchain_project: Optional[str] = "sealai"
 
-    # Memory-Feature-Flags
-    ltm_enable: bool = True  # Long-Term-Memory aktiv/inaktiv schaltbar
+    # Feature-Flags
+    ltm_enable: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
     )
 
+    # Wichtig: nicht mehr aus ENV lesen.
+    # Der Backend-Issuer entspricht immer dem Keycloak-Issuer.
+    @property
+    def backend_keycloak_issuer(self) -> str:
+        return self.keycloak_issuer
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
 
 settings = get_settings()

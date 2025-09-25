@@ -1,0 +1,2018 @@
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/build.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/build.py
+     2	from __future__ import annotations
+     3	
+     4	import logging
+     5	from typing import Any, Dict, List
+     6	from langgraph.graph import StateGraph, END
+     7	
+     8	from .state import ConsultState
+     9	from .utils import normalize_messages
+    10	from .domain_router import detect_domain
+    11	from .domain_runtime import compute_domain
+    12	
+    13	from .nodes.intake import intake_node
+    14	from .nodes.ask_missing import ask_missing_node
+    15	from .nodes.validate import validate_node
+    16	from .nodes.recommend import recommend_node
+    17	from .nodes.explain import explain_node
+    18	from .nodes.calc_agent import calc_agent_node
+    19	from .nodes.rag import run_rag_node
+    20	from .nodes.validate_answer import validate_answer
+    21	
+    22	# NEU
+    23	from .nodes.smalltalk import smalltalk_node
+    24	from .nodes.lite_router import lite_router_node
+    25	
+    26	from .heuristic_extract import pre_extract_params
+    27	from .extract import extract_params_with_llm
+    28	from .config import create_llm
+    29	
+    30	log = logging.getLogger("uvicorn.error")
+    31	
+    32	
+    33	def _join_user_text(msgs: List) -> str:
+    34	    out: List[str] = []
+    35	    for m in msgs:
+    36	        role = (getattr(m, "type", "") or getattr(m, "role", "")).lower()
+    37	        content = getattr(m, "content", "")
+    38	        if isinstance(m, dict):
+    39	            role = (m.get("type") or m.get("role") or "").lower()
+    40	            content = m.get("content")
+    41	        if role in ("human", "user") and isinstance(content, str) and content.strip():
+    42	            out.append(content.strip())
+    43	    return "\n".join(out)
+    44	
+    45	
+    46	def _merge_seed_first(seed: Dict[str, Any], llm_out: Dict[str, Any]) -> Dict[str, Any]:
+    47	    out = dict(llm_out or {})
+    48	    for k, v in (seed or {}).items():
+    49	        if v not in (None, "", []):
+    50	            out[k] = v
+    51	    return out
+    52	
+    53	
+    54	def _compact_param_summary(domain: str, params: Dict[str, Any]) -> str:
+    55	    p = params or {}
+    56	    parts: List[str] = []
+    57	
+    58	    if domain == "rwdr":
+    59	        parts.append("RWDR")
+    60	        if p.get("abmessung"):
+    61	            parts.append(str(p["abmessung"]))
+    62	        elif p.get("wellen_mm") and p.get("gehause_mm") and p.get("breite_mm"):
+    63	            parts.append(f'{p["wellen_mm"]}x{p["gehause_mm"]}x{p["breite_mm"]}')
+    64	    elif domain == "hydraulics_rod":
+    65	        parts.append("Hydraulik Stangendichtung")
+    66	
+    67	    if p.get("medium"):
+    68	        parts.append(str(p["medium"]))
+    69	    if p.get("temp_max_c") or p.get("tmax_c"):
+    70	        parts.append(f'Tmax {int(p.get("temp_max_c") or p.get("tmax_c"))} °C')
+    71	    if p.get("druck_bar"):
+    72	        parts.append(f'Druck {p["druck_bar"]} bar')
+    73	    if p.get("drehzahl_u_min"):
+    74	        parts.append(f'{int(p["drehzahl_u_min"])} U/min')
+    75	    if p.get("relativgeschwindigkeit_ms"):
+    76	        parts.append(f'v≈{float(p["relativgeschwindigkeit_ms"]):.2f} m/s')
+    77	
+    78	    bl = p.get("material_blacklist") or p.get("vermeide_materialien")
+    79	    wl = p.get("material_whitelist") or p.get("bevorzugte_materialien")
+    80	    if bl:
+    81	        parts.append(f'Vermeide: {bl}')
+    82	    if wl:
+    83	        parts.append(f'Bevorzugt: {wl}')
+    84	
+    85	    return ", ".join(parts)
+    86	
+    87	
+    88	def _extract_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    89	    msgs = normalize_messages(state.get("messages", []))
+    90	    params = dict(state.get("params") or {})
+    91	    user_text = _join_user_text(msgs)
+    92	
+    93	    heur = pre_extract_params(user_text)
+    94	    seed = {**params, **{k: v for k, v in heur.items() if v not in (None, "", [])}}
+    95	
+    96	    llm_params = extract_params_with_llm(user_text)
+    97	    final_params = _merge_seed_first(seed, llm_params)
+    98	    return {**state, "params": final_params, "phase": "extract"}
+    99	
+   100	
+   101	def _domain_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   102	    msgs = normalize_messages(state.get("messages", []))
+   103	    params = dict(state.get("params") or {})
+   104	    try:
+   105	        domain = detect_domain(None, msgs, params) or "rwdr"
+   106	        domain = domain.strip().lower()
+   107	    except Exception:
+   108	        domain = "rwdr"
+   109	    return {**state, "domain": domain, "phase": "domain_router"}
+   110	
+   111	
+   112	def _compute_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   113	    domain = (state.get("domain") or "rwdr").strip().lower()
+   114	    params = dict(state.get("params") or {})
+   115	    derived = compute_domain(domain, params) or {}
+   116	
+   117	    alias_map = {
+   118	        "tmax_c": params.get("temp_max_c"),
+   119	        "temp_c": params.get("temp_max_c"),
+   120	        "druck": params.get("druck_bar"),
+   121	        "pressure_bar": params.get("druck_bar"),
+   122	        "n_u_min": params.get("drehzahl_u_min"),
+   123	        "rpm": params.get("drehzahl_u_min"),
+   124	        "v_ms": params.get("relativgeschwindigkeit_ms"),
+   125	    }
+   126	    for k, v in alias_map.items():
+   127	        if k not in params and v not in (None, "", []):
+   128	            params[k] = v
+   129	
+   130	    return {**state, "params": params, "derived": derived, "phase": "compute"}
+   131	
+   132	
+   133	def _prepare_query_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   134	    if (state.get("query") or "").strip():
+   135	        return {**state, "phase": "prepare_query"}
+   136	
+   137	    msgs = normalize_messages(state.get("messages", []))
+   138	    params = dict(state.get("params") or {})
+   139	    domain = (state.get("domain") or "rwdr").strip().lower()
+   140	
+   141	    user_text = _join_user_text(msgs)
+   142	    param_str = _compact_param_summary(domain, params)
+   143	    prefix = "RWDR" if domain == "rwdr" else "Hydraulik"
+   144	    query = ", ".join([s for s in [prefix, user_text, param_str] if s])
+   145	
+   146	    new_state = dict(state)
+   147	    new_state["query"] = query
+   148	    return {**new_state, "phase": "prepare_query"}
+   149	
+   150	
+   151	def _respond_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   152	    return {**state, "phase": "respond"}
+   153	
+   154	
+   155	# ---- Conditional helpers ----
+   156	def _route_key(state: Dict[str, Any]) -> str:
+   157	    return (state.get("route") or "default").strip().lower() or "default"
+   158	
+   159	
+   160	def _ask_or_ok(state: Dict[str, Any]) -> str:
+   161	    p = state.get("params") or {}
+   162	
+   163	    def has(v: Any) -> bool:
+   164	        if v is None: return False
+   165	        if isinstance(v, (list, dict)) and not v: return False
+   166	        if isinstance(v, str) and not v.strip(): return False
+   167	        return True
+   168	
+   169	    base_ok = has(p.get("temp_max_c")) and has(p.get("druck_bar"))
+   170	    rel_ok  = has(p.get("relativgeschwindigkeit_ms")) or (has(p.get("wellen_mm")) and has(p.get("drehzahl_u_min")))
+   171	
+   172	    msgs = normalize_messages(state.get("messages", []))
+   173	    user = (_join_user_text(msgs) or "").lower()
+   174	    info_triggers = (
+   175	        "was weißt du", "was weisst du", "what do you know", "info",
+   176	        "rag", "rag:", "kyrolon", "ptfe", "datenblatt", "sds"
+   177	    )
+   178	    if not (base_ok and rel_ok) and any(t in user for t in info_triggers):
+   179	        return "info"
+   180	
+   181	    return "ok" if (base_ok and rel_ok) else "ask"
+   182	
+   183	
+   184	def _after_rag(state: Dict[str, Any]) -> str:
+   185	    p = state.get("params") or {}
+   186	
+   187	    def has(v: Any) -> bool:
+   188	        if v is None: return False
+   189	        if isinstance(v, (list, dict)) and not v: return False
+   190	        if isinstance(v, str) and not v.strip(): return False
+   191	        return True
+   192	
+   193	    base_ok = has(p.get("temp_max_c")) and has(p.get("druck_bar"))
+   194	    rel_ok  = has(p.get("relativgeschwindigkeit_ms")) or (has(p.get("wellen_mm")) and has(p.get("drehzahl_u_min")))
+   195	    docs    = state.get("retrieved_docs") or state.get("docs") or []
+   196	    ctx_ok  = bool(docs) or bool(state.get("context"))
+   197	
+   198	    return "recommend" if (base_ok and rel_ok and ctx_ok) else "explain"
+   199	
+   200	
+   201	def build_graph() -> StateGraph:
+   202	    log.info("[ConsultGraph] Initialisierung…")
+   203	    g = StateGraph(ConsultState)
+   204	
+   205	    # --- Nodes ---
+   206	    g.add_node("lite_router", lite_router_node)  # NEU
+   207	    g.add_node("smalltalk", smalltalk_node)      # NEU
+   208	
+   209	    g.add_node("intake", intake_node)
+   210	    g.add_node("extract", _extract_node)
+   211	    g.add_node("domain_router", _domain_router_node)
+   212	    g.add_node("compute", _compute_node)
+   213	    g.add_node("calc_agent", calc_agent_node)
+   214	    g.add_node("ask_missing", ask_missing_node)
+   215	    g.add_node("validate", validate_node)
+   216	    g.add_node("prepare_query", _prepare_query_node)
+   217	    g.add_node("rag", run_rag_node)
+   218	    g.add_node("recommend", recommend_node)
+   219	    g.add_node("validate_answer", validate_answer)
+   220	    g.add_node("explain", explain_node)
+   221	    g.add_node("respond", _respond_node)
+   222	
+   223	    # --- Entry & Routing ---
+   224	    g.set_entry_point("lite_router")
+   225	    g.add_conditional_edges("lite_router", _route_key, {
+   226	        "smalltalk": "smalltalk",
+   227	        "info": "prepare_query",
+   228	        "default": "intake",
+   229	    })
+   230	
+   231	    # --- Main flow ---
+   232	    g.add_edge("intake", "extract")
+   233	    g.add_edge("extract", "domain_router")
+   234	    g.add_edge("domain_router", "compute")
+   235	    g.add_edge("compute", "calc_agent")
+   236	    g.add_edge("calc_agent", "ask_missing")
+   237	
+   238	    g.add_conditional_edges("ask_missing", _ask_or_ok, {
+   239	        "ask":  "respond",
+   240	        "ok":   "validate",
+   241	        "info": "prepare_query",
+   242	    })
+   243	
+   244	    g.add_edge("validate", "prepare_query")
+   245	    g.add_edge("prepare_query", "rag")
+   246	    g.add_conditional_edges("rag", _after_rag, {
+   247	        "recommend": "recommend",
+   248	        "explain":   "explain",
+   249	    })
+   250	    g.add_edge("recommend", "validate_answer")
+   251	    g.add_edge("validate_answer", "explain")
+   252	    g.add_edge("explain", "respond")
+   253	    g.add_edge("respond", END)
+   254	
+   255	    log.info("[ConsultGraph] erfolgreich erstellt.")
+   256	    return g
+   257	
+   258	
+   259	def build_consult_graph() -> StateGraph:
+   260	    return build_graph()
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/config.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/config.py
+     2	from __future__ import annotations
+     3	
+     4	import os
+     5	from typing import List, Optional
+     6	from langchain_openai import ChatOpenAI
+     7	
+     8	
+     9	# --- Domänen-Schalter ---------------------------------------------------------
+    10	# Kommagetrennte Liste via ENV z. B.: "rwdr,hydraulics_rod"
+    11	def _env_domains() -> List[str]:
+    12	    raw = (os.getenv("CONSULT_ENABLED_DOMAINS") or "").strip()
+    13	    if not raw:
+    14	        return ["rwdr", "hydraulics_rod"]
+    15	    return [x.strip().lower() for x in raw.split(",") if x.strip()]
+    16	
+    17	
+    18	ENABLED_DOMAINS: List[str] = _env_domains()
+    19	
+    20	
+    21	# --- LLM-Fabrik ---------------------------------------------------------------
+    22	def _model_name() -> str:
+    23	    # Fällt auf GPT-5 mini zurück, wie gewünscht
+    24	    return (os.getenv("LLM_MODEL_DEFAULT") or "gpt-5-mini").strip()
+    25	
+    26	
+    27	def _base_url() -> Optional[str]:
+    28	    # kompatibel zu llm_factory: neues Feld heißt base_url (nicht api_base)
+    29	    base = (os.getenv("OPENAI_API_BASE") or "").strip()
+    30	    return base or None
+    31	
+    32	
+    33	def create_llm(*, streaming: bool = True) -> ChatOpenAI:
+    34	    """
+    35	    Einheitliche LLM-Erzeugung für den Consult-Graph.
+    36	    Nutzt GPT-5-mini (Default) und übernimmt OPENAI_API_BASE, falls gesetzt,
+    37	    via base_url (kein api_base!).
+    38	    """
+    39	    kwargs = {
+    40	        "model": _model_name(),
+    41	        "streaming": streaming,
+    42	        "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
+    43	        "max_retries": int(os.getenv("LLM_MAX_RETRIES", "2")),
+    44	    }
+    45	    base = _base_url()
+    46	    if base:
+    47	        kwargs["base_url"] = base
+    48	    return ChatOpenAI(**kwargs)
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/domain_router.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/domain_router.py
+     2	from __future__ import annotations
+     3	import json
+     4	from typing import List
+     5	from langchain_openai import ChatOpenAI
+     6	from app.services.langgraph.llm_router import get_router_llm, get_router_fallback_llm
+     7	from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+     8	from app.services.langgraph.prompting import render_template, messages_for_template, strip_json_fence
+     9	from .config import ENABLED_DOMAINS
+    10	
+    11	def detect_domain(llm: ChatOpenAI, msgs: List[AnyMessage], params: dict) -> str:
+    12	    router = llm or get_router_llm()
+    13	    prompt = render_template(
+    14	        "domain_router.jinja2",
+    15	        messages=messages_for_template(msgs),
+    16	        params_json=json.dumps(params, ensure_ascii=False),
+    17	        enabled_domains=ENABLED_DOMAINS,
+    18	    )
+    19	    # 1st pass
+    20	    resp = router.invoke([HumanMessage(content=prompt)])
+    21	    domain, conf = None, 0.0
+    22	    try:
+    23	        data = json.loads(strip_json_fence(resp.content or ""))
+    24	        domain = str((data.get("domain") or "")).strip().lower()
+    25	        conf = float(data.get("confidence") or 0.0)
+    26	    except Exception:
+    27	        domain, conf = None, 0.0
+    28	
+    29	    # Fallback, wenn unsicher
+    30	    if (domain not in ENABLED_DOMAINS) or (conf < 0.70):
+    31	        fb = get_router_fallback_llm()
+    32	        try:
+    33	            resp2 = fb.invoke([HumanMessage(content=prompt)])
+    34	            data2 = json.loads(strip_json_fence(resp2.content or ""))
+    35	            d2 = str((data2.get("domain") or "")).strip().lower()
+    36	            c2 = float(data2.get("confidence") or 0.0)
+    37	            if (d2 in ENABLED_DOMAINS) and (c2 >= conf):
+    38	                domain, conf = d2, c2
+    39	        except Exception:
+    40	            pass
+    41	
+    42	    # Heuristische Fallbacks – nur Nutzertext
+    43	    if (domain not in ENABLED_DOMAINS) or (conf < 0.40):
+    44	        utter = ""
+    45	        for m in reversed(msgs or []):
+    46	            if hasattr(m, "content") and getattr(m, "content"):
+    47	                if isinstance(m, HumanMessage):
+    48	                    utter = (m.content or "").lower().strip()
+    49	                    break
+    50	        if "wellendichtring" in utter or "rwdr" in utter:
+    51	            domain = "rwdr"
+    52	        elif "stangendichtung" in utter or "kolbenstange" in utter or "hydraulik" in utter:
+    53	            domain = "hydraulics_rod"
+    54	        elif (params.get("bauform") or "").upper().startswith("BA"):
+    55	            domain = "rwdr"
+    56	        elif ENABLED_DOMAINS:
+    57	            domain = ENABLED_DOMAINS[0]
+    58	        else:
+    59	            domain = "rwdr"
+    60	    return domain
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/ask_missing.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/ask_missing.py
+     2	from __future__ import annotations
+     3	
+     4	import logging
+     5	from typing import Any, Dict, List
+     6	
+     7	from langchain_core.messages import AIMessage
+     8	from app.services.langgraph.prompting import render_template
+     9	from ..utils import missing_by_domain, anomaly_messages, normalize_messages
+    10	
+    11	log = logging.getLogger(__name__)
+    12	
+    13	# ---------- Feldlabels ----------
+    14	FIELD_LABELS_RWDR = {
+    15	    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
+    16	    "wellen_mm": "Welle (mm)",
+    17	    "gehause_mm": "Gehäuse (mm)",
+    18	    "breite_mm": "Breite (mm)",
+    19	    "bauform": "Bauform/Profil",
+    20	    "medium": "Medium",
+    21	    "temp_min_c": "Temperatur min (°C)",
+    22	    "temp_max_c": "Temperatur max (°C)",
+    23	    "druck_bar": "Druck (bar)",
+    24	    "drehzahl_u_min": "Drehzahl (U/min)",
+    25	    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
+    26	    "umgebung": "Umgebung",
+    27	    "prioritaet": "Priorität (z. B. Preis, Lebensdauer)",
+    28	    "besondere_anforderungen": "Besondere Anforderungen",
+    29	    "bekannte_probleme": "Bekannte Probleme",
+    30	}
+    31	DISPLAY_ORDER_RWDR = [
+    32	    "falltyp","wellen_mm","gehause_mm","breite_mm","bauform","medium",
+    33	    "temp_min_c","temp_max_c","druck_bar","drehzahl_u_min","geschwindigkeit_m_s",
+    34	    "umgebung","prioritaet","besondere_anforderungen","bekannte_probleme",
+    35	]
+    36	
+    37	FIELD_LABELS_HYD = {
+    38	    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
+    39	    "stange_mm": "Stange (mm)",
+    40	    "nut_d_mm": "Nut-Ø D (mm)",
+    41	    "nut_b_mm": "Nutbreite B (mm)",
+    42	    "medium": "Medium",
+    43	    "temp_max_c": "Temperatur max (°C)",
+    44	    "druck_bar": "Druck (bar)",
+    45	    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
+    46	}
+    47	DISPLAY_ORDER_HYD = [
+    48	    "falltyp","stange_mm","nut_d_mm","nut_b_mm","medium","temp_max_c","druck_bar","geschwindigkeit_m_s",
+    49	]
+    50	
+    51	def _friendly_list(keys: List[str], domain: str) -> str:
+    52	    if domain == "hydraulics_rod":
+    53	        labels, order = FIELD_LABELS_HYD, DISPLAY_ORDER_HYD
+    54	    else:
+    55	        labels, order = FIELD_LABELS_RWDR, DISPLAY_ORDER_RWDR
+    56	    ordered = [k for k in order if k in keys]
+    57	    return ", ".join(f"**{labels.get(k, k)}**" for k in ordered)
+    58	
+    59	# ---------- Node ----------
+    60	def ask_missing_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    61	    """
+    62	    Stellt Rückfragen nur bei Beratungsbedarf.
+    63	    Liefert zusätzlich ein UI-Event zum Öffnen des Formular-Drawers.
+    64	    """
+    65	    consult_required = bool(state.get("consult_required", True))
+    66	    if not consult_required:
+    67	        return {**state, "messages": [], "phase": "ask_missing"}
+    68	
+    69	    _ = normalize_messages(state.get("messages", []))
+    70	    params: Dict[str, Any] = state.get("params") or {}
+    71	    domain: str = (state.get("domain") or "rwdr").strip().lower()
+    72	    derived: Dict[str, Any] = state.get("derived") or {}
+    73	
+    74	    # Sprache (Fallback de)
+    75	    lang = (params.get("lang") or state.get("lang") or "de").lower()
+    76	
+    77	    missing = missing_by_domain(domain, params)
+    78	    log.info("[ask_missing_node] fehlend=%s domain=%s consult_required=%s", missing, domain, consult_required)
+    79	
+    80	    if missing:
+    81	        friendly = _friendly_list(missing, domain)
+    82	        # Einzeilenbeispiel je Domäne
+    83	        example = (
+    84	            "Welle 25, Gehäuse 47, Breite 7, Medium Öl, Tmax 80, Druck 2 bar, n 1500"
+    85	            if domain != "hydraulics_rod"
+    86	            else "Stange 25, Nut D 32, Nut B 6, Medium Öl, Tmax 80, Druck 160 bar, v 0,3 m/s"
+    87	        )
+    88	
+    89	        content = render_template(
+    90	            "ask_missing.jinja2",
+    91	            domain=domain,
+    92	            friendly=friendly,
+    93	            example=example,
+    94	            lang=lang,
+    95	        )
+    96	
+    97	        ui_event = {
+    98	            "ui_action": "open_form",
+    99	            "form_id": f"{domain}_params_v1",
+   100	            "schema_ref": f"domains/{domain}/params@1.0.0",
+   101	            "missing": missing,
+   102	            "prefill": {k: v for k, v in params.items() if v not in (None, "", [])},
+   103	        }
+   104	        return {
+   105	            **state,
+   106	            "messages": [AIMessage(content=content)],
+   107	            "phase": "ask_missing",
+   108	            "ui_event": ui_event,
+   109	            "missing_fields": missing,
+   110	        }
+   111	
+   112	    followups = anomaly_messages(domain, params, derived)
+   113	    if followups:
+   114	        content = render_template("ask_missing_followups.jinja2", followups=followups[:2], lang=lang)
+   115	        ui_event = {
+   116	            "ui_action": "open_form",
+   117	            "form_id": f"{domain}_params_v1",
+   118	            "schema_ref": f"domains/{domain}/params@1.0.0",
+   119	            "missing": [],
+   120	            "prefill": {k: v for k, v in params.items() if v not in (None, "", [])},
+   121	        }
+   122	        return {
+   123	            **state,
+   124	            "messages": [AIMessage(content=content)],
+   125	            "phase": "ask_missing",
+   126	            "ui_event": ui_event,
+   127	            "missing_fields": [],
+   128	        }
+   129	
+   130	    return {**state, "messages": [], "phase": "ask_missing"}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/calc_agent.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/calc_agent.py
+     2	from __future__ import annotations
+     3	
+     4	import logging
+     5	from typing import Any, Dict
+     6	
+     7	log = logging.getLogger(__name__)
+     8	
+     9	
+    10	def _num(x: Any) -> float | None:
+    11	    try:
+    12	        if x in (None, "", []):
+    13	            return None
+    14	        if isinstance(x, bool):
+    15	            return None
+    16	        return float(x)
+    17	    except Exception:
+    18	        return None
+    19	
+    20	
+    21	def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+    22	    """
+    23	    flache & verschachtelte Dicts zusammenführen (b gewinnt),
+    24	    nützlich um 'derived.calculated' nicht zu überschreiben.
+    25	    """
+    26	    out = dict(a or {})
+    27	    for k, v in (b or {}).items():
+    28	        if isinstance(v, dict) and isinstance(out.get(k), dict):
+    29	            out[k] = _deep_merge(out[k], v)
+    30	        else:
+    31	            out[k] = v
+    32	    return out
+    33	
+    34	
+    35	def _calc_rwdr(params: Dict[str, Any]) -> Dict[str, Any]:
+    36	    """Berechnungen für Radial-Wellendichtringe (RWDR)."""
+    37	    d_mm = _num(params.get("wellen_mm"))
+    38	    n_rpm = _num(params.get("drehzahl_u_min"))
+    39	    p_bar = _num(params.get("druck_bar"))
+    40	    tmax = _num(params.get("temp_max_c"))
+    41	
+    42	    calc: Dict[str, Any] = {}
+    43	
+    44	    # Umfangsgeschwindigkeit v = π * d[m] * n[1/s]
+    45	    if d_mm is not None and n_rpm is not None and d_mm > 0 and n_rpm >= 0:
+    46	        d_m = d_mm / 1000.0
+    47	        v_ms = 3.141592653589793 * d_m * (n_rpm / 60.0)
+    48	        calc["umfangsgeschwindigkeit_m_s"] = v_ms
+    49	        # kompatibel zu älteren Keys
+    50	        calc["surface_speed_m_s"] = round(v_ms, 3)
+    51	
+    52	    # PV-Indikator (einfaches Produkt) → Orientierung für thermische Last
+    53	    if p_bar is not None and calc.get("umfangsgeschwindigkeit_m_s") is not None:
+    54	        calc["pv_indicator_bar_ms"] = p_bar * calc["umfangsgeschwindigkeit_m_s"]
+    55	
+    56	    # Material-Hinweise (leichtgewichtig / erweiterbar)
+    57	    mat_whitelist: list[str] = []
+    58	    mat_blacklist: list[str] = []
+    59	
+    60	    medium = (params.get("medium") or "").strip().lower()
+    61	    if "wasser" in medium:
+    62	        # Wasser → NBR okay, FKM oft okay, PTFE nur bei spezieller Ausführung
+    63	        mat_blacklist.append("PTFE")
+    64	    if tmax is not None:
+    65	        if tmax > 120:
+    66	            mat_whitelist.append("FKM")
+    67	        if tmax > 200:
+    68	            # sehr hohe T → PTFE grundsätzlich denkbar (aber oben ggf. ausgeschlossen)
+    69	            mat_whitelist.append("PTFE")
+    70	
+    71	    reqs: list[str] = []
+    72	    if "PTFE" in mat_blacklist:
+    73	        reqs.append("Vermeide Materialien: PTFE")
+    74	
+    75	    flags: Dict[str, Any] = {}
+    76	    if p_bar is not None and p_bar > 1.0:
+    77	        flags["druckbelastet"] = True
+    78	
+    79	    out = {
+    80	        "calculated": calc,
+    81	        "material_whitelist": mat_whitelist,
+    82	        "material_blacklist": mat_blacklist,
+    83	        "requirements": reqs,
+    84	        "flags": flags,
+    85	    }
+    86	    return out
+    87	
+    88	
+    89	def _calc_hydraulics_rod(params: Dict[str, Any]) -> Dict[str, Any]:
+    90	    """Berechnungen für Hydraulik-Stangendichtungen."""
+    91	    p_bar = _num(params.get("druck_bar"))
+    92	    v_lin = _num(params.get("geschwindigkeit_m_s"))  # lineare Stangengeschwindigkeit
+    93	    tmax = _num(params.get("temp_max_c"))
+    94	
+    95	    calc: Dict[str, Any] = {}
+    96	    if p_bar is not None and v_lin is not None:
+    97	        # einfacher PV-Indikator (lineare Geschwindigkeit)
+    98	        calc["pv_indicator_bar_ms"] = p_bar * v_lin
+    99	
+   100	    # kleine Heuristik zur Extrusionsgefahr bei hohen Drücken
+   101	    flags: Dict[str, Any] = {}
+   102	    reqs: list[str] = []
+   103	    if p_bar is not None and p_bar >= 160:
+   104	        flags["extrusion_risk"] = True
+   105	        reqs.append("Stütz-/Back-up-Ring prüfen (≥160 bar).")
+   106	
+   107	    # Materialpräferenz bei hohen Temperaturen
+   108	    mat_whitelist: list[str] = []
+   109	    if tmax is not None and tmax > 100:
+   110	        mat_whitelist.append("FKM")
+   111	
+   112	    out = {
+   113	        "calculated": calc,
+   114	        "flags": flags,
+   115	        "requirements": reqs,
+   116	        "material_whitelist": mat_whitelist,
+   117	        "material_blacklist": [],
+   118	    }
+   119	    return out
+   120	
+   121	
+   122	def calc_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   123	    """
+   124	    Dedizierter Kalkulations-Node:
+   125	    - führt domänenspezifische Rechen- & Heuristikschritte aus,
+   126	    - schreibt Ergebnisse nach state['derived'] (nicht destruktiv),
+   127	    - hinterlässt 'phase': 'calc_agent'.
+   128	    """
+   129	    domain = (state.get("domain") or "rwdr").strip().lower()
+   130	    params = dict(state.get("params") or {})
+   131	    derived_existing = dict(state.get("derived") or {})
+   132	
+   133	    try:
+   134	        if domain == "hydraulics_rod":
+   135	            derived_new = _calc_hydraulics_rod(params)
+   136	        else:
+   137	            # Default: RWDR
+   138	            derived_new = _calc_rwdr(params)
+   139	    except Exception as e:
+   140	        log.warning("[calc_agent] calc_failed", exc=str(e))
+   141	        # Fehler nicht eskalieren – einfach Phase setzen
+   142	        return {**state, "phase": "calc_agent"}
+   143	
+   144	    # nicht-destruktiv zusammenführen
+   145	    derived_merged = _deep_merge(derived_existing, derived_new)
+   146	
+   147	    # Kompatibilität: einzelner Key für v [m/s], falls benötigt
+   148	    v = (
+   149	        derived_merged.get("calculated", {}).get("umfangsgeschwindigkeit_m_s")
+   150	        or params.get("relativgeschwindigkeit_ms")
+   151	    )
+   152	    if v is not None:
+   153	        derived_merged["relativgeschwindigkeit_ms"] = v
+   154	
+   155	    new_state = {**state, "derived": derived_merged, "phase": "calc_agent"}
+   156	    return new_state
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/calc_node.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/calc_node.py
+     2	from __future__ import annotations
+     3	
+     4	import math
+     5	from typing import Any, Dict, Tuple
+     6	
+     7	def _norm_float(x: Any) -> float | None:
+     8	    try:
+     9	        if x is None or x == "" or x == []:
+    10	            return None
+    11	        return float(x)
+    12	    except Exception:
+    13	        return None
+    14	
+    15	def _merge_derived(base: Dict[str, Any], add: Dict[str, Any]) -> Dict[str, Any]:
+    16	    """Non-destruktiv in state['derived'] zusammenführen."""
+    17	    out = dict(base or {})
+    18	    for k, v in (add or {}).items():
+    19	        if isinstance(v, dict) and isinstance(out.get(k), dict):
+    20	            out[k] = {**out[k], **v}
+    21	        else:
+    22	            out[k] = v
+    23	    return out
+    24	
+    25	# -------------------------
+    26	#   RWDR – Berechnungen
+    27	# -------------------------
+    28	def _calc_rwdr(params: Dict[str, Any]) -> Dict[str, Any]:
+    29	    d_mm = _norm_float(params.get("wellen_mm"))
+    30	    n_rpm = _norm_float(params.get("drehzahl_u_min"))
+    31	    druck_bar = _norm_float(params.get("druck_bar"))
+    32	    tmax = _norm_float(params.get("temp_max_c"))
+    33	
+    34	    v_ms = None
+    35	    if d_mm and n_rpm:
+    36	        d_m = d_mm / 1000.0
+    37	        n_rps = n_rpm / 60.0
+    38	        v_ms = math.pi * d_m * n_rps  # Umfangsgeschwindigkeit
+    39	
+    40	    pv = None
+    41	    if v_ms is not None and druck_bar is not None:
+    42	        pv = druck_bar * v_ms  # einfacher PV-Indikator
+    43	
+    44	    # leichte Material-Whitelist/Blacklist-Heuristiken
+    45	    medium_raw = (params.get("medium") or "").strip().lower()
+    46	    mat_whitelist: list[str] = []
+    47	    mat_blacklist: list[str] = []
+    48	
+    49	    if "wasser" in medium_raw:
+    50	        mat_whitelist += ["EPDM"]
+    51	        mat_blacklist += ["NBR"]
+    52	    if "öl" in medium_raw or "oel" in medium_raw:
+    53	        mat_whitelist += ["NBR", "FKM"]
+    54	
+    55	    calculated = {
+    56	        "umfangsgeschwindigkeit_m_s": v_ms,
+    57	        "surface_speed_m_s": round(v_ms, 3) if isinstance(v_ms, (int, float)) else None,
+    58	        "pv_indicator_bar_ms": pv,
+    59	        "druck_bar": druck_bar,
+    60	        "temp_max_c": tmax,
+    61	    }
+    62	    # Filtere Nones raus
+    63	    calculated = {k: v for k, v in calculated.items() if v is not None}
+    64	
+    65	    return {
+    66	        "calculated": calculated,
+    67	        "flags": {},
+    68	        "warnings": [],
+    69	        "requirements": [],
+    70	        "material_whitelist": mat_whitelist,
+    71	        "material_blacklist": mat_blacklist,
+    72	    }
+    73	
+    74	# -------------------------
+    75	#   Hydraulik-Stange
+    76	# -------------------------
+    77	def _calc_hydraulics_rod(params: Dict[str, Any]) -> Dict[str, Any]:
+    78	    v_ms = _norm_float(params.get("geschwindigkeit_m_s"))
+    79	    druck_bar = _norm_float(params.get("druck_bar"))
+    80	    tmax = _norm_float(params.get("temp_max_c"))
+    81	    stange_mm = _norm_float(params.get("stange_mm"))
+    82	
+    83	    # Umfangsgeschwindigkeit nur, wenn Drehzahl bekannt; sonst weglassen.
+    84	    u_ms = None
+    85	    n_rpm = _norm_float(params.get("drehzahl_u_min"))
+    86	    if stange_mm and n_rpm:
+    87	        d_m = stange_mm / 1000.0
+    88	        n_rps = n_rpm / 60.0
+    89	        u_ms = math.pi * d_m * n_rps
+    90	
+    91	    pv = None
+    92	    if v_ms is not None and druck_bar is not None:
+    93	        pv = druck_bar * v_ms
+    94	
+    95	    flags: Dict[str, bool] = {}
+    96	    requirements: list[str] = []
+    97	
+    98	    if (druck_bar or 0) >= 160:
+    99	        flags["extrusion_risk"] = True
+   100	        requirements.append("Stütz-/Back-up-Ring prüfen (≥160 bar).")
+   101	
+   102	    calculated = {
+   103	        "geschwindigkeit_m_s": v_ms,
+   104	        "umfangsgeschwindigkeit_m_s": u_ms,
+   105	        "pv_indicator_bar_ms": pv,
+   106	        "druck_bar": druck_bar,
+   107	        "temp_max_c": tmax,
+   108	        "stange_mm": stange_mm,
+   109	        "bohrung_mm": _norm_float(params.get("nut_d_mm")),
+   110	    }
+   111	    calculated = {k: v for k, v in calculated.items() if v is not None}
+   112	
+   113	    return {
+   114	        "calculated": calculated,
+   115	        "flags": flags,
+   116	        "warnings": [],
+   117	        "requirements": requirements,
+   118	        "material_whitelist": [],
+   119	        "material_blacklist": [],
+   120	    }
+   121	
+   122	# --------------------------------
+   123	#   Öffentlicher LangGraph-Node
+   124	# --------------------------------
+   125	def calc_node(state: Dict[str, Any]) -> Dict[str, Any]:
+   126	    """
+   127	    Aggregiert domänenspezifische Vorberechnungen und schreibt sie nach
+   128	    state['derived'] zurück. Keine I/O, keine LLM-Aufrufe.
+   129	    """
+   130	    params: Dict[str, Any] = dict(state.get("params") or {})
+   131	    domain = (state.get("domain") or "rwdr").strip().lower()
+   132	
+   133	    # Bestehende derived (falls vorher schon vorhanden) übernehmen
+   134	    derived_in = dict(state.get("derived") or {})
+   135	
+   136	    try:
+   137	        if domain in ("rwdr", "radial_wellendichtring", "wellendichtring"):
+   138	            out = _calc_rwdr(params)
+   139	        elif domain in ("hydraulics_rod", "rod", "hydraulik_stange"):
+   140	            out = _calc_hydraulics_rod(params)
+   141	        else:
+   142	            out = {"calculated": {}, "flags": {}, "warnings": [], "requirements": []}
+   143	
+   144	        # zusammenführen
+   145	        derived_out = _merge_derived(
+   146	            derived_in,
+   147	            {
+   148	                "calculated": out.get("calculated", {}),
+   149	                "flags": {**derived_in.get("flags", {}), **out.get("flags", {})},
+   150	                "warnings": list({*(derived_in.get("warnings") or []), *(out.get("warnings") or [])}),
+   151	                "requirements": list({*(derived_in.get("requirements") or []), *(out.get("requirements") or [])}),
+   152	                "material_whitelist": list({*derived_in.get("material_whitelist", []), *out.get("material_whitelist", [])}),
+   153	                "material_blacklist": list({*derived_in.get("material_blacklist", []), *out.get("material_blacklist", [])}),
+   154	            },
+   155	        )
+   156	
+   157	        return {**state, "derived": derived_out, "phase": "calc"}
+   158	    except Exception:
+   159	        # Fallback: state unverändert weiterreichen
+   160	        return {**state, "derived": derived_in, "phase": "calc"}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/explain.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/explain.py
+     2	from __future__ import annotations
+     3	
+     4	from typing import Any, Dict, List, Optional, Callable
+     5	import json
+     6	import structlog
+     7	from langchain_core.messages import AIMessage
+     8	from app.services.langgraph.prompting import render_template
+     9	
+    10	log = structlog.get_logger(__name__)
+    11	
+    12	def _top_sources(docs: List[Dict[str, Any]], k: int = 3) -> List[str]:
+    13	    if not docs:
+    14	        return []
+    15	    def _score(d: Dict[str, Any]) -> float:
+    16	        try:
+    17	            if d.get("fused_score") is not None:
+    18	                return float(d["fused_score"])
+    19	            return max(float(d.get("vector_score") or 0.0),
+    20	                       float(d.get("keyword_score") or 0.0) / 100.0)
+    21	        except Exception:
+    22	            return 0.0
+    23	    tops = sorted(docs, key=_score, reverse=True)[:k]
+    24	    out: List[str] = []
+    25	    for d in tops:
+    26	        src = d.get("source") or (d.get("metadata") or {}).get("source") or ""
+    27	        if src:
+    28	            out.append(str(src))
+    29	    seen, uniq = set(), []
+    30	    for s in out:
+    31	        if s not in seen:
+    32	            seen.add(s)
+    33	            uniq.append(s)
+    34	    return uniq
+    35	
+    36	def _emit_text(events: Optional[Callable[[Dict[str, Any]], None]],
+    37	               node: str, text: str, chunk_size: int = 180) -> None:
+    38	    if not events or not text:
+    39	        return
+    40	    for i in range(0, len(text), chunk_size):
+    41	        events({"type": "stream_text", "node": node, "text": text[i:i+chunk_size]})
+    42	
+    43	def _last_ai_text(state: Dict[str, Any]) -> str:
+    44	    """Zieht den Text der letzten AIMessage (string oder tool-structured)."""
+    45	    msgs = state.get("messages") or []
+    46	    last_ai = None
+    47	    for m in reversed(msgs):
+    48	        t = (getattr(m, "type", "") or getattr(m, "role", "") or "").lower()
+    49	        if t in ("ai", "assistant"):
+    50	            last_ai = m
+    51	            break
+    52	    if not last_ai:
+    53	        return ""
+    54	    content = getattr(last_ai, "content", None)
+    55	    if isinstance(content, str):
+    56	        return content.strip()
+    57	    # LangChain kann Liste aus {"type":"text","text":"..."} liefern
+    58	    out_parts: List[str] = []
+    59	    if isinstance(content, list):
+    60	        for p in content:
+    61	            if isinstance(p, str):
+    62	                out_parts.append(p)
+    63	            elif isinstance(p, dict) and isinstance(p.get("text"), str):
+    64	                out_parts.append(p["text"])
+    65	    return "\n".join(out_parts).strip()
+    66	
+    67	def _parse_recommendation(text: str) -> Dict[str, Any]:
+    68	    """
+    69	    Akzeptiert:
+    70	      1) {"empfehlungen":[{typ, werkstoff, begruendung, vorteile, einschraenkungen, ...}, ...]}
+    71	      2) {"main": {...}, "alternativen": [...], "hinweise":[...]}
+    72	      3) {"text": "<JSON string>"}  -> wird rekursiv geparst
+    73	    """
+    74	    if not text:
+    75	        return {}
+    76	
+    77	    def _loads_maybe(s: str):
+    78	        try:
+    79	            return json.loads(s)
+    80	        except Exception:
+    81	            return None
+    82	
+    83	    obj = _loads_maybe(text)
+    84	    if isinstance(obj, dict) and "text" in obj and isinstance(obj["text"], str):
+    85	        obj2 = _loads_maybe(obj["text"])
+    86	        if isinstance(obj2, dict):
+    87	            obj = obj2
+    88	
+    89	    if not isinstance(obj, dict):
+    90	        return {}
+    91	
+    92	    # Form 2
+    93	    if "main" in obj or "alternativen" in obj:
+    94	        main = obj.get("main") or {}
+    95	        alternativen = obj.get("alternativen") or []
+    96	        hinweise = obj.get("hinweise") or []
+    97	        return {"main": main, "alternativen": alternativen, "hinweise": hinweise}
+    98	
+    99	    # Form 1
+   100	    if isinstance(obj.get("empfehlungen"), list) and obj["empfehlungen"]:
+   101	        recs = obj["empfehlungen"]
+   102	        main = recs[0] if isinstance(recs[0], dict) else {}
+   103	        alternativen = [r for r in recs[1:] if isinstance(r, dict)]
+   104	        return {"main": main, "alternativen": alternativen, "hinweise": obj.get("hinweise") or []}
+   105	
+   106	    return {}
+   107	
+   108	def explain_node(state: Dict[str, Any], *, events: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
+   109	    """
+   110	    Rendert die Empfehlung als freundliches Markdown (explain.jinja2),
+   111	    streamt Chunks (falls WS-Events übergeben werden) und hängt eine AIMessage an.
+   112	    Holt sich – falls nötig – main/alternativen automatisch aus der letzten AI-JSON.
+   113	    """
+   114	    params: Dict[str, Any] = state.get("params") or {}
+   115	    docs: List[Dict[str, Any]] = state.get("retrieved_docs") or state.get("docs") or []
+   116	    sources = _top_sources(docs, k=3)
+   117	
+   118	    # Falls main/alternativen/hinweise fehlen, aus der letzten AI-Message extrahieren
+   119	    main = state.get("main") or {}
+   120	    alternativen = state.get("alternativen") or []
+   121	    hinweise = state.get("hinweise") or []
+   122	    if not main and not alternativen:
+   123	        parsed = _parse_recommendation(_last_ai_text(state))
+   124	        if parsed:
+   125	            main = parsed.get("main") or main
+   126	            alternativen = parsed.get("alternativen") or alternativen
+   127	            if not hinweise:
+   128	                hinweise = parsed.get("hinweise") or []
+   129	
+   130	    md = render_template(
+   131	        "explain.jinja2",
+   132	        main=main or {},
+   133	        alternativen=alternativen or [],
+   134	        derived=state.get("derived") or {},
+   135	        hinweise=hinweise or [],
+   136	        params=params,
+   137	        sources=sources,
+   138	    ).strip()
+   139	
+   140	    _emit_text(events, node="explain", text=md)
+   141	
+   142	    msgs = (state.get("messages") or []) + [AIMessage(content=md)]
+   143	    return {
+   144	        **state,
+   145	        "main": main,
+   146	        "alternativen": alternativen,
+   147	        "hinweise": hinweise,
+   148	        "phase": "explain",
+   149	        "messages": msgs,
+   150	        "explanation": md,
+   151	        "retrieved_docs": docs,
+   152	    }
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/__init__.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/__init__.py
+     2	# (nur für Paketinitialisierung)
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/intake.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/intake.py
+     2	from __future__ import annotations
+     3	
+     4	import json
+     5	import logging
+     6	from typing import Any, Dict
+     7	
+     8	from langchain_core.messages import HumanMessage
+     9	from app.services.langgraph.llm_factory import get_llm as create_llm
+    10	from app.services.langgraph.prompting import (
+    11	    render_template,
+    12	    messages_for_template,
+    13	    strip_json_fence,
+    14	)
+    15	from ..utils import normalize_messages
+    16	
+    17	log = logging.getLogger(__name__)
+    18	
+    19	
+    20	def intake_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    21	    """
+    22	    Analysiert die Eingabe, klassifiziert den Intent und extrahiert Parameter.
+    23	    Schreibt Ergebnis deterministisch in state['triage'] und state['params'].
+    24	    """
+    25	    msgs = normalize_messages(state.get("messages", []))
+    26	    params = dict(state.get("params") or {})
+    27	
+    28	    # Prompt rendern
+    29	    prompt = render_template(
+    30	        "intake_triage.jinja2",
+    31	        messages=messages_for_template(msgs),
+    32	        params=params,
+    33	        params_json=json.dumps(params, ensure_ascii=False),
+    34	    )
+    35	
+    36	    llm = create_llm()
+    37	    try:
+    38	        resp = llm.invoke([HumanMessage(content=prompt)])
+    39	        raw = strip_json_fence(getattr(resp, "content", "") or "")
+    40	        data = json.loads(raw)
+    41	    except Exception as e:
+    42	        log.warning("intake_node: Parse- oder LLM-Fehler: %s", e, exc_info=True)
+    43	        data = {}
+    44	
+    45	    # Intent & Params sauber übernehmen
+    46	    intent = str((data.get("intent") or "unknown")).strip().lower()
+    47	    new_params = dict(params)
+    48	    if isinstance(data.get("params"), dict):
+    49	        for k, v in data["params"].items():
+    50	            # nur nicht-leere Werte übernehmen
+    51	            if v not in (None, "", "unknown"):
+    52	                new_params[k] = v
+    53	
+    54	    triage = {
+    55	        "intent": intent if intent in ("greeting", "smalltalk", "consult", "unknown") else "unknown",
+    56	        "confidence": 1.0 if intent in ("greeting", "smalltalk", "consult") else 0.0,
+    57	        "reply": "",
+    58	        "flags": {"source": "intake_triage"},
+    59	    }
+    60	
+    61	    # Keine AIMessage nötig – Routing übernimmt build._route_from_intake()
+    62	    return {
+    63	        "messages": [],
+    64	        "params": new_params,
+    65	        "triage": triage,
+    66	        "phase": "intake",
+    67	    }
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/lite_router.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/lite_router.py
+     2	from __future__ import annotations
+     3	from typing import Any, Dict, List
+     4	import logging
+     5	
+     6	log = logging.getLogger("uvicorn.error")
+     7	
+     8	
+     9	def _last_user_text(messages: List[Dict[str, Any]]) -> str:
+    10	    for m in reversed(messages or []):
+    11	        role = (m.get("role") or m.get("type") or "").lower()
+    12	        if role in ("user", "human") and isinstance(m.get("content"), str):
+    13	            return m["content"].strip()
+    14	    return ""
+    15	
+    16	
+    17	def lite_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    18	    """
+    19	    Sehr schneller Router:
+    20	      - smalltalk=True: Grüße / Smalltalk
+    21	      - info=True: Wissens-/Materialfragen (z.B. 'PTFE', 'was weißt du ...')
+    22	    Setzt Flags in den State, ändert aber den Flow nicht – die nächste Node
+    23	    entscheidet anhand der Flags (z.B. Smalltalk-Node).
+    24	    """
+    25	    messages = state.get("messages") or []
+    26	    text = (_last_user_text(messages) or "").lower()
+    27	
+    28	    # Heuristiken
+    29	    smalltalk_triggers = (
+    30	        "hallo", "hi", "servus", "moin", "grüß", "gruss", "wie geht", "na?", "hey"
+    31	    )
+    32	    info_triggers = (
+    33	        "was weißt du", "was weisst du", "what do you know",
+    34	        "ptfe", "nbr", "fkm", "datenblatt", "werkstoff", "material", "rag:"
+    35	    )
+    36	
+    37	    is_smalltalk = any(t in text for t in smalltalk_triggers)
+    38	    is_info = any(t in text for t in info_triggers) and not is_smalltalk
+    39	
+    40	    log.info(f"[lite_router] smalltalk={is_smalltalk} info={is_info} text='{text}'")
+    41	
+    42	    new_state: Dict[str, Any] = dict(state)
+    43	    new_state["lite_route"] = {"smalltalk": is_smalltalk, "info": is_info}
+    44	    # Phase hier nicht setzen – das macht die nächste Node
+    45	    return new_state
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/rag.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/rag.py
+     2	"""
+     3	RAG-Node: holt Hybrid-Treffer (Qdrant + Redis BM25), baut kompakten
+     4	Kontext-String und legt beides in den State (retrieved_docs/docs, context) ab.
+     5	"""
+     6	from __future__ import annotations
+     7	from typing import Any, Dict, List, Optional
+     8	import structlog
+     9	
+    10	from .....rag import rag_orchestrator as ro  # relativer Import
+    11	
+    12	log = structlog.get_logger(__name__)
+    13	
+    14	
+    15	def _extract_query(state: Dict[str, Any]) -> str:
+    16	    return (
+    17	        state.get("query")
+    18	        or state.get("question")
+    19	        or state.get("user_input")
+    20	        or state.get("input")
+    21	        or ""
+    22	    )
+    23	
+    24	
+    25	def _extract_tenant(state: Dict[str, Any]) -> Optional[str]:
+    26	    ctx = state.get("context") or {}
+    27	    return state.get("tenant") or (ctx.get("tenant") if isinstance(ctx, dict) else None)
+    28	
+    29	
+    30	def _context_from_docs(docs: List[Dict[str, Any]], max_chars: int = 1200) -> str:
+    31	    """Kompakter Textkontext für Prompting (inkl. Quelle)."""
+    32	    if not docs:
+    33	        return ""
+    34	    parts: List[str] = []
+    35	    for d in docs[:6]:
+    36	        t = (d.get("text") or "").strip()
+    37	        if not t:
+    38	            continue
+    39	        src = d.get("source") or (d.get("metadata") or {}).get("source")
+    40	        if src:
+    41	            t = f"{t}\n[source: {src}]"
+    42	        parts.append(t)
+    43	    ctx = "\n\n".join(parts)
+    44	    return ctx[:max_chars]
+    45	
+    46	
+    47	def run_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    48	    """
+    49	    Eingänge (optional):
+    50	      - query/question/user_input/input
+    51	      - tenant bzw. context.tenant
+    52	      - rag_filters, rag_k, rag_rerank
+    53	    Ausgänge:
+    54	      - retrieved_docs/docs: List[Dict[str, Any]]
+    55	      - context: str
+    56	    """
+    57	    query = _extract_query(state)
+    58	    tenant = _extract_tenant(state)
+    59	    filters = state.get("rag_filters") or None
+    60	    k = int(state.get("rag_k") or ro.FINAL_K)
+    61	    use_rerank = bool(state.get("rag_rerank", True))
+    62	
+    63	    if not query.strip():
+    64	        return {**state, "retrieved_docs": [], "docs": [], "context": "", "phase": "rag"}
+    65	
+    66	    docs = ro.hybrid_retrieve(
+    67	        query=query,
+    68	        tenant=tenant,
+    69	        k=k,
+    70	        metadata_filters=filters,
+    71	        use_rerank=use_rerank,
+    72	    )
+    73	
+    74	    context = state.get("context")
+    75	    if not isinstance(context, str) or not context.strip():
+    76	        context = _context_from_docs(docs)
+    77	
+    78	    out = {
+    79	        **state,
+    80	        "retrieved_docs": docs,
+    81	        "docs": docs,              # Alias für nachfolgende Nodes
+    82	        "context": context,
+    83	        "phase": "rag",
+    84	    }
+    85	    try:
+    86	        log.info("[rag_node] retrieved", n=len(docs), tenant=tenant or "-", ctx_len=len(context or ""))
+    87	    except Exception:
+    88	        pass
+    89	    return out
+    90	
+    91	
+    92	__all__ = ["run_rag_node"]
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/recommend.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/recommend.py
+     2	from __future__ import annotations
+     3	
+     4	import json
+     5	import re
+     6	from typing import Any, Dict, List, Optional
+     7	
+     8	import structlog
+     9	from langchain_core.messages import AIMessage, SystemMessage
+    10	from langchain_core.runnables.config import RunnableConfig
+    11	
+    12	from app.services.langgraph.llm_factory import get_llm as create_llm
+    13	from app.services.langgraph.prompting import (
+    14	    render_template,
+    15	    messages_for_template,
+    16	    strip_json_fence,
+    17	)
+    18	from app.services.langgraph.prompt_registry import get_agent_prompt
+    19	from ..utils import normalize_messages, last_user_text
+    20	
+    21	log = structlog.get_logger(__name__)
+    22	
+    23	
+    24	def _extract_text_from_chunk(chunk) -> List[str]:
+    25	    out: List[str] = []
+    26	    if not chunk:
+    27	        return out
+    28	    c = getattr(chunk, "content", None)
+    29	    if isinstance(c, str) and c:
+    30	        out.append(c)
+    31	    elif isinstance(c, list):
+    32	        for part in c:
+    33	            if isinstance(part, str):
+    34	                out.append(part)
+    35	            elif isinstance(part, dict) and isinstance(part.get("text"), str):
+    36	                out.append(part["text"])
+    37	    ak = getattr(chunk, "additional_kwargs", None)
+    38	    if isinstance(ak, dict):
+    39	        for k in ("delta", "content", "text", "token"):
+    40	            v = ak.get(k)
+    41	            if isinstance(v, str) and v:
+    42	                out.append(v)
+    43	    if isinstance(chunk, dict):
+    44	        for k in ("delta", "content", "text", "token"):
+    45	            v = chunk.get(k)
+    46	            if isinstance(v, str) and v:
+    47	                out.append(v)
+    48	    return out
+    49	
+    50	
+    51	def _extract_json_any(s: str) -> str:
+    52	    s = (s or "").strip()
+    53	    if not s:
+    54	        return ""
+    55	    if (s[:1] in "{[") and (s[-1:] in "}]"):
+    56	        return s
+    57	    s2 = strip_json_fence(s)
+    58	    if (s2[:1] in "{[") and (s2[-1:] in "}]"):
+    59	        return s2
+    60	    # balanced JSON heuristics
+    61	    m = re.search(r"\{(?:[^{}]|(?R))*\}", s, re.S)
+    62	    if m:
+    63	        return m.group(0)
+    64	    m = re.search(r"\[(?:[^\[\]]|(?R))*\]", s, re.S)
+    65	    return m.group(0) if m else ""
+    66	
+    67	
+    68	def _parse_empfehlungen(raw: str) -> Optional[List[Dict[str, Any]]]:
+    69	    if not raw:
+    70	        return None
+    71	    try:
+    72	        data = json.loads(strip_json_fence(raw))
+    73	        if isinstance(data, dict) and isinstance(data.get("empfehlungen"), list):
+    74	            return data["empfehlungen"]
+    75	    except Exception as e:
+    76	        log.warning("[recommend_node] json_parse_error", err=str(e))
+    77	    return None
+    78	
+    79	
+    80	# -------- Markdown → strukturierter Fallback --------
+    81	_RX = {
+    82	    "typ": re.compile(r"(?im)^\s*Typ:\s*(.+?)\s*$"),
+    83	    "werkstoff": re.compile(r"(?im)^\s*Werkstoff:\s*(.+?)\s*$"),
+    84	    "vorteile": re.compile(
+    85	        r"(?is)\bVorteile:\s*(.+?)(?:\n\s*(?:Einschr[aä]nkungen|Begr[üu]ndung|Abgeleiteter|Alternativen)\b|$)"
+    86	    ),
+    87	    "einschraenkungen": re.compile(
+    88	        r"(?is)\bEinschr[aä]nkungen:\s*(.+?)(?:\n\s*(?:Begr[üu]ndung|Abgeleiteter|Alternativen)\b|$)"
+    89	    ),
+    90	    "begruendung": re.compile(
+    91	        r"(?is)\bBegr[üu]ndung:\s*(.+?)(?:\n\s*(?:Abgeleiteter|Alternativen)\b|$)"
+    92	    ),
+    93	}
+    94	
+    95	
+    96	def _split_items(s: str) -> List[str]:
+    97	    if not s:
+    98	        return []
+    99	    s = re.sub(r"[•\-\u2013\u2014]\s*", ", ", s)
+   100	    parts = re.split(r"[;,]\s*|\s{2,}", s.strip())
+   101	    return [p.strip(" .") for p in parts if p and not p.isspace()]
+   102	
+   103	
+   104	def _coerce_from_markdown(text: str) -> Optional[List[Dict[str, Any]]]:
+   105	    if not text:
+   106	        return None
+   107	
+   108	    def _m(rx):
+   109	        m = rx.search(text)
+   110	        return (m.group(1).strip() if m else "")
+   111	
+   112	    typ = _m(_RX["typ"])
+   113	    werkstoff = _m(_RX["werkstoff"])
+   114	    vorteile = _split_items(_m(_RX["vorteile"]))
+   115	    einschr = _split_items(_m(_RX["einschraenkungen"]))
+   116	    begr = _m(_RX["begruendung"])
+   117	    if not (typ or werkstoff or begr or vorteile or einschr):
+   118	        return None
+   119	    return [{
+   120	        "typ": typ or "",
+   121	        "werkstoff": werkstoff or "",
+   122	        "begruendung": begr or "",
+   123	        "vorteile": vorteile or [],
+   124	        "einschraenkungen": einschr or [],
+   125	        "geeignet_fuer": [],
+   126	    }]
+   127	
+   128	
+   129	def _context_from_docs(docs: List[Dict[str, Any]], max_chars: int = 1200) -> str:
+   130	    if not docs:
+   131	        return ""
+   132	    parts: List[str] = []
+   133	    for d in docs[:6]:
+   134	        t = (d.get("text") or "").strip()
+   135	        if not t:
+   136	            continue
+   137	        src = d.get("source") or (d.get("metadata") or {}).get("source")
+   138	        if src:
+   139	            t = f"{t}\n[source: {src}]"
+   140	        parts.append(t)
+   141	    ctx = "\n\n".join(parts)
+   142	    return ctx[:max_chars]
+   143	
+   144	
+   145	def recommend_node(state: Dict[str, Any], config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
+   146	    msgs = normalize_messages(state.get("messages", []))
+   147	    params: Dict[str, Any] = state.get("params") or {}
+   148	    domain = (state.get("domain") or "").strip().lower()
+   149	    derived = state.get("derived") or {}
+   150	    retrieved_docs: List[Dict[str, Any]] = state.get("retrieved_docs") or []
+   151	
+   152	    context = state.get("context") or _context_from_docs(retrieved_docs)
+   153	    if context:
+   154	        log.info("[recommend_node] using_context", n_docs=len(retrieved_docs), ctx_len=len(context))
+   155	
+   156	    base_llm = create_llm()
+   157	    try:
+   158	        llm = base_llm.bind(response_format={"type": "json_object"})
+   159	    except Exception:
+   160	        llm = base_llm
+   161	
+   162	    recent_user = (last_user_text(msgs) or "").strip()
+   163	
+   164	    prompt = render_template(
+   165	        "recommend.jinja2",
+   166	        messages=messages_for_template(msgs),
+   167	        params=params,
+   168	        domain=domain,
+   169	        derived=derived,
+   170	        recent_user=recent_user,
+   171	        context=context,
+   172	    )
+   173	
+   174	    effective_cfg: RunnableConfig = (config or {}).copy()  # type: ignore[assignment]
+   175	    if "run_name" not in (effective_cfg or {}):
+   176	        effective_cfg = {**effective_cfg, "run_name": "recommend"}  # type: ignore[dict-item]
+   177	
+   178	    # Domänen-spezifischen Systemprompt + JSON-Instruktion kombinieren
+   179	    sys_msgs = [
+   180	        SystemMessage(content=get_agent_prompt(domain or "rwdr")),
+   181	        SystemMessage(content=prompt),
+   182	    ]
+   183	
+   184	    content_parts: List[str] = []
+   185	    try:
+   186	        for chunk in llm.with_config(effective_cfg).stream(sys_msgs):
+   187	            content_parts.extend(_extract_text_from_chunk(chunk))
+   188	    except Exception as e:
+   189	        log.warning("[recommend_node] stream_failed", err=str(e))
+   190	        try:
+   191	            resp = llm.invoke(sys_msgs, config=effective_cfg)
+   192	            content_parts = [getattr(resp, "content", "") or ""]
+   193	        except Exception as e2:
+   194	            log.error("[recommend_node] invoke_failed", err=str(e2))
+   195	            payload = json.dumps({"empfehlungen": []}, ensure_ascii=False, separators=(",", ":"))
+   196	            ai_msg = AIMessage(content=payload)
+   197	            return {
+   198	                **state,
+   199	                "messages": msgs + [ai_msg],
+   200	                "answer": payload,
+   201	                "phase": "recommend",
+   202	                "empfehlungen": [],
+   203	                "retrieved_docs": retrieved_docs,
+   204	                "docs": retrieved_docs,
+   205	                "context": context,
+   206	            }
+   207	
+   208	    raw = ("".join(content_parts) or "").strip()
+   209	    log.info("[recommend_node] stream_len", chars=len(raw))
+   210	
+   211	    # 1) echtes JSON?
+   212	    json_snippet = _extract_json_any(raw)
+   213	    recs = _parse_empfehlungen(json_snippet) or _parse_empfehlungen(raw)
+   214	
+   215	    # 2) Fallback: Markdown → strukturieren
+   216	    if not recs:
+   217	        recs = _coerce_from_markdown(raw)
+   218	
+   219	    # 3) Letzter Fallback
+   220	    if not recs:
+   221	        recs = [{
+   222	            "typ": "",
+   223	            "werkstoff": "",
+   224	            "begruendung": (raw[:600] if raw else "Keine strukturierte Empfehlung erhalten."),
+   225	            "vorteile": [],
+   226	            "einschraenkungen": [],
+   227	            "geeignet_fuer": [],
+   228	        }]
+   229	
+   230	    content_out = json.dumps({"empfehlungen": recs}, ensure_ascii=False, separators=(",", ":"))
+   231	    content_out = content_out.replace("\n", " ").strip()  # sicher einzeilig
+   232	
+   233	    log.info("[recommend_node] emitting_json", length=len(content_out))
+   234	
+   235	    ai_msg = AIMessage(content=content_out)
+   236	    return {
+   237	        **state,
+   238	        "messages": msgs + [ai_msg],
+   239	        "answer": content_out,
+   240	        "phase": "recommend",
+   241	        "empfehlungen": recs,
+   242	        "retrieved_docs": retrieved_docs,
+   243	        "docs": retrieved_docs,
+   244	        "context": context,
+   245	    }
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/smalltalk.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/smalltalk.py
+     2	from __future__ import annotations
+     3	from typing import Any, Dict, List
+     4	import logging
+     5	
+     6	# Verwende die bestehende LLM-Factory in diesem Consult-Paket
+     7	from ..config import create_llm
+     8	
+     9	log = logging.getLogger("uvicorn.error")
+    10	
+    11	SYSTEM = (
+    12	    "Du bist ein freundlicher Assistent. Antworte kurz, natürlich und auf Deutsch. "
+    13	    "Bei Smalltalk: keine Fachberatung und keine Rückfragen zu Parametern."
+    14	)
+    15	
+    16	
+    17	def _last_user_text(messages: List[Dict[str, Any]]) -> str:
+    18	    for m in reversed(messages or []):
+    19	        role = (m.get("role") or m.get("type") or "").lower()
+    20	        if role in ("user", "human") and isinstance(m.get("content"), str):
+    21	            return m["content"].strip()
+    22	    return ""
+    23	
+    24	
+    25	def smalltalk_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    26	    """
+    27	    Smalltalk über das Standard-Chatmodell laufen lassen.
+    28	    Wenn Streaming-Callbacks konfiguriert sind, wird gestreamt; sonst fällt es
+    29	    sauber auf eine kurze, synchron erzeugte Antwort zurück.
+    30	    """
+    31	    messages = state.get("messages") or []
+    32	    user = _last_user_text(messages) or "Kleiner Smalltalk."
+    33	
+    34	    try:
+    35	        # Das create_llm kommt aus consult/config.py und ist in deinem Projekt vorhanden.
+    36	        # Viele Setups akzeptieren stream=True (wird intern vom WS-Handler genutzt).
+    37	        llm = create_llm(stream=True)
+    38	        prompt = [
+    39	            {"role": "system", "content": SYSTEM},
+    40	            {"role": "user", "content": user},
+    41	        ]
+    42	        completion = llm.invoke(prompt)
+    43	        text = getattr(completion, "content", None) or ""
+    44	        if not text:
+    45	            text = "Hallo! 😊 Wie kann ich dir helfen?"
+    46	    except Exception as e:
+    47	        log.warning(f"[smalltalk] fallback without LLM due to: {e}")
+    48	        # Minimaler, robuster Fallback ohne Modell
+    49	        greetings = ("hallo", "hi", "servus", "moin", "grüß", "gruss")
+    50	        low = user.lower()
+    51	        if any(g in low for g in greetings):
+    52	            text = "Hallo! 👋 Wie kann ich dir helfen?"
+    53	        elif "wie geht" in low:
+    54	            text = "Mir geht’s gut, danke! 😊 Und dir?"
+    55	        else:
+    56	            text = "Klingt gut! Wie kann ich dich unterstützen?"
+    57	
+    58	    new_messages = list(messages) + [{"role": "assistant", "content": text}]
+    59	    new_state = dict(state)
+    60	    new_state["messages"] = new_messages
+    61	    new_state["phase"] = "respond"
+    62	    return new_state
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/validate_answer.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/validate_answer.py
+     2	from __future__ import annotations
+     3	
+     4	import math
+     5	from typing import Any, Dict, List
+     6	import structlog
+     7	
+     8	from ..state import ConsultState
+     9	
+    10	log = structlog.get_logger(__name__)
+    11	
+    12	
+    13	def _sigmoid(x: float) -> float:
+    14	    try:
+    15	        return 1.0 / (1.0 + math.exp(-x))
+    16	    except Exception:
+    17	        return 0.5
+    18	
+    19	
+    20	def _confidence_from_docs(docs: List[Dict[str, Any]]) -> float:
+    21	    """
+    22	    Grobe Konfidenzabschätzung aus RAG-Scores.
+    23	    Nutzt fused_score, sonst max(vector_score, keyword_score/100).
+    24	    """
+    25	    if not docs:
+    26	        return 0.15
+    27	
+    28	    vals: List[float] = []
+    29	    for d in docs[:6]:
+    30	        vs = d.get("vector_score")
+    31	        ks = d.get("keyword_score")
+    32	        fs = d.get("fused_score")
+    33	        try:
+    34	            base = float(fs if fs is not None else max(float(vs or 0.0), float(ks or 0.0) / 100.0))
+    35	        except Exception:
+    36	            base = 0.0
+    37	        vals.append(_sigmoid(base))
+    38	
+    39	    conf = sum(vals) / max(1, len(vals))
+    40	    return max(0.05, min(0.98, conf))
+    41	
+    42	
+    43	def _top_source(d: Dict[str, Any]) -> str:
+    44	    return (d.get("source")
+    45	            or (d.get("metadata") or {}).get("source")
+    46	            or "")
+    47	
+    48	
+    49	def validate_answer(state: ConsultState) -> ConsultState:
+    50	    """
+    51	    Bewertet die Antwortqualität (Konfidenz/Quellen) und MERGT den State,
+    52	    ohne RAG-Felder zu verlieren.
+    53	    """
+    54	    retrieved_docs: List[Dict[str, Any]] = state.get("retrieved_docs") or state.get("docs") or []
+    55	    context: str = state.get("context") or ""
+    56	
+    57	    conf = _confidence_from_docs(retrieved_docs)
+    58	    needs_more = bool(state.get("needs_more_params")) or conf < 0.35
+    59	
+    60	    validation: Dict[str, Any] = {
+    61	        "n_docs": len(retrieved_docs),
+    62	        "confidence": round(conf, 3),
+    63	        "top_source": _top_source(retrieved_docs[0]) if retrieved_docs else "",
+    64	    }
+    65	
+    66	    log.info(
+    67	        "validate_answer",
+    68	        confidence=validation["confidence"],
+    69	        needs_more_params=needs_more,
+    70	        n_docs=validation["n_docs"],
+    71	        top_source=validation["top_source"],
+    72	    )
+    73	
+    74	    return {
+    75	        **state,
+    76	        "phase": "validate_answer",
+    77	        "validation": validation,
+    78	        "confidence": conf,
+    79	        "needs_more_params": needs_more,
+    80	        # explizit erhalten
+    81	        "retrieved_docs": retrieved_docs,
+    82	        "docs": retrieved_docs,
+    83	        "context": context,
+    84	    }
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/consult/nodes/validate.py
+###############################################################################
+     1	# backend/app/services/langgraph/graph/consult/nodes/validate.py
+     2	from __future__ import annotations
+     3	from typing import Any, Dict
+     4	
+     5	
+     6	def _to_float(x: Any) -> Any:
+     7	    try:
+     8	        if isinstance(x, bool):
+     9	            return x
+    10	        return float(x)
+    11	    except Exception:
+    12	        return x
+    13	
+    14	
+    15	def validate_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    16	    """
+    17	    Leichter Parameter-Check/Normalisierung vor RAG.
+    18	    WICHTIG: Keine Berechnungen, kein Calculator-Aufruf – das macht calc_agent.
+    19	    """
+    20	    params = dict(state.get("params") or {})
+    21	
+    22	    # numerische Felder best-effort in float wandeln
+    23	    for k in (
+    24	        "temp_max_c", "temp_min_c", "druck_bar", "drehzahl_u_min",
+    25	        "wellen_mm", "gehause_mm", "breite_mm",
+    26	        "relativgeschwindigkeit_ms",
+    27	        "tmax_c", "pressure_bar", "n_u_min", "rpm", "v_ms",
+    28	    ):
+    29	        if k in params and params[k] not in (None, "", []):
+    30	            params[k] = _to_float(params[k])
+    31	
+    32	    # einfache Alias-Harmonisierung (falls Ziel noch leer)
+    33	    alias = {
+    34	        "tmax_c": "temp_max_c",
+    35	        "pressure_bar": "druck_bar",
+    36	        "n_u_min": "drehzahl_u_min",
+    37	        "rpm": "drehzahl_u_min",
+    38	        "v_ms": "relativgeschwindigkeit_ms",
+    39	    }
+    40	    for src, dst in alias.items():
+    41	        if (params.get(dst) in (None, "", [])) and (params.get(src) not in (None, "", [])):
+    42	            params[dst] = params[src]
+    43	
+    44	    return {**state, "params": params, "phase": "validate"}
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/supervisor_graph.py
+###############################################################################
+     1	from __future__ import annotations
+     2	
+     3	import logging
+     4	from functools import lru_cache
+     5	from typing import TypedDict, List, Literal, Optional
+     6	
+     7	from langchain_openai import ChatOpenAI
+     8	from langchain_core.messages import BaseMessage, AIMessage
+     9	from langchain_core.tools import tool
+    10	from langgraph.graph import StateGraph
+    11	from langgraph.constants import END
+    12	
+    13	from app.services.langgraph.tools import long_term_memory as ltm
+    14	from .intent_router import classify_intent
+    15	from .consult.build import build_consult_graph
+    16	from app.services.langgraph.llm_factory import get_llm
+    17	
+    18	log = logging.getLogger(__name__)
+    19	
+    20	@lru_cache(maxsize=1)
+    21	def create_llm() -> ChatOpenAI:
+    22	    """Create a ChatOpenAI instance (streaming enabled) from the central LLM factory."""
+    23	    return get_llm(streaming=True)
+    24	
+    25	@tool
+    26	def ltm_search(query: str) -> str:
+    27	    """Durchsucht das Long-Term-Memory (Qdrant) nach relevanten Erinnerungen (MMR, top-k=5) und gibt einen zusammenhängenden Kontext-Text zurück."""
+    28	    ctx, _hits = ltm.ltm_query(query, strategy="mmr", top_k=5)
+    29	    return ctx or "Keine relevanten Erinnerungen gefunden."
+    30	
+    31	@tool
+    32	def ltm_store(user: str, chat_id: str, text: str, kind: str = "note") -> str:
+    33	    """Speichert einen Text-Schnipsel im Long-Term-Memory (Qdrant). Parameter: user, chat_id, text, kind."""
+    34	    try:
+    35	        pid = ltm.upsert_memory(user=user, chat_id=chat_id, text=text, kind=kind)
+    36	        return f"Memory gespeichert (ID={pid})"
+    37	    except Exception as e:
+    38	        return f"Fehler beim Speichern: {e}"
+    39	
+    40	TOOLS = [ltm_search, ltm_store]
+    41	
+    42	class ChatState(TypedDict, total=False):
+    43	    messages: List[BaseMessage]
+    44	    intent: Literal["consult", "chitchat"]
+    45	
+    46	@lru_cache(maxsize=1)
+    47	def _compiled_consult_graph():
+    48	    return build_consult_graph().compile()
+    49	
+    50	def build_chat_builder(llm: Optional[ChatOpenAI] = None) -> StateGraph:
+    51	    """Erstellt den Supervisor-Graphen: Router -> (Consult|Chitchat)."""
+    52	    log.info("[supervisor] Initialisiere…")
+    53	    builder = StateGraph(ChatState)
+    54	
+    55	    base_llm = llm or create_llm()
+    56	    llm_chitchat = base_llm.bind_tools(TOOLS)
+    57	    consult_graph = _compiled_consult_graph()
+    58	
+    59	    def router_node(state: ChatState) -> ChatState:
+    60	        intent = classify_intent(base_llm, state.get("messages", []))
+    61	        return {"intent": intent}
+    62	
+    63	    def chitchat_node(state: ChatState) -> ChatState:
+    64	        history = state.get("messages", [])
+    65	        result = llm_chitchat.invoke(history)
+    66	        ai_msg = result if isinstance(result, AIMessage) else AIMessage(content=getattr(result, "content", str(result)))
+    67	        return {"messages": [ai_msg]}
+    68	
+    69	    def consult_node(state: ChatState) -> ChatState:
+    70	        result = consult_graph.invoke({"messages": state.get("messages", [])})
+    71	        out_msgs = result.get("messages") or []
+    72	        ai_txt = ""
+    73	        for m in reversed(out_msgs):
+    74	            if isinstance(m, AIMessage):
+    75	                ai_txt = (m.content or "").strip()
+    76	                break
+    77	        if not ai_txt:
+    78	            ai_txt = "Die Beratung wurde abgeschlossen."
+    79	        return {"messages": [AIMessage(content=ai_txt)]}
+    80	
+    81	    builder.add_node("router", router_node)
+    82	    builder.add_node("chitchat", chitchat_node)
+    83	    builder.add_node("consult", consult_node)
+    84	
+    85	    builder.set_entry_point("router")
+    86	
+    87	    def decide(state: ChatState) -> str:
+    88	        intent = state.get("intent") or "chitchat"
+    89	        return "consult" if intent == "consult" else "chitchat"
+    90	
+    91	    builder.add_conditional_edges("router", decide, {"consult": "consult", "chitchat": "chitchat"})
+    92	    builder.add_edge("consult", END)
+    93	    builder.add_edge("chitchat", END)
+    94	
+    95	    log.info("[supervisor] Bereit.")
+    96	    return builder
+
+###############################################################################
+# FILE: backend/app/services/langgraph/graph/orchestrator.py
+###############################################################################
+     1	from __future__ import annotations
+     2	from typing import Dict, Any
+     3	from langgraph.graph import StateGraph, END
+     4	from app.services.langgraph.graph.state import SealAIState
+     5	from app.services.langgraph.graph.nodes.deterministic import intake_validate, calc_core, calc_advanced
+     6	from app.services.langgraph.graph.nodes.rag_nodes import rag_retrieve, partner_only_filter, rules_filter
+     7	from app.services.langgraph.graph.nodes.explain_nodes import explain
+     8	from app.services.langgraph.graph.nodes.rfq_nodes import decision_ready, await_user_action, generate_rfq_pdf_node, deliver_pdf
+     9	
+    10	def build_sealai_graph() -> StateGraph:
+    11	    g = StateGraph(SealAIState)
+    12	    g.add_node("intake_validate", intake_validate)
+    13	    g.add_node("calc_core", calc_core)
+    14	    g.add_node("calc_advanced", calc_advanced)
+    15	    g.add_node("rag_retrieve", rag_retrieve)
+    16	    g.add_node("partner_only_filter", partner_only_filter)
+    17	    g.add_node("rules_filter", rules_filter)
+    18	    g.add_node("explain", explain)
+    19	    g.add_node("decision_ready", decision_ready)
+    20	    g.add_node("await_user_action", await_user_action)
+    21	    g.add_node("generate_rfq_pdf", generate_rfq_pdf_node)
+    22	    g.add_node("deliver_pdf", deliver_pdf)
+    23	
+    24	    g.set_entry_point("intake_validate")
+    25	    g.add_edge("intake_validate", "calc_core")
+    26	    g.add_edge("calc_core", "calc_advanced")
+    27	    g.add_edge("calc_advanced", "rag_retrieve")
+    28	    g.add_edge("rag_retrieve", "partner_only_filter")
+    29	    g.add_edge("partner_only_filter", "rules_filter")
+    30	    g.add_edge("rules_filter", "explain")
+    31	    g.add_edge("explain", "decision_ready")
+    32	    g.add_edge("decision_ready", "await_user_action")
+    33	    g.add_edge("await_user_action", "generate_rfq_pdf")
+    34	    g.add_edge("generate_rfq_pdf", "deliver_pdf")
+    35	    g.add_edge("deliver_pdf", END)
+    36	    return g
+    37	
+    38	def invoke_sealai(state: Dict[str, Any]) -> Dict[str, Any]:
+    39	    mode = (state.get("mode") or "consult").lower()
+    40	    g = build_sealai_graph().compile()
+    41	    out = g.invoke(state)
+    42	    if mode != "consult":
+    43	        out.pop("rfq_pdf", None)
+    44	        out["ui_events"] = [e for e in out.get("ui_events", []) if e.get("ui_action") != "rfq_ready"]
+    45	    return out
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/__init__.py
+###############################################################################
+     1	# -*- coding: utf-8 -*-
+     2	# Stellt sicher, dass Domains beim Import registriert werden.
+     3	from .rwdr import register as register_rwdr
+     4	from .hydraulics_rod import register as register_hydraulics_rod
+     5	
+     6	def register_all_domains() -> None:
+     7	    register_rwdr()
+     8	    register_hydraulics_rod()
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/calculator.py
+###############################################################################
+     1	# backend/app/services/langgraph/domains/rwdr/calculator.py
+     2	from __future__ import annotations
+     3	from typing import Dict, Any
+     4	import math
+     5	
+     6	
+     7	def _to_float(x, default=0.0):
+     8	    try:
+     9	        if x is None:
+    10	            return default
+    11	        if isinstance(x, (int, float)):
+    12	            return float(x)
+    13	        s = str(x).replace(" ", "").replace(".", "").replace(",", ".")
+    14	        return float(s)
+    15	    except Exception:
+    16	        return default
+    17	
+    18	
+    19	def compute(params: Dict[str, Any]) -> Dict[str, Any]:
+    20	    p = params or {}
+    21	    out = {"calculated": {}, "flags": {}, "warnings": [], "requirements": []}
+    22	
+    23	    d_mm = _to_float(p.get("wellen_mm"))
+    24	    rpm = _to_float(p.get("drehzahl_u_min"))
+    25	    t_max = _to_float(p.get("temp_max_c"))
+    26	    press_bar = _to_float(p.get("druck_bar"))
+    27	    medium = (p.get("medium") or "").lower()
+    28	    bauform = (p.get("bauform") or "").upper()
+    29	
+    30	    # Umfangsgeschwindigkeit [m/s]
+    31	    v = 0.0
+    32	    if d_mm > 0 and rpm > 0:
+    33	        v = math.pi * (d_mm / 1000.0) * (rpm / 60.0)
+    34	    v = round(v, 3)
+    35	
+    36	    # Beide Keys setzen (Deutsch+Englisch), damit Templates/Alt-Code beides finden
+    37	    out["calculated"]["umfangsgeschwindigkeit_m_s"] = v
+    38	    out["calculated"]["surface_speed_m_s"] = v
+    39	
+    40	    # Flags
+    41	    if press_bar > 2.0:
+    42	        out["flags"]["requires_pressure_stage"] = True
+    43	    if v >= 20.0:
+    44	        out["flags"]["speed_high"] = True
+    45	    if t_max >= 120.0:
+    46	        out["flags"]["temp_very_high"] = True
+    47	
+    48	    # Material-Guidance (Whitelist/Blacklist)
+    49	    whitelist, blacklist = set(), set()
+    50	
+    51	    # RWDR Bauform BA: Standard ist Elastomer-Lippe (NBR/FKM). PTFE nur Spezialprofile.
+    52	    if bauform.startswith("BA"):
+    53	        blacklist.add("PTFE")
+    54	        if any(k in medium for k in ("hydraulik", "öl", "oel", "oil")):
+    55	            if t_max <= 100:
+    56	                whitelist.update(["NBR", "FKM"])   # NBR präferiert, FKM ok
+    57	            else:
+    58	                whitelist.add("FKM")
+    59	                blacklist.add("NBR")
+    60	        else:
+    61	            whitelist.update(["FKM", "NBR"])
+    62	
+    63	    # Druckrestriktion für PTFE (Standard-RWDR): ab ~0.5 bar vermeiden
+    64	    if press_bar > 0.5:
+    65	        blacklist.add("PTFE")
+    66	
+    67	    # Chemie / sehr hohe Temp → PTFE als mögliche Alternative zulassen
+    68	    if any(k in medium for k in ("chem", "lösemittel", "loesemittel", "solvent")) or t_max > 180:
+    69	        whitelist.add("PTFE")
+    70	
+    71	    out["calculated"]["material_whitelist"] = sorted(whitelist) if whitelist else []
+    72	    out["calculated"]["material_blacklist"] = sorted(blacklist) if blacklist else []
+    73	
+    74	    # Anforderungen (menschlich lesbar)
+    75	    if whitelist:
+    76	        out["requirements"].append("Bevorzuge Materialien: " + ", ".join(sorted(whitelist)))
+    77	    if blacklist:
+    78	        out["requirements"].append("Vermeide Materialien: " + ", ".join(sorted(blacklist)))
+    79	    if out["flags"].get("requires_pressure_stage"):
+    80	        out["requirements"].append("Druckstufe oder Drucktaugliches Profil erforderlich (>2 bar).")
+    81	    if out["flags"].get("speed_high"):
+    82	        out["requirements"].append("Hohe Umfangsgeschwindigkeit (>= 20 m/s) berücksichtigen.")
+    83	
+    84	    return out
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/rwdr/__init__.py
+###############################################################################
+     1	# -*- coding: utf-8 -*-
+     2	import os
+     3	from typing import Dict, Any
+     4	from app.services.langgraph.domains.base import DomainSpec, register_domain
+     5	from .calculator import compute as rwdr_compute
+     6	
+     7	def register() -> None:
+     8	    base_dir = os.path.dirname(os.path.abspath(__file__))
+     9	    spec = DomainSpec(
+    10	        id="rwdr",
+    11	        name="Radialwellendichtring",
+    12	        base_dir=base_dir,
+    13	        schema_file="schema.yaml",
+    14	        calculator=rwdr_compute,
+    15	        ask_order=[
+    16	            "falltyp", "bauform", "wellen_mm", "gehause_mm", "breite_mm",
+    17	            "medium", "temp_max_c", "druck_bar", "drehzahl_u_min"
+    18	        ],
+    19	    )
+    20	    register_domain(spec)
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/calculator.py
+###############################################################################
+     1	# Hydraulik – Stangendichtung: deterministische Checks
+     2	from typing import Dict, Any
+     3	
+     4	def _to_float(v, default=None):
+     5	    try:
+     6	        if v is None or v == "" or v == "unknown":
+     7	            return default
+     8	        return float(v)
+     9	    except Exception:
+    10	        return default
+    11	
+    12	def compute(params: Dict[str, Any]) -> Dict[str, Any]:
+    13	    # Pflicht-/Kernparameter
+    14	    p_bar   = _to_float(params.get("druck_bar"))
+    15	    t_max   = _to_float(params.get("temp_max_c"))
+    16	    speed   = _to_float(params.get("geschwindigkeit_m_s"))  # optional
+    17	    bore    = _to_float(params.get("nut_d_mm"))              # ✅ Nut-Ø D (mm)
+    18	    rod     = _to_float(params.get("stange_mm"))             # ✅ Stangen-Ø (mm)
+    19	
+    20	    flags = {}
+    21	    warnings = []
+    22	    reqs = []
+    23	
+    24	    # Extrusionsrisiko grob ab ~160–200 bar (ohne Stützring / je nach Spalt)
+    25	    if p_bar is not None and p_bar >= 160:
+    26	        flags["extrusion_risk"] = True
+    27	        reqs.append("Stütz-/Back-up-Ring prüfen (≥160 bar).")
+    28	
+    29	    if t_max is not None and t_max > 100:
+    30	        warnings.append(f"Hohe Temperatur ({t_max:.0f} °C) – Werkstoffwahl prüfen.")
+    31	
+    32	    if speed is not None and speed > 0.6:
+    33	        warnings.append(f"Hohe Stangengeschwindigkeit ({speed:.2f} m/s) – Reibung/Stick-Slip beachten.")
+    34	
+    35	    # Plausibilitäts-Hinweis (Spaltmaß sehr klein)
+    36	    if bore and rod and bore - rod < 2.0:
+    37	        warnings.append("Sehr kleiner Spalt zwischen Bohrung und Stange (< 2 mm).")
+    38	
+    39	    return {
+    40	        "calculated": {
+    41	            "druck_bar": p_bar,
+    42	            "temp_max_c": t_max,
+    43	            "geschwindigkeit_m_s": speed,
+    44	            "bohrung_mm": bore,
+    45	            "stange_mm": rod,
+    46	        },
+    47	        "flags": flags,
+    48	        "warnings": warnings,
+    49	        "requirements": reqs,
+    50	    }
+
+###############################################################################
+# FILE: backend/app/services/langgraph/domains/hydraulics_rod/__init__.py
+###############################################################################
+     1	# -*- coding: utf-8 -*-
+     2	import os
+     3	from typing import Dict, Any
+     4	from app.services.langgraph.domains.base import DomainSpec, register_domain
+     5	from .calculator import compute as hyd_rod_compute
+     6	
+     7	def register() -> None:
+     8	    base_dir = os.path.dirname(os.path.abspath(__file__))
+     9	    spec = DomainSpec(
+    10	        id="hydraulics_rod",
+    11	        name="Hydraulik – Stangendichtung",
+    12	        base_dir=base_dir,
+    13	        schema_file="schema.yaml",
+    14	        calculator=hyd_rod_compute,
+    15	        ask_order=[
+    16	            "falltyp", "stange_mm", "nut_d_mm", "nut_b_mm", "druck_bar",
+    17	            "geschwindigkeit_m_s", "medium", "temp_max_c"
+    18	        ],
+    19	    )
+    20	    register_domain(spec)
+

@@ -1,10 +1,18 @@
-import 'next-auth';
+import "next-auth";
+import "next-auth/jwt";
 
-declare module 'next-auth' {
+declare module "next-auth" {
   interface Session {
-    accessToken?: string;
-    idToken?: string;
+    accessToken?: string | null;
+    idToken?: string | null;
+    expires_at?: number | null;
   }
 }
 
-export {};
+declare module "next-auth/jwt" {
+  interface JWT {
+    accessToken?: string | null;
+    idToken?: string | null;
+    expires_at?: number | null;
+  }
+}

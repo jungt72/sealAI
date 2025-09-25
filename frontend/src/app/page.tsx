@@ -24,7 +24,7 @@ function Header() {
         <div className="flex items-center gap-3">
           <a
             href="/auth/signin"
-            onClick={(e) => { e.preventDefault(); signIn(undefined, { callbackUrl: "/dashboard" }); }}
+            onClick={(e) => { e.preventDefault(); signIn(undefined, { callbackUrl: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/dashboard` }); }}
             className="inline-flex items-center rounded-xl border border-white/20 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
           >
             Try SealAI

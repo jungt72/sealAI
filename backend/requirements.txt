@@ -1,0 +1,63 @@
+###############################################################################
+# SEALAI – BACKEND REQUIREMENTS (Python 3.11+)
+###############################################################################
+# --- Web-Framework ----------------------------------------------------------
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+
+# --- Async / Utils ----------------------------------------------------------
+async-timeout==4.0.3
+
+# --- OpenAI / LLM -----------------------------------------------------------
+openai==1.99.9
+
+# --- LangChain --------------------------------------------------------------
+langchain==0.3.27
+langchain-core==0.3.74
+langchain-community==0.3.27
+langchain-openai==0.3.31
+langchain-qdrant==0.2.0
+langchain-huggingface==0.3.1
+langchain-text-splitters==0.3.9
+
+# --- LangGraph & Checkpointer ----------------------------------------------
+langgraph==0.6.7
+langgraph-checkpoint==2.1.1
+langgraph-checkpoint-redis==0.1.1
+langgraph-swarm==0.0.14
+langgraph-checkpoint-postgres==2.0.23
+
+# --- Vector DB & Memory -----------------------------------------------------
+qdrant-client==1.15.1
+redis==6.4.0
+redisvl==0.8.1
+fastembed==0.7.1
+
+# --- Datenbanken ------------------------------------------------------------
+sqlalchemy==2.0.41
+asyncpg==0.30.0
+alembic==1.16.4
+psycopg[binary,pool]==3.2.9
+
+# --- ML / Embeddings --------------------------------------------------------
+sentence-transformers==5.1.0
+transformers>=4.55.1
+
+# --- Auth & Security --------------------------------------------------------
+python-keycloak==5.8.1
+python-jose[cryptography]==3.5.0
+PyJWT==2.10.1
+
+# --- Misc -------------------------------------------------------------------
+jinja2==3.1.6
+orjson==3.10.18
+ormsgpack==1.10.0
+structlog==25.4.0
+
+# --- Dev / Test -------------------------------------------------------------
+pytest==8.3.3
+black==24.8.0
+ruff==0.6.9
+mypy==1.11.2
+pre-commit==3.8.0
+reportlab>=4.2.0

@@ -1,0 +1,21 @@
+###############################################################################
+# SEALAI – BACKEND DEV REQUIREMENTS  (nur für Entwicklung / CI)
+# → NICHT ins schlanke Runtime-Image installieren!
+###############################################################################
+
+# Code-Qualität & Formatting
+black==24.8.0
+ruff==0.6.9
+
+# Statisches Typ-Checking
+mypy==1.11.2
+
+# Test-Framework
+pytest==8.3.3
+pytest-asyncio==0.23.7            # für async-Tests (optional)
+
+# Coverage-Messung (optional)
+pytest-cov==5.0.0
+
+# Pre-commit Hooks
+pre-commit==3.8.0
