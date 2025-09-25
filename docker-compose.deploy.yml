@@ -1,0 +1,8 @@
+version: "3.9"
+services:
+  backend:
+    image: ghcr.io/jungt72/sealai-backend:latest
+  frontend:
+    image: ghcr.io/jungt72/sealai-frontend:latest
+  keycloak:
+    image: ghcr.io/jungt72/sealai-keycloak:latest

@@ -21,7 +21,7 @@ jobs:
           script: |
             set -euxo pipefail
             cd /root/sealai
-            docker compose pull backend frontend keycloak || true
-            docker compose up -d backend frontend keycloak
+            docker compose -f docker-compose.yml -f docker-compose.deploy.yml pull backend frontend keycloak || true
+            docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d backend frontend keycloak
             docker system prune -f
             curl -fsS http://localhost:8000/api/v1/ping || curl -fsS http://localhost:8000/health || true
