@@ -1,17 +1,15 @@
 name: build-and-push
+
 on:
   push:
     branches: [ main, refactor/intake-triage-unify ]
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - "keycloak/**"
-      - "docker-compose.yml"
-      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
 permissions:
   contents: read
   packages: write
   id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
