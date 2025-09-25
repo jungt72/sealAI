@@ -3,7 +3,7 @@ FROM python:3.11-slim AS builder
 WORKDIR /opt/build
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential gcc curl libpq-dev && rm -rf /var/lib/apt/lists/*
 COPY requirements*.txt ./
-RUN set -eux; \
+RUN set -eux; mkdir -p /opt/wheels; \
     if [ -f requirements.txt ]; then pip wheel -r requirements.txt -w /opt/wheels; \
     elif [ -f requirements.prod.txt ]; then pip wheel -r requirements.prod.txt -w /opt/wheels; \
     fi
