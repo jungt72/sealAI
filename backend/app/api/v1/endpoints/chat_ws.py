@@ -112,6 +112,34 @@ def _iter_text_from_chunk(chunk) -> Iterable[str]:
             if isinstance(v, str) and v:
                 yield v
 
+
+def _iter_text_from_event(ev: Dict[str, Any]) -> Iterable[str]:
+    """Robustly extract textual pieces from a LangGraph event."""
+    if not isinstance(ev, dict):
+        return
+
+    data = ev.get("data") or {}
+    if isinstance(data, dict):
+        chunk = data.get("chunk")
+        if chunk is not None:
+            for piece in _iter_text_from_chunk(chunk):
+                yield piece
+
+        delta = data.get("delta")
+        if delta is not None:
+            for piece in _iter_text_from_chunk(delta):
+                yield piece
+
+        for key in ("content", "token", "text"):
+            val = data.get(key)
+            if isinstance(val, str) and val:
+                yield val
+
+    for key in ("delta", "content", "token", "text"):
+        val = ev.get(key)
+        if isinstance(val, str) and val:
+            yield val
+
 _BOUNDARY_RX = re.compile(r"[ \n\t.,;:!?…)\]}]")
 
 def _micro_chunks(s: str) -> Iterable[str]:
@@ -399,6 +427,13 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
                 return asyncio.create_task(_send_json_safe(ws, u)) is not None
         return False
 
+    stream_event_names = {
+        "on_chat_model_stream",
+        "on_chat_model_delta",
+        "on_llm_stream",
+        "on_llm_new_token",
+    }
+
     if g_async is not None and not cancelled():
         for ver in ("v2", "v1"):
             try:
@@ -410,10 +445,9 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
 
                     ev_name = ev.get("event") if isinstance(ev, dict) else None
 
-                    if ev_name in ("on_chat_model_stream", "on_llm_stream") and _is_relevant_node(ev):
-                        chunk = (ev.get("data") or {}).get("chunk") if isinstance(ev.get("data"), dict) else None
-                        if not chunk: continue
-                        for piece in _iter_text_from_chunk(chunk):
+                    if ev_name in stream_event_names and _is_relevant_node(ev):
+                        got_piece = False
+                        for piece in _iter_text_from_event(ev):
                             if not piece or cancelled(): continue
                             for seg in _micro_chunks(piece):
                                 buf.append(seg)
@@ -422,6 +456,19 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
                                 too_old = (loop.time() - last_flush[0]) * 1000.0 >= COALESCE_MAX_LAT_MS
                                 if enough or natural or too_old:
                                     await flush()
+                            got_piece = True
+
+                        if not got_piece:
+                            # Manche Events liefern Strings direkt in data['delta']/'content'] auf Top-Level
+                            piece = _piece_from_llm_chunk((ev.get("data") or {}).get("chunk"))
+                            if piece:
+                                for seg in _micro_chunks(piece):
+                                    buf.append(seg)
+                                    enough  = sum(len(x) for x in buf) >= COALESCE_MIN_CHARS
+                                    natural = any("".join(buf).endswith(e) for e in FLUSH_ENDINGS)
+                                    too_old = (loop.time() - last_flush[0]) * 1000.0 >= COALESCE_MAX_LAT_MS
+                                    if enough or natural or too_old:
+                                        await flush()
 
                     if ev_name in ("on_node_end", "on_chain_end", "on_graph_end"):
                         _emit_ui_event_if_any(ev.get("data"))
