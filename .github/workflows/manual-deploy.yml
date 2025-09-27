@@ -1,17 +1,24 @@
-name: deploy
+name: manual-deploy
+
 on:
-  workflow_run:
-    workflows: [ build-and-push ]
-    types: [ completed ]
-    branches: [ main, refactor/intake-triage-unify ]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Git branch to deploy"
+        required: true
+        default: "refactor/intake-triage-unify"
+      force_clean:
+        description: "Force clean working tree before deploy"
+        required: false
+        type: boolean
+        default: false
+
 permissions:
   contents: read
+
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    env:
-      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch || 'refactor/intake-triage-unify' }}
     steps:
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.2.0
@@ -22,7 +29,11 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
             set -euxo pipefail
-            BRANCH="${DEPLOY_BRANCH}"
+            BRANCH="${{ github.event.inputs.branch }}"
+            FORCE="0"
+            if [[ "${{ github.event.inputs.force_clean }}" == "true" ]]; then
+              FORCE="1"
+            fi
             cd /root/sealai
             if [[ ! -x scripts/deploy_sync.sh ]]; then
               git fetch origin
@@ -30,4 +41,4 @@ jobs:
               git pull --ff-only origin "${BRANCH}"
               chmod +x scripts/deploy_sync.sh || true
             fi
-            ./scripts/deploy_sync.sh "${BRANCH}"
+            FORCE_DEPLOY="${FORCE}" ./scripts/deploy_sync.sh "${BRANCH}"
