@@ -74,7 +74,13 @@ def _classify_llm(query: str) -> str:
     if not (_LLM_OK and ChatOpenAI):
         raise RuntimeError("LLM not available")
     model_name = os.getenv("OPENAI_INTENT_MODEL", "gpt-5-mini")
-    llm = ChatOpenAI(model=model_name, temperature=0, max_tokens=6)  # type: ignore
+    llm = ChatOpenAI(  # type: ignore
+        model=model_name,
+        temperature=0,
+        max_tokens=6,
+        output_version="responses/v1",
+        use_responses_api=True,
+    )
     prompt = _INTENT_PROMPT.format(allowed=", ".join(ALLOWED_ROUTES), query=query.strip())
     try:
         resp = llm.invoke(prompt)  # type: ignore

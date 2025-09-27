@@ -24,7 +24,11 @@ function Header() {
         <div className="flex items-center gap-3">
           <a
             href="/auth/signin"
-            onClick={(e) => { e.preventDefault(); signIn(undefined, { callbackUrl: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/dashboard` }); }}
+            onClick={(e) => {
+              e.preventDefault();
+              const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+              signIn("keycloak", { callbackUrl: `${base}/dashboard` });
+            }}
             className="inline-flex items-center rounded-xl border border-white/20 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
           >
             Try SealAI
@@ -125,6 +129,12 @@ function Card({
     <a
       id={id}
       href={href}
+      onClick={(event) => {
+        if (href !== "/auth/signin") return;
+        event.preventDefault();
+        const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+        signIn("keycloak", { callbackUrl: `${base}/dashboard` });
+      }}
       className={[
         "group block rounded-2xl border p-6 transition bg-white/[0.03]",
         secondary ? "border-white/15 hover:bg-white/5" : "border-white/20 hover:bg-white/[0.06]",

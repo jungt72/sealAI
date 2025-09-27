@@ -16,11 +16,17 @@ def pre_extract_params(text: str) -> Dict[str, object]:
     t = text or ""
     out: Dict[str, object] = {}
 
-    m = re.search(r"(?:\b(?:rwdr|ba|bauform)\b\s*)?(\d{1,3})\s*[x×]\s*(\d{1,3})\s*[x×]\s*(\d{1,3})", t, re.I)
-    if m:
-        out["wellen_mm"]  = int(m.group(1))
-        out["gehause_mm"] = int(m.group(2))
-        out["breite_mm"]  = int(m.group(3))
+    slash_combo = re.search(r"(\d{1,3})\s*/\s*(\d{1,3})\s*[x×]\s*(\d{1,3})(?:\s*mm)?", t, re.I)
+    if slash_combo:
+        out["wellen_mm"] = int(slash_combo.group(1))
+        out["gehause_mm"] = int(slash_combo.group(2))
+        out["breite_mm"] = int(slash_combo.group(3))
+    else:
+        m = re.search(r"(?:\b(?:rwdr|ba|bauform)\b\s*)?(\d{1,3})\s*[x×]\s*(\d{1,3})\s*[x×]\s*(\d{1,3})", t, re.I)
+        if m:
+            out["wellen_mm"]  = int(m.group(1))
+            out["gehause_mm"] = int(m.group(2))
+            out["breite_mm"]  = int(m.group(3))
 
     if re.search(r"\bhydraulik ?öl\b", t, re.I):
         out["medium"] = "Hydrauliköl"

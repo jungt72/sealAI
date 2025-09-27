@@ -1,4 +1,8 @@
-# backend/app/api/v1/endpoints/chat_ws.py
+# Generated from the original SealAI code dump with modifications.
+# The WebSocket authentication logic now accepts JWT tokens passed via
+# Authorization headers, URL query parameters or the Sec-WebSocket-Protocol
+# subprotocol list. Additionally, the guard_websocket import is active.
+
 from __future__ import annotations
 
 import os
@@ -12,7 +16,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.messages.ai import AIMessageChunk
 
-from app.api.v1.dependencies.auth import guard_websocket
+from app.api.v1.dependencies.auth import guard_websocket  # activated for WS auth
 from app.services.langgraph.llm_factory import get_llm as make_llm
 from app.services.langgraph.redis_lifespan import get_redis_checkpointer
 from app.services.langgraph.prompt_registry import get_agent_prompt
@@ -21,23 +25,26 @@ from app.services.langgraph.graph.consult.memory_utils import (
     write_message as stm_write_message,
 )
 from app.services.langgraph.tools import long_term_memory as ltm
+from app.services.langgraph.compat import call_with_supported_kwargs
+
 
 router = APIRouter()
 
 # --- Tunables / Env (engere Defaults für mehr Tempo) ---
-COALESCE_MIN_CHARS      = int(os.getenv("WS_COALESCE_MIN_CHARS", "24"))
-COALESCE_MAX_LAT_MS     = float(os.getenv("WS_COALESCE_MAX_LAT_MS", "40"))
-IDLE_TIMEOUT_SEC        = int(os.getenv("WS_IDLE_TIMEOUT_SEC", "45"))  # 45s, Client heartbeat < 45s
-FIRST_TOKEN_TIMEOUT_MS  = int(os.getenv("WS_FIRST_TOKEN_TIMEOUT_MS", "2000"))
-WS_INPUT_MAX_CHARS      = int(os.getenv("WS_INPUT_MAX_CHARS", "4000"))
-WS_RATE_LIMIT_PER_MIN   = int(os.getenv("WS_RATE_LIMIT_PER_MIN", "30"))
-MICRO_CHUNK_CHARS       = int(os.getenv("WS_MICRO_CHUNK_CHARS", "0"))
-EMIT_FINAL_TEXT         = os.getenv("WS_EMIT_FINAL_TEXT", "0") == "1"
-DEBUG_EVENTS            = os.getenv("WS_DEBUG_EVENTS", "1") == "1"
-WS_EVENT_TIMEOUT_SEC    = int(os.getenv("WS_EVENT_TIMEOUT_SEC", "25"))
-FORCE_SYNC_FALLBACK     = os.getenv("WS_FORCE_SYNC", "0") == "1"
+COALESCE_MIN_CHARS = int(os.getenv("WS_COALESCE_MIN_CHARS", "24"))
+COALESCE_MAX_LAT_MS = float(os.getenv("WS_COALESCE_MAX_LAT_MS", "40"))
+IDLE_TIMEOUT_SEC = int(os.getenv("WS_IDLE_TIMEOUT_SEC", "45"))  # 45s, Client heartbeat < 45s
+FIRST_TOKEN_TIMEOUT_MS = int(os.getenv("WS_FIRST_TOKEN_TIMEOUT_MS", "2000"))
+WS_INPUT_MAX_CHARS = int(os.getenv("WS_INPUT_MAX_CHARS", "4000"))
+WS_RATE_LIMIT_PER_MIN = int(os.getenv("WS_RATE_LIMIT_PER_MIN", "30"))
+MICRO_CHUNK_CHARS = int(os.getenv("WS_MICRO_CHUNK_CHARS", "0"))
+EMIT_FINAL_TEXT = os.getenv("WS_EMIT_FINAL_TEXT", "0") == "1"
+DEBUG_EVENTS = os.getenv("WS_DEBUG_EVENTS", "1") == "1"
+WS_EVENT_TIMEOUT_SEC = int(os.getenv("WS_EVENT_TIMEOUT_SEC", "25"))
+FORCE_SYNC_FALLBACK = os.getenv("WS_FORCE_SYNC", "0") == "1"
 
 FLUSH_ENDINGS: Tuple[str, ...] = (". ", "? ", "! ", "\n\n", ":", ";", "…", ", ", ") ", "] ", " }")
+
 
 def _env_stream_nodes() -> set[str]:
     raw = os.getenv("WS_STREAM_NODES", "*").strip()
@@ -45,18 +52,23 @@ def _env_stream_nodes() -> set[str]:
         return {"*"}
     return {x.strip().lower() for x in raw.split(",") if x.strip()}
 
+
 STREAM_NODES = _env_stream_nodes()
 GRAPH_BUILDER = os.getenv("GRAPH_BUILDER", "supervisor").lower()
 
-def _log(msg: str, **extra):
+
+def _log(msg: str, **extra) -> None:
     try:
         if extra:
             print(f"[ws] {msg} " + json.dumps(extra, ensure_ascii=False, default=str))
         else:
             print(f"[ws] {msg}")
     except Exception:
-        try: print(f"[ws] {msg} {extra}")
-        except Exception: pass
+        try:
+            print(f"[ws] {msg} {extra}")
+        except Exception:
+            pass
+
 
 def _get_rl_redis(app) -> Optional[redis.Redis]:
     client = getattr(app.state, "redis_rl", None)
@@ -71,6 +83,7 @@ def _get_rl_redis(app) -> Optional[redis.Redis]:
         return client
     except Exception:
         return None
+
 
 def _piece_from_llm_chunk(chunk: Any) -> Optional[str]:
     if isinstance(chunk, AIMessageChunk):
@@ -91,17 +104,21 @@ def _piece_from_llm_chunk(chunk: Any) -> Optional[str]:
                 return v
     return None
 
+
 def _iter_text_from_chunk(chunk) -> Iterable[str]:
     if isinstance(chunk, dict):
         c = chunk.get("content")
         if isinstance(c, str) and c:
-            yield c; return
+            yield c
+            return
         d = chunk.get("delta")
         if isinstance(d, str) and d:
-            yield d; return
+            yield d
+            return
     content = getattr(chunk, "content", None)
     if isinstance(content, str) and content:
-        yield content; return
+        yield content
+        return
     if isinstance(content, list):
         for part in content:
             if isinstance(part, str):
@@ -115,32 +132,43 @@ def _iter_text_from_chunk(chunk) -> Iterable[str]:
             if isinstance(v, str) and v:
                 yield v
 
-_BOUNDARY_RX = re.compile(r"[ \n\t.,;:!?…)\]}]")
+
+_BOUNDARY_RX = re.compile(r"[ \n\t.,;:!?…\)\]}]")
+
 
 def _micro_chunks(s: str) -> Iterable[str]:
     n = MICRO_CHUNK_CHARS
     if n <= 0 or len(s) <= n:
-        yield s; return
-    i = 0; L = len(s)
+        yield s
+        return
+    i = 0
+    L = len(s)
     while i < L:
-        j = min(i + n, L); k = j
+        j = min(i + n, L)
+        k = j
         if j < L:
             m = _BOUNDARY_RX.search(s, j, min(L, j + 40))
-            if m: k = m.end()
-        yield s[i:k]; i = k
+            if m:
+                k = m.end()
+        yield s[i:k]
+        i = k
+
 
 def _is_relevant_node(ev: Dict) -> bool:
     if "*" in STREAM_NODES or "all" in STREAM_NODES:
         return True
-    meta = ev.get("metadata") or {}; run  = ev.get("run") or {}
+    meta = ev.get("metadata") or {}
+    run = ev.get("run") or {}
     node = str(meta.get("langgraph_node") or "").lower()
     run_name = str(run.get("name") or meta.get("run_name") or "").lower()
     return (node in STREAM_NODES) or (run_name in STREAM_NODES)
 
+
 def _extract_texts(obj: Any) -> List[str]:
     out: List[str] = []
     if isinstance(obj, str) and obj.strip():
-        out.append(obj.strip()); return out
+        out.append(obj.strip())
+        return out
     if isinstance(obj, dict):
         for k in ("response", "final_text", "text", "answer"):
             v = obj.get(k)
@@ -165,32 +193,49 @@ def _extract_texts(obj: Any) -> List[str]:
             out.extend(_extract_texts(it))
     return out
 
+
 def _last_ai_text_from_result_like(obj: Dict[str, Any]) -> str:
     texts = _extract_texts(obj)
     return texts[-1].strip() if texts else ""
 
+
 REMEMBER_RX = re.compile(r"^\s*(?:!remember|remember|merke(?:\s*dir)?|speicher(?:e)?)\s*[:\-]?\s*(.+)$", re.I)
 GREETING_RX = re.compile(r"^(hi|hallo|hello|hey|moin)\b", re.I)
 
-def _ensure_graph(app) -> None:
-    if getattr(app.state, "graph_async", None) is not None or getattr(app.state, "graph_sync", None) is not None:
+
+def _ensure_graph(app, builder_name: str | None = None) -> None:
+    # Cache per graph name
+    want = (builder_name or GRAPH_BUILDER).lower().strip() or "supervisor"
+    if (
+        getattr(app.state, "graph_name", None) == want
+        and (
+            getattr(app.state, "graph_async", None) is not None
+            or getattr(app.state, "graph_sync", None) is not None
+        )
+    ):
         return
-    if GRAPH_BUILDER == "supervisor":
+
+    if want == "supervisor":
         from app.services.langgraph.supervisor_graph import build_supervisor_graph as build_graph
     else:
         from app.services.langgraph.graph.consult.build import build_consult_graph as build_graph
+
     saver = None
     try:
         saver = get_redis_checkpointer(app)
     except Exception:
         saver = None
+
     g = build_graph()
     try:
         compiled = g.compile(checkpointer=saver) if saver else g.compile()
     except Exception:
         compiled = g.compile()
+
     app.state.graph_async = compiled
-    app.state.graph_sync  = compiled
+    app.state.graph_sync = compiled
+    app.state.graph_name = want
+
 
 def _choose_subprotocol(ws: WebSocket) -> Optional[str]:
     raw = ws.headers.get("sec-websocket-protocol")
@@ -198,34 +243,60 @@ def _choose_subprotocol(ws: WebSocket) -> Optional[str]:
         return None
     return raw.split(",")[0].strip() or None
 
+
 async def _send_json_safe(ws: WebSocket, payload: Dict) -> bool:
     try:
-        await ws.send_json(payload); return True
+        await ws.send_json(payload)
+        return True
     except WebSocketDisconnect:
         return False
     except Exception:
         return False
 
+
 def _get_token(ws: WebSocket) -> Optional[str]:
+    """
+    Extract the JWT from the WebSocket headers or query parameters.
+
+    Supports three transports:
+      * Authorization: Bearer <token>
+      * ?token=<token> query parameter
+      * Sec-WebSocket-Protocol header: either "bearer,<token>" or a single
+        protocol value containing dots (e.g. a JWT)
+    """
     auth = ws.headers.get("authorization") or ws.headers.get("Authorization")
     if auth:
         parts = auth.split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
             return parts[1]
+    # query param
     try:
         q = ws.query_params.get("token")
         if q:
-            return q
+            return str(q)
     except Exception:
         pass
+    # subprotocol
+    sp = ws.headers.get("sec-websocket-protocol") or ws.headers.get("Sec-WebSocket-Protocol")
+    if sp:
+        protocols = [p.strip() for p in sp.split(",") if p.strip()]
+        if protocols:
+            first = protocols[0].lower()
+            if first in {"bearer", "jwt", "token"} and len(protocols) > 1:
+                return protocols[1]
+            if len(protocols) == 1 and "." in protocols[0]:
+                return protocols[0]
     return None
+
 
 # ------------------- Streaming helpers -------------------
 
-async def _send_typing_stub(ws: WebSocket, thread_id: str):
+
+async def _send_typing_stub(ws: WebSocket, thread_id: str) -> None:
     await _send_json_safe(ws, {"event": "typing", "thread_id": thread_id})
 
-async def _stream_llm_direct(ws: WebSocket, llm, *, user_input: str, thread_id: str):
+
+async def _stream_llm_direct(ws: WebSocket, llm, *, user_input: str, thread_id: str) -> None:
     def cancelled() -> bool:
         flags = getattr(ws.app.state, "ws_cancel_flags", {})
         return bool(flags.get(thread_id))
@@ -235,12 +306,16 @@ async def _stream_llm_direct(ws: WebSocket, llm, *, user_input: str, thread_id: 
         return
 
     loop = asyncio.get_event_loop()
-    buf: List[str] = []; accum: List[str] = []; last_flush = [loop.time()]
+    buf: List[str] = []
+    accum: List[str] = []
+    last_flush = [loop.time()]
 
-    async def flush():
+    async def flush() -> None:
         if not buf or cancelled():
             return
-        chunk = "".join(buf); buf.clear(); last_flush[0] = loop.time()
+        chunk = "".join(buf)
+        buf.clear()
+        last_flush[0] = loop.time()
         accum.append(chunk)
         await _send_json_safe(ws, {"event": "token", "delta": chunk, "thread_id": thread_id})
 
@@ -259,60 +334,84 @@ async def _stream_llm_direct(ws: WebSocket, llm, *, user_input: str, thread_id: 
                 text = ""
         except Exception:
             text = ""
-        try: await agen.aclose()
-        except Exception: pass
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
         if text and not cancelled():
             await _send_json_safe(ws, {"event": "token", "delta": text, "thread_id": thread_id})
-            try: stm_write_message(thread_id=thread_id, role="assistant", content=text)
-            except Exception: pass
+            try:
+                stm_write_message(thread_id=thread_id, role="assistant", content=text)
+            except Exception:
+                pass
         if EMIT_FINAL_TEXT and not cancelled():
             await _send_json_safe(ws, {"event": "final", "text": text, "thread_id": thread_id})
         await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
         return
     except Exception:
-        try: await agen.aclose()
-        except Exception: pass
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
         return
 
     if cancelled():
-        try: await agen.aclose()
-        except Exception: pass
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
         return
 
     txt = (_piece_from_llm_chunk(first) or "")
     if txt and not cancelled():
         for seg in _micro_chunks(txt):
-            buf.append(seg); await flush()
+            buf.append(seg)
+            await flush()
 
     try:
         async for chunk in agen:
-            if cancelled(): break
+            if cancelled():
+                break
             for piece in _iter_text_from_chunk(chunk):
-                if not piece or cancelled(): continue
+                if not piece or cancelled():
+                    continue
                 for seg in _micro_chunks(piece):
                     buf.append(seg)
-                    enough  = sum(len(x) for x in buf) >= COALESCE_MIN_CHARS
+                    enough = sum(len(x) for x in buf) >= COALESCE_MIN_CHARS
                     natural = any("".join(buf).endswith(e) for e in FLUSH_ENDINGS)
                     too_old = (loop.time() - last_flush[0]) * 1000.0 >= COALESCE_MAX_LAT_MS
                     if enough or natural or too_old:
                         await flush()
         await flush()
     finally:
-        try: await agen.aclose()
-        except Exception: pass
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
 
     if cancelled():
         return
 
     final_text = ("".join(accum)).strip()
     if final_text:
-        try: stm_write_message(thread_id=thread_id, role="assistant", content=final_text)
-        except Exception: pass
+        try:
+            stm_write_message(thread_id=thread_id, role="assistant", content=final_text)
+        except Exception:
+            pass
     if EMIT_FINAL_TEXT:
         await _send_json_safe(ws, {"event": "final", "text": final_text, "thread_id": thread_id})
     await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
 
-async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: str, params_patch: Optional[Dict]=None):
+
+async def _stream_supervised(
+    ws: WebSocket,
+    *,
+    app,
+    user_input: str,
+    thread_id: str,
+    params_patch: Optional[Dict] = None,
+    builder_name: str | None = None,
+) -> None:
     def cancelled() -> bool:
         flags = getattr(ws.app.state, "ws_cancel_flags", {})
         return bool(flags.get(thread_id))
@@ -321,7 +420,7 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
         return
 
     try:
-        _ensure_graph(app)
+        _ensure_graph(app, builder_name=builder_name)
     except Exception as e:
         if EMIT_FINAL_TEXT and not cancelled():
             await _send_json_safe(ws, {"event": "final", "text": "", "thread_id": thread_id, "error": f"graph_build_failed: {e!r}"})
@@ -329,7 +428,7 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
         return
 
     g_async = getattr(app.state, "graph_async", None)
-    g_sync  = getattr(app.state, "graph_sync", None)
+    g_sync = getattr(app.state, "graph_sync", None)
 
     _log("graph_ready", builder=GRAPH_BUILDER, has_async=bool(g_async), has_sync=bool(g_sync))
 
@@ -348,17 +447,29 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
     if isinstance(params_patch, dict) and params_patch:
         initial["params"] = params_patch
 
-    cfg = {"configurable": {"thread_id": thread_id, "checkpoint_ns": getattr(app.state, "checkpoint_ns", None)}}
+    cfg = {
+        "configurable": {
+            "thread_id": thread_id,
+            "checkpoint_ns": getattr(app.state, "checkpoint_ns", None),
+        }
+    }
 
     loop = asyncio.get_event_loop()
-    buf: List[str] = []; last_flush = [loop.time()]; streamed_any = False
-    final_tail: str = ""; accum: List[str] = []
+    buf: List[str] = []
+    last_flush = [loop.time()]
+    streamed_any = False
+    final_tail: str = ""
+    accum: List[str] = []
 
-    async def flush():
+    async def flush() -> None:
         nonlocal streamed_any
-        if not buf or cancelled(): return
-        chunk = "".join(buf); buf.clear(); last_flush[0] = loop.time()
-        streamed_any = True; accum.append(chunk)
+        if not buf or cancelled():
+            return
+        chunk = "".join(buf)
+        buf.clear()
+        last_flush[0] = loop.time()
+        streamed_any = True
+        accum.append(chunk)
         if not await _send_json_safe(ws, {"event": "token", "delta": chunk, "thread_id": thread_id}):
             raise WebSocketDisconnect()
 
@@ -391,7 +502,7 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
                 "event": "ui_action",
                 "ui_action": "open_form",
                 "thread_id": thread_id,
-                "source": "ws_fallback"
+                "source": "ws_fallback",
             }
             _log("emit_ui_event_fallback", node=node, phase=phase, payload=payload)
             asyncio.create_task(_send_json_safe(ws, payload))
@@ -400,17 +511,30 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
 
     def _try_stream_text_from_node(data: Any) -> None:
         texts = _extract_texts(data)
-        if not texts: return
+        if not texts:
+            return
         joined = "\n".join([t for t in texts if isinstance(t, str)])
         for seg in _micro_chunks(joined):
             buf.append(seg)
 
     await _send_typing_stub(ws, thread_id)
 
-    async def _run_stream(version: str):
+    async def _run_stream(version: str) -> None:
         nonlocal final_tail
-        async for ev in g_async.astream_events(initial, config=cfg, version=version):  # type: ignore
-            if cancelled(): return
+        if g_async is None:
+            return
+        astream_method = getattr(g_async, "astream_events", None)
+        if not callable(astream_method):
+            return
+        astream = call_with_supported_kwargs(
+            astream_method,
+            initial,
+            config=cfg,
+            version=version,
+        )
+        async for ev in astream:  # type: ignore[misc]
+            if cancelled():
+                return
             ev_name = ev.get("event") if isinstance(ev, dict) else None
             data = ev.get("data") if isinstance(ev, dict) else None
             meta = ev.get("metadata") if isinstance(ev, dict) else None
@@ -424,14 +548,28 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
             if DEBUG_EVENTS and ev_name in ("on_node_start", "on_node_end"):
                 _log("node_event", event=ev_name, node=node_name)
 
+            if isinstance(data, dict) and str(data.get("type") or "").lower() == "stream_text":
+                text_piece = data.get("text")
+                if isinstance(text_piece, str) and text_piece:
+                    for seg in _micro_chunks(text_piece):
+                        buf.append(seg)
+                        enough = sum(len(x) for x in buf) >= COALESCE_MIN_CHARS
+                        natural = any("".join(buf).endswith(e) for e in FLUSH_ENDINGS)
+                        too_old = (loop.time() - last_flush[0]) * 1000.0 >= COALESCE_MAX_LAT_MS
+                        if enough or natural or too_old:
+                            await flush()
+                    await flush()
+                continue
+
             if ev_name in ("on_chat_model_stream", "on_llm_stream") and _is_relevant_node(ev):
                 chunk = (data or {}).get("chunk") if isinstance(data, dict) else None
                 if chunk:
                     for piece in _iter_text_from_chunk(chunk):
-                        if not piece or cancelled(): continue
+                        if not piece or cancelled():
+                            continue
                         for seg in _micro_chunks(piece):
                             buf.append(seg)
-                            enough  = sum(len(x) for x in buf) >= COALESCE_MIN_CHARS
+                            enough = sum(len(x) for x in buf) >= COALESCE_MIN_CHARS
                             natural = any("".join(buf).endswith(e) for e in FLUSH_ENDINGS)
                             too_old = (loop.time() - last_flush[0]) * 1000.0 >= COALESCE_MAX_LAT_MS
                             if enough or natural or too_old:
@@ -478,12 +616,14 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
         assistant_text = final_tail
     elif (not streamed_any) or timed_out:
         try:
-            result = None
+            result: Any = None
             if g_sync is not None:
-                def _run_sync(): return g_sync.invoke(initial, config=cfg)
+                def _run_sync() -> Any:
+                    return call_with_supported_kwargs(g_sync.invoke, initial, config=cfg)
+
                 result = await asyncio.get_event_loop().run_in_executor(None, _run_sync)
             elif g_async is not None:
-                result = await g_async.ainvoke(initial, config=cfg)  # type: ignore
+                result = await call_with_supported_kwargs(g_async.ainvoke, initial, config=cfg)  # type: ignore[arg-type]
 
             if isinstance(result, dict):
                 emitted = _emit_ui_event_if_any(result)
@@ -499,7 +639,9 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
         if not assistant_text:
             try:
                 llm = getattr(app.state, "llm", make_llm(streaming=False))
-                resp = await llm.ainvoke([SystemMessage(content=get_agent_prompt("supervisor"))] + history + [HumanMessage(content=user_input)])
+                resp = await llm.ainvoke(
+                    [SystemMessage(content=get_agent_prompt("supervisor"))] + history + [HumanMessage(content=user_input)]
+                )
                 assistant_text = (getattr(resp, "content", "") or "").strip()
             except Exception:
                 assistant_text = ""
@@ -526,27 +668,32 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
         await _send_json_safe(ws, {"event": "final", "text": final_text, "thread_id": thread_id})
     await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
 
-# ------------------- WebSocket endpoint -------------------
 
 @router.websocket("/ai/ws")
-async def ws_chat(ws: WebSocket):
-    """
-    Robuster Handshake & tolerante Auth:
-    """
+async def ws_chat(ws: WebSocket) -> None:
+    # One‑time tolerant handshake including subprotocol negotiation
     await ws.accept(subprotocol=_choose_subprotocol(ws))
+    """
+    Robust handshake & tolerant auth:
+    """
 
+    # Soft‑Auth (Keycloak optional); on failure close connection
     user_payload: Dict[str, Any] = {}
     try:
+        # Validate origin and token via guard_websocket
         user_payload = await guard_websocket(ws)
     except Exception:
-        token = _get_token(ws)
-        user_payload = {"sub": "anonymous"} if not token else {"sub": "bearer"}
+        # no valid token → close and return
+        await _send_json_safe(ws, {"event": "error", "message": "unauthorized"})
+        await ws.close(code=1008)
+        return
 
     try:
         ws.scope["user"] = user_payload
     except Exception:
         pass
 
+    # Lazy init shared state
     app = ws.app
     if not getattr(app.state, "llm", None):
         app.state.llm = make_llm(streaming=True)
@@ -559,12 +706,14 @@ async def ws_chat(ws: WebSocket):
 
     try:
         while True:
+            # Heartbeat / idle detection
             try:
                 raw = await asyncio.wait_for(ws.receive_text(), timeout=IDLE_TIMEOUT_SEC)
             except asyncio.TimeoutError:
                 await _send_json_safe(ws, {"event": "idle", "ts": int(asyncio.get_event_loop().time())})
                 continue
 
+            # Logging / short preview of raw message
             try:
                 short = raw if len(raw) < 256 else raw[:252] + "...}"
                 _log("RX_raw", raw=short)
@@ -575,7 +724,7 @@ async def ws_chat(ws: WebSocket):
                 await _send_json_safe(ws, {
                     "event": "error",
                     "code": "input_oversize",
-                    "message": f"payload too large (>{WS_INPUT_MAX_CHARS*2} chars)",
+                    "message": f"payload too large (>{WS_INPUT_MAX_CHARS * 2} chars)",
                 })
                 await _send_json_safe(ws, {"event": "done", "thread_id": "ws"})
                 continue
@@ -583,20 +732,25 @@ async def ws_chat(ws: WebSocket):
             try:
                 data = json.loads(raw)
             except Exception:
-                await _send_json_safe(ws, {"event": "error", "message": "invalid_json"}); continue
+                await _send_json_safe(ws, {"event": "error", "message": "invalid_json"})
+                continue
 
+            # Control messages
             typ = (data.get("type") or "").strip().lower()
             if typ == "ping":
-                await _send_json_safe(ws, {"event": "pong", "ts": data.get("ts")}); continue
+                await _send_json_safe(ws, {"event": "pong", "ts": data.get("ts")})
+                continue
             if typ == "cancel":
                 tid = (data.get("thread_id") or f"api:{(data.get('chat_id') or 'default').strip()}").strip()
-                app.state.ws_cancel_flags[tid] = True
-                await _send_json_safe(ws, {"event": "done", "thread_id": tid}); continue
+                ws.app.state.ws_cancel_flags[tid] = True
+                await _send_json_safe(ws, {"event": "done", "thread_id": tid})
+                continue
 
-            chat_id    = (data.get("chat_id") or "").strip() or "default"
-            thread_id  = f"api:{chat_id}"
-            payload    = ws.scope.get("user") or {}
-            user_id    = str(payload.get("sub") or payload.get("email") or chat_id)
+            # Context / limits
+            chat_id = (data.get("chat_id") or "").strip() or "default"
+            thread_id = f"api:{chat_id}"
+            payload = ws.scope.get("user") or {}
+            user_id = str(payload.get("sub") or payload.get("email") or chat_id)
 
             rl = _get_rl_redis(app)
             if rl and WS_RATE_LIMIT_PER_MIN > 0:
@@ -610,7 +764,7 @@ async def ws_chat(ws: WebSocket):
                             "event": "error",
                             "code": "rate_limited",
                             "message": "Too many requests, slow down.",
-                            "retry_after_sec": int(rl.ttl(key) or 60)
+                            "retry_after_sec": int(rl.ttl(key) or 60),
                         })
                         await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
                         continue
@@ -622,67 +776,84 @@ async def ws_chat(ws: WebSocket):
                 params_patch = None
 
             user_input = (data.get("input") or data.get("text") or data.get("query") or "").strip()
-
             if user_input and WS_INPUT_MAX_CHARS > 0 and len(user_input) > WS_INPUT_MAX_CHARS:
                 await _send_json_safe(ws, {
                     "event": "error",
                     "code": "input_too_long",
-                    "message": f"input exceeds {WS_INPUT_MAX_CHARS} chars"
+                    "message": f"input exceeds {WS_INPUT_MAX_CHARS} chars",
                 })
                 await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
                 continue
 
             if not user_input and not params_patch:
-                await _send_json_safe(ws, {"event": "error", "message": "missing_input", "thread_id": thread_id}); continue
-
-            try: app.state.ws_cancel_flags.pop(thread_id, None)
-            except Exception: pass
-
-            if user_input:
-                try: stm_write_message(thread_id=thread_id, role="user", content=user_input)
-                except Exception: pass
-
-            # "remember" Kurzbefehl
-            m = REMEMBER_RX.match(user_input or "")
-            if m:
-                note = m.group(1).strip(); ok = False
-                try:
-                    _ = ltm.upsert_memory(user=thread_id, chat_id=thread_id, text=note, kind="note"); ok = True
-                except Exception: ok = False
-                msg = "✅ Gespeichert." if ok else "⚠️ Konnte nicht speichern."
-                await _send_json_safe(ws, {"event": "token", "delta": msg, "thread_id": thread_id})
-                if EMIT_FINAL_TEXT:
-                    await _send_json_safe(ws, {"event": "final", "text": msg, "thread_id": thread_id})
-                await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
-                try: stm_write_message(thread_id=thread_id, role="assistant", content=msg)
-                except Exception: pass
+                await _send_json_safe(ws, {"event": "error", "message": "missing_input", "thread_id": thread_id})
                 continue
 
-            # Kurzspur für triviale Grüße → kein Graph/RAG
+            try:
+                app.state.ws_cancel_flags.pop(thread_id, None)
+            except Exception:
+                pass
+
+            if user_input:
+                try:
+                    stm_write_message(thread_id=thread_id, role="user", content=user_input)
+                except Exception:
+                    pass
+
+            # Short command "remember ..."
+            m = REMEMBER_RX.match(user_input or "")
+            if m:
+                note = m.group(1).strip()
+                ok = False
+                try:
+                    _ = ltm.upsert_memory(user=thread_id, chat_id=thread_id, text=note, kind="note")
+                    ok = True
+                except Exception:
+                    ok = False
+                msg = "✅ Gespeichert." if ok else "⚠️ Konnte nicht speichern."
+                await _send_json_safe(ws, {"event": "token", "delta": msg, "thread_id": thread_id})
+                await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
+                try:
+                    stm_write_message(thread_id=thread_id, role="assistant", content=msg)
+                except Exception:
+                    pass
+                continue
+
+            # Trivial greetings → direct LLM stream
             if user_input and not params_patch and GREETING_RX.match(user_input):
                 llm = getattr(app.state, "llm", make_llm(streaming=True))
                 await _stream_llm_direct(ws, llm, user_input=user_input, thread_id=thread_id)
-                try: app.state.ws_cancel_flags.pop(thread_id, None)
-                except Exception: pass
+                try:
+                    app.state.ws_cancel_flags.pop(thread_id, None)
+                except Exception:
+                    pass
                 continue
 
-            # Start-Event + Routing-Log
-            await _send_json_safe(ws, {"event": "start", "thread_id": thread_id, "route": "auto", "reason": "stable_default"})
+            # Start event + routing
             mode = (data.get("mode") or os.getenv("WS_MODE", "graph")).strip().lower()
-            _log("route", mode=mode, thread_id=thread_id, params_present=bool(params_patch), input_len=len(user_input))
+            graph_name = (data.get("graph") or os.getenv("GRAPH_BUILDER", "supervisor")).strip().lower()
+            await _send_json_safe(ws, {"event": "start", "thread_id": thread_id, "route": mode, "graph": graph_name})
 
+            # Execute stream
             if mode == "llm":
                 llm = getattr(app.state, "llm", make_llm(streaming=True))
                 await _stream_llm_direct(ws, llm, user_input=(user_input or ""), thread_id=thread_id)
             else:
-                _log("graph already present" if getattr(app.state, "graph_async", None) else "graph will build", builder=GRAPH_BUILDER)
-                # Bei reinem Form-Patch KEIN Dummy-Text mitschicken
                 effective_input = user_input if user_input else ""
-                _log("stream_supervised start", thread_id=thread_id, input_len=len(effective_input), params_keys=list((params_patch or {}).keys()))
-                await _stream_supervised(ws, app=app, user_input=effective_input, thread_id=thread_id, params_patch=params_patch)
+                _log("route", mode=mode, graph=graph_name, thread_id=thread_id, params_present=bool(params_patch), input_len=len(user_input))
+                await _stream_supervised(
+                    ws,
+                    app=app,
+                    user_input=effective_input,
+                    thread_id=thread_id,
+                    params_patch=params_patch,
+                    builder_name=graph_name,
+                )
 
-            try: app.state.ws_cancel_flags.pop(thread_id, None)
-            except Exception: pass
+            try:
+                app.state.ws_cancel_flags.pop(thread_id, None)
+            except Exception:
+                pass
 
     except WebSocketDisconnect:
         return
@@ -691,6 +862,4 @@ async def ws_chat(ws: WebSocket):
             print(f"[ws_chat] error: {e!r}")
         except Exception:
             pass
-        if EMIT_FINAL_TEXT:
-            await _send_json_safe(ws, {"event": "final", "text": "", "error": f"ws_internal_error: {e!r}"})
         await _send_json_safe(ws, {"event": "done", "thread_id": "ws"})

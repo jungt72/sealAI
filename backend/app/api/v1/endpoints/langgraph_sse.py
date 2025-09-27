@@ -16,6 +16,7 @@ from app.services.langgraph.graph.consult.memory_utils import (
     read_history as stm_read_history,
     write_message as stm_write_message,
 )
+from app.services.langgraph.compat import call_with_supported_kwargs
 
 router = APIRouter()
 
@@ -96,15 +97,15 @@ async def chat_stream(request: Request) -> StreamingResponse:
     Output: text/event-stream mit Events: token, final, done
     """
     body = await request.json()
-    chat_id   = (body.get("chat_id") or "default").strip() or "default"
-    user_text = (body.get("input_text") or "").strip()
+    chat_id   = (body.get("chat_id") or body.get("chatId") or "default").strip() or "default"
+    user_text = (body.get("input_text") or body.get("input") or body.get("message") or "").strip()
     if not user_text:
         async def bad() -> AsyncGenerator[bytes, None]:
-            yield _sse("error", "input_text empty"); yield _sse("done", "")
+            yield _sse("error", {"error": "input_empty"}); yield _sse("done", {"done": True})
         return StreamingResponse(bad(), media_type="text/event-stream")
     if SSE_INPUT_MAX > 0 and len(user_text) > SSE_INPUT_MAX:
         async def too_long() -> AsyncGenerator[bytes, None]:
-            yield _sse("error", f"input exceeds {SSE_INPUT_MAX} chars"); yield _sse("done", "")
+            yield _sse("error", {"error": f"input exceeds {SSE_INPUT_MAX} chars"}); yield _sse("done", {"done": True})
         return StreamingResponse(too_long(), media_type="text/event-stream")
 
     async def gen() -> AsyncGenerator[bytes, None]:
@@ -142,16 +143,27 @@ async def chat_stream(request: Request) -> StreamingResponse:
                 return
             chunk = "".join(buf); buf.clear(); last_flush[0] = loop.time()
             accum.append(chunk)
-            yield_bytes = _sse("token", chunk)
+            yield_bytes = _sse("token", {"delta": chunk})
             # yield innerhalb Hilfsfunktion geht nicht; zurückgeben
             return yield_bytes
 
         # Sofortiges Lebenszeichen
-        yield _sse("token", "…")
+        yield _sse("token", {"delta": "…"})
         # Stream
         async def run_stream(version: str):
             nonlocal final_tail
-            async for ev in g_async.astream_events(initial, config=cfg, version=version):  # type: ignore
+            if g_async is None:
+                return
+            astream_method = getattr(g_async, "astream_events", None)
+            if not callable(astream_method):
+                return
+            agen = call_with_supported_kwargs(
+                astream_method,
+                initial,
+                config=cfg,
+                version=version,
+            )
+            async for ev in agen:  # type: ignore[misc]
                 ev_name = ev.get("event"); data = ev.get("data")
                 if ev_name in ("on_chat_model_stream", "on_llm_stream"):
                     chunk = (data or {}).get("chunk") if isinstance(data, dict) else None
@@ -201,8 +213,10 @@ async def chat_stream(request: Request) -> StreamingResponse:
         if final_text:
             try: stm_write_message(thread_id=thread_id, role="assistant", content=final_text)
             except Exception: pass
-            yield _sse("token", final_text)
-        yield _sse("final", final_text)
-        yield _sse("done", "")
+        if final_text:
+            yield _sse("final", {"final": {"text": final_text}})
+        else:
+            yield _sse("final", {"final": {"text": ""}})
+        yield _sse("done", {"done": True})
 
     return StreamingResponse(gen(), media_type="text/event-stream")

@@ -17,5 +17,7 @@ def get_llm(*, streaming: bool = True) -> Any:
         temperature=0.2,
         timeout=timeout,
         max_retries=2,
+        output_version="responses/v1",
+        use_responses_api=True,
     )
     return llm

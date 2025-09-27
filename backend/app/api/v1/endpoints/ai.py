@@ -211,6 +211,20 @@ async def chat_ws(
                 out_text = "Entschuldige, da ist gerade ein Fehler passiert."
 
             if websocket.application_state == WebSocketState.CONNECTED:
+                ui_event = out.get("ui_event") if isinstance(out, dict) else None
+            else:
+                ui_event = None
+
+            if websocket.application_state == WebSocketState.CONNECTED and isinstance(ui_event, dict):
+                ui_payload = {**ui_event}
+                ui_payload.setdefault("event", "ui_action")
+                ui_payload.setdefault("thread_id", thread_id)
+                try:
+                    await websocket.send_text(json.dumps(ui_payload))
+                except Exception:
+                    log.exception("failed to emit ui_event for thread %s", thread_id)
+
+            if websocket.application_state == WebSocketState.CONNECTED:
                 await websocket.send_text(json.dumps({"event": "final", "text": out_text}))
 
     except WebSocketDisconnect:

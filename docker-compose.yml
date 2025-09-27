@@ -69,7 +69,7 @@ services:
       qdrant:   { condition: service_started }
       keycloak: { condition: service_started }
     restart: unless-stopped
-    env_file: [ ./.env.dev, ./backend/.env ]
+    env_file: [ ./backend/.env, ./.env.dev ]
     environment:
       KEYCLOAK_BASE_URL: "https://auth.sealai.net"
       KEYCLOAK_REALM: "sealAI"

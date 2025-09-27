@@ -16,11 +16,13 @@ class MaterialAgent:
     def __init__(self, context=None):
         self.system_prompt = get_prompt(context)
         self.llm = ChatOpenAI(
-            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL") or None,
             temperature=float(os.getenv("OPENAI_TEMPERATURE", "0")),
             streaming=True,
+            output_version="responses/v1",
+            use_responses_api=True,
         )
 
     def invoke(self, state):

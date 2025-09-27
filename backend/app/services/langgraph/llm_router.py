@@ -13,6 +13,8 @@ def _mk_router_llm(model: str) -> ChatOpenAI:
         streaming=False,
         max_retries=1,
         timeout=5,
+        output_version="responses/v1",
+        use_responses_api=True,
     )
 
 @lru_cache(maxsize=1)

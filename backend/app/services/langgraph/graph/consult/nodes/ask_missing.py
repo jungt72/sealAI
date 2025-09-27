@@ -6,59 +6,17 @@ from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage
 from app.services.langgraph.prompting import render_template
-
-try:
-    from ..utils import missing_by_domain, anomaly_messages, normalize_messages
-except ImportError:
-    from ..utils import missing_by_domain, normalize_messages
-    from ..domain_runtime import anomaly_messages
+from ..utils import (
+    missing_by_domain,
+    optional_missing_by_domain,
+    anomaly_messages,
+    normalize_messages,
+    friendly_required_list,
+    friendly_optional_list,
+)
 
 log = logging.getLogger(__name__)
 
-FIELD_LABELS_RWDR = {
-    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
-    "wellen_mm": "Welle (mm)",
-    "gehause_mm": "Gehäuse (mm)",
-    "breite_mm": "Breite (mm)",
-    "bauform": "Bauform/Profil",
-    "medium": "Medium",
-    "temp_min_c": "Temperatur min (°C)",
-    "temp_max_c": "Temperatur max (°C)",
-    "druck_bar": "Druck (bar)",
-    "drehzahl_u_min": "Drehzahl (U/min)",
-    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
-    "umgebung": "Umgebung",
-    "prioritaet": "Priorität (z. B. Preis, Lebensdauer)",
-    "besondere_anforderungen": "Besondere Anforderungen",
-    "bekannte_probleme": "Bekannte Probleme",
-}
-DISPLAY_ORDER_RWDR = [
-    "falltyp","wellen_mm","gehause_mm","breite_mm","bauform","medium",
-    "temp_min_c","temp_max_c","druck_bar","drehzahl_u_min","geschwindigkeit_m_s",
-    "umgebung","prioritaet","besondere_anforderungen","bekannte_probleme",
-]
-
-FIELD_LABELS_HYD = {
-    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
-    "stange_mm": "Stange (mm)",
-    "nut_d_mm": "Nut-Ø D (mm)",
-    "nut_b_mm": "Nutbreite B (mm)",
-    "medium": "Medium",
-    "temp_max_c": "Temperatur max (°C)",
-    "druck_bar": "Druck (bar)",
-    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
-}
-DISPLAY_ORDER_HYD = [
-    "falltyp","stange_mm","nut_d_mm","nut_b_mm","medium","temp_max_c","druck_bar","geschwindigkeit_m_s",
-]
-
-def _friendly_list(keys: List[str], domain: str) -> str:
-    if domain == "hydraulics_rod":
-        labels, order = FIELD_LABELS_HYD, DISPLAY_ORDER_HYD
-    else:
-        labels, order = FIELD_LABELS_RWDR, DISPLAY_ORDER_RWDR
-    ordered = [k for k in order if k in keys]
-    return ", ".join(f"**{labels.get(k, k)}**" for k in ordered)
 
 def ask_missing_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """Rückfragen & UI-Event (Formular öffnen) bei fehlenden Angaben."""
@@ -74,39 +32,101 @@ def ask_missing_node(state: Dict[str, Any]) -> Dict[str, Any]:
     lang = (params.get("lang") or state.get("lang") or "de").lower()
 
     missing = missing_by_domain(domain, params)
-    log.info("[ask_missing_node] fehlend=%s domain=%s consult_required=%s", missing, domain, consult_required)
+    optional_missing = optional_missing_by_domain(domain, params)
+    log.info(
+        "[ask_missing_node] fehlend=%s optional=%s domain=%s consult_required=%s",
+        missing,
+        optional_missing,
+        domain,
+        consult_required,
+    )
+
+    prefill = {k: v for k, v in params.items() if v not in (None, "", [])}
+    form_id = f"{domain}_params_v1"
+    schema_ref = f"domains/{domain}/params@1.0.0"
 
     if missing:
-        friendly = _friendly_list(missing, domain)
+        friendly_required = friendly_required_list(domain, missing)
+        friendly_optional = friendly_optional_list(domain, optional_missing)
+        friendly_legacy = friendly_required or ", ".join(missing)
         example = (
             "Welle 25, Gehäuse 47, Breite 7, Medium Öl, Tmax 80, Druck 2 bar, n 1500"
             if domain != "hydraulics_rod"
             else "Stange 25, Nut D 32, Nut B 6, Medium Öl, Tmax 80, Druck 160 bar, v 0,3 m/s"
         )
 
-        content = render_template("ask_missing.jinja2", domain=domain, friendly=friendly, example=example, lang=lang)
+        content = render_template(
+            "ask_missing.jinja2",
+            domain=domain,
+            friendly=friendly_legacy,
+            friendly_required=friendly_required,
+            friendly_optional=friendly_optional,
+            missing_required=missing,
+            missing_optional=optional_missing,
+            example=example,
+            lang=lang,
+        )
 
         ui_event = {
             "ui_action": "open_form",
-            "form_id": f"{domain}_params_v1",
-            "schema_ref": f"domains/{domain}/params@1.0.0",
+            "form_id": form_id,
+            "schema_ref": schema_ref,
             "missing": missing,
-            "prefill": {k: v for k, v in params.items() if v not in (None, "", [])},
+            "prefill": prefill,
         }
         log.info("[ask_missing_node] ui_event=%s", ui_event)
-        return {**state, "messages": [AIMessage(content=content)], "phase": "ask_missing", "ui_event": ui_event, "missing_fields": missing}
+        return {
+            **state,
+            "messages": [AIMessage(content=content)],
+            "phase": "ask_missing",
+            "ui_event": ui_event,
+            "missing_fields": missing,
+        }
 
     followups = anomaly_messages(domain, params, derived)
     if followups:
         content = render_template("ask_missing_followups.jinja2", followups=followups[:2], lang=lang)
         ui_event = {
             "ui_action": "open_form",
-            "form_id": f"{domain}_params_v1",
-            "schema_ref": f"domains/{domain}/params@1.0.0",
+            "form_id": form_id,
+            "schema_ref": schema_ref,
             "missing": [],
-            "prefill": {k: v for k, v in params.items() if v not in (None, "", [])},
+            "prefill": prefill,
         }
         log.info("[ask_missing_node] ui_event_followups=%s", ui_event)
-        return {**state, "messages": [AIMessage(content=content)], "phase": "ask_missing", "ui_event": ui_event, "missing_fields": []}
+        return {
+            **state,
+            "messages": [AIMessage(content=content)],
+            "phase": "ask_missing",
+            "ui_event": ui_event,
+            "missing_fields": [],
+        }
 
-    return {**state, "messages": [], "phase": "ask_missing"}
+    if prefill:
+        prev_event = state.get("ui_event") if isinstance(state, dict) else None
+        if isinstance(prev_event, dict):
+            merged_prefill = {}
+            existing_prefill = prev_event.get("prefill") if isinstance(prev_event.get("prefill"), dict) else {}
+            merged_prefill.update(existing_prefill)
+            merged_prefill.update(prefill)
+
+            merged_event = {
+                **prev_event,
+                "prefill": merged_prefill,
+                "form_id": prev_event.get("form_id") or form_id,
+                "schema_ref": prev_event.get("schema_ref") or schema_ref,
+            }
+            if "missing" not in merged_event:
+                merged_event["missing"] = []
+            return {**state, "messages": [], "phase": "ask_missing", "ui_event": merged_event, "missing_fields": []}
+
+        ui_event = {
+            "ui_action": "form_sync",
+            "form_id": form_id,
+            "schema_ref": schema_ref,
+            "missing": [],
+            "prefill": prefill,
+        }
+        return {**state, "messages": [], "phase": "ask_missing", "ui_event": ui_event, "missing_fields": []}
+
+    return {**state, "messages": [], "phase": "ask_missing", "missing_fields": []}
