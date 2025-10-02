@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 FROM python:3.11-slim AS builder
 WORKDIR /opt/build
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential gcc curl libpq-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential gcc curl libpq-dev pkg-config libffi-dev rustc cargo && rm -rf /var/lib/apt/lists/*
 COPY requirements*.txt ./
 RUN set -eux; mkdir -p /opt/wheels; \
     if [ -f requirements.txt ]; then pip wheel -r requirements.txt -w /opt/wheels; \
