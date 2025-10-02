@@ -280,6 +280,10 @@ def build_system_prompt_from_parts(
 
     # Budget for attachments
     budget = max(0, int(max_tokens) - base_tokens)
+    try:
+        log.info("[prompting] build_system_prompt base_tokens=%d budget=%d model=%s", base_tokens, budget, model)
+    except Exception:
+        pass
 
     parts: list[str] = [base]
     # Try include summary first (compact)
@@ -319,4 +323,13 @@ def build_system_prompt_from_parts(
         if included:
             parts.extend(included)
 
-    return "\n".join(parts)
+    try:
+        final = "\n".join(parts)
+        try:
+            total_tokens = count_tokens(final, model=model)
+            log.info("[prompting] build_system_prompt total_tokens=%d included_docs=%d", total_tokens, len(included) if rag_docs else 0)
+        except Exception:
+            pass
+        return final
+    except Exception:
+        return base

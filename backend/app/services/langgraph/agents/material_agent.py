@@ -1,19 +1,25 @@
 import os
-from jinja2 import Environment, FileSystemLoader
+from typing import Any
+
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
 
-PROMPT_FILE = os.path.join(os.path.dirname(__file__), "..", "prompts", "material_agent.jinja2")
+from app.services.langgraph.prompting import render_template, build_system_prompt_from_parts
 
-def get_prompt(context=None):
-    env = Environment(loader=FileSystemLoader(os.path.dirname(PROMPT_FILE)))
-    template = env.get_template("material_agent.jinja2")
-    return template.render(context=context)
+PROMPT_NAME = "material_agent.jinja2"
+
+
+def get_prompt(context: dict | None = None) -> str:
+    try:
+        return render_template(PROMPT_NAME, context=context or {})
+    except Exception:
+        return ""
+
 
 class MaterialAgent:
     name = "material_agent"
 
-    def __init__(self, context=None):
+    def __init__(self, context: dict | None = None):
         self.system_prompt = get_prompt(context)
         self.llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
@@ -25,9 +31,22 @@ class MaterialAgent:
             use_responses_api=True,
         )
 
-    def invoke(self, state):
-        messages = [SystemMessage(content=self.system_prompt)] + state["messages"]
+    def invoke(self, state: dict[str, Any]):
+        # Prevent duplicate system messages: strip leading system messages from state
+        msgs = list(state.get("messages") or [])
+        msgs = [m for m in msgs if not isinstance(m, SystemMessage)]
+
+        # If state contains retrieved docs or a summary, optionally merge them
+        retrieved = state.get("retrieved_docs") or []
+        rag_texts = [d.get("text") for d in retrieved if isinstance(d, dict) and d.get("text")]
+        summary = state.get("summary") or None
+        system_text = build_system_prompt_from_parts(
+            f"{self.system_prompt}", summary=summary, rag_docs=rag_texts, max_tokens=int(os.getenv("PROMPT_MAX_TOKENS", "3000")), model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+        )
+
+        messages = [SystemMessage(content=system_text)] + msgs
         return {"messages": self.llm.invoke(messages)}
 
-def get_material_agent(context=None):
+
+def get_material_agent(context: dict | None = None) -> MaterialAgent:
     return MaterialAgent(context)
