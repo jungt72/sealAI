@@ -2,6 +2,7 @@ from __future__ import annotations
 import functools
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+import os
 import yaml
 
 from app.services.langgraph.prompting import render_template, build_system_prompt_from_parts
