@@ -16,6 +16,9 @@ def _conv_key(thread_id: str) -> str:
     # Gleicher Key wie im SSE: chat:stm:{thread_id}:messages
     return f"chat:stm:{thread_id}:messages"
 
+def _summary_key(thread_id: str) -> str:
+    return f"chat:stm:{thread_id}:summary"
+
 
 def write_message(*, thread_id: str, role: Literal["user", "assistant", "system"], content: str) -> None:
     if not content:
@@ -30,12 +33,26 @@ def write_message(*, thread_id: str, role: Literal["user", "assistant", "system"
     pipe.execute()
 
 
+def set_summary(thread_id: str, content: str) -> None:
+    """Persistiert eine kompakte Thread-Zusammenfassung separat, mit derselben TTL wie STM."""
+    if not content:
+        return
+    r = _redis()
+    key = _summary_key(thread_id)
+    r.set(key, content)
+    r.expire(key, int(os.getenv("STM_TTL_SEC", "604800")))
+
+
 def read_history_raw(thread_id: str, limit: int = 80) -> List[Dict[str, str]]:
     """Rohdaten (älteste -> neueste)."""
     r = _redis()
     key = _conv_key(thread_id)
     items = r.lrange(key, 0, limit - 1) or []
+    # Optional vorgespeicherte Summary als erste Systemnachricht einfügen
+    summary_txt = r.get(_summary_key(thread_id))
     out: List[Dict[str, str]] = []
+    if isinstance(summary_txt, str) and summary_txt.strip():
+        out.append({"role": "system", "content": summary_txt.strip()})
     for s in reversed(items):  # Redis speichert neueste zuerst
         try:
             obj = json.loads(s)

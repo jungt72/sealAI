@@ -8,54 +8,29 @@ Conversation STM (Short-Term Memory) auf Redis
 """
 
 from __future__ import annotations
-import os
-import json
-import time
-from typing import Literal, List, Dict, Any
-from redis import Redis
+from typing import List, Dict, Any
 
-# ───────────────────────── Config ──────────────────────────
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
-TTL_SEC   = int(os.getenv("STM_TTL_SEC", "604800"))           # 7 Tage
-MAX_MSG   = int(os.getenv("STM_MAX_MSG", "200"))              # max. Messages/Chat
-PREFIX    = os.getenv("STM_PREFIX", "chat:stm")               # Key-Namespace
-# ────────────────────────────────────────────────────────────
+# Dieses Modul war historisch eine eigenständige STM-Implementierung.
+# Aus Wartbarkeitsgründen delegieren wir die Funktionalität an die
+# bereits genutzte Implementation unter `graph.consult.memory_utils`.
+from app.services.langgraph.graph.consult import memory_utils as _mu
 
-def _r() -> Redis:
-    return Redis.from_url(REDIS_URL, decode_responses=True)
 
-def _key(chat_id: str) -> str:
-    return f"{PREFIX}:{chat_id}:messages"
-
-def _touch(chat_id: str) -> None:
-    _r().expire(_key(chat_id), TTL_SEC)
-
-Role = Literal["user", "assistant", "system"]
-
-def add_message(chat_id: str, role: Role, content: str) -> None:
-    """Hängt eine Nachricht an das Chat-Log (Ring-Buffer) an."""
-    if not chat_id or not isinstance(content, str) or not content.strip():
+def add_message(chat_id: str, role: str, content: str) -> None:
+    """Backward-compatible wrapper: delegiert an memory_utils.write_message."""
+    try:
+        _mu.write_message(thread_id=chat_id, role=role, content=content)
+    except Exception:
+        # Best-effort: swallow errors to avoid breaking callers
         return
-    doc: Dict[str, Any] = {
-        "role": role,
-        "content": content,
-        "ts": time.time(),
-    }
-    r = _r()
-    r.rpush(_key(chat_id), json.dumps(doc, ensure_ascii=False))
-    r.ltrim(_key(chat_id), -MAX_MSG, -1)  # Ring-Buffer begrenzen
-    _touch(chat_id)
+
 
 def get_history(chat_id: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Liest die letzten N Nachrichten (chronologisch)."""
-    if limit <= 0:
+    """Wrapper um die rohen Einträge zu lesen (älteste -> neueste).
+
+    Rückgabe: List[dict] mit mindestens `role` und `content`.
+    """
+    try:
+        return _mu.read_history_raw(chat_id, limit=limit)
+    except Exception:
         return []
-    r = _r()
-    raw = r.lrange(_key(chat_id), -limit, -1)
-    out: List[Dict[str, Any]] = []
-    for row in raw:
-        try:
-            out.append(json.loads(row))
-        except Exception:
-            continue
-    return out

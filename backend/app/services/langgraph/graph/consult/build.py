@@ -11,13 +11,16 @@ from .domain_router import detect_domain
 from .domain_runtime import compute_domain
 
 from .nodes.intake import intake_node
+from .nodes.profile import profile_node
 from .nodes.ask_missing import ask_missing_node
 from .nodes.validate import validate_node
 from .nodes.recommend import recommend_node
 from .nodes.explain import explain_node
 from .nodes.calc_agent import calc_agent_node
 from .nodes.rag import run_rag_node
+from .nodes.ltm import ltm_node
 from .nodes.validate_answer import validate_answer
+from .nodes.summarize import summarize_node
 
 # NEU
 from .nodes.smalltalk import smalltalk_node
@@ -27,8 +30,10 @@ from .nodes.deterministic_calc import deterministic_calc_node  # NEW
 from .heuristic_extract import pre_extract_params
 from .extract import extract_params_with_llm
 from .config import create_llm  # ggf. später genutzt
+from ..logging_utils import wrap_node_with_logging, log_branch_decision
 
 log = logging.getLogger("uvicorn.error")
+_GRAPH_NAME = "ConsultGraph"
 
 
 def _join_user_text(msgs: List) -> str:
@@ -155,7 +160,9 @@ def _respond_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 # ---- Conditional helpers ----
 def _route_key(state: Dict[str, Any]) -> str:
-    return (state.get("route") or "default").strip().lower() or "default"
+    branch = (state.get("route") or "default").strip().lower() or "default"
+    log_branch_decision(_GRAPH_NAME, "lite_router", "route", branch, state)
+    return branch
 
 
 def _ask_or_ok(state: Dict[str, Any]) -> str:
@@ -175,10 +182,9 @@ def _ask_or_ok(state: Dict[str, Any]) -> str:
         has(p.get("wellen_mm")) and has(p.get("drehzahl_u_min"))
     )
 
-    if not (base_ok and rel_ok):
-        return "ask"
-
-    return "ok"
+    branch = "ask" if not (base_ok and rel_ok) else "ok"
+    log_branch_decision(_GRAPH_NAME, "ask_missing", "ask_or_ok", branch, state)
+    return branch
 
 
 def _after_rag(state: Dict[str, Any]) -> str:
@@ -200,7 +206,9 @@ def _after_rag(state: Dict[str, Any]) -> str:
     docs = state.get("retrieved_docs") or state.get("docs") or []
     ctx_ok = bool(docs) or bool(state.get("context"))
 
-    return "recommend" if (base_ok and rel_ok and ctx_ok) else "explain"
+    branch = "recommend" if (base_ok and rel_ok and ctx_ok) else "explain"
+    log_branch_decision(_GRAPH_NAME, "rag", "after_rag", branch, state)
+    return branch
 
 
 def build_graph() -> StateGraph:
@@ -208,26 +216,38 @@ def build_graph() -> StateGraph:
     g = StateGraph(ConsultState)
 
     # --- Nodes ---
-    g.add_node("lite_router", lite_router_node)   # NEU
-    g.add_node("smalltalk", smalltalk_node)       # NEU
+    g.add_node("lite_router", wrap_node_with_logging(_GRAPH_NAME, "lite_router", lite_router_node))   # NEU
+    g.add_node("smalltalk", wrap_node_with_logging(_GRAPH_NAME, "smalltalk", smalltalk_node))       # NEU
 
-    g.add_node("intake", intake_node)
-    g.add_node("extract", _extract_node)
-    g.add_node("domain_router", _domain_router_node)
-    g.add_node("compute", _compute_node)
+    g.add_node("intake", wrap_node_with_logging(_GRAPH_NAME, "intake", intake_node))
+    g.add_node("profile", wrap_node_with_logging(_GRAPH_NAME, "profile", profile_node))
+    g.add_node("extract", wrap_node_with_logging(_GRAPH_NAME, "extract", _extract_node))
+    g.add_node("domain_router", wrap_node_with_logging(_GRAPH_NAME, "domain_router", _domain_router_node))
+    g.add_node("compute", wrap_node_with_logging(_GRAPH_NAME, "compute", _compute_node))
 
     # NEW: deterministische Physik vor dem LLM-Calc-Agent
-    g.add_node("deterministic_calc", deterministic_calc_node)
+    g.add_node(
+        "deterministic_calc",
+        wrap_node_with_logging(_GRAPH_NAME, "deterministic_calc", deterministic_calc_node),
+    )
 
-    g.add_node("calc_agent", calc_agent_node)
-    g.add_node("ask_missing", ask_missing_node)
-    g.add_node("validate", validate_node)
-    g.add_node("prepare_query", _prepare_query_node)
-    g.add_node("rag", run_rag_node)
-    g.add_node("recommend", recommend_node)
-    g.add_node("validate_answer", validate_answer)
-    g.add_node("explain", explain_node)
-    g.add_node("respond", _respond_node)
+    g.add_node("calc_agent", wrap_node_with_logging(_GRAPH_NAME, "calc_agent", calc_agent_node))
+    g.add_node("ask_missing", wrap_node_with_logging(_GRAPH_NAME, "ask_missing", ask_missing_node))
+    g.add_node("validate", wrap_node_with_logging(_GRAPH_NAME, "validate", validate_node))
+    g.add_node(
+        "prepare_query",
+        wrap_node_with_logging(_GRAPH_NAME, "prepare_query", _prepare_query_node),
+    )
+    g.add_node("ltm", wrap_node_with_logging(_GRAPH_NAME, "ltm", ltm_node))
+    g.add_node("rag", wrap_node_with_logging(_GRAPH_NAME, "rag", run_rag_node))
+    g.add_node("recommend", wrap_node_with_logging(_GRAPH_NAME, "recommend", recommend_node))
+    g.add_node(
+        "validate_answer",
+        wrap_node_with_logging(_GRAPH_NAME, "validate_answer", validate_answer),
+    )
+    g.add_node("explain", wrap_node_with_logging(_GRAPH_NAME, "explain", explain_node))
+    g.add_node("respond", wrap_node_with_logging(_GRAPH_NAME, "respond", _respond_node))
+    g.add_node("summarize", wrap_node_with_logging(_GRAPH_NAME, "summarize", summarize_node))
 
     # --- Entry & Routing ---
     g.set_entry_point("lite_router")
@@ -240,7 +260,8 @@ def build_graph() -> StateGraph:
     g.add_edge("smalltalk", "respond")
 
     # --- Main flow ---
-    g.add_edge("intake", "extract")
+    g.add_edge("intake", "profile")
+    g.add_edge("profile", "extract")
     g.add_edge("extract", "domain_router")
     g.add_edge("domain_router", "compute")
     g.add_edge("compute", "deterministic_calc")
@@ -253,7 +274,8 @@ def build_graph() -> StateGraph:
     })
 
     g.add_edge("validate", "prepare_query")
-    g.add_edge("prepare_query", "rag")
+    g.add_edge("prepare_query", "ltm")
+    g.add_edge("ltm", "rag")
 
     g.add_conditional_edges("rag", _after_rag, {
         "recommend": "recommend",
@@ -263,6 +285,9 @@ def build_graph() -> StateGraph:
     g.add_edge("recommend", "validate_answer")
     g.add_edge("validate_answer", "respond")
     g.add_edge("explain", "respond")
+    # Context handoff: Nach jeder Antwort komprimieren/speichern
+    g.add_edge("respond", "summarize")
+    g.add_edge("summarize", END)
 
     return g
 

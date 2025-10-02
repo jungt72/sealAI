@@ -8,6 +8,7 @@ import Thinking from "./Thinking";
 import ChatInput from "./ChatInput";
 import type { Message } from "@/types/chat";
 import { useChatWs } from "@/lib/useChatWs";
+import { useChatThreadId } from "@/lib/useChatThreadId";
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -16,7 +17,7 @@ export default function ChatContainer() {
   const { data: session, status } = useSession();
   const isAuthed = status === "authenticated";
 
-  const chatId = "default";
+  const chatId = useChatThreadId();
   const token = useAccessToken();
   const { connected, streaming, text, lastError, send, cancel } =
     useChatWs({ chatId, token });
@@ -24,6 +25,11 @@ export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [hasStarted, setHasStarted] = useState(false);
+
+  useEffect(() => {
+    setMessages([]);
+    setHasStarted(false);
+  }, [chatId]);
 
   // === Scroll "anchor-then-hold" ===
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -103,7 +109,8 @@ export default function ChatContainer() {
   }, [messages, streaming]);
 
   const firstName = (session?.user?.name || "").split(" ")[0] || "";
-  const sendingDisabled = !isAuthed || !connected;
+  const hasThread = Boolean(chatId);
+  const sendingDisabled = !isAuthed || !connected || !hasThread;
   const isInitial = messages.length === 0 && !hasStarted;
 
   const handleSend = useCallback((msg: string) => {
@@ -131,9 +138,16 @@ export default function ChatContainer() {
             </div>
             <div className="text-xs text-center mb-4">
               {isAuthed ? (
-                connected ? <span className="text-emerald-600">WebSocket verbunden</span>
-                          : <span className="text-amber-600">Verbinde WebSocket…</span>
-              ) : <span className="text-gray-500">Bitte anmelden</span>}
+                !hasThread ? (
+                  <span className="text-amber-600">Initialisiere Sitzung…</span>
+                ) : connected ? (
+                  <span className="text-emerald-600">WebSocket verbunden</span>
+                ) : (
+                  <span className="text-amber-600">Verbinde WebSocket…</span>
+                )
+              ) : (
+                <span className="text-gray-500">Bitte anmelden</span>
+              )}
             </div>
 
             <ChatInput
@@ -145,7 +159,11 @@ export default function ChatContainer() {
               streaming={streaming}
               placeholder={
                 isAuthed
-                  ? (connected ? "Was möchtest du wissen?" : "Verbinde…")
+                  ? !hasThread
+                    ? "Initialisiere Sitzung…"
+                    : connected
+                      ? "Was möchtest du wissen?"
+                      : "Verbinde…"
                   : "Bitte anmelden, um zu schreiben"
               }
             />
@@ -205,7 +223,11 @@ export default function ChatContainer() {
                 streaming={streaming}
                 placeholder={
                   isAuthed
-                    ? (connected ? "Was möchtest du wissen?" : "Verbinde…")
+                    ? !hasThread
+                      ? "Initialisiere Sitzung…"
+                      : connected
+                        ? "Was möchtest du wissen?"
+                        : "Verbinde…"
                     : "Bitte anmelden, um zu schreiben"
                 }
               />

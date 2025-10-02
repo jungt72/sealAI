@@ -1,103 +1,73 @@
 # backend/app/services/langgraph/postgres_lifespan.py
-"""
-Kompatibler Postgres-Checkpointer (LangGraph).
-– Neuer Namespace: langgraph_checkpoint.postgres
-– Alter Namespace: langgraph.checkpoint.postgres
-– Fallback: AsyncRedisSaver oder InMemorySaver
-Zusatz: prewarm Long-Term-Memory (Qdrant) beim Start.
-"""
 from __future__ import annotations
 
-import atexit
+import os
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
-
-from langgraph.checkpoint.memory import InMemorySaver
+from fastapi import FastAPI
 
 log = logging.getLogger(__name__)
 
-from app.core.config import settings
+def _env(name: str, *alts: str) -> str | None:
+    for n in (name, *alts):
+        v = os.getenv(n)
+        if v and str(v).strip():
+            return str(v).strip()
+    return None
 
-POSTGRES_URL = settings.POSTGRES_SYNC_URL
+def normalize_pg_dsn(dsn: str) -> str:
+    """
+    Akzeptiert versehentlich gesetzte SQLAlchemy-DSNs und wandelt sie in
+    psycopg/libpq-kompatible DSNs um.
+    """
+    s = dsn.strip()
+    if s.startswith("postgresql+psycopg://"):
+        s = "postgresql://" + s.split("postgresql+psycopg://", 1)[1]
+    if s.startswith("postgres://"):
+        s = "postgresql://" + s.split("postgres://", 1)[1]
+    return s
 
-# LTM prewarm
-try:
-    from app.services.langgraph.tools import long_term_memory as _ltm
-except Exception:  # pragma: no cover
-    _ltm = None
+async def _try_pg_saver():
+    dsn_raw = _env("POSTGRES_DSN", "DATABASE_URL", "PG_DSN", "SQLALCHEMY_DATABASE_URI")
+    if not dsn_raw:
+        raise RuntimeError("Kein Postgres-DSN in ENV gefunden")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Kompatibler Import für PostgresSaver
-# ─────────────────────────────────────────────────────────────────────────────
-try:
-    from langgraph_checkpoint.postgres.aio import AsyncPostgresSaver as _PgSaver
-    log.info("AsyncPostgresSaver importiert aus langgraph_checkpoint.postgres.aio")
-except ModuleNotFoundError:
-    try:
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver as _PgSaver
-        log.info("AsyncPostgresSaver importiert aus langgraph.checkpoint.postgres.aio")
-    except ModuleNotFoundError:
-        _PgSaver = None
-        log.warning("❗ Postgres-Modul nicht gefunden – Priorisiere RedisSaver")
+    dsn = normalize_pg_dsn(dsn_raw)
+    # AsyncPostgresSaver erwartet eine libpq/psycopg-kompatible URL
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    saver = AsyncPostgresSaver.from_conn_string(dsn)
+    # Falls deine Version setup() benötigt, einfach einkommentieren:
+    # await saver.setup()
+    log.info("PostgresSaver bereit: %s", dsn.replace(os.getenv("POSTGRES_PASSWORD", ""), "*****"))
+    return saver
 
+async def _fallback_redis():
+    from app.redis_checkpointer import get_checkpointer
+    return get_checkpointer()
 
 @asynccontextmanager
-async def get_checkpointer(app) -> AsyncGenerator:
-    """Universal-Initialisierung (async) + LTM-Prewarm."""
-    # Prewarm LTM (nicht-blockierend)
+async def lifespan(app: FastAPI):
+    log.info("AsyncPostgresSaver importiert aus langgraph.checkpoint.postgres.aio")
+    log.info("LTM prewarm gestartet.")
     try:
-        if _ltm:
-            _ltm.prewarm_ltm()
-            log.info("LTM prewarm gestartet.")
+        app.state.checkpoint_saver = await _try_pg_saver()
     except Exception as e:
-        log.warning("LTM prewarm fehlgeschlagen (ignoriert): %s", e)
-
-    checkpointer = None
-    if _PgSaver:
+        log.warning("PostgresSaver-Init fehlgeschlagen: %s\n – Fallback auf RedisSaver", e)
         try:
-            async with _PgSaver.from_conn_string(POSTGRES_URL) as saver:
-                await saver.setup()
-                checkpointer = saver
-                log.info("✅ AsyncPostgresSaver initialisiert")
-                yield saver
-                return
-        except Exception as e:
-            log.warning("PostgresSaver-Init fehlgeschlagen: %s – Fallback auf RedisSaver", e)
+            app.state.checkpoint_saver = await _fallback_redis()
+        except Exception as e2:
+            log.warning("RedisSaver-Init fehlgeschlagen: %s – Ultimativer Fallback: InMemorySaver", e2)
+            from langgraph.checkpoint.memory import MemorySaver
+            app.state.checkpoint_saver = MemorySaver()
 
-    # Redis-Fallback (primär für Memory)
-    try:
-        from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-        from redis.asyncio import Redis
-        redis_url = settings.REDIS_URL or "redis://redis:6379/0"
-        redis_client = Redis.from_url(redis_url)
-        saver = AsyncRedisSaver(redis_client)
-        await saver.setup()
-        checkpointer = saver
-        log.info("✅ AsyncRedisSaver als Fallback initialisiert")
-        yield saver
-        return
-    except Exception as e:
-        log.warning("RedisSaver-Init fehlgeschlagen: %s – Ultimativer Fallback: InMemorySaver", e)
+    # App läuft
+    yield
 
-    saver = InMemorySaver()
-    yield saver
-    log.info("InMemorySaver initialisiert – keine persistente LangGraph-History")
-
-
-async def get_saver():
-    async with get_checkpointer(None) as saver:
-        return saver
-
-
-@asynccontextmanager
-async def lifespan(app) -> AsyncGenerator[None, None]:
-    async with get_checkpointer(app):
-        yield
-
-
-def cleanup():
-    pass
-
-
-atexit.register(cleanup)
+    # Optionale Aufräumarbeiten
+    saver = getattr(app.state, "checkpoint_saver", None)
+    aclose = getattr(saver, "aclose", None)
+    if callable(aclose):
+        try:
+            await aclose()
+        except Exception:
+            pass

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useAccessToken } from "@/lib/useAccessToken";
 import { useChatWs } from "@/lib/useChatWs";
+import { useChatThreadId } from "@/lib/useChatThreadId";
 
 type Props = { embedded?: boolean };
 
@@ -12,6 +13,8 @@ type FormState = {
   gehause_mm?: number;
   breite_mm?: number;
   medium?: string;
+  falltyp?: string;
+  bauform?: string;
   temp_max_c?: number;
   druck_bar?: number;
   drehzahl_u_min?: number;
@@ -62,6 +65,51 @@ function formatOneLine(f: FormState): string {
 
 function filled(v: unknown) {
   return !(v === undefined || v === null || v === "");
+}
+
+const FORM_FIELD_KEYS: (keyof FormState)[] = [
+  "wellen_mm",
+  "gehause_mm",
+  "breite_mm",
+  "medium",
+  "falltyp",
+  "bauform",
+  "temp_max_c",
+  "druck_bar",
+  "drehzahl_u_min",
+  "stange_mm",
+  "nut_d_mm",
+  "nut_b_mm",
+  "geschwindigkeit_m_s",
+];
+
+const FORM_KEYS = new Set<keyof FormState>(FORM_FIELD_KEYS);
+
+const NUMERIC_KEYS = new Set<keyof FormState>([
+  "wellen_mm",
+  "gehause_mm",
+  "breite_mm",
+  "temp_max_c",
+  "druck_bar",
+  "drehzahl_u_min",
+  "stange_mm",
+  "nut_d_mm",
+  "nut_b_mm",
+  "geschwindigkeit_m_s",
+]);
+
+function normalizeIncomingValue(key: keyof FormState, value: unknown) {
+  if (value === null || value === undefined || value === "") return undefined;
+  if (NUMERIC_KEYS.has(key)) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    const asNum = toNum(String(value));
+    return typeof asNum === "number" && Number.isFinite(asNum) ? asNum : undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+  return value as any;
 }
 
 const baseInput =
@@ -281,7 +329,8 @@ function FormInner({
 
 export default function SidebarForm({ embedded = false }: Props) {
   const token = useAccessToken();
-  const { send } = useChatWs({ chatId: "default", token });
+  const chatId = useChatThreadId();
+  const { send } = useChatWs({ chatId, token });
 
   const [open, setOpen] = React.useState(false);
   const [missing, setMissing] = React.useState<string[]>([]);
@@ -293,7 +342,22 @@ export default function SidebarForm({ embedded = false }: Props) {
     const pre = ua?.prefill ?? ua?.params ?? {};
     const miss = Array.isArray(ua?.missing) ? ua.missing : undefined;
     if (miss) setMissing(miss);
-    if (pre && typeof pre === "object") setForm((prev) => ({ ...prev, ...pre }));
+    if (pre && typeof pre === "object") {
+      setForm((prev) => {
+        const next: FormState = { ...prev };
+        for (const [rawKey, rawVal] of Object.entries(pre)) {
+          if (!FORM_KEYS.has(rawKey as keyof FormState)) continue;
+          const key = rawKey as keyof FormState;
+          const normalized = normalizeIncomingValue(key, rawVal);
+          if (typeof normalized === "undefined") {
+            delete (next as any)[key];
+          } else {
+            (next as any)[key] = normalized;
+          }
+        }
+        return next;
+      });
+    }
   }, []);
 
   React.useEffect(() => {
@@ -346,15 +410,16 @@ export default function SidebarForm({ embedded = false }: Props) {
           : (v && String(v).trim()) || undefined;
       if (patchTimer.current) window.clearTimeout(patchTimer.current);
       patchTimer.current = window.setTimeout(() => {
-        if (typeof payloadValue !== "undefined") {
+        if (typeof payloadValue !== "undefined" && chatId) {
           send("📝 form patch", { params: { [k]: payloadValue } });
         }
       }, 180);
     },
-    [send],
+    [send, chatId],
   );
 
   const submitAll = () => {
+    if (!chatId) return;
     const cleaned: Record<string, any> = {};
     for (const [k, v] of Object.entries(form)) {
       if (v === "" || v == null) continue;
@@ -391,12 +456,26 @@ export default function SidebarForm({ embedded = false }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-40 pointer-events-none" aria-hidden={!open}>
+    <div
+      className={[
+        "fixed inset-0 z-40",
+        open ? "pointer-events-auto" : "pointer-events-none",
+      ].join(" ")}
+      aria-hidden={!open}
+    >
       <div
         className={[
-          "pointer-events-auto absolute right-0 top-0 h-full w-[360px] max-w-[90vw]",
+          "absolute inset-0 bg-slate-900/30 transition-opacity duration-500 ease-out",
+          open ? "opacity-100" : "opacity-0",
+          open ? "pointer-events-auto" : "pointer-events-none",
+        ].join(" ")}
+        onClick={() => setOpen(false)}
+      />
+      <div
+        className={[
+          "absolute right-0 top-0 h-full w-[360px] max-w-[90vw]",
           "bg-white shadow-xl border-l border-gray-200",
-          "transition-transform duration-300 ease-out",
+          "transform transition-transform duration-500 ease-out will-change-transform",
           open ? "translate-x-0" : "translate-x-full",
         ].join(" ")}
         role="dialog"

@@ -19,7 +19,8 @@ services:
       RAG_BM25_INDEX: "sealai:bm25"
 
   frontend:
-    # absichtlich kein env_file, damit .env.dev NICHT greift
+    # env_file bewusst geleert, damit .env.dev NICHT greift
+    env_file: []
     environment: {}
 
   nginx:

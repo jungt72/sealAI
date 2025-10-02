@@ -77,6 +77,9 @@ class ConsultState(TypedDict, total=False):
     phase: Optional[str]
     consult_required: Optional[bool]
 
+    # User-Profil (aus Postgres)
+    user_profile: Dict[str, Any]
+
     # ---- UI/Frontend-Integration ----
     ui_event: Dict[str, Any]
     missing_fields: List[str]

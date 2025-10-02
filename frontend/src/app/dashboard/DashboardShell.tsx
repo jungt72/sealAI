@@ -3,15 +3,20 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { logout } from "../../lib/logout";
 import SidebarLeft from "./components/Sidebar/SidebarLeft";
 
 function LogoutButton() {
   const { status } = useSession();
   if (status !== "authenticated") return null;
 
-  const handleLogout = () => {
-    window.location.assign("/api/auth/sso-logout");
-    setTimeout(() => window.location.assign("/"), 2500);
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error("Logout failed", error);
+      window.location.assign("/");
+    }
   };
 
   return (

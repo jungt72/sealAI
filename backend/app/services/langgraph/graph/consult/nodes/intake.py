@@ -11,11 +11,16 @@ from app.services.langgraph.prompting import (
     messages_for_template,
     strip_json_fence,
 )
-from ..utils import normalize_messages
+from ..utils import (
+    normalize_messages,
+    missing_by_domain,
+    optional_missing_by_domain,
+    friendly_required_list,
+    friendly_optional_list,
+)
 # Vereinheitlichte LLM-Factory für Consult
 from ..config import create_llm
 # NEU: Frühe Pflichtfeldprüfung für sofortiges Sidebar-Open
-from ..domain_runtime import missing_by_domain
 
 log = logging.getLogger(__name__)
 
@@ -36,10 +41,11 @@ def intake_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     try:
-        llm = create_llm(streaming=False)
+        # Intake nutzt bewusst das leichtere GPT-5-Nano.
+        llm = create_llm(streaming=False, model="gpt-5-nano")
         resp = llm.invoke([HumanMessage(content=prompt)])
         raw = strip_json_fence(getattr(resp, "content", "") or "")
-        data = json.loads(raw)
+        data = _safe_json_loads(raw)
     except Exception as e:
         log.warning("intake_node: parse_or_llm_error: %s", e, exc_info=True)
         data = {}
@@ -72,13 +78,19 @@ def intake_node(state: Dict[str, Any]) -> Dict[str, Any]:
             if domain_guess == "hydraulics_rod"
             else "Welle 25, Gehäuse 47, Breite 7, Medium Öl, Tmax 80, Druck 2 bar, n 1500"
         )
-        # Hinweistext (Template nutzt intern 'friendly_required', der bestehende ask_missing-Node
-        # übergibt historisch 'friendly' – wir bleiben kompatibel)
+        optional_missing = optional_missing_by_domain(domain_guess, new_params)
+        friendly_required = friendly_required_list(domain_guess, missing)
+        friendly_optional = friendly_optional_list(domain_guess, optional_missing)
+        friendly_legacy = friendly_required or ", ".join(missing)
         assistant_msg = AIMessage(
             content=render_template(
                 "ask_missing.jinja2",
                 domain=domain_guess,
-                friendly=", ".join(missing),  # kompatibel zu bestehendem Template-Gebrauch
+                friendly=friendly_legacy,
+                friendly_required=friendly_required,
+                friendly_optional=friendly_optional,
+                missing_required=missing,
+                missing_optional=optional_missing,
                 example=example,
                 lang="de",
             )
@@ -100,3 +112,18 @@ def intake_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "phase": "intake",
         **({"ui_event": ui_event} if ui_event else {}),
     }
+# --- safe JSON parsing helper (added) ---
+import re as _re
+def _safe_json_loads(_raw: str):
+    if not _raw or not str(_raw).strip():
+        return {}
+    try:
+        return json.loads(_raw)
+    except Exception:
+        m = _re.search(r'\{.*\}', str(_raw), _re.S)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except Exception:
+                pass
+        return {}

@@ -221,3 +221,102 @@ def strip_json_fence(text: str) -> str:
 def safe_json(obj: Any) -> str:
     """Kompaktes JSON (UTF-8) für Prompt-Übergaben."""
     return json.dumps(obj or {}, ensure_ascii=False, separators=(",", ":"))
+
+
+# -------------------------------------------------------------------
+# Token / Truncation Utilities
+# -------------------------------------------------------------------
+try:
+    import tiktoken  # type: ignore
+
+    def _count_tokens_tiktoken(text: str, model: str = "gpt-4o") -> int:
+        try:
+            enc = tiktoken.encoding_for_model(model)
+        except Exception:
+            try:
+                enc = tiktoken.get_encoding("cl100k_base")
+            except Exception:
+                return max(0, len(text) // 4)
+        return len(enc.encode(text or ""))
+
+    _token_counter = _count_tokens_tiktoken
+except Exception:
+    # fallback estimate: 1 token ~ 4 chars (rough)
+    def _token_counter(text: str, model: str = "gpt-4o") -> int:  # type: ignore
+        return max(0, len(text or "") // 4)
+
+
+def count_tokens(text: str, model: str = "gpt-4o") -> int:
+    try:
+        return _token_counter(text or "", model)
+    except Exception:
+        return max(0, len(text or "") // 4)
+
+
+def build_system_prompt_from_parts(
+    template_text: str,
+    *,
+    summary: str | None = None,
+    rag_docs: list[str] | None = None,
+    max_tokens: int = 3000,
+    model: str = "gpt-4o",
+) -> str:
+    """Kombiniert das gerenderte Systemtemplate mit optionaler Thread-Summary
+    und RAG-Dokumenten und kürzt die RAG-Teile tokenbasiert auf `max_tokens`.
+
+    Strategy:
+    - Always include full `template_text` and (if present) `summary` if it fits.
+    - Then append as many `rag_docs` (most relevant first) as token budget erlaubt.
+    - If nothing fits, fallback to returning `template_text`.
+    """
+    if not template_text:
+        return ""
+    summary = (summary or "").strip()
+    rag_docs = rag_docs or []
+
+    # Start with template
+    base = template_text.strip()
+    base_tokens = count_tokens(base, model=model)
+
+    # Budget for attachments
+    budget = max(0, int(max_tokens) - base_tokens)
+
+    parts: list[str] = [base]
+    # Try include summary first (compact)
+    if summary:
+        t = f"\n\n# Thread Summary:\n{summary}\n"
+        tok = count_tokens(t, model=model)
+        if tok <= budget:
+            parts.append(t)
+            budget -= tok
+
+    # Include RAG docs list until budget exhausted
+    if rag_docs:
+        included = []
+        for doc in rag_docs:
+            if not doc:
+                continue
+            snippet = doc.strip()
+            t = f"\n\n# Source:\n{snippet}\n"
+            tok = count_tokens(t, model=model)
+            if tok <= budget:
+                included.append(t)
+                budget -= tok
+            else:
+                # try to truncate the doc text roughly to fit
+                # truncation by chars: approximate tokens->chars
+                approx_chars = max(100, budget * 4)
+                if approx_chars <= 0:
+                    break
+                short = snippet[:approx_chars].rsplit("\n", 1)[0]
+                if not short:
+                    short = snippet[:approx_chars]
+                t2 = f"\n\n# Source (truncated):\n{short}\n"
+                if count_tokens(t2, model=model) <= budget:
+                    included.append(t2)
+                    budget -= count_tokens(t2, model=model)
+                break
+        if included:
+            parts.extend(included)
+
+    return "\n".join(parts)

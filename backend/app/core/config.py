@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # OpenAI / LLM / LangChain
     openai_api_key: str
-    openai_model: str = "gpt-4.1-mini"
+    openai_model: str = "gpt-5-mini"
 
     # Embeddings
     embedding_model: str = "BAAI/bge-base-en-v1.5"

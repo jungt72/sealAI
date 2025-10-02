@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import structlog
 from langchain_core.messages import AIMessage, SystemMessage
@@ -15,10 +16,13 @@ from app.services.langgraph.prompting import (
     strip_json_fence,
 )
 from app.services.langgraph.prompt_registry import get_agent_prompt
+from app.services.langgraph.prompting import build_system_prompt_from_parts
 from ..utils import normalize_messages, last_user_text
 from ..config import create_llm
 
 log = structlog.get_logger(__name__)
+
+_STREAM_CHUNK_CHARS = 160
 
 def _extract_text_from_chunk(chunk) -> List[str]:
     out: List[str] = []
@@ -131,7 +135,24 @@ def _context_from_docs(docs: List[Dict[str, Any]], max_chars: int = 1200) -> str
     ctx = "\n\n".join(parts)
     return ctx[:max_chars]
 
-def recommend_node(state: Dict[str, Any], config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
+def _emit_stream_chunks(events: Optional[Callable[[Dict[str, Any]], None]], *, node: str, text: str) -> None:
+    if not events or not text:
+        return
+    try:
+        for i in range(0, len(text), _STREAM_CHUNK_CHARS):
+            chunk = text[i : i + _STREAM_CHUNK_CHARS]
+            if chunk:
+                events({"type": "stream_text", "node": node, "text": chunk})
+    except Exception as exc:
+        log.debug("[recommend_node] stream_emit_failed", err=str(exc))
+
+
+def recommend_node(
+    state: Dict[str, Any],
+    config: Optional[RunnableConfig] = None,
+    *,
+    events: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
     # Falls noch Pflichtfelder fehlen, NICHT ins teure RAG/LLM gehen – stattdessen UI-Form öffnen
     missing = state.get("fehlend") or state.get("missing") or []
     if isinstance(missing, (list, tuple)) and len(missing) > 0:
@@ -177,23 +198,39 @@ def recommend_node(state: Dict[str, Any], config: Optional[RunnableConfig] = Non
         effective_cfg = {**effective_cfg, "run_name": "recommend"}  # type: ignore[dict-item]
 
     content_parts: List[str] = []
+    # Combine domain/system prompt and the generated prompt into a single system message
+    domain_prompt = get_agent_prompt(domain or "rwdr")
+    # retrieved_docs may contain dicts with "text"
+    rag_texts = [d.get("text") for d in retrieved_docs if isinstance(d, dict) and d.get("text")]
+    system_text = build_system_prompt_from_parts(
+        f"{domain_prompt}\n\n{prompt}",
+        summary=None,
+        rag_docs=rag_texts,
+        max_tokens=int(os.getenv("PROMPT_MAX_TOKENS", "3000")),
+        model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+    )
     try:
         for chunk in llm.with_config(effective_cfg).stream([
-            SystemMessage(content=get_agent_prompt(domain or "rwdr")),
-            SystemMessage(content=prompt),
+            SystemMessage(content=system_text),
         ]):
-            content_parts.extend(_extract_text_from_chunk(chunk))
+            texts = _extract_text_from_chunk(chunk)
+            for piece in texts:
+                _emit_stream_chunks(events, node="recommend", text=piece)
+            content_parts.extend(texts)
     except Exception as e:
         log.warning("[recommend_node] stream_failed", err=str(e))
         try:
             resp = llm.invoke([
-                SystemMessage(content=get_agent_prompt(domain or "rwdr")),
-                SystemMessage(content=prompt),
+                SystemMessage(content=system_text),
             ], config=effective_cfg)
-            content_parts = [getattr(resp, "content", "") or ""]
+            final_text = getattr(resp, "content", "") or ""
+            if final_text:
+                _emit_stream_chunks(events, node="recommend", text=final_text)
+            content_parts = [final_text]
         except Exception as e2:
             log.error("[recommend_node] invoke_failed", err=str(e2))
             payload = json.dumps({"empfehlungen": []}, ensure_ascii=False, separators=(",", ":"))
+            _emit_stream_chunks(events, node="recommend", text=payload)
             ai_msg = AIMessage(content=payload)
             return {
                 **state,

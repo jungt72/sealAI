@@ -224,6 +224,11 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     # Threshold + top-k
     merged = _apply_threshold(merged, SCORE_THRESHOLD)[:k]
 
+    # Externer Fallback (Microservice), wenn keine Treffer
+    if not merged:
+        ext = _fallback_external_search(q, tenant=tenant, limit=k)
+        merged = ext[:k]
+
     try:
         _event("hybrid_retrieve", n=len(merged), tenant=tenant or "-", collection=collection, k=k)
     except Exception:
@@ -247,3 +252,62 @@ def prewarm() -> None:
     except Exception:
         # Beim Boot nie eskalieren
         pass
+def _fallback_external_search(query: str, *, tenant: Optional[str] = None, limit: int = FINAL_K) -> List[Dict[str, Any]]:
+    """Optionaler externer Fallback über Microservices (z.B. Normen-/Material-Agent).
+
+    Env:
+      AGENT_NORMEN_URL    → /v1/search endpoint returning [{text, source, score?, metadata?}]
+      AGENT_MATERIAL_URL  → /v1/search endpoint returning [{text, source, score?, metadata?}]
+    """
+    import itertools
+    bases = []
+    n_url = (os.getenv("AGENT_NORMEN_URL") or "").strip().rstrip("/")
+    m_url = (os.getenv("AGENT_MATERIAL_URL") or "").strip().rstrip("/")
+    if n_url:
+        bases.append((n_url, "normen"))
+    if m_url:
+        bases.append((m_url, "material"))
+    if not bases:
+        return []
+
+    results: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    try:
+        import httpx
+        payload: Dict[str, Any] = {"query": query, "k": limit}
+        if tenant:
+            payload["tenant"] = tenant
+        with httpx.Client(timeout=5.0) as client:
+            for base, tag in bases:
+                try:
+                    r = client.post(f"{base}/v1/search", json=payload)
+                    r.raise_for_status()
+                    data = r.json()
+                    items = data if isinstance(data, list) else (data.get("items") or [])
+                    for it in items[:limit]:
+                        t = (it.get("text") or it.get("content") or "").strip()
+                        if not t:
+                            continue
+                        results.append({
+                            "text": t,
+                            "source": it.get("source") or f"{tag}_agent",
+                            "vector_score": float(it.get("score") or 0.0),
+                            "metadata": it.get("metadata") or {},
+                        })
+                    _event("fallback_search", n=len(items), tenant=tenant or "-", agent=tag)
+                except Exception as e:
+                    errors.append(f"{tag}:{type(e).__name__}:{e}")
+    except Exception as e:
+        errors.append(f"client:{type(e).__name__}:{e}")
+
+    # Dedup by text prefix to reduce repetitions
+    seen = set()
+    dedup: List[Dict[str, Any]] = []
+    for it in results:
+        key = (it.get("text") or "")[:80]
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(it)
+
+    return dedup[:limit]

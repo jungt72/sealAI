@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: material-agent
+  namespace: sealai
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: material-agent}
+  template:
+    metadata:
+      labels: {app: material-agent}
+    spec:
+      containers:
+        - name: material-agent
+          image: ghcr.io/jungt72/sealai-material-agent:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: UVICORN_HOST
+              value: 0.0.0.0
+            - name: UVICORN_PORT
+              value: "9102"
+          command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9102"]
+          ports:
+            - containerPort: 9102
+          readinessProbe:
+            httpGet: {path: /health, port: 9102}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: material-agent
+  namespace: sealai
+spec:
+  selector: {app: material-agent}
+  ports:
+    - name: http
+      port: 9102
+      targetPort: 9102
+

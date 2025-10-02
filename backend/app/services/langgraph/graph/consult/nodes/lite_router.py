@@ -48,6 +48,13 @@ def lite_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
       - sonst: sehr kurze Eingaben → smalltalk
     """
     msgs = normalize_messages(state.get("messages", []))
+
+    # Formular-Patches/Submits liefern in der Regel Parameter – diese sollen immer in den
+    # technischen Flow laufen, auch wenn der User-Text sehr kurz ist (z. B. "form submit" aus der Sidebar).
+    params = state.get("params") or {}
+    if isinstance(params, dict) and params:
+        return {**state, "route": "default"}
+
     text = _join_user_text(msgs)
 
     # NEU: wenn keine messages vorhanden, auf input/question/query zurückfallen

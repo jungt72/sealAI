@@ -69,7 +69,8 @@ def _last_ai_text_from_result_like(obj: Dict[str, Any]) -> str:
 def _build_graph(app):
     # Gleiche Logik wie WS: Supervisor bevorzugen, sonst Consult
     if GRAPH_BUILDER == "supervisor":
-        from app.services.langgraph.supervisor_graph import build_supervisor_graph as build_graph
+        # FIX: korrekter Importpfad
+        from app.services.langgraph.graph.supervisor_graph import build_supervisor_graph as build_graph
     else:
         from app.services.langgraph.graph.consult.build import build_consult_graph as build_graph
     saver = None
@@ -96,15 +97,15 @@ async def chat_stream(request: Request) -> StreamingResponse:
     Output: text/event-stream mit Events: token, final, done
     """
     body = await request.json()
-    chat_id   = (body.get("chat_id") or "default").strip() or "default"
-    user_text = (body.get("input_text") or "").strip()
+    chat_id   = (body.get("chat_id") or body.get("chatId") or "default").strip() or "default"
+    user_text = (body.get("input_text") or body.get("input") or body.get("message") or "").strip()
     if not user_text:
         async def bad() -> AsyncGenerator[bytes, None]:
-            yield _sse("error", "input_text empty"); yield _sse("done", "")
+            yield _sse("error", {"error": "input_empty"}); yield _sse("done", {"done": True})
         return StreamingResponse(bad(), media_type="text/event-stream")
     if SSE_INPUT_MAX > 0 and len(user_text) > SSE_INPUT_MAX:
         async def too_long() -> AsyncGenerator[bytes, None]:
-            yield _sse("error", f"input exceeds {SSE_INPUT_MAX} chars"); yield _sse("done", "")
+            yield _sse("error", {"error": f"input exceeds {SSE_INPUT_MAX} chars"}); yield _sse("done", {"done": True})
         return StreamingResponse(too_long(), media_type="text/event-stream")
 
     async def gen() -> AsyncGenerator[bytes, None]:
@@ -115,8 +116,18 @@ async def chat_stream(request: Request) -> StreamingResponse:
 
         # History
         thread_id = f"api:{chat_id}"
+        # read raw history to extract optional summary and avoid duplicate system messages
+        raw = stm_read_history(thread_id, limit=80)
+        summary_text = ""
+        if raw and isinstance(raw, list) and isinstance(raw[0], dict) and raw[0].get("role") == "system":
+            summary_text = (raw[0].get("content") or "").strip()
+
         history = stm_read_history(thread_id, limit=80)
-        sys_msg = SystemMessage(content=get_agent_prompt("supervisor"))
+        # remove SystemMessage instances from history to prevent duplicate system prompts
+        history = [m for m in history if not isinstance(m, SystemMessage)]
+
+        sys_text = get_agent_prompt("supervisor", context={"rag_context": summary_text})
+        sys_msg = SystemMessage(content=sys_text)
 
         # Graph vorbereiten (wie WS)
         if not getattr(app.state, "graph_async", None):
@@ -129,7 +140,12 @@ async def chat_stream(request: Request) -> StreamingResponse:
             "chat_id": thread_id,
             "input": user_text,
         }
-        cfg = {"configurable": {"thread_id": thread_id, "checkpoint_ns": getattr(app.state, "checkpoint_ns", None)}}
+        # user_id not available from auth here; use chat_id as fallback
+        try:
+            initial["user_id"] = thread_id
+        except Exception:
+            pass
+        cfg = {"configurable": {"thread_id": thread_id, "checkpoint_ns": getattr(app.state, "checkpoint_ns", None), "user_id": thread_id}}
 
         loop = asyncio.get_event_loop()
         buf: list[str] = []
@@ -142,12 +158,12 @@ async def chat_stream(request: Request) -> StreamingResponse:
                 return
             chunk = "".join(buf); buf.clear(); last_flush[0] = loop.time()
             accum.append(chunk)
-            yield_bytes = _sse("token", chunk)
+            yield_bytes = _sse("token", {"delta": chunk})
             # yield innerhalb Hilfsfunktion geht nicht; zurückgeben
             return yield_bytes
 
         # Sofortiges Lebenszeichen
-        yield _sse("token", "…")
+        yield _sse("token", {"delta": "…"})
         # Stream
         async def run_stream(version: str):
             nonlocal final_tail
@@ -201,8 +217,10 @@ async def chat_stream(request: Request) -> StreamingResponse:
         if final_text:
             try: stm_write_message(thread_id=thread_id, role="assistant", content=final_text)
             except Exception: pass
-            yield _sse("token", final_text)
-        yield _sse("final", final_text)
-        yield _sse("done", "")
+        if final_text:
+            yield _sse("final", {"final": {"text": final_text}})
+        else:
+            yield _sse("final", {"final": {"text": ""}})
+        yield _sse("done", {"done": True})
 
     return StreamingResponse(gen(), media_type="text/event-stream")

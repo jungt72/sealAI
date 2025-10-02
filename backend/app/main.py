@@ -1,120 +1,95 @@
+# backend/app/main.py
 from __future__ import annotations
 
 import logging
 import os
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from langchain_core.messages import HumanMessage
 
-from app.api.v1.api import api_router
-from app.services.langgraph.graph.consult.build import build_consult_graph
-
-# Bevorzugte LLM-Factory (nutzt das zentrale LLM für WS/SSE)
+# Router (Fallback, falls api_router fehlt)
 try:
-    from app.services.langgraph.llm_factory import get_llm as _make_llm  # hat meist streaming=True
-except Exception:  # Fallback nur, falls Modul nicht vorhanden
-    _make_llm = None  # type: ignore
-
-# Zweite Option: LLM-Factory aus der Consult-Config
-try:
-    from app.services.langgraph.graph.consult.config import create_llm as _create_llm_cfg
+    from app.api.v1.api import api_router  # type: ignore
 except Exception:
-    _create_llm_cfg = None  # type: ignore
+    from fastapi import APIRouter
+    from app.api.v1.endpoints import chat_ws  # type: ignore
+    api_router = APIRouter()
+    api_router.include_router(chat_ws.router)
 
-# RAG-Orchestrator für Warmup
-try:
-    from app.services.rag import rag_orchestrator as ro  # enthält prewarm(), hybrid_retrieve, …
-except Exception:
-    ro = None  # type: ignore
+from app.services.langgraph.llm_factory import get_llm as make_llm
+from app.services.langgraph.redis_lifespan import get_redis_checkpointer
+from app.services.langgraph.tools import long_term_memory as ltm
 
-# ---- Access-Log-Filter: /health stummschalten ----
-class _HealthSilencer(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            msg = record.getMessage()
-        except Exception:
-            return True
-        return "/health" not in msg
-
-logging.getLogger("uvicorn.access").addFilter(_HealthSilencer())
-# ---------------------------------------------------
+# Graph-Builder
+from app.services.langgraph.graph.supervisor_graph import build_supervisor_graph as _build_supervisor_graph
+from app.services.langgraph.graph.consult.build import build_consult_graph as _build_consult_graph
 
 log = logging.getLogger("uvicorn.error")
 
 
-def _init_llm():
-    """
-    Initialisiert ein Chat LLM für Streaming-Endpoints.
-    Robust gegen unterschiedliche Factory-Signaturen/Module.
-    """
-    # 1) Primär: zentrale LLM-Factory
-    if _make_llm:
-        try:
-            return _make_llm(streaming=True)  # neue Signatur
-        except TypeError:
-            # ältere Signatur ohne streaming-Param
-            return _make_llm()
+def _compile_graph(app: FastAPI, name: str) -> None:
+    desired = (name or "supervisor").strip().lower()
+    if desired == getattr(app.state, "graph_name", None) and (
+        getattr(app.state, "graph_async", None) is not None
+        or getattr(app.state, "graph_sync", None) is not None
+    ):
+        return
 
-    # 2) Fallback: Consult-Config Factory
-    if _create_llm_cfg:
-        try:
-            return _create_llm_cfg(streaming=True)
-        except TypeError:
-            return _create_llm_cfg()
+    builder = _build_supervisor_graph if desired == "supervisor" else _build_consult_graph
+    graph = builder()
 
-    return None
+    saver = None
+    try:
+        saver = get_redis_checkpointer(app)
+    except Exception:
+        saver = None
+
+    try:
+        compiled = graph.compile(checkpointer=saver) if saver else graph.compile()
+    except Exception:
+        compiled = graph.compile()
+
+    app.state.graph_async = compiled
+    app.state.graph_sync = compiled
+    app.state.graph_name = desired
+    log.info("[startup] graph compiled: %s", desired)
+
+
+def _warmup_llm(app: FastAPI) -> None:
+    # persistent streaming client
+    if not getattr(app.state, "llm", None):
+        app.state.llm = make_llm(streaming=True)
+        log.info("[startup] LLM client initialised (streaming=True)")
+
+    # optional one-shot ping (TLS/DNS warm)
+    # CHANGE: Default jetzt "1" -> Warmup standardmäßig aktiv
+    if os.getenv("WARMUP_PING_LLM", "1") == "1":
+        try:
+            non_stream = make_llm(streaming=False)
+            non_stream.invoke([HumanMessage(content="ok")])
+            log.info("[startup] LLM ping completed")
+        except Exception as exc:
+            log.warning("[startup] LLM ping failed: %r", exc)
+
+
+def _warmup_ltm() -> None:
+    try:
+        ltm.prewarm_ltm()
+        log.info("[startup] LTM prewarm completed")
+    except Exception as exc:
+        log.warning("[startup] LTM prewarm failed: %r", exc)
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="SealAI Backend", version=os.getenv("APP_VERSION", "dev"))
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(","),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # Health für LB/Compose
-    @app.get("/health")
-    async def _health() -> PlainTextResponse:
-        return PlainTextResponse("ok")
-
-    # API v1
+    app = FastAPI(title="SealAI Backend")
     app.include_router(api_router, prefix="/api/v1")
 
     @app.on_event("startup")
-    async def _startup():
-        # 1) LLM für Streaming-Endpoints initialisieren
-        try:
-            app.state.llm = _init_llm()
-            if app.state.llm is None:
-                raise RuntimeError("No LLM factory available")
-            log.info("LLM initialized for streaming endpoints.")
-        except Exception as e:
-            app.state.llm = None
-            log.warning("LLM init failed: %s", e)
-
-        # 2) RAG Warmup (Embedding, Reranker, Redis, Qdrant) – verhindert langen ersten Request
-        try:
-            if ro and hasattr(ro, "prewarm"):
-                ro.prewarm()
-                log.info("RAG prewarm completed.")
-            else:
-                log.info("RAG prewarm skipped (no ro.prewarm available).")
-        except Exception as e:
-            log.warning("RAG prewarm failed: %s", e)
-
-        # 3) Sync-Fallback-Graph (ohne Checkpointer) vorbereiten
-        try:
-            app.state.graph_sync = build_consult_graph().compile()
-            log.info("Consult graph compiled for sync fallback.")
-        except Exception as e:
-            app.state.graph_sync = None
-            log.warning("Graph compile failed: %s", e)
-
-        log.info("Startup: no prebuilt async graph (lazy build in chat_ws).")
+    async def on_startup() -> None:
+        _warmup_llm(app)
+        desired = (os.getenv("GRAPH_BUILDER", "supervisor") or "supervisor").strip().lower()
+        _compile_graph(app, desired)
+        _warmup_ltm()
+        log.info("[startup] warmup done (graph=%s)", desired)
 
     return app
 

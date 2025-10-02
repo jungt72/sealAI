@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type UseChatWsOpts = {
-  chatId: string;
+  chatId?: string | null;
   token?: string | null; // Keycloak Access Token
 };
 
@@ -86,12 +86,7 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
   // ---- zentrale UI-Event-Brücke ----
   const emitUiAction = useCallback((ua: any) => {
     try {
-      // Normalisieren
-      const payload = typeof ua === 'object' && ua !== null
-        ? ua
-        : { ui_action: String(ua || '') };
-
-      // einheitliches CustomEvent
+      const payload = typeof ua === 'object' && ua !== null ? ua : { ui_action: String(ua || '') };
       window.dispatchEvent(new CustomEvent('sealai:ui', { detail: payload }));
       window.dispatchEvent(new CustomEvent('sealai:ui_action', { detail: payload }));
     } catch {}
@@ -111,11 +106,9 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
     const payload: any = typeof ev.data === 'string' ? safeParse(ev.data) : ev.data;
     if (!payload) return;
 
-    // Roh-Frames ignorieren
     if (payload?.event === 'idle') return;
     if (payload?.event === 'error' && payload?.code === 'idle_timeout') return;
 
-    // ---- Debug-Routing (z. B. ask_missing) -> sofort Formular öffnen
     if (payload?.event === 'dbg') {
       const node = (payload?.meta?.langgraph_node || payload?.meta?.run_name || '').toString().toLowerCase();
       if (node === 'ask_missing' && !firedNeedParamsRef.current) {
@@ -124,7 +117,6 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
       }
     }
 
-    // ---- UI-Event: unterstützt event:'ui_action', ui_event:{} oder ui_action:'open_form'
     if (payload?.event === 'ui_action' || payload?.ui_event || typeof payload?.ui_action !== 'undefined') {
       const ua = typeof payload?.ui_action === 'string'
         ? { ui_action: payload.ui_action }
@@ -170,8 +162,7 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
       case 'pong':
         break;
 
-      default:
-        // Falls ein Textfeld außerhalb obiger Events kommt (LCEL frames o.ä.)
+      default: {
         const maybeText =
           payload?.message?.data?.content ??
           payload?.message?.content ??
@@ -181,6 +172,7 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
           maybeOpenFormFromText(maybeText);
         }
         break;
+      }
     }
   }, [emitUiAction, maybeOpenFormFromText]);
 
@@ -189,7 +181,8 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
 
     try {
-      const ws = new WebSocket(url, 'json');
+      // WICHTIG: kein Sub-Protokoll übergeben
+      const ws = new WebSocket(url);
       wsRef.current = ws;
       setLastError(null);
 
@@ -221,6 +214,12 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 
+  useEffect(() => {
+    lastThreadIdRef.current = null;
+    setStreaming(false);
+    setText('');
+  }, [chatId]);
+
   const send = useCallback(
     (input: string, params?: Record<string, any>) => {
       const ws = wsRef.current;
@@ -232,7 +231,12 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
       setText('');
       firedNeedParamsRef.current = false;
 
-      // Graph-Modus + expliziter Graph-Name (consult), damit der Consult-Flow sicher läuft
+      if (!chatId) {
+        setLastError('Kein Gesprächskontext verfügbar');
+        setStreaming(false);
+        return;
+      }
+
       const payload: any = { chat_id: chatId, input, mode: 'graph', graph: 'consult' };
       if (params && typeof params === 'object') payload.params = params;
 
@@ -249,6 +253,7 @@ export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
   const cancel = useCallback(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!chatId) return;
     const threadId = lastThreadIdRef.current || `api:${chatId}`;
     try {
       ws.send(JSON.stringify({ type: 'cancel', chat_id: chatId, thread_id: threadId }));
