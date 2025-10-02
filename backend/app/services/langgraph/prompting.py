@@ -10,6 +10,7 @@ from typing import Any, Iterable, List, Dict
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from app.services.langgraph import metrics as _metrics
 
 log = logging.getLogger(__name__)
 
@@ -328,8 +329,19 @@ def build_system_prompt_from_parts(
         try:
             total_tokens = count_tokens(final, model=model)
             log.info("[prompting] build_system_prompt total_tokens=%d included_docs=%d", total_tokens, len(included) if rag_docs else 0)
+            try:
+                _metrics.observe_prompt_tokens(total_tokens)
+            except Exception:
+                pass
         except Exception:
-            pass
+            try:
+                _metrics.inc_prompt_render_failures()
+            except Exception:
+                pass
         return final
     except Exception:
+        try:
+            _metrics.inc_prompt_render_failures()
+        except Exception:
+            pass
         return base
