@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, AsyncGenerator
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket
 from pydantic import BaseModel, Field
@@ -13,16 +13,14 @@ from redis import Redis
 from starlette.websockets import WebSocketState
 
 # ─────────────────────────────────────────────────────────────
-# Graph-Schnittstelle (entspricht neuem Backend-Layout)
-#   → stream_consult(state) : async generator[dict]
-#   → invoke_consult(state) : dict
-# Passe den Importweg *hier* an dein Projekt an.
-# In deinem Tree existiert `backend/app/langgraph/graph_chat.py`,
-# daher importieren wir von dort.
+# Graph-Adapter (bereitgestellt in backend/app/langgraph/graph_chat.py)
+#   → stream_consult(state): async generator[dict]
+#   → invoke_consult(state): dict
 # ─────────────────────────────────────────────────────────────
 from app.langgraph.graph_chat import stream_consult, invoke_consult
 
 log = logging.getLogger("uvicorn.error")
+
 
 # ─────────────────────────────────────────────────────────────
 # Redis Short-Term Memory (Small, practical memory)
@@ -106,6 +104,19 @@ def _memory_intent(text: str, thread_id: str) -> Optional[str]:
 
 
 # ─────────────────────────────────────────────────────────────
+# Pydantic-Schemas
+# ─────────────────────────────────────────────────────────────
+class ChatRequest(BaseModel):
+    chat_id: str = Field(default="default")
+    input: str = Field(..., min_length=1)
+    params: Dict[str, Any] | None = None
+
+
+class ChatResponse(BaseModel):
+    text: str
+
+
+# ─────────────────────────────────────────────────────────────
 # Utilities für Text-Extraktion aus Graph-Outputs
 # ─────────────────────────────────────────────────────────────
 def _msg_text(message: Any) -> str:
@@ -117,93 +128,29 @@ def _msg_text(message: Any) -> str:
         return content.strip()
 
     if isinstance(content, list):
-        parts: List[str] = []
-        for c in content:
-            if isinstance(c, dict):
-                t = c.get("text") or c.get("content") or ""
-                if isinstance(t, str):
-                    parts.append(t)
-        return "\n".join(p for p in parts if p).strip()
+        # nimm erstes Text-Element, falls vorhanden
+        for part in content:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                return part["text"].strip()
 
     return ""
 
 
-def _extract_text(out: Any) -> str:
-    """
-    Extrahiert bevorzugt `final.text`, fällt zurück auf `message.data.content`,
-    dann `message.content`, dann `text`.
-    """
-    if isinstance(out, dict):
-        if isinstance(out.get("final"), dict):
-            ft = out["final"].get("text")
-            if isinstance(ft, str) and ft.strip():
-                return ft.strip()
-        # LCEL / LangGraph Messages
-        msg = out.get("message") or out.get("messages") or out.get("msg")
-        if msg:
-            t = _msg_text(msg)
-            if t:
-                return t
-        t2 = out.get("text")
-        if isinstance(t2, str) and t2.strip():
-            return t2.strip()
-    # Fallback: stringifizieren
-    try:
-        s = str(out)
-        return s.strip()
-    except Exception:
-        return ""
+def _extract_text(graph_out: Dict[str, Any]) -> str:
+    # unterstützt sowohl {"final":{"text":..}} als auch {"message":{...}}
+    if isinstance(graph_out, dict):
+        if isinstance(graph_out.get("final"), dict):
+            t = graph_out["final"].get("text")
+            if isinstance(t, str) and t.strip():
+                return t.strip()
+        if isinstance(graph_out.get("message"), dict):
+            return _msg_text(graph_out["message"])
+    return ""
 
 
 # ─────────────────────────────────────────────────────────────
-# HTTP-Modelle
+# Auth-Helper: Bearer aus Header ODER Query akzeptieren
 # ─────────────────────────────────────────────────────────────
-class ChatRequest(BaseModel):
-    input: str = Field(..., description="User-Eingabe")
-    stream: bool = Field(default=True)
-    chat_id: Optional[str] = Field(default="default")
-    params: Optional[Dict[str, Any]] = None
-
-
-class ChatResponse(BaseModel):
-    text: str
-
-
-# ─────────────────────────────────────────────────────────────
-# HTTP-Endpoint (sync invoke) – für Tests/Debug
-# ─────────────────────────────────────────────────────────────
-router = APIRouter()
-
-
-@router.post("/beratung", response_model=ChatResponse)
-async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
-    user_text = (payload.input or "").strip()
-    if not user_text:
-        raise HTTPException(status_code=400, detail="empty_input")
-
-    thread_id = f"api:{payload.chat_id or 'default'}"
-
-    # Leichte Memory-Intents (sofortiges Ergebnis)
-    mm = _memory_intent(user_text, thread_id)
-    if mm:
-        return ChatResponse(text=mm)
-
-    # Graph synchron aufrufen
-    state = {
-        "messages": [{"role": "user", "content": user_text}],
-        "input": user_text,
-        "chat_id": thread_id,
-    }
-    try:
-        out = invoke_consult(state)
-    except Exception as e:
-        log.exception("consult invoke failed: %r", e)
-        raise HTTPException(status_code=500, detail="consult_failed")
-
-    return ChatResponse(text=_extract_text(out))
-
-
-# ── Auth-Helper: Bearer aus Header ODER Query akzeptieren ─────────────────────
 _BEARER_RE = re.compile(r"^\s*Bearer\s+(.+?)\s*$", re.IGNORECASE)
 
 
@@ -226,13 +173,52 @@ def _resolve_ws_token(ws: WebSocket, query_token: str | None) -> str | None:
     return _extract_token_from_headers(ws)
 
 
+router = APIRouter()
+
+
 # ─────────────────────────────────────────────────────────────
-# WebSocket API – exakt abgestimmt auf dein Frontend/useChatWs:
+# REST: /api/v1/ai/beratung  (synchrone Variante)
+# ─────────────────────────────────────────────────────────────
+@router.post("/beratung", response_model=ChatResponse)
+async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
+    """
+    Synchrone Beratung:
+      - nimmt chat_id, input, params entgegen
+      - löst leichte Memory-Intents lokal auf
+      - ruft invoke_consult(...) mit *params* auf (Fix!)
+    """
+    # Thread-Namespace angleichen
+    thread_id = f"api:{payload.chat_id or 'default'}"
+
+    # Memory-Intents (leicht & synchron)
+    mi = _memory_intent(payload.input, thread_id)
+    if mi:
+        return ChatResponse(text=mi)
+
+    # WICHTIG: params wirklich an invoke_consult weiterreichen
+    state: Dict[str, Any] = {
+        "chat_id": thread_id,
+        "input": payload.input,
+        "params": payload.params or {},  # <── Fix gegenüber vorher
+        "messages": [{"role": "user", "content": payload.input}],
+    }
+
+    try:
+        out = invoke_consult(state)
+    except Exception as e:
+        log.exception("consult invoke failed: %r", e)
+        raise HTTPException(status_code=500, detail="consult_failed")
+
+    return ChatResponse(text=_extract_text(out))
+
+
+# ─────────────────────────────────────────────────────────────
+# WebSocket API – abgestimmt auf dein Frontend/useChatWs:
 #   start → { event:"start", thread_id }
 #   token → { event:"token", delta:"…" }
 #   final → { event:"final", text:"…" }
 #   done  → { event:"done" }
-# Zusätzlich: UI-Events → { event:"ui_action", ui_event:{…}, ui_action?:str }
+#   ui_action → { event:"ui_action", ui_action:"open_form"/"calc_snapshot", ... }
 # ─────────────────────────────────────────────────────────────
 @router.websocket("/ws")
 @router.websocket("/chat/ws")
@@ -250,7 +236,7 @@ async def ws_endpoint(websocket: WebSocket, token: str | None = Query(default=No
                 pass
 
     try:
-        # Auth: Query (?token=…) oder "Authorization: Bearer …"
+        # Header- oder Query-Token akzeptieren
         effective_token = _resolve_ws_token(websocket, token)
         if not WS_AUTH_OPTIONAL and not effective_token:
             await _send({"event": "error", "message": "unauthorized"})
@@ -272,97 +258,33 @@ async def ws_endpoint(websocket: WebSocket, token: str | None = Query(default=No
 
             chat_id = (data.get("chat_id") or "default") if isinstance(data, dict) else "default"
             user_input = (data.get("input") or "").strip() if isinstance(data, dict) else str(data)
-            params = data.get("params") if isinstance(data, dict) else None
+            params = data.get("params") or {}  # <── WS: params werden unterstützt
             thread_id = f"api:{chat_id}"
-            if not user_input:
+            if not user_input and not params:
                 continue
 
-            # Sofort-Intents (Memory)
-            mm = _memory_intent(user_input, thread_id)
-            if mm:
-                await _send({"event": "start", "thread_id": thread_id})
-                await _send({"event": "final", "text": mm})
+            # Memory-Intents (leicht & lokal)
+            mi = _memory_intent(user_input, thread_id)
+            if mi:
+                await _send({"event": "token", "delta": mi})
+                await _send({"event": "final", "text": mi})
                 await _send({"event": "done", "thread_id": thread_id})
                 continue
 
-            # Graph-Streaming
-            await _send({"event": "start", "thread_id": thread_id})
-
-            state: Dict[str, Any] = {
-                "messages": [{"role": "user", "content": user_input}],
-                "input": user_input,
+            # Graph streamen
+            state = {
                 "chat_id": thread_id,
+                "input": user_input,
+                "params": params,
+                "messages": [{"role": "user", "content": user_input}],
             }
-            if isinstance(params, dict) and params:
-                state["params"] = params
 
-            async def _emit_stream(gen: AsyncGenerator[Dict[str, Any], None]) -> None:
-                """Normalisiert Stream-Frames auf das Frontend-Protokoll."""
-                async for frame in gen:
-                    if not isinstance(frame, dict):
-                        # Rohtext → als Token streamen
-                        await _send({"event": "token", "delta": str(frame)})
-                        continue
-
-                    # Debug/Node-Events → als dbg weiterreichen (für UI-Triggers)
-                    if frame.get("event") == "dbg" or frame.get("type") == "dbg":
-                        await _send({"event": "dbg", "meta": frame.get("meta") or {}})
-                        # heuristisch: ask_missing → Formular öffnen
-                        node = (frame.get("meta", {}).get("langgraph_node") or "").lower()
-                        if node == "ask_missing":
-                            await _send({"event": "ui_action", "ui_action": "open_form"})
-                        continue
-
-                    # UI-Events aus dem Graph direkt durchreichen
-                    if frame.get("event") == "ui_action" or frame.get("ui_event") or frame.get("ui_action"):
-                        ua = frame.get("ui_event") or frame
-                        await _send({"event": "ui_action", **(ua if isinstance(ua, dict) else {"ui_action": str(ua)})})
-                        continue
-
-                    # Token / Delta
-                    if isinstance(frame.get("delta"), str) and frame["delta"]:
-                        await _send({"event": "token", "delta": frame["delta"]})
-                        continue
-
-                    # Finaltext
-                    if isinstance(frame.get("final"), dict) and isinstance(frame["final"].get("text"), str):
-                        await _send({"event": "final", "text": frame["final"]["text"]})
-                        continue
-
-                    # LCEL / message(content)
-                    msg = frame.get("message") or frame.get("messages") or None
-                    if msg:
-                        t = _msg_text(msg)
-                        if t:
-                            await _send({"event": "token", "delta": t})
-                            continue
-
-                    # Fallback: text
-                    t2 = frame.get("text")
-                    if isinstance(t2, str) and t2.strip():
-                        await _send({"event": "token", "delta": t2.strip()})
-                        continue
-
-                # Ende-Event
-                await _send({"event": "done", "thread_id": thread_id})
-
-            # Stream ausführen
-            try:
-                await _emit_stream(stream_consult(state))
-            except Exception as e:
-                log.exception("stream_consult failed: %r", e)
-                await _send({"event": "error", "message": "stream_failed"})
-                # sauberes Done schicken, damit Frontend nicht hängt
-                await _send({"event": "done", "thread_id": thread_id})
+            async for ev in stream_consult(state):
+                await _send(ev)
 
     except Exception as e:
-        # Verbindungs-/Protokollfehler
+        log.exception("ws_endpoint error: %r", e)
         try:
-            await _send({"event": "error", "message": str(e) or "ws_error"})
-        except Exception:
-            pass
-        try:
-            if websocket.application_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1011)
+            await websocket.close(code=1011)
         except Exception:
             pass
