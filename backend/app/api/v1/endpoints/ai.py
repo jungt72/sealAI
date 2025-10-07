@@ -203,7 +203,7 @@ async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
 @router.websocket("/v1/ws")
 @router.websocket("/ws_chat")          # Backwards-compat
 @router.websocket("/api/v1/ai/ws")     # aktueller Pfad, den das Frontend nutzt
-async def chat_ws(websocket: WebSocket, token: str | None = Query(default=None)) -> None:
+async def ws_endpoint(websocket: WebSocket, token: str | None = Query(default=None)) -> None:
     await websocket.accept()
 
     async def _send(payload: Dict[str, Any]) -> None:
