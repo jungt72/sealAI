@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, AsyncGenerator
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket
 from pydantic import BaseModel, Field
@@ -23,7 +23,6 @@ from starlette.websockets import WebSocketState
 from app.langgraph.graph_chat import stream_consult, invoke_consult
 
 log = logging.getLogger("uvicorn.error")
-
 
 # ─────────────────────────────────────────────────────────────
 # Redis Short-Term Memory (Small, practical memory)
@@ -119,64 +118,78 @@ def _msg_text(message: Any) -> str:
 
     if isinstance(content, list):
         parts: List[str] = []
-        for chunk in content:
-            if isinstance(chunk, str):
-                parts.append(chunk)
-            elif isinstance(chunk, dict):
-                text = chunk.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-        joined = "".join(parts).strip()
-        if joined:
-            return joined
+        for c in content:
+            if isinstance(c, dict):
+                t = c.get("text") or c.get("content") or ""
+                if isinstance(t, str):
+                    parts.append(t)
+        return "\n".join(p for p in parts if p).strip()
+
     return ""
 
 
-def _extract_text(out: Dict[str, Any]) -> str:
-    msgs = out.get("messages") or []
-    if isinstance(msgs, list) and msgs:
-        for candidate in reversed(msgs):
-            text = _msg_text(candidate)
-            if text:
-                return text
-    for key in ("answer", "explanation", "text", "response", "summary_text"):
-        value = out.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return "OK."
+def _extract_text(out: Any) -> str:
+    """
+    Extrahiert bevorzugt `final.text`, fällt zurück auf `message.data.content`,
+    dann `message.content`, dann `text`.
+    """
+    if isinstance(out, dict):
+        if isinstance(out.get("final"), dict):
+            ft = out["final"].get("text")
+            if isinstance(ft, str) and ft.strip():
+                return ft.strip()
+        # LCEL / LangGraph Messages
+        msg = out.get("message") or out.get("messages") or out.get("msg")
+        if msg:
+            t = _msg_text(msg)
+            if t:
+                return t
+        t2 = out.get("text")
+        if isinstance(t2, str) and t2.strip():
+            return t2.strip()
+    # Fallback: stringifizieren
+    try:
+        s = str(out)
+        return s.strip()
+    except Exception:
+        return ""
 
 
 # ─────────────────────────────────────────────────────────────
-# FastAPI Router
+# HTTP-Modelle
 # ─────────────────────────────────────────────────────────────
-router = APIRouter()
-
-
 class ChatRequest(BaseModel):
-    chat_id: str = Field(default="default", description="Konversations-/Thread-ID")
-    input_text: str = Field(..., description="Nutzertext")
+    input: str = Field(..., description="User-Eingabe")
+    stream: bool = Field(default=True)
+    chat_id: Optional[str] = Field(default="default")
+    params: Optional[Dict[str, Any]] = None
 
 
 class ChatResponse(BaseModel):
     text: str
 
 
+# ─────────────────────────────────────────────────────────────
+# HTTP-Endpoint (sync invoke) – für Tests/Debug
+# ─────────────────────────────────────────────────────────────
+router = APIRouter()
+
+
 @router.post("/beratung", response_model=ChatResponse)
 async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
-    """
-    Sync-HTTP für einfache Integrationen.
-    """
-    user_text = (payload.input_text or "").trim()
+    user_text = (payload.input or "").strip()
     if not user_text:
-        raise HTTPException(status_code=400, detail="input_text empty")
+        raise HTTPException(status_code=400, detail="empty_input")
 
-    thread_id = f"api:{payload.chat_id}"
+    thread_id = f"api:{payload.chat_id or 'default'}"
 
-    mem = _memory_intent(user_text, thread_id)
-    if mem:
-        return ChatResponse(text=mem)
+    # Leichte Memory-Intents (sofortiges Ergebnis)
+    mm = _memory_intent(user_text, thread_id)
+    if mm:
+        return ChatResponse(text=mm)
 
-    state: Dict[str, Any] = {
+    # Graph synchron aufrufen
+    state = {
         "messages": [{"role": "user", "content": user_text}],
         "input": user_text,
         "chat_id": thread_id,
@@ -188,6 +201,29 @@ async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=500, detail="consult_failed")
 
     return ChatResponse(text=_extract_text(out))
+
+
+# ── Auth-Helper: Bearer aus Header ODER Query akzeptieren ─────────────────────
+_BEARER_RE = re.compile(r"^\s*Bearer\s+(.+?)\s*$", re.IGNORECASE)
+
+
+def _extract_token_from_headers(ws: WebSocket) -> str | None:
+    """Liest ggf. "Authorization: Bearer <token>" aus dem WS-Handshake."""
+    try:
+        header_val = ws.headers.get("authorization")
+        if not header_val:
+            return None
+        m = _BEARER_RE.match(header_val)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _resolve_ws_token(ws: WebSocket, query_token: str | None) -> str | None:
+    # Priorität: Query-Param > Authorization-Header
+    if query_token:
+        return query_token
+    return _extract_token_from_headers(ws)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -214,8 +250,10 @@ async def ws_endpoint(websocket: WebSocket, token: str | None = Query(default=No
                 pass
 
     try:
-        if not WS_AUTH_OPTIONAL and not token:
-            await _send({"error": "unauthorized"})
+        # Auth: Query (?token=…) oder "Authorization: Bearer …"
+        effective_token = _resolve_ws_token(websocket, token)
+        if not WS_AUTH_OPTIONAL and not effective_token:
+            await _send({"event": "error", "message": "unauthorized"})
             await websocket.close(code=1008)
             return
 
@@ -234,132 +272,97 @@ async def ws_endpoint(websocket: WebSocket, token: str | None = Query(default=No
 
             chat_id = (data.get("chat_id") or "default") if isinstance(data, dict) else "default"
             user_input = (data.get("input") or "").strip() if isinstance(data, dict) else str(data)
+            params = data.get("params") if isinstance(data, dict) else None
             thread_id = f"api:{chat_id}"
             if not user_input:
                 continue
 
-            # Start-Event (Frontend erwartet genau "start")
-            await _send({"event": "start", "thread_id": thread_id})
-
-            # Schnelle Memory-Intents ohne Graph
-            mem = _memory_intent(user_input, thread_id)
-            if mem:
-                await _send({"event": "final", "thread_id": thread_id, "text": mem, "final": {"text": mem}})
+            # Sofort-Intents (Memory)
+            mm = _memory_intent(user_input, thread_id)
+            if mm:
+                await _send({"event": "start", "thread_id": thread_id})
+                await _send({"event": "final", "text": mm})
                 await _send({"event": "done", "thread_id": thread_id})
                 continue
 
-            # Graph-State vorbereiten
+            # Graph-Streaming
+            await _send({"event": "start", "thread_id": thread_id})
+
             state: Dict[str, Any] = {
                 "messages": [{"role": "user", "content": user_input}],
                 "input": user_input,
                 "chat_id": thread_id,
             }
+            if isinstance(params, dict) and params:
+                state["params"] = params
 
-            streamed: List[str] = []
-            last_messages: List[Any] = []
-            last_ui_serialized: Optional[str] = None
-            out: Optional[Dict[str, Any]] = None
+            async def _emit_stream(gen: AsyncGenerator[Dict[str, Any], None]) -> None:
+                """Normalisiert Stream-Frames auf das Frontend-Protokoll."""
+                async for frame in gen:
+                    if not isinstance(frame, dict):
+                        # Rohtext → als Token streamen
+                        await _send({"event": "token", "delta": str(frame)})
+                        continue
 
-            async def _maybe_ui(candidate: Dict[str, Any]) -> None:
-                nonlocal last_ui_serialized
-                if not isinstance(candidate, dict):
-                    return
-                ui_event = candidate.get("ui_event")
-                if not isinstance(ui_event, dict) or not ui_event:
-                    return
-                try:
-                    ser = json.dumps(ui_event, sort_keys=True, ensure_ascii=False)
-                except Exception:
-                    ser = None
-                if ser and ser == last_ui_serialized:
-                    return
-                last_ui_serialized = ser
-                payload = {"event": "ui_action", "thread_id": thread_id, "ui_event": ui_event}
-                if isinstance(ui_event.get("ui_action"), str):
-                    payload["ui_action"] = ui_event["ui_action"]
-                await _send(payload)
+                    # Debug/Node-Events → als dbg weiterreichen (für UI-Triggers)
+                    if frame.get("event") == "dbg" or frame.get("type") == "dbg":
+                        await _send({"event": "dbg", "meta": frame.get("meta") or {}})
+                        # heuristisch: ask_missing → Formular öffnen
+                        node = (frame.get("meta", {}).get("langgraph_node") or "").lower()
+                        if node == "ask_missing":
+                            await _send({"event": "ui_action", "ui_action": "open_form"})
+                        continue
 
-            async def _handle_stream(evt: Dict[str, Any]) -> None:
-                nonlocal out
-                if not isinstance(evt, dict):
-                    return
-                name = str(evt.get("event") or "")
+                    # UI-Events aus dem Graph direkt durchreichen
+                    if frame.get("event") == "ui_action" or frame.get("ui_event") or frame.get("ui_action"):
+                        ua = frame.get("ui_event") or frame
+                        await _send({"event": "ui_action", **(ua if isinstance(ua, dict) else {"ui_action": str(ua)})})
+                        continue
 
-                # Vereinheitlichte Text-Tokens
-                if name == "on_custom_event":
-                    data = evt.get("data")
-                    custom = str(evt.get("name") or "").lower()
-                    # Variante A: {"name": "stream_text", "data":{"text":"..."}}
-                    if custom == "stream_text" and isinstance(data, dict):
-                        t = data.get("text")
-                        if isinstance(t, str) and t:
-                            streamed.append(t)
-                            await _send({"event": "token", "thread_id": thread_id, "delta": t})
-                        return
-                    # Variante B: {"data":{"type":"stream_text","text":"..."}}
-                    if isinstance(data, dict) and str(data.get("type") or "").lower() == "stream_text":
-                        t = data.get("text")
-                        if isinstance(t, str) and t:
-                            streamed.append(t)
-                            await _send({"event": "token", "thread_id": thread_id, "delta": t})
-                        return
+                    # Token / Delta
+                    if isinstance(frame.get("delta"), str) and frame["delta"]:
+                        await _send({"event": "token", "delta": frame["delta"]})
+                        continue
 
-                # Abschlüsse von Ketten/Nodes/Graph → mögliche finale Outputs sammeln
-                if name in {"on_node_end", "on_chain_end", "on_graph_end", "on_execution_end"}:
-                    data = evt.get("data")
-                    cand: Optional[Dict[str, Any]] = None
-                    if isinstance(data, dict):
-                        outp = data.get("output")
-                        res = data.get("result")
-                        if isinstance(outp, dict):
-                            cand = outp
-                        elif isinstance(res, dict):
-                            cand = res
-                        elif any(k in data for k in ("messages", "ui_event", "answer", "text", "response")):
-                            cand = data
-                    if isinstance(cand, dict):
-                        out = cand
-                        msgs = cand.get("messages")
-                        if isinstance(msgs, list) and msgs:
-                            last_messages = msgs
-                        await _maybe_ui(cand)
+                    # Finaltext
+                    if isinstance(frame.get("final"), dict) and isinstance(frame["final"].get("text"), str):
+                        await _send({"event": "final", "text": frame["final"]["text"]})
+                        continue
 
-            # Primär: Streaming
-            stream_failed = False
+                    # LCEL / message(content)
+                    msg = frame.get("message") or frame.get("messages") or None
+                    if msg:
+                        t = _msg_text(msg)
+                        if t:
+                            await _send({"event": "token", "delta": t})
+                            continue
+
+                    # Fallback: text
+                    t2 = frame.get("text")
+                    if isinstance(t2, str) and t2.strip():
+                        await _send({"event": "token", "delta": t2.strip()})
+                        continue
+
+                # Ende-Event
+                await _send({"event": "done", "thread_id": thread_id})
+
+            # Stream ausführen
             try:
-                async for ev in stream_consult(state):
-                    await _handle_stream(ev)
-            except Exception as stream_exc:
-                stream_failed = True
-                log.exception("consult stream error: %r", stream_exc)
-
-            # Fallback: synchron
-            if out is None or stream_failed:
-                try:
-                    out = invoke_consult(state)
-                except Exception as e:
-                    log.exception("consult error: %r", e)
-                    out = {"error": str(e)}
-                await _maybe_ui(out)
-                if isinstance(out, dict):
-                    msgs = out.get("messages")
-                    if isinstance(msgs, list) and msgs:
-                        last_messages = msgs
-
-            out = out or {}
-            if last_messages and not out.get("messages"):
-                out = {**out, "messages": last_messages}
-
-            aggregated = "".join(s for s in streamed if isinstance(s, str))
-            final_text = _extract_text(out) or aggregated or ""
-
-            await _send({"event": "final", "thread_id": thread_id, "text": final_text, "final": {"text": final_text}})
-            await _send({"event": "done", "thread_id": thread_id})
+                await _emit_stream(stream_consult(state))
+            except Exception as e:
+                log.exception("stream_consult failed: %r", e)
+                await _send({"event": "error", "message": "stream_failed"})
+                # sauberes Done schicken, damit Frontend nicht hängt
+                await _send({"event": "done", "thread_id": thread_id})
 
     except Exception as e:
-        log.exception("ws_chat error: %r", e)
+        # Verbindungs-/Protokollfehler
         try:
-            await _send({"error": "internal"})
-            await websocket.close(code=1011)
+            await _send({"event": "error", "message": str(e) or "ws_error"})
+        except Exception:
+            pass
+        try:
+            if websocket.application_state == WebSocketState.CONNECTED:
+                await websocket.close(code=1011)
         except Exception:
             pass
