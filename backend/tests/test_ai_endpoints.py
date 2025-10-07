@@ -75,6 +75,7 @@ class _FakeRedis:
     def expire(self, key: str, _ttl: int) -> None:
         self._exp[key] = _ttl  # ignoriert tatsächliche Ablauf-Logik
 
+
 @pytest.fixture
 def fake_redis(monkeypatch):
     store = _FakeRedis()

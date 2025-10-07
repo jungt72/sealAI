@@ -7,20 +7,20 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from redis import Redis
 from starlette.websockets import WebSocketState
 
 # ─────────────────────────────────────────────────────────────
-# Graph-Adapter (bereitgestellt in backend/app/langgraph/graph_chat.py)
-#   → stream_consult(state): async generator[dict]
-#   → invoke_consult(state): dict
+# Graph-Schnittstelle (neues Backend-Layout)
+#   → stream_consult(state) : async generator[dict]
+#   → invoke_consult(state) : dict
+# Passe ggf. den Importweg hier an deinen Tree an.
 # ─────────────────────────────────────────────────────────────
 from app.langgraph.graph_chat import stream_consult, invoke_consult
 
 log = logging.getLogger("uvicorn.error")
-
 
 # ─────────────────────────────────────────────────────────────
 # Redis Short-Term Memory (Small, practical memory)
@@ -104,19 +104,6 @@ def _memory_intent(text: str, thread_id: str) -> Optional[str]:
 
 
 # ─────────────────────────────────────────────────────────────
-# Pydantic-Schemas
-# ─────────────────────────────────────────────────────────────
-class ChatRequest(BaseModel):
-    chat_id: str = Field(default="default")
-    input: str = Field(..., min_length=1)
-    params: Dict[str, Any] | None = None
-
-
-class ChatResponse(BaseModel):
-    text: str
-
-
-# ─────────────────────────────────────────────────────────────
 # Utilities für Text-Extraktion aus Graph-Outputs
 # ─────────────────────────────────────────────────────────────
 def _msg_text(message: Any) -> str:
@@ -128,34 +115,85 @@ def _msg_text(message: Any) -> str:
         return content.strip()
 
     if isinstance(content, list):
-        # nimm erstes Text-Element, falls vorhanden
+        # liste aus message parts → concat reine strings
+        buf: List[str] = []
         for part in content:
-            if isinstance(part, dict) and isinstance(part.get("text"), str):
-                return part["text"].strip()
-
+            if isinstance(part, str):
+                buf.append(part.strip())
+            elif isinstance(part, dict) and isinstance(part.get("text"), str):
+                buf.append(part["text"].strip())
+            elif hasattr(part, "text") and isinstance(part.text, str):
+                buf.append(part.text.strip())
+        return "\n".join([x for x in buf if x])
     return ""
 
 
-def _extract_text(graph_out: Dict[str, Any]) -> str:
-    # unterstützt sowohl {"final":{"text":..}} als auch {"message":{...}}
-    if isinstance(graph_out, dict):
-        if isinstance(graph_out.get("final"), dict):
-            t = graph_out["final"].get("text")
-            if isinstance(t, str) and t.strip():
-                return t.strip()
-        if isinstance(graph_out.get("message"), dict):
-            return _msg_text(graph_out["message"])
-    return ""
+def _extract_text(out: Any) -> str:
+    # versucht common Felder
+    if isinstance(out, dict):
+        if "text" in out and isinstance(out["text"], str):
+            return out["text"].strip()
+        if "messages" in out:
+            msgs = out["messages"]
+            if isinstance(msgs, list) and msgs:
+                return _msg_text(msgs[-1])
+        if "final" in out:
+            return _msg_text(out["final"])
+    return _msg_text(out)
 
 
 # ─────────────────────────────────────────────────────────────
-# Auth-Helper: Bearer aus Header ODER Query akzeptieren
+# Datamodels
 # ─────────────────────────────────────────────────────────────
+class ChatRequest(BaseModel):
+    chat_id: Optional[str] = Field(default="default")
+    input: str = Field(default="")
+    params: Optional[Dict[str, Any]] = None
+
+
+class ChatResponse(BaseModel):
+    text: str
+
+
+# ─────────────────────────────────────────────────────────────
+# REST Endpoint – sync invoke (Debug/Kompat)
+# ─────────────────────────────────────────────────────────────
+router = APIRouter()
+
+
+@router.post("/beratung", response_model=ChatResponse)
+async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
+    user_text = (payload.input or "").strip()
+    thread_id = f"api:{payload.chat_id or 'default'}"
+
+    # kleine Memory-Intents vorziehen (Qualitäts-of-Life)
+    mem = _memory_intent(user_text, thread_id)
+    if mem:
+        return ChatResponse(text=mem)
+
+    state = {
+        "messages": [{"role": "user", "content": user_text}],
+        "input": user_text,
+        "chat_id": thread_id,
+        "params": payload.params or {},
+    }
+    try:
+        out = invoke_consult(state)
+    except Exception as e:
+        log.exception("consult invoke failed: %r", e)
+        raise HTTPException(status_code=500, detail="consult_failed")
+
+    return ChatResponse(text=_extract_text(out))
+
+
+# ── Auth-Helper: Bearer aus Header ODER Query akzeptieren ─────────────────────
 _BEARER_RE = re.compile(r"^\s*Bearer\s+(.+?)\s*$", re.IGNORECASE)
 
 
 def _extract_token_from_headers(ws: WebSocket) -> str | None:
-    """Liest ggf. "Authorization: Bearer <token>" aus dem WS-Handshake."""
+    """
+    Liest ggf. 'Authorization: Bearer <token>' aus dem WS-Handshake.
+    """
     try:
         header_val = ws.headers.get("authorization")
         if not header_val:
@@ -173,59 +211,69 @@ def _resolve_ws_token(ws: WebSocket, query_token: str | None) -> str | None:
     return _extract_token_from_headers(ws)
 
 
-router = APIRouter()
-
-
 # ─────────────────────────────────────────────────────────────
-# REST: /api/v1/ai/beratung  (synchrone Variante)
+# Hilfs-Funktion: abgeleitete Kennwerte (UI-Event)
 # ─────────────────────────────────────────────────────────────
-@router.post("/beratung", response_model=ChatResponse)
-async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
+def _calc_snapshot(params: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Synchrone Beratung:
-      - nimmt chat_id, input, params entgegen
-      - löst leichte Memory-Intents lokal auf
-      - ruft invoke_consult(...) mit *params* auf (Fix!)
+    Erzeugt ein leichtes Engineering-Snapshot-Objekt aus RWDR-Parametern.
     """
-    # Thread-Namespace angleichen
-    thread_id = f"api:{payload.chat_id or 'default'}"
-
-    # Memory-Intents (leicht & synchron)
-    mi = _memory_intent(payload.input, thread_id)
-    if mi:
-        return ChatResponse(text=mi)
-
-    # WICHTIG: params wirklich an invoke_consult weiterreichen
-    state: Dict[str, Any] = {
-        "chat_id": thread_id,
-        "input": payload.input,
-        "params": payload.params or {},  # <── Fix gegenüber vorher
-        "messages": [{"role": "user", "content": payload.input}],
-    }
-
     try:
-        out = invoke_consult(state)
-    except Exception as e:
-        log.exception("consult invoke failed: %r", e)
-        raise HTTPException(status_code=500, detail="consult_failed")
+        d_mm = float(params.get("wellen_mm") or 0)
+        n = float(params.get("drehzahl_u_min") or 0)
+        p_bar = float(params.get("druck_bar") or 0)
 
-    return ChatResponse(text=_extract_text(out))
+        # Umfangsgeschwindigkeit v = pi * d * n / 60  (d in m)
+        v = 3.141592653589793 * (d_mm / 1000.0) * (n / 60.0)
+        omega = 2 * 3.141592653589793 * (n / 60.0)
+        pv = p_bar * v
+        pv_mpa = (p_bar / 10.0) * v  # 1 bar = 0.1 MPa
+
+        warnings: List[str] = []
+        if v > 20:
+            warnings.append("Umfangsgeschwindigkeit ungewöhnlich hoch")
+        if p_bar > 10:
+            warnings.append("Druck > 10 bar – Spezialausführung prüfen")
+
+        return {
+            "calculated": {
+                "surface_speed_m_s": v,
+                "omega_rad_s": omega,
+                "pv_bar_ms": pv,
+                "p_bar": p_bar,
+                "p_mpa": p_bar / 10.0,
+                "pv_mpa_ms": pv_mpa,
+            },
+            "warnings": warnings,
+        }
+    except Exception:
+        return {"calculated": {}, "warnings": ["snapshot_failed"]}
 
 
 # ─────────────────────────────────────────────────────────────
-# WebSocket API – abgestimmt auf dein Frontend/useChatWs:
+# WebSocket API – exakt abgestimmt auf Frontend/useChatWs:
 #   start → { event:"start", thread_id }
 #   token → { event:"token", delta:"…" }
 #   final → { event:"final", text:"…" }
 #   done  → { event:"done" }
-#   ui_action → { event:"ui_action", ui_action:"open_form"/"calc_snapshot", ... }
+# Plus: UI-Events → { event:"ui_action", ui_action, derived:{…} }
 # ─────────────────────────────────────────────────────────────
 @router.websocket("/ws")
 @router.websocket("/chat/ws")
 @router.websocket("/v1/ws")
 @router.websocket("/ws_chat")          # Backwards-compat
-@router.websocket("/api/v1/ai/ws")     # aktueller Pfad, den das Frontend nutzt
+@router.websocket("/api/v1/ai/ws")     # aktueller Pfad
 async def ws_endpoint(websocket: WebSocket, token: str | None = Query(default=None)) -> None:
+    # ── NEU: Auth vor accept() prüfen, damit Tests einen Fehler beim Connect sehen ──
+    effective_token = _resolve_ws_token(websocket, token)
+    if not WS_AUTH_OPTIONAL and not effective_token:
+        # Handshake ablehnen → TestClient bekommt eine Exception
+        try:
+            await websocket.close(code=1008)
+        finally:
+            raise WebSocketDisconnect(code=1008)
+
+    # Ab hier akzeptieren wir die Verbindung
     await websocket.accept()
 
     async def _send(payload: Dict[str, Any]) -> None:
@@ -236,13 +284,6 @@ async def ws_endpoint(websocket: WebSocket, token: str | None = Query(default=No
                 pass
 
     try:
-        # Header- oder Query-Token akzeptieren
-        effective_token = _resolve_ws_token(websocket, token)
-        if not WS_AUTH_OPTIONAL and not effective_token:
-            await _send({"event": "error", "message": "unauthorized"})
-            await websocket.close(code=1008)
-            return
-
         while True:
             raw = await websocket.receive_text()
             try:
@@ -258,33 +299,73 @@ async def ws_endpoint(websocket: WebSocket, token: str | None = Query(default=No
 
             chat_id = (data.get("chat_id") or "default") if isinstance(data, dict) else "default"
             user_input = (data.get("input") or "").strip() if isinstance(data, dict) else str(data)
-            params = data.get("params") or {}  # <── WS: params werden unterstützt
             thread_id = f"api:{chat_id}"
-            if not user_input and not params:
-                continue
+            params = data.get("params") if isinstance(data, dict) else {}
 
-            # Memory-Intents (leicht & lokal)
-            mi = _memory_intent(user_input, thread_id)
-            if mi:
-                await _send({"event": "token", "delta": mi})
-                await _send({"event": "final", "text": mi})
+            # UI: kleiner Live-Snapshot (falls params kommen)
+            if isinstance(params, dict) and params:
+                await _send({
+                    "event": "ui_action",
+                    "ui_action": "calc_snapshot",
+                    "derived": _calc_snapshot(params),
+                })
+
+            # Memory-Intents
+            mem = _memory_intent(user_input, thread_id)
+            if mem:
+                await _send({"event": "final", "text": mem})
                 await _send({"event": "done", "thread_id": thread_id})
                 continue
 
-            # Graph streamen
+            if not user_input:
+                continue
+
+            await _send({"event": "start", "thread_id": thread_id})
+
+            # Stream vom Graph
             state = {
-                "chat_id": thread_id,
-                "input": user_input,
-                "params": params,
                 "messages": [{"role": "user", "content": user_input}],
+                "input": user_input,
+                "chat_id": thread_id,
+                "params": params or {},
             }
 
+            final_fragments: List[str] = []
             async for ev in stream_consult(state):
-                await _send(ev)
+                # Erwartete keys: {"type":"chunk"/"final"/"info", ...}
+                if not isinstance(ev, dict):
+                    continue
+                t = ev.get("type")
 
+                if t == "chunk":
+                    delta = _extract_text(ev) or ev.get("delta") or ev.get("text") or ""
+                    if delta:
+                        final_fragments.append(delta)
+                        await _send({"event": "token", "delta": delta})
+
+                elif t == "final":
+                    txt = _extract_text(ev) or ""
+                    if txt:
+                        final_fragments.append(txt)
+
+                elif t == "info":
+                    # optional: typing o.ä.
+                    if ev.get("info") == "typing":
+                        await _send({"event": "typing", "thread_id": thread_id})
+
+            final_text = "".join(final_fragments).strip()
+            if final_text:
+                await _send({"event": "final", "text": final_text})
+
+            await _send({"event": "done", "thread_id": thread_id})
+
+    except WebSocketDisconnect:
+        # sauber beenden
+        return
     except Exception as e:
         log.exception("ws_endpoint error: %r", e)
         try:
+            await _send({"event": "error", "message": "internal_error"})
             await websocket.close(code=1011)
         except Exception:
             pass
