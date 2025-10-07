@@ -15,6 +15,7 @@ except Exception:
     api_router = APIRouter()
     api_router.include_router(chat_ws.router)
 
+from app.api.routes.chat import router as chat_router
 from app.services.langgraph.llm_factory import get_llm as make_llm
 from app.services.langgraph.redis_lifespan import get_redis_checkpointer
 from app.services.langgraph.tools import long_term_memory as ltm
@@ -22,6 +23,10 @@ from app.services.langgraph.tools import long_term_memory as ltm
 # Graph-Builder
 from app.services.langgraph.graph.supervisor_graph import build_supervisor_graph as _build_supervisor_graph
 from app.services.langgraph.graph.consult.build import build_consult_graph as _build_consult_graph
+try:
+    from app.services.langgraph.graph.mvp_graph import build_mvp_graph as _build_mvp_graph
+except Exception:
+    _build_mvp_graph = None  # type: ignore
 
 log = logging.getLogger("uvicorn.error")
 
@@ -34,13 +39,22 @@ def _compile_graph(app: FastAPI, name: str) -> None:
     ):
         return
 
-    builder = _build_supervisor_graph if desired == "supervisor" else _build_consult_graph
+    if desired == "supervisor":
+        builder = _build_supervisor_graph
+    elif desired == "mvp" and _build_mvp_graph is not None:
+        builder = _build_mvp_graph
+    else:
+        builder = _build_consult_graph
     graph = builder()
 
     saver = None
     try:
         saver = get_redis_checkpointer(app)
-    except Exception:
+    except RuntimeError as exc:
+        log.error("[startup] Redis checkpointer required but unavailable: %s", exc)
+        raise
+    except Exception as exc:
+        log.warning("[startup] Redis checkpointer optional fallback: %s", exc)
         saver = None
 
     try:
@@ -81,6 +95,7 @@ def _warmup_ltm() -> None:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="SealAI Backend")
+    app.include_router(chat_router)
     app.include_router(api_router, prefix="/api/v1")
 
     @app.on_event("startup")

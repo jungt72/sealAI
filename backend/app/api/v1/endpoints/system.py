@@ -19,6 +19,8 @@ async def test_consult_invoke(body: _ConsultInvokeIn, request: Request) -> Dict[
     thread_id = f"api:{body.chat_id or 'test'}"
     try:
         saver = get_redis_checkpointer(request.app)
+    except RuntimeError as exc:
+        raise RuntimeError("Redis checkpointer required for consult test endpoint") from exc
     except Exception:
         saver = None
 

@@ -42,8 +42,15 @@ async def _try_pg_saver():
     return saver
 
 async def _fallback_redis():
-    from app.redis_checkpointer import get_checkpointer
-    return get_checkpointer()
+    """Fallback to the shared Redis checkpointer used by the LangGraph runtime."""
+    from app.services.langgraph.redis_lifespan import get_redis_checkpointer
+
+    saver = get_redis_checkpointer()
+    if saver is None:
+        from langgraph.checkpoint.memory import MemorySaver
+
+        return MemorySaver()
+    return saver
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

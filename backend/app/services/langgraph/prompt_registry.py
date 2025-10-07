@@ -1,22 +1,33 @@
 from __future__ import annotations
+
 import functools
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
 import yaml
 
-from app.services.langgraph.prompting import render_template, build_system_prompt_from_parts
+from app.services.langgraph.prompting import (
+    render_template,
+    build_system_prompt_from_parts,
+)
 
 _BASE = Path(__file__).resolve().parent / "prompts"
 
-
+# ------------------------------------------------------------
+# Registry laden (cached) – rein statisch und hashbar
+# ------------------------------------------------------------
 @functools.lru_cache(maxsize=64)
-def _load_registry() -> Dict:
+def _load_registry() -> Dict[str, Any]:
     p = _BASE / "registry.yaml"
     if not p.exists():
         return {"agents": {}}
     with p.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {"agents": {}}
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        return {"agents": {}}
+    data.setdefault("agents", {})
+    return data
 
 
 def _read(path: Path) -> str:
@@ -26,50 +37,75 @@ def _read(path: Path) -> str:
         return ""
 
 
+# ------------------------------------------------------------
+# Nur die Dateiliste (Pfade) cachen – KEIN context hier
+# ------------------------------------------------------------
 @functools.lru_cache(maxsize=256)
-def get_agent_prompt(agent_id: str, lang: str = "de", context: Optional[Dict[str, Any]] = None) -> str:
-    """Lädt den Agentenprompt. Rendert Jinja‑Templates und hängt optional
-    `context['rag_context']` bzw. `context['rag_docs']` tokenbewusst an.
+def _files_for(agent_id: str, lang: str = "de") -> Tuple[str, ...]:
+    """
+    Liefert die absoluten Pfade der Prompt-Bestandteile für einen Agenten.
+    Rückgabe als Tuple[str,...] (hashbar für LRU).
     """
     reg = _load_registry()
-    agent = (reg.get("agents") or {}).get(agent_id) or (reg.get("agents") or {}).get("supervisor")
-    if not agent:
-        return ""
+    agents = reg.get("agents") or {}
+    agent = agents.get(agent_id) or agents.get("supervisor") or {}
     files: List[str] = agent.get("files") or []
-    parts: List[str] = []
+    paths: List[str] = []
     for rel in files:
         p = _BASE / rel
-        if not p.exists():
-            continue
+        if p.exists():
+            paths.append(str(p.resolve()))
+    return tuple(paths)
+
+
+# ------------------------------------------------------------
+# Öffentliches API – KEIN Cache wegen context (dict)!
+# ------------------------------------------------------------
+def get_agent_prompt(
+    agent_id: str,
+    lang: str = "de",
+    context: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Baut den endgültigen Prompt für einen Agenten.
+    - Statische Dateiliste kommt aus dem Cache (_files_for)
+    - Rendering mit context (dict) erfolgt *ohne* Cache
+    - Optionaler RAG-Anhang via build_system_prompt_from_parts
+    """
+    parts: List[str] = []
+    for abs_path in _files_for(agent_id, lang):
+        p = Path(abs_path)
         suf = p.suffix.lower()
         if suf == ".jinja2":
+            # Jinja-Template mit dynamischem context – ohne Cache!
             try:
+                # render_template erwartet den Template-Namen im prompts-Root
                 parts.append(render_template(p.name, **(context or {})))
-                continue
             except Exception as exc:
-                # Log and fallback to raw template text to avoid breaking runtime
+                # Fallback: Raw lesen, um Runtime nicht zu brechen
                 try:
                     import logging
-
                     logging.getLogger(__name__).warning(
                         "[prompt_registry] render_failed %s %s", p, str(exc)
                     )
                 except Exception:
                     pass
                 parts.append(_read(p))
-                continue
-        if suf in {".md", ".txt"}:
+        elif suf in {".md", ".txt"}:
+            parts.append(_read(p))
+        else:
+            # Unbekanntes Suffix – sicherheitshalber als Text laden
             parts.append(_read(p))
 
     joined = "\n\n".join(x for x in parts if x)
 
-    # If context contains rag_context (summary) or rag_docs, try to build a
-    # token-budgeted system prompt. Default max tokens from ENV or 3000.
+    # Token-budgetiertes Zusammenführen inkl. RAG-Kontext, falls vorhanden
     try:
         max_toks = int(os.getenv("PROMPT_MAX_TOKENS", "3000"))
     except Exception:
         max_toks = 3000
     model = os.getenv("OPENAI_MODEL", "gpt-4o")
+
     if context and (context.get("rag_context") or context.get("rag_docs")):
         return build_system_prompt_from_parts(
             joined,

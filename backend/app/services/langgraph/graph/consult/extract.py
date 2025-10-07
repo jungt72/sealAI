@@ -124,7 +124,11 @@ def extract_params_with_llm(user_input: str, *, rag_context: str | None = None) 
         HumanMessage(content=user_input or ""),
     ]
 
-    llm = get_llm(streaming=False)
+    try:
+        llm = get_llm(streaming=False)
+    except Exception as e:
+        log.warning("[extract_params_with_llm] llm_factory_failed: %r", e)
+        return heuristic_extract(user_input)
 
     try:
         resp = llm.invoke(messages)

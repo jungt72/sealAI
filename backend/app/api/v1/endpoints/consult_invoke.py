@@ -27,6 +27,8 @@ async def consult_invoke_endpoint(payload: ConsultInvokeIn, request: Request):
         saver = None
         try:
             saver = get_redis_checkpointer(request.app)
+        except RuntimeError as exc:
+            raise RuntimeError("Redis checkpointer required for debug consult invoke") from exc
         except Exception:
             saver = None
         out = invoke_consult(text, thread_id=chat_id, checkpointer=saver)

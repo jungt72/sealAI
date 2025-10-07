@@ -18,6 +18,7 @@ from app.services.langgraph.graph.consult.memory_utils import (
 )
 from app.services.langgraph.llm_factory import get_llm as make_llm
 from app.services.langgraph.prompt_registry import get_agent_prompt
+from app.services.langgraph.instrumentation import with_tracing
 from app.services.langgraph.redis_lifespan import get_redis_checkpointer
 
 
@@ -135,16 +136,12 @@ def _last_ai_text_from_result_like(obj: Dict[str, Any]) -> str:
 
 
 def _truncate_history_for_prompt(system_text: str, history_msgs: List[Any], max_chars: int) -> List[Any]:
-    """Truncate oldest history messages until system+history <= max_chars (char-based).
-
-    Simple char-based heuristic: keep the most recent messages that fit.
-    """
+    """Truncate oldest history messages until system+history <= max_chars (char-based)."""
     if max_chars <= 0:
         return history_msgs
     total = len(system_text or "")
     sizes = [len((getattr(m, "content", str(m)) or "")) for m in history_msgs]
     kept: List[Any] = []
-    # iterate from newest backwards
     for m, s in zip(reversed(history_msgs), reversed(sizes)):
         if total + s > max_chars:
             break
@@ -167,7 +164,6 @@ def _ensure_graph(app, builder_name: Optional[str], config: WebSocketConfig) -> 
         return
 
     with _GRAPH_BUILD_LOCK:
-        # Double-check inside lock
         if (
             getattr(app.state, "graph_name", None) == desired
             and (
@@ -178,15 +174,22 @@ def _ensure_graph(app, builder_name: Optional[str], config: WebSocketConfig) -> 
             return
 
         if desired == "supervisor":
-            # FIX: korrekter Importpfad
             from app.services.langgraph.graph.supervisor_graph import build_supervisor_graph as build_graph
+        elif desired == "mvp":
+            try:
+                from app.services.langgraph.graph.mvp_graph import build_mvp_graph as build_graph  # type: ignore
+            except Exception:
+                from app.services.langgraph.graph.consult.build import build_consult_graph as build_graph
         else:
             from app.services.langgraph.graph.consult.build import build_consult_graph as build_graph
 
         saver = None
         try:
             saver = get_redis_checkpointer(app)
-        except Exception:
+        except RuntimeError as exc:
+            raise RuntimeError("Redis checkpointer required for LangGraph websocket") from exc
+        except Exception as exc:
+            ws_log("redis_checkpointer_fallback", error=str(exc))
             saver = None
 
         graph = build_graph()
@@ -216,7 +219,6 @@ async def stream_llm_direct(
         flags = getattr(ws.app.state, "ws_cancel_flags", {})
         return bool(flags.get(thread_id))
 
-    # read raw history first to extract optional summary (stored as first system message)
     raw2 = stm_read_history_raw(thread_id, limit=80)
     summary_text2 = ""
     if raw2 and isinstance(raw2, list) and isinstance(raw2[0], dict) and raw2[0].get("role") == "system":
@@ -225,7 +227,6 @@ async def stream_llm_direct(
     history = stm_read_history(thread_id, limit=80)
     if cancelled():
         return
-    # remove any SystemMessage from history to avoid duplicate system prompts
     history = [m for m in history if not isinstance(m, SystemMessage)]
 
     loop = asyncio.get_event_loop()
@@ -243,13 +244,12 @@ async def stream_llm_direct(
         await send_json_safe(ws, {"event": "token", "delta": chunk, "thread_id": thread_id})
 
     try:
-        sys_text = get_agent_prompt("supervisor", context={"rag_context": summary_text2})
+        sys_text = get_agent_prompt("supervisor", context={"rag_context": str(summary_text2 or "")})
     except Exception:
         sys_text = get_agent_prompt("supervisor")
     system_message = SystemMessage(content=sys_text)
     await _send_typing_stub(ws, thread_id)
 
-    # truncate history to respect token/char budget
     max_prompt_chars = int(getattr(config, "prompt_max_chars", 15000))
     truncated_history = _truncate_history_for_prompt(system_message.content or "", history, max_prompt_chars)
     agen = llm.astream([system_message] + truncated_history + [HumanMessage(content=user_input)])
@@ -346,6 +346,7 @@ async def stream_supervised(
     params_patch: Optional[Dict[str, Any]] = None,
     builder_name: Optional[str] = None,
     config: WebSocketConfig,
+    routing_payload: Optional[Dict[str, Any]] = None,
 ) -> None:
     def cancelled() -> bool:
         flags = getattr(ws.app.state, "ws_cancel_flags", {})
@@ -354,7 +355,6 @@ async def stream_supervised(
     if cancelled():
         return
 
-    # Sofort "typing" ans UI senden
     await _send_typing_stub(ws, thread_id)
 
     try:
@@ -383,25 +383,21 @@ async def stream_supervised(
         has_sync=bool(graph_sync),
     )
 
-    # read raw history to extract optional summary (stored as first system message)
     raw = stm_read_history_raw(thread_id, limit=80)
     summary_text = ""
     if raw and isinstance(raw, list) and isinstance(raw[0], dict) and raw[0].get("role") == "system":
         summary_text = (raw[0].get("content") or "").strip()
 
     history = stm_read_history(thread_id, limit=80)
-    # remove any SystemMessage from history to avoid duplicate system prompts
     history = [m for m in history if not isinstance(m, SystemMessage)]
 
-    # Prompt dynamisch je nach Graph, Fallback auf "supervisor"
     prompt_key = "consult" if ((builder_name or config.graph_builder).strip().lower() == "consult") else "supervisor"
     try:
-        system_text = get_agent_prompt(prompt_key, context={"rag_context": summary_text})
+        system_text = get_agent_prompt(prompt_key, context={"rag_context": str(summary_text or "")})
     except Exception:
-        system_text = get_agent_prompt("supervisor", context={"rag_context": summary_text})
+        system_text = get_agent_prompt("supervisor", context={"rag_context": str(summary_text or "")})
     system_message = SystemMessage(content=system_text)
 
-    # truncate history if prompt too large
     max_prompt_chars = int(getattr(config, "prompt_max_chars", 15000))
     truncated_history = _truncate_history_for_prompt(system_message.content or "", history, max_prompt_chars)
 
@@ -425,12 +421,21 @@ async def stream_supervised(
     if isinstance(params_patch, dict) and params_patch:
         initial["params"] = params_patch
 
-    cfg = {
-        "configurable": {
-            "thread_id": thread_id,
-            "checkpoint_ns": getattr(app.state, "checkpoint_ns", None),
-        }
-    }
+    if isinstance(routing_payload, dict):
+        for key in ("intent_seed", "source", "confidence"):
+            value = routing_payload.get(key)
+            if value is not None and value != "":
+                initial[key] = value
+
+    cfg = with_tracing(
+        {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": getattr(app.state, "checkpoint_ns", None),
+            }
+        },
+        run_name=(builder_name or config.graph_builder or "supervisor").lower(),
+    )
     try:
         cfg["configurable"]["user_id"] = user_id  # type: ignore[index]
     except Exception:
@@ -616,7 +621,13 @@ async def stream_supervised(
 
     final_text = (assistant_text or "".join(accum)).strip()
     already = "".join(accum).strip()
-    if final_text and (not already or already != final_text):
+    should_emit_final_token = bool(final_text) and (
+        not streamed_any or not already or already != final_text
+    )
+    if should_emit_final_token:
+        # Ensure the fallback path (sync invoke or timeout recovery) still yields
+        # at least one text chunk even when no streaming tokens were flushed.
+        streamed_any = True
         if not await send_json_safe(ws, {"event": "token", "delta": final_text, "thread_id": thread_id}):
             return
 

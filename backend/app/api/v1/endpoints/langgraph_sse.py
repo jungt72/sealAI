@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from typing import Any, AsyncGenerator, Dict, Iterable, Optional
 
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.services.langgraph.instrumentation import with_tracing
 from app.services.langgraph.llm_factory import get_llm as make_llm
 from app.services.langgraph.redis_lifespan import get_redis_checkpointer
 from app.services.langgraph.prompt_registry import get_agent_prompt
@@ -18,6 +20,7 @@ from app.services.langgraph.graph.consult.memory_utils import (
 )
 
 router = APIRouter()
+log = logging.getLogger("uvicorn.error")
 
 # Tunables
 SSE_MIN_CHARS      = int(os.getenv("SSE_COALESCE_MIN_CHARS", "24"))
@@ -69,15 +72,22 @@ def _last_ai_text_from_result_like(obj: Dict[str, Any]) -> str:
 def _build_graph(app):
     # Gleiche Logik wie WS: Supervisor bevorzugen, sonst Consult
     if GRAPH_BUILDER == "supervisor":
-        # FIX: korrekter Importpfad
         from app.services.langgraph.graph.supervisor_graph import build_supervisor_graph as build_graph
+    elif GRAPH_BUILDER == "mvp":
+        try:
+            from app.services.langgraph.graph.mvp_graph import build_mvp_graph as build_graph  # type: ignore
+        except Exception:
+            from app.services.langgraph.graph.consult.build import build_consult_graph as build_graph  # fallback
     else:
         from app.services.langgraph.graph.consult.build import build_consult_graph as build_graph
     saver = None
     try:
         saver = get_redis_checkpointer(app)
-    except Exception:
+    except RuntimeError as exc:
+        raise RuntimeError(f"Redis checkpointer required for graph '{GRAPH_BUILDER}'") from exc
+    except Exception as exc:
         saver = None
+        log.warning("redis checkpointer unavailable for SSE: %s", exc)
     g = build_graph()
     try:
         return g.compile(checkpointer=saver) if saver else g.compile()
@@ -145,7 +155,16 @@ async def chat_stream(request: Request) -> StreamingResponse:
             initial["user_id"] = thread_id
         except Exception:
             pass
-        cfg = {"configurable": {"thread_id": thread_id, "checkpoint_ns": getattr(app.state, "checkpoint_ns", None), "user_id": thread_id}}
+        cfg = with_tracing(
+            {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "checkpoint_ns": getattr(app.state, "checkpoint_ns", None),
+                    "user_id": thread_id,
+                }
+            },
+            run_name=(GRAPH_BUILDER or "supervisor"),
+        )
 
         loop = asyncio.get_event_loop()
         buf: list[str] = []

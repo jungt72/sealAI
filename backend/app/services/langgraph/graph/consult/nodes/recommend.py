@@ -154,8 +154,14 @@ def recommend_node(
     events: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     # Falls noch Pflichtfelder fehlen, NICHT ins teure RAG/LLM gehen – stattdessen UI-Form öffnen
+    msgs = normalize_messages(state.get("messages", []))
     missing = state.get("fehlend") or state.get("missing") or []
     if isinstance(missing, (list, tuple)) and len(missing) > 0:
+        missing_list = ", ".join(str(item) for item in missing)
+        hint = (
+            "Mir fehlen noch Angaben (" + missing_list + ") – bitte die Formularfelder ergänzen." if missing_list else
+            "Mir fehlen noch konkrete Angaben – bitte die Formularfelder ergänzen."
+        )
         ui = {
             "ui_event": {
                 "ui_action": "open_form",
@@ -165,9 +171,14 @@ def recommend_node(
                 "prefill": (state.get("params") or {})
             }
         }
-        return {**state, **ui, "phase": "ask_missing"}
-
-    msgs = normalize_messages(state.get("messages", []))
+        ai_msg = AIMessage(content=hint)
+        return {
+            **state,
+            **ui,
+            "phase": "ask_missing",
+            "messages": msgs + [ai_msg],
+            "missing_fields": list(missing),
+        }
     params: Dict[str, Any] = state.get("params") or {}
     domain = (state.get("domain") or "").strip().lower()
     derived = state.get("derived") or {}
@@ -176,7 +187,25 @@ def recommend_node(
     if context:
         log.info("[recommend_node] using_context", n_docs=len(retrieved_docs), ctx_len=len(context))
 
-    base_llm = create_llm(streaming=True)
+    try:
+        base_llm = create_llm(streaming=True)
+    except Exception as e:
+        log.error("[recommend_node] llm_factory_failed", err=str(e))
+        fallback_payload = json.dumps({"empfehlungen": []}, ensure_ascii=False, separators=(",", ":"))
+        ai_msg = AIMessage(
+            content="Es tut mir leid – der Empfehlungsdienst ist momentan nicht verfügbar. Bitte versuchen Sie es später erneut."
+        )
+        return {
+            **state,
+            "messages": msgs + [ai_msg],
+            "answer": fallback_payload,
+            "phase": "recommend",
+            "empfehlungen": [],
+            "retrieved_docs": state.get("retrieved_docs") or [],
+            "docs": state.get("retrieved_docs") or [],
+            "context": state.get("context") or "",
+        }
+
     try:
         llm = base_llm.bind(response_format={"type": "json_object"})
     except Exception:

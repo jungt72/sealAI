@@ -19,7 +19,6 @@ api_router = APIRouter()
 api_router.include_router(langgraph_sse.router, prefix="/langgraph", tags=["sse"])  # <-- NEU
 
 # WebSocket (ohne extra Prefix → /api/v1/ai/ws)
-api_router.include_router(chat_ws.router, tags=["ws"])
 
 # Sync-Invoke (Debug)
 api_router.include_router(consult_invoke.router, tags=["test"])

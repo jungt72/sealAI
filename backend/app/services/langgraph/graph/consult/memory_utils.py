@@ -20,6 +20,10 @@ def _summary_key(thread_id: str) -> str:
     return f"chat:stm:{thread_id}:summary"
 
 
+def _last_agent_key(thread_id: str) -> str:
+    return f"chat:stm:{thread_id}:last_agent"
+
+
 def write_message(*, thread_id: str, role: Literal["user", "assistant", "system"], content: str) -> None:
     if not content:
         return
@@ -41,6 +45,31 @@ def set_summary(thread_id: str, content: str) -> None:
     key = _summary_key(thread_id)
     r.set(key, content)
     r.expire(key, int(os.getenv("STM_TTL_SEC", "604800")))
+
+
+def set_last_agent(thread_id: str, agent: str) -> None:
+    if not agent:
+        return
+    r = _redis()
+    key = _last_agent_key(thread_id)
+    ttl = int(os.getenv("STM_TTL_SEC", "604800"))
+    try:
+        r.set(key, agent)
+        r.expire(key, ttl)
+    except Exception:
+        pass
+
+
+def get_last_agent(thread_id: str) -> str | None:
+    r = _redis()
+    key = _last_agent_key(thread_id)
+    try:
+        raw = r.get(key)
+    except Exception:
+        return None
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
 
 
 def read_history_raw(thread_id: str, limit: int = 80) -> List[Dict[str, str]]:

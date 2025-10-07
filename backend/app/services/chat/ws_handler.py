@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import logging
 from typing import Any, Dict
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -13,6 +14,9 @@ from app.services.chat.ws_streaming import stream_llm_direct, stream_supervised
 from app.services.langgraph.graph.consult.memory_utils import write_message as stm_write_message
 from app.services.langgraph.llm_factory import get_llm as make_llm
 from app.services.langgraph.tools import long_term_memory as ltm
+from app.services.langgraph.hybrid_routing import extract_button_payload
+
+logger = logging.getLogger(__name__)
 
 REMEMBER_RX = re.compile(r"^\s*(?:!remember|remember|merke(?:\s*dir)?|speicher(?:e)?)\s*[:\-]?\s*(.+)$", re.I)
 GREETING_RX = re.compile(r"^(hi|hallo|hello|hey|moin)\b", re.I)
@@ -50,6 +54,8 @@ class WebSocketChatHandler:
         except WebSocketDisconnect:
             return
         except Exception as exc:
+            # VOLLEN STACKTRACE loggen, nicht nur repr(exc)
+            logger.exception("WS chat error")
             ws_log("ws_chat_error", error=repr(exc))
             await send_json_safe(ws, {"event": "done", "thread_id": "ws"})
 
@@ -166,6 +172,12 @@ class WebSocketChatHandler:
             mode = (data.get("mode") or config.default_route_mode).strip().lower() or config.default_route_mode
             graph_name = (data.get("graph") or config.graph_builder).strip().lower() or config.graph_builder
 
+            routing_payload = extract_button_payload(data)
+            if routing_payload.get("intent_seed") and not routing_payload.get("source"):
+                routing_payload["source"] = "ui_button"
+            if routing_payload.get("source") == "ui_button" and not routing_payload.get("confidence"):
+                routing_payload["confidence"] = 0.95
+
             await send_json_safe(ws, {"event": "start", "thread_id": thread_id, "route": mode, "graph": graph_name})
 
             if mode == "llm":
@@ -180,6 +192,7 @@ class WebSocketChatHandler:
                     params_patch=params_patch,
                     builder_name=graph_name,
                     config=config,
+                    routing_payload=routing_payload,
                 )
 
             try:

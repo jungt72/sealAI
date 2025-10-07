@@ -5,6 +5,8 @@ import os
 import logging
 from typing import Optional, Any
 
+from app.services.langgraph.config.runtime import get_runtime_config
+
 log = logging.getLogger("app.redis_checkpointer")
 
 # RedisSaver (sync). Unterschiedliche Versionen haben verschiedene __init__-Signaturen.
@@ -95,10 +97,14 @@ def get_redis_checkpointer(app=None) -> Optional["RedisSaver"]:
     redis_url = _redis_url()
     ns, ttl = _namespace()
 
+    cfg = get_runtime_config()
+
     try:
         saver = _try_construct_redis_saver(redis_url, ns, ttl)
         log.info("LangGraph Checkpointer aktiv: url=%s ns/prefix=%s ttl=%s", redis_url, ns, ttl)
         return saver
     except Exception as e:
+        if cfg.checkpoint_required:
+            raise RuntimeError(f"Redis checkpointer required but unavailable: {e!r}") from e
         log.warning("RedisSaver nicht nutzbar (%r). Fallback: None (In-Memory-Graph).", e)
         return None

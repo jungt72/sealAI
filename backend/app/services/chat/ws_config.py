@@ -49,15 +49,16 @@ def get_ws_config() -> WebSocketConfig:
     )
 
     return WebSocketConfig(
-        # CHANGE: aggressiveres Streaming / schnellere ersten Tokens
-        coalesce_min_chars=int(os.getenv("WS_COALESCE_MIN_CHARS", "20")),     # vorher 24
-        coalesce_max_latency_ms=float(os.getenv("WS_COALESCE_MAX_LAT_MS", "120")),  # vorher 40
+        # Tuning für flüssiges Streaming
+        coalesce_min_chars=int(os.getenv("WS_COALESCE_MIN_CHARS", "20")),
+        coalesce_max_latency_ms=float(os.getenv("WS_COALESCE_MAX_LAT_MS", "120")),
         idle_timeout_sec=int(os.getenv("WS_IDLE_TIMEOUT_SEC", "45")),
-        first_token_timeout_ms=int(os.getenv("WS_FIRST_TOKEN_TIMEOUT_MS", "1500")),  # vorher 2000
+        first_token_timeout_ms=int(os.getenv("WS_FIRST_TOKEN_TIMEOUT_MS", "1500")),
         input_max_chars=int(os.getenv("WS_INPUT_MAX_CHARS", "4000")),
         rate_limit_per_min=int(os.getenv("WS_RATE_LIMIT_PER_MIN", "30")),
-        micro_chunk_chars=int(os.getenv("WS_MICRO_CHUNK_CHARS", "16")),       # vorher 0
-        emit_final_text=os.getenv("WS_EMIT_FINAL_TEXT", "0") == "1",
+        micro_chunk_chars=int(os.getenv("WS_MICRO_CHUNK_CHARS", "16")),
+        # WICHTIG: Standard jetzt "1" → Frontend erhält immer ein `final`-Event
+        emit_final_text=os.getenv("WS_EMIT_FINAL_TEXT", "1") == "1",
         debug_events=os.getenv("WS_DEBUG_EVENTS", "1") == "1",
         event_timeout_sec=int(os.getenv("WS_EVENT_TIMEOUT_SEC", "25")),
         force_sync_fallback=os.getenv("WS_FORCE_SYNC", "0") == "1",

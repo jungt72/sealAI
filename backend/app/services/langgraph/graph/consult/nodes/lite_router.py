@@ -12,7 +12,7 @@ RE_GREET = re.compile(
     re.I,
 )
 RE_SMALLTALK = re.compile(
-    r"\b(wie\s+geht'?s|alles\s+gut|was\s+geht|na\s+du|danke|bitte|tschüss|ciao|bye)\b",
+    r"\b(wie\s+geht'?s|alles\s+gut|was\s+geht|na\s+du|danke|bitte|tschüss|ciao|bye|weitere\s+infor?\w*|mehr\s+details?)\b",
     re.I,
 )
 RE_TECH_HINT = re.compile(
@@ -40,6 +40,13 @@ def _fallback_text_from_state(state: Dict[str, Any]) -> str:
             return v.strip()
     return ""
 
+def _with_route(state: Dict[str, Any], route: str) -> Dict[str, Any]:
+    return {**state, "route": route, "phase": "lite_router"}
+
+
+SMALLTALK_LENGTH_THRESHOLD = 40
+
+
 def lite_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Entscheidet, ob wir in Smalltalk verzweigen oder in den technischen Flow.
@@ -53,7 +60,7 @@ def lite_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # technischen Flow laufen, auch wenn der User-Text sehr kurz ist (z. B. "form submit" aus der Sidebar).
     params = state.get("params") or {}
     if isinstance(params, dict) and params:
-        return {**state, "route": "default"}
+        return _with_route(state, "default")
 
     text = _join_user_text(msgs)
 
@@ -64,16 +71,16 @@ def lite_router_node(state: Dict[str, Any]) -> Dict[str, Any]:
     tlen = len(text)
 
     if not text:
-        return {**state, "route": "default"}
+        return _with_route(state, "default")
 
     if RE_TECH_HINT.search(text):
-        return {**state, "route": "default"}
+        return _with_route(state, "default")
 
     if RE_GREET.search(text) or RE_SMALLTALK.search(text):
-        if tlen <= 64:
-            return {**state, "route": "smalltalk"}
+        if tlen <= 80:
+            return _with_route(state, "smalltalk")
 
-    if tlen <= 20:
-        return {**state, "route": "smalltalk"}
+    if tlen <= SMALLTALK_LENGTH_THRESHOLD:
+        return _with_route(state, "smalltalk")
 
-    return {**state, "route": "default"}
+    return _with_route(state, "default")

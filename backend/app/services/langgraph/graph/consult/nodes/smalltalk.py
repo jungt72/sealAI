@@ -5,6 +5,8 @@ import random
 import re
 from typing import Any, Dict, List
 
+from langchain_core.messages import AIMessage
+
 from ..utils import normalize_messages
 
 RE_HELLO = re.compile(r"\b(hi|hallo|hello|hey|servus|moin)\b", re.I)
@@ -59,5 +61,5 @@ def smalltalk_node(state: Dict[str, Any]) -> Dict[str, Any]:
     else:
         reply = "Alles klar! 🙂 Womit kann ich dir helfen?"
 
-    new_msgs = list(msgs) + [{"role": "assistant", "content": reply}]
+    new_msgs = list(msgs) + [AIMessage(content=reply)]
     return {**state, "messages": new_msgs, "phase": "smalltalk_done"}

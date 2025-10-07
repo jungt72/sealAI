@@ -1,14 +1,43 @@
-# backend/app/services/langgraph/graph/consult/utils.py
 from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, Iterable, List, Optional
+import json
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Set
 
 from langgraph.graph.message import add_messages
 from langchain_core.messages import AnyMessage, HumanMessage, AIMessage, SystemMessage
 
 log = logging.getLogger(__name__)
+
+# -------------------------------------------------------------------
+# Hashbare Hilfen für Dedup (dict/list -> stabile Schlüssel)
+# -------------------------------------------------------------------
+
+def _hashable_key(x: Any) -> Any:
+    if isinstance(x, dict):
+        # JSON-stabile, reihenfolgeunabhängige Repräsentation
+        try:
+            return json.dumps(x, sort_keys=True, ensure_ascii=False)
+        except Exception:
+            return tuple(sorted((str(k), _hashable_key(v)) for k, v in x.items()))
+    if isinstance(x, (list, tuple, set)):
+        return tuple(_hashable_key(v) for v in x)
+    # Messages/Objekte -> auf Inhalt mappen, sonst str(x)
+    if isinstance(x, (HumanMessage, AIMessage, SystemMessage)):
+        return ("msg", x.__class__.__name__, getattr(x, "content", ""))
+    return x if isinstance(x, (str, int, float, bool, type(None))) else str(x)
+
+def dedup_stable(seq: Iterable[Any]) -> List[Any]:
+    out: List[Any] = []
+    seen: Set[Any] = set()
+    for item in (seq or []):
+        k = _hashable_key(item)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(item)
+    return out
 
 # -------------------------------------------------------------------
 # Message utilities
@@ -61,7 +90,7 @@ def messages_text(msgs: List[AnyMessage], *, only_user: bool = False) -> str:
             parts.append(c)
     return "\n".join(parts)
 
-# Kompatibilit\u00e4ts-Alias (einige Module importieren 'msgs_text')
+# Kompatibilitäts-Alias (einige Module importieren 'msgs_text')
 msgs_text = messages_text
 
 def only_user_text(msgs: List[AnyMessage]) -> str:
@@ -88,7 +117,7 @@ def _num_from_str(raw: str) -> Optional[float]:
 def apply_heuristics_from_text(params: Dict[str, Any], text: str) -> Dict[str, Any]:
     """
     Deterministische Fallbacks, falls das LLM Werte nicht gesetzt hat:
-      - 'kein/ohne \u00dcberdruck/Druck' -> druck_bar = 0
+      - 'kein/ohne Überdruck/Druck' -> druck_bar = 0
       - '... Druck: 5 bar'          -> druck_bar = 5
       - 'Drehzahl 1.200 U/min'      -> drehzahl_u_min = 1200
       - 'dauerhaft X U/min'         -> drehzahl_u_min = X
@@ -99,10 +128,10 @@ def apply_heuristics_from_text(params: Dict[str, Any], text: str) -> Dict[str, A
 
     # Druck
     if merged.get("druck_bar") in (None, "", "unknown"):
-        if re.search(r"\b(kein|ohne)\s+(\u00fcberdruck|ueberdruck|druck)\b", t, re.I):
+        if re.search(r"\b(kein|ohne)\s+(überdruck|ueberdruck|druck)\b", t, re.I):
             merged["druck_bar"] = 0.0
         else:
-            m = re.search(r"(?:\u00fcberdruck|ueberdruck|druck)\s*[:=]?\s*([0-9][\d\.\s,]*)\s*bar\b", t, re.I)
+            m = re.search(r"(?:überdruck|ueberdruck|druck)\s*[:=]?\s*([0-9][\d\.\s,]*)\s*bar\b", t, re.I)
             if m:
                 val = _num_from_str(m.group(1))
                 if val is not None:
@@ -144,14 +173,14 @@ def apply_heuristics_from_text(params: Dict[str, Any], text: str) -> Dict[str, A
 def _is_missing_value(key: str, val: Any) -> bool:
     if val is None or val == "" or val == "unknown":
         return True
-    # 0 bar ist g\u00fcltig
+    # 0 bar ist gültig
     if key == "druck_bar":
         try:
             float(val)
             return False
         except Exception:
             return True
-    # Positive Gr\u00f6\u00dfen brauchen > 0
+    # Positive Größen brauchen > 0
     if key in (
         "wellen_mm", "gehause_mm", "breite_mm", "drehzahl_u_min", "geschwindigkeit_m_s",
         "stange_mm", "nut_d_mm", "nut_b_mm"
@@ -200,11 +229,11 @@ def _missing_by_domain(domain: str, params: Dict[str, Any]) -> List[str]:
     req = _required_fields_by_domain(domain or "rwdr")
     return [k for k in req if _is_missing_value(k, (params or {}).get(k))]
 
-# \u00d6ffentlicher Alias (Pflicht)
+# Öffentlicher Alias (Pflicht)
 missing_by_domain = _missing_by_domain
 
 # ---------- Optional/empfohlen ----------
-# Dom\u00e4nenspezifische Empfehl-Felder, die Qualit\u00e4t/Tragf\u00e4higkeit deutlich erh\u00f6hen
+# Domänenspezifische Empfehl-Felder
 _RWDR_OPTIONAL = [
     "bauform", "werkstoff_pref",
     "welle_iso", "gehause_iso",
@@ -220,324 +249,129 @@ _HYD_OPTIONAL = [
     "normen", "umgebung", "prioritaet", "besondere_anforderungen", "bekannte_probleme",
 ]
 
+def _optional_fields_by_domain(domain: str) -> List[str]:
+    if (domain or "rwdr") == "hydraulics_rod":
+        return list(_HYD_OPTIONAL)
+    return list(_RWDR_OPTIONAL)
 
-FIELD_LABELS_RWDR = {
-    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
+def _optional_missing_by_domain(domain: str, params: Dict[str, Any]) -> List[str]:
+    opt = _optional_fields_by_domain(domain or "rwdr")
+    return [k for k in opt if _is_missing_value(k, (params or {}).get(k))]
+
+# Öffentlicher Alias
+optional_missing_by_domain = _optional_missing_by_domain
+
+# -------------------------------------------------------------------
+# Friendly-Namen & Anomalien
+# -------------------------------------------------------------------
+
+_FRIENDLY_RWDR = {
+    "falltyp": "Falltyp",
     "wellen_mm": "Welle (mm)",
-    "gehause_mm": "Geh\u00e4use (mm)",
+    "gehause_mm": "Gehäuse (mm)",
     "breite_mm": "Breite (mm)",
-    "bauform": "Bauform/Profil",
     "medium": "Medium",
-    "temp_min_c": "Temperatur min (\u00b0C)",
-    "temp_max_c": "Temperatur max (\u00b0C)",
-    "druck_bar": "Druck (bar)",
+    "temp_max_c": "Temperatur max (°C)",
+    "druck_bar": "Überdruck (bar)",
     "drehzahl_u_min": "Drehzahl (U/min)",
-    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
-    "umgebung": "Umgebung",
-    "prioritaet": "Priorit\u00e4t (z. B. Preis, Lebensdauer)",
-    "besondere_anforderungen": "Besondere Anforderungen",
-    "bekannte_probleme": "Bekannte Probleme",
-    "werkstoff_pref": "Werkstoffpr\u00e4ferenz",
+    # optional
+    "bauform": "Bauform",
+    "werkstoff_pref": "Werkstoff-Präferenz",
     "welle_iso": "Welle ISO-Toleranz",
-    "gehause_iso": "Geh\u00e4use ISO-Toleranz",
-    "ra_welle_um": "Ra Welle (\u00b5m)",
-    "rz_welle_um": "Rz Welle (\u00b5m)",
-    "wellenwerkstoff": "Werkstoff Welle",
-    "gehausewerkstoff": "Werkstoff Geh\u00e4use",
-    "normen": "Normen/Vorgaben",
-}
-DISPLAY_ORDER_RWDR = [
-    "falltyp",
-    "wellen_mm",
-    "gehause_mm",
-    "breite_mm",
-    "bauform",
-    "medium",
-    "temp_min_c",
-    "temp_max_c",
-    "druck_bar",
-    "drehzahl_u_min",
-    "geschwindigkeit_m_s",
-    "umgebung",
-    "prioritaet",
-    "besondere_anforderungen",
-    "bekannte_probleme",
-]
-
-FIELD_LABELS_HYD = {
-    "falltyp": "Anwendungsfall (Ersatz/Neu/Optimierung)",
-    "stange_mm": "Stange (mm)",
-    "nut_d_mm": "Nut-\u00d8 D (mm)",
-    "nut_b_mm": "Nutbreite B (mm)",
-    "medium": "Medium",
-    "temp_max_c": "Temperatur max (\u00b0C)",
-    "temp_min_c": "Temperatur min (\u00b0C)",
-    "druck_bar": "Druck (bar)",
-    "geschwindigkeit_m_s": "Relativgeschwindigkeit (m/s)",
-    "profil": "Profil/Bauform",
-    "werkstoff_pref": "Werkstoffpr\u00e4ferenz",
-    "stange_iso": "Stange ISO-Toleranz",
-    "nut_toleranz": "Nut Toleranz",
-    "ra_stange_um": "Ra Stange (\u00b5m)",
-    "rz_stange_um": "Rz Stange (\u00b5m)",
-    "stangenwerkstoff": "Werkstoff Stange",
-    "normen": "Normen/Vorgaben",
+    "gehause_iso": "Gehäuse ISO-Toleranz",
+    "ra_welle_um": "Rauheit Ra Welle (µm)",
+    "rz_welle_um": "Rauheit Rz Welle (µm)",
+    "wellenwerkstoff": "Wellenwerkstoff",
+    "gehausewerkstoff": "Gehäusewerkstoff",
+    "normen": "Normen",
     "umgebung": "Umgebung",
-    "prioritaet": "Priorit\u00e4t (z. B. Preis, Lebensdauer)",
+    "prioritaet": "Priorität",
     "besondere_anforderungen": "Besondere Anforderungen",
     "bekannte_probleme": "Bekannte Probleme",
 }
-DISPLAY_ORDER_HYD = [
-    "falltyp",
-    "stange_mm",
-    "nut_d_mm",
-    "nut_b_mm",
-    "medium",
-    "temp_max_c",
-    "temp_min_c",
-    "druck_bar",
-    "geschwindigkeit_m_s",
-    "profil",
-    "werkstoff_pref",
-    "stange_iso",
-    "nut_toleranz",
-    "ra_stange_um",
-    "rz_stange_um",
-    "stangenwerkstoff",
-    "normen",
-    "umgebung",
-    "prioritaet",
-    "besondere_anforderungen",
-    "bekannte_probleme",
-]
 
-def _labels_for_domain(domain: str) -> Dict[str, str]:
-    d = (domain or "rwdr").strip().lower()
-    return FIELD_LABELS_HYD if d == "hydraulics_rod" else FIELD_LABELS_RWDR
+_FRIENDLY_HYD = {
+    "falltyp": "Falltyp",
+    "stange_mm": "Stange (mm)",
+    "nut_d_mm": "Nut-Ø (mm)",
+    "nut_b_mm": "Nutbreite (mm)",
+    "medium": "Medium",
+    "temp_max_c": "Temperatur max (°C)",
+    "druck_bar": "Druck (bar)",
+    "geschwindigkeit_m_s": "Geschwindigkeit (m/s)",
+    # optional
+    "profil": "Profil",
+    "werkstoff_pref": "Werkstoff-Präferenz",
+    "stange_iso": "Stange ISO-Toleranz",
+    "nut_toleranz": "Nut-Toleranz",
+    "ra_stange_um": "Rauheit Ra Stange (µm)",
+    "rz_stange_um": "Rauheit Rz Stange (µm)",
+    "stangenwerkstoff": "Stangenwerkstoff",
+    "normen": "Normen",
+    "umgebung": "Umgebung",
+    "prioritaet": "Priorität",
+    "besondere_anforderungen": "Besondere Anforderungen",
+    "bekannte_probleme": "Bekannte Probleme",
+}
 
-def _required_order_for_domain(domain: str) -> List[str]:
-    d = (domain or "rwdr").strip().lower()
-    return DISPLAY_ORDER_HYD if d == "hydraulics_rod" else DISPLAY_ORDER_RWDR
+def _friendly_map(domain: str) -> Dict[str, str]:
+    return _FRIENDLY_HYD if (domain or "rwdr") == "hydraulics_rod" else _FRIENDLY_RWDR
 
-def _optional_order_for_domain(domain: str) -> List[str]:
-    d = (domain or "rwdr").strip().lower()
-    return _HYD_OPTIONAL if d == "hydraulics_rod" else _RWDR_OPTIONAL
+def friendly_required_list(domain: str, missing_keys: List[str]) -> str:
+    fm = _friendly_map(domain)
+    return ", ".join(fm.get(k, k) for k in (missing_keys or []))
 
-def _friendly_from_keys(keys: List[str], labels: Dict[str, str], order: List[str]) -> List[str]:
-    if not keys:
-        return []
-    seen = set()
-    friendly: List[str] = []
-    for key in order:
-        if key in keys and key not in seen:
-            friendly.append(labels.get(key, key))
-            seen.add(key)
-    for key in keys:
-        if key not in seen:
-            friendly.append(labels.get(key, key))
-            seen.add(key)
-    return friendly
+def friendly_optional_list(domain: str, missing_keys: List[str]) -> str:
+    fm = _friendly_map(domain)
+    return ", ".join(fm.get(k, k) for k in (missing_keys or []))
 
-def friendly_required_list(domain: str, keys: List[str]) -> str:
-    if not keys:
-        return ""
-    labels = _labels_for_domain(domain)
-    order = _required_order_for_domain(domain)
-    friendly = _friendly_from_keys(list(keys), labels, order)
-    return ", ".join(f"**{label}**" for label in friendly)
-
-def friendly_optional_list(domain: str, keys: List[str], limit: int = 6) -> str:
-    if not keys:
-        return ""
-    labels = _labels_for_domain(domain)
-    order = _optional_order_for_domain(domain)
-    friendly = _friendly_from_keys(list(keys), labels, order)
-    if limit and limit > 0:
-        friendly = friendly[:limit]
-    return ", ".join(f"**{label}**" for label in friendly)
-
-def _is_unset(x: Any) -> bool:
-    return x in (None, "", [], "unknown")
-
-def optional_missing_by_domain(domain: str, params: Dict[str, Any]) -> List[str]:
-    p = params or {}
-    fields = _HYD_OPTIONAL if (domain or "") == "hydraulics_rod" else _RWDR_OPTIONAL
-    missing: List[str] = []
-    for k in fields:
-        if _is_unset(p.get(k)):
-            missing.append(k)
-    return missing
-
-# ---- Anomalie-/Follow-up-Meldungen (FEHLTE zuvor!) --------------------------
-
-def _anomaly_messages(domain: str, params: Dict[str, Any], derived: Dict[str, Any]) -> List[str]:
-    """
-    Erzeugt R\u00fcckfragen basierend auf abgeleiteten Flags (domainabh\u00e4ngig).
-    Erwartet 'derived' z. B.: {"flags": {...}, "warnings": [...], "requirements": [...]}
-    """
+def anomaly_messages(domain: str, params: Dict[str, Any], derived: Dict[str, Any] | None = None) -> List[str]:
+    """Einfache Plausibilitätsprüfungen -> kurze Follow-up-Fragen."""
     msgs: List[str] = []
-    flags = (derived.get("flags") or {})
+    d = (domain or "rwdr")
+    p = params or {}
 
-    # RWDR – Druckstufenfreigabe
-    if flags.get("requires_pressure_stage") and not flags.get("pressure_stage_ack"):
-        msgs.append(
-            "Ein \u00dcberdruck >2 bar ist f\u00fcr Standard-Radialdichtringe kritisch. "
-            "D\u00fcrfen Druckstufenl\u00f6sungen gepr\u00fcft werden?"
-        )
+    def _f(name: str) -> Optional[float]:
+        try:
+            v = p.get(name)
+            if v is None or v == "" or v == "unknown":
+                return None
+            return float(v)
+        except Exception:
+            return None
 
-    # Hohe Drehzahl/Geschwindigkeit
-    if flags.get("speed_high"):
-        msgs.append("Die Drehzahl/Umfangsgeschwindigkeit ist hoch – ist sie dauerhaft oder nur kurzzeitig (Spitzen)?")
+    if d == "rwdr":
+        w = _f("wellen_mm"); g = _f("gehause_mm"); b = _f("breite_mm")
+        if w and g and w >= g:
+            msgs.append("Ist der Wellen-Ø möglicherweise kleiner als der Gehäuse-Ø?")
+        if b and w and b > w * 0.8:
+            msgs.append("Die Breite wirkt im Verhältnis zum Wellen-Ø ungewöhnlich hoch – bitte prüfen.")
+        rpm = _f("drehzahl_u_min")
+        if rpm is not None and rpm < 0:
+            msgs.append("Drehzahl ist negativ – bitte prüfen.")
+    else:  # hydraulics_rod
+        s = _f("stange_mm"); nd = _f("nut_d_mm"); nb = _f("nut_b_mm")
+        if s and nd and s >= nd:
+            msgs.append("Ist der Stangen-Ø möglicherweise kleiner als der Nut-Ø?")
+        v = _f("geschwindigkeit_m_s")
+        if v is not None and v < 0:
+            msgs.append("Geschwindigkeit ist negativ – bitte prüfen.")
 
-    # Sehr hohe Temperatur
-    if flags.get("temp_very_high"):
-        msgs.append("Die Temperatur ist sehr hoch. Handelt es sich um Dauer- oder Spitzentemperaturen?")
-
-    # Hydraulik Stange – Extrusions-/Back-up-Ring-Freigabe
-    if (domain or "") == "hydraulics_rod" and flags.get("extrusion_risk") and not flags.get("extrusion_risk_ack"):
-        msgs.append("Bei dem Druck besteht Extrusionsrisiko. Darf eine St\u00fctz-/Back-up-Ring-L\u00f6sung gepr\u00fcft werden?")
+    tmax = _f("temp_max_c")
+    if tmax is not None and (tmax < -50 or tmax > 300):
+        msgs.append("Die Temperatur liegt außerhalb des üblichen Bereichs (−50…300 °C) – korrekt?")
 
     return msgs
 
-# --- Output-Cleaner etc. (unver\u00e4ndert) --------------------------------------
-
-def _strip(s: str) -> str:
-    return (s or "").strip()
-
-def _normalize_newlines(text: str) -> str:
-    """Normalisiert Zeilenenden und trimmt \u00fcberfl\u00fcssige Leerzeichen am Zeilenende."""
-    if not isinstance(text, str):
-        return text
-    t = re.sub(r"\r\n?|\r", "\n", text)
-    t = "\n".join(line.rstrip() for line in t.split("\n"))
-    return t
-
-def strip_leading_meta_blocks(text: str) -> str:
+# -------------------------------------------------------------------
+# Stable unique + sort for recent_user_texts (ohne set(dict)-Crash)
+# -------------------------------------------------------------------
+def recent_user_texts_sorted_unique(recent_user_texts: Iterable[Any]) -> List[str]:
     """
-    Entfernt am *Anfang* der Antwort Meta-Bl\u00f6cke wie:
-      - f\u00fchrende JSON-/YAML-Objekte
-      - ```…``` fenced code blocks
-      - '# QA-Notiz …' bis zur n\u00e4chsten Leerzeile
-    Wir iterieren, bis kein solcher Block mehr vorne steht.
+    Ersetzt 'sorted(set(recent_user_texts or []), ...)' durch eine sichere Variante.
+    - Castet Elemente robust zu String
+    - Dedup via Insertion-Order (dict.fromkeys)
     """
-    if not isinstance(text, str) or not text.strip():
-        return text
-    t = text.lstrip()
-
-    changed = True
-    # max. 5 Durchl\u00e4ufe als Sicherung
-    for _ in range(5):
-        if not changed:
-            break
-        changed = False
-
-        # Fenced code block (beliebiges fence, inkl. json/yaml)
-        m = re.match(r"^\s*```[\s\S]*?```\s*", t)
-        if m:
-            t = t[m.end():].lstrip()
-            changed = True
-            continue
-
-        # F\u00fchrendes JSON-/YAML-Objekt (heuristisch, nicht perfekt balanciert)
-        m = re.match(r"^\s*\{[\s\S]*?\}\s*(?=\n|$)", t)
-        if m:
-            t = t[m.end():].lstrip()
-            changed = True
-            continue
-        m = re.match(r"^\s*---[\s\S]*?---\s*(?=\n|$)", t)  # YAML frontmatter
-        if m:
-            t = t[m.end():].lstrip()
-            changed = True
-            continue
-
-        # QA-Notiz-Block bis zur n\u00e4chsten Leerzeile
-        m = re.match(r"^\s*#\s*QA-Notiz[^\n]*\n[\s\S]*?(?:\n\s*\n|$)", t, flags=re.IGNORECASE)
-        if m:
-            t = t[m.end():].lstrip()
-            changed = True
-            continue
-
-    return t
-
-def clean_ai_output(ai_text: str, recent_user_texts: List[str]) -> str:
-    """
-    Entfernt angeh\u00e4ngte Echos zuletzt gesagter User-Texte am Ende der AI-Ausgabe.
-    - vergleicht trim-normalisiert (Suffix)
-    - entfernt ganze trailing Bl\u00f6cke, falls sie exakt einem der recent_user_texts entsprechen
-    """
-    if not isinstance(ai_text, str) or not ai_text:
-        return ai_text
-
-    out = ai_text.rstrip()
-
-    # Pr\u00fcfe Kandidaten in abnehmender L\u00e4nge (stabil gegen Teilmengen)
-    for u in sorted(set(recent_user_texts or []), key=len, reverse=True):
-        u_s = _strip(u)
-        if not u_s:
-            continue
-
-        # Work on a normalized working copy for suffix check
-        norm_out = _strip(out)
-        if norm_out.endswith(u_s):
-            # schneide die letzte (nicht-normalisierte) Vorkommen-Stelle am Ende ab
-            raw_idx = out.rstrip().rfind(u_s)
-            if raw_idx != -1:
-                out = out[:raw_idx].rstrip()
-
-    return out
-
-def _norm_key(block: str) -> str:
-    """Normierungs-Schl\u00fcssel f\u00fcr Block-Vergleich (whitespace-/case-insensitiv)."""
-    return re.sub(r"\s+", " ", (block or "").strip()).lower()
-
-def dedupe_text_blocks(text: str) -> str:
-    """
-    Entfernt doppelte inhaltlich identische Abs\u00e4tze/Bl\u00f6cke, robust gegen CRLF
-    und gemischte Leerzeilen. Als Absatztrenner gilt: ≥1 (auch nur whitespace-) Leerzeile.
-    Zus\u00e4tzlich werden identische, aufeinanderfolgende Einzelzeilen entfernt.
-    """
-    if not isinstance(text, str) or not text.strip():
-        return text
-
-    t = _normalize_newlines(text)
-
-    # Abs\u00e4tze anhand *mindestens* einer Leerzeile trennen (auch wenn nur Whitespace in der Leerzeile steht)
-    parts = [p.strip() for p in re.split(r"\n\s*\n+", t.strip()) if p.strip()]
-
-    seen = set()
-    out_blocks = []
-    for p in parts:
-        k = _norm_key(p)
-        if k in seen:
-            continue
-        seen.add(k)
-        out_blocks.append(p)
-
-    # Zusammensetzen mit Leerzeile zwischen Abs\u00e4tzen
-    merged = "\n\n".join(out_blocks)
-
-    # Zus\u00e4tzlicher Schutz: identische direkt aufeinanderfolgende Zeilen entfernen
-    final_lines = []
-    prev_key = None
-    for line in merged.split("\n"):
-        key = _norm_key(line)
-        if key and key == prev_key:
-            continue
-        final_lines.append(line)
-        prev_key = key
-
-    return "\n".join(final_lines)
-
-def clean_and_dedupe(ai_text: str, recent_user_texts: List[str]) -> str:
-    """
-    Reihenfolge:
-      1) F\u00fchrende Meta-Bl\u00f6cke entfernen
-      2) Trailing User-Echos abschneiden
-      3) Identische Abs\u00e4tze/Zeilen de-dupen
-    """
-    head_clean = strip_leading_meta_blocks(ai_text)
-    tail_clean = clean_ai_output(head_clean, recent_user_texts)
-    return dedupe_text_blocks(tail_clean)
-
-# \u00d6ffentlicher Alias
-anomaly_messages = _anomaly_messages
+    texts = [str(u) for u in (recent_user_texts or [])]
+    uniq = list(dict.fromkeys(texts))  # preserves order, no unhashable dict
+    return sorted(uniq, key=len, reverse=True)
