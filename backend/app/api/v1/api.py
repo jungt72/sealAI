@@ -1,33 +1,37 @@
+# backend/app/api/v1/api.py
 from __future__ import annotations
-from app.api.v1.endpoints import rfq as rfq_endpoint
+
 from fastapi import APIRouter
 
+# REST-/Service-Endpunkte
 from app.api.v1.endpoints import (
-    ai,
+    ai,               # → enthält WS (/api/v1/ai/ws) + Sync-Invoke (/api/v1/ai/beratung)
     auth,
-    chat_ws,
-    consult_invoke,
+    consult_invoke,   # optionaler Sync-Debug-Invoke
     memory,
     system,
     users,
 )
-from app.api.v1.endpoints import langgraph_sse  # <-- NEU
+from app.api.v1.endpoints import rfq as rfq_endpoint
+
+# WICHTIG:
+# - Keine SSE-Registrierung mehr (langgraph_sse entfällt).
+# - Kein legacy chat_ws Import/Include mehr.
+# - WS-Endpoints werden in ai.py direkt registriert.
 
 api_router = APIRouter()
 
-# SSE
-api_router.include_router(langgraph_sse.router, prefix="/langgraph", tags=["sse"])  # <-- NEU
+# AI (WS+Sync)
+api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
 
-# WebSocket (ohne extra Prefix → /api/v1/ai/ws)
-
-# Sync-Invoke (Debug)
+# Optional: Debug/Test invoke
 api_router.include_router(consult_invoke.router, tags=["test"])
 
-# REST
-api_router.include_router(ai.router, prefix="/ai")   # → /api/v1/ai/beratung
+# Weitere Subsysteme
 api_router.include_router(auth.router)
 api_router.include_router(memory.router)
 api_router.include_router(system.router)
 api_router.include_router(users.router)
 
+# RFQ
 api_router.include_router(rfq_endpoint.router, prefix="/rfq", tags=["rfq"])
