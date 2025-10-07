@@ -132,7 +132,7 @@ def _extract_text_from_consult_out(out: Dict[str, Any]) -> str:
 # ─────────────────────────────────────────────────────────────
 # API (HTTP)
 # ─────────────────────────────────────────────────────────────
-router = APIRouter()  # KEIN prefix hier – der übergeordnete Router hängt '/ai' an.
+router = APIRouter()
 
 class ChatRequest(BaseModel):
     chat_id: str = Field(default="default", description="Konversations-/Thread-ID")
@@ -152,12 +152,12 @@ async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
 
     thread_id = f"api:{payload.chat_id}"
 
-    # 1) Memory-Intents ggf. direkt beantworten (kein Graph-Call)
+    # Memory-Intents ggf. direkt beantworten (kein Graph-Call)
     mem = _maybe_handle_memory_intent(user_text, thread_id)
     if mem:
         return ChatResponse(text=mem)
 
-    # 2) Consult-Flow mit State aufrufen
+    # Consult-Flow mit State aufrufen
     state: Dict[str, Any] = {
         "messages": [{"role": "user", "content": user_text}],
         "input": user_text,
@@ -172,7 +172,11 @@ async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
     return ChatResponse(text=_extract_text_from_consult_out(out))
 
 # ─────────────────────────────────────────────────────────────
-# API (WebSocket)
+# API (WebSocket) – Events exakt für useChatWs:
+#   start → { event:"start", thread_id }
+#   token → { event:"token", delta: "…" }
+#   final → { event:"final", text: "…" }
+#   done  → { event:"done" }
 # ─────────────────────────────────────────────────────────────
 @router.websocket("/ws")
 @router.websocket("/chat/ws")
@@ -183,12 +187,6 @@ async def chat_ws(
     websocket: WebSocket,
     token: str | None = Query(default=None),
 ) -> None:
-    """
-    Robuster WS-Handler:
-      • Erst accept(), dann (optionale) Token/Origin-Prüfung
-      • Erwartet Textframes mit JSON wie:
-        {"chat_id":"default","input":"hallo","mode":"graph"}
-    """
     await websocket.accept()
 
     async def _send_json(payload: Dict[str, Any]) -> None:
@@ -197,7 +195,6 @@ async def chat_ws(
         try:
             await websocket.send_json(payload)
         except Exception:
-            # Verbindung evtl. weg – bewusst “schlucken” für Robustheit
             pass
 
     try:
@@ -225,15 +222,13 @@ async def chat_ws(
             if not user_input:
                 continue
 
-            # Frontend erwartet ein "starting"-Signal pro Anfrage.
-            await _send_json({"event": "starting", "phase": "starting", "thread_id": thread_id})
+            # useChatWs erwartet "start" (nicht "starting")
+            await _send_json({"event": "start", "thread_id": thread_id})
 
             # Memory-Intent?
             mem = _maybe_handle_memory_intent(user_input, thread_id)
             if mem:
-                await _send_json(
-                    {"event": "final", "thread_id": thread_id, "text": mem, "final": {"text": mem}}
-                )
+                await _send_json({"event": "final", "thread_id": thread_id, "text": mem, "final": {"text": mem}})
                 await _send_json({"event": "done", "thread_id": thread_id})
                 continue
 
@@ -273,7 +268,7 @@ async def chat_ws(
                     return
                 ev_name = str(event.get("event") or "")
 
-                # vereinheitlichte Text-Streams
+                # Vereinheitlichte Text-Streams → "token" mit {delta}
                 if ev_name == "on_custom_event":
                     data = event.get("data")
                     name = str(event.get("name") or "").lower()
@@ -281,27 +276,13 @@ async def chat_ws(
                         text_piece = data.get("text")
                         if isinstance(text_piece, str) and text_piece:
                             streamed_chunks.append(text_piece)
-                            await _send_json(
-                                {
-                                    "event": "stream",
-                                    "thread_id": thread_id,
-                                    "text": text_piece,
-                                    "node": data.get("node") or data.get("source"),
-                                }
-                            )
+                            await _send_json({"event": "token", "thread_id": thread_id, "delta": text_piece})
                         return
                     if isinstance(data, dict) and str(data.get("type") or "").lower() == "stream_text":
                         text_piece = data.get("text")
                         if isinstance(text_piece, str) and text_piece:
                             streamed_chunks.append(text_piece)
-                            await _send_json(
-                                {
-                                    "event": "stream",
-                                    "thread_id": thread_id,
-                                    "text": text_piece,
-                                    "node": data.get("node") or data.get("source"),
-                                }
-                            )
+                            await _send_json({"event": "token", "thread_id": thread_id, "delta": text_piece})
                     return
 
                 if ev_name in {"on_node_end", "on_chain_end", "on_graph_end", "on_execution_end"}:
@@ -327,7 +308,7 @@ async def chat_ws(
             try:
                 async for stream_event in _stream_consult(state):
                     await _handle_stream_event(stream_event)
-            except Exception as stream_exc:  # robustes Fallback
+            except Exception as stream_exc:
                 stream_failed = True
                 log.exception("consult stream error: %r", stream_exc)
 
@@ -349,9 +330,7 @@ async def chat_ws(
             aggregated_text = "".join(chunk for chunk in streamed_chunks if isinstance(chunk, str))
             out_text = _extract_text_from_consult_out(out) or aggregated_text or ""
 
-            await _send_json(
-                {"event": "final", "thread_id": thread_id, "text": out_text, "final": {"text": out_text}}
-            )
+            await _send_json({"event": "final", "thread_id": thread_id, "text": out_text, "final": {"text": out_text}})
             await _send_json({"event": "done", "thread_id": thread_id})
 
     except Exception as e:
