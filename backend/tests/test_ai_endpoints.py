@@ -14,7 +14,7 @@ from app.api.v1.endpoints import ai as ai_mod
 
 
 # ─────────────────────────────────────────────────────────────
-# Helfer
+# Test-Helfer
 # ─────────────────────────────────────────────────────────────
 @contextmanager
 def ws_optional_auth():
@@ -58,6 +58,31 @@ def fake_stream(events: list[Dict[str, Any]]):
 
 
 # ─────────────────────────────────────────────────────────────
+# Fake-Redis (entkoppelt die Tests von echter Infrastruktur)
+# ─────────────────────────────────────────────────────────────
+class _FakeRedis:
+    def __init__(self):
+        self._h: dict[str, dict[str, str]] = {}
+        self._exp: dict[str, int] = {}
+
+    # kompatible API-Subset
+    def hset(self, key: str, field: str, value: str) -> None:
+        self._h.setdefault(key, {})[field] = value
+
+    def hget(self, key: str, field: str) -> str | None:
+        return self._h.get(key, {}).get(field)
+
+    def expire(self, key: str, _ttl: int) -> None:
+        self._exp[key] = _ttl  # ignoriert tatsächliche Ablauf-Logik
+
+@pytest.fixture
+def fake_redis(monkeypatch):
+    store = _FakeRedis()
+    monkeypatch.setattr(ai_mod, "_redis", lambda: store)
+    return store
+
+
+# ─────────────────────────────────────────────────────────────
 # REST: Params-Forwarding & Memory-Intents
 # ─────────────────────────────────────────────────────────────
 def test_rest_params_are_forwarded(monkeypatch):
@@ -91,7 +116,7 @@ def test_rest_params_are_forwarded(monkeypatch):
     assert captured["messages"][0]["content"] == "Bitte bewerten."
 
 
-def test_rest_memory_intent_number(monkeypatch):
+def test_rest_memory_intent_number(monkeypatch, fake_redis):
     # invoke_consult sollte NICHT aufgerufen werden
     called = {"value": False}
 
@@ -160,7 +185,7 @@ def test_ws_heartbeat(monkeypatch):
             assert ws.receive_text() == '{"type":"pong"}'
 
 
-def test_ws_params_and_memory_intent(monkeypatch):
+def test_ws_params_and_memory_intent(monkeypatch, fake_redis):
     # Wenn Memory-Intent anschlägt, sendet die WS-Schicht token/final/done
     client = TestClient(app)
     with ws_optional_auth():
@@ -169,6 +194,10 @@ def test_ws_params_and_memory_intent(monkeypatch):
             ev1 = ws.receive_json()
             ev2 = ws.receive_json()
             ev3 = ws.receive_json()
+            assert ev1["event"] in ("typing", "token")  # manche Builds senden "typing" zuerst
+            # Inkrementell bis zum final:
+            if ev1["event"] == "typing":
+                ev1 = ws.receive_json()
             assert ev1["event"] == "token"
             assert "gemerkt" in ev1["delta"].lower()
             assert ev2["event"] == "final"
