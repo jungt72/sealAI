@@ -1,28 +1,25 @@
-# Cleanup Report (Draft)
-
-| Path | Action | Reason | Evidence |
-| --- | --- | --- | --- |
-| backend/agents/material_agent/main.py | move to .trash | Legacy FastAPI micro-service unused by backend since LangGraph migration; vulture marks `health` unused. | vulture report (`analysis/vulture_backend.txt`), file `backend/agents/material_agent/main.py:17` |
-| backend/agents/normen_agent/main.py | move to .trash | Legacy stub agent not imported anywhere; duplicate functionality removed. | vulture report (`analysis/vulture_backend.txt`), file `backend/agents/normen_agent/main.py:17` |
-| backend/app/api/routes/chat.py | move to .trash | Deprecated SSE fallback conflicting with current LangGraph streaming; missing dependency pins. | deptry report (`analysis/deptry_backend.json`), file `backend/app/api/routes/chat.py:7` |
-| backend/app/__pycache__ | move to .trash | Bytecode artefact. | inventory (`analysis/artifact_dirs.json`) |
-| backend/app/langgraph/__pycache__ | move to .trash | Bytecode artefact. | inventory (`analysis/artifact_dirs.json`) |
-| backend/.pytest_cache | move to .trash | Test artefact. | inventory (`analysis/artifact_dirs.json`) |
-| frontend/.next | move to .trash | Stale Next.js build output, not tracked. | inventory (`analysis/artifact_dirs.json`) |
-| .pytest_cache | move to .trash | Root pytest cache. | inventory (`analysis/artifact_dirs.json`) |
-| .env.bak.1754931261 | move to .trash | Duplicate env backup; no unique content. | duplicate scan (`analysis/duplicates_filtered.json`) |
-| .env.bak.1754931391 | move to .trash | Duplicate env backup; no unique content. | duplicate scan (`analysis/duplicates_filtered.json`) |
-| .env.bak.1754931465 | move to .trash | Duplicate env backup; no unique content. | duplicate scan (`analysis/duplicates_filtered.json`) |
-| frontend/src/components/Fog.tsx | move to .trash | Unused component (ts-prune). | `analysis/ts_prune_frontend.txt` |
-| frontend/src/components/HeroBackground.tsx | move to .trash | Unused component (ts-prune). | `analysis/ts_prune_frontend.txt` |
-| frontend/src/components/organisms/Header.tsx | move to .trash | Legacy layout unused. | `analysis/ts_prune_frontend.txt` |
-| frontend/src/components/organisms/Sidebar.tsx | move to .trash | Replaced by new dashboard; ts-prune unused. | `analysis/ts_prune_frontend.txt` |
-| frontend/src/components/ui/card.tsx | move to .trash | Duplicate card component; unused (knip). | `analysis/knip_frontend.json` |
-| frontend/src/app/dashboard/Dashboard.tsx | move to .trash | Obsolete dashboard wrapper (ts-prune). | `analysis/ts_prune_frontend.txt` |
-| frontend/src/app/dashboard/ChatScreen.tsx | move to .trash | Legacy chat entry (ts-prune). | `analysis/ts_prune_frontend.txt` |
-| frontend/src/app/dashboard/components/Sidebar/Sidebar.tsx | move to .trash | Unused wrapper (ts-prune). | `analysis/ts_prune_frontend.txt` |
-| frontend/src/app/dashboard/components/Sidebar/SidebarRight.tsx | move to .trash | Unused panel (ts-prune). | `analysis/ts_prune_frontend.txt` |
-| frontend/src/lib/logout.ts | move to .trash | Duplicate logout helper; unused exports. | `analysis/knip_frontend.json`, `analysis/ts_prune_frontend.txt` |
-| frontend/src/lib/useAccessToken.ts | move to .trash | Unused helper; replaced by session tokens. | `analysis/knip_frontend.json`, `analysis/ts_prune_frontend.txt` |
-
-> Note: All removals routed through `scripts/cleanup.sh` and executed only after sign-off.
+# Cleanup Report (dry-run ready)
+## Backend — Functions/Files
+DELETE backend/agents/material_agent/main.py | Grund: ungenutztes health() | Nachweis: vulture material_agent/main.py:17
+DELETE backend/agents/normen_agent/main.py   | Grund: ungenutztes health() | Nachweis: vulture normen_agent/main.py:17
+DELETE backend/agents/supervisor_stack.py    | Grund: arithmetischer Dummy/Stub | Nachweis: vulture supervisor_stack.py:234
+DELETE backend/app/langgraph/subgraphs/material/nodes/*_legacy.py | Grund: veraltete LCEL/Wrapper | Nachweis: ruff F401/F841 + Review
+## Backend — Ruff Fixes
+FIX backend/app/api/v1/endpoints/ai.py:12 | Grund: ungenutzter Import | Nachweis: ruff F401
+FIX backend/app/langgraph/subgraphs/material/nodes/** | Grund: ungenutzte Variablen/Imports | Nachweis: ruff F401/F841
+## Backend — Tests/Harness
+MOVE backend/app/langgraph/tests/test_hybrid_flow.py -> backend/tests/test_hybrid_flow.py | Grund: Imports reparieren | Nachweis: pytest collect log
+## Frontend — Components/Helpers
+DELETE frontend/src/components/organisms/Sidebar.tsx | Grund: keine Konsumenten | Nachweis: knip, ts-prune
+DELETE frontend/src/app/dashboard/components/Sidebar/Sidebar.tsx | Grund: Legacy-Duplikat | Nachweis: knip, ts-prune
+## Frontend — Dependencies
+REMOVE @react-three/drei | Grund: ungenutzt | Nachweis: depcheck
+REMOVE react-icons | Grund: ungenutzt | Nachweis: depcheck
+REMOVE react-textarea-autosize | Grund: ungenutzt | Nachweis: depcheck
+## Artefakte
+DELETE .pytest_cache/ 
+DELETE __pycache__/
+DELETE frontend/.next/
+DELETE dist/
+DELETE build/
+DELETE coverage/

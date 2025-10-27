@@ -1,0 +1,1274 @@
+[
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/agents/material_agent/main.py",
+            "line": 5,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/agents/material_agent/main.py",
+            "line": 6,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/agents/normen_agent/main.py",
+            "line": 5,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/agents/normen_agent/main.py",
+            "line": 6,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_core' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_core",
+        "location": {
+            "file": "backend/agents/supervisor_stack.py",
+            "line": 19,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_openai' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_openai",
+        "location": {
+            "file": "backend/agents/supervisor_stack.py",
+            "line": 20,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/agents/supervisor_stack.py",
+            "line": 21,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/agents/supervisor_stack.py",
+            "line": 22,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/agents/supervisor_stack.py",
+            "line": 23,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_community' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_community",
+        "location": {
+            "file": "backend/agents/supervisor_stack.py",
+            "line": 24,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/alembic/env.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/alembic/versions/70968fe4c62e_add_form_results_table.py",
+            "line": 8,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/alembic/versions/8b7f4c21d3ab_add_user_profiles_table.py",
+            "line": 9,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/alembic/versions/8b7f4c21d3ab_add_user_profiles_table.py",
+            "line": 10,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/alembic/versions/963dc293d186_initial_schema.py",
+            "line": 15,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/routes/chat.py",
+            "line": 7,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/routes/chat.py",
+            "line": 8,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/app/api/routes/chat.py",
+            "line": 9,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/api.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'httpx' imported but missing from the dependency definitions"
+        },
+        "module": "httpx",
+        "location": {
+            "file": "backend/app/api/v1/dependencies/auth.py",
+            "line": 14,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'jose' imported but missing from the dependency definitions"
+        },
+        "module": "jose",
+        "location": {
+            "file": "backend/app/api/v1/dependencies/auth.py",
+            "line": 15,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'jose' imported but missing from the dependency definitions"
+        },
+        "module": "jose",
+        "location": {
+            "file": "backend/app/api/v1/dependencies/auth.py",
+            "line": 16,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/dependencies/auth.py",
+            "line": 17,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/ai.py",
+            "line": 9,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/ai.py",
+            "line": 10,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'redis' imported but missing from the dependency definitions"
+        },
+        "module": "redis",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/ai.py",
+            "line": 11,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'starlette' imported but missing from the dependency definitions"
+        },
+        "module": "starlette",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/ai.py",
+            "line": 12,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/auth.py",
+            "line": 1,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/auth.py",
+            "line": 2,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/consult_invoke.py",
+            "line": 6,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/consult_invoke.py",
+            "line": 7,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/memory.py",
+            "line": 9,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/memory.py",
+            "line": 10,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'qdrant_client' imported but missing from the dependency definitions"
+        },
+        "module": "qdrant_client",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/memory.py",
+            "line": 11,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/rfq.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/rfq.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/system.py",
+            "line": 5,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/system.py",
+            "line": 6,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/users.py",
+            "line": 1,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/api/v1/endpoints/users.py",
+            "line": 2,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/app/api/v1/schemas/chat.py",
+            "line": 1,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/app/api/v1/schemas/form.py",
+            "line": 1,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic_settings' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic_settings",
+        "location": {
+            "file": "backend/app/core/config.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'structlog' imported but missing from the dependency definitions"
+        },
+        "module": "structlog",
+        "location": {
+            "file": "backend/app/core/config.py",
+            "line": 5,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/database.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/database.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/compile.py",
+            "line": 6,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/compile.py",
+            "line": 7,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/compile.py",
+            "line": 63,
+            "column": 9
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/nodes/resolver.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_core' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_core",
+        "location": {
+            "file": "backend/app/langgraph/state.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/state.py",
+            "line": 5,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/subgraphs/debate/compile.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/subgraphs/debate/nodes/debate_agent.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/subgraphs/material/compile.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'rag_orchestrator' imported but missing from the dependency definitions"
+        },
+        "module": "rag_orchestrator",
+        "location": {
+            "file": "backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+            "line": 8,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/subgraphs/material/nodes/synthesis.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'pydantic' imported but missing from the dependency definitions"
+        },
+        "module": "pydantic",
+        "location": {
+            "file": "backend/app/langgraph/tools/material_calculator.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'redis' imported but missing from the dependency definitions"
+        },
+        "module": "redis",
+        "location": {
+            "file": "backend/app/langgraph/tools/material_calculator.py",
+            "line": 8,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'redis' imported but missing from the dependency definitions"
+        },
+        "module": "redis",
+        "location": {
+            "file": "backend/app/langgraph/utils/checkpointer.py",
+            "line": 7,
+            "column": 5
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/langgraph/utils/checkpointer.py",
+            "line": 8,
+            "column": 5
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'jinja2' imported but missing from the dependency definitions"
+        },
+        "module": "jinja2",
+        "location": {
+            "file": "backend/app/langgraph/utils/jinja_renderer.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_openai' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_openai",
+        "location": {
+            "file": "backend/app/langgraph/utils/llm.py",
+            "line": 5,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'yaml' imported but missing from the dependency definitions"
+        },
+        "module": "yaml",
+        "location": {
+            "file": "backend/app/langgraph/utils/llm.py",
+            "line": 6,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/main.py",
+            "line": 9,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/main.py",
+            "line": 10,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/models/beratungsergebnis.py",
+            "line": 1,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/models/chat_message.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/models/form_result.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/models/form_result.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/models/long_term_memory.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/models/postgres_logger.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sqlalchemy' imported but missing from the dependency definitions"
+        },
+        "module": "sqlalchemy",
+        "location": {
+            "file": "backend/app/models/postgres_logger.py",
+            "line": 5,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/services/auth/dependencies.py",
+            "line": 12,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/services/auth/jwt_utils.py",
+            "line": 2,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'httpx' imported but missing from the dependency definitions"
+        },
+        "module": "httpx",
+        "location": {
+            "file": "backend/app/services/auth/token.py",
+            "line": 12,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'jose' imported but missing from the dependency definitions"
+        },
+        "module": "jose",
+        "location": {
+            "file": "backend/app/services/auth/token.py",
+            "line": 13,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'redis' imported but missing from the dependency definitions"
+        },
+        "module": "redis",
+        "location": {
+            "file": "backend/app/services/chat/ws_commons.py",
+            "line": 8,
+            "column": 12
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langgraph' imported but missing from the dependency definitions"
+        },
+        "module": "langgraph",
+        "location": {
+            "file": "backend/app/services/chat/ws_streaming.py",
+            "line": 11,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'redis' imported but missing from the dependency definitions"
+        },
+        "module": "redis",
+        "location": {
+            "file": "backend/app/services/memory/conversation_memory.py",
+            "line": 15,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'qdrant_client' imported but missing from the dependency definitions"
+        },
+        "module": "qdrant_client",
+        "location": {
+            "file": "backend/app/services/memory/memory_core.py",
+            "line": 18,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'qdrant_client' imported but missing from the dependency definitions"
+        },
+        "module": "qdrant_client",
+        "location": {
+            "file": "backend/app/services/memory/memory_core.py",
+            "line": 19,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_qdrant' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_qdrant",
+        "location": {
+            "file": "backend/app/services/rag/rag_ingest.py",
+            "line": 2,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_text_splitters' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_text_splitters",
+        "location": {
+            "file": "backend/app/services/rag/rag_ingest.py",
+            "line": 3,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_huggingface' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_huggingface",
+        "location": {
+            "file": "backend/app/services/rag/rag_ingest.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_community' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_community",
+        "location": {
+            "file": "backend/app/services/rag/rag_ingest.py",
+            "line": 5,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'redis' imported but missing from the dependency definitions"
+        },
+        "module": "redis",
+        "location": {
+            "file": "backend/app/services/rag/rag_orchestrator.py",
+            "line": 67,
+            "column": 16
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sentence_transformers' imported but missing from the dependency definitions"
+        },
+        "module": "sentence_transformers",
+        "location": {
+            "file": "backend/app/services/rag/rag_orchestrator.py",
+            "line": 81,
+            "column": 9
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sentence_transformers' imported but missing from the dependency definitions"
+        },
+        "module": "sentence_transformers",
+        "location": {
+            "file": "backend/app/services/rag/rag_orchestrator.py",
+            "line": 89,
+            "column": 9
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sentence_transformers' imported but missing from the dependency definitions"
+        },
+        "module": "sentence_transformers",
+        "location": {
+            "file": "backend/app/services/rag/rag_orchestrator.py",
+            "line": 115,
+            "column": 9
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'httpx' imported but missing from the dependency definitions"
+        },
+        "module": "httpx",
+        "location": {
+            "file": "backend/app/services/rag/rag_orchestrator.py",
+            "line": 127,
+            "column": 12
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'sentence_transformers' imported but missing from the dependency definitions"
+        },
+        "module": "sentence_transformers",
+        "location": {
+            "file": "backend/app/services/rag/rag_orchestrator.py",
+            "line": 175,
+            "column": 13
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'httpx' imported but missing from the dependency definitions"
+        },
+        "module": "httpx",
+        "location": {
+            "file": "backend/app/services/rag/rag_orchestrator.py",
+            "line": 276,
+            "column": 16
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'fastapi' imported but missing from the dependency definitions"
+        },
+        "module": "fastapi",
+        "location": {
+            "file": "backend/app/utils/json.py",
+            "line": 8,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'websockets' imported but missing from the dependency definitions"
+        },
+        "module": "websockets",
+        "location": {
+            "file": "backend/app/ws_stream_test.py",
+            "line": 5,
+            "column": 8
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'yaml' imported but missing from the dependency definitions"
+        },
+        "module": "yaml",
+        "location": {
+            "file": "backend/backend/app/langgraph/tests/test_prompts_exist_and_bind.py",
+            "line": 24,
+            "column": 12
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'redis' imported but missing from the dependency definitions"
+        },
+        "module": "redis",
+        "location": {
+            "file": "backend/backend/app/langgraph/utils/rag_cache.py",
+            "line": 24,
+            "column": 24
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'jinja2' imported but missing from the dependency definitions"
+        },
+        "module": "jinja2",
+        "location": {
+            "file": "backend/prompt_renderer.py",
+            "line": 17,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP002",
+            "message": "'black' defined as a dependency but not used in the codebase"
+        },
+        "module": "black",
+        "location": {
+            "file": "backend/requirements-dev.txt",
+            "line": null,
+            "column": null
+        }
+    },
+    {
+        "error": {
+            "code": "DEP002",
+            "message": "'ruff' defined as a dependency but not used in the codebase"
+        },
+        "module": "ruff",
+        "location": {
+            "file": "backend/requirements-dev.txt",
+            "line": null,
+            "column": null
+        }
+    },
+    {
+        "error": {
+            "code": "DEP002",
+            "message": "'mypy' defined as a dependency but not used in the codebase"
+        },
+        "module": "mypy",
+        "location": {
+            "file": "backend/requirements-dev.txt",
+            "line": null,
+            "column": null
+        }
+    },
+    {
+        "error": {
+            "code": "DEP002",
+            "message": "'pytest-asyncio' defined as a dependency but not used in the codebase"
+        },
+        "module": "pytest-asyncio",
+        "location": {
+            "file": "backend/requirements-dev.txt",
+            "line": null,
+            "column": null
+        }
+    },
+    {
+        "error": {
+            "code": "DEP002",
+            "message": "'pytest-cov' defined as a dependency but not used in the codebase"
+        },
+        "module": "pytest-cov",
+        "location": {
+            "file": "backend/requirements-dev.txt",
+            "line": null,
+            "column": null
+        }
+    },
+    {
+        "error": {
+            "code": "DEP002",
+            "message": "'pre-commit' defined as a dependency but not used in the codebase"
+        },
+        "module": "pre-commit",
+        "location": {
+            "file": "backend/requirements-dev.txt",
+            "line": null,
+            "column": null
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'langchain_core' imported but missing from the dependency definitions"
+        },
+        "module": "langchain_core",
+        "location": {
+            "file": "backend/tests/test_hybrid_routing.py",
+            "line": 4,
+            "column": 1
+        }
+    },
+    {
+        "error": {
+            "code": "DEP001",
+            "message": "'websockets' imported but missing from the dependency definitions"
+        },
+        "module": "websockets",
+        "location": {
+            "file": "backend/ws_test.py",
+            "line": 4,
+            "column": 8
+        }
+    }
+]

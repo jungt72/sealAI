@@ -1,0 +1,262 @@
+[
+  {
+    "path": "/root/sealai/frontend/src/components/HeroBackground.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/components/Starfield.tsx",
+    "total_imports": 2,
+    "non_test_imports": 2
+  },
+  {
+    "path": "/root/sealai/frontend/src/components/HeroGrok.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/components/Fog.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/components/SiteBackground.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/lib/useChatWs.ts",
+    "total_imports": 2,
+    "non_test_imports": 2
+  },
+  {
+    "path": "/root/sealai/frontend/src/lib/utils.ts",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/lib/useChatThreadId.ts",
+    "total_imports": 2,
+    "non_test_imports": 2
+  },
+  {
+    "path": "/root/sealai/frontend/src/lib/useAccessToken.ts",
+    "total_imports": 2,
+    "non_test_imports": 2
+  },
+  {
+    "path": "/root/sealai/frontend/src/lib/logout.ts",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/providers.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/page.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/layout.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/types/ui.ts",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/types/chat.ts",
+    "total_imports": 2,
+    "non_test_imports": 2
+  },
+  {
+    "path": "/root/sealai/frontend/src/types/markdown-to-jsx.d.ts",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/types/next-auth.d.ts",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/components/ui/card.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/components/organisms/Sidebar.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/components/organisms/Header.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/lib/types/langgraph.ts",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/Dashboard.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/DashboardShell.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/DashboardClient.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/page.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/layout.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/ChatScreen.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/auth/error/error-client.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/auth/error/page.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/auth/signin/signin-client.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/auth/signin/page.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/components/ui/card.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/api/auth/sso-logout/route.ts",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/api/auth/[...nextauth]/route.ts",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/api/auth/custom-logout/route.ts",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/LogoutButton.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Sidebar.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/CcxResultCard.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/InfoBar.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/ccx/page.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Sidebar/Sidebar.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Sidebar/CalcCard.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Sidebar/SidebarLeft.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Sidebar/AccordionTabs.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Sidebar/SidebarRight.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Sidebar/SidebarForm.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Chat/MarkdownMessage.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Chat/Thinking.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Chat/ChatHistory.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Chat/ChatContainer.tsx",
+    "total_imports": 3,
+    "non_test_imports": 3
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/components/Chat/ChatInput.tsx",
+    "total_imports": 1,
+    "non_test_imports": 1
+  },
+  {
+    "path": "/root/sealai/frontend/src/app/dashboard/ccx/[jobId]/page.tsx",
+    "total_imports": 0,
+    "non_test_imports": 0
+  }
+]

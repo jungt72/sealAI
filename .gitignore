@@ -17,7 +17,9 @@ __pycache__/
 .venv/
 backend/.venv/
 .venv_audit/
+.mypy_cache/
 .ruff_cache/
+.pytest_cache/
 
 # Builds & Artefakte
 dist/
@@ -42,6 +44,8 @@ frontend/public/files/mein_job.*
 
 # Test artefacts
 tests/e2e_consult*.sh
+coverage/
+.coverage*
 
 # Misc
 .DS_Store
@@ -58,5 +62,3 @@ test_stream.py
 tests/test_consult_e2e.py
 test_input.json
 .trash/
-analysis/*.json
-analysis/*.log
