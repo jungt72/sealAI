@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -13,7 +13,6 @@ from starlette.websockets import WebSocketState
 
 from app.services.chat.ws_commons import choose_subprotocol, send_json_safe
 from app.services.chat.ws_streaming import stream_langgraph
-from agents.supervisor_stack import run_supervisor_stack
 
 log = logging.getLogger("uvicorn.error")
 
@@ -102,12 +101,8 @@ async def supervisor_endpoint(payload: ChatRequest) -> ChatResponse:
     user_text = (payload.input or "").strip()
     if not user_text:
         raise HTTPException(status_code=400, detail="input empty")
-    try:
-        messages = run_supervisor_stack(user_text)
-        response_text = " ".join(messages)
-        return ChatResponse(text=response_text)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    log.warning("supervisor_endpoint disabled; legacy supervisor stack removed")
+    return ChatResponse(text="Supervisor-Stack wurde deaktiviert. Bitte nutzen Sie den Standard-Chat.")
 
 
 @router.post("/beratung", response_model=ChatResponse)
