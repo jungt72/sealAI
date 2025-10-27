@@ -16,6 +16,8 @@ __pycache__/
 *.py[cod]
 .venv/
 backend/.venv/
+.venv_audit/
+.ruff_cache/
 
 # Builds & Artefakte
 dist/
@@ -55,3 +57,6 @@ test_langchain.py
 test_stream.py
 tests/test_consult_e2e.py
 test_input.json
+.trash/
+analysis/*.json
+analysis/*.log

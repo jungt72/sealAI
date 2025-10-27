@@ -17,6 +17,7 @@ services:
       REDIS_URL: "redis://redis:6379/0"
       RAG_BM25_ENABLED: "0"
       RAG_BM25_INDEX: "sealai:bm25"
+      ENABLE_LANGGRAPH_V06: "true"
 
   frontend:
     # env_file bewusst geleert, damit .env.dev NICHT greift

@@ -8,29 +8,104 @@ Conversation STM (Short-Term Memory) auf Redis
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any
+import json
+import os
+from typing import Any, Dict, List
 
-# Dieses Modul war historisch eine eigenständige STM-Implementierung.
-# Aus Wartbarkeitsgründen delegieren wir die Funktionalität an die
-# bereits genutzte Implementation unter `graph.consult.memory_utils`.
-from app.services.langgraph.graph.consult import memory_utils as _mu
+from redis import Redis
+
+
+STM_PREFIX = os.getenv("STM_PREFIX", "chat:stm")
+STM_MAX_MSG = int(os.getenv("STM_MAX_MSG", "50"))
+STM_TTL_SEC = int(os.getenv("STM_TTL_SEC", "604800"))
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+_LAST_AGENT_SUFFIX = "last_agent"
+
+
+def _redis() -> Redis:
+    return Redis.from_url(REDIS_URL, decode_responses=True)
+
+
+def _stm_key(chat_id: str) -> str:
+    return f"{STM_PREFIX}:{chat_id}"
+
+
+def _last_agent_key(chat_id: str) -> str:
+    return f"{_stm_key(chat_id)}:{_LAST_AGENT_SUFFIX}"
 
 
 def add_message(chat_id: str, role: str, content: str) -> None:
-    """Backward-compatible wrapper: delegiert an memory_utils.write_message."""
+    entry = json.dumps({"role": role, "content": content})
     try:
-        _mu.write_message(thread_id=chat_id, role=role, content=content)
+        r = _redis()
+        key = _stm_key(chat_id)
+        r.rpush(key, entry)
+        r.ltrim(key, -STM_MAX_MSG, -1)
+        r.expire(key, STM_TTL_SEC)
     except Exception:
-        # Best-effort: swallow errors to avoid breaking callers
         return
 
 
 def get_history(chat_id: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Wrapper um die rohen Einträge zu lesen (älteste -> neueste).
-
-    Rückgabe: List[dict] mit mindestens `role` und `content`.
-    """
     try:
-        return _mu.read_history_raw(chat_id, limit=limit)
+        r = _redis()
+        key = _stm_key(chat_id)
+        entries = r.lrange(key, -limit, -1)
+        history: List[Dict[str, Any]] = []
+        for entry in entries:
+            try:
+                parsed = json.loads(entry)
+                if isinstance(parsed, dict):
+                    history.append(parsed)
+            except json.JSONDecodeError:
+                continue
+        return history
     except Exception:
         return []
+
+
+def set_last_agent(chat_id: str, agent: str) -> None:
+    """Persist the last selected agent for a chat thread.
+
+    The value is stored with the same TTL as the STM messages so that it
+    expires automatically when the conversation history is purged.
+    """
+
+    if not chat_id or not agent:
+        return
+    try:
+        r = _redis()
+        key = _last_agent_key(chat_id)
+        r.set(key, agent, ex=STM_TTL_SEC)
+    except Exception:
+        return
+
+
+def get_last_agent(chat_id: str) -> str | None:
+    """Return the previously stored agent identifier, if available."""
+
+    if not chat_id:
+        return None
+    try:
+        r = _redis()
+        key = _last_agent_key(chat_id)
+        value = r.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+    except Exception:
+        return None
+
+
+def clear_last_agent(chat_id: str) -> None:
+    """Remove the cached agent hint for the given chat thread."""
+
+    if not chat_id:
+        return
+    try:
+        r = _redis()
+        key = _last_agent_key(chat_id)
+        r.delete(key)
+    except Exception:
+        return

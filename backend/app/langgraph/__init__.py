@@ -1,3 +1,1 @@
-"""Unified LangGraph integration layer."""
-
-__all__ = []
+# MIGRATION: Phase-1 - LangGraph module init

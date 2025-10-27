@@ -1,69 +1,74 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.8.0+cpu
 ###############################################################################
 # SEALAI – BACKEND REQUIREMENTS (Python 3.11+)
+# Fokus: FastAPI, LangGraph (+Redis Checkpoint), Qdrant, WebSocket-Streaming
+# Hinweis: Modell per ENV setzen (z. B. LLM_MODEL=gpt-4.1-mini)
+# Stand: Pinned auf aktuell INSTALLIERTE Versionen (reproduzierbare Builds)
 ###############################################################################
-# --- Web-Framework ----------------------------------------------------------
-fastapi==0.116.1
-uvicorn[standard]==0.35.0
 
-# --- Async / Utils ----------------------------------------------------------
-async-timeout==4.0.3
+# --- Web-Framework / Runtime -------------------------------------------------
+fastapi==0.119.1
+starlette==0.48.0
+uvicorn[standard]==0.37.0
+websockets==15.0.1
+httpx==0.28.1
+anyio==4.11.0
+httpcore==1.0.9
+orjson==3.10.18
+python-dotenv==1.1.1
+PyYAML==6.0.3
+pydantic==2.12.3
+pydantic-core==2.41.4
+pydantic-settings==2.11.0
+typing-extensions==4.15.0
+tenacity==9.1.2
 
-# --- OpenAI / LLM -----------------------------------------------------------
-openai==1.99.9
+# --- OpenAI / LLM ------------------------------------------------------------
+openai==2.3.0
+tiktoken==0.12.0
 
-# --- LangChain --------------------------------------------------------------
-langchain==0.3.27
-langchain-core==0.3.74
-langchain-community==0.3.27
-langchain-openai==0.3.31
-langchain-qdrant==0.2.0
-langchain-huggingface==0.3.1
-langchain-text-splitters==0.3.9
+# --- LangChain / LangGraph ---------------------------------------------------
+langchain==1.0.2
+langchain-core==1.0.1
+langchain-community==0.4
+langchain-openai==1.0.1
+langchain-qdrant==1.1.0
+langchain-text-splitters==1.0.0
+langsmith==0.4.38
 
-# Optional: token counting (used for prompt truncation). Install to get accurate token counts.
-tiktoken==0.11.0
+# LangGraph + Redis-Checkpoint
+langgraph[redis]==1.0.1
+langgraph-checkpoint==2.1.2
+langgraph-checkpoint-redis==0.1.2
+langgraph-supervisor==0.0.30
+# Optional Add-ons NUR falls importiert:
+# langgraph-prebuilt==1.0.1
+# langgraph-sdk==0.2.9
 
-# --- LangGraph & Checkpointer ----------------------------------------------
-langgraph==0.6.7
-langgraph-checkpoint==2.1.1
-langgraph-checkpoint-redis==0.1.1
-langgraph-swarm==0.0.14
-langgraph-checkpoint-postgres==2.0.23
-
-# --- Vector DB & Memory -----------------------------------------------------
+# --- Vector DB & Embeddings --------------------------------------------------
 qdrant-client==1.15.1
 redis==6.4.0
-redisvl==0.8.1
-fastembed==0.7.1
+# Lokale Embeddings – nur behalten, wenn wirklich genutzt:
+fastembed==0.7.3
+onnxruntime==1.23.2
+# WebSocket ist Standard. SSE wird NICHT genutzt:
+# httpx-sse==0.4.3   # (nur aktivieren, wenn explizit benötigt)
 
-# --- Datenbanken ------------------------------------------------------------
-sqlalchemy==2.0.41
-asyncpg==0.30.0
-alembic==1.16.4
-psycopg[binary,pool]==3.2.9
+# --- Datenbanken -------------------------------------------------------------
+SQLAlchemy==2.0.44
+alembic==1.17.0
+asyncpg==0.29.0   # Dialekt: postgresql+asyncpg://
 
-# --- ML / Embeddings --------------------------------------------------------
-sentence-transformers==5.1.0
-transformers>=4.55.1
-
-# --- Auth & Security --------------------------------------------------------
+# --- Auth & Security ---------------------------------------------------------
 python-keycloak==5.8.1
 python-jose[cryptography]==3.5.0
-PyJWT==2.10.1
+cryptography==46.0.3
 
-# --- Misc -------------------------------------------------------------------
-jinja2==3.1.6
-orjson==3.10.18
-ormsgpack==1.10.0
-structlog==25.4.0
-PyYAML==6.0.2
+# --- Logging / Utilities -----------------------------------------------------
+structlog==24.2.0
 
-# --- Dev / Test -------------------------------------------------------------
-pytest==8.4.2
-black==24.8.0
-ruff==0.6.9
-mypy==1.11.2
-pre-commit==3.8.0
-reportlab>=4.2.0
+# --- Prompt-Templating -------------------------------------------------------
+Jinja2==3.1.6
+
+# --- Optional Tools (nur aktivieren, wenn wirklich genutzt) ------------------
+# langchain-tavily==0.2.12        # Websuche-Tool
+# python-multipart==0.0.12        # File-Uploads in FastAPI (FormData)
