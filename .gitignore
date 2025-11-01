@@ -62,3 +62,4 @@ test_stream.py
 tests/test_consult_e2e.py
 test_input.json
 .trash/
+_audits/
