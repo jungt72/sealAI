@@ -1,0 +1,3669 @@
+==================== backend/app/database.py ====================
+# 📁 backend/app/database.py
+
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+# Best Practice: Einzige Quelle für Einstellungen ist app.core.config
+from app.core.config import settings
+
+# SQLAlchemy Base
+Base = declarative_base()
+
+# Datenbank-URL aus Core-Config ziehen
+DATABASE_URL = settings.database_url
+
+# Engine mit optionalem SQL-Debug aus den Settings
+engine = create_async_engine(
+    DATABASE_URL,
+    future=True,
+    echo=settings.debug_sql,   # gibt SQL-Statements bei Bedarf aus
+)
+
+# Session-Factory
+AsyncSessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
+
+# FastAPI-Dependency für DB-Sessions
+async def get_db() -> AsyncSession:
+    async with AsyncSessionLocal() as session:
+        yield session
+==================== backend/app/utils/json.py ====================
+"""JSON serialization utilities with fallbacks for complex objects."""
+from __future__ import annotations
+
+import base64
+import json
+from typing import Any, Dict, List, Union
+
+from fastapi.encoders import jsonable_encoder
+import dataclasses
+
+
+def to_jsonable(obj: Any) -> Any:
+    """
+    Convert an object to a JSON-serializable form using multiple fallbacks.
+
+    Order:
+    1. fastapi.encoders.jsonable_encoder with custom encoder for bytes
+    2. .model_dump() (Pydantic v2) -> .dict() (Pydantic v1) -> dataclasses.asdict()
+    3. Fallback: json.dumps(..., default=str) or str(obj)
+    """
+    if obj is None:
+        return None
+
+    # Try fastapi jsonable_encoder first, with bytes to base64
+    try:
+        return jsonable_encoder(obj, custom_encoder={bytes: lambda b: base64.b64encode(b).decode('ascii')})
+    except (AttributeError, TypeError) as e:
+        # If it fails, try other methods
+        pass
+
+    # Try Pydantic v2 model_dump
+    if hasattr(obj, 'model_dump') and callable(getattr(obj, 'model_dump')):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+
+    # Try Pydantic v1 dict
+    if hasattr(obj, 'dict') and callable(getattr(obj, 'dict')):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+
+    # Try dataclasses.asdict
+    if dataclasses.is_dataclass(obj):
+        try:
+            return dataclasses.asdict(obj)
+        except Exception:
+            pass
+
+    # Special cases for LangChain/BaseMessage
+    if hasattr(obj, '__class__') and 'BaseMessage' in obj.__class__.__name__:
+        try:
+            result = {
+                'type': getattr(obj, 'type', 'unknown'),
+                'content': getattr(obj, 'content', ''),
+                'tool_calls': getattr(obj, 'tool_calls', None) if hasattr(obj, 'tool_calls') else None,
+            }
+            # Remove None values
+            return {k: v for k, v in result.items() if v is not None}
+        except Exception:
+            pass
+
+    # Special case for RAG Document
+    if hasattr(obj, '__class__') and 'Document' in obj.__class__.__name__:
+        try:
+            result = {
+                'id': getattr(obj, 'id', None) or getattr(obj, 'page_content', '')[:50] + '...',
+                'page_content': getattr(obj, 'page_content', ''),
+                'metadata': getattr(obj, 'metadata', {}),
+                'score': getattr(obj, 'score', None),
+            }
+            # Remove None values except score if present
+            return {k: v for k, v in result.items() if v is not None or k == 'score'}
+        except Exception:
+            pass
+
+    # For bytes/audio, encode as base64 with MIME hint
+    if isinstance(obj, bytes):
+        try:
+            mime = 'application/octet-stream'  # Default, could be detected
+            return {'data': base64.b64encode(obj).decode('ascii'), 'mime': mime, 'type': 'bytes'}
+        except Exception:
+            pass
+
+    # Fallback: try json.dumps with default=str
+    try:
+        json_str = json.dumps(obj, default=str)
+        return json.loads(json_str)  # To ensure it's parseable
+    except Exception:
+        # Last resort: str(obj)
+        return str(obj)
+
+
+def to_jsonable_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert all values in a dict to jsonable."""
+    return {k: to_jsonable(v) for k, v in data.items()}
+
+
+def to_jsonable_list(data: List[Any]) -> List[Any]:
+    """Convert all items in a list to jsonable."""
+    return [to_jsonable(item) for item in data]==================== backend/app/services/auth/dependencies.py ====================
+# 📁 backend/app/services/auth/dependencies.py
+"""
+Auth-Dependencies für FastAPI-/WebSocket-Endpoints.
+
+* prüft Bearer-Token (Keycloak / OIDC)
+* liefert den User-Namen für Endpoints (HTTP & WS)
+* WS: akzeptiert neben "Authorization: Bearer <token>" auch ?token= / ?access_token=
+"""
+
+from __future__ import annotations
+
+from fastapi import Depends, HTTPException, WebSocket, status, Header
+
+from app.core.config import settings              # <-- korrekter Pfad!
+from app.services.auth.token import verify_access_token
+
+
+# --------------------------------------------------------------------------- #
+# 1) HTTP-Dependency – für normale FastAPI-Routes
+# --------------------------------------------------------------------------- #
+async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
+    authorization: str | None = Header(default=None),
+) -> str:
+    """
+    Liefert den `preferred_username` aus dem gültigen JWT,
+    sonst → 401 UNAUTHORIZED.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header fehlt oder ungültig",
+        )
+
+    token = authorization.removeprefix("Bearer ").strip()
+    payload = verify_access_token(token)
+    return payload.get("preferred_username", "anonymous")
+
+
+# --------------------------------------------------------------------------- #
+# 2) WebSocket-Dependency – für Chat-Streaming
+#    (unterstützt Header *oder* Query-Parameter ?token=/ ?access_token=)
+# --------------------------------------------------------------------------- #
+async def get_current_ws_user(websocket: WebSocket) -> str:
+    """
+    Prüft beim WS-Handshake das Access Token.
+    Bevorzugt `Authorization: Bearer <token>`, fällt aber auf Query-Parameter
+    `?token=` oder `?access_token=` zurück (praktisch, da Browser-WS keine
+    Custom-Header setzen kann).
+    """
+    # 1) Versuche Authorization-Header
+    auth_header = websocket.headers.get("Authorization", "")
+    token: str | None = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header.removeprefix("Bearer ").strip()
+
+    # 2) Fallback: Query-Parameter (z. B. ws://.../ws?token=xxx)
+    if not token:
+        qp = websocket.query_params
+        token = qp.get("token") or qp.get("access_token")
+
+    if not token:
+        await websocket.close(code=1008)  # Policy violation
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kein Token gefunden (weder Authorization-Header noch Query-Param).",
+        )
+
+    payload = verify_access_token(token)
+    return payload.get("preferred_username", "anonymous")
+==================== backend/app/services/auth/token.py ====================
+"""
+Token-Utilities
+===============
+Verifiziert Keycloak-JWTs für das Backend (REST & WebSocket).
+Logging reduziert (keine sensiblen Daten), Algorithmen strikt auf RS256.
+"""
+
+from __future__ import annotations
+from app.core.config import settings
+import functools
+from typing import Any, Final
+import httpx
+from jose import jwt, JWTError
+import logging
+import base64
+import re
+import json
+
+log = logging.getLogger("uvicorn.error")
+
+REALM_ISSUER: Final[str] = settings.backend_keycloak_issuer
+JWKS_URL: Final[str] = settings.keycloak_jwks_url
+ALLOWED_AUDS: Final[set[str]] = {"nextauth", "sealai-backend-api"}
+ALLOWED_ALGS: Final[tuple[str, ...]] = ("RS256",)  # ✅ fixiert
+
+@functools.lru_cache(maxsize=1)
+def _get_jwks() -> dict[str, Any]:
+    resp = httpx.get(JWKS_URL, timeout=5.0, verify=True)
+    resp.raise_for_status()
+    return resp.json()
+
+def _get_key(kid: str) -> dict[str, Any]:
+    for key in _get_jwks()["keys"]:
+        if key["kid"] == kid:
+            return key
+    raise JWTError(f"kid {kid!r} not found in JWKS")
+
+def _jwk_to_pem(jwk: dict[str, Any]) -> str:
+    x5c = jwk.get("x5c")
+    if not x5c:
+        raise JWTError("x5c field missing in JWKS")
+    cert = x5c[0]
+    cert_str = "-----BEGIN CERTIFICATE-----\n"
+    cert_str += "\n".join(cert[i:i+64] for i in range(0, len(cert), 64))
+    cert_str += "\n-----END CERTIFICATE-----\n"
+    return cert_str
+
+def _safe_get_unverified_header(token: str) -> dict:
+    try:
+        header_b64 = token.split(".")[0]
+        header_b64 = re.sub(r'[^A-Za-z0-9_\-]', '', header_b64)
+        padded = header_b64 + "=" * (-len(header_b64) % 4)
+        decoded = base64.urlsafe_b64decode(padded).decode("utf-8")
+        return json.loads(decoded)
+    except Exception as exc:
+        log.debug("JWT header decode failed: %r", exc)
+        raise JWTError("Header decode fail") from exc
+
+def verify_access_token(token: str) -> dict[str, Any]:
+    """
+    * Gibt den vollständigen Claim-Dict zurück, wenn alles passt
+    * Löst ValueError aus, wenn der Token ungültig ist
+    """
+    try:
+        header = _safe_get_unverified_header(token)
+        kid = header.get("kid")
+        alg = header.get("alg")
+
+        if alg not in ALLOWED_ALGS:
+            raise JWTError(f"unsupported alg {alg!r}; allowed={ALLOWED_ALGS}")
+
+        jwk = _get_key(kid)
+        public_key_pem = _jwk_to_pem(jwk)
+
+        claims: dict[str, Any] = jwt.decode(
+            token,
+            public_key_pem,
+            algorithms=list(ALLOWED_ALGS),  # ✅ strikt
+            issuer=REALM_ISSUER,
+            options={"verify_aud": False},  # aud separat prüfen
+        )
+
+        # Audience/Client-Checks
+        aud = claims.get("aud")
+        aud_ok = (
+            (isinstance(aud, str)  and aud in ALLOWED_AUDS)
+            or (isinstance(aud, list) and any(a in ALLOWED_AUDS for a in aud))
+            or (claims.get("azp") in ALLOWED_AUDS)
+            or (claims.get("client_id") in ALLOWED_AUDS)
+        )
+        if not aud_ok:
+            raise JWTError(
+                f"audience not allowed (aud={aud!r}, azp={claims.get('azp')!r}, client_id={claims.get('client_id')!r})"
+            )
+
+        # Minimal-log (kein PEM/keine Claims)
+        log.debug("JWT verified (kid=%s, alg=%s, iss ok, aud ok)", kid, alg)
+        return claims
+
+    except Exception as exc:
+        log.warning("JWT verify failed: %s", exc)
+        raise ValueError(str(exc)) from exc
+==================== backend/app/services/auth/__init__.py ====================
+==================== backend/app/services/auth/jwt_utils.py ====================
+# 📁 backend/app/services/auth/jwt_utils.py
+from fastapi import HTTPException, status
+
+def extract_username_from_payload(payload: dict) -> str:
+    """
+    Extrahiert den Nutzernamen aus dem bereits verifizierten JWT-Payload.
+    """
+    try:
+        return (
+            payload.get("preferred_username")
+            or payload.get("email")
+            or payload["sub"]
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Username claim missing in token"
+        )
+==================== backend/app/services/memory/__init__.py ====================
+==================== backend/app/services/memory/conversation_memory.py ====================
+# backend/app/services/memory/conversation_memory.py
+"""
+Conversation STM (Short-Term Memory) auf Redis
+----------------------------------------------
+- Speichert JEDE Chatnachricht (user|assistant|system) chronologisch.
+- Ring-Buffer per LTRIM (STM_MAX_MSG).
+- TTL wird bei jedem Push erneuert (STM_TTL_SEC).
+"""
+
+from __future__ import annotations
+import json
+import os
+from typing import Any, Dict, List
+
+from redis import Redis
+
+
+STM_PREFIX = os.getenv("STM_PREFIX", "chat:stm")
+STM_MAX_MSG = int(os.getenv("STM_MAX_MSG", "50"))
+STM_TTL_SEC = int(os.getenv("STM_TTL_SEC", "604800"))
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+_LAST_AGENT_SUFFIX = "last_agent"
+
+
+def _redis() -> Redis:
+    return Redis.from_url(REDIS_URL, decode_responses=True)
+
+
+def _stm_key(chat_id: str) -> str:
+    return f"{STM_PREFIX}:{chat_id}"
+
+
+def _last_agent_key(chat_id: str) -> str:
+    return f"{_stm_key(chat_id)}:{_LAST_AGENT_SUFFIX}"
+
+
+def add_message(chat_id: str, role: str, content: str) -> None:
+    entry = json.dumps({"role": role, "content": content})
+    try:
+        r = _redis()
+        key = _stm_key(chat_id)
+        r.rpush(key, entry)
+        r.ltrim(key, -STM_MAX_MSG, -1)
+        r.expire(key, STM_TTL_SEC)
+    except Exception:
+        return
+
+
+def get_history(chat_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    try:
+        r = _redis()
+        key = _stm_key(chat_id)
+        entries = r.lrange(key, -limit, -1)
+        history: List[Dict[str, Any]] = []
+        for entry in entries:
+            try:
+                parsed = json.loads(entry)
+                if isinstance(parsed, dict):
+                    history.append(parsed)
+            except json.JSONDecodeError:
+                continue
+        return history
+    except Exception:
+        return []
+
+
+def set_last_agent(chat_id: str, agent: str) -> None:
+    """Persist the last selected agent for a chat thread.
+
+    The value is stored with the same TTL as the STM messages so that it
+    expires automatically when the conversation history is purged.
+    """
+
+    if not chat_id or not agent:
+        return
+    try:
+        r = _redis()
+        key = _last_agent_key(chat_id)
+        r.set(key, agent, ex=STM_TTL_SEC)
+    except Exception:
+        return
+
+
+def get_last_agent(chat_id: str) -> str | None:
+    """Return the previously stored agent identifier, if available."""
+
+    if not chat_id:
+        return None
+    try:
+        r = _redis()
+        key = _last_agent_key(chat_id)
+        value = r.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+    except Exception:
+        return None
+
+
+def clear_last_agent(chat_id: str) -> None:
+    """Remove the cached agent hint for the given chat thread."""
+
+    if not chat_id:
+        return
+    try:
+        r = _redis()
+        key = _last_agent_key(chat_id)
+        r.delete(key)
+    except Exception:
+        return
+==================== backend/app/services/memory/memory_core.py ====================
+"""
+Memory Core: Kapselt Long-Term-Memory (Qdrant) für Export/Löschen.
+Kurz-/Mittelzeit (Redis/Summary) laufen separat über LangGraph-Checkpointer.
+
+Payload-Felder pro Eintrag:
+- user: str                  (Pflicht für Filterung pro Benutzer)
+- chat_id: str               (optional; für Export/Löschen pro Chat)
+- kind: str                  (z. B. "preference", "fact", "note", …)
+- text: str                  (Inhalt)
+- created_at: float|int|str  (optional: Unix-Zeit oder ISO)
+Weitere Felder erlaubt – werden unverändert mit exportiert.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Tuple
+
+from qdrant_client import QdrantClient, models
+from qdrant_client.http.models import FilterSelector
+
+from app.core.config import settings
+
+
+# ---------------------------------------------------------------------------
+# Qdrant Client & Collection
+# ---------------------------------------------------------------------------
+
+def _get_qdrant_client() -> QdrantClient:
+    kwargs = {"url": settings.qdrant_url}
+    if settings.qdrant_api_key:
+        kwargs["api_key"] = settings.qdrant_api_key
+    return QdrantClient(**kwargs)
+
+
+def _ltm_collection_name() -> str:
+    """
+    Eigene LTM-Collection verwenden, um keine Vektorgrößen-Konflikte mit der
+    RAG-Collection zu riskieren. Fallback: "<qdrant_collection>-ltm".
+    """
+    return (settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm").strip()
+
+
+def ensure_ltm_collection(client: QdrantClient) -> None:
+    """
+    Stellt sicher, dass die LTM-Collection existiert. Wir verwenden einen
+    Dummy-Vektor (size=1), da wir nur Payload-basierte Scroll/Filter-Operationen
+    benötigen. (Qdrant verlangt einen Vektorspace pro Collection.)
+    """
+    coll = _ltm_collection_name()
+    try:
+        client.get_collection(coll)
+    except Exception:
+        client.recreate_collection(
+            collection_name=coll,
+            vectors_config=models.VectorParams(size=1, distance=models.Distance.COSINE),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Export / Delete
+# ---------------------------------------------------------------------------
+
+def _build_user_filter(user: str, chat_id: Optional[str] = None) -> models.Filter:
+    must: List[models.FieldCondition] = [
+        models.FieldCondition(key="user", match=models.MatchValue(value=user))
+    ]
+    if chat_id:
+        must.append(models.FieldCondition(key="chat_id", match=models.MatchValue(value=chat_id)))
+    return models.Filter(must=must)
+
+
+def ltm_export_all(
+    user: str,
+    chat_id: Optional[str] = None,
+    limit: int = 10000,
+) -> List[Dict[str, Any]]:
+    """
+    Exportiert bis zu `limit` LTM-Items für den User (optional gefiltert nach chat_id).
+    Liefert Liste aus {id, payload}.
+    """
+    if not settings.ltm_enable:
+        return []
+
+    client = _get_qdrant_client()
+    ensure_ltm_collection(client)
+
+    flt = _build_user_filter(user, chat_id)
+    out: List[Dict[str, Any]] = []
+
+    next_page = None
+    fetched = 0
+    page_size = 512
+    coll = _ltm_collection_name()
+
+    while fetched < limit:
+        points, next_page = client.scroll(
+            collection_name=coll,
+            scroll_filter=flt,
+            with_payload=True,
+            with_vectors=False,
+            limit=min(page_size, limit - fetched),
+            offset=next_page,
+        )
+        if not points:
+            break
+        for p in points:
+            out.append({
+                "id": str(p.id),
+                "payload": dict(p.payload or {}),
+            })
+        fetched += len(points)
+        if next_page is None:
+            break
+
+    return out
+
+
+def ltm_delete_all(
+    user: str,
+    chat_id: Optional[str] = None,
+) -> int:
+    """
+    Löscht alle LTM-Items für User (optional gefiltert nach chat_id).
+    Gibt die Anzahl der gelöschten Punkte (approx.) zurück.
+    """
+    if not settings.ltm_enable:
+        return 0
+
+    client = _get_qdrant_client()
+    ensure_ltm_collection(client)
+
+    flt = _build_user_filter(user, chat_id)
+    coll = _ltm_collection_name()
+
+    # Vorab zählen (für Response)
+    to_delete = 0
+    next_page = None
+    while True:
+        points, next_page = client.scroll(
+            collection_name=coll,
+            scroll_filter=flt,
+            with_payload=False,
+            with_vectors=False,
+            limit=1024,
+            offset=next_page,
+        )
+        if not points:
+            break
+        to_delete += len(points)
+        if next_page is None:
+            break
+
+    # Delete via Filter (serverseitig)
+    client.delete(
+        collection_name=coll,
+        points_selector=FilterSelector(filter=flt),
+        wait=True,
+    )
+    return to_delete
+==================== backend/app/services/__init__.py ====================
+==================== backend/app/services/chat/__init__.py ====================
+"""Chat service utilities for websocket endpoints."""
+
+__all__: list[str] = []
+==================== backend/app/services/chat/ws_streaming.py ====================
+# backend/app/services/chat/ws_streaming.py
+"""Chat streaming helpers with LangGraph integration."""
+from __future__ import annotations
+
+import os
+import traceback
+from typing import Any, Iterable, List
+from uuid import uuid4
+
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+
+from app.services.chat.ws_commons import send_json_safe
+
+FLUSH_MAX_LATENCY_SEC = float(os.getenv("WS_STREAM_MAX_LATENCY_SEC", "1.0"))
+
+
+def _truncate_history_for_prompt(system_prompt: str, history: Iterable[Any], max_chars: int = 4000) -> List[Any]:
+    keep: List[Any] = []
+    remaining = max(max_chars - len(system_prompt or ""), 0)
+    for message in reversed(list(history)):
+        text = (getattr(message, "content", None) or getattr(message, "text", None) or "")
+        if len(text) > remaining and keep:
+            break
+        keep.append(message)
+        remaining -= len(text)
+    keep.reverse()
+    return keep
+
+
+async def stream_langgraph(ws, payload):
+    """Stream LangGraph responses over WebSocket."""
+    try:
+        from app.langgraph.compile import create_main_graph
+        from app.langgraph.constants import CHECKPOINTER_NAMESPACE_MAIN
+        from app.langgraph.state import MetaInfo, Routing, SealAIState
+
+        graph = await create_main_graph()
+
+        user_input = (payload.get("input") or "").strip()
+        chat_id = (payload.get("chat_id") or "default").strip()
+        user_id = payload.get("user_id") or "ws_user"
+
+        initial_state = SealAIState(
+            messages=[],
+            slots={"user_query": user_input},
+            routing=Routing(),
+            context_refs=[],
+            meta=MetaInfo(thread_id=chat_id, user_id=user_id, trace_id=str(uuid4())),
+        )
+
+        config = {
+            "configurable": {
+                "thread_id": chat_id,
+                "user_id": user_id,
+                "checkpoint_ns": CHECKPOINTER_NAMESPACE_MAIN,
+            }
+        }
+
+        async for event in graph.astream_events(initial_state, config=config, stream_mode="messages"):
+            kind = event.get("event")
+            if kind == "messages":
+                for message in event.get("data", []):
+                    await _send_stream_chunk(ws, message)
+            elif kind == "end":
+                await send_json_safe(ws, {"event": "done"})
+                return
+
+        await send_json_safe(ws, {"event": "done"})
+
+    except ImportError as e:
+        await send_json_safe(ws, {"event": "error", "message": f"LangGraph import error: {str(e)}"})
+        await send_json_safe(ws, {"event": "done"})
+    except Exception as e:  # pragma: no cover - defensive
+        await send_json_safe(
+            ws,
+            {"event": "error", "message": f"LangGraph error: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"},
+        )
+        await send_json_safe(ws, {"event": "done"})
+
+
+async def _send_stream_chunk(ws, message: BaseMessage) -> None:
+    if isinstance(message, AIMessage):
+        await send_json_safe(ws, {"event": "text", "text": message.content})
+    elif isinstance(message, ToolMessage):
+        await send_json_safe(
+            ws,
+            {
+                "event": "tool",
+                "tool_call_id": getattr(message, "tool_call_id", None),
+                "payload": message.content,
+            },
+        )
+
+
+__all__ = ["_truncate_history_for_prompt", "stream_langgraph", "FLUSH_MAX_LATENCY_SEC"]
+==================== backend/app/services/chat/ws_config.py ====================
+# backend/app/services/chat/ws_config.py
+from __future__ import annotations
+import os
+from dataclasses import dataclass
+
+# Bewährte Defaults (breit verfügbar)
+_DEFAULT_MODEL = "gpt-4o-mini"
+_SUPPORTED_MODELS = [
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4.1-mini",
+    "o4-mini",
+]
+
+# einfache Alias/Normalisierungstabelle
+_MODEL_ALIASES = {
+    "gpt-5": "gpt-5-mini",
+    "gpt5": "gpt-5-mini",
+    "gpt-5-large": "gpt-5-mini",
+    "gpt5-large": "gpt-5-mini",
+    "gpt-4.1": "gpt-4o",  # falls jemand 4.1 ohne Suffix setzt
+    "gpt-4.1-large": "gpt-4o",
+    "gpt-4o-mini-2024-xx": "gpt-4o-mini",
+}
+
+def _normalize_model(name: str | None) -> str:
+    if not name:
+        return _DEFAULT_MODEL
+    raw = name.strip()
+    if raw in _SUPPORTED_MODELS:
+        return raw
+    alias = _MODEL_ALIASES.get(raw.lower())
+    if alias:
+        return alias
+    # Fallback auf das Default, wenn unbekannt
+    return _DEFAULT_MODEL
+
+def _get_bool(name: str, default: bool) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+def _get_int(name: str, default: int) -> int:
+    try:
+        return int((os.getenv(name) or "").strip() or default)
+    except Exception:
+        return default
+
+@dataclass
+class WSConfig:
+    # Auth / Transport
+    auth_optional: bool = True
+    streaming_enabled: bool = True
+
+    # Modell
+    model: str = _DEFAULT_MODEL
+
+    # Routing / Graph
+    default_route_mode: str = "supervisor"   # "supervisor" | "llm"
+    graph_builder: str = "supervisor"        # "supervisor" | "mvp"
+
+    # UX-Limits
+    input_max_chars: int = 2000
+
+    # Sonstiges
+    allow_plain_llm: bool = True
+
+
+def get_ws_config() -> WSConfig:
+    # Priorität: CHAT_MODEL > GENERATION_MODEL
+    env_model = os.getenv("CHAT_MODEL") or os.getenv("GENERATION_MODEL")
+    norm_model = _normalize_model(env_model)
+
+    return WSConfig(
+        auth_optional=_get_bool("WS_AUTH_OPTIONAL", True),
+        streaming_enabled=_get_bool("WS_STREAMING_ENABLED", True),
+        model=norm_model,
+        default_route_mode=(os.getenv("DEFAULT_ROUTE_MODE") or "supervisor").strip().lower(),
+        graph_builder=(os.getenv("GRAPH_BUILDER") or "supervisor").strip().lower(),
+        input_max_chars=_get_int("CHAT_INPUT_MAX_CHARS", 2000),
+        allow_plain_llm=_get_bool("ALLOW_PLAIN_LLM", True),
+    )
+==================== backend/app/services/chat/tests/test_ws_prompt_composition.py ====================
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+from app.services.chat.ws_streaming import _truncate_history_for_prompt
+
+
+def _msg(text: str):
+    return SimpleNamespace(content=text)
+
+
+def test_truncate_history_keeps_recent():
+    system = "System prompt"
+    history = [_msg(f"m{i}") for i in range(10)]
+    # set max_chars small so only last messages kept
+    kept = _truncate_history_for_prompt(system, history, max_chars=20)
+    assert isinstance(kept, list)
+    assert len(kept) <= len(history)
+    # last message should be present
+    assert kept and kept[-1].content == "m9"
+
+==================== backend/app/services/chat/ws_commons.py ====================
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Dict, Optional
+
+try:
+    import redis  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dependency
+    redis = None  # type: ignore[assignment]
+from app.utils.json import to_jsonable_dict
+
+
+def ws_log(message: str, **extra: Any) -> None:
+    try:
+        if extra:
+            print(f"[ws] {message} " + json.dumps(extra, ensure_ascii=False, default=str))
+        else:
+            print(f"[ws] {message}")
+    except Exception:
+        try:
+            print(f"[ws] {message} {extra}")
+        except Exception:
+            pass
+
+
+async def send_json_safe(ws: WebSocket, payload: Dict[str, Any]) -> bool:
+    try:
+        # Debug logging for serialization issues
+        ws_log(f"Sending payload type: {type(payload)}, keys: {list(payload.keys()) if isinstance(payload, dict) else 'not dict'}")
+        for k, v in payload.items():
+            ws_log(f"Payload[{k}]: type={type(v)}, class={v.__class__.__name__}")
+        # Convert payload to jsonable
+        jsonable_payload = to_jsonable_dict(payload)
+        await ws.send_json(jsonable_payload)
+        return True
+    except WebSocketDisconnect:
+        return False
+    except Exception as e:
+        ws_log(f"send_json_safe error: {type(e).__name__}: {str(e)}")
+        return False
+
+
+def choose_subprotocol(ws: WebSocket) -> Optional[str]:
+    raw = ws.headers.get("sec-websocket-protocol")
+    if not raw:
+        return None
+    return raw.split(",")[0].strip() or None
+
+
+def get_rate_limit_client(app) -> Optional["redis.Redis"]:
+    if redis is None:
+        return None
+    client = getattr(app.state, "redis_rl", None)
+    if client is not None:
+        return client
+    url = os.getenv("REDIS_URL")
+    if not url:
+        return None
+    try:
+        client = redis.Redis.from_url(url, decode_responses=True)
+        app.state.redis_rl = client
+        return client
+    except Exception:
+        return None
+
+
+__all__ = ["ws_log", "send_json_safe", "choose_subprotocol", "get_rate_limit_client"]
+==================== backend/app/services/rag/__init__.py ====================
+# backend/app/services/rag/__init__.py
+from __future__ import annotations
+
+# Public surface für Altaufrufer: ro.prewarm(), ro.hybrid_retrieve, ro.FINAL_K
+from .rag_orchestrator import (
+    startup_warmup as prewarm,   # erwartet von Startup
+    hybrid_retrieve,
+    FINAL_K,
+)
+
+__all__ = ["prewarm", "hybrid_retrieve", "FINAL_K"]
+==================== backend/app/services/rag/rag_orchestrator.py ====================
+from __future__ import annotations
+
+import os
+import time
+import math
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
+log = logging.getLogger("app.services.rag.rag_orchestrator")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Env & Flags
+# ─────────────────────────────────────────────────────────────────────────────
+def _truthy(x: Optional[str]) -> bool:
+    if x is None:
+        return False
+    v = str(x).strip().lower()
+    return v in {"1", "true", "yes", "on"}
+
+# RAG core
+QDRANT_URL                 = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
+QDRANT_COLLECTION_PREFIX   = os.getenv("QDRANT_COLLECTION_PREFIX", "").strip()
+QDRANT_COLLECTION_DEFAULT  = os.getenv("QDRANT_COLLECTION", "sealai-docs").strip()
+
+# Embeddings / Rerank
+EMB_MODEL_NAME             = os.getenv("EMB_MODEL_NAME", os.getenv("EMBEDDINGS_MODEL", "intfloat/multilingual-e5-base"))
+RERANK_MODEL_NAME          = os.getenv("RERANK_MODEL_NAME", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+# Retrieval knobs
+HYBRID_K                   = int(os.getenv("RAG_HYBRID_K", os.getenv("RAG_TOP_K", "12")))
+FINAL_K                    = int(os.getenv("RAG_FINAL_K", "6"))
+RRF_K                      = int(os.getenv("RAG_RRF_K", "60"))
+SCORE_THRESHOLD            = float(os.getenv("RAG_SCORE_THRESHOLD", "0.0"))
+
+# Optional BM25 over Redis (gated)
+USE_BM25                   = _truthy(os.getenv("RAG_BM25_ENABLED", "0"))
+REDIS_URL                  = os.getenv("REDIS_URL")
+REDIS_BM25_INDEX           = os.getenv("REDIS_BM25_INDEX") or os.getenv("RAG_BM25_INDEX")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module globals (lazy)
+# ─────────────────────────────────────────────────────────────────────────────
+_embedder = None
+_reranker = None
+
+def _event(event: str, **data: Any) -> None:
+    payload = {**data, "event": event, "timestamp": _iso_utc(), "level": "info"}
+    log.info(f"{payload}")
+
+def _iso_utc() -> str:
+    import datetime as _dt
+    return _dt.datetime.utcnow().replace(tzinfo=_dt.timezone.utc).isoformat()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Init / warmup
+# ─────────────────────────────────────────────────────────────────────────────
+def init_bm25(redis_url: Optional[str] = None, index_name: Optional[str] = None) -> Optional[Any]:
+    """BM25 optional. Wenn deaktiviert, komplett still."""
+    if not USE_BM25:
+        return None
+    url = redis_url or REDIS_URL
+    idx = index_name or REDIS_BM25_INDEX
+    if not url or not idx:
+        _event("redis_bm25_unavailable", reason="missing_url_or_index")
+        return None
+    try:
+        import redis
+        r = redis.Redis.from_url(url)
+        _ = r.ping()
+        _event("redis_bm25_ready", index=idx)
+        return {"client": r, "index": idx}
+    except Exception as e:
+        _event("redis_bm25_unavailable", reason=f"{type(e).__name__}: {e}")
+        return None
+
+def prewarm_embeddings() -> None:
+    """Lädt Embeddings + Reranker und meldet Zeiten."""
+    global _embedder, _reranker
+    try:
+        t0 = time.perf_counter()
+        from sentence_transformers import SentenceTransformer
+        _embedder = SentenceTransformer(EMB_MODEL_NAME)
+        _event("embeddings_loaded", model=EMB_MODEL_NAME, ms=int((time.perf_counter() - t0) * 1000))
+    except Exception as e:
+        _event("embeddings_failed", model=EMB_MODEL_NAME, error=f"{type(e).__name__}: {e}")
+
+    try:
+        t0 = time.perf_counter()
+        from sentence_transformers import CrossEncoder
+        _reranker = CrossEncoder(RERANK_MODEL_NAME)
+        _event("reranker_loaded", model=RERANK_MODEL_NAME, ms=int((time.perf_counter() - t0) * 1000))
+    except Exception as e:
+        _event("reranker_failed", model=RERANK_MODEL_NAME, error=f"{type(e).__name__}: {e}")
+
+    log.info("RAG prewarm completed.")
+
+def startup_warmup() -> None:
+    _ = init_bm25()
+    prewarm_embeddings()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Utilities
+# ─────────────────────────────────────────────────────────────────────────────
+def _collection_for_tenant(tenant: Optional[str]) -> str:
+    t = (tenant or "").strip()
+    if QDRANT_COLLECTION_PREFIX and t:
+        return f"{QDRANT_COLLECTION_PREFIX}:{t}"
+    return QDRANT_COLLECTION_DEFAULT
+
+def _embed(texts: List[str]) -> List[List[float]]:
+    if not texts:
+        return []
+    global _embedder
+    if _embedder is None:
+        from sentence_transformers import SentenceTransformer
+        _embedder = SentenceTransformer(EMB_MODEL_NAME)
+    return _embedder.encode(texts, normalize_embeddings=True).tolist()
+
+def _rrf_merge(candidates: List[Tuple[Dict[str, Any], float]], k: int = RRF_K) -> List[Tuple[Dict[str, Any], float]]:
+    """Reciprocal Rank Fusion on already ranked hits (doc, score)."""
+    # candidates are already from a single source; RRF is trivial passthrough here.
+    # Hook left in for future BM25+Vector fusion.
+    return candidates
+
+def _qdrant_search(query_vec: List[float], collection: str, top_k: int = HYBRID_K,
+                   metadata_filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    import httpx
+    url = f"{QDRANT_URL}/collections/{collection}/points/search"
+    body: Dict[str, Any] = {
+        "vector": query_vec,
+        "limit": top_k,
+        "with_payload": True,
+        "with_vector": False,
+    }
+    if metadata_filters:
+        body["filter"] = {"must": [{"key": k, "match": {"value": v}} for k, v in metadata_filters.items()]}
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            r = client.post(url, json=body)
+            r.raise_for_status()
+            data = r.json()
+            res = data.get("result") or []
+            out: List[Dict[str, Any]] = []
+            for item in res:
+                payload = item.get("payload") or {}
+                txt = payload.get("text") or payload.get("chunk") or payload.get("content") or ""
+                src = payload.get("source") or (payload.get("metadata") or {}).get("source") or payload.get("file") or ""
+                out.append({
+                    "text": txt,
+                    "source": src,
+                    "vector_score": float(item.get("score") or 0.0),
+                    "metadata": payload,
+                })
+            return out
+    except Exception as e:
+        _event("qdrant_search_failed", reason=f"{type(e).__name__}: {e}", collection=collection)
+        return []
+
+def _apply_threshold(hits: List[Dict[str, Any]], thr: float) -> List[Dict[str, Any]]:
+    if thr <= 0:
+        return hits
+    out = []
+    for h in hits:
+        s = float(h.get("fused_score") or h.get("vector_score") or 0.0)
+        if s >= thr:
+            out.append(h)
+    return out
+
+def _rerank_if_enabled(query: str, hits: List[Dict[str, Any]], use_rerank: bool) -> List[Dict[str, Any]]:
+    if not use_rerank or not hits:
+        return hits
+    global _reranker
+    if _reranker is None:
+        try:
+            from sentence_transformers import CrossEncoder
+            _reranker = CrossEncoder(RERANK_MODEL_NAME)
+        except Exception:
+            return hits
+    pairs = [(query, h.get("text") or "") for h in hits]
+    try:
+        scores = _reranker.predict(pairs)
+    except Exception:
+        return hits
+    # attach and sort
+    for h, s in zip(hits, scores):
+        h["rerank_score"] = float(s)
+        # normalize a bit into 0..1 via sigmoid
+        try:
+            h["fused_score"] = 1.0 / (1.0 + math.exp(-float(s)))
+        except Exception:
+            h["fused_score"] = float(h.get("vector_score") or 0.0)
+    return sorted(hits, key=lambda d: float(d.get("fused_score") or 0.0), reverse=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API
+# ─────────────────────────────────────────────────────────────────────────────
+def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
+                    metadata_filters: Optional[Dict[str, Any]] = None,
+                    use_rerank: bool = True) -> List[Dict[str, Any]]:
+    """
+    Vector-first retrieval from Qdrant (+ optional BM25 fusion in future).
+    Returns list of {text, source, vector_score, fused_score?, metadata}.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+
+    # Embed query
+    vec = _embed([q])[0]
+
+    # Pick collection by tenant
+    collection = _collection_for_tenant(tenant)
+
+    # Vector search
+    vec_hits = _qdrant_search(vec, collection, top_k=max(HYBRID_K, k), metadata_filters=metadata_filters)
+
+    # Placeholder: BM25 could be merged here when enabled
+    fused = _rrf_merge([(h, float(h.get("vector_score") or 0.0)) for h in vec_hits], k=RRF_K)
+    merged = [h for (h, _s) in fused]
+
+    # Optional rerank
+    merged = _rerank_if_enabled(q, merged, use_rerank)
+
+    # Threshold + top-k
+    merged = _apply_threshold(merged, SCORE_THRESHOLD)[:k]
+
+    # Externer Fallback (Microservice), wenn keine Treffer
+    if not merged:
+        ext = _fallback_external_search(q, tenant=tenant, limit=k)
+        merged = ext[:k]
+
+    try:
+        _event("hybrid_retrieve", n=len(merged), tenant=tenant or "-", collection=collection, k=k)
+    except Exception:
+        pass
+
+    return merged
+
+__all__ = [
+    "startup_warmup",
+    "init_bm25",
+    "prewarm_embeddings",
+    "hybrid_retrieve",
+    "FINAL_K",
+    "prewarm",
+]
+# ---- Backward-compat shim for startup ----
+def prewarm() -> None:
+    """Backward-compat: Startup expects ro.prewarm()."""
+    try:
+        startup_warmup()
+    except Exception:
+        # Beim Boot nie eskalieren
+        pass
+def _fallback_external_search(query: str, *, tenant: Optional[str] = None, limit: int = FINAL_K) -> List[Dict[str, Any]]:
+    """Optionaler externer Fallback über Microservices (z.B. Normen-/Material-Agent).
+
+    Env:
+      AGENT_NORMEN_URL    → /v1/search endpoint returning [{text, source, score?, metadata?}]
+      AGENT_MATERIAL_URL  → /v1/search endpoint returning [{text, source, score?, metadata?}]
+    """
+    import itertools
+    bases = []
+    n_url = (os.getenv("AGENT_NORMEN_URL") or "").strip().rstrip("/")
+    m_url = (os.getenv("AGENT_MATERIAL_URL") or "").strip().rstrip("/")
+    if n_url:
+        bases.append((n_url, "normen"))
+    if m_url:
+        bases.append((m_url, "material"))
+    if not bases:
+        return []
+
+    results: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    try:
+        import httpx
+        payload: Dict[str, Any] = {"query": query, "k": limit}
+        if tenant:
+            payload["tenant"] = tenant
+        with httpx.Client(timeout=5.0) as client:
+            for base, tag in bases:
+                try:
+                    r = client.post(f"{base}/v1/search", json=payload)
+                    r.raise_for_status()
+                    data = r.json()
+                    items = data if isinstance(data, list) else (data.get("items") or [])
+                    for it in items[:limit]:
+                        t = (it.get("text") or it.get("content") or "").strip()
+                        if not t:
+                            continue
+                        results.append({
+                            "text": t,
+                            "source": it.get("source") or f"{tag}_agent",
+                            "vector_score": float(it.get("score") or 0.0),
+                            "metadata": it.get("metadata") or {},
+                        })
+                    _event("fallback_search", n=len(items), tenant=tenant or "-", agent=tag)
+                except Exception as e:
+                    errors.append(f"{tag}:{type(e).__name__}:{e}")
+    except Exception as e:
+        errors.append(f"client:{type(e).__name__}:{e}")
+
+    # Dedup by text prefix to reduce repetitions
+    seen = set()
+    dedup: List[Dict[str, Any]] = []
+    for it in results:
+        key = (it.get("text") or "")[:80]
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(it)
+
+    return dedup[:limit]
+==================== backend/app/services/rag/rag_ingest.py ====================
+import os, sys
+from langchain_qdrant import QdrantVectorStore
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.document_loaders import (
+    PDFPlumberLoader, Docx2txtLoader, TextLoader, UnstructuredFileLoader
+)
+
+QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "sealai-docs-bge-m3")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+SUPPORTED_EXTENSIONS = [".pdf", ".txt", ".docx", ".md"]
+
+def load_document(file_path: str):
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".pdf":
+        return PDFPlumberLoader(file_path).load()
+    elif ext == ".docx":
+        return Docx2txtLoader(file_path).load()
+    elif ext in (".txt", ".md"):
+        return TextLoader(file_path).load()
+    else:
+        return UnstructuredFileLoader(file_path).load()
+
+def ingest_file(file_path: str, chunk_size: int = 700, chunk_overlap: int = 80):
+    print(f"[INGEST] Lade: {file_path}")
+    docs = load_document(file_path)
+    print(f"[INGEST] Split: size={chunk_size}, overlap={chunk_overlap}")
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+        separators=["\\n\\n", "\\n", ".", " ", ""],
+    )
+    split_docs = splitter.split_documents(docs)
+
+    print(f"[INGEST] HF-Embeddings: {EMBEDDING_MODEL} (normalize=True)")
+    embeddings = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        encode_kwargs={"normalize_embeddings": True},
+    )
+
+    print(f"[INGEST] Schreibe nach Qdrant: {QDRANT_COLLECTION}")
+    _ = QdrantVectorStore.from_documents(
+        split_docs, embeddings,
+        url=QDRANT_URL, api_key=QDRANT_API_KEY,
+        collection_name=QDRANT_COLLECTION,
+    )
+    print(f"[INGEST] OK: {file_path}")
+
+def ingest_directory(directory: str):
+    files = [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS
+    ]
+    if not files:
+        print(f"[INGEST] Keine unterstützten Dateien in {directory}")
+    for fp in files:
+        ingest_file(fp)
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Nutzung: python rag_ingest.py <file_or_directory>")
+        sys.exit(1)
+    target = sys.argv[1]
+    if os.path.isdir(target):
+        ingest_directory(target)
+    else:
+        ingest_file(target)
+==================== backend/app/services/openai_payload.py ====================
+# backend/app/services/openai_payload.py
+from __future__ import annotations
+from typing import Dict, List, Tuple, Any
+
+def use_responses_api(model: str) -> bool:
+    m = (model or "").lower().strip()
+    # GPT-5 / o4 / o3 nutzen die Responses API
+    return m.startswith("gpt-5") or m.startswith("o4") or m.startswith("o3")
+
+def _to_input_parts(content: Any) -> List[Dict[str, Any]]:
+    """
+    Responses-API erwartet strukturierte Parts.
+    Strings -> [{"type":"input_text","text": "..."}]
+    Bereits strukturierte Parts werden durchgereicht.
+    """
+    parts: List[Dict[str, Any]] = []
+    if content is None:
+        return parts
+    if isinstance(content, str):
+        return [{"type": "input_text", "text": content}]
+    if isinstance(content, list):
+        for c in content:
+            if isinstance(c, str):
+                parts.append({"type": "input_text", "text": c})
+            elif isinstance(c, dict):
+                if "type" in c:
+                    parts.append(c)
+                elif "text" in c:
+                    parts.append({"type": "input_text", "text": str(c["text"])})
+                else:
+                    parts.append({"type": "input_text", "text": str(c)})
+        return parts or [{"type": "input_text", "text": str(content)}]
+    if isinstance(content, dict):
+        if "type" in content:
+            return [content]
+        if "text" in content:
+            return [{"type": "input_text", "text": str(content["text"])}]
+        return [{"type": "input_text", "text": str(content)}]
+    return [{"type": "input_text", "text": str(content)}]
+
+def messages_to_responses_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Chat-Message-Format -> Responses-API 'input'
+    [{"role":"system","content":[{"type":"input_text","text":"..."}]}, ...]
+    """
+    out: List[Dict[str, Any]] = []
+    for m in messages or []:
+        role = (m.get("role") or m.get("type") or "user").strip()
+        content = m.get("content")
+        parts = _to_input_parts(content)
+        if parts:
+            out.append({"role": role, "content": parts})
+    return out
+
+def _responses_sampling_supported(model: str) -> bool:
+    """
+    Einige Responses-Modelle (z. B. gpt-5-mini) akzeptieren KEIN 'temperature'/'top_p'.
+    Um 400er zu vermeiden, standardmäßig False.
+    Stelle hier ggf. eine Whitelist her, falls du Modelle hast, die Sampling erlauben.
+    """
+    return False  # konservativ: keine Sampling-Parameter senden
+
+def build_openai_payload(
+    model: str,
+    messages: List[Dict[str, Any]],
+    max_new_tokens: int,
+    temperature: float = 0.2,
+    top_p: float = 1.0,
+    stream: bool = True,
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Liefert (endpoint, payload_json) passend zum Modell.
+      - Responses API (gpt-5*/o4*/o3*):   /v1/responses + max_output_tokens
+        -> ohne 'temperature'/'top_p' (verhindert 400 bei gpt-5-mini)
+      - Chat Completions (rest):          /v1/chat/completions + max_tokens
+    """
+    if use_responses_api(model):
+        endpoint = "/v1/responses"
+        payload: Dict[str, Any] = {
+            "model": model,
+            "input": messages_to_responses_input(messages),
+            "stream": stream,
+            "max_output_tokens": max_new_tokens,
+        }
+        # Nur senden, wenn explizit erlaubt (derzeit bewusst aus)
+        if _responses_sampling_supported(model):
+            payload["temperature"] = temperature
+            payload["top_p"] = top_p
+    else:
+        endpoint = "/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": stream,
+            "max_tokens": max_new_tokens,
+        }
+    return endpoint, payload
+==================== backend/app/core/config.py ====================
+# backend/app/core/config.py
+from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from functools import lru_cache
+import structlog
+
+# Strukturiertes Logging (JSON)
+structlog.configure(
+    processors=[
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.stdlib.add_log_level,
+        structlog.processors.JSONRenderer(),
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+class Settings(BaseSettings):
+    # Datenbank / SQLAlchemy
+    postgres_user: str
+    postgres_password: str
+    postgres_host: str
+    postgres_port: int
+    postgres_db: str
+    database_url: str
+    debug_sql: bool = False
+
+    # Neu: Postgres-Sync-URL (basierend auf database_url oder explizit)
+    POSTGRES_SYNC_URL: str
+
+    # OpenAI / LLM / LangChain
+    openai_api_key: str
+    openai_model: str = "gpt-5-mini"
+
+    # Embeddings
+    embedding_model: str = "BAAI/bge-base-en-v1.5"
+
+    # Qdrant (RAG & LTM)
+    qdrant_url: str
+    qdrant_collection: str
+    qdrant_collection_ltm: Optional[str] = None
+    qdrant_api_key: Optional[str] = None
+    rag_k: int = 4
+    qdrant_filter_metadata: Optional[dict] = None
+    debug_qdrant: bool = False
+
+    # Redis Memory & Sessions
+    redis_host: str = "redis"
+    redis_port: int = 6379
+    redis_url: str
+    redis_db: int = 0
+    redis_ttl: int = 60 * 60 * 24  # 24h
+
+    # Explizite REDIS_URL (Fallback für andere Komponenten)
+    REDIS_URL: str = "redis://redis:6379/0"
+
+    # Auth / Keycloak / NextAuth
+    nextauth_url: str
+    nextauth_secret: str
+    keycloak_issuer: str
+    keycloak_jwks_url: str
+    keycloak_client_id: str
+    keycloak_client_secret: str
+    keycloak_expected_azp: str
+
+    # LangChain Tracing etc.
+    langchain_tracing_v2: bool = True
+    langchain_endpoint: Optional[str] = "https://api.smith.langchain.com"
+    langchain_api_key: Optional[str] = None
+    langchain_project: Optional[str] = "sealai"
+
+    # Feature-Flags
+    ltm_enable: bool = True
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+    )
+
+    # Wichtig: nicht mehr aus ENV lesen.
+    # Der Backend-Issuer entspricht immer dem Keycloak-Issuer.
+    @property
+    def backend_keycloak_issuer(self) -> str:
+        return self.keycloak_issuer
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
+==================== backend/app/__init__.py ====================
+__all__ = []
+==================== backend/app/common/obs.py ====================
+"""Routing observability utilities."""
+from __future__ import annotations
+
+import json
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+log = logging.getLogger("app.routing.telemetry")
+
+
+@dataclass
+class RoutingMetrics:
+    """Container capturing routing KPIs for downstream logging/metrics."""
+
+    route: Optional[str] = None
+    chosen_agents: List[str] = field(default_factory=list)
+    missing_parameters: List[str] = field(default_factory=list)
+    confidence: Optional[float] = None
+    coverage: Optional[float] = None
+    hybrid_score: Optional[float] = None
+    risk: Optional[float] = None
+    rag_sources: List[str] = field(default_factory=list)
+    safety_flags: List[str] = field(default_factory=list)
+    latency_ms_p50: Optional[float] = None
+    latency_ms_p95: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "route": self.route,
+            "chosen_agents": self.chosen_agents,
+            "missing_parameters": self.missing_parameters,
+            "confidence": self.confidence,
+            "coverage": self.coverage,
+            "hybrid_score": self.hybrid_score,
+            "risk": self.risk,
+            "rag_sources": self.rag_sources,
+            "safety_flags": self.safety_flags,
+            "latency_ms_p50": self.latency_ms_p50,
+            "latency_ms_p95": self.latency_ms_p95,
+        }
+
+
+class RoutingTimer:
+    """Context manager to measure routing latency percentiles."""
+
+    def __init__(self, *, sample_size: int = 32) -> None:
+        self.sample_size = max(1, sample_size)
+        self._samples: List[float] = []
+        self._start: Optional[float] = None
+
+    def __enter__(self) -> "RoutingTimer":
+        self._start = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.stop()
+
+    def stop(self) -> None:
+        if self._start is None:
+            return
+        elapsed = (time.perf_counter() - self._start) * 1000.0
+        self._samples.append(elapsed)
+        if len(self._samples) > self.sample_size:
+            self._samples.pop(0)
+        self._start = None
+
+    @property
+    def p50(self) -> Optional[float]:
+        return _percentile(self._samples, 50)
+
+    @property
+    def p95(self) -> Optional[float]:
+        return _percentile(self._samples, 95)
+
+
+def _percentile(samples: List[float], percentile: float) -> Optional[float]:
+    if not samples:
+        return None
+    values = sorted(samples)
+    rank = (percentile / 100.0) * (len(values) - 1)
+    lower = int(rank)
+    upper = min(lower + 1, len(values) - 1)
+    if lower == upper:
+        return round(values[lower], 3)
+    weight = rank - lower
+    return round(values[lower] * (1 - weight) + values[upper] * weight, 3)
+
+
+def emit_routing_event(metrics: RoutingMetrics, *, extra: Optional[Dict[str, Any]] = None) -> None:
+    """Serialize and emit routing telemetry as structured JSON log."""
+    payload = metrics.to_dict()
+    if extra:
+        payload.update(extra)
+    try:
+        log.info("routing_event", extra={"json": json.dumps(payload, ensure_ascii=False)})
+    except Exception:
+        log.info("routing_event %s", payload)
+
+
+__all__ = ["RoutingMetrics", "RoutingTimer", "emit_routing_event"]
+==================== backend/app/ws_stream_test.py ====================
+import os
+import json
+import asyncio
+import inspect
+import websockets
+
+# --- Konfiguration über ENV ---
+WS_BASE   = os.getenv("WS_BASE", "ws://127.0.0.1:8000")
+WS_PATH   = os.getenv("WS_PATH", "/api/v1/ai/ws")
+WS_ORIGIN = os.getenv("WS_ORIGIN", "http://localhost:3000")
+WS_URL    = os.getenv("WS_URL")  # komplette URL (optional)
+TOKEN     = os.getenv("TOKEN", "")
+FORCE_STREAM = os.getenv("WS_FORCE_STREAM", "1") not in ("0", "false", "False")
+RAW_DEBUG    = os.getenv("WS_RAW_DEBUG", "0") in ("1", "true", "True")
+
+PROMPTS = [
+    ("ws1", "Guten Morgen, kurze Frage zu RWDR."),
+    ("ws1", "Ich brauche eine optimale Dichtungsempfehlung für RWDR 25x47x7, Öl, 2 bar, 1500 rpm."),
+]
+
+# --- Helpers ---
+def _connect_kwargs(headers):
+    """Kompatibel zu websockets-Versionen mit additional_headers/extra_headers."""
+    params = {"subprotocols": ["json"], "ping_interval": 20, "ping_timeout": 20, "max_size": None}
+    sig = inspect.signature(websockets.connect)
+    if "additional_headers" in sig.parameters:
+        params["additional_headers"] = headers
+    elif "extra_headers" in sig.parameters:
+        params["extra_headers"] = headers
+    return params
+
+def _empty(s: str) -> bool:
+    if not s: return True
+    t = s.strip()
+    return t in ("", "{}", "null", "[]")
+
+async def _drain(ws):
+    """Alle Frames lesen; bei event=done beenden."""
+    got_delta = False
+    while True:
+        raw = await ws.recv()
+        if RAW_DEBUG:
+            print(f"[raw] {raw!r}", flush=True)
+
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8", errors="ignore")
+        if _empty(raw):
+            continue
+
+        try:
+            msg = json.loads(raw)
+        except Exception:
+            # Falls der Server reine Textframes schickt (nicht JSON)
+            print(raw, end="", flush=True)
+            continue
+
+        if not isinstance(msg, dict):
+            continue
+
+        if msg.get("phase") == "starting":
+            print(f"\n[{msg.get('thread_id','?')}] starting\n", flush=True)
+
+        # Token-Streaming (delta)
+        if "delta" in msg and msg["delta"]:
+            got_delta = True
+            print(str(msg["delta"]), end="", flush=True)
+
+        # Fallback auf Ganztext, wenn kein delta-Feld benutzt wird
+        if not got_delta and msg.get("content"):
+            print(str(msg["content"]), end="", flush=True)
+
+        if msg.get("error"):
+            print(f"\n[error] {msg['error']}\n", flush=True)
+
+        if msg.get("event") == "done":
+            print("\n— done —\n", flush=True)
+            break
+
+async def _send(ws, chat_id: str, text: str):
+    payload = {
+        "chat_id": chat_id,
+        "input": text,
+    }
+    # Wichtig: Server explizit um Token-Streaming bitten
+    if FORCE_STREAM:
+        payload["stream"] = True
+        payload["emit_delta"] = True  # einige Backends nutzen diesen Schlüssel
+
+    await ws.send(json.dumps(payload))
+    await _drain(ws)
+
+async def main():
+    uri = WS_URL or (f"{WS_BASE}{WS_PATH}?token={TOKEN}" if TOKEN else f"{WS_BASE}{WS_PATH}")
+    headers = [("Origin", WS_ORIGIN)]
+    if TOKEN:
+        headers.append(("Authorization", f"Bearer {TOKEN}"))
+
+    async with websockets.connect(uri, **_connect_kwargs(headers)) as ws:
+        for chat_id, text in PROMPTS:
+            await _send(ws, chat_id, text)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+==================== backend/app/cli/__init__.py ====================
+==================== backend/app/models/long_term_memory.py ====================
+# backend/app/models/long_term_memory.py
+
+from sqlalchemy import Column, Integer, String, Text, DateTime, func
+from app.database import Base
+
+class LongTermMemory(Base):
+    __tablename__ = "long_term_memory"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True, nullable=False)
+    key = Column(String, index=True, nullable=False)
+    value = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+==================== backend/app/models/form_result.py ====================
+# 📁 backend/app/models/form_result.py
+from __future__ import annotations
+from sqlalchemy import Column, String, Float, DateTime
+from sqlalchemy.sql import func
+from app.database import Base
+
+class FormResult(Base):
+    __tablename__ = "form_results"
+
+    id = Column(String, primary_key=True, index=True)
+    username = Column(String, index=True)
+    radial_clearance = Column(Float, nullable=False)
+    tolerance_fit = Column(String, nullable=False)
+    result_text = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+==================== backend/app/models/beratungsergebnis.py ====================
+from sqlalchemy import Column, Integer, String, DateTime, JSON
+from datetime import datetime
+
+# ✅ Gemeinsame Base aus app.database verwenden (keine eigene deklarieren)
+from app.database import Base
+
+class Beratungsergebnis(Base):
+    __tablename__ = "beratungsergebnisse"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    session_id = Column(String, index=True)
+    frage = Column(String)
+    parameter = Column(JSON)
+    antworten = Column(JSON)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+==================== backend/app/models/chat_message.py ====================
+# 📁 backend/app/models/chat_message.py
+
+from sqlalchemy import Column, Integer, String, Text, DateTime, func
+from app.database import Base
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    session_id = Column(String, index=True)
+    role = Column(String)  # "user" oder "assistant"
+    content = Column(Text)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+==================== backend/app/models/postgres_logger.py ====================
+# 📁 backend/app/services/memory/postgres_logger.py
+
+from app.models.chat_message import ChatMessage
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from typing import Literal
+
+async def log_message_to_db(
+    db: AsyncSession,
+    username: str,
+    session_id: str,
+    role: Literal["user", "assistant"],
+    content: str,
+):
+    message = ChatMessage(
+        username=username,
+        session_id=session_id,
+        role=role,
+        content=content
+    )
+    db.add(message)
+    await db.commit()
+
+async def get_messages_for_session(
+    db: AsyncSession,
+    username: str,
+    session_id: str
+):
+    result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.username == username)
+        .where(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.timestamp)
+    )
+    return result.scalars().all()
+==================== backend/app/api/v1/__init__.py ====================
+==================== backend/app/api/v1/dependencies/__init__.py ====================
+==================== backend/app/api/v1/dependencies/auth.py ====================
+# NOTE: This file has been adapted to improve WebSocket token handling.
+# The original code expected JWTs only in the Authorization header or the
+# `?token=` query parameter. Browsers cannot set arbitrary headers when
+# establishing a WebSocket connection, so clients often pass the JWT in the
+# `Sec-WebSocket-Protocol` field. The new implementation extracts tokens
+# from Authorization headers, query parameters and the WebSocket subprotocol.
+
+import os
+import time
+import logging
+from typing import Optional, Tuple, Iterable
+import urllib.parse as urlparse
+
+import httpx
+from jose import jwt, jwk
+from jose.utils import base64url_decode
+from fastapi import WebSocket
+
+
+logger = logging.getLogger("auth")
+
+# ---- Config / ENV ------------------------------------------------------------
+
+
+def _csv(env: str) -> Iterable[str]:
+    """
+    Parse a comma‑separated environment variable into a list of strings.
+
+    Empty or unset variables return an empty list. Items are stripped of
+    whitespace.
+    """
+    raw = (os.getenv(env) or "").strip()
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def _norm_url(u: str) -> str:
+    """
+    Normalize URLs for strict comparison by lowercasing the scheme and host,
+    and stripping any trailing slash. If parsing fails, returns the original
+    value in lowercase without a trailing slash.
+    """
+    if not u:
+        return ""
+    try:
+        p = urlparse.urlparse(u.strip())
+        scheme = (p.scheme or "https").lower()
+        host = (p.hostname or "").lower()
+        port = f":{p.port}" if p.port else ""
+        path = (p.path or "").rstrip("/")
+        return f"{scheme}://{host}{port}{path}"
+    except Exception:
+        return u.strip().rstrip("/").lower()
+
+
+REALM_URL = os.getenv("KEYCLOAK_REALM_URL", "https://auth.sealai.net/realms/sealAI")
+ISSUER_ENV = os.getenv("KEYCLOAK_ISSUER", REALM_URL)
+ALLOWED_ISSUERS = {ISSUER_ENV, REALM_URL, *_csv("KEYCLOAK_ALLOWED_ISSUERS")}
+ALLOWED_ISSUERS_NORM = {_norm_url(x) for x in ALLOWED_ISSUERS if x}
+
+JWKS_URL = (
+    os.getenv("KEYCLOAK_JWKS_URL")
+    or f"{_norm_url(ISSUER_ENV)}/protocol/openid-connect/certs"
+)
+
+ALLOWED_AUDIENCES = set(_csv("ALLOWED_AUDIENCES") or ["account", "nextauth", "sealai-backend-api"])
+
+JWKS_TTL_SEC = int(os.getenv("JWKS_TTL_SEC", "600"))
+CLOCK_SKEW = int(os.getenv("WS_CLOCK_SKEW_LEEWAY", "120"))
+
+# ---- JWKS cache with TTL -----------------------------------------------------
+
+_JWKS_CACHE = {"data": None, "ts": 0.0}
+
+
+def _get_jwks_cached() -> dict:
+    """
+    Fetch the JSON Web Key Set (JWKS) used to verify JWT signatures. A simple
+    in‑memory cache with a TTL avoids repeatedly calling the JWKS endpoint.
+    """
+    now = time.time()
+    if _JWKS_CACHE["data"] and (now - _JWKS_CACHE["ts"] < JWKS_TTL_SEC):
+        return _JWKS_CACHE["data"]  # type: ignore[return-value]
+    logger.info("Fetching JWKS from %s", JWKS_URL)
+    with httpx.Client(timeout=10.0) as client:
+        r = client.get(JWKS_URL)
+        r.raise_for_status()
+        _JWKS_CACHE["data"] = r.json()
+        _JWKS_CACHE["ts"] = now
+        return _JWKS_CACHE["data"]  # type: ignore[return-value]
+
+
+def _jwks_clear() -> None:
+    """
+    Clear the JWKS cache. Useful for forcing a refresh when the expected
+    signing key is not present.
+    """
+    _JWKS_CACHE["data"] = None
+    _JWKS_CACHE["ts"] = 0.0
+
+
+def _find_key(kid: str) -> Optional[dict]:
+    """
+    Locate the public key with the given `kid` in the JWKS. If not found on
+    the first attempt, forces a cache refresh and tries again.
+    """
+    jwks = _get_jwks_cached()
+    for key in jwks.get("keys", []):
+        if key.get("kid") == kid:
+            return key
+    # miss? refresh once
+    _jwks_clear()
+    jwks = _get_jwks_cached()
+    for key in jwks.get("keys", []):
+        if key.get("kid") == kid:
+            return key
+    return None
+
+
+# ---- Token verification ------------------------------------------------------
+
+
+def _verify_rs256(token: str) -> dict:
+    """
+    Verify an RS256 JWT. Validates the signature, expiry and not‑before
+    timestamps, issuer and audience/authorized party claims. Raises a
+    `ValueError` with descriptive text on any failure.
+    """
+    try:
+        headers = jwt.get_unverified_header(token)
+        payload = jwt.get_unverified_claims(token)
+    except Exception as e:
+        raise ValueError(f"invalid token format: {e}")
+
+    kid = headers.get("kid")
+    if not kid:
+        raise ValueError("token header missing 'kid'")
+
+    key_dict = _find_key(kid)
+    if not key_dict:
+        raise ValueError("jwks key not found for kid")
+
+    # signature
+    try:
+        signing_input, signature = token.rsplit(".", 1)
+    except ValueError:
+        raise ValueError("token missing signature part")
+    signature_bytes = base64url_decode(signature.encode())
+    public_key = jwk.construct(key_dict)
+    if not public_key.verify(signing_input.encode(), signature_bytes):
+        raise ValueError("signature verification failed")
+
+    # temporal claims (with skew)
+    now = int(time.time())
+    exp = int(payload.get("exp", 0) or 0)
+    nbf = int(payload.get("nbf", 0) or 0)
+    if nbf and now + CLOCK_SKEW < nbf:
+        raise ValueError("token not yet valid (nbf)")
+    if exp and now - CLOCK_SKEW >= exp:
+        raise ValueError("token expired")
+
+    # issuer (case/host normalized)
+    iss = payload.get("iss")
+    if _norm_url(iss or "") not in ALLOWED_ISSUERS_NORM:
+        raise ValueError(f"invalid issuer: {iss}")
+
+    # audience / azp fallback
+    aud = payload.get("aud")
+    aud_ok = False
+    if isinstance(aud, str):
+        aud_ok = aud in ALLOWED_AUDIENCES
+    elif isinstance(aud, (list, tuple, set)):
+        aud_ok = any(a in ALLOWED_AUDIENCES for a in aud)
+    if not aud_ok:
+        azp = payload.get("azp") or payload.get("client_id")
+        if not azp or azp not in ALLOWED_AUDIENCES:
+            raise ValueError(f"aud not allowed: {aud}")
+
+    return payload
+
+
+# ---- WS helpers --------------------------------------------------------------
+
+
+def extract_bearer_or_query_token(websocket: WebSocket) -> Optional[str]:
+    """
+    Extract a JWT from a WebSocket request.
+
+    The token can be provided in three different ways:
+
+    1. As an HTTP `Authorization` header with the scheme `Bearer`.
+    2. As a `token` query parameter on the WebSocket URL.
+    3. As part of the `Sec-WebSocket-Protocol` header. When a browser
+       establishes a WebSocket it may send one or more subprotocols.
+       If the first subprotocol is `bearer`, `jwt` or `token`, the next
+       value is assumed to be the JWT. Alternatively, if there is only
+       a single subprotocol and it contains dots (e.g. typical for JWTs), it
+       is treated as the token directly.
+
+    Returns the extracted token, or `None` if no token was found.
+    """
+    # 1) Authorization header
+    auth = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip()
+
+    # 2) Query parameter
+    try:
+        token = websocket.query_params.get("token")  # type: ignore[assignment]
+    except Exception:
+        token = None
+    if token:
+        token = str(token).strip()
+        if token:
+            return token
+
+    # 3) Sec-WebSocket-Protocol header
+    sp = websocket.headers.get("sec-websocket-protocol") or websocket.headers.get("Sec-WebSocket-Protocol")
+    if sp:
+        # Split on commas into individual protocols
+        protocols = [p.strip() for p in sp.split(",") if p.strip()]
+        if protocols:
+            first = protocols[0].lower()
+            # explicit scheme indicates next entry holds the token
+            if first in {"bearer", "jwt", "token"}:
+                if len(protocols) > 1:
+                    return protocols[1]
+            # single subprotocol that looks like a JWT (contains dot separators)
+            if len(protocols) == 1 and "." in protocols[0]:
+                return protocols[0]
+    return None
+
+
+def _truthy(v: Optional[str]) -> bool:
+    """
+    Convert various string representations of truth to a boolean. Recognises
+    `1`, `true`, `yes` and `on` (case‑insensitive). Any other value
+    (including `None`) yields `False`.
+    """
+    if v is None:
+        return False
+    v = str(v).strip().strip("'\"").lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _allowed_origins_set() -> set[str]:
+    """
+    Parse the `ALLOWED_ORIGIN` environment variable into a set of origin strings.
+    Multiple entries are comma‑separated. Empty values are ignored.
+    """
+    raw = (os.getenv("ALLOWED_ORIGIN", "") or "").strip().strip("'\"")
+    return {o.strip() for o in raw.split(",") if o.strip()}
+
+
+def check_origin_allowed(origin: Optional[str]) -> Tuple[bool, str]:
+    """
+    Determine if a request's origin is allowed to connect to the WebSocket.
+
+    Returns a tuple of `(allowed, reason)` where `allowed` is a boolean and
+    `reason` is a human‑readable explanation. The logic is driven by
+    environment variables:
+
+    * `ALLOW_WS_ORIGIN_ANY` set to a truthy value bypasses all checks.
+    * `WS_REQUIRE_ORIGIN` forces an `Origin` header to be present.
+    * `ALLOWED_ORIGIN` contains a comma‑separated list of permitted origins.
+      A wildcard `*` or `any` allows any origin.
+    """
+    if _truthy(os.getenv("ALLOW_WS_ORIGIN_ANY", "0")):
+        return True, "ALLOW_WS_ORIGIN_ANY=1"
+    if not origin and not _truthy(os.getenv("WS_REQUIRE_ORIGIN", "0")):
+        return True, "no Origin header (allowed)"
+    if not origin:
+        return False, "missing Origin header"
+    allowed = _allowed_origins_set()
+    if not allowed:
+        return False, "ALLOWED_ORIGIN not configured"
+    if "*" in allowed or "any" in allowed:
+        return True, "ALLOWED_ORIGIN=*"
+    if origin in allowed:
+        return True, "origin ok"
+    return False, f"origin '{origin}' not in {sorted(allowed)}"
+
+
+def token_allows_origin(payload: dict, origin: Optional[str]) -> Tuple[bool, str]:
+    """
+    Validate that the provided JWT payload authorises the given origin. The
+    optional claim `allowed-origins` may be present on the token. If
+    `WS_ENFORCE_TOKEN_ORIGIN` is not set, the check is skipped. Returns a
+    tuple of `(allowed, reason)`.
+    """
+    if not _truthy(os.getenv("WS_ENFORCE_TOKEN_ORIGIN", "0")):
+        return True, "token-origin check disabled"
+    if not origin:
+        return True, "skip claim check (no origin)"
+    claim = payload.get("allowed-origins")
+    if not claim:
+        return True, "no allowed-origins claim; skipping"
+    if isinstance(claim, list) and origin in claim:
+        return True, "allowed-origins claim ok"
+    return False, f"origin '{origin}' not in token allowed-origins"
+
+
+def verify_token_or_raise(token: str) -> dict:
+    """
+    Verify the JWT and return its payload. Raises an exception on any
+    validation failure. Logging at WARNING level captures the exception for
+    easier troubleshooting.
+    """
+    try:
+        return _verify_rs256(token)
+    except Exception as e:
+        logger.warning("JWT verify failed: %s", e)
+        raise
+
+
+async def guard_websocket(websocket: WebSocket) -> dict:
+    """
+    Full WebSocket guard. Validates the request origin and extracts and
+    verifies the bearer token. On failure an exception is raised; callers are
+    responsible for closing the websocket when handling the error.
+
+    On success the verified JWT payload is attached to the `websocket.scope` as
+    `'user'` and returned to the caller.
+    """
+    origin = websocket.headers.get("origin")
+
+    ok, _ = check_origin_allowed(origin)
+    if not ok:
+        raise RuntimeError("forbidden origin")
+
+    token = extract_bearer_or_query_token(websocket)
+    if not token:
+        raise RuntimeError("missing bearer token")
+
+    try:
+        payload = verify_token_or_raise(token)
+    except Exception:
+        raise
+
+    ok2, _ = token_allows_origin(payload, origin)
+    if not ok2:
+        raise RuntimeError("token origin mismatch")
+
+    websocket.scope["user"] = payload
+    return payload
+==================== backend/app/api/v1/schemas/chat.py ====================
+from pydantic import BaseModel
+from typing import Dict, Optional, List
+from datetime import datetime
+
+class ChatRequest(BaseModel):
+    chat_id: str
+    input_text: str
+
+class ChatResponse(BaseModel):
+    response: str
+
+# ───────────────────────────────────────────────────────
+# Für den Beratungs-Workflow via /beratung
+# ───────────────────────────────────────────────────────
+class BeratungsRequest(BaseModel):
+    frage: str
+    chat_id: str
+
+class BeratungsResponse(BaseModel):
+    antworten: Dict[str, str]
+
+class BeratungsverlaufResponse(BaseModel):
+    id: int
+    session_id: str
+    frage: Optional[str]
+    parameter: Optional[dict]
+    antworten: Optional[List[str]]
+    timestamp: datetime
+==================== backend/app/api/v1/schemas/form.py ====================
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class FormData(BaseModel):
+    shaft_diameter: float = Field(..., description="Wellen-Ø in mm")
+    housing_diameter: float = Field(..., description="Gehäuse-Ø in mm")
+
+class FormResult(BaseModel):
+    id: str
+    username: str
+    radial_clearance: float
+    tolerance_fit: str
+    result_text: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+==================== backend/app/api/v1/api.py ====================
+# backend/app/api/v1/api.py
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+# REST-/Service-Endpunkte
+from app.api.v1.endpoints import (
+    ai,               # → enthält WS (/api/v1/ai/ws) + Sync-Invoke (/api/v1/ai/beratung)
+    auth,
+    consult_invoke,   # optionaler Sync-Debug-Invoke
+    memory,
+    system,
+    users,
+)
+from app.api.v1.endpoints import rfq as rfq_endpoint
+
+# WICHTIG:
+# - Keine SSE-Registrierung mehr (langgraph_sse entfällt).
+# - Kein legacy chat_ws Import/Include mehr.
+# - WS-Endpoints werden in ai.py direkt registriert.
+
+api_router = APIRouter()
+
+# AI (WS+Sync)
+api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
+
+# Optional: Debug/Test invoke
+api_router.include_router(consult_invoke.router, tags=["test"])
+
+# Weitere Subsysteme
+api_router.include_router(auth.router)
+api_router.include_router(memory.router)
+api_router.include_router(system.router)
+api_router.include_router(users.router)
+
+# RFQ
+api_router.include_router(rfq_endpoint.router, prefix="/rfq", tags=["rfq"])
+==================== backend/app/api/v1/endpoints/__init__.py ====================
+==================== backend/app/api/v1/endpoints/consult_invoke.py ====================
+# backend/app/api/v1/endpoints/consult_invoke.py
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Request, status
+from app.langgraph.compile import run_langgraph_stream
+from pydantic import BaseModel, Field
+
+router = APIRouter(prefix="/test", tags=["test"])  # wird unter /api/v1 gemountet
+
+class ConsultInvokeIn(BaseModel):
+    text: str = Field(..., description="Nutzereingabe")
+    chat_id: str = Field(..., description="Thread/Chat ID")
+
+class ConsultInvokeOut(BaseModel):
+    text: str
+
+@router.post("/consult/invoke", response_model=ConsultInvokeOut)
+async def consult_invoke_endpoint(request: Request, payload: ConsultInvokeIn):
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="text empty")
+
+    request.state.langgraph_payload = payload.model_dump()
+    result = await run_langgraph_stream(request)
+    return result
+==================== backend/app/api/v1/endpoints/memory.py ====================
+# backend/app/api/v1/endpoints/memory.py
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+from typing import Any, Dict, Optional, List
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
+from qdrant_client import QdrantClient, models as qmodels
+
+from app.core.config import settings
+from app.services.auth.dependencies import get_current_request_user
+from app.services.memory.memory_core import (
+    ltm_export_all,
+    ltm_delete_all,
+    ensure_ltm_collection,
+    _get_qdrant_client,
+)
+
+router = APIRouter(prefix="/memory", tags=["memory"])
+logger = logging.getLogger(__name__)
+
+
+def _ltm_collection() -> str:
+    """Resolve the Qdrant collection name for LTM (Long-Term-Memory)."""
+    return (settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm").strip()
+
+
+# ----------------------------------------------------------------------
+# Create Memory Item
+# ----------------------------------------------------------------------
+@router.post("", summary="Lege einen LTM-Eintrag in Qdrant an")
+async def create_memory_item(
+    payload: Dict[str, Any],
+    username: str = Depends(get_current_request_user),
+) -> JSONResponse:
+    """
+    Erwartet JSON:
+    {
+      "text": "…Pflicht…",
+      "kind": "note|preference|fact|…",
+      "chat_id": "optional"
+    }
+    """
+    if not settings.ltm_enable:
+        return JSONResponse({"ltm_enabled": False}, status_code=200)
+
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Field 'text' is required and must be non-empty")
+
+    kind = (payload.get("kind") or "note").strip()
+    chat_id = (payload.get("chat_id") or None) or None
+
+    point_id = uuid.uuid4().hex
+    q_payload: Dict[str, Any] = {
+        "user": username,  # WICHTIG: Schlüssel = 'user' (wird für Filter verwendet!)
+        "chat_id": chat_id,
+        "kind": kind,
+        "text": text,
+        "created_at": time.time(),
+    }
+    # Zusatzfelder übernehmen (ohne Pflichtfelder zu überschreiben)
+    for k, v in payload.items():
+        if k not in q_payload:
+            q_payload[k] = v
+
+    try:
+        client: QdrantClient = _get_qdrant_client()
+        ensure_ltm_collection(client)
+
+        # Dummy-Vektor, da nur Payload benötigt wird
+        client.upsert(
+            collection_name=_ltm_collection(),
+            points=[
+                qmodels.PointStruct(
+                    id=point_id,
+                    vector=[0.0],
+                    payload=q_payload,
+                )
+            ],
+            wait=True,
+        )
+
+        logger.info(f"[LTM] create_memory_item user={username} chat_id={chat_id} id={point_id}")
+        return JSONResponse(
+            {"id": point_id, "ltm_enabled": True, "success": True},
+            status_code=200,
+        )
+
+    except Exception as exc:
+        logger.exception(f"[LTM] Fehler beim Speichern für user={username}, chat_id={chat_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Speichern fehlgeschlagen") from exc
+
+
+# ----------------------------------------------------------------------
+# Export Memory Items
+# ----------------------------------------------------------------------
+@router.get("/export", summary="Exportiere Long-Term-Memory (Qdrant) des aktuellen Nutzers")
+async def export_memory(
+    chat_id: Optional[str] = Query(default=None, description="Optional: nur Einträge dieses Chats exportieren"),
+    limit: int = Query(default=10000, ge=1, le=20000),
+    username: str = Depends(get_current_request_user),
+) -> JSONResponse:
+    if not settings.ltm_enable:
+        return JSONResponse({"items": [], "count": 0, "ltm_enabled": False}, status_code=200)
+
+    try:
+        items: List[Dict[str, Any]] = ltm_export_all(user=username, chat_id=chat_id, limit=limit)
+        logger.info(f"[LTM] export_memory user={username} chat_id={chat_id} count={len(items)}")
+        return JSONResponse(
+            {"items": items, "count": len(items), "ltm_enabled": True, "success": True},
+            status_code=200,
+        )
+    except Exception as exc:
+        logger.exception(f"[LTM] Fehler beim Export für user={username}, chat_id={chat_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Export fehlgeschlagen") from exc
+
+
+# ----------------------------------------------------------------------
+# Delete Memory Items
+# ----------------------------------------------------------------------
+@router.delete("", summary="Lösche Long-Term-Memory des aktuellen Nutzers (optional pro Chat)")
+async def delete_memory(
+    chat_id: Optional[str] = Query(default=None, description="Optional: nur Einträge dieses Chats löschen"),
+    username: str = Depends(get_current_request_user),
+) -> JSONResponse:
+    if not settings.ltm_enable:
+        return JSONResponse({"deleted": 0, "ltm_enabled": False}, status_code=200)
+
+    try:
+        deleted = ltm_delete_all(user=username, chat_id=chat_id)
+        logger.info(f"[LTM] delete_memory user={username} chat_id={chat_id} deleted={deleted}")
+        return JSONResponse(
+            {"deleted": deleted, "ltm_enabled": True, "success": True},
+            status_code=200,
+        )
+    except Exception as exc:
+        logger.exception(f"[LTM] Fehler beim Löschen für user={username}, chat_id={chat_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Löschen fehlgeschlagen") from exc
+==================== backend/app/api/v1/endpoints/ai.py ====================
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import contextlib
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
+from app.langgraph.compile import run_langgraph_stream
+from pydantic import BaseModel, Field
+from redis import Redis
+from starlette.websockets import WebSocketState
+
+from app.services.chat.ws_commons import choose_subprotocol, send_json_safe
+from app.services.chat.ws_streaming import stream_langgraph
+
+log = logging.getLogger("uvicorn.error")
+
+ENABLE_LANGGRAPH = os.getenv("ENABLE_LANGGRAPH", os.getenv("ENABLE_LANGGRAPH_V06", "true")).lower() in (
+    "true",
+    "1",
+    "yes",
+)
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+STM_PREFIX = os.getenv("STM_PREFIX", "chat:stm")
+STM_TTL_SEC = int(os.getenv("STM_TTL_SEC", "604800"))
+WS_AUTH_OPTIONAL = os.getenv("WS_AUTH_OPTIONAL", "1") == "1"
+
+
+def _stm_key(thread_id: str) -> str:
+    return f"{STM_PREFIX}:{thread_id}"
+
+
+def _redis() -> Redis:
+    return Redis.from_url(REDIS_URL, decode_responses=True)
+
+
+def _stm_set(thread_id: str, key: str, value: str) -> None:
+    r = _redis()
+    skey = _stm_key(thread_id)
+    r.hset(skey, key, value)
+    r.expire(skey, STM_TTL_SEC)
+
+
+def _stm_get(thread_id: str, key: str) -> Optional[str]:
+    r = _redis()
+    value = r.hget(_stm_key(thread_id), key)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+RE_REMEMBER_NUM = re.compile(r"\b(merke\s*dir|merk\s*dir|remember)\b[^0-9\-+]*?(-?\d+(?:[.,]\d+)?)", re.I)
+RE_REMEMBER_FREE = re.compile(r"\b(merke\s*dir|merk\s*dir|remember)\b[:\s]+(.+)$", re.I)
+RE_ASK_NUMBER = re.compile(r"\b(welche\s+zahl\s+meinte\s+ich|what\s+number\s+did\s+i\s+mean)\b", re.I)
+RE_ASK_FREE = re.compile(r"\b(woran\s+erinn?erst\s+du\s+dich|what\s+did\s+you\s+remember)\b", re.I)
+
+
+def _norm_num(value: str) -> str:
+    return (value or "").replace(",", ".")
+
+
+def _memory_intent(text: str, thread_id: str) -> Optional[str]:
+    content = (text or "").strip()
+    if not content:
+        return None
+
+    match_number = RE_REMEMBER_NUM.search(content)
+    if match_number:
+        raw = match_number.group(2)
+        _stm_set(thread_id, "last_number", _norm_num(raw))
+        return f"Alles klar – ich habe mir **{raw}** gemerkt."
+
+    match_free = RE_REMEMBER_FREE.search(content)
+    if match_free and not match_number:
+        value = (match_free.group(2) or "").strip()
+        if value:
+            _stm_set(thread_id, "last_note", value)
+            return "Notiert. 👍"
+
+    if RE_ASK_NUMBER.search(content):
+        remembered = _stm_get(thread_id, "last_number")
+        return f"Du meintest **{remembered}**." if remembered else "Ich habe dazu noch keine Zahl gespeichert."
+
+    if RE_ASK_FREE.search(content):
+        remembered = _stm_get(thread_id, "last_note")
+        return f"Ich habe mir gemerkt: “{remembered}”." if remembered else "Ich habe dazu noch nichts gespeichert."
+
+    return None
+
+
+class ChatRequest(BaseModel):
+    chat_id: str = Field(default="default")
+    input: str
+    params: Optional[Dict[str, Any]] = None
+
+
+class ChatResponse(BaseModel):
+    text: str
+
+
+router = APIRouter()
+
+@router.post("/supervisor", response_model=ChatResponse)
+async def supervisor_endpoint(payload: ChatRequest) -> ChatResponse:
+    user_text = (payload.input or "").strip()
+    if not user_text:
+        raise HTTPException(status_code=400, detail="input empty")
+    log.warning("supervisor_endpoint disabled; legacy supervisor stack removed")
+    return ChatResponse(text="Supervisor-Stack wurde deaktiviert. Bitte nutzen Sie den Standard-Chat.")
+
+
+@router.post("/beratung", response_model=ChatResponse)
+async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
+    user_text = (payload.input or "").strip()
+    thread_id = f"api:{payload.chat_id or 'default'}"
+
+    if not user_text:
+        raise HTTPException(status_code=400, detail="input empty")
+
+    memory_hint = _memory_intent(user_text, thread_id)
+    if memory_hint:
+        return ChatResponse(text=memory_hint)
+
+    request = _req
+    request.state.langgraph_payload = payload.model_dump()
+    result = await run_langgraph_stream(request)
+    return result
+
+
+_BEARER_RE = re.compile(r"^\s*Bearer\s+(.+?)\s*$", re.IGNORECASE)
+
+
+def _extract_token_from_headers(ws: WebSocket) -> Optional[str]:
+    try:
+        header_val = ws.headers.get("authorization")
+        if not header_val:
+            return None
+        match = _BEARER_RE.match(header_val)
+        return match.group(1) if match else None
+    except Exception:
+        return None
+
+
+def _extract_token_from_cookies(ws: WebSocket) -> Optional[str]:
+    try:
+        cookies = ws.cookies or {}
+        return cookies.get("kc_access_token") or cookies.get("access_token") or None
+    except Exception:
+        return None
+
+
+def _resolve_ws_token(ws: WebSocket, query_token: Optional[str]) -> Optional[str]:
+    return query_token or _extract_token_from_headers(ws) or _extract_token_from_cookies(ws)
+
+
+@router.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)) -> None:
+    effective_token = _resolve_ws_token(websocket, token)
+    if not WS_AUTH_OPTIONAL and not effective_token:
+        try:
+            await websocket.close(code=1008)
+        finally:
+            return
+
+    await websocket.accept(subprotocol=choose_subprotocol(websocket))
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+            except Exception:
+                data = {"input": raw}
+
+            if isinstance(data, dict) and data.get("type") == "ping":
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.send_text('{"type":"pong"}')
+                continue
+
+            if not isinstance(data, dict):
+                data = {"input": str(data)}
+
+            chat_id = data.get("chat_id") or "default"
+            user_input = str(data.get("input") or data.get("text") or data.get("query") or "").strip()
+
+            if not user_input:
+                continue
+
+            memory_hint = _memory_intent(user_input, f"ws:{chat_id}")
+            if memory_hint:
+                await send_json_safe(
+                    websocket,
+                    {"type": "memory_hint", "event": "memory", "text": memory_hint},
+                )
+                continue
+
+            if ENABLE_LANGGRAPH:
+                await stream_langgraph(
+                    websocket,
+                    {
+                        "input": user_input,
+                        "chat_id": chat_id,
+                        "thread_id": data.get("thread_id"),
+                        "user_id": data.get("user_id") or effective_token or "ws_user",
+                    },
+                )
+                with contextlib.suppress(Exception):
+                    if websocket.application_state == WebSocketState.CONNECTED:
+                        await websocket.close(code=1000)
+                return
+
+            await send_json_safe(
+                websocket,
+                {
+                    "type": "graph_disabled",
+                    "event": "info",
+                    "message": (
+                        "LangGraph ist deaktiviert. Streaming-Antworten stehen derzeit nicht zur Verfügung."
+                    ),
+                },
+            )
+            await send_json_safe(websocket, {"type": "graph_done", "event": "done"})
+            with contextlib.suppress(Exception):
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.close(code=1000)
+            return
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        log.exception("ws_endpoint error: %r", exc)
+        try:
+            if websocket.application_state == WebSocketState.CONNECTED:
+                await send_json_safe(websocket, {"type": "graph_error", "event": "error", "error": "internal_error"})
+        finally:
+            if websocket.application_state == WebSocketState.CONNECTED:
+                await websocket.close(code=1011)
+==================== backend/app/api/v1/endpoints/system.py ====================
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, HTTPException, Request, status
+from app.langgraph.compile import run_langgraph_stream
+from pydantic import BaseModel, Field
+
+router = APIRouter()  # Prefix und Tags werden im übergeordneten Router gesetzt
+
+
+class _ConsultInvokeIn(BaseModel):
+    text: str = Field(..., min_length=1)
+    chat_id: Optional[str] = None
+
+
+@router.post("/test/consult/invoke", tags=["test"])
+async def test_consult_invoke(request: Request, _body: _ConsultInvokeIn) -> Dict[str, Any]:
+    request.state.langgraph_payload = _body.model_dump()
+    result = await run_langgraph_stream(request)
+    return result
+==================== backend/app/api/v1/endpoints/auth.py ====================
+from fastapi import APIRouter, Query
+from fastapi.responses import RedirectResponse
+from urllib.parse import urlencode
+
+from app.core.config import settings
+
+router = APIRouter()
+
+@router.get("/login", tags=["Auth"])
+def login_redirect(
+    state: str | None = Query(default=None, description="Optional OIDC state passthrough"),
+    nonce: str | None = Query(default=None, description="Optional OIDC nonce passthrough"),
+):
+    """
+    Leitet den Benutzer zum Keycloak-Login weiter.
+    Die Parameter müssen mit der Konfiguration deines Keycloak-Clients übereinstimmen.
+    """
+    # Aus ENV/Settings ableiten, statt Hardcoding
+    keycloak_base_url = f"{settings.keycloak_issuer.rstrip('/')}/protocol/openid-connect/auth"
+
+    client_id = settings.keycloak_client_id
+    # NextAuth baut die Callback-Route immer unter /api/auth/callback/<provider>
+    redirect_uri = f"{settings.nextauth_url.rstrip('/')}/api/auth/callback/keycloak"
+
+    response_type = "code"
+    # Scope analog zum NextAuth-Provider
+    scope = "openid profile email"
+
+    params = {
+        "client_id": client_id,
+        "response_type": response_type,
+        "redirect_uri": redirect_uri,
+        "scope": scope
+    }
+
+    # Optional: state/nonce durchreichen, wenn gesetzt
+    if state:
+        params["state"] = state
+    if nonce:
+        params["nonce"] = nonce
+
+    # Erzeuge die vollständige URL
+    url = f"{keycloak_base_url}?{urlencode(params)}"
+    return RedirectResponse(url)
+==================== backend/app/api/v1/endpoints/rfq.py ====================
+from __future__ import annotations
+import os
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
+
+router = APIRouter()
+
+@router.get("/download")
+def rfq_download(path: str = Query(..., description="Server-Pfad zur PDF")):
+    if not os.path.isfile(path):
+        raise HTTPException(404, "Datei nicht gefunden")
+    return FileResponse(path, filename=os.path.basename(path), media_type="application/pdf")
+==================== backend/app/api/v1/endpoints/users.py ====================
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+
+router = APIRouter()
+
+@router.get("/ping", summary="👥 User Ping", response_class=JSONResponse)
+async def users_ping():
+    return {"pong": True, "module": "users"}
+==================== backend/app/api/__init__.py ====================
+==================== backend/app/api/routes/__init__.py ====================
+"""API route modules for the unified chat endpoints."""
+
+__all__ = []
+==================== backend/app/api/routes/chat.py ====================
+"""Chat endpoint placeholder emitting HTTP 503 while LangGraph rebuilds."""
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from app.langgraph.compile import run_langgraph_stream
+from pydantic import BaseModel, Field
+
+from app.services.auth.dependencies import get_current_request_user
+
+router = APIRouter()
+
+
+class ParameterItem(BaseModel):
+    name: str
+    value: int | float | str | bool
+    unit: str = Field(default="none")
+    source: str = Field(default="user")
+
+
+class ChatStreamRequest(BaseModel):
+    chat_id: str = Field(..., min_length=1)
+    input_text: str = Field(..., min_length=1)
+
+
+@router.post("/chat/stream", status_code=status.HTTP_200_OK)
+async def chat_stream(
+    payload: ChatStreamRequest,
+    _request: Request,
+    _username: str = Depends(get_current_request_user),
+) -> Any:
+    text = payload.input_text.strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="input_text empty")
+
+    request = _request
+    request.state.langgraph_payload = payload.model_dump()
+    result = await run_langgraph_stream(request)
+    return result
+
+
+__all__ = ["router"]
+==================== backend/app/api/routes/chat_utils.py ====================
+"""Utility helpers for chat endpoints."""
+from __future__ import annotations
+
+from functools import lru_cache
+
+_DEFAULT_PROMPT = (
+    "Du bist SealAI, ein technischer Fachberater. "
+    "Antworte präzise, nachvollziehbar und auf Deutsch."
+)
+
+
+@lru_cache(maxsize=1)
+def ensure_system_prompt() -> str:
+    """Return the legacy system prompt used before the LangGraph rollout."""
+    return _DEFAULT_PROMPT
+
+
+__all__ = ["ensure_system_prompt"]
+==================== backend/app/main.py ====================
+# backend/app/main.py
+from __future__ import annotations
+
+import logging
+import os
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.v1.api import api_router
+
+log = logging.getLogger("uvicorn.error")
+
+
+def _bool_env(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+APP_NAME = os.getenv("APP_NAME", "sealAI-backend")
+APP_VERSION = os.getenv("APP_VERSION", os.getenv("GIT_SHA", "dev"))
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "https://sealai.net")
+ENABLE_CORS = _bool_env("ENABLE_CORS", "1")
+WARMUP_ON_START = _bool_env("WARMUP_ON_START", "0")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    log.info("Starting %s v%s", APP_NAME, APP_VERSION)
+    if WARMUP_ON_START:
+        log.info("Warmup aktiviert, aber LangGraph wurde entfernt – überspringe Warmup.")
+    app.state.warmed_up = True
+    yield
+    log.info("Stopping %s", APP_NAME)
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title=APP_NAME,
+        version=APP_VERSION,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        lifespan=lifespan,
+    )
+
+    if ENABLE_CORS:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[FRONTEND_ORIGIN, "http://localhost:3000", "http://127.0.0.1:3000"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    @app.get("/")
+    async def root():
+        return {"ok": True, "name": APP_NAME, "version": APP_VERSION}
+
+    @app.get("/version")
+    async def version():
+        return {"version": APP_VERSION}
+
+    @app.get("/healthz")
+    async def health():
+        return {"status": "ok"}
+
+    @app.get("/readyz")
+    async def ready():
+        return {"ready": bool(getattr(app.state, "warmed_up", False))}
+
+    @app.get("/api/v1/ping")
+    async def ping():
+        return {"pong": True}
+
+    # v1-API mounten
+    app.include_router(api_router, prefix="/api/v1")
+
+    return app
+
+
+app = create_app()
+==================== backend/app/langgraph/utils/checkpointer.py ====================
+# backend/app/langgraph/utils/checkpointer.py
+from __future__ import annotations
+
+from typing import Optional
+
+try:
+    from redis.asyncio import Redis
+    from langgraph.checkpoint.redis import RedisSaver
+except ImportError:
+    Redis = None
+    RedisSaver = None
+
+
+async def make_redis_checkpointer(redis_url: Optional[str], namespace: str):
+    """
+    Builder für RedisSaver mit aktueller API.
+    Erstellt RedisSaver mit async redis_client.
+    Namespace wird über config gesetzt.
+    """
+    if not redis_url or not Redis or not RedisSaver:
+        return None
+    client = Redis.from_url(redis_url)
+    saver = RedisSaver(redis_client=client, namespace=namespace)
+    await saver.setup()  # Einrichtung der Redis-Strukturen
+    return saver
+==================== backend/app/langgraph/utils/ids.py ====================
+# MIGRATION: Phase-1 - thread_id, trace_id, message_id Utilities
+
+import uuid
+
+def generate_thread_id() -> str:
+    return str(uuid.uuid4())
+
+def generate_trace_id() -> str:
+    return str(uuid.uuid4())
+
+def generate_message_id() -> str:
+    return str(uuid.uuid4())==================== backend/app/langgraph/utils/llm.py ====================
+# MIGRATION: LLM Utility für OpenAI API
+
+import os
+from typing import Dict, Any
+from langchain_openai import ChatOpenAI
+import yaml
+
+def load_agent_config(domain: str) -> Dict[str, Any]:
+    config_path = os.path.join(os.path.dirname(__file__), "../config/agents.yaml")
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config.get(domain, {})
+
+def create_llm_for_domain(domain: str) -> ChatOpenAI:
+    config = load_agent_config(domain)
+    model_config = config.get("model", {})
+    # Override with ENV if set (from .env.dev)
+    model_name = os.getenv("OPENAI_MODEL", model_config.get("name", "gpt-4o-mini"))
+    return ChatOpenAI(
+        model=model_name,
+        temperature=model_config.get("temperature", 0.7),
+        max_tokens=model_config.get("max_output_tokens", 1000),
+        openai_api_key=os.getenv("OPENAI_API_KEY")
+    )
+
+async def call_llm(llm: ChatOpenAI, prompt: str) -> str:
+    response = await llm.ainvoke(prompt)
+    return response.content==================== backend/app/langgraph/utils/errors.py ====================
+# MIGRATION: Phase-1 - Fehlerklassen
+
+class LangGraphError(Exception):
+    pass
+
+class ToolError(LangGraphError):
+    pass==================== backend/app/langgraph/utils/logging.py ====================
+# MIGRATION: Phase-1 - strukturierte Logs, Trace-IDs
+
+import logging
+import json
+
+logger = logging.getLogger("langgraph")
+
+def log_event(event: str, **data):
+    logger.info(json.dumps({"event": event, **data}))==================== backend/app/langgraph/utils/jinja_renderer.py ====================
+# MIGRATION: Phase-1 - Template-Lade-/Render-Util; pure functions
+
+from jinja2 import Template
+import os
+
+def render_template(template_path: str, context: dict) -> str:
+    with open(template_path, 'r') as f:
+        template = Template(f.read())
+    return template.render(**context)==================== backend/app/langgraph/types.py ====================
+"""Basic compatibility helpers for LangGraph."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Dict
+
+
+@dataclass
+class InterruptSignal(Exception):
+    """Raised to indicate that graph execution should pause for human input."""
+
+    payload: Dict[str, Any]
+
+    def __str__(self) -> str:  # pragma: no cover - human readable info
+        return f"LangGraph interrupt: {self.payload!r}"
+
+
+def interrupt(payload: Dict[str, Any]) -> None:
+    """Signal an interrupt by raising an exception with the provided payload."""
+
+    raise InterruptSignal(payload)
+
+
+__all__ = ["interrupt", "InterruptSignal"]
+
+==================== backend/app/langgraph/nodes/resolver.py ====================
+# MIGRATION: Phase-2 - Resolver (regel-basierter Fan-in)
+
+from langgraph.types import Send
+from ..state import SealAIState
+
+CONFIDENCE_THRESHOLD = 0.7
+
+async def resolver(state: SealAIState) -> Send:
+    routing = state.get("routing", {})
+    confidence = routing.get("confidence", 0.0)
+    
+    # Regel: Wenn confidence < threshold, debate
+    if confidence < CONFIDENCE_THRESHOLD:
+        # Send zu debate_subgraph (noch nicht implementiert, placeholder)
+        return Send("debate_subgraph", state)
+    else:
+        # Go to exit
+        return Send("exit_response", state)
+==================== backend/app/langgraph/nodes/supervisor.py ====================
+# MIGRATION: Phase-2 - Supervisor (simple routing)
+
+from ..state import SealAIState
+
+async def supervisor(state: SealAIState):
+    # Routing is handled by conditional edges in the graph
+    return state
+==================== backend/app/langgraph/nodes/confirm_gate.py ====================
+# MIGRATION: Phase-2 - Confirm Gate (Interrupt)
+
+# from langgraph.types import interrupt  # Disabled for streaming compatibility
+
+async def confirm_gate(state):
+    # Interrupt mit reason
+    # interrupt({"reason": "confirm_discovery", "current_state": state})  # Disabled
+    return {}==================== backend/app/langgraph/nodes/discovery_intake.py ====================
+# MIGRATION: Phase-2 - Discovery intake
+
+from langchain_core.messages import HumanMessage
+
+from ..state import SealAIState, new_assistant_message
+from ..utils.ids import generate_message_id
+
+
+async def discovery_intake(state: SealAIState) -> dict:
+    # Analysiere letzte User-Message und stelle Fragen
+    last_user_msg = next(
+        (m for m in reversed(state.get("messages", [])) if isinstance(m, HumanMessage)),
+        None,
+    )
+    if not last_user_msg:
+        questions = ["What is your query?"]
+    else:
+        # Dummy: Immer gleiche Fragen
+        questions = ["What is the material?", "What are the conditions?", "Any specific parameters?"]
+    content = "\n".join(questions)
+    assistant_msg = new_assistant_message(content, msg_id=generate_message_id())
+    slots = {**(state.get("slots") or {}), "coverage": 0.3}  # Dummy
+    return {"messages": [assistant_msg], "slots": slots}
+==================== backend/app/langgraph/nodes/entry_frontend.py ====================
+# backend/app/langgraph/nodes/entry_frontend.py
+# MIGRATION: Phase-2 - Entry point
+
+from ..state import SealAIState, new_user_message
+from ..utils.ids import generate_message_id
+
+async def entry_frontend(state: SealAIState) -> dict:
+    user_query = (state.get("slots") or {}).get("user_query", "")
+    if not user_query:
+        raise ValueError("user_query required in slots")
+
+    message = new_user_message(
+        user_query,
+        user_id=state.get("meta", {}).get("user_id", "user"),
+        msg_id=generate_message_id(),
+    )
+    slots = {**(state.get("slots") or {}), "last_query": user_query}
+    return {"messages": [message], "slots": slots}
+==================== backend/app/langgraph/nodes/exit_response.py ====================
+# MIGRATION: Phase-2 - Exit Response
+
+from ..state import SealAIState
+
+async def exit_response(state: SealAIState) -> dict:
+    # Baue JSON-Struktur
+    answer = "Final answer"  # From state
+    response = {
+        "answer": answer,
+        "evidence_ids": [ref.id for ref in state["context_refs"]],
+        "parameters": state["slots"],
+        "risks": [],
+        "next_steps": [],
+        "ui_hints": {},
+        "meta": state["meta"]
+    }
+    return {"messages": state["messages"] + [{"role": "assistant", "content": str(response)}]}==================== backend/app/langgraph/nodes/intent_projector.py ====================
+# MIGRATION: Phase-2 - Intent Projector
+
+from ..state import SealAIState
+
+async def intent_projector(state: SealAIState) -> dict:
+    # Dummy: Set routing basierend auf Query
+    user_query = state["slots"].get("user_query", "").lower()
+    if "material" in user_query:
+        domains = ["material"]
+        primary = "material"
+        confidence = 0.9
+    else:
+        domains = ["material"]  # Default
+        primary = "material"
+        confidence = 0.5
+    routing = {
+        "domains": domains,
+        "primary_domain": primary,
+        "confidence": confidence,
+        "coverage": state["slots"].get("coverage", 0.0)
+    }
+    return {"routing": routing}==================== backend/app/langgraph/__init__.py ====================
+# MIGRATION: Phase-1 - LangGraph module init==================== backend/app/langgraph/subgraphs/debate/nodes/debate_agent.py ====================
+# Debate Agent
+
+from langgraph.types import Send
+from ....state import SealAIState
+from ....utils.llm import create_llm_for_domain, call_llm
+
+async def debate_agent(state: SealAIState) -> Send:
+    # Simple debate: Re-evaluate confidence
+    prompt = "Debate the routing decision and update confidence."
+    llm = create_llm_for_domain("material")
+    response = await call_llm(llm, prompt)
+    # Assume updates confidence
+    updated_routing = state.get("routing", {}).copy()
+    updated_routing["confidence"] = 0.9  # Dummy
+    updated_state = state.copy()
+    updated_state["routing"] = updated_routing
+    return Send("resolver", updated_state)
+==================== backend/app/langgraph/subgraphs/debate/__init__.py ====================
+# MIGRATION: Phase-1 - Debate subgraph==================== backend/app/langgraph/subgraphs/debate/compile.py ====================
+# MIGRATION: Phase-2 - Debate Subgraph
+
+from langgraph.graph import StateGraph
+
+from ...state import SealAIState
+from .nodes.debate_agent import debate_agent
+
+def create_debate_subgraph():
+    graph = StateGraph(SealAIState)
+    graph.add_node("debate_agent", debate_agent)
+    graph.set_entry_point("debate_agent")
+    # debate_agent sends to resolver
+    return graph.compile()
+==================== backend/app/langgraph/subgraphs/material/nodes/rag_select.py ====================
+import asyncio
+# MIGRATION: Phase-2 - RAG Select (nur Referenzen)
+
+from ....state import SealAIState, ContextRef
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../services/rag"))
+from rag_orchestrator import hybrid_retrieve
+
+async def rag_select(state: SealAIState) -> dict:
+    # RAG-Query aus State, z.B. user_query
+    query = state["slots"].get("user_query", "")
+    if not query:
+        return {}
+    # Rufe RAG auf
+    results = await asyncio.get_event_loop().run_in_executor(None, lambda: hybrid_retrieve(query=query, tenant=None, k=6))  # Dummy tenant
+    # Extrahiere nur IDs/Meta, keine Volltexte
+    refs = [
+        ContextRef(
+            kind="rag",
+            id=result.get("id", f"doc_{i}"),  # Annahme id ist vorhanden
+            meta={
+                "score": result.get("vector_score", 0.0),
+                "source": result.get("source", ""),
+                "title": result.get("metadata", {}).get("title", "")
+            }
+        ) for i, result in enumerate(results)
+    ]
+    return {"context_refs": state["context_refs"] + refs}==================== backend/app/langgraph/subgraphs/material/nodes/tools_node.py ====================
+# MIGRATION: Phase-2 - ToolNode
+
+# from langgraph import ToolNode
+from ....tools.material_calculator import material_calculator
+
+tools = [material_calculator]
+# tool_node = ToolNode(tools)tool_node = None  # Placeholder
+==================== backend/app/langgraph/subgraphs/material/nodes/synthesis.py ====================
+# MIGRATION: Phase-2 - Synthesis (send zurück zu resolver)
+
+from ....state import SealAIState
+from langgraph.types import Send
+from ....utils.jinja_renderer import render_template
+from ....utils.llm import create_llm_for_domain, call_llm
+import os
+import json
+
+async def synthesis(state: SealAIState) -> Send:
+    # Render Synthesis-Prompt
+    prompt_path = os.path.join(os.path.dirname(__file__), "../../../prompts/synthesis.md")
+    context = {
+        "user_query": state["slots"].get("user_query", ""),
+        "slots": state["slots"],
+        "context_refs": state["context_refs"],
+        "tool_results_brief": []  # Placeholder
+    }
+    prompt = render_template(prompt_path, context)
+    
+    # LLM Call
+    llm = create_llm_for_domain("material")
+    response_text = await call_llm(llm, prompt)
+    
+    # Parse to structured answer (assume LLM returns JSON)
+    try:
+        answer = json.loads(response_text)
+    except json.JSONDecodeError:
+        answer = {
+            "answer": response_text,
+            "evidence_ids": [ref.id for ref in state["context_refs"]],
+            "risks": ["Parsing error"],
+            "confidence_dom": 0.5
+        }
+    
+    updated_state = state.copy()
+    updated_state["messages"] = state.get("messages", []) + [{"role": "assistant", "content": json.dumps(answer)}]
+    # Send zurück zu resolver im Hauptgraph
+    return Send("resolver", updated_state)
+==================== backend/app/langgraph/subgraphs/material/nodes/material_agent.py ====================
+# MIGRATION: Phase-2 - Material Agent
+
+from ....state import SealAIState
+from ....utils.jinja_renderer import render_template
+from ....utils.llm import create_llm_for_domain, call_llm
+import os
+
+async def material_agent(state: SealAIState) -> dict:
+    # Render Prompt
+    prompt_path = os.path.join(os.path.dirname(__file__), "../../../prompts/material_agent.md")
+    context = {
+        "user_query": state["slots"].get("user_query", ""),
+        "messages_window": state["messages"][-5:],  # Letzte 5
+        "slots": state["slots"],
+        "context_refs": state["context_refs"]
+    }
+    prompt = render_template(prompt_path, context)
+    
+    # LLM Call
+    llm = create_llm_for_domain("material")
+    hypotheses = await call_llm(llm, prompt)
+    
+    return {"messages": state["messages"] + [{"role": "assistant", "content": hypotheses}]}==================== backend/app/langgraph/subgraphs/material/__init__.py ====================
+# MIGRATION: Phase-1 - Material subgraph==================== backend/app/langgraph/subgraphs/material/compile.py ====================
+# MIGRATION: Phase-2 - Subgraph kompilieren (eigener Checkpointer optional)
+
+from langgraph.graph import StateGraph
+
+from .state import SealAIState
+from .nodes.material_agent import material_agent
+from .nodes.rag_select import rag_select
+# from .nodes.tools_node import tool_node  # ToolNode not available
+from .nodes.synthesis import synthesis
+
+def create_material_subgraph():
+    graph = StateGraph(SealAIState)
+    # Add nodes
+    graph.add_node("material_agent", material_agent)
+    graph.add_node("rag_select", rag_select)
+    # graph.add_node("tools_node", tool_node)  # ToolNode not available
+    graph.add_node("synthesis", synthesis)
+    # Edges
+    graph.set_entry_point("material_agent")
+    graph.add_edge("material_agent", "rag_select")
+    graph.add_edge("rag_select", "synthesis")
+    # synthesis sends to resolver in main graph
+    return graph.compile()
+==================== backend/app/langgraph/subgraphs/material/state.py ====================
+# MIGRATION: Phase-2 - Optional abweichendes Schema für Material
+
+from ...state import SealAIState  # Same for now==================== backend/app/langgraph/subgraphs/validierung/__init__.py ====================
+# MIGRATION: Phase-1 - Validierung subgraph==================== backend/app/langgraph/subgraphs/profil/__init__.py ====================
+# MIGRATION: Phase-1 - Profil subgraph==================== backend/app/langgraph/constants.py ====================
+"""Constants used by LangGraph."""
+
+END = "__end__"
+
+# Redis Namespaces
+REDIS_URL = "redis://localhost:6379"
+CHECKPOINTER_NAMESPACE_MAIN = "sealai:main"
+CHECKPOINTER_NAMESPACE_MATERIAL = "sealai:material"
+CHECKPOINTER_NAMESPACE_DEBATE = "sealai:debate"
+
+__all__ = ["END", "REDIS_URL", "CHECKPOINTER_NAMESPACE_MAIN", "CHECKPOINTER_NAMESPACE_MATERIAL", "CHECKPOINTER_NAMESPACE_DEBATE"]
+==================== backend/app/langgraph/tests/test_state.py ====================
+# MIGRATION: Phase-1 - Test State
+
+import pytest
+from ..state import SealAIState, MetaInfo
+
+def test_state_creation():
+    meta = MetaInfo(thread_id="t1", user_id="u1", trace_id="tr1")
+    state = SealAIState(meta=meta)
+    assert state.messages == []
+    assert state.slots == {}
+    assert state.context_refs == []
+
+def test_slots_validation():
+    meta = MetaInfo(thread_id="t1", user_id="u1", trace_id="tr1")
+    # Valid small slot
+    state = SealAIState(meta=meta, slots={"temp": 100})
+    assert state.slots["temp"] == 100
+
+    # Invalid large slot
+    with pytest.raises(ValueError):
+        SealAIState(meta=meta, slots={"big": "x" * 1001})==================== backend/app/langgraph/tests/test_resolver_determinism.py ====================
+# MIGRATION: Phase-2 - Resolver deterministisch
+
+from ..state import SealAIState, MetaInfo
+from ..nodes.resolver import resolver
+
+def test_resolver_determinism():
+    meta = MetaInfo(thread_id="t1", user_id="u1", trace_id="tr1")
+    state = SealAIState(meta=meta, routing={"domains": ["material"], "confidence": 0.8})
+    
+    result1 = resolver(state)
+    result2 = resolver(state)
+    # Assert same output
+    assert result1 == result2==================== backend/app/langgraph/tests/test_singleflow_entry_to_exit.py ====================
+# MIGRATION: Phase-1 - E2E ohne RAG/Tools
+
+from ..state import SealAIState, MetaInfo
+from ..nodes.entry_frontend import entry_frontend
+from ..nodes.discovery_intake import discovery_intake
+from ..nodes.intent_projector import intent_projector
+from ..nodes.supervisor import supervisor
+from ..nodes.resolver import resolver
+from ..nodes.exit_response import exit_response
+from unittest.mock import patch
+
+def test_single_flow():
+    meta = MetaInfo(thread_id="t1", user_id="u1", trace_id="tr1")
+    state = SealAIState(meta=meta, slots={"user_query": "Test material query"})
+    
+    # Mock LLM calls
+    with patch('backend.app.langgraph.utils.llm.call_llm', return_value="Mocked response"):
+        # Simulate flow
+        state_dict = entry_frontend(state)
+        state = state.update(state_dict)
+        assert len(state.messages) == 1
+        assert state.messages[0]["role"] == "user"
+        
+        state_dict = discovery_intake(state)
+        state = state.update(state_dict)
+        assert len(state.messages) == 2
+        assert "What is the material?" in state.messages[1]["content"]
+        
+        state_dict = intent_projector(state)
+        state = state.update(state_dict)
+        assert state.routing.domains == ["material"]
+        
+        # Supervisor, Resolver, Exit - Dummy assertions
+        state_dict = supervisor(state)
+        state = state.update(state_dict)
+        
+        state_dict = resolver(state)
+        state = state.update(state_dict)
+        assert "Resolved:" in state.messages[-1]["content"]
+        
+        state_dict = exit_response(state)
+        state = state.update(state_dict)
+        assert len(state.messages) == 4  # Plus answer==================== backend/app/langgraph/tests/test_rag_ref_only.py ====================
+# MIGRATION: Phase-2 - RAG liefert nur Referenzen
+
+from ..state import SealAIState, MetaInfo
+from ..subgraphs.material.nodes.rag_select import rag_select
+
+def test_rag_refs():
+    meta = MetaInfo(thread_id="t1", user_id="u1", trace_id="tr1")
+    state = SealAIState(meta=meta, slots={"user_query": "material test"})
+    initial_refs = len(state.context_refs)
+    state_dict = rag_select(state)
+    new_state = state.update(state_dict)
+    # Assert only refs added, no full texts in messages
+    assert len(new_state.context_refs) >= initial_refs
+    for ref in new_state.context_refs:
+        assert ref.kind == "rag"
+        assert "id" in ref.dict()
+        assert "text" not in str(ref.dict())  # No full text==================== backend/app/langgraph/compile.py ====================
+# backend/app/langgraph/compile.py
+# MIGRATION: Phase-2 - Hauptgraph kompilieren, Checkpointer setzen
+
+from __future__ import annotations
+
+import json
+from typing import Any, AsyncIterator, Dict, Optional
+from uuid import uuid4
+
+from fastapi import HTTPException, Request
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import BaseMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+
+from .checkpointer import make_checkpointer
+from .constants import CHECKPOINTER_NAMESPACE_MAIN
+from .nodes.confirm_gate import confirm_gate
+from .nodes.discovery_intake import discovery_intake
+from .nodes.entry_frontend import entry_frontend
+from .nodes.exit_response import exit_response
+from .nodes.intent_projector import intent_projector
+from .nodes.resolver import resolver
+from .nodes.supervisor import supervisor
+from .state import MetaInfo, Routing, SealAIState
+from .subgraphs.debate.compile import create_debate_subgraph
+from .subgraphs.material.compile import create_material_subgraph
+from .subgraphs.recommendation.nodes.rag_handoff import rag_handoff
+
+_CHECKPOINTER = make_checkpointer()
+_ASYNC_CHECKPOINTER = make_checkpointer(require_async=True)
+
+
+def _create_recommendation_subgraph() -> CompiledStateGraph:
+    # // FIX: Lightweight recommendation subgraph for RAG enrichment.
+    subgraph = StateGraph(SealAIState)
+    subgraph.add_node("rag_handoff", rag_handoff)
+    subgraph.set_entry_point("rag_handoff")
+    subgraph.add_edge("rag_handoff", END)
+    return subgraph.compile()
+
+def _ensure_compiled(subgraph) -> CompiledStateGraph:
+    if isinstance(subgraph, CompiledStateGraph):
+        return subgraph
+    if isinstance(subgraph, StateGraph):
+        return subgraph.compile()
+    compile_attr = getattr(subgraph, "compile", None)
+    if callable(compile_attr):
+        compiled = compile_attr()
+        if isinstance(compiled, CompiledStateGraph):
+            return compiled
+    raise TypeError("Expected a StateGraph or CompiledStateGraph for subgraph nodes")
+
+def _ensure_async_ready(checkpointer: object) -> object:
+    """
+    Ensure the supplied saver provides async checkpoint primitives.
+    Falls back to the async-safe module default otherwise.
+    """
+    if hasattr(checkpointer, "aget_tuple") and callable(getattr(checkpointer, "aget_tuple")):
+        return checkpointer
+    return _ASYNC_CHECKPOINTER
+
+
+def create_main_graph(*, checkpointer: Optional[object] = None, require_async: bool = False) -> CompiledStateGraph:
+    builder = StateGraph(SealAIState)
+
+    # Nodes
+    builder.add_node("entry_frontend", entry_frontend)
+    builder.add_node("discovery_intake", discovery_intake)
+    builder.add_node("confirm_gate", confirm_gate)
+    builder.add_node("intent_projector", intent_projector)
+    builder.add_node("supervisor", supervisor)
+
+    recommendation_subgraph = _ensure_compiled(_create_recommendation_subgraph())
+    material_subgraph = _ensure_compiled(create_material_subgraph())
+    debate_subgraph = _ensure_compiled(create_debate_subgraph())
+
+    builder.add_node("recommendation", recommendation_subgraph)
+    builder.add_node("material_subgraph", material_subgraph)
+    builder.add_node("debate_subgraph", debate_subgraph)
+    builder.add_node("resolver", resolver)
+    builder.add_node("exit_response", exit_response)
+
+    # Edges
+    builder.add_edge(START, "entry_frontend")
+    builder.add_edge("entry_frontend", "discovery_intake")
+    builder.add_edge("discovery_intake", "confirm_gate")
+    builder.add_edge("confirm_gate", "intent_projector")
+    builder.add_edge("intent_projector", "supervisor")
+    builder.add_edge("supervisor", "resolver")
+    builder.add_edge("recommendation", "resolver")
+    builder.add_edge("material_subgraph", "resolver")
+    builder.add_edge("debate_subgraph", "resolver")
+    builder.add_edge("resolver", "exit_response")
+    builder.add_edge("exit_response", END)
+
+    if checkpointer is None:
+        checkpointer = _ASYNC_CHECKPOINTER if require_async else _CHECKPOINTER
+    elif require_async:
+        checkpointer = _ensure_async_ready(checkpointer)
+
+    return builder.compile(checkpointer=checkpointer)
+
+
+_GRAPH_CACHE: Optional[CompiledStateGraph] = None
+
+
+def _ensure_main_graph() -> CompiledStateGraph:
+    global _GRAPH_CACHE
+    if _GRAPH_CACHE is None:
+        _GRAPH_CACHE = create_main_graph(require_async=True)
+    return _GRAPH_CACHE
+
+
+def _message_text(message: Any) -> Optional[str]:
+    if isinstance(message, BaseMessage):
+        content = message.content
+        return content if isinstance(content, str) else str(content)
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if content is not None:
+            return str(content)
+    return None
+
+
+async def _request_payload(request: Request) -> Dict[str, Any]:
+    cached = getattr(request.state, "langgraph_payload", None)
+    if isinstance(cached, dict):
+        return dict(cached)
+    if request.method in {"POST", "PUT", "PATCH"}:
+        try:
+            data = await request.json()
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return dict(request.query_params)
+
+
+def _build_initial_state(payload: Dict[str, Any], *, chat_id: str, user_id: str, user_input: str) -> SealAIState:
+    return SealAIState(
+        messages=[],
+        slots={"user_query": user_input},
+        routing=Routing(),
+        context_refs=[],
+        meta=MetaInfo(thread_id=chat_id, user_id=user_id, trace_id=str(uuid4())),
+    )
+
+
+async def _sse_events(graph: CompiledStateGraph, state: SealAIState, config: Dict[str, Any]) -> AsyncIterator[str]:
+    async for event in graph.astream_events(state, config=config, stream_mode="messages"):
+        kind = event.get("event")
+        if kind == "messages":
+            for message in event.get("data", []):
+                text = _message_text(message)
+                if text:
+                    payload = json.dumps({"text": text}, ensure_ascii=False)
+                    yield f"event: message\ndata: {payload}\n\n"
+        elif kind == "end":
+            yield "event: done\ndata: {}\n\n"
+            return
+
+
+async def run_langgraph_stream(request: Request):
+    payload = await _request_payload(request)
+    user_input = str(
+        payload.get("input")
+        or payload.get("input_text")
+        or payload.get("text")
+        or payload.get("query")
+        or payload.get("message")
+        or ""
+    ).strip()
+    if not user_input:
+        raise HTTPException(status_code=400, detail="input empty")
+
+    chat_id = str(
+        payload.get("chat_id")
+        or payload.get("thread_id")
+        or payload.get("chatId")
+        or request.path_params.get("chat_id")
+        or "default"
+    ).strip() or "default"
+    user_id = str(
+        payload.get("user_id")
+        or getattr(getattr(request.state, "user", None), "id", None)
+        or request.headers.get("x-user-id")
+        or "api_user"
+    )
+
+    graph = _ensure_main_graph()
+    initial_state = _build_initial_state(payload, chat_id=chat_id, user_id=user_id, user_input=user_input)
+    config = {
+        "configurable": {
+            "thread_id": chat_id,
+            "user_id": user_id,
+            "checkpoint_ns": CHECKPOINTER_NAMESPACE_MAIN,
+        }
+    }
+
+    accepts = request.headers.get("accept", "")
+    if request.url.path.endswith("/chat/stream") or "text/event-stream" in accepts:
+        return StreamingResponse(_sse_events(graph, initial_state, config), media_type="text/event-stream")
+
+    final_text = ""
+    async for event in graph.astream_events(initial_state, config=config, stream_mode="messages"):
+        if event.get("event") == "messages":
+            for message in event.get("data", []):
+                text = _message_text(message)
+                if text:
+                    final_text = text
+        elif event.get("event") == "end":
+            break
+
+    return {"text": final_text or "", "chat_id": chat_id}
+
+
+__all__ = ["create_main_graph", "run_langgraph_stream"]
+==================== backend/app/langgraph/state.py ====================
+# MIGRATION: Phase-2 - State-Definitionen (messages-first, TypedDict für 0.6.10)
+
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.graph import add_messages
+
+class ContextRef(TypedDict, total=False):
+    kind: str  # "rag" or "tool"
+    id: str
+    meta: Optional[Dict[str, Any]]
+
+class Routing(TypedDict, total=False):
+    domains: List[str]
+    primary_domain: Optional[str]
+    confidence: float
+    coverage: float
+
+class MetaInfo(TypedDict, total=False):
+    thread_id: str
+    user_id: str
+    trace_id: str
+
+class SealAIState(TypedDict, total=False):
+    messages: Annotated[List[BaseMessage], add_messages]
+    slots: Dict[str, Any]
+    routing: Routing
+    context_refs: List[ContextRef]
+    meta: MetaInfo
+
+
+def new_user_message(content: str, *, user_id: str, msg_id: str) -> HumanMessage:
+    return HumanMessage(content=content, id=msg_id, name=user_id)
+
+
+def new_assistant_message(content: str, *, msg_id: str) -> AIMessage:
+    return AIMessage(content=content, id=msg_id)
+
+# Validation function for slots (keine großen Artefakte)
+def validate_slots(slots: Dict[str, Any]) -> Dict[str, Any]:
+    for key, value in slots.items():
+        if isinstance(value, (str, dict, list)) and len(str(value)) > 1000:
+            raise ValueError(f"Slot {key} too large")
+    return slots
+
+# No custom update method needed; use built-in Partial-Updates in LangGraph
+==================== backend/app/langgraph/tools/material_calculator.py ====================
+# MIGRATION: Phase-1/Phase-2 - Reine Tool-Signaturen + Validierung, mit Cache
+
+from typing import Dict, Any
+from pydantic import BaseModel
+import hashlib
+import json
+import os
+import redis
+
+class MaterialCalculatorInput(BaseModel):
+    material: str
+    pressure: float
+    temperature: float
+
+class MaterialCalculatorOutput(BaseModel):
+    result: float
+    units: str
+
+REDIS_URL = os.getenv("REDIS_URL")
+CACHE_TTL = 3600
+
+def _get_cache_key(input_data: dict) -> str:
+    data_str = json.dumps(input_data, sort_keys=True)
+    return f"tool:material_calculator:{hashlib.md5(data_str.encode()).hexdigest()}"
+
+def material_calculator(input: MaterialCalculatorInput) -> MaterialCalculatorOutput:
+    cache_key = _get_cache_key(input.dict())
+    if REDIS_URL:
+        r = redis.Redis.from_url(REDIS_URL)
+        cached = r.get(cache_key)
+        if cached:
+            return MaterialCalculatorOutput.parse_raw(cached)
+    # Dummy calculation
+    result = input.pressure * input.temperature / 100
+    output = MaterialCalculatorOutput(result=result, units="MPa")
+    # Cache
+    if REDIS_URL:
+        r.setex(cache_key, CACHE_TTL, output.json())
+    return output
