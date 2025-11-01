@@ -4,9 +4,10 @@ import json
 import logging
 import os
 import re
+import contextlib
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 from redis import Redis
 from starlette.websockets import WebSocketState
@@ -16,7 +17,11 @@ from app.services.chat.ws_streaming import stream_langgraph
 
 log = logging.getLogger("uvicorn.error")
 
-ENABLE_LANGGRAPH = os.getenv("ENABLE_LANGGRAPH_V06", "false").lower() in ("true", "1", "yes")
+ENABLE_LANGGRAPH = os.getenv("ENABLE_LANGGRAPH", os.getenv("ENABLE_LANGGRAPH_V06", "true")).lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 STM_PREFIX = os.getenv("STM_PREFIX", "chat:stm")
@@ -110,18 +115,17 @@ async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
     user_text = (payload.input or "").strip()
     thread_id = f"api:{payload.chat_id or 'default'}"
 
+    if not user_text:
+        raise HTTPException(status_code=400, detail="input empty")
+
     memory_hint = _memory_intent(user_text, thread_id)
     if memory_hint:
         return ChatResponse(text=memory_hint)
 
-    message = (
-        "LangGraph wurde entfernt. "
-        "Die Beratungskomponente wird neu aufgebaut. "
-        "Bitte zu einem späteren Zeitpunkt erneut versuchen."
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="LangGraph temporarily unavailable. Use WS /chat/stream.",
     )
-    if not user_text:
-        raise HTTPException(status_code=400, detail="input empty")
-    return ChatResponse(text=message)
 
 
 _BEARER_RE = re.compile(r"^\s*Bearer\s+(.+?)\s*$", re.IGNORECASE)
@@ -150,16 +154,7 @@ def _resolve_ws_token(ws: WebSocket, query_token: Optional[str]) -> Optional[str
     return query_token or _extract_token_from_headers(ws) or _extract_token_from_cookies(ws)
 
 
-@router.websocket("/api/v1/ai/ws")
 @router.websocket("/ws")
-@router.websocket("/chat/ws")
-@router.websocket("/v1/ws")
-@router.websocket("/ws_chat")
-@router.websocket("/api/v1/ai/ws")
-@router.websocket("/ws")
-@router.websocket("/chat/ws")
-@router.websocket("/v1/ws")
-@router.websocket("/ws_chat")
 async def ws_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)) -> None:
     effective_token = _resolve_ws_token(websocket, token)
     if not WS_AUTH_OPTIONAL and not effective_token:
@@ -188,48 +183,55 @@ async def ws_endpoint(websocket: WebSocket, token: Optional[str] = Query(default
 
             chat_id = data.get("chat_id") or "default"
             user_input = str(data.get("input") or data.get("text") or data.get("query") or "").strip()
-            mode = data.get("mode", "default")
 
             if not user_input:
                 continue
 
             memory_hint = _memory_intent(user_input, f"ws:{chat_id}")
             if memory_hint:
-                await send_json_safe(websocket, {"event": "memory", "text": memory_hint})
-                continue
-            if mode == "graph" and ENABLE_LANGGRAPH:
-                await stream_langgraph(websocket, {"input": user_input, "chat_id": chat_id})
+                await send_json_safe(
+                    websocket,
+                    {"type": "memory_hint", "event": "memory", "text": memory_hint},
+                )
                 continue
 
-            # Fallback for non-memory messages when LangGraph is disabled
+            if ENABLE_LANGGRAPH:
+                await stream_langgraph(
+                    websocket,
+                    {
+                        "input": user_input,
+                        "chat_id": chat_id,
+                        "thread_id": data.get("thread_id"),
+                        "user_id": data.get("user_id") or effective_token or "ws_user",
+                    },
+                )
+                with contextlib.suppress(Exception):
+                    if websocket.application_state == WebSocketState.CONNECTED:
+                        await websocket.close(code=1000)
+                return
+
             await send_json_safe(
                 websocket,
                 {
+                    "type": "graph_disabled",
                     "event": "info",
                     "message": (
-                        "LangGraph wurde entfernt. "
-                        "Streaming-Antworten stehen vorübergehend nicht zur Verfügung."
+                        "LangGraph ist deaktiviert. Streaming-Antworten stehen derzeit nicht zur Verfügung."
                     ),
                 },
             )
-            await send_json_safe(websocket, {"event": "done"})
+            await send_json_safe(websocket, {"type": "graph_done", "event": "done"})
+            with contextlib.suppress(Exception):
+                if websocket.application_state == WebSocketState.CONNECTED:
+                    await websocket.close(code=1000)
+            return
     except WebSocketDisconnect:
         pass
     except Exception as exc:
         log.exception("ws_endpoint error: %r", exc)
         try:
             if websocket.application_state == WebSocketState.CONNECTED:
-                await send_json_safe(websocket, {"event": "error", "message": "internal_error"})
-        finally:
-            if websocket.application_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1011)
-    except WebSocketDisconnect:
-        pass
-    except Exception as exc:
-        log.exception("ws_endpoint error: %r", exc)
-        try:
-            if websocket.application_state == WebSocketState.CONNECTED:
-                await send_json_safe(websocket, {"event": "error", "message": "internal_error"})
+                await send_json_safe(websocket, {"type": "graph_error", "event": "error", "error": "internal_error"})
         finally:
             if websocket.application_state == WebSocketState.CONNECTED:
                 await websocket.close(code=1011)

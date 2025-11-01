@@ -1,8 +1,6 @@
 # backend/app/api/v1/endpoints/consult_invoke.py
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -21,10 +19,7 @@ async def consult_invoke_endpoint(payload: ConsultInvokeIn):
     if not text:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="text empty")
 
-    chat_id = f"api:{payload.chat_id.strip() or 'test'}"
-    result = {
-        "message": "LangGraph wurde entfernt. Dieser Test-Endpunkt liefert nur Platzhalterdaten.",
-        "input": text,
-        "chat_id": chat_id,
-    }
-    return {"text": json.dumps(result)}
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="LangGraph temporarily unavailable. Use WS /chat/stream.",
+    )
