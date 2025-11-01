@@ -11,8 +11,7 @@ async def resolver(state: SealAIState) -> Send:
     
     # Regel: Wenn confidence < threshold, debate
     if confidence < CONFIDENCE_THRESHOLD:
-        # Send zu debate_subgraph (noch nicht implementiert, placeholder)
-        return Send("debate_subgraph", state)
+    return state
     else:
         # Go to exit
         return Send("exit_response", state)

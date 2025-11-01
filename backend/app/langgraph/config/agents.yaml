@@ -1,12 +1,10 @@
 # MIGRATION: Phase-1/Phase-2 - Agent-/Subgraph-Konfigurationen
-
 material:
   model:
     name: gpt-4o-mini  # Overridden by OPENAI_MODEL if set
     temperature: 0.7
     max_output_tokens: 1000
   prompt:
-    agent: prompts/material_agent.md
     variant: default
   rag:
     index_id: sealai-docs
@@ -27,9 +25,7 @@ material:
   budget:
     max_tool_calls: 10
     max_llm_calls: 5
-
 # Similar for profil, validierung
-
 debate:
   model:
     name: gpt-4o  # Overridden by OPENAI_MODEL if set
