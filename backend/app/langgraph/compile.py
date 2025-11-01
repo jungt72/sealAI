@@ -55,9 +55,6 @@ def create_main_graph(*, checkpointer: Optional[object] = None, require_async: b
     builder.add_node("confirm_gate", confirm_gate)
     builder.add_node("intent_projector", intent_projector)
     builder.add_node("supervisor", supervisor)
-    recommendation_subgraph = _ensure_compiled(_create_recommendation_subgraph())
-    material_subgraph = _ensure_compiled(create_material_subgraph())
-    debate_subgraph = _ensure_compiled(create_debate_subgraph())
     builder.add_node("resolver", resolver)
     builder.add_node("exit_response", exit_response)
     # Edges
