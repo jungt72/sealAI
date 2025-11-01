@@ -8,6 +8,7 @@ import contextlib
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
+from app.langgraph.compile import run_langgraph_stream
 from pydantic import BaseModel, Field
 from redis import Redis
 from starlette.websockets import WebSocketState
@@ -122,10 +123,10 @@ async def beratung(_req: Request, payload: ChatRequest) -> ChatResponse:
     if memory_hint:
         return ChatResponse(text=memory_hint)
 
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="LangGraph temporarily unavailable. Use WS /chat/stream.",
-    )
+    request = _req
+    request.state.langgraph_payload = payload.model_dump()
+    result = await run_langgraph_stream(request)
+    return result
 
 
 _BEARER_RE = re.compile(r"^\s*Bearer\s+(.+?)\s*$", re.IGNORECASE)

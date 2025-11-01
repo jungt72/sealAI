@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
+from app.langgraph.compile import run_langgraph_stream
 from pydantic import BaseModel, Field
 
 router = APIRouter()  # Prefix und Tags werden im übergeordneten Router gesetzt
@@ -14,8 +15,7 @@ class _ConsultInvokeIn(BaseModel):
 
 
 @router.post("/test/consult/invoke", tags=["test"])
-async def test_consult_invoke(_body: _ConsultInvokeIn) -> Dict[str, Any]:
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="LangGraph temporarily unavailable. Use WS /chat/stream.",
-    )
+async def test_consult_invoke(request: Request, _body: _ConsultInvokeIn) -> Dict[str, Any]:
+    request.state.langgraph_payload = _body.model_dump()
+    result = await run_langgraph_stream(request)
+    return result

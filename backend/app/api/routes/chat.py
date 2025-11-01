@@ -1,7 +1,10 @@
 """Chat endpoint placeholder emitting HTTP 503 while LangGraph rebuilds."""
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from app.langgraph.compile import run_langgraph_stream
 from pydantic import BaseModel, Field
 
 from app.services.auth.dependencies import get_current_request_user
@@ -26,16 +29,15 @@ async def chat_stream(
     payload: ChatStreamRequest,
     _request: Request,
     _username: str = Depends(get_current_request_user),
-) -> None:
+) -> Any:
     text = payload.input_text.strip()
     if not text:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="input_text empty")
 
-    # Fast fail until LangGraph streaming is re-enabled
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="LangGraph temporarily unavailable. Use WS /chat/stream.",
-    )
+    request = _request
+    request.state.langgraph_payload = payload.model_dump()
+    result = await run_langgraph_stream(request)
+    return result
 
 
 __all__ = ["router"]
