@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     ai,               # → enthält WS (/api/v1/ai/ws) + Sync-Invoke (/api/v1/ai/beratung)
     auth,
     consult_invoke,   # optionaler Sync-Debug-Invoke
+    langgraph_v2,     # LangGraph v2 HTTP/SSE-Endpunkte
     memory,
     system,
     users,
@@ -26,6 +27,9 @@ api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
 
 # Optional: Debug/Test invoke
 api_router.include_router(consult_invoke.router, tags=["test"])
+
+# LangGraph HTTP/SSE-API (v2)
+api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph-v2"])
 
 # Weitere Subsysteme
 api_router.include_router(auth.router)

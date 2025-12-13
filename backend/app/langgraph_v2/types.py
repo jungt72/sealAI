@@ -44,6 +44,7 @@ PhaseLiteral: TypeAlias = Literal[
     "frontdoor",
     "smalltalk",
     "intent",
+    "confirm",
     "preflight_use_case",
     "preflight_parameters",
     "calculation",

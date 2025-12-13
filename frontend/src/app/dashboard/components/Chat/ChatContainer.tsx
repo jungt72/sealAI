@@ -7,7 +7,7 @@ import ChatHistory from "./ChatHistory";
 import Thinking from "./Thinking";
 import ChatInput from "./ChatInput";
 import type { Message } from "@/types/chat";
-import { useChatWs } from "@/lib/useChatWs";
+import { useChatSseV2 } from "@/lib/useChatSseV2";
 import { useChatThreadId } from "@/lib/useChatThreadId";
 
 import ReactMarkdown from "react-markdown";
@@ -19,8 +19,8 @@ export default function ChatContainer() {
 
   const chatId = useChatThreadId();
   const token = useAccessToken();
-  const { connected, streaming, text, lastError, send, cancel } =
-    useChatWs({ chatId, token });
+  const { connected, streaming, text, lastError, confirmCheckpoint, send, cancel } =
+    useChatSseV2({ chatId, token });
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -141,9 +141,9 @@ export default function ChatContainer() {
                 !hasThread ? (
                   <span className="text-amber-600">Initialisiere Sitzung…</span>
                 ) : connected ? (
-                  <span className="text-emerald-600">WebSocket verbunden</span>
+                  <span className="text-emerald-600">Streaming bereit</span>
                 ) : (
-                  <span className="text-amber-600">Verbinde WebSocket…</span>
+                  <span className="text-amber-600">Initialisiere Streaming…</span>
                 )
               ) : (
                 <span className="text-gray-500">Bitte anmelden</span>
@@ -163,7 +163,7 @@ export default function ChatContainer() {
                     ? "Initialisiere Sitzung…"
                     : connected
                       ? "Was möchtest du wissen?"
-                      : "Verbinde…"
+                      : "Initialisiere…"
                   : "Bitte anmelden, um zu schreiben"
               }
             />
@@ -191,6 +191,24 @@ export default function ChatContainer() {
             className="flex-1 overflow-y-auto w-full pb-36"
             style={{ minHeight: 0 }}
           >
+            {confirmCheckpoint ? (
+              <div className="w-full max-w-[768px] mx-auto px-4 pt-3">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  <div className="font-semibold">Abnahme-Checkpoint</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide">
+                      Status: {confirmCheckpoint.recommendation_go ? "GO" : "NO-GO"}
+                    </span>
+                    {!confirmCheckpoint.recommendation_go ? (
+                      <span className="text-xs">Freigabe erforderlich (bitte fehlende Kernangaben ergänzen).</span>
+                    ) : (
+                      <span className="text-xs">Bitte kurz bestätigen, dann kann die Empfehlung weiter ausgearbeitet werden.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <ChatHistory messages={historyMessages} />
 
             {/* Anker vor der Live-Bubble */}
@@ -221,16 +239,16 @@ export default function ChatContainer() {
                 onStop={() => cancel()}
                 disabled={sendingDisabled}
                 streaming={streaming}
-                placeholder={
-                  isAuthed
-                    ? !hasThread
-                      ? "Initialisiere Sitzung…"
-                      : connected
-                        ? "Was möchtest du wissen?"
-                        : "Verbinde…"
-                    : "Bitte anmelden, um zu schreiben"
-                }
-              />
+              placeholder={
+                isAuthed
+                  ? !hasThread
+                    ? "Initialisiere Sitzung…"
+                    : connected
+                      ? "Was möchtest du wissen?"
+                      : "Initialisiere…"
+                  : "Bitte anmelden, um zu schreiben"
+              }
+            />
               {!isAuthed && (
                 <div className="mt-2 text-xs text-gray-500">
                   Du musst angemeldet sein, um Nachrichten zu senden.
