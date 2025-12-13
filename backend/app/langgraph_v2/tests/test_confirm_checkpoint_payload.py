@@ -9,7 +9,7 @@ def test_build_confirm_checkpoint_payload() -> None:
         final_text="**Abnahme-Checkpoint (vorläufig)**\n- Status: GO",
         recommendation_go=True,
         coverage_score=0.9,
-        coverage_gaps=[],
+        coverage_gaps=["medium"],
         parameters=TechnicalParameters(
             medium="Hydraulikoel",
             temperature_C=80,
@@ -23,3 +23,4 @@ def test_build_confirm_checkpoint_payload() -> None:
     assert payload["phase"] == "confirm"
     assert payload["recommendation_go"] is True
     assert payload["coverage_score"] == 0.9
+    assert payload["missing_core"] == ["medium"]

@@ -114,10 +114,14 @@ function normalizeIncomingValue(key: keyof FormState, value: unknown) {
 
 const baseInput =
   "mt-1 w-full rounded px-3 py-2 text-sm transition border outline-none focus:ring-2 focus:ring-blue-200";
-const cls = (isFilled: boolean) =>
+const cls = (isFilled: boolean, isMissing: boolean) =>
   [
     baseInput,
-    isFilled ? "text-black font-semibold border-gray-900" : "text-gray-700 border-gray-300 placeholder-gray-400",
+    isFilled
+      ? "text-black font-semibold border-gray-900"
+      : isMissing
+        ? "text-gray-700 border-amber-400 placeholder-gray-400 ring-2 ring-amber-100"
+        : "text-gray-700 border-gray-300 placeholder-gray-400",
   ].join(" ");
 
 function FormInner({
@@ -137,11 +141,27 @@ function FormInner({
   clearAll: () => void;
   containerRef: React.RefObject<HTMLDivElement>;
 }) {
+  const isMissing = React.useCallback(
+    (key: keyof FormState) => missing.includes(String(key)) && !filled(form[key]),
+    [missing, form],
+  );
+
+  const labelMissingBadge = (key: keyof FormState) =>
+    isMissing(key) ? (
+      <span className="ml-2 inline-flex items-center rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+        fehlt
+      </span>
+    ) : null;
+
+  const missingPretty = missing
+    .map((key) => LABELS[key] || key)
+    .filter(Boolean);
+
   return (
     <>
       {missing.length > 0 && (
         <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Fehlend: {missing.join(", ")}
+          Fehlend: {missingPretty.join(", ")}
         </div>
       )}
 
@@ -149,13 +169,16 @@ function FormInner({
         {/* RWDR */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700">{LABELS.wellen_mm}</label>
+            <label className="block text-sm font-medium text-gray-700">
+              {LABELS.wellen_mm}
+              {labelMissingBadge("wellen_mm")}
+            </label>
             <input
               type="number"
               inputMode="decimal"
               step="0.01"
               placeholder="z. B. 25"
-              className={cls(filled(form.wellen_mm))}
+              className={cls(filled(form.wellen_mm), isMissing("wellen_mm"))}
               value={form.wellen_mm ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, wellen_mm: toNum(e.target.value) }))}
               onBlur={(e) => patch("wellen_mm", toNum(e.target.value))}
@@ -168,7 +191,7 @@ function FormInner({
               inputMode="decimal"
               step="0.01"
               placeholder="z. B. 47"
-              className={cls(filled(form.gehause_mm))}
+              className={cls(filled(form.gehause_mm), isMissing("gehause_mm"))}
               value={form.gehause_mm ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, gehause_mm: toNum(e.target.value) }))}
               onBlur={(e) => patch("gehause_mm", toNum(e.target.value))}
@@ -181,7 +204,7 @@ function FormInner({
               inputMode="decimal"
               step="0.01"
               placeholder="z. B. 7"
-              className={cls(filled(form.breite_mm))}
+              className={cls(filled(form.breite_mm), isMissing("breite_mm"))}
               value={form.breite_mm ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, breite_mm: toNum(e.target.value) }))}
               onBlur={(e) => patch("breite_mm", toNum(e.target.value))}
@@ -191,37 +214,46 @@ function FormInner({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-1">
-            <label className="block text-sm font-medium text-gray-700">{LABELS.medium}</label>
+            <label className="block text-sm font-medium text-gray-700">
+              {LABELS.medium}
+              {labelMissingBadge("medium")}
+            </label>
             <input
               type="text"
               placeholder="z. B. Hydrauliköl"
-              className={cls(filled(form.medium))}
+              className={cls(filled(form.medium), isMissing("medium"))}
               value={form.medium ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, medium: e.target.value }))}
               onBlur={(e) => patch("medium", e.target.value.trim() || undefined)}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">{LABELS.temp_max_c}</label>
+            <label className="block text-sm font-medium text-gray-700">
+              {LABELS.temp_max_c}
+              {labelMissingBadge("temp_max_c")}
+            </label>
             <input
               type="number"
               inputMode="decimal"
               step="1"
               placeholder="z. B. 80"
-              className={cls(filled(form.temp_max_c))}
+              className={cls(filled(form.temp_max_c), isMissing("temp_max_c"))}
               value={form.temp_max_c ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, temp_max_c: toNum(e.target.value) }))}
               onBlur={(e) => patch("temp_max_c", toNum(e.target.value))}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">{LABELS.druck_bar}</label>
+            <label className="block text-sm font-medium text-gray-700">
+              {LABELS.druck_bar}
+              {labelMissingBadge("druck_bar")}
+            </label>
             <input
               type="number"
               inputMode="decimal"
               step="0.1"
               placeholder="z. B. 2"
-              className={cls(filled(form.druck_bar))}
+              className={cls(filled(form.druck_bar), isMissing("druck_bar"))}
               value={form.druck_bar ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, druck_bar: toNum(e.target.value) }))}
               onBlur={(e) => patch("druck_bar", toNum(e.target.value))}
@@ -231,13 +263,16 @@ function FormInner({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700">{LABELS.drehzahl_u_min}</label>
+            <label className="block text-sm font-medium text-gray-700">
+              {LABELS.drehzahl_u_min}
+              {labelMissingBadge("drehzahl_u_min")}
+            </label>
             <input
               type="number"
               inputMode="numeric"
               step="1"
               placeholder="z. B. 1500"
-              className={cls(filled(form.drehzahl_u_min))}
+              className={cls(filled(form.drehzahl_u_min), isMissing("drehzahl_u_min"))}
               value={form.drehzahl_u_min ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, drehzahl_u_min: toNum(e.target.value) }))}
               onBlur={(e) => patch("drehzahl_u_min", toNum(e.target.value))}
@@ -254,7 +289,7 @@ function FormInner({
               inputMode="decimal"
               step="0.01"
               placeholder="z. B. 25"
-              className={cls(filled(form.stange_mm))}
+              className={cls(filled(form.stange_mm), isMissing("stange_mm"))}
               value={form.stange_mm ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, stange_mm: toNum(e.target.value) }))}
               onBlur={(e) => patch("stange_mm", toNum(e.target.value))}
@@ -267,7 +302,7 @@ function FormInner({
               inputMode="decimal"
               step="0.01"
               placeholder="z. B. 32"
-              className={cls(filled(form.nut_d_mm))}
+              className={cls(filled(form.nut_d_mm), isMissing("nut_d_mm"))}
               value={form.nut_d_mm ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, nut_d_mm: toNum(e.target.value) }))}
               onBlur={(e) => patch("nut_d_mm", toNum(e.target.value))}
@@ -280,7 +315,7 @@ function FormInner({
               inputMode="decimal"
               step="0.01"
               placeholder="z. B. 6"
-              className={cls(filled(form.nut_b_mm))}
+              className={cls(filled(form.nut_b_mm), isMissing("nut_b_mm"))}
               value={form.nut_b_mm ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, nut_b_mm: toNum(e.target.value) }))}
               onBlur={(e) => patch("nut_b_mm", toNum(e.target.value))}
@@ -293,7 +328,7 @@ function FormInner({
               inputMode="decimal"
               step="0.01"
               placeholder="z. B. 0.3"
-              className={cls(filled(form.geschwindigkeit_m_s))}
+              className={cls(filled(form.geschwindigkeit_m_s), isMissing("geschwindigkeit_m_s"))}
               value={form.geschwindigkeit_m_s ?? ""}
               onChange={(e) => setForm((f) => ({ ...f, geschwindigkeit_m_s: toNum(e.target.value) }))}
               onBlur={(e) => patch("geschwindigkeit_m_s", toNum(e.target.value))}
@@ -408,6 +443,7 @@ export default function SidebarForm({ embedded = false }: Props) {
             ? v
             : undefined
           : (v && String(v).trim()) || undefined;
+      setMissing((prev) => (typeof payloadValue !== "undefined" ? prev.filter((key) => key !== String(k)) : prev));
       if (patchTimer.current) window.clearTimeout(patchTimer.current);
       patchTimer.current = window.setTimeout(() => {
         if (typeof payloadValue !== "undefined" && chatId) {

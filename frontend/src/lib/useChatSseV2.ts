@@ -13,6 +13,7 @@ export type ConfirmCheckpointPayload = {
   recommendation_go?: boolean;
   coverage_score?: number;
   coverage_gaps?: string[];
+  missing_core?: string[];
   text?: string;
 };
 
@@ -154,4 +155,3 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
 
   return { connected, streaming, text, lastError, confirmCheckpoint, send, cancel };
 }
-

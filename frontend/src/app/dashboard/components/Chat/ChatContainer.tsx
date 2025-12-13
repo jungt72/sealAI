@@ -128,6 +128,41 @@ export default function ChatContainer() {
 
   const hasFirstToken = text.trim().length > 0;
 
+  const missingCoreFields = useMemo(() => {
+    const knownCore = ["medium", "temperature_C", "pressure_bar", "speed_rpm", "shaft_diameter"];
+    const raw =
+      (confirmCheckpoint as any)?.missing_core ??
+      (confirmCheckpoint as any)?.missingCore ??
+      (confirmCheckpoint as any)?.coverage_gaps ??
+      [];
+    const list = Array.isArray(raw) ? raw.filter((v) => typeof v === "string") : [];
+    const filtered = list.filter((k) => knownCore.includes(k));
+    return Array.from(new Set(filtered));
+  }, [confirmCheckpoint]);
+
+  const openMissingParameterForm = useCallback(() => {
+    const mapping: Record<string, string> = {
+      medium: "medium",
+      temperature_C: "temp_max_c",
+      pressure_bar: "druck_bar",
+      speed_rpm: "drehzahl_u_min",
+      shaft_diameter: "wellen_mm",
+    };
+    const missingFormKeys = missingCoreFields
+      .map((k) => mapping[k])
+      .filter((v): v is string => typeof v === "string" && v.length > 0);
+    window.dispatchEvent(
+      new CustomEvent("sealai:ui", {
+        detail: {
+          ui_action: "open_form",
+          action: "open_form",
+          missing: missingFormKeys,
+          source: "confirm_checkpoint",
+        },
+      }),
+    );
+  }, [missingCoreFields]);
+
   const approveConfirmGo = useCallback(async () => {
     if (!chatId) return;
     if (!token) return;
@@ -235,6 +270,12 @@ export default function ChatContainer() {
                       <span className="text-xs">Bitte kurz bestätigen, dann kann die Empfehlung weiter ausgearbeitet werden.</span>
                     )}
                   </div>
+                  {!confirmCheckpoint.recommendation_go && missingCoreFields.length > 0 ? (
+                    <div className="mt-1 text-xs">
+                      Fehlt (Kernfelder):{" "}
+                      <span className="font-semibold">{missingCoreFields.join(", ")}</span>
+                    </div>
+                  ) : null}
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -247,7 +288,10 @@ export default function ChatContainer() {
                     <button
                       type="button"
                       disabled={streaming || confirmActionBusy}
-                      onClick={() => setInputValue("Ich reiche Daten nach: ")}
+                      onClick={() => {
+                        setInputValue("Ich reiche Daten nach: ");
+                        openMissingParameterForm();
+                      }}
                       className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 ring-1 ring-amber-300 disabled:opacity-50"
                     >
                       Daten nachreichen
