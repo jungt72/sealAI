@@ -25,6 +25,8 @@ export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [hasStarted, setHasStarted] = useState(false);
+  const [confirmActionBusy, setConfirmActionBusy] = useState(false);
+  const [confirmActionError, setConfirmActionError] = useState<string | null>(null);
 
   useEffect(() => {
     setMessages([]);
@@ -121,9 +123,37 @@ export default function ChatContainer() {
     setHasStarted(true);
     send(content);
     setInputValue("");
+    setConfirmActionError(null);
   }, [sendingDisabled, send]);
 
   const hasFirstToken = text.trim().length > 0;
+
+  const approveConfirmGo = useCallback(async () => {
+    if (!chatId) return;
+    if (!token) return;
+    if (confirmActionBusy) return;
+    setConfirmActionBusy(true);
+    setConfirmActionError(null);
+    try {
+      const res = await fetch("/api/v1/langgraph/confirm/go", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ chat_id: chatId, go: true }),
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        throw new Error(msg || `HTTP ${res.status}`);
+      }
+      setConfirmActionBusy(false);
+      handleSend("Freigabe erteilt. Bitte Empfehlung ausarbeiten.");
+    } catch (e: any) {
+      setConfirmActionBusy(false);
+      setConfirmActionError(String(e?.message || e));
+    }
+  }, [chatId, token, confirmActionBusy, handleSend]);
 
   return (
     <div className="flex flex-col h-full w-full bg-transparent relative">
@@ -204,6 +234,27 @@ export default function ChatContainer() {
                     ) : (
                       <span className="text-xs">Bitte kurz bestätigen, dann kann die Empfehlung weiter ausgearbeitet werden.</span>
                     )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={!token || streaming || confirmActionBusy}
+                      onClick={approveConfirmGo}
+                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      {confirmActionBusy ? "Freigabe läuft…" : "Freigeben (GO)"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={streaming || confirmActionBusy}
+                      onClick={() => setInputValue("Ich reiche Daten nach: ")}
+                      className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 ring-1 ring-amber-300 disabled:opacity-50"
+                    >
+                      Daten nachreichen
+                    </button>
+                    {confirmActionError ? (
+                      <span className="text-xs text-red-700">Freigabe fehlgeschlagen: {confirmActionError}</span>
+                    ) : null}
                   </div>
                 </div>
               </div>
