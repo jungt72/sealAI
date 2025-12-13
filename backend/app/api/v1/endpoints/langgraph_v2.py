@@ -15,6 +15,11 @@ from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
+from app.langgraph_v2.utils.parameter_patch import (
+    ParametersPatchRequest,
+    merge_parameters,
+    sanitize_v2_parameter_patch,
+)
 from app.services.auth.dependencies import get_current_request_user
 
 router = APIRouter()
@@ -123,6 +128,36 @@ async def confirm_go(
         return {"ok": True, "chat_id": body.chat_id, "recommendation_go": bool(body.go)}
     except HTTPException:
         raise
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/parameters/patch")
+async def patch_parameters(
+    body: ParametersPatchRequest,
+    username: str = Depends(get_current_request_user),
+) -> Dict[str, Any]:
+    try:
+        patch = sanitize_v2_parameter_patch(body.parameters)
+        if not patch:
+            raise HTTPException(status_code=400, detail="No parameters provided")
+
+        graph, config = await _build_graph_config(thread_id=body.chat_id, user_id=username)
+        snapshot = await graph.aget_state(config)
+        state_values = snapshot.values if isinstance(snapshot.values, dict) else {}
+        existing_params = state_values.get("parameters") if isinstance(state_values, dict) else {}
+        merged = merge_parameters(existing_params, patch)
+
+        await graph.aupdate_state(
+            config,
+            {"parameters": merged},
+            as_node="parameter_patch_ui",
+        )
+        return {"ok": True, "chat_id": body.chat_id, "updated": patch}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

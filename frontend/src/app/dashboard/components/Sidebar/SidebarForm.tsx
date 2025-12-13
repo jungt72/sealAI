@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { useAccessToken } from "@/lib/useAccessToken";
-import { useChatWs } from "@/lib/useChatWs";
 import { useChatThreadId } from "@/lib/useChatThreadId";
+import { normalizeSidebarFormPatchToV2, patchV2Parameters } from "@/lib/v2ParameterPatch";
 
 type Props = { embedded?: boolean };
 
@@ -365,7 +365,6 @@ function FormInner({
 export default function SidebarForm({ embedded = false }: Props) {
   const token = useAccessToken();
   const chatId = useChatThreadId();
-  const { send } = useChatWs({ chatId, token });
 
   const [open, setOpen] = React.useState(false);
   const [missing, setMissing] = React.useState<string[]>([]);
@@ -446,12 +445,18 @@ export default function SidebarForm({ embedded = false }: Props) {
       setMissing((prev) => (typeof payloadValue !== "undefined" ? prev.filter((key) => key !== String(k)) : prev));
       if (patchTimer.current) window.clearTimeout(patchTimer.current);
       patchTimer.current = window.setTimeout(() => {
-        if (typeof payloadValue !== "undefined" && chatId) {
-          send("📝 form patch", { params: { [k]: payloadValue } });
-        }
+        if (typeof payloadValue === "undefined") return;
+        if (!chatId || !token) return;
+        const mapped = normalizeSidebarFormPatchToV2({ [k]: payloadValue });
+        if (!Object.keys(mapped).length) return;
+        patchV2Parameters({ chatId, token, parameters: mapped }).catch((err) => {
+          try {
+            console.warn("[sealai] v2 parameter patch failed", err);
+          } catch {}
+        });
       }, 180);
     },
-    [send, chatId],
+    [chatId, token],
   );
 
   const submitAll = () => {
@@ -461,7 +466,16 @@ export default function SidebarForm({ embedded = false }: Props) {
       if (v === "" || v == null) continue;
       cleaned[k] = v;
     }
-    send("📝 form submit", { params: cleaned });
+    if (token) {
+      const mapped = normalizeSidebarFormPatchToV2(cleaned);
+      if (Object.keys(mapped).length) {
+        patchV2Parameters({ chatId, token, parameters: mapped }).catch((err) => {
+          try {
+            console.warn("[sealai] v2 parameter submit failed", err);
+          } catch {}
+        });
+      }
+    }
     const summary = formatOneLine(cleaned as FormState);
     if (summary) {
       window.dispatchEvent(
