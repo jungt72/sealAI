@@ -37,6 +37,36 @@ Bekannte Parameter:
 - Aktuell liegen keine Parameterwerte vor.
 {%- endif %}
 
+{%- set p = parameters if parameters is defined and parameters is mapping else {} -%}
+{%- set priority = ["medium", "temperature_C", "pressure_bar", "speed_rpm", "shaft_diameter"] -%}
+{%- set missing = [] -%}
+{%- if coverage_gaps is defined and coverage_gaps -%}
+  {%- set missing = coverage_gaps -%}
+{%- elif discovery_missing is defined and discovery_missing -%}
+  {%- set missing = discovery_missing -%}
+{%- else -%}
+  {%- for k in priority -%}
+    {%- if p.get(k) is none or p.get(k) == "" -%}
+      {%- set _ = missing.append(k) -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+
+Erste Einordnung (vorläufig):
+{%- set medium = p.get("medium") -%}
+{%- set temp = p.get("temperature_C") -%}
+{%- set pbar = p.get("pressure_bar") -%}
+{%- set rpm = p.get("speed_rpm") -%}
+{%- set dshaft = p.get("shaft_diameter") -%}
+- Stand heute: Medium={{ medium if medium else "offen" }}, Temperatur={{ temp if temp is not none else "offen" }}, Druck={{ pbar if pbar is not none else "offen" }}, Drehzahl={{ rpm if rpm is not none else "offen" }}, Wellen-Ø={{ dshaft if dshaft is not none else "offen" }}.
+- Für eine belastbare Empfehlung sind Medium/Temperatur/Druck/Bewegung und Geometrie maßgeblich (Werkstoffverträglichkeit, Wärmeeintrag/Verschleiß, Lippenbelastung, Einbaumaße).
+{% if missing and ("medium" in missing or "temperature_C" in missing) %}
+- Ohne Medium und Temperatur bleibt die Werkstoff- und Standzeitbewertung vorläufig.
+{% endif %}
+{% if missing and ("pressure_bar" in missing or "speed_rpm" in missing) %}
+- Ohne Druck und Drehzahl ist die tribologische Belastung (Wärme/Verschleiß) nur grob einzuordnen.
+{% endif %}
+
 {% if discovery_summary %}
 Discovery-Kompakt: {{ discovery_summary }}
 {% endif %}
@@ -45,21 +75,33 @@ Discovery-Kompakt: {{ discovery_summary }}
 Coverage Score: {{ coverage_score | round(2) }}
 {% endif %}
 
-{%- if coverage_gaps_text %}
+{% if coverage_gaps_text is defined and coverage_gaps_text %}
 Bisher fehlen Informationen zu: {{ coverage_gaps_text }}.
-{%- elif discovery_missing %}
+{% elif discovery_missing is defined and discovery_missing %}
 Bisher fehlen Informationen zu: {{ discovery_missing | join(', ') }}.
-{%- endif %}
+{% endif %}
 
-Fragen zur Vervollständigung:
-{%- set question_hints = coverage_gaps or discovery_missing %}
-{%- if question_hints %}
-{%- for gap in question_hints[:3] %}
-- Kannst du mir noch etwas zu {{ gap.replace('_', ' ') }} sagen?
-{%- endfor %}
-{%- else %}
-- Gibt es noch weitere Betriebsdaten oder Anforderungen, die ich kennen sollte?
-{%- endif %}
+
+{%- set question_bank = {
+  "medium": {"q": "Welches Medium (inkl. Additive/Verunreinigung)?", "w": "Warum: steuert Werkstoffverträglichkeit und Schmierung."},
+  "temperature_C": {"q": "Welcher Temperaturbereich (min/max oder Betrieb)?", "w": "Warum: entscheidet über Werkstofffenster, Setzverhalten und Wärmeeintrag."},
+  "pressure_bar": {"q": "Welcher Druck bzw. Differenzdruck Δp (Druckseite)?", "w": "Warum: beeinflusst Leckage, Lippenbelastung und ggf. Stützelemente."},
+  "speed_rpm": {"q": "Welcher Drehzahlbereich (min/max, Dauer/Spitzen)?", "w": "Warum: bestimmt Wärmeeintrag, Verschleiß und Profilwahl."},
+  "shaft_diameter": {"q": "Welcher Wellen-Ø inkl. Toleranz/Material/Oberfläche?", "w": "Warum: Einbaumaß/Pressung, Gegenlauffläche und Standardabmessungen."},
+} -%}
+{%- set prioritized = [] -%}
+{%- for k in priority -%}
+  {%- if k in (missing or []) -%}
+    {%- set _ = prioritized.append(k) -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{% if prioritized %}
+Top-Rückfragen (priorisiert):
+{% for k in prioritized[:5] %}
+- {{ question_bank.get(k, {}).get("q", "Kannst du mir noch etwas zu " ~ k.replace('_', ' ') ~ " sagen?") }} {{ question_bank.get(k, {}).get("w", "Warum: reduziert die größte Unsicherheit in der Auslegung.") }}
+{% endfor %}
+{% endif %}
 
 Vorbereiteter Entwurf zur Einbettung:
 {{ draft }}
