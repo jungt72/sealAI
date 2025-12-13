@@ -1,0 +1,478 @@
+# backend/app/langgraph_v2/nodes/nodes_flows.py
+from __future__ import annotations
+
+import math
+from typing import Any, Dict, List
+
+from langchain_core.messages import AIMessage, BaseMessage
+
+from app.langgraph_v2.sealai_graph_v2 import log_state_debug
+from app.langgraph_v2.state import CalcResults, SealAIState, WorkingMemory
+from app.langgraph_v2.utils.jinja import render_template
+from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
+from app.langgraph_v2.utils.messages import latest_user_text
+
+
+def _update_working_memory(state: SealAIState, updates: Dict[str, Any]) -> WorkingMemory:
+    wm = state.working_memory or WorkingMemory()
+    return wm.model_copy(update=updates)
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _merge_flags(state: SealAIState, updates: Dict[str, Any]) -> Dict[str, Any]:
+    flags = dict(state.flags or {})
+    flags.update(updates)
+    return flags
+
+
+def _extend_dict(base: Dict[str, Any] | None, extras: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(base or {})
+    merged.update(extras)
+    return merged
+
+
+def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("discovery_schema_node", state)
+    user_text = latest_user_text(state.get("messages")) or ""
+    required = [
+        "medium",
+        "pressure_bar",
+        "temperature_C",
+        "shaft_diameter",
+        "speed_rpm",
+    ]
+    missing = [key for key in required if not getattr(state.parameters, key, None)]
+    schema_notes = {
+        "missing": missing,
+        "required": required,
+        "user_input": user_text,
+        "prompt": "Bitte teile Brenn- und Bewegungsdaten oder Geometrien mit.",
+    }
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    design_notes = _extend_dict(existing_design, {"schema": schema_notes})
+    wm = _update_working_memory(state, {"design_notes": design_notes})
+    flags = _merge_flags(state, {"parameters_complete_for_material": not bool(missing)})
+    return {
+        "missing_params": missing,
+        "working_memory": wm,
+        "flags": flags,
+        # Phase: Parameter-Vorbereitung
+        "phase": "preflight_parameters",
+        "last_node": "discovery_schema_node",
+    }
+
+
+def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("parameter_check_node", state)
+    missing = state.missing_params or []
+    complete = not bool(missing)
+    flags = _merge_flags(state, {"parameters_complete_for_profile": complete})
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    design_notes = _extend_dict(existing_design, {"parameter_check": {"missing": missing}})
+    wm = _update_working_memory(state, {"design_notes": design_notes})
+    return {
+        "flags": flags,
+        "working_memory": wm,
+        "analysis_complete": True,
+        # Noch immer Parameter-Phase
+        "phase": "preflight_parameters",
+        "last_node": "parameter_check_node",
+    }
+
+
+def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("calculator_node", state)
+    params = state.parameters
+    diameter_mm = _safe_float(params.shaft_diameter) or _safe_float(params.inner_diameter_mm) or 50.0
+    speed_rpm = _safe_float(params.speed_rpm) or 1000.0
+    rpm = speed_rpm
+    circumference_mm = math.pi * diameter_mm
+    surface_speed_m_per_min = circumference_mm * rpm / 1000.0
+    temp_c = _safe_float(params.temperature_C) or 25.0
+    pressure = _safe_float(params.pressure_bar) or 1.0
+    notes = [
+        f"Berechnete Umfangsgeschwindigkeit: {surface_speed_m_per_min:.1f} m/min",
+        f"Aktuelle Temperaturannahme: {temp_c:.1f} °C",
+    ]
+    safety_factor = 1.5 if pressure <= 150 else 1.3
+    calc = CalcResults(
+        safety_factor=safety_factor,
+        temperature_margin=max(0.0, 220 - temp_c),
+        pressure_margin=max(0.0, 200 - pressure),
+        notes=notes,
+    )
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    calculations = {"surface_speed": surface_speed_m_per_min, "notes": notes}
+    design_notes = _extend_dict(existing_design, {"calculations": calculations})
+    wm = _update_working_memory(state, {"design_notes": design_notes})
+    return {
+        "calc_results": calc,
+        "calc_results_ok": True,
+        "working_memory": wm,
+        # Phase: Berechnung
+        "phase": "calculation",
+        "last_node": "calculator_node",
+    }
+
+
+def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("material_agent_node", state)
+    temp = _safe_float(state.parameters.temperature_C) or 25.0
+    medium = (state.parameters.medium or "").lower()
+    candidates: List[Dict[str, Any]] = []
+    if temp >= 180 or "hot" in medium:
+        candidates.append({"name": "FKM", "rationale": "Bewährt für heiße Schmierstoffe", "temp_limit": 200})
+        candidates.append({"name": "PTFE", "rationale": "Chemisch resistent bei hohen Temperaturen", "temp_limit": 250})
+    else:
+        candidates.append({"name": "NBR", "rationale": "Gutes Preis-Leistungs-Verhältnis", "temp_limit": 120})
+        candidates.append({"name": "FKM", "rationale": "Gute chemische Beständigkeit", "temp_limit": 200})
+    summary = f"Materialkandidaten: {', '.join(c['name'] for c in candidates)}"
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    design_notes = _extend_dict(existing_design, {"material_selection": summary})
+    wm = _update_working_memory(state, {"material_candidates": candidates, "design_notes": design_notes})
+    state_material = {"material": candidates[0]["name"], "confidence": "high", "details": candidates[0]["rationale"]}
+    return {
+        "material_choice": state_material,
+        "working_memory": wm,
+        # Phase: technischer Consulting-Schritt
+        "phase": "consulting",
+        "last_node": "material_agent_node",
+    }
+
+
+def profile_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("profile_agent_node", state)
+    profile = {
+        "profile": "Radial-Doppellippendichtung",
+        "lip_count": 2,
+        "construction": "Gummieinlage mit Metallträger",
+        "rationale": "Erfüllt hohe Anforderungen bei Schrauben- und Wellendruck",
+    }
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    design_notes = _extend_dict(existing_design, {"profile": profile})
+    wm = _update_working_memory(state, {"design_notes": design_notes})
+    return {
+        "profile_choice": profile,
+        "working_memory": wm,
+        # Phase: weiterhin Consulting
+        "phase": "consulting",
+        "last_node": "profile_agent_node",
+    }
+
+
+def validation_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("validation_agent_node", state)
+    issues: List[str] = []
+    if not state.flags.get("parameters_complete_for_profile"):
+        issues.append("Einige Profilparameter fehlen noch.")
+    status = "warning" if issues else "ok"
+    validation = {"status": status, "issues": issues}
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    design_notes = _extend_dict(existing_design, {"validation": validation})
+    wm = _update_working_memory(state, {"design_notes": design_notes})
+    return {
+        "validation": validation,
+        "working_memory": wm,
+        # Phase: Validierung
+        "phase": "validation",
+        "last_node": "validation_agent_node",
+    }
+
+
+def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("critical_review_node", state)
+    validation = state.validation or {}
+    issues = validation.get("issues") or []
+    critical = dict(state.critical or {})
+    iteration = int(critical.get("iteration_count") or 0)
+    iteration += 1
+    target = "final"
+    next_step = "final_answer_node"
+    if issues:
+        critical_status = "needs_refinement" if iteration <= 2 else "warning"
+        target = "discovery"
+        next_step = "discovery_schema_node"
+    else:
+        critical_status = "ok"
+    critical.update(
+        {
+            "status": critical_status,
+            "target": target,
+            "next_step": next_step,
+            "iteration_count": iteration,
+        }
+    )
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    design_notes = _extend_dict(existing_design, {"critical_review": critical})
+    wm = _update_working_memory(state, {"design_notes": design_notes})
+    return {
+        "critical": critical,
+        "working_memory": wm,
+        # Phase: ich ordne Critical Review unter Validierung ein
+        "phase": "validation",
+        "last_node": "critical_review_node",
+    }
+
+
+def product_match_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("product_match_node", state)
+    want_products = bool(state.plan.get("want_product_recommendation"))
+    matches: List[Dict[str, Any]] = []
+    if want_products:
+        matches.append({"manufacturer": "SealCo", "part_number": "SC-3-200", "fit": "Trifft Kundenanforderung"})
+    products = {
+        "manufacturer": matches[0]["manufacturer"] if matches else None,
+        "matches": matches,
+        "match_quality": "high" if matches else None,
+    }
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    design_notes = _extend_dict(existing_design, {"product_match": matches})
+    wm = _update_working_memory(state, {"design_notes": design_notes})
+    return {
+        "products": products,
+        "working_memory": wm,
+        # Phase: Consulting (Produkt-Mapping)
+        "phase": "consulting",
+        "last_node": "product_match_node",
+    }
+
+
+def product_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("product_explainer_node", state)
+    products = state.products or {}
+    matches = products.get("matches") or []
+    explanation = (
+        "Produktbegründung: Die erste Empfehlung deckt Geometrie und Temperaturniveau ab."
+        if matches
+        else "Keine spezielle Produktempfehlung gewünscht."
+    )
+    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    design_notes = _extend_dict(existing_design, {"product_explainer": explanation})
+    wm = _update_working_memory(state, {"design_notes": design_notes})
+    return {
+        "working_memory": wm,
+        # Phase: immer noch Consulting
+        "phase": "consulting",
+        "last_node": "product_explainer_node",
+    }
+
+
+def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("material_comparison_node", state)
+    user_text = latest_user_text(state.get("messages")) or ""
+    
+    full_text = render_template("material_comparison.j2", {"user_text": user_text})
+    parts = full_text.split("---", 1)
+    if len(parts) == 2:
+        system = parts[0].strip()
+        prompt = parts[1].strip()
+    else:
+        system = "Du bist ein technischer Materialvergleichs-Experte."
+        prompt = full_text.strip()
+
+    response = run_llm(
+        model=get_model_tier("mini"),
+        prompt=prompt,
+        system=system,
+        temperature=0.2,
+        max_tokens=320,
+        metadata={"node": "material_comparison_node"},
+    )
+    existing_notes = getattr(state.working_memory, "comparison_notes", None) if state.working_memory else {}
+    notes = _extend_dict(existing_notes, {"comparison_text": response.strip()})
+    wm = _update_working_memory(state, {"comparison_notes": notes})
+    return {
+        "working_memory": wm,
+        # Phase: Wissens-/Vergleichs-Flow
+        "phase": "knowledge",
+        "last_node": "material_comparison_node",
+    }
+
+
+def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("rag_support_node", state)
+    notes = dict(state.working_memory.comparison_notes if state.working_memory else {})
+    notes["rag_reference"] = "Normbezug: DIN EN 12756, relevante Datenblätter im Anhang."
+    wm = _update_working_memory(state, {"comparison_notes": notes})
+    return {
+        "working_memory": wm,
+        # Phase: explizit RAG
+        "phase": "rag",
+        "last_node": "rag_support_node",
+    }
+
+
+def leakage_troubleshooting_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("leakage_troubleshooting_node", state)
+    user_text = latest_user_text(state.get("messages")) or ""
+    
+    full_text = render_template("leakage_troubleshooting.j2", {"user_text": user_text})
+    parts = full_text.split("---", 1)
+    if len(parts) == 2:
+        system = parts[0].strip()
+        prompt = parts[1].strip()
+    else:
+        system = "Du bist ein Troubleshooting Spezialist."
+        prompt = full_text.strip()
+
+    response = run_llm(
+        model=get_model_tier("mini"),
+        prompt=prompt,
+        system=system,
+        temperature=0.2,
+        max_tokens=260,
+        metadata={"node": "leakage_troubleshooting_node"},
+    )
+    troubleshooting = {
+        "symptoms": [user_text],
+        "hypotheses": ["Überdruck", "Montagefehler"],
+        "notes": response.strip(),
+    }
+    existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
+    merged_notes = _extend_dict(existing_notes, troubleshooting)
+    wm = _update_working_memory(state, {"troubleshooting_notes": merged_notes})
+    updated = dict(state.troubleshooting or {})
+    updated.update(troubleshooting)
+    updated["done"] = False
+    return {
+        "troubleshooting": updated,
+        "working_memory": wm,
+        # Phase: Consulting-Flow für Troubleshooting
+        "phase": "consulting",
+        "last_node": "leakage_troubleshooting_node",
+    }
+
+
+def troubleshooting_pattern_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("troubleshooting_pattern_node", state)
+    text = latest_user_text(state.get("messages")) or ""
+    patterns = [
+        ("undercompression", ["leck", "druck", "unter"]),
+        ("overcompression", ["zu stark", "deformiert"]),
+        ("material_mismatch", ["medium", "chemisch"]),
+    ]
+    pattern = "assembly_error"
+    for name, markers in patterns:
+        if any(marker in text.lower() for marker in markers):
+            pattern = name
+            break
+    updated = dict(state.troubleshooting or {})
+    updated["pattern_match"] = pattern
+    updated.setdefault("hypotheses", []).append(pattern)
+    existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
+    notes = _extend_dict(existing_notes, {"pattern": pattern})
+    wm = _update_working_memory(state, {"troubleshooting_notes": notes})
+    return {
+        "troubleshooting": updated,
+        "working_memory": wm,
+        # Phase: weiterhin Troubleshooting-Consulting
+        "phase": "consulting",
+        "last_node": "troubleshooting_pattern_node",
+    }
+
+
+def troubleshooting_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("troubleshooting_explainer_node", state)
+    pattern = (state.troubleshooting or {}).get("pattern_match") or "assembly_error"
+    symptoms = ", ".join(state.troubleshooting.get('symptoms', []))
+    
+    full_text = render_template("troubleshooting_explainer.j2", {"pattern": pattern, "symptoms": symptoms})
+    parts = full_text.split("---", 1)
+    if len(parts) == 2:
+        system = parts[0].strip()
+        prompt = parts[1].strip()
+    else:
+        system = "Du gibst eine pragmatische Fehleranalyse."
+        prompt = full_text.strip()
+
+    response = run_llm(
+        model=get_model_tier("mini"),
+        prompt=prompt,
+        system=system,
+        temperature=0.2,
+        max_tokens=320,
+        metadata={"node": "troubleshooting_explainer_node"},
+    )
+    updated = dict(state.troubleshooting or {})
+    updated["explanation_text"] = response.strip()
+    updated["done"] = True
+    existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
+    notes = _extend_dict(existing_notes, {"explanation": response.strip()})
+    wm = _update_working_memory(state, {"troubleshooting_notes": notes})
+    return {
+        "troubleshooting": updated,
+        "working_memory": wm,
+        # Phase: weiterhin Consulting
+        "phase": "consulting",
+        "last_node": "troubleshooting_explainer_node",
+    }
+
+
+def build_final_answer_context(state: SealAIState) -> Dict[str, Any]:
+    wm = state.working_memory or WorkingMemory()
+    intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
+    parameters = state.parameters.as_dict()
+    calc_results = state.calc_results.model_dump(exclude_none=True) if state.calc_results else {}
+
+    return {
+        "intent_goal": intent_goal,
+        "frontdoor_reply": getattr(wm, "frontdoor_reply", None),
+        "parameters": parameters,
+        "calc_results": calc_results,
+        "material_choice": state.material_choice or {},
+        "profile_choice": state.profile_choice or {},
+        "validation": state.validation or {},
+        "critical": state.critical or {},
+        "products": state.products or {},
+        "comparison_notes": getattr(wm, "comparison_notes", {}),
+        "troubleshooting": state.troubleshooting or {},
+        "response_text": getattr(wm, "response_text", None),
+        "phase": state.phase or "final",
+    }
+
+
+def render_final_answer_draft(context: Dict[str, Any]) -> str:
+    text = render_template("final_answer_router.j2", context)
+    return (text or "").strip()
+
+
+def map_final_answer_to_state(state: SealAIState, final_text: str) -> Dict[str, Any]:
+    clean_text = (final_text or "").strip()
+    messages: List[BaseMessage] = list(state.messages or [])
+    if clean_text:
+        messages.append(AIMessage(content=[{"type": "text", "text": clean_text}]))
+
+    patch: Dict[str, Any] = {
+        "messages": messages,
+        "final_text": clean_text,
+        "phase": state.phase or "final",
+        "last_node": "final_answer_node",
+    }
+    return patch
+
+
+__all__ = [
+    "discovery_schema_node",
+    "parameter_check_node",
+    "calculator_node",
+    "material_agent_node",
+    "profile_agent_node",
+    "validation_agent_node",
+    "critical_review_node",
+    "product_match_node",
+    "product_explainer_node",
+    "material_comparison_node",
+    "rag_support_node",
+    "leakage_troubleshooting_node",
+    "troubleshooting_pattern_node",
+    "troubleshooting_explainer_node",
+    "build_final_answer_context",
+    "render_final_answer_draft",
+    "map_final_answer_to_state",
+]
