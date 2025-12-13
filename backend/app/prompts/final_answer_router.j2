@@ -1,0 +1,143 @@
+{%- set goal = intent_goal -%}
+{%- set abstract_reply = frontdoor_reply if frontdoor_reply is defined else "SealAI-Analyse: Präzise Empfehlung aus unserem Branchen-Clone." -%}
+{%- set query_text = original_query if original_query is defined else 'Nicht spezifiziert' -%}
+{%- set key_result_text = key_result if key_result is defined else 'Right-first-time für Dichtungen.' -%}
+{%- set standards = standards_used if standards_used is defined else 'ASTM D2240 & EN 681-1' -%}
+{%- set params = parameters if parameters is defined else {} -%}
+{%- set calc = calc_results if calc_results is defined else {} -%}
+{%- set mat_choice = material_choice if material_choice is defined else {} -%}
+{%- set prof_choice = profile_choice if profile_choice is defined else {} -%}
+{%- set vals = validation if validation is defined else {} -%}
+{%- set prods = products if products is defined else {} -%}
+{%- set comp = comparison_notes if comparison_notes is defined else {} -%}
+{%- set troubleshoot = troubleshooting if troubleshooting is defined else {} -%}
+{%- set default_text = default_text if default_text is defined else 'Basis-Empfehlung: NBR für Standard-Anwendungen.' -%}
+{%- set current_date_text = current_date if current_date is defined else 'Heute' -%}
+{%- set requires_rag = (requires_rag if requires_rag is defined else false) -%}
+{%- set wm = working_memory if working_memory is defined else {} -%}
+{%- if wm is mapping -%}
+  {%- set wm_comp = wm.get('comparison_notes') or {} -%}
+{%- else -%}
+  {%- set wm_comp = wm.comparison_notes if wm and wm.comparison_notes is defined else {} -%}
+{%- endif -%}
+{%- set rag_context = (comp.get('rag_context') if comp is mapping else none) -%}
+{%- if not rag_context -%}
+  {%- set rag_context = (wm_comp.get('rag_context') if wm_comp is mapping else none) -%}
+{%- endif -%}
+{%- set rag_reference = (comp.get('rag_reference') if comp is mapping else none) -%}
+{%- if not rag_reference -%}
+  {%- set rag_reference = (wm_comp.get('rag_reference') if wm_comp is mapping else none) -%}
+{%- endif -%}
+{%- set has_rag_attempt = false -%}
+{%- if rag_context is string -%}
+  {%- set has_rag_attempt = rag_context|trim != "" -%}
+{%- elif rag_context is sequence or rag_context is mapping -%}
+  {%- set has_rag_attempt = rag_context|length > 0 -%}
+{%- else -%}
+  {%- set has_rag_attempt = rag_context is not none -%}
+{%- endif -%}
+
+{%- set has_rag_refs = false -%}
+{%- if rag_reference is string -%}
+  {%- set has_rag_refs = rag_reference|trim != "" -%}
+{%- elif rag_reference is sequence or rag_reference is mapping -%}
+  {%- set has_rag_refs = rag_reference|length > 0 -%}
+{%- else -%}
+  {%- set has_rag_refs = rag_reference is not none -%}
+{%- endif -%}
+
+## Allgemeines Fachwissen
+
+### Abstract
+{{ abstract_reply }}  
+**Query:** {{ query_text }}.  
+**Schlüsseleinsicht:** {{ key_result_text }}.  
+*{{ current_date_text }} – Multi-Agenten-Orchestrator.*
+
+{%- if goal == "smalltalk" -%}
+**Nächster Schritt:** Was brauchst du? Z. B. Materialvergleich oder Leckage-Tipp?
+{%- elif goal == "out_of_scope" -%}
+**Hinweis:** Bleiben wir bei Dichtungstechnik – z. B. Normen oder Produkte?
+{%- elif goal == "design_recommendation" -%}
+### Results
+| Parameter | Wert | Einheit | Norm |
+|-----------|------|---------|------|
+| Material | {{ mat_choice.get('material', 'NBR') }} | - | ASTM D1414 |
+| Profil | {{ prof_choice.get('profile', 'Standard') }} | - | EN 6194 |
+{%- if calc.get('safety_factor') is not none -%}
+| Sicherheitsfaktor | {{ "%.2f"|format(calc.get('safety_factor')) }} | - | >1.5 |
+{%- endif -%}
+{%- for key, value in params.items() if value is not none and value != "" -%}
+| {{ key.replace('_', ' ').title() }} | {{ value }} | - | - |
+{%- endfor -%}
+
+{%- if prods.get('matches') and prods.get('matches')|length > 0 -%}
+### Produktmatches (Top 3)
+| Hersteller | Teilenr. | Fit |
+|------------|----------|-----|
+{%- for match in prods.get('matches')[:3] -%}
+| {{ match.manufacturer or 'Unbekannt' }} | {{ match.part_number or 'n/a' }} | {{ match.fit or 'Gut' }} |
+{%- endfor -%}
+{%- endif -%}
+
+**Validierung:** {{ vals.get('status', 'Offen') }}{%- if vals.get('issues') -%} – Hinweise: {{ vals.get('issues')|join(', ') }}{%- endif -%}.  
+**Empfehlung:** Passe Parameter für Optimierung – das kann Ausfälle reduzieren.
+
+**Nächster Schritt:** Mehr Details zu Druck/Temperatur?
+{%- elif goal == "explanation_or_comparison" -%}
+### Results: Vergleichstabelle
+{%- if comp.get('options') and comp.get('options')|length >= 2 -%}
+| Kriterium | {{ comp.options[0].name or 'Option A' }} | {{ comp.options[1].name or 'Option B' }} |
+|-----------|-------------------------------------------------------|-----------------------------------------------------|
+{%- for criterion, values in comp.get('criteria', {}).items() -%}
+| {{ criterion.replace('_', ' ').title() }} | {{ values[0] or 'N/A' }} | {{ values[1] or 'N/A' }} |
+{%- endfor -%}
+{%- else -%}
+**Einfacher Vergleich:**  
+- Option A: {{ comp.get('text_a', 'Beschreibung fehlt') }}  
+- Option B: {{ comp.get('text_b', 'Beschreibung fehlt') }}  
+{%- endif -%}
+
+**Empfehlung:** {{ comp.get('winner', 'Option A') }} – basierend auf {{ comp.get('criteria_keys', ['Haltbarkeit'])|join(', ') }} (Standards: {{ standards }}).
+
+**Nächster Schritt:** Priorisiere Kriterium (z. B. Kosten)?
+{%- elif goal == "troubleshooting_leakage" -%}
+### Results: Hypothesen
+| Hypothese | Wahrsch. | Fix |
+|-----------|----------|-----|
+{%- for hypo in troubleshoot.get('hypotheses', []) -%}
+{%- set hypo_text = hypo.hypothesis if hypo is mapping else hypo -%}
+{%- set hypo_prob = hypo.prob if hypo is mapping else 'Mittel' -%}
+{%- set hypo_fix = hypo.fix if hypo is mapping else 'Anpassen' -%}
+| {{ hypo_text or 'Unbekannt' }} | {{ hypo_prob or 'Mittel' }} | {{ hypo_fix or 'Anpassen' }} |
+{%- endfor -%}
+{%- if not troubleshoot.get('hypotheses') -%}
+**Standard-Tipps:** Medium prüfen (EN 682) oder Montage.
+{%- endif -%}
+
+**Empfehlung:** Starte mit Fix #1 – das kann Stillstände reduzieren. Symptome: {{ troubleshoot.get('symptoms', [])|join(', ') }}.
+
+**Nächster Schritt:** Ergänze Bedingungen (z. B. Temperatur)?
+{%- else -%}
+### Results
+{{ default_text }}  
+
+**Empfehlung:** Mehr Input für Details.
+{%- endif -%}
+
+{%- if requires_rag and has_rag_refs -%}
+## Wissensdatenbank (Quellen)
+{%- if rag_reference is sequence and rag_reference is not string -%}
+{%- for ref in rag_reference -%}
+- {{ ref }}
+{%- endfor -%}
+{%- else -%}
+- {{ rag_reference }}
+{%- endif -%}
+{%- elif requires_rag -%}
+## Quellen
+- Quellen derzeit nicht verfügbar (keine belastbaren Quellen extrahiert).
+{%- endif -%}
+**Feedback:** 1–5 Sterne?  
+---  
+*SealAI: Dein Dichtungsexperte.*

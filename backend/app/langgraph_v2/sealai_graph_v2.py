@@ -229,7 +229,16 @@ def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
         payload["template_context"].get("goal"),
         payload["template_context"].get("recommendation_go", False),
     )
+    plan = payload["template_context"].get("plan") or {}
+    style_profile = (plan.get("style_profile") or "senior_sealing_engineer_de") if isinstance(plan, dict) else "senior_sealing_engineer_de"
+    include_policy = str(style_profile).strip().lower() not in {"off", "none", "disabled", "disable"}
+
     prompt_text = render_template(template_name, payload["template_context"])
+    if include_policy:
+        policy_text = render_template("senior_policy_de.j2", {})
+        policy_text = (policy_text or "").strip()
+        if policy_text:
+            prompt_text = f"{policy_text}\n\n{(prompt_text or '').strip()}"
     messages: List[BaseMessage] = [SystemMessage(content=prompt_text)]
     messages.extend(list(payload.get("messages") or []))
     return messages

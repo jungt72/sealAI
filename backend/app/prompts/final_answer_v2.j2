@@ -1,0 +1,155 @@
+{# final_answer_v3.j2 - LangGraph v3 Abschlussantwort #}
+{# Eingaben:
+   user_input, application_category, motion_type, seal_family,
+   parameters (dict), calc_results (dict), recommendation (dict),
+   knowledge_material, knowledge_lifetime, knowledge_generic
+#}
+
+{# Hilfs-Makros #}
+{% macro bullet(label, value) -%}
+{%- if value %}- {{ label }}: {{ value }}{% endif -%}
+{%- endmacro %}
+
+{% macro plain(value, fallback) -%}
+{{ value if value else fallback }}
+{%- endmacro %}
+
+{% macro param_line(label, value, unit=None) -%}
+{%- if value is not none and value != "" -%}
+- {{ label }}: {{ value }}{% if unit %} {{ unit }}{% endif %}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro param_range_line(label, min_value, max_value, unit=None) -%}
+{%- if min_value is not none and max_value is not none -%}
+- {{ label }}: {{ min_value }} … {{ max_value }}{% if unit %} {{ unit }}{% endif %}
+{%- elif min_value is not none -%}
+- {{ label }}: ≥{{ min_value }}{% if unit %} {{ unit }}{% endif %}
+{%- elif max_value is not none -%}
+- {{ label }}: ≤{{ max_value }}{% if unit %} {{ unit }}{% endif %}
+{%- endif -%}
+{%- endmacro %}
+
+{# Kontext-Zusammenfassung #}
+{% set summary = [] %}
+{% if user_input %}{% set _ = summary.append("Anliegen: " ~ user_input) %}{% endif %}
+{% if application_category %}{% set _ = summary.append("Anwendung: " ~ application_category) %}{% endif %}
+{% if motion_type %}{% set _ = summary.append("Bewegungsart: " ~ motion_type) %}{% endif %}
+{% if seal_family %}{% set _ = summary.append("Dichtungstyp: " ~ seal_family) %}{% endif %}
+
+{# Parameter & Pflichtfelder #}
+{% set p = parameters or {} %}
+{% set required_missing = [] %}
+{% if not p.get("medium") %}
+  {% set _ = required_missing.append("Medium") %}
+{% endif %}
+{% set has_temperature = p.get("temperature_max") or p.get("temperature_min") or p.get("temperature_C") %}
+{% if not has_temperature %}
+  {% set _ = required_missing.append("Temperaturbereich") %}
+{% endif %}
+{% set has_pressure = (
+  p.get("pressure_bar")
+  or p.get("p_max")
+  or p.get("p_min")
+  or p.get("pressure")
+  or p.get("pressure_inner")
+) %}
+{% if not has_pressure %}
+  {% set _ = required_missing.append("Druck") %}
+{% endif %}
+
+{% set c = calc_results or {} %}
+{% set rec = recommendation or {} %}
+
+Empfehlung zur Dichtungsauswahl (automatisch generiert)
+
+1) Kurz-Zusammenfassung
+
+{% if summary %}
+- {{ summary | join(" | ") }}
+{% else %}
+- Es wurden keine konkreten Randbedingungen angegeben. Die folgende Empfehlung ist daher nur sehr grob und sollte nicht ohne Rücksprache verwendet werden.
+{% endif %}
+
+{% if rec.get("material") or seal_family %}
+- Vorläufige Empfehlung: {{ rec.get("material") or "Werkstoff noch offen" }} in der Dichtungsfamilie {{ seal_family or "noch nicht festgelegt" }}.
+{% endif %}
+
+2) Anwendung & Einordnung
+
+{{ bullet("Anwendung", application_category) }}
+{{ bullet("Bewegungsart", motion_type) }}
+{{ bullet("Dichtungstyp", seal_family) }}
+
+3) Wesentliche Betriebsparameter (Auszug)
+
+{{ param_line("Medium", p.get("medium")) }}
+{{ param_line("Druck", p.get("pressure_bar") or p.get("pressure"), "bar") }}
+{{ param_range_line("Druckbereich", p.get("p_min"), p.get("p_max"), "bar") }}
+{{ param_line("Betriebstemperatur", p.get("temperature_C"), "°C") }}
+{{ param_range_line("Temperaturbereich", p.get("temperature_min"), p.get("temperature_max"), "°C") }}
+{{ param_line("Drehzahl", p.get("speed_rpm"), "rpm") }}
+{{ param_line("Umfangsgeschwindigkeit", p.get("speed_linear"), "m/s") }}
+{{ param_line("Wellendurchmesser", p.get("shaft_diameter"), "mm") }}
+{{ param_line("Nenn-Ø Welle", p.get("d_shaft_nominal"), "mm") }}
+{{ param_line("Gehäuse-Ø", p.get("housing_diameter"), "mm") }}
+{{ param_line("Bohrungs-Ø (tats.)", p.get("d_bore_nominal"), "mm") }}
+{{ param_line("Axialer Platz", p.get("housing_axial_space"), "mm") }}
+{{ param_line("Wellenschlag", p.get("dynamic_runout"), "dyn") }}
+{{ param_line("Montageversatz", p.get("mounting_offset"), "mm") }}
+
+4) Technische Bewertung / Berechnungsergebnisse
+
+- Sicherheitsfaktor: {{ plain(c.get("safety_factor"), "keine Berechnung hinterlegt") }}
+- Temperatur-Reserve: {{ plain(c.get("temperature_margin"), "nicht berechnet") }}
+- Druck-Reserve: {{ plain(c.get("pressure_margin"), "nicht berechnet") }}
+
+Diese Werte sind als technische Orientierung zu verstehen. Sie ersetzen keine detaillierte Auslegung bzw. keinen Prüfbericht.
+
+5) Materialempfehlung und Begründung
+
+- Vorgeschlagener Werkstoff: {{ plain(rec.get("material"), "noch kein Werkstoff vorgeschlagen") }}
+- Kurzbegründung: {{ plain(rec.get("rationale"), "Vorläufige Auswahl auf Basis unvollständiger Daten. Bitte verifizieren.") }}
+
+{% set risk_list = rec.get("risk_hints") or [] %}
+- Risiken / Hinweise:
+  {% if risk_list %}
+  - {{ risk_list | join("\n  - ") }}
+  {% else %}
+  - Bitte Betriebsdaten (Medium, Temperatur, Druck, Geschwindigkeiten, Toleranzen) verifizieren und mit Ihren internen Freigaberegeln abgleichen.
+  {% endif %}
+
+6) Fachliche Erläuterung (aus Wissensbasis)
+
+{% if knowledge_material %}
+- Werkstoffbezogene Hinweise (z.B. PTFE/NBR/FKM):
+  {{ knowledge_material }}
+{% elif knowledge_lifetime %}
+- Hinweise zu Lebensdauer / Standzeit:
+  {{ knowledge_lifetime }}
+{% elif knowledge_generic %}
+- Allgemeine technische Erläuterung:
+  {{ knowledge_generic }}
+{% else %}
+- Für diesen Fall liegen derzeit keine zusätzlichen Wissensdaten (Knowledge-Subgraph) vor.
+{% endif %}
+
+7) Hinweis zur Verantwortung / Freigabe
+
+- Diese Empfehlung wird automatisiert und auf Basis vereinfachter Annahmen generiert.
+- Für eine freigabefähige Auslegung sind eine vollständige Datenerfassung, eine detaillierte Auslegung und die Prüfung durch die zuständige Fachstelle erforderlich.
+- Bitte prüfen Sie insbesondere Grenzwerte (Temperatur, Druck, Geschwindigkeiten) sowie chemische Beständigkeit des Werkstoffs gegen das Medium.
+
+8) Nächste Schritte / Rückfragen
+
+{% if required_missing %}
+- Für eine deutlich präzisere Empfehlung werden noch folgende Angaben benötigt:
+  {% for item in required_missing[:3] %}
+  - {{ item }}
+  {% endfor %}
+  {% if required_missing|length > 3 %}
+  - (weitere Angaben sind hilfreich; dies ist nur die wichtigste Auswahl)
+  {% endif %}
+{% else %}
+- Der Datensatz ist für eine erste Abschätzung ausreichend. Falls weitere Details (z.B. Bewegungsprofil, Einbautoleranzen, Oberflächengüten) vorliegen, kann die Empfehlung weiter verfeinert werden.
+{% endif %}
