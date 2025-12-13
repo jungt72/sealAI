@@ -82,9 +82,9 @@ def supervisor_route(state: SealAIState) -> str:
     if goal == "design_recommendation":
         if not ready:
             return "intermediate"
-        if ready and not go:
-            return "confirm"
-        return "design_flow"
+        if go:
+            return "design_flow"
+        return "confirm"
     if goal == "explanation_or_comparison":
         return "comparison"
     if goal == "troubleshooting_leakage":
