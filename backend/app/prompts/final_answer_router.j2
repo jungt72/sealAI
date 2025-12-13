@@ -46,87 +46,91 @@
   {%- set has_rag_refs = rag_reference is not none -%}
 {%- endif -%}
 
-## Allgemeines Fachwissen
+## Annahmen & Randbedingungen
 
-### Abstract
-{{ abstract_reply }}  
-**Query:** {{ query_text }}.  
-**Schlüsseleinsicht:** {{ key_result_text }}.  
-*{{ current_date_text }} – Multi-Agenten-Orchestrator.*
+- Kontext/Anliegen: {{ query_text }}
+- Interne Kurz-Einordnung: {{ abstract_reply }}
+- Rahmenannahme: vorläufige Auslegung auf Basis der aktuell bekannten Angaben.
+{%- if params and params|length > 0 -%}
+- Bekannte Randbedingungen (Auszug): {{ params.keys()|list|join(', ') }}
+{%- else -%}
+- Bekannte Randbedingungen: keine belastbaren Betriebsdaten im State.
+{%- endif -%}
 
-{%- if goal == "smalltalk" -%}
-**Nächster Schritt:** Was brauchst du? Z. B. Materialvergleich oder Leckage-Tipp?
-{%- elif goal == "out_of_scope" -%}
-**Hinweis:** Bleiben wir bei Dichtungstechnik – z. B. Normen oder Produkte?
+## Technische Mechanismen
+- Relevante Mechanismen (rotierende Dichtsysteme): Reibung/Wärmeeintrag, Schmierfilm/Medium, Gegenlaufflächenzustand, Verformung/Setzverhalten, ggf. Druckbeaufschlagung.
+{%- if goal == "troubleshooting_leakage" -%}
+- Leckage ist häufig ein Zusammenspiel aus Montage/Einlauf, Wellenlauf, Oberflächenzustand und Medien-/Temperaturfenster.
+{%- endif -%}
+
+## Risiken & Failure-Modes
+{%- if goal == "troubleshooting_leakage" -%}
+- Mögliche Ursachen (indikativ): Montagefehler, falsches Material/Medium, falsches Einbaumaß, Wellen-/Gehäusetoleranzen, thermische Überlast, Trockenlauf.
 {%- elif goal == "design_recommendation" -%}
-### Results
-| Parameter | Wert | Einheit | Norm |
-|-----------|------|---------|------|
-| Material | {{ mat_choice.get('material', 'NBR') }} | - | ASTM D1414 |
-| Profil | {{ prof_choice.get('profile', 'Standard') }} | - | EN 6194 |
+- Typische Risiken: Werkstoffinkompatibilität, thermische Überlast/Überhitzung, Verschleiß an der Gegenlauffläche, unzureichende Schmierung, Einbau-/Geometriefehler.
+{%- else -%}
+- Risiken hängen stark von Medium/Temperatur/Druck und Bewegungsprofil ab.
+{%- endif -%}
+
+## Bewertung / Auslegung (vorläufig)
+{%- if goal == "design_recommendation" -%}
+- Vorläufige Auswahl (aus State): Material={{ mat_choice.get('material', 'offen') }}, Profil={{ prof_choice.get('profile', 'offen') }}.
 {%- if calc.get('safety_factor') is not none -%}
-| Sicherheitsfaktor | {{ "%.2f"|format(calc.get('safety_factor')) }} | - | >1.5 |
+- Rechenhinweis (aus State): Sicherheitsfaktor={{ "%.2f"|format(calc.get('safety_factor')) }}.
 {%- endif -%}
-{%- for key, value in params.items() if value is not none and value != "" -%}
-| {{ key.replace('_', ' ').title() }} | {{ value }} | - | - |
-{%- endfor -%}
-
 {%- if prods.get('matches') and prods.get('matches')|length > 0 -%}
-### Produktmatches (Top 3)
-| Hersteller | Teilenr. | Fit |
-|------------|----------|-----|
-{%- for match in prods.get('matches')[:3] -%}
-| {{ match.manufacturer or 'Unbekannt' }} | {{ match.part_number or 'n/a' }} | {{ match.fit or 'Gut' }} |
-{%- endfor -%}
+- Produktmatches (Top 3):
+  {%- for match in prods.get('matches')[:3] -%}
+  - {{ match.manufacturer or 'Unbekannt' }} / {{ match.part_number or 'n/a' }} (Fit: {{ match.fit or 'unbekannt' }})
+  {%- endfor -%}
 {%- endif -%}
-
-**Validierung:** {{ vals.get('status', 'Offen') }}{%- if vals.get('issues') -%} – Hinweise: {{ vals.get('issues')|join(', ') }}{%- endif -%}.  
-**Empfehlung:** Passe Parameter für Optimierung – das kann Ausfälle reduzieren.
-
-**Nächster Schritt:** Mehr Details zu Druck/Temperatur?
 {%- elif goal == "explanation_or_comparison" -%}
-### Results: Vergleichstabelle
-{%- if comp.get('options') and comp.get('options')|length >= 2 -%}
-| Kriterium | {{ comp.options[0].name or 'Option A' }} | {{ comp.options[1].name or 'Option B' }} |
-|-----------|-------------------------------------------------------|-----------------------------------------------------|
-{%- for criterion, values in comp.get('criteria', {}).items() -%}
-| {{ criterion.replace('_', ' ').title() }} | {{ values[0] or 'N/A' }} | {{ values[1] or 'N/A' }} |
-{%- endfor -%}
-{%- else -%}
-**Einfacher Vergleich:**  
-- Option A: {{ comp.get('text_a', 'Beschreibung fehlt') }}  
-- Option B: {{ comp.get('text_b', 'Beschreibung fehlt') }}  
-{%- endif -%}
-
-**Empfehlung:** {{ comp.get('winner', 'Option A') }} – basierend auf {{ comp.get('criteria_keys', ['Haltbarkeit'])|join(', ') }} (Standards: {{ standards }}).
-
-**Nächster Schritt:** Priorisiere Kriterium (z. B. Kosten)?
+- Vergleich (Kurzform):
+  {%- if comp.get('options') and comp.get('options')|length >= 2 -%}
+  - Option A: {{ comp.options[0].name or 'Option A' }}
+  - Option B: {{ comp.options[1].name or 'Option B' }}
+  {%- else -%}
+  - Option A: {{ comp.get('text_a', 'Beschreibung fehlt') }}
+  - Option B: {{ comp.get('text_b', 'Beschreibung fehlt') }}
+  {%- endif -%}
 {%- elif goal == "troubleshooting_leakage" -%}
-### Results: Hypothesen
-| Hypothese | Wahrsch. | Fix |
-|-----------|----------|-----|
-{%- for hypo in troubleshoot.get('hypotheses', []) -%}
-{%- set hypo_text = hypo.hypothesis if hypo is mapping else hypo -%}
-{%- set hypo_prob = hypo.prob if hypo is mapping else 'Mittel' -%}
-{%- set hypo_fix = hypo.fix if hypo is mapping else 'Anpassen' -%}
-| {{ hypo_text or 'Unbekannt' }} | {{ hypo_prob or 'Mittel' }} | {{ hypo_fix or 'Anpassen' }} |
-{%- endfor -%}
-{%- if not troubleshoot.get('hypotheses') -%}
-**Standard-Tipps:** Medium prüfen (EN 682) oder Montage.
-{%- endif -%}
-
-**Empfehlung:** Starte mit Fix #1 – das kann Stillstände reduzieren. Symptome: {{ troubleshoot.get('symptoms', [])|join(', ') }}.
-
-**Nächster Schritt:** Ergänze Bedingungen (z. B. Temperatur)?
+- Hypothesen (aus State):
+  {%- for hypo in troubleshoot.get('hypotheses', []) -%}
+  - {{ hypo.hypothesis if hypo is mapping else hypo }}
+  {%- endfor -%}
+  {%- if not troubleshoot.get('hypotheses') -%}
+  - Keine Hypothesen hinterlegt; ohne Randbedingungen nur grobe Einordnung möglich.
+  {%- endif -%}
 {%- else -%}
-### Results
-{{ default_text }}  
-
-**Empfehlung:** Mehr Input für Details.
+- {{ default_text }}
+{%- endif -%}
+{%- if vals -%}
+- Validierung (aus State): {{ vals.get('status', 'offen') }}{%- if vals.get('issues') -%} (Hinweise: {{ vals.get('issues')|join(', ') }}){%- endif -%}.
 {%- endif -%}
 
-{%- if requires_rag and has_rag_refs -%}
-## Wissensdatenbank (Quellen)
+## Prüf- und Abnahmeempfehlung
+- Absichern: Medienverträglichkeit/Temperaturfenster, Einbau- und Gegenlaufflächen-Check, Dichtheits-/Standzeitprüfung unter repräsentativen Bedingungen.
+
+## Nächste Schritte
+{%- if goal == "smalltalk" -%}
+- Konkretes Thema wählen (z. B. Werkstoffwahl, Leckageanalyse, Einbauhinweise).
+{%- elif goal == "out_of_scope" -%}
+- Bitte auf Dichtungstechnik eingrenzen (Medium, Temperatur, Druck, Drehzahl/Bewegung, Geometrie).
+{%- else -%}
+- Daten vervollständigen und dann Empfehlung verifizieren (Material/Profil/Einbau).
+{%- endif -%}
+
+## Rückfragen (falls nötig)
+{%- if params and params|length > 0 -%}
+- Welche Randbedingung ist am unsichersten (Medium/Temperatur/Druck/Bewegung)?
+{%- else -%}
+- Medium?
+- Temperaturbereich (min/max oder Betrieb)?
+- Druck-/Δp (falls relevant) und Drehzahl/Umfangsgeschwindigkeit?
+{%- endif -%}
+
+{%- if has_rag_refs -%}
+## Quellen / Belege
 {%- if rag_reference is sequence and rag_reference is not string -%}
 {%- for ref in rag_reference -%}
 - {{ ref }}
@@ -134,9 +138,6 @@
 {%- else -%}
 - {{ rag_reference }}
 {%- endif -%}
-{%- elif requires_rag -%}
-## Quellen
-- Quellen derzeit nicht verfügbar (keine belastbaren Quellen extrahiert).
 {%- endif -%}
 **Feedback:** 1–5 Sterne?  
 ---  
