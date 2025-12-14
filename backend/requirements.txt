@@ -46,7 +46,7 @@ langgraph-supervisor==0.0.30
 
 # --- Vector DB & Embeddings --------------------------------------------------
 qdrant-client==1.15.1
-redis==5.0.4
+redis==5.2.1
 # Lokale Embeddings – nur behalten, wenn wirklich genutzt:
 fastembed==0.7.3
 onnxruntime==1.23.2
