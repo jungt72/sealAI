@@ -7,7 +7,7 @@
 
 # --- Web-Framework / Runtime -------------------------------------------------
 fastapi~=0.120.0
-starlette==0.38.5
+starlette==0.40.0
 uvicorn[standard]~=0.38.0
 websockets==15.0.1
 httpx==0.28.1
