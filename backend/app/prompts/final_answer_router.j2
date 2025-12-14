@@ -75,11 +75,20 @@
 
 ## Bewertung / Auslegung (vorläufig)
 {%- if goal == "design_recommendation" -%}
-- Vorläufige Auswahl (aus State): Material={{ mat_choice.get('material', 'offen') }}, Profil={{ prof_choice.get('profile', 'offen') }}.
+{%- set material_value = mat_choice.get('material') -%}
+{%- set profile_value = prof_choice.get('profile') -%}
+- Material: {{ material_value if material_value else 'offen' }}{%- if mat_choice.get('confidence') %} ({{ mat_choice.get('confidence') }}){%- endif -%}.
+- Profil: {{ profile_value if profile_value else 'offen' }}{%- if prof_choice.get('confidence') %} ({{ prof_choice.get('confidence') }}){%- endif -%}.
 {%- if calc.get('safety_factor') is not none -%}
 - Rechenhinweis (aus State): Sicherheitsfaktor={{ "%.2f"|format(calc.get('safety_factor')) }}.
+{%- elif calc.get('notes') -%}
+- Keine belastbare Berechnung: {{ calc.get('notes')[0] }}
+{%- else -%}
+- Keine belastbare Berechnung vorhanden.
 {%- endif -%}
-{%- if prods.get('matches') and prods.get('matches')|length > 0 -%}
+{%- if prods.get('requested') and not prods.get('catalog_connected') -%}
+- Produktempfehlung: nicht möglich (kein Produktkatalog verbunden).
+{%- elif prods.get('catalog_connected') and prods.get('matches') and prods.get('matches')|length > 0 -%}
 - Produktmatches (Top 3):
   {%- for match in prods.get('matches')[:3] -%}
   - {{ match.manufacturer or 'Unbekannt' }} / {{ match.part_number or 'n/a' }} (Fit: {{ match.fit or 'unbekannt' }})

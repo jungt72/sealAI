@@ -91,26 +91,42 @@ def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
 def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("calculator_node", state)
     params = state.parameters
-    diameter_mm = _safe_float(params.shaft_diameter) or _safe_float(params.inner_diameter_mm) or 50.0
-    speed_rpm = _safe_float(params.speed_rpm) or 1000.0
-    rpm = speed_rpm
-    circumference_mm = math.pi * diameter_mm
-    surface_speed_m_per_min = circumference_mm * rpm / 1000.0
-    temp_c = _safe_float(params.temperature_C) or 25.0
-    pressure = _safe_float(params.pressure_bar) or 1.0
-    notes = [
-        f"Berechnete Umfangsgeschwindigkeit: {surface_speed_m_per_min:.1f} m/min",
-        f"Aktuelle Temperaturannahme: {temp_c:.1f} °C",
-    ]
-    safety_factor = 1.5 if pressure <= 150 else 1.3
-    calc = CalcResults(
-        safety_factor=safety_factor,
-        temperature_margin=max(0.0, 220 - temp_c),
-        pressure_margin=max(0.0, 200 - pressure),
-        notes=notes,
-    )
+    diameter_mm = _safe_float(params.shaft_diameter) or _safe_float(params.inner_diameter_mm)
+    rpm = _safe_float(params.speed_rpm)
+    temp_c = _safe_float(params.temperature_C)
+    pressure = _safe_float(params.pressure_bar)
+
+    missing: List[str] = []
+    if diameter_mm is None:
+        missing.append("shaft_diameter")
+    if rpm is None:
+        missing.append("speed_rpm")
+    if temp_c is None:
+        missing.append("temperature_C")
+    if pressure is None:
+        missing.append("pressure_bar")
+
+    calculations: Dict[str, Any] = {}
+    if missing:
+        calc = CalcResults(
+            safety_factor=None,
+            temperature_margin=None,
+            pressure_margin=None,
+            notes=[f"Keine Berechnung: fehlende Kernwerte ({', '.join(missing)})."],
+        )
+    else:
+        circumference_mm = math.pi * float(diameter_mm)
+        surface_speed_m_per_min = circumference_mm * float(rpm) / 1000.0
+        notes = [f"Berechnete Umfangsgeschwindigkeit: {surface_speed_m_per_min:.1f} m/min"]
+        safety_factor = 1.5 if float(pressure) <= 150 else 1.3
+        calc = CalcResults(
+            safety_factor=safety_factor,
+            temperature_margin=max(0.0, 220 - float(temp_c)),
+            pressure_margin=max(0.0, 200 - float(pressure)),
+            notes=notes,
+        )
+        calculations = {"surface_speed_m_per_min": surface_speed_m_per_min}
     existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
-    calculations = {"surface_speed": surface_speed_m_per_min, "notes": notes}
     design_notes = _extend_dict(existing_design, {"calculations": calculations})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
@@ -125,20 +141,32 @@ def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
 
 def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("material_agent_node", state)
-    temp = _safe_float(state.parameters.temperature_C) or 25.0
-    medium = (state.parameters.medium or "").lower()
+    temp = _safe_float(state.parameters.temperature_C)
+    medium_raw = (state.parameters.medium or "").strip()
+    medium = medium_raw.lower()
     candidates: List[Dict[str, Any]] = []
-    if temp >= 180 or "hot" in medium:
-        candidates.append({"name": "FKM", "rationale": "Bewährt für heiße Schmierstoffe", "temp_limit": 200})
-        candidates.append({"name": "PTFE", "rationale": "Chemisch resistent bei hohen Temperaturen", "temp_limit": 250})
-    else:
-        candidates.append({"name": "NBR", "rationale": "Gutes Preis-Leistungs-Verhältnis", "temp_limit": 120})
-        candidates.append({"name": "FKM", "rationale": "Gute chemische Beständigkeit", "temp_limit": 200})
+    needs_input: List[str] = []
+    if not medium_raw:
+        needs_input.append("medium")
+    if temp is None:
+        needs_input.append("temperature_C")
+
+    if not needs_input:
+        if temp >= 180 or "hot" in medium:
+            candidates.append({"name": "FKM", "rationale": "Hohe Temperatur-/Medienbeständigkeit (heuristisch, bitte validieren)."})
+            candidates.append({"name": "PTFE", "rationale": "Hohe chemische Beständigkeit (heuristisch, bitte validieren)."})
+        else:
+            candidates.append({"name": "NBR", "rationale": "Robuster Standardwerkstoff (heuristisch, bitte validieren)."})
+            candidates.append({"name": "FKM", "rationale": "Gute chemische Beständigkeit (heuristisch, bitte validieren)."})
     summary = f"Materialkandidaten: {', '.join(c['name'] for c in candidates)}"
     existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
     design_notes = _extend_dict(existing_design, {"material_selection": summary})
     wm = _update_working_memory(state, {"material_candidates": candidates, "design_notes": design_notes})
-    state_material = {"material": candidates[0]["name"], "confidence": "high", "details": candidates[0]["rationale"]}
+    state_material: Dict[str, Any] = {"confidence": "heuristic"}
+    if candidates:
+        state_material.update({"material": candidates[0]["name"], "details": candidates[0]["rationale"]})
+    if needs_input:
+        state_material["needs_input"] = needs_input
     return {
         "material_choice": state_material,
         "working_memory": wm,
@@ -154,7 +182,8 @@ def profile_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         "profile": "Radial-Doppellippendichtung",
         "lip_count": 2,
         "construction": "Gummieinlage mit Metallträger",
-        "rationale": "Erfüllt hohe Anforderungen bei Schrauben- und Wellendruck",
+        "rationale": "Heuristischer Kandidat; finale Auswahl hängt von Einbauraum, Druck-/Δp und Gegenlauffläche ab.",
+        "confidence": "heuristic",
     }
     existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
     design_notes = _extend_dict(existing_design, {"profile": profile})
@@ -225,10 +254,11 @@ def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
 def product_match_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("product_match_node", state)
     want_products = bool(state.plan.get("want_product_recommendation"))
+    catalog_connected = bool(str(os.getenv("PRODUCT_CATALOG_URL", "")).strip())
     matches: List[Dict[str, Any]] = []
-    if want_products:
-        matches.append({"manufacturer": "SealCo", "part_number": "SC-3-200", "fit": "Trifft Kundenanforderung"})
     products = {
+        "requested": want_products,
+        "catalog_connected": catalog_connected,
         "manufacturer": matches[0]["manufacturer"] if matches else None,
         "matches": matches,
         "match_quality": "high" if matches else None,
