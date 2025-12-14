@@ -10,15 +10,16 @@ def _format_hit(hit: dict, max_chars: int = 480) -> str:
     metadata = hit.get("metadata") or {}
     doc_id = metadata.get("document_id") or metadata.get("document_title") or "unknown"
     section = metadata.get("section_title") or metadata.get("chunk_title") or "Abschnitt unbekannt"
-    source = metadata.get("url") or metadata.get("source") or "intern"
+    source = metadata.get("url") or metadata.get("source") or ""
     score = float(hit.get("fused_score") or hit.get("vector_score") or 0.0)
     text = (hit.get("text") or "").strip()
     if len(text) > max_chars:
         text = text[:max_chars] + "..."
+    source_line = f"Quelle: {source}\n" if isinstance(source, str) and source.strip() else ""
     return (
         f"- Dokument: **{doc_id}** | Abschnitt: *{section}* | Score: {score:.2f}\n"
         f"{text}\n"
-        f"Quelle: {source}\n"
+        f"{source_line}"
     )
 
 
