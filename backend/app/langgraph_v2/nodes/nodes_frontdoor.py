@@ -29,9 +29,9 @@ SMALLTALK_PATTERNS = [
     r"^(danke|dankeschoen|danke dir|thx)$",
 ]
 
+# Internal note for the downstream final-answer templates (should not be a user-facing greeting).
 FRIENDLY_SMALLTALK_REPLY = (
-    "Hallo! Schön, von dir zu hören. Wenn du magst, sag mir kurz, "
-    "bei welchem Dichtungsprojekt ich dich unterstützen kann."
+    "Smalltalk/Begrüßung erkannt. Bitte direkt nach Kontext fragen (Medium, Temperatur, Druck, Bewegung, Geometrie)."
 )
 
 FRONTDOOR_PROMPT_TEMPLATE = "frontdoor_discovery_prompt.jinja2"

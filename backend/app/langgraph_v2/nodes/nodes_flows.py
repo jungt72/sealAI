@@ -12,6 +12,7 @@ from app.langgraph_v2.state import CalcResults, SealAIState, WorkingMemory
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text
+from app.langgraph_v2.utils.output_sanitizer import strip_meta_preamble
 from app.langgraph_v2.utils.rag_tool import search_knowledge_base
 
 
@@ -522,7 +523,7 @@ def render_final_answer_draft(context: Dict[str, Any]) -> str:
 
 
 def map_final_answer_to_state(state: SealAIState, final_text: str) -> Dict[str, Any]:
-    clean_text = (final_text or "").strip()
+    clean_text = strip_meta_preamble((final_text or "").strip())
     messages: List[BaseMessage] = list(state.messages or [])
     if clean_text:
         messages.append(AIMessage(content=[{"type": "text", "text": clean_text}]))

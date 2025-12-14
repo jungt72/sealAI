@@ -239,6 +239,25 @@ def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
         policy_text = (policy_text or "").strip()
         if policy_text:
             prompt_text = f"{policy_text}\n\n{(prompt_text or '').strip()}"
+    meta = payload.get("meta") if isinstance(payload, dict) else None
+    if isinstance(meta, dict):
+        logger.info(
+            "final_prompt_selected",
+            goal=payload["template_context"].get("goal"),
+            selected_template_name=template_name,
+            senior_policy_enabled=bool(include_policy),
+            phase=meta.get("phase"),
+            last_node=meta.get("last_node"),
+            run_id=meta.get("run_id"),
+            thread_id=meta.get("thread_id"),
+        )
+    else:
+        logger.info(
+            "final_prompt_selected",
+            goal=payload["template_context"].get("goal"),
+            selected_template_name=template_name,
+            senior_policy_enabled=bool(include_policy),
+        )
     messages: List[BaseMessage] = [SystemMessage(content=prompt_text)]
     messages.extend(list(payload.get("messages") or []))
     return messages
@@ -298,6 +317,12 @@ def _build_final_answer_chain() -> Any:
                     lambda d: {
                         "messages": d["messages"],
                         "template_context": d["template_context"],
+                        "meta": {
+                            "phase": getattr(d["state"], "phase", None),
+                            "last_node": getattr(d["state"], "last_node", None),
+                            "run_id": getattr(d["state"], "run_id", None),
+                            "thread_id": getattr(d["state"], "thread_id", None),
+                        },
                     }
                 )
                 # Hier wird jetzt eine List[BaseMessage] erzeugt …
