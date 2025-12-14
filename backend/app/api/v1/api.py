@@ -5,12 +5,11 @@ from fastapi import APIRouter
 
 # REST-/Service-Endpunkte
 from app.api.v1.endpoints import (
-    ai,               # → enthält WS (/api/v1/ai/ws) + Sync-Invoke (/api/v1/ai/beratung)
     auth,
-    consult_invoke,   # optionaler Sync-Debug-Invoke
+    langgraph_health,
     langgraph_v2,     # LangGraph v2 HTTP/SSE-Endpunkte
     memory,
-    system,
+    ping,
     users,
 )
 from app.api.v1.endpoints import rfq as rfq_endpoint
@@ -22,20 +21,21 @@ from app.api.v1.endpoints import rfq as rfq_endpoint
 
 api_router = APIRouter()
 
-# AI (WS+Sync)
-api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
-
-# Optional: Debug/Test invoke
-api_router.include_router(consult_invoke.router, tags=["test"])
+# Health / Liveness
+api_router.include_router(ping.router)
 
 # LangGraph HTTP/SSE-API (v2)
 api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph-v2"])
+api_router.include_router(langgraph_health.router, prefix="/langgraph", tags=["langgraph-v2"])
 
 # Weitere Subsysteme
 api_router.include_router(auth.router)
 api_router.include_router(memory.router)
-api_router.include_router(system.router)
 api_router.include_router(users.router)
 
 # RFQ
 api_router.include_router(rfq_endpoint.router, prefix="/rfq", tags=["rfq"])
+
+# NOTE:
+# Legacy-Endpunkte (ai/ws + v1 compile-based test invokes) wurden entfernt, da sie alte `app.langgraph.*` Imports ziehen.
+# Bitte `/api/v1/langgraph/...` (v2) verwenden.
