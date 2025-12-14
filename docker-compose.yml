@@ -89,7 +89,13 @@ services:
     command: ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--log-level","debug"]
     ports: ["8000:8000"]
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/ping"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/langgraph/health', timeout=3).read()",
+        ]
       interval: 60s
       timeout: 5s
       retries: 5
