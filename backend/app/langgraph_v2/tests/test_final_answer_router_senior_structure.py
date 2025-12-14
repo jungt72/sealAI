@@ -25,6 +25,10 @@ def test_final_answer_router_has_senior_headings_and_no_sources_without_refs() -
     assert "## Prüf- und Abnahmeempfehlung" in text
     assert "## Nächste Schritte" in text
     assert "## Quellen / Belege" not in text
+    assert "Feedback" not in text
+    assert "Dein Dichtungsexperte" not in text
+    assert "Branchen-Clone" not in text
+    assert "Basis-Empfehlung: NBR" not in text
 
 
 def test_final_answer_router_shows_sources_only_when_refs_present() -> None:

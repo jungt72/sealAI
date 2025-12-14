@@ -22,6 +22,8 @@ def test_final_system_prompt_includes_senior_policy_by_default() -> None:
     assert "Risiken" in system_text
     assert "Nächste Schritte" in system_text
     assert "Beginne NIE mit Meta-Sätzen" in system_text
+    assert "freundlich" in system_text
+    assert "geduldig" in system_text
 
 
 def test_style_profile_can_disable_policy() -> None:

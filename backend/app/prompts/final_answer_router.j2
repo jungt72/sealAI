@@ -1,8 +1,6 @@
 {%- set goal = intent_goal -%}
-{%- set abstract_reply = frontdoor_reply if frontdoor_reply is defined else "SealAI-Analyse: Präzise Empfehlung aus unserem Branchen-Clone." -%}
-{%- set query_text = original_query if original_query is defined else 'Nicht spezifiziert' -%}
-{%- set key_result_text = key_result if key_result is defined else 'Right-first-time für Dichtungen.' -%}
-{%- set standards = standards_used if standards_used is defined else 'ASTM D2240 & EN 681-1' -%}
+{%- set abstract_reply = frontdoor_reply if frontdoor_reply is defined else none -%}
+{%- set query_text = original_query if original_query is defined else 'Nicht angegeben' -%}
 {%- set params = parameters if parameters is defined else {} -%}
 {%- set calc = calc_results if calc_results is defined else {} -%}
 {%- set mat_choice = material_choice if material_choice is defined else {} -%}
@@ -11,7 +9,6 @@
 {%- set prods = products if products is defined else {} -%}
 {%- set comp = comparison_notes if comparison_notes is defined else {} -%}
 {%- set troubleshoot = troubleshooting if troubleshooting is defined else {} -%}
-{%- set default_text = default_text if default_text is defined else 'Basis-Empfehlung: NBR für Standard-Anwendungen.' -%}
 {%- set current_date_text = current_date if current_date is defined else 'Heute' -%}
 {%- set requires_rag = (requires_rag if requires_rag is defined else false) -%}
 {%- set wm = working_memory if working_memory is defined else {} -%}
@@ -49,12 +46,16 @@
 ## Annahmen & Randbedingungen
 
 - Kontext/Anliegen: {{ query_text }}
+{%- if abstract_reply %}
 - Interne Kurz-Einordnung: {{ abstract_reply }}
+{%- else %}
+- Interne Kurz-Einordnung: nicht vorhanden.
+{%- endif %}
 - Rahmenannahme: vorläufige Auslegung auf Basis der aktuell bekannten Angaben.
 {%- if params and params|length > 0 -%}
 - Bekannte Randbedingungen (Auszug): {{ params.keys()|list|join(', ') }}
 {%- else -%}
-- Bekannte Randbedingungen: keine belastbaren Betriebsdaten im State.
+- Bekannte Randbedingungen: nicht angegeben.
 {%- endif -%}
 
 ## Technische Mechanismen
@@ -102,7 +103,7 @@
   - Keine Hypothesen hinterlegt; ohne Randbedingungen nur grobe Einordnung möglich.
   {%- endif -%}
 {%- else -%}
-- {{ default_text }}
+- Keine belastbaren Angaben vorhanden.
 {%- endif -%}
 {%- if vals -%}
 - Validierung (aus State): {{ vals.get('status', 'offen') }}{%- if vals.get('issues') -%} (Hinweise: {{ vals.get('issues')|join(', ') }}){%- endif -%}.
@@ -139,6 +140,3 @@
 - {{ rag_reference }}
 {%- endif -%}
 {%- endif -%}
-**Feedback:** 1–5 Sterne?  
----  
-*SealAI: Dein Dichtungsexperte.*
