@@ -96,7 +96,9 @@ docker compose logs frontend --since 5m | rg "\\[api/chat\\]|request_id|chat_id"
 
 ## Nginx SSE Hardening (wenn Nginx vor dem Proxy sitzt)
 
-Für SSE Locations (z.B. `/api/chat`) sollten folgende Direktiven gesetzt sein:
+Für SSE Locations (z.B. `/api/chat`) sollten folgende Direktiven gesetzt sein.
+
+Repo-Referenz: `nginx/default.conf` enthält eine dedizierte `location ^~ /api/chat { ... }` mit diesen Einstellungen.
 
 ```nginx
 proxy_http_version 1.1;
@@ -108,4 +110,3 @@ proxy_read_timeout 3600;
 proxy_send_timeout 3600;
 add_header X-Accel-Buffering no;
 ```
-
