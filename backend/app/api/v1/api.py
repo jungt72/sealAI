@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     auth,
     langgraph_health,
     langgraph_v2,     # LangGraph v2 HTTP/SSE-Endpunkte
+    state,
     memory,
     ping,
     users,
@@ -27,6 +28,7 @@ api_router.include_router(ping.router)
 # LangGraph HTTP/SSE-API (v2)
 api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph-v2"])
 api_router.include_router(langgraph_health.router, prefix="/langgraph", tags=["langgraph-v2"])
+api_router.include_router(state.router, prefix="/langgraph", tags=["langgraph-v2"])
 
 # Weitere Subsysteme
 api_router.include_router(auth.router)
