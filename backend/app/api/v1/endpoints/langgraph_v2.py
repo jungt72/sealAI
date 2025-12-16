@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, AsyncIterator, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
+from pydantic.config import ConfigDict
 
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 
@@ -23,12 +25,16 @@ from app.langgraph_v2.utils.parameter_patch import (
 from app.services.auth.dependencies import get_current_request_user
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class LangGraphV2Request(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     input: str = Field(default="", description="User prompt")
     chat_id: str = Field(default="default", description="Conversation/thread id")
-    user_id: str = Field(default="anonymous", description="User id (for checkpointer identity)")
+    client_msg_id: Optional[str] = Field(default=None, description="Client message id for tracing")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Optional client metadata")
 
 
 def _format_sse(event: str, payload: Dict[str, Any]) -> bytes:
@@ -80,11 +86,17 @@ def _should_emit_confirm_checkpoint(state: SealAIState) -> bool:
     return False
 
 
-async def _event_stream_v2(req: LangGraphV2Request) -> AsyncIterator[bytes]:
+async def _event_stream_v2(req: LangGraphV2Request, *, user_id: str) -> AsyncIterator[bytes]:
+    task: asyncio.Task[SealAIState] | None = None
     try:
-        # NOTE: user_id for checkpointer identity must match the auth identity used by state updates.
-        user_id = req.user_id
-        result_state = await _run_graph_to_state(req, user_id=user_id)
+        task = asyncio.create_task(_run_graph_to_state(req, user_id=user_id))
+        while True:
+            done, _pending = await asyncio.wait({task}, timeout=15.0)
+            if done:
+                break
+            yield b": keepalive\n\n"
+
+        result_state = task.result()
 
         if _should_emit_confirm_checkpoint(result_state):
             yield _format_sse("confirm_checkpoint", build_confirm_checkpoint_payload(result_state))
@@ -101,16 +113,39 @@ async def _event_stream_v2(req: LangGraphV2Request) -> AsyncIterator[bytes]:
     except Exception as exc:  # pragma: no cover
         yield _format_sse("error", {"type": "error", "message": str(exc)})
         yield _format_sse("done", {"type": "done"})
+    finally:
+        if task and not task.done():
+            task.cancel()
 
 
 @router.post("/chat/v2")
 async def langgraph_chat_v2_endpoint(
     request: LangGraphV2Request,
+    raw_request: Request,
     username: str = Depends(get_current_request_user),
 ) -> StreamingResponse:
-    # Override user_id with authenticated identity to keep checkpointer stable.
-    request.user_id = username
-    return StreamingResponse(_event_stream_v2(request), media_type="text/event-stream")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    logger.info(
+        "langgraph_v2_chat_request",
+        extra={
+            "request_id": request_id,
+            "chat_id": request.chat_id,
+            "user": username,
+            "client_msg_id": request.client_msg_id,
+        },
+    )
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    if request_id:
+        headers["X-Request-Id"] = request_id
+    return StreamingResponse(
+        _event_stream_v2(request, user_id=username),
+        media_type="text/event-stream",
+        headers=headers,
+    )
 
 
 @router.post("/confirm/go")
