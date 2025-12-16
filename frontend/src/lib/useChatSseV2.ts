@@ -27,11 +27,7 @@ type SseState = {
   cancel: () => void;
 };
 
-function buildEndpointUrl() {
-  if (typeof window === 'undefined') return '';
-  const { origin } = window.location;
-  return `${origin}/api/v1/langgraph/chat/v2`;
-}
+const ENDPOINT_URL = "/api/chat";
 
 function parseSseFrame(frame: string): { event?: string; data?: any } {
   const lines = frame.split('\n').map(l => l.trimEnd());
@@ -60,7 +56,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
 
   const abortRef = useRef<AbortController | null>(null);
 
-  const endpointUrl = useMemo(() => buildEndpointUrl(), []);
+  const endpointUrl = useMemo(() => ENDPOINT_URL, []);
 
   useEffect(() => {
     setConnected(Boolean(endpointUrl));
@@ -76,6 +72,10 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
     async (input: string) => {
       if (!endpointUrl) return;
       if (!chatId) return;
+      if (!token) {
+        setLastError("Nicht angemeldet (Token fehlt).");
+        return;
+      }
       const trimmed = (input || '').trim();
       if (!trimmed) return;
 
@@ -94,14 +94,21 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
           headers: {
             'Content-Type': 'application/json',
             Accept: 'text/event-stream',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ input: trimmed, chat_id: chatId }),
+          body: JSON.stringify({
+            input: trimmed,
+            chat_id: chatId,
+            client_msg_id: (typeof crypto !== "undefined" && "randomUUID" in crypto)
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          }),
           signal: controller.signal,
         });
 
         if (!res.ok || !res.body) {
-          throw new Error(`HTTP ${res.status}`);
+          const detail = await res.text().catch(() => "");
+          throw new Error(detail || `HTTP ${res.status}`);
         }
 
         const reader = res.body.getReader();
