@@ -13,11 +13,16 @@ import { useChatThreadId } from "@/lib/useChatThreadId";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-export default function ChatContainer() {
+type ChatContainerProps = {
+  chatId?: string | null;
+};
+
+export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps) {
   const { data: session, status } = useSession();
   const isAuthed = status === "authenticated";
 
-  const chatId = useChatThreadId();
+  const storedChatId = useChatThreadId(chatIdProp ?? null);
+  const chatId = chatIdProp ?? storedChatId;
   const token = useAccessToken();
   const { connected, streaming, text, lastError, confirmCheckpoint, send, cancel } =
     useChatSseV2({ chatId, token });

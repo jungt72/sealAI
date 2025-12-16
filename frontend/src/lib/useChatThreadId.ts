@@ -14,7 +14,7 @@ function makeIdentity(session: any): string {
   return `${String(sub)}${sid ? `:${String(sid)}` : ''}`;
 }
 
-export function useChatThreadId(): string | null {
+export function useChatThreadId(preferredChatId?: string | null): string | null {
   const { data: session, status } = useSession();
   const [chatId, setChatId] = useState<string | null>(null);
   const identity = useMemo(() => {
@@ -42,6 +42,13 @@ export function useChatThreadId(): string | null {
     const storageKey = `${STORAGE_PREFIX}${identity}`;
     sessionStorage.setItem(STORAGE_CURRENT, storageKey);
 
+    const preferred = (preferredChatId ?? "").trim();
+    if (preferred) {
+      sessionStorage.setItem(storageKey, preferred);
+      setChatId(preferred);
+      return;
+    }
+
     const existing = sessionStorage.getItem(storageKey);
     if (existing) {
       setChatId(existing);
@@ -52,7 +59,7 @@ export function useChatThreadId(): string | null {
     const newId = `thread-${random}`;
     sessionStorage.setItem(storageKey, newId);
     setChatId(newId);
-  }, [status, identity]);
+  }, [status, identity, preferredChatId]);
 
   return chatId;
 }
