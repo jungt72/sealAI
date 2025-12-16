@@ -16,7 +16,7 @@ function makeIdentity(session: any): string {
 
 export function useChatThreadId(): string | null {
   const { data: session, status } = useSession();
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const [chatId, setChatId] = useState<string | null>(null);
   const identity = useMemo(() => {
     if (status !== 'authenticated') return null;
     return makeIdentity(session);
@@ -35,7 +35,7 @@ export function useChatThreadId(): string | null {
       const lastKey = sessionStorage.getItem(STORAGE_CURRENT);
       if (lastKey) sessionStorage.removeItem(lastKey);
       sessionStorage.removeItem(STORAGE_CURRENT);
-      setThreadId(null);
+      setChatId(null);
       return;
     }
 
@@ -44,16 +44,15 @@ export function useChatThreadId(): string | null {
 
     const existing = sessionStorage.getItem(storageKey);
     if (existing) {
-      setThreadId(existing);
+      setChatId(existing);
       return;
     }
 
     const random = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     const newId = `thread-${random}`;
     sessionStorage.setItem(storageKey, newId);
-    setThreadId(newId);
+    setChatId(newId);
   }, [status, identity]);
 
-  return threadId;
+  return chatId;
 }
-
