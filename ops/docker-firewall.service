@@ -1,0 +1,15 @@
+[Unit]
+Description=Ensure Docker bridge subnets are reachable through DOCKER-USER
+After=network-online.target docker.service ufw.service
+Wants=network-online.target docker.service ufw.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/docker_firewall_fix.sh
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

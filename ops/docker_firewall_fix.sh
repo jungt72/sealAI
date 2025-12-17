@@ -30,35 +30,75 @@ ensure_chain_exists() {
   fi
 }
 
-insert_or_report() {
-  local direction=$1
-  local subnet=$2
-  if iptables -C DOCKER-USER "$direction" "$subnet" -j RETURN >/dev/null 2>&1; then
-    log "rule already present: DOCKER-USER ${direction} ${subnet}"
-    return
-  fi
-  local cmd=(iptables -I DOCKER-USER 1 "$direction" "$subnet" -j RETURN)
-  log "inserting rule: ${cmd[*]}"
+run_iptables_command() {
+  local cmd=("$@")
+  log "running: ${cmd[*]}"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    log "dry run; skipping actual insertion"
+    log "dry run; skipping iptables execution"
     return
   fi
   "${cmd[@]}"
 }
 
-allow_output_to_subnet() {
+ensure_docker_user_rule() {
+  local direction=$1
+  local subnet=$2
+  if iptables -C DOCKER-USER "$direction" "$subnet" -j RETURN >/dev/null 2>&1; then
+    log "DOCKER-USER ${direction} ${subnet} already allows Docker bridge traffic"
+    return
+  fi
+  log "adding DOCKER-USER ${direction} ${subnet} -> RETURN"
+  run_iptables_command iptables -I DOCKER-USER 1 "$direction" "$subnet" -j RETURN
+}
+
+ensure_output_rule() {
   local subnet=$1
   if iptables -C OUTPUT -d "$subnet" -j ACCEPT >/dev/null 2>&1; then
     log "OUTPUT already accepts ${subnet}"
     return
   fi
-  local cmd=(iptables -I OUTPUT 1 -d "$subnet" -j ACCEPT)
   log "allowing host OUTPUT to Docker bridge ${subnet}"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    log "dry run; skipping actual insertion"
-    return
+  run_iptables_command iptables -I OUTPUT 1 -d "$subnet" -j ACCEPT
+}
+
+cleanup_redundant_rules() {
+  local redundant_patterns=(
+    "-p tcp -m tcp --dport 3000 -j RETURN"
+    "-p tcp -m tcp --dport 8000 -j RETURN"
+    "-i lo -p tcp -m tcp --dport 3000 -j RETURN"
+    "-i lo -p tcp -m tcp --dport 8000 -j RETURN"
+  )
+  for pattern in "${redundant_patterns[@]}"; do
+    read -r -a args <<< "$pattern"
+    while true; do
+      if ! iptables -C DOCKER-USER "${args[@]}" >/dev/null 2>&1; then
+        break
+      fi
+      log "removing redundant DOCKER-USER rule: ${pattern}"
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        log "dry run; skipping redundant-rule cleanup"
+        break
+      fi
+      run_iptables_command iptables -D DOCKER-USER "${args[@]}"
+    done
+  done
+}
+
+network_from_address() {
+  local addr=$1
+  if [[ -z "$addr" ]]; then
+    return 1
   fi
-  "${cmd[@]}"
+  local network
+  network=$(ADDR="$addr" python3 <<'PY'
+import ipaddress, os, sys
+addr = os.environ.get("ADDR", "")
+if not addr:
+    sys.exit(1)
+print(ipaddress.ip_network(addr, strict=False))
+PY
+)
+  echo "$network"
 }
 
 parse_args() {
@@ -85,9 +125,10 @@ fi
 
 require_command ip
 require_command iptables
+require_command python3
 ensure_chain_exists
 
-mapfile -t BRIDGES < <(ip -o link show | awk -F': ' '{print $2}' | grep '^br-' | cut -d'@' -f1)
+mapfile -t BRIDGES < <(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(br-|docker0)' | cut -d'@' -f1)
 
 if [[ "${#BRIDGES[@]}" -eq 0 ]]; then
   log "no Docker bridge interfaces detected"
@@ -95,20 +136,39 @@ if [[ "${#BRIDGES[@]}" -eq 0 ]]; then
 fi
 
 declare -A SEEN_SUBNET
+declare -a SUBNETS
 
 for bridge in "${BRIDGES[@]}"; do
-  log "processing bridge interface ${bridge}"
-  while IFS= read -r subnet; do
-    [[ -z "$subnet" ]] && continue
-    if [[ -n "${SEEN_SUBNET[$subnet]:-}" ]]; then
-      log "skipping duplicate subnet ${subnet}"
+  log "scanning bridge interface ${bridge}"
+  while IFS= read -r address; do
+    [[ -z "$address" ]] && continue
+    network=$(network_from_address "$address")
+    [[ -z "$network" ]] && continue
+    if [[ -n "${SEEN_SUBNET[$network]:-}" ]]; then
+      log "already processed ${network}"
       continue
     fi
-    SEEN_SUBNET["$subnet"]=1
-    insert_or_report -s "$subnet"
-    insert_or_report -d "$subnet"
-    allow_output_to_subnet "$subnet"
+    SEEN_SUBNET["$network"]=1
+    SUBNETS+=("$network")
+    log "detected Docker bridge subnet ${network}"
   done < <(ip -4 addr show dev "$bridge" | awk '/inet /{print $2}')
 done
 
+if [[ "${#SUBNETS[@]}" -eq 0 ]]; then
+  log "no Docker IPv4 subnets found on bridges"
+  exit 0
+fi
+
+cleanup_redundant_rules
+
+for subnet in "${SUBNETS[@]}"; do
+  ensure_docker_user_rule -s "$subnet"
+  ensure_docker_user_rule -d "$subnet"
+  ensure_output_rule "$subnet"
+done
+
 log "completed Docker bridge subnet rules"
+
+# Validation commands:
+# sudo /usr/local/bin/docker_firewall_fix.sh --dry-run
+# sudo /usr/local/bin/docker_firewall_fix.sh
