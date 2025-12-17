@@ -4,7 +4,7 @@ export const revalidate = 0;
 
 import { redirect } from "next/navigation";
 
-export default function DashboardPage({
+export default function DashboardCatchAllPage({
   searchParams,
 }: {
   searchParams?: { chat_id?: string };
