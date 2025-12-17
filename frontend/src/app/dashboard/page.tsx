@@ -9,10 +9,10 @@ export default function DashboardPage({
 }: {
   searchParams?: { chat_id?: string };
 }) {
-  if (searchParams?.chat_id) {
-    const chatId = encodeURIComponent(searchParams.chat_id);
-    redirect(`/chat/${chatId}`);
-  }
+  const requestedChatId = searchParams?.chat_id?.trim();
+  const target = requestedChatId
+    ? `/chat/${encodeURIComponent(requestedChatId)}`
+    : "/chat";
 
-  redirect("/chat");
+  redirect(target);
 }
