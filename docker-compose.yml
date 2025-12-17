@@ -64,25 +64,22 @@ services:
     build: { context: ./backend }
     depends_on:
       postgres: { condition: service_healthy }
-      redis:    { condition: service_started }
+      redis:    { condition: service_healthy }
       qdrant:   { condition: service_started }
       keycloak: { condition: service_started }
     restart: unless-stopped
     env_file: [ ./backend/.env, ./.env.dev ]
     environment:
-      # --- Routing/Intent/Domain über Nano:
       ROUTER_MODEL: gpt-5-nano
       ROUTER_TEMP: "0.0"
       ROUTER_MAX_TOKENS: "256"
       ROUTER_JSON_MODE: "1"
       SEALAI_LOG_LEVEL: DEBUG
 
-      # --- Generator separat steuerbar:
       GENERATION_MODEL: gpt-5-large
       GENERATION_TEMP: "0.2"
       GENERATION_MAX_TOKENS: "1024"
 
-      # --- WebSocket Auth optional (zum Debuggen / lokale Dev):
       WS_AUTH_OPTIONAL: "1"
       CONSULT_GRAPH_DEBUG: "1"
       CONSULT_GRAPH_DEBUG_LEVEL: "debug"
@@ -91,12 +88,10 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/langgraph/health', timeout=3).read()",
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:8000/api/v1/langgraph/health >/dev/null",
         ]
-      interval: 60s
+      interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
@@ -145,9 +140,21 @@ services:
         NEXTAUTH_URL:           "${NEXTAUTH_URL:-http://localhost:3000}"
         KEYCLOAK_ISSUER:        "${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/sealAI}"
         KEYCLOAK_CLIENT_ID:     "${KEYCLOAK_CLIENT_ID:-nextauth}"
-    depends_on: [backend]
+        BUILD_ID: ${BUILD_ID:-dev}
+    depends_on:
+      backend: { condition: service_healthy }
     restart: unless-stopped
     ports: ["3000:3000"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:3000/api/health >/dev/null",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   nginx:
     image: nginx:latest

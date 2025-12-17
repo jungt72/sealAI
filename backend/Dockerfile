@@ -27,8 +27,9 @@ WORKDIR /app
 
 # Nur was wirklich gebraucht wird:
 # - libgomp1: OpenMP für onnxruntime (CPU)
+# - curl: healthchecks
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libgomp1 \
+ && apt-get install -y --no-install-recommends libgomp1 curl \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Non-root User
