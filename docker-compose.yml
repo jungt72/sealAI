@@ -140,14 +140,14 @@ services:
         KEYCLOAK_ISSUER:        "${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/sealAI}"
         KEYCLOAK_CLIENT_ID:     "${KEYCLOAK_CLIENT_ID:-nextauth}"
         BUILD_ID: ${BUILD_ID:-dev}
-        NEXT_PUBLIC_STRAPI_URL: "${NEXT_PUBLIC_STRAPI_URL:-http://strapi:1337}"
-        NEXT_PUBLIC_IMAGE_BASE_URL: "${NEXT_PUBLIC_IMAGE_BASE_URL:-${NEXT_PUBLIC_STRAPI_URL:-http://strapi:1337}}"
+        NEXT_PUBLIC_STRAPI_URL: "${NEXT_PUBLIC_STRAPI_URL:-https://sealai.net/strapi}"
+        NEXT_PUBLIC_IMAGE_BASE_URL: "${NEXT_PUBLIC_IMAGE_BASE_URL:-${NEXT_PUBLIC_STRAPI_URL:-https://sealai.net/strapi}}"
     depends_on:
       backend: { condition: service_healthy }
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_STRAPI_URL: "${NEXT_PUBLIC_STRAPI_URL:-http://strapi:1337}"
-      NEXT_PUBLIC_IMAGE_BASE_URL: "${NEXT_PUBLIC_IMAGE_BASE_URL:-${NEXT_PUBLIC_STRAPI_URL:-http://strapi:1337}}"
+      NEXT_PUBLIC_STRAPI_URL: "${NEXT_PUBLIC_STRAPI_URL:-https://sealai.net/strapi}"
+      NEXT_PUBLIC_IMAGE_BASE_URL: "${NEXT_PUBLIC_IMAGE_BASE_URL:-${NEXT_PUBLIC_STRAPI_URL:-https://sealai.net/strapi}}"
     ports: ["3000:3000"]
     healthcheck:
       test:
