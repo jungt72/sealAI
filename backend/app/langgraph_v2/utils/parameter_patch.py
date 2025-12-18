@@ -23,7 +23,8 @@ ALLOWED_V2_PARAMETER_KEYS = {
 
 
 class ParametersPatchRequest(BaseModel):
-    chat_id: str = Field(..., description="Conversation/thread id")
+    # Keep a default so we can return an explicit 400 "missing_chat_id" instead of a 422.
+    chat_id: str = Field(default="", description="Conversation/thread id")
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -85,4 +86,3 @@ __all__ = [
     "sanitize_v2_parameter_patch",
     "merge_parameters",
 ]
-

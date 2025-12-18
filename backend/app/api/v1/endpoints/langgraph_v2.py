@@ -12,9 +12,11 @@ from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
+from langgraph.errors import InvalidUpdateError
 
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.contracts import assert_node_exists, error_detail, is_dependency_unavailable_error
 from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
 from app.langgraph_v2.utils.parameter_patch import (
@@ -26,6 +28,9 @@ from app.services.auth.dependencies import get_current_request_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+CONFIRM_GO_AS_NODE = "confirm_recommendation_node"
+PARAMETERS_PATCH_AS_NODE = "supervisor_logic_node"
 
 
 class LangGraphV2Request(BaseModel):
@@ -151,33 +156,67 @@ async def langgraph_chat_v2_endpoint(
 @router.post("/confirm/go")
 async def confirm_go(
     body: ConfirmGoRequest,
+    raw_request: Request,
     username: str = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     try:
+        if not (body.chat_id or "").strip():
+            raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
         graph, config = await _build_graph_config(thread_id=body.chat_id, user_id=username)
+        assert_node_exists(
+            graph,
+            CONFIRM_GO_AS_NODE,
+            request_id=request_id,
+            status_code=500,
+            code="server_misconfigured",
+        )
         await graph.aupdate_state(
             config,
             {"recommendation_go": bool(body.go)},
-            as_node="confirm_recommendation_node",
+            as_node=CONFIRM_GO_AS_NODE,
         )
         return {"ok": True, "chat_id": body.chat_id, "recommendation_go": bool(body.go)}
     except HTTPException:
         raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except InvalidUpdateError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc)),
+        ) from exc
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "langgraph_v2_confirm_go_error",
+            extra={"request_id": request_id, "chat_id": body.chat_id, "user": username},
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
 
 
 @router.post("/parameters/patch")
 async def patch_parameters(
     body: ParametersPatchRequest,
+    raw_request: Request,
     username: str = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    chat_id = (body.chat_id or "").strip()
     try:
+        if not chat_id:
+            raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
         patch = sanitize_v2_parameter_patch(body.parameters)
         if not patch:
-            raise HTTPException(status_code=400, detail="No parameters provided")
+            raise HTTPException(status_code=400, detail=error_detail("missing_parameters", request_id=request_id))
 
-        graph, config = await _build_graph_config(thread_id=body.chat_id, user_id=username)
+        graph, config = await _build_graph_config(thread_id=chat_id, user_id=username)
+        assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
         snapshot = await graph.aget_state(config)
         state_values = snapshot.values if isinstance(snapshot.values, dict) else {}
         existing_params = state_values.get("parameters") if isinstance(state_values, dict) else {}
@@ -186,15 +225,43 @@ async def patch_parameters(
         await graph.aupdate_state(
             config,
             {"parameters": merged},
-            as_node="parameter_patch_ui",
+            # LangGraph requires `as_node` to be an existing node in the compiled graph.
+            # Parameter patches are UI-driven and should not advance the graph; we attach
+            # the update to a stable, always-present node.
+            as_node=PARAMETERS_PATCH_AS_NODE,
         )
         return {"ok": True, "chat_id": body.chat_id, "updated": patch}
     except HTTPException:
         raise
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail("invalid_parameters", request_id=request_id, message=str(exc)),
+        ) from exc
+    except InvalidUpdateError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc)),
+        ) from exc
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "langgraph_v2_parameters_patch_error",
+            extra={
+                "request_id": request_id,
+                "chat_id": chat_id,
+                "user": username,
+                "patch_keys": sorted(patch.keys()),
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
 
 
 __all__ = ["LangGraphV2Request"]

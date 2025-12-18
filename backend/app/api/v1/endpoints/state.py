@@ -3,18 +3,18 @@
 
 from __future__ import annotations
 
-import traceback
 from datetime import datetime
 import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, SealParameterUpdate, TechnicalParameters
+from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
 from app.services.auth.dependencies import get_current_request_user
 
 logger = logging.getLogger(__name__)
@@ -133,6 +133,7 @@ async def _build_state_config_with_checkpointer(thread_id: str, user_id: str):
 
 @router.get("/state")
 async def get_state(
+    raw_request: Request,
     thread_id: str = Query(..., description="Thread ID"),
     username: str = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
@@ -140,6 +141,7 @@ async def get_state(
 
     Returns the complete state including parameters, messages, etc.
     """
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     try:
         # user_id must always come from the authenticated Keycloak JWT (`current_user.sub`).
         graph, config = await _build_state_config_with_checkpointer(
@@ -167,22 +169,30 @@ async def get_state(
             "next": snapshot.next,
             "config": _sanitize_config_for_client(snapshot.config),
         }
-    except Exception as e:
-        logger.error(
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
             "state_get_error",
             extra={
+                "request_id": request_id,
                 "thread_id": thread_id,
                 "user_id": username,
-                "error": str(e),
             },
         )
-        logger.error("Traceback: %s", traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get state: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
 
 
 @router.post("/state")
 async def update_state(
     body: StateUpdate,
+    raw_request: Request,
     thread_id: str = Query(..., description="Thread ID"),
     username: str = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
@@ -192,9 +202,13 @@ async def update_state(
     sending a chat message. The state update will be reflected in
     the next graph run.
     """
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     sanitized_parameters = body.parameters.model_dump(exclude_none=True)
     if not sanitized_parameters:
-        raise HTTPException(status_code=400, detail="No parameters provided")
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail("missing_parameters", request_id=request_id),
+        )
 
     try:
         # Reuse the authenticated `sub` so the state update is scoped to the Keycloak user.
@@ -203,7 +217,19 @@ async def update_state(
         )
         snapshot = await graph.aget_state(config)
         state_values = _state_to_dict(snapshot.values)
-        as_node = _resolve_update_as_node(state_values) or DEFAULT_STATE_UPDATE_NODE
+        resolved = _resolve_update_as_node(state_values)
+        as_node = pick_existing_node(graph, resolved, fallback=DEFAULT_STATE_UPDATE_NODE)
+        if resolved and as_node != resolved:
+            logger.warning(
+                "state_update_invalid_as_node_fallback",
+                extra={
+                    "request_id": request_id,
+                    "thread_id": thread_id,
+                    "user_id": username,
+                    "resolved_as_node": resolved,
+                    "fallback_as_node": as_node,
+                },
+            )
 
         await graph.aupdate_state(
             config,
@@ -224,14 +250,21 @@ async def update_state(
         )
 
         return {"ok": True, "parameters": sanitized_parameters}
-    except Exception as e:
-        logger.error(
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
             "state_update_error",
             extra={
+                "request_id": request_id,
                 "thread_id": thread_id,
                 "user_id": username,
-                "error": str(e),
             },
         )
-        logger.error("Traceback: %s", traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to update state: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
