@@ -32,7 +32,13 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
         )
 
     token = authorization.removeprefix("Bearer ").strip()
-    payload = verify_access_token(token)
+    try:
+        payload = verify_access_token(token)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
     return payload.get("preferred_username", "anonymous")
 
 
@@ -65,5 +71,11 @@ async def get_current_ws_user(websocket: WebSocket) -> str:
             detail="Kein Token gefunden (weder Authorization-Header noch Query-Param).",
         )
 
-    payload = verify_access_token(token)
+    try:
+        payload = verify_access_token(token)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
     return payload.get("preferred_username", "anonymous")
