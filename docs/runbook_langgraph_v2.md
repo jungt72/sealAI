@@ -88,3 +88,30 @@ PY"
 - Stable contract Nodes nur ändern, wenn:
   - Tests (`backend/tests/test_langgraph_parameters_patch.py`) angepasst sind
   - Docs/Runbook aktualisiert sind
+
+## Tests (schnell vs. Compose)
+
+### Schnell / deterministisch (pure app)
+
+```bash
+cd backend
+pytest -q
+pytest -q tests/integration/test_langgraph_v2_http.py
+pytest -q tests/integration/test_langgraph_v2_sse.py
+```
+
+### Compose Wiring (optional)
+
+Läuft nur, wenn der Stack erreichbar ist (Default: skip).
+
+```bash
+cd backend
+RUN_INTEGRATION=1 pytest -q tests/integration/test_compose_wiring.py
+```
+
+Alternativ über Script:
+
+```bash
+./ops/test-backend.sh
+RUN_INTEGRATION=1 ./ops/test-backend.sh
+```
