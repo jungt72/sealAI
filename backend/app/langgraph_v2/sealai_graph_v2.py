@@ -162,6 +162,9 @@ def _ensure_state_model(state: Any) -> SealAIState:
 SMALLTALK_TEMPLATE = "final_answer_smalltalk_v2.j2"
 DISCOVERY_TEMPLATE = "final_answer_discovery_v2.j2"
 RECOMMENDATION_TEMPLATE = "final_answer_recommendation_v2.j2"
+EXPLANATION_TEMPLATE = "final_answer_explanation_v2.j2"
+TROUBLESHOOTING_TEMPLATE = "final_answer_troubleshooting_v2.j2"
+OUT_OF_SCOPE_TEMPLATE = "final_answer_out_of_scope_v2.j2"
 
 
 def _select_final_answer_template(goal: str | None, recommendation_go: bool) -> str:
@@ -169,6 +172,12 @@ def _select_final_answer_template(goal: str | None, recommendation_go: bool) -> 
         return SMALLTALK_TEMPLATE
     if goal == "design_recommendation":
         return RECOMMENDATION_TEMPLATE if recommendation_go else DISCOVERY_TEMPLATE
+    if goal == "explanation_or_comparison":
+        return EXPLANATION_TEMPLATE
+    if goal == "troubleshooting_leakage":
+        return TROUBLESHOOTING_TEMPLATE
+    if goal == "out_of_scope":
+        return OUT_OF_SCOPE_TEMPLATE
     return DISCOVERY_TEMPLATE
 
 
