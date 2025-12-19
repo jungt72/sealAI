@@ -35,7 +35,6 @@ os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.js
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 from langchain_core.messages import AIMessage
-from langchain_core.messages.ai import AIMessageChunk
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
 
@@ -70,8 +69,8 @@ class DummyGraphTokens:
 
     def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
         async def gen():
-            yield ("messages", (AIMessageChunk(content="Hallo"), {"node": "final_answer_node"}))
-            yield ("messages", (AIMessageChunk(content=" Welt"), {"node": "final_answer_node"}))
+            yield ("messages", ("Hallo", {"node": "final_answer_node"}))
+            yield ("messages", (" Welt", {"node": "final_answer_node"}))
             yield ("values", {"final_text": "Hallo Welt", "phase": "final", "last_node": "final_answer_node"})
 
         return gen()
@@ -92,8 +91,8 @@ class DummyGraphTokensWithFinalMessage:
 
     def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
         async def gen():
-            yield ("messages", (AIMessageChunk(content="Hallo"), {"node": "final_answer_node"}))
-            yield ("messages", (AIMessageChunk(content=" Welt"), {"node": "final_answer_node"}))
+            yield ("messages", ("Hallo", {"node": "final_answer_node"}))
+            yield ("messages", (" Welt", {"node": "final_answer_node"}))
             yield ("messages", (AIMessage(content="Hallo Welt"), {"node": "final_answer_node"}))
             yield ("values", {"final_text": "Hallo Welt", "phase": "final", "last_node": "final_answer_node"})
 
