@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from typing import Any, Dict, List
 
@@ -218,6 +219,15 @@ def _build_final_answer_template_context(
     return template_context
 
 
+def _normalize_smalltalk_text(text: str | None) -> str:
+    if not text:
+        return ""
+    normalized = text.strip().lower()
+    normalized = re.sub(r"[!?.]+$", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
 def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
     """
     Baut die endgültige Prompt-Message-Liste für das LLM.
@@ -289,6 +299,21 @@ def _build_final_answer_chain() -> Any:
         coverage_gaps_text = coverage_gaps_text or "keine"
 
         user_text = latest_user_text(messages)
+        user_text_norm = _normalize_smalltalk_text(user_text)
+        micro_greetings = {
+            "hallo",
+            "hi",
+            "hey",
+            "moin",
+            "guten morgen",
+            "guten tag",
+            "guten abend",
+            "servus",
+        }
+        is_micro_smalltalk = bool(
+            goal == "smalltalk"
+            and (len(user_text_norm) <= 12 or user_text_norm in micro_greetings)
+        )
 
         template_context = _build_final_answer_template_context(
             state=s,
@@ -302,6 +327,8 @@ def _build_final_answer_chain() -> Any:
             recommendation_go=go,
             latest_user_text=user_text,
         )
+        template_context["user_text_norm"] = user_text_norm
+        template_context["is_micro_smalltalk"] = is_micro_smalltalk
         return {
             "state": s,
             "messages": messages,
