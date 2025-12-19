@@ -60,7 +60,8 @@ Alle anderen Nodes sind intern/implementierungsabhängig und können sich änder
 ### Dev Script (Repo)
 
 ```bash
-python -m backend.scripts.print_langgraph_v2_nodes
+cd backend
+python scripts/print_langgraph_v2_nodes.py
 ```
 
 ### Direkt im Container (wenn nötig)
@@ -87,4 +88,3 @@ PY"
 - Stable contract Nodes nur ändern, wenn:
   - Tests (`backend/tests/test_langgraph_parameters_patch.py`) angepasst sind
   - Docs/Runbook aktualisiert sind
-
