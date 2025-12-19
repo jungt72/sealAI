@@ -11,7 +11,6 @@ import structlog
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableParallel
-from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END, START
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -20,6 +19,7 @@ from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.constants import CHECKPOINTER_NAMESPACE_V2
 from app.langgraph_v2.utils.checkpointer import make_v2_checkpointer_async
 from app.langgraph_v2.utils.jinja import render_template
+from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI
 from app.langgraph_v2.utils.messages import latest_user_text
 
 logger = structlog.get_logger("langgraph_v2.graph")
@@ -283,7 +283,7 @@ def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
 
 
 def _build_final_answer_chain() -> Any:
-    llm = ChatOpenAI(
+    llm = LazyChatOpenAI(
         model="gpt-4.1-mini",
         temperature=0.15,
         max_tokens=800,

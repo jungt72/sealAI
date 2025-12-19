@@ -5,10 +5,12 @@ import json
 import logging
 import os
 from functools import lru_cache
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from threading import Lock
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Iterator, List, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import Runnable
 
 from app.langgraph_v2.constants import MODEL_PRO
 
@@ -17,6 +19,59 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Singleton / Cache für Chat-Modelle
 # ---------------------------------------------------------------------------
+
+
+class LazyChatOpenAI(Runnable[Any, Any]):
+    """Lazy wrapper to avoid ChatOpenAI init at graph build time."""
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        temperature: float | None = None,
+        streaming: bool = False,
+        max_tokens: int | None = None,
+        max_retries: int | None = None,
+    ) -> None:
+        self._model = model
+        self._temperature = temperature
+        self._streaming = streaming
+        self._max_tokens = max_tokens
+        self._max_retries = max_retries
+        self._client: ChatOpenAI | None = None
+        self._lock = Lock()
+
+    def _get_client(self) -> ChatOpenAI:
+        if self._client is None:
+            with self._lock:
+                if self._client is None:
+                    kwargs: Dict[str, Any] = {
+                        "model": self._model,
+                        "streaming": self._streaming,
+                    }
+                    if self._temperature is not None:
+                        kwargs["temperature"] = float(self._temperature)
+                    if self._max_tokens is not None:
+                        kwargs["max_tokens"] = int(self._max_tokens)
+                    if self._max_retries is not None:
+                        kwargs["max_retries"] = int(self._max_retries)
+                    self._client = ChatOpenAI(**kwargs)
+        return self._client
+
+    def invoke(self, input: Any, config: Any | None = None, **kwargs: Any) -> Any:
+        return self._get_client().invoke(input, config=config, **kwargs)
+
+    async def ainvoke(self, input: Any, config: Any | None = None, **kwargs: Any) -> Any:
+        return await self._get_client().ainvoke(input, config=config, **kwargs)
+
+    def stream(self, input: Any, config: Any | None = None, **kwargs: Any) -> Iterator[Any]:
+        return self._get_client().stream(input, config=config, **kwargs)
+
+    async def astream(
+        self, input: Any, config: Any | None = None, **kwargs: Any
+    ) -> AsyncIterator[Any]:
+        async for chunk in self._get_client().astream(input, config=config, **kwargs):
+            yield chunk
 
 
 @lru_cache(maxsize=16)
@@ -296,4 +351,4 @@ async def run_llm_stream(
     return "".join(collected).strip()
 
 
-__all__ = ["get_model_tier", "run_llm", "run_llm_stream"]
+__all__ = ["LazyChatOpenAI", "get_model_tier", "run_llm", "run_llm_stream"]
