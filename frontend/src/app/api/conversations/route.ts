@@ -52,6 +52,7 @@ export async function GET() {
     return NextResponse.json(
       {
         detail: "Failed to read session",
+        reason: "session_read_failed",
         error: String(e?.message || e),
       },
       { status: 401 },
@@ -84,7 +85,7 @@ export async function GET() {
     return NextResponse.json(
       {
         detail: "Unauthorized",
-        reason: "no_access_token_in_session",
+        reason: "no_access_token",
       },
       { status: 401 },
     );
