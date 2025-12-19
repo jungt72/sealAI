@@ -124,6 +124,12 @@ def _extract_stream_token_text(token: Any) -> str | None:
         return None
     if isinstance(token, BaseMessage) and not _is_message_chunk(token):
         return None
+    text_attr = getattr(token, "text", None)
+    if isinstance(text_attr, str) and text_attr:
+        return text_attr
+    content_attr = getattr(token, "content", None)
+    if isinstance(content_attr, str) and content_attr:
+        return content_attr
     text = _flatten_message_content(token)
     return text if text else None
 
@@ -156,7 +162,7 @@ async def _event_stream_v2(
         latest_state: SealAIState | Dict[str, Any] = initial_state
 
         async def _producer() -> None:
-            nonlocal emitted_any_token, latest_state
+            nonlocal emitted_any_token, latest_state, token_count, done_sent
             try:
                 iterator = graph.astream(
                     initial_state,
