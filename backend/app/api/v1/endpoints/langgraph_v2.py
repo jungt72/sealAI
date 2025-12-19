@@ -122,10 +122,16 @@ def _flatten_message_content(message: Any) -> str:
 def _extract_stream_token_text(token: Any) -> str | None:
     if token is None:
         return None
-    if isinstance(token, BaseMessage) and not isinstance(token, AIMessageChunk):
+    if isinstance(token, BaseMessage) and not _is_message_chunk(token):
         return None
     text = _flatten_message_content(token)
     return text if text else None
+
+
+def _is_message_chunk(token: BaseMessage) -> bool:
+    if isinstance(token, AIMessageChunk):
+        return True
+    return token.__class__.__name__.endswith("Chunk")
 
 
 async def _event_stream_v2(
