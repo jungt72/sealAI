@@ -1,8 +1,9 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, LogOut, MessageSquare, Plus } from "lucide-react";
+import { signIn, useSession } from "next-auth/react";
 
 import { cn } from "@/lib/utils";
 import { ChatBrandRail } from "@/app/chat/components/ChatBrandRail";
@@ -12,6 +13,8 @@ type ConversationListItem = {
   title: string | null;
   updated_at: string;
 };
+
+const SESSION_EXPIRED_MESSAGE = "Sitzung abgelaufen – neu anmelden";
 
 const SECTION_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
@@ -66,19 +69,36 @@ const AppleIconButton = ({
 export default function ConversationSidebar() {
   const router = useRouter();
   const pathname = usePathname();
+  const { status } = useSession();
 
   const [collapsed, setCollapsed] = useState(true);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sessionExpired, setSessionExpired] = useState(false);
+  const [authState, setAuthState] = useState<"ok" | "expired">("ok");
+  const authStateRef = useRef(authState);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const didReauthFetchRef = useRef(false);
 
   const fetchConversations = useCallback(async () => {
+    if (authStateRef.current === "expired") {
+      setLoading(false);
+      return;
+    }
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     setError(null);
-    setSessionExpired(false);
+
     try {
-      const res = await fetch("/api/conversations", { method: "GET", cache: "no-store" });
+      const res = await fetch("/api/conversations", {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+      });
       const text = await res.text();
       let payload: any = null;
       try {
@@ -88,13 +108,14 @@ export default function ConversationSidebar() {
       }
 
       if (!res.ok) {
-        const isExpired = res.status === 401 && payload?.detail === "Session expired";
-        const msg = isExpired
-          ? "Sitzung abgelaufen – bitte neu anmelden."
-          : res.status === 401
-          ? "Bitte anmelden, um Unterhaltungen zu sehen."
-          : payload?.detail || "Fehler beim Laden der Unterhaltungen.";
-        setSessionExpired(isExpired);
+        if (res.status === 401) {
+          didReauthFetchRef.current = false;
+          setAuthState("expired");
+          setError(SESSION_EXPIRED_MESSAGE);
+          return;
+        }
+
+        const msg = payload?.detail || "Fehler beim Laden der Unterhaltungen.";
         setConversations([]);
         setError(msg);
         return;
@@ -105,19 +126,47 @@ export default function ConversationSidebar() {
       } else {
         setConversations([]);
       }
-      setSessionExpired(false);
+      setAuthState("ok");
     } catch (e: any) {
-      setSessionExpired(false);
+      if (controller.signal.aborted) {
+        return;
+      }
       setConversations([]);
       setError(e?.message || "Netzwerkfehler beim Laden der Unterhaltungen.");
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
+    authStateRef.current = authState;
+  }, [authState]);
+
+  useEffect(() => {
+    if (status === "loading") return;
     void fetchConversations();
-  }, [fetchConversations, pathname]);
+  }, [fetchConversations, pathname, status]);
+
+  useEffect(() => {
+    if (status === "loading") return;
+
+    if (status === "authenticated") {
+      if (authStateRef.current !== "expired") return;
+      if (!didReauthFetchRef.current) {
+        didReauthFetchRef.current = true;
+        authStateRef.current = "ok";
+        setAuthState("ok");
+        void fetchConversations();
+      }
+      return;
+    }
+
+    // Reset one-shot guard when leaving authenticated state.
+    didReauthFetchRef.current = false;
+  }, [status, fetchConversations]);
 
   const recent = useMemo(() => {
     const now = Date.now();
@@ -131,6 +180,7 @@ export default function ConversationSidebar() {
 
   const pathSegments = pathname?.split("/").filter(Boolean) ?? [];
   const activeConversationId = pathSegments[0] === "chat" && pathSegments.length > 1 ? pathSegments[1] : null;
+  const sessionExpired = authState === "expired";
 
   const handleNewConversation = useCallback(() => {
     const newId = makeConversationId();
@@ -145,6 +195,14 @@ export default function ConversationSidebar() {
   const handleLogout = useCallback(() => {
     window.location.assign("/api/auth/sso-logout");
   }, []);
+
+  const handleReauth = useCallback(async () => {
+    try {
+      await signIn("keycloak", { callbackUrl: window.location.href });
+    } catch {
+      router.push("/auth/signin");
+    }
+  }, [router]);
 
   const renderList = (items: ConversationListItem[]) =>
     items.map((item) => {
@@ -260,7 +318,7 @@ export default function ConversationSidebar() {
                   {sessionExpired && (
                     <button
                       type="button"
-                      onClick={() => router.push("/auth/signin")}
+                      onClick={handleReauth}
                       className="ml-2 text-xs font-semibold uppercase tracking-wide text-sky-600 underline-offset-4 transition hover:text-sky-800"
                     >
                       Neu anmelden
