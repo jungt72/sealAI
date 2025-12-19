@@ -41,6 +41,42 @@ docker exec nginx sh -lc 'curl -sS -i http://backend:8000/api/v1/langgraph/param
 docker compose logs --tail=400 backend | rg -n "langgraph_v2_parameters_patch|internal_error|invalid_as_node|dependency_unavailable|Traceback" -S
 ```
 
+## Parameter Sync (Form ↔ State)
+
+### How it works
+
+- UI patches parameters via `POST /api/v1/langgraph/parameters/patch` with `chat_id`.
+- UI refreshes `GET /api/v1/langgraph/state?thread_id=...` on chat load and after SSE streaming ends.
+- Backend stores parameters in the same checkpointer thread as chat/v2: `thread_id = <user_id>|<chat_id>`.
+
+### Debug (safe logs)
+
+Set backend env:
+
+```
+SEALAI_PARAM_SYNC_DEBUG=1
+```
+
+Logs include only `chat_id`, key counts, and checkpointer ids (no values).
+
+### Smoke Test (running stack)
+
+```
+AUTH_TOKEN="..." NGINX_BASE_URL="https://sealai.net" ./ops/smoke-param-sync.sh
+```
+
+Optional cookie auth:
+
+```
+AUTH_COOKIE="next-auth.session-token=..." ./ops/smoke-param-sync.sh
+```
+
+### Common Failure Modes
+
+- Wrong `chat_id` (UI route `conversationId` vs sessionStorage).
+- `401` Unauthorized (missing/expired bearer token).
+- Allowlist drift (backend rejects keys → `invalid_parameters`).
+
 ## Node Contract (stable vs optional)
 
 ### Stable (API-/Contract-relevant)
@@ -105,6 +141,14 @@ PY"
   - Docs/Runbook aktualisiert sind
 
 ## Tests (schnell vs. Compose)
+
+### Tests ohne OPENAI_API_KEY
+
+- Param Sync / State laufen ohne `OPENAI_API_KEY`, da kein LLM ausgefuehrt wird.
+- Betroffene Tests:
+  - `backend/app/api/tests/test_langgraph_v2_param_sync_integration.py`
+  - `backend/tests/integration/test_langgraph_v2_http.py -k patch_then_state`
+- Chat/SSE Tests benoetigen weiterhin einen echten LLM-Access-Key.
 
 ### Schnell / deterministisch (pure app)
 
