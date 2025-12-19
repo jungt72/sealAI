@@ -411,6 +411,26 @@ def _comparison_rag_router(state: SealAIState) -> str:
     return "rag" if bool(getattr(state, "requires_rag", False)) else "skip"
 
 
+async def _supervisor_route_async(state: SealAIState) -> str:
+    return supervisor_route(state)
+
+
+async def _parameter_check_router_async(state: SealAIState) -> str:
+    return _parameter_check_router(state)
+
+
+async def _critical_review_router_async(state: SealAIState) -> str:
+    return _critical_review_router(state)
+
+
+async def _product_router_async(state: SealAIState) -> str:
+    return _product_router(state)
+
+
+async def _comparison_rag_router_async(state: SealAIState) -> str:
+    return _comparison_rag_router(state)
+
+
 # ---------------------------------------------------------------------------
 # Graph-Definition
 # ---------------------------------------------------------------------------
@@ -446,7 +466,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 
     builder.add_conditional_edges(
         "supervisor_logic_node",
-        supervisor_route,
+        _supervisor_route_async,
         {
             "intermediate": "final_answer_node",
             "confirm": "confirm_recommendation_node",
@@ -463,7 +483,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_edge("discovery_schema_node", "parameter_check_node")
     builder.add_conditional_edges(
         "parameter_check_node",
-        _parameter_check_router,
+        _parameter_check_router_async,
         {
             "calculator_node": "calculator_node",
             "supervisor_logic_node": "supervisor_logic_node",
@@ -477,7 +497,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 
     builder.add_conditional_edges(
         "critical_review_node",
-        _critical_review_router,
+        _critical_review_router_async,
         {
             "refine": "discovery_schema_node",
             "reject": "final_answer_node",
@@ -488,7 +508,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 
     builder.add_conditional_edges(
         "product_match_node",
-        _product_router,
+        _product_router_async,
         {
             "include": "product_explainer_node",
             "skip": "final_answer_node",
@@ -501,7 +521,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     # Comparison flow
     builder.add_conditional_edges(
         "material_comparison_node",
-        _comparison_rag_router,
+        _comparison_rag_router_async,
         {
             "rag": "rag_support_node",
             "skip": "final_answer_node",
