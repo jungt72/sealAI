@@ -55,6 +55,21 @@ Quelle: `backend/app/langgraph_v2/contracts.py`
 
 Alle anderen Nodes sind intern/implementierungsabhängig und können sich ändern, solange der stable contract eingehalten wird.
 
+## Prompt-Mapping (v2)
+
+### Goal -> Template
+
+- `smalltalk` -> `final_answer_smalltalk_v2.j2`
+- `design_recommendation` -> `final_answer_recommendation_v2.j2` (sonst `final_answer_discovery_v2.j2`)
+- `explanation_or_comparison` -> `final_answer_explanation_v2.j2`
+- `troubleshooting_leakage` -> `final_answer_troubleshooting_v2.j2`
+- `out_of_scope` -> `final_answer_out_of_scope_v2.j2`
+
+### Smalltalk Micro-Branch
+
+- Wenn `goal == smalltalk` und der letzte User-Text sehr kurz ist (z. B. "hallo", "hi", "moin"), wird eine kurze Micro-Antwort erzeugt.
+- In der Micro-Branch werden keine technischen Checklisten oder Parameterfragen ausgegeben.
+
 ## Node-Liste schnell ausgeben
 
 ### Dev Script (Repo)
