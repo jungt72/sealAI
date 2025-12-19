@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -28,6 +29,7 @@ from app.services.auth.dependencies import get_current_request_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 
 CONFIRM_GO_AS_NODE = "confirm_recommendation_node"
 PARAMETERS_PATCH_AS_NODE = "supervisor_logic_node"
@@ -91,38 +93,241 @@ def _should_emit_confirm_checkpoint(state: SealAIState) -> bool:
     return False
 
 
-async def _event_stream_v2(req: LangGraphV2Request, *, user_id: str) -> AsyncIterator[bytes]:
-    task: asyncio.Task[SealAIState] | None = None
+def _flatten_message_content(message: Any) -> str:
+    content = getattr(message, "content", message)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for chunk in content:
+            if isinstance(chunk, str):
+                parts.append(chunk)
+            elif isinstance(chunk, dict):
+                text_value = chunk.get("text") or chunk.get("content")
+                if text_value is None:
+                    continue
+                parts.append(str(text_value))
+            else:
+                parts.append(str(chunk))
+        return "".join(parts)
+    if isinstance(content, dict):
+        text_value = content.get("text") or content.get("content")
+        return str(text_value) if text_value is not None else str(content)
+    if content is None:
+        return ""
+    return str(content)
+
+
+def _extract_stream_token_text(token: Any) -> str | None:
+    if token is None:
+        return None
+    text = _flatten_message_content(token)
+    return text if text else None
+
+
+async def _event_stream_v2(
+    req: LangGraphV2Request,
+    *,
+    user_id: str,
+    request_id: str | None = None,
+) -> AsyncIterator[bytes]:
+    stream_task: asyncio.Task[None] | None = None
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
     try:
-        task = asyncio.create_task(_run_graph_to_state(req, user_id=user_id))
+        graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id)
+        initial_state = SealAIState(
+            user_id=user_id,
+            thread_id=req.chat_id,
+            messages=[HumanMessage(content=req.input)],
+        )
+
+        emitted_any_token = False
+        token_count = 0
+        done_sent = False
+        latest_state: SealAIState | Dict[str, Any] = initial_state
+
+        async def _producer() -> None:
+            nonlocal emitted_any_token, latest_state
+            try:
+                iterator = graph.astream(
+                    initial_state,
+                    config=config,
+                    stream_mode=["messages", "values"],
+                ).__aiter__()
+
+                while True:
+                    try:
+                        item = await asyncio.wait_for(iterator.__anext__(), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        await queue.put(b": keepalive\n\n")
+                        continue
+                    except StopAsyncIteration:
+                        break
+
+                    if (
+                        isinstance(item, tuple)
+                        and len(item) == 2
+                        and isinstance(item[0], str)
+                    ):
+                        mode, data = item
+                        if mode == "messages":
+                            token: Any
+                            meta: Any
+                            if isinstance(data, tuple) and len(data) == 2:
+                                token, meta = data
+                            else:
+                                token, meta = data, None
+
+                            text = _extract_stream_token_text(token)
+                            if text:
+                                emitted_any_token = True
+                                token_count += 1
+                                await queue.put(_format_sse("token", {"type": "token", "text": text}))
+                                if SSE_DEBUG:
+                                    logger.info(
+                                        "langgraph_v2_sse_event",
+                                        extra={
+                                            "event_type": "token",
+                                            "data_len": len(text),
+                                            "token_count": token_count,
+                                            "done_sent": done_sent,
+                                            "request_id": request_id,
+                                            "chat_id": req.chat_id,
+                                        },
+                                    )
+                            continue
+
+                        if mode == "values":
+                            if isinstance(data, SealAIState):
+                                latest_state = data
+                            elif isinstance(data, dict):
+                                latest_state = data
+                            continue
+
+                    # Unexpected shape: treat as terminal state-like output.
+                    if isinstance(item, SealAIState):
+                        latest_state = item
+                    elif isinstance(item, dict):
+                        latest_state = item
+
+                # Finalize from last known state
+                result_state = (
+                    latest_state
+                    if isinstance(latest_state, SealAIState)
+                    else SealAIState.model_validate(latest_state or {})
+                )
+
+                if _should_emit_confirm_checkpoint(result_state):
+                    payload = build_confirm_checkpoint_payload(result_state)
+                    await queue.put(_format_sse("confirm_checkpoint", payload))
+                    if SSE_DEBUG:
+                        logger.info(
+                            "langgraph_v2_sse_event",
+                            extra={
+                                "event_type": "confirm_checkpoint",
+                                "data_len": len(json.dumps(payload, ensure_ascii=False)),
+                                "token_count": token_count,
+                                "done_sent": done_sent,
+                                "request_id": request_id,
+                                "chat_id": req.chat_id,
+                            },
+                        )
+
+                final_text = (result_state.final_text or "")
+                if (not emitted_any_token) and final_text.strip():
+                    for chunk in _chunk_text(final_text.strip()):
+                        await queue.put(_format_sse("token", {"type": "token", "text": chunk}))
+                        if SSE_DEBUG:
+                            logger.info(
+                                "langgraph_v2_sse_event",
+                                extra={
+                                    "event_type": "token_fallback",
+                                    "data_len": len(chunk),
+                                    "token_count": token_count,
+                                    "done_sent": done_sent,
+                                    "request_id": request_id,
+                                    "chat_id": req.chat_id,
+                                },
+                            )
+
+                done_payload = {
+                    "type": "done",
+                    "chat_id": req.chat_id,
+                    "request_id": request_id,
+                    "client_msg_id": req.client_msg_id,
+                    "phase": result_state.phase,
+                    "last_node": result_state.last_node,
+                }
+                await queue.put(_format_sse("done", done_payload))
+                done_sent = True
+                if SSE_DEBUG:
+                    logger.info(
+                        "langgraph_v2_sse_event",
+                        extra={
+                            "event_type": "done",
+                            "data_len": len(json.dumps(done_payload, ensure_ascii=False)),
+                            "token_count": token_count,
+                            "done_sent": done_sent,
+                            "request_id": request_id,
+                            "chat_id": req.chat_id,
+                        },
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover
+                message = (
+                    "dependency_unavailable"
+                    if is_dependency_unavailable_error(exc)
+                    else "internal_error"
+                )
+                await queue.put(_format_sse("error", {"type": "error", "message": message}))
+                await queue.put(
+                    _format_sse(
+                        "done",
+                        {
+                            "type": "done",
+                            "chat_id": req.chat_id,
+                            "request_id": request_id,
+                            "client_msg_id": req.client_msg_id,
+                        },
+                    )
+                )
+            finally:
+                await queue.put(None)
+
+        stream_task = asyncio.create_task(_producer())
+
         while True:
-            done, _pending = await asyncio.wait({task}, timeout=15.0)
-            if done:
+            item = await queue.get()
+            if item is None:
                 break
-            yield b": keepalive\n\n"
-
-        result_state = task.result()
-
-        if _should_emit_confirm_checkpoint(result_state):
-            yield _format_sse("confirm_checkpoint", build_confirm_checkpoint_payload(result_state))
-
-        final_text = (result_state.final_text or "").strip()
-        if final_text:
-            for chunk in _chunk_text(final_text):
-                yield _format_sse("token", {"type": "token", "text": chunk})
-
-        yield _format_sse("done", {"type": "done"})
+            yield item
     except asyncio.CancelledError:
-        yield _format_sse("done", {"type": "done"})
+        yield _format_sse(
+            "done",
+            {
+                "type": "done",
+                "chat_id": req.chat_id,
+                "request_id": request_id,
+                "client_msg_id": req.client_msg_id,
+            },
+        )
         return
     except Exception as exc:  # pragma: no cover
-        # Never stream raw exception messages to clients; keep it stable and non-sensitive.
         message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
         yield _format_sse("error", {"type": "error", "message": message})
-        yield _format_sse("done", {"type": "done"})
+        yield _format_sse(
+            "done",
+            {
+                "type": "done",
+                "chat_id": req.chat_id,
+                "request_id": request_id,
+                "client_msg_id": req.client_msg_id,
+            },
+        )
     finally:
-        if task and not task.done():
-            task.cancel()
+        if stream_task and not stream_task.done():
+            stream_task.cancel()
 
 
 @router.post("/chat/v2")
@@ -149,7 +354,7 @@ async def langgraph_chat_v2_endpoint(
     if request_id:
         headers["X-Request-Id"] = request_id
     return StreamingResponse(
-        _event_stream_v2(request, user_id=username),
+        _event_stream_v2(request, user_id=username, request_id=request_id),
         media_type="text/event-stream",
         headers=headers,
     )
