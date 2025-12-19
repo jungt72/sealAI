@@ -116,7 +116,9 @@ async def _event_stream_v2(req: LangGraphV2Request, *, user_id: str) -> AsyncIte
         yield _format_sse("done", {"type": "done"})
         return
     except Exception as exc:  # pragma: no cover
-        yield _format_sse("error", {"type": "error", "message": str(exc)})
+        # Never stream raw exception messages to clients; keep it stable and non-sensitive.
+        message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
+        yield _format_sse("error", {"type": "error", "message": message})
         yield _format_sse("done", {"type": "done"})
     finally:
         if task and not task.done():
