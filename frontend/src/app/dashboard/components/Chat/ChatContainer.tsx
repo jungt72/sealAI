@@ -9,20 +9,51 @@ import ChatInput from "./ChatInput";
 import type { Message } from "@/types/chat";
 import { useChatSseV2 } from "@/lib/useChatSseV2";
 import { useChatThreadId } from "@/lib/useChatThreadId";
+import { fetchV2StateParameters, patchV2Parameters } from "@/lib/v2ParameterPatch";
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+import ParameterFormSidebar from "./ParameterFormSidebar";
+import type { SealParameters } from "@/lib/types/sealParameters";
 
 type ChatContainerProps = {
   chatId?: string | null;
 };
 
+function coerceValue(v: string): string | number {
+  const t = v.trim();
+  if (!t) return "";
+  const n = Number(t.replace(",", "."));
+  if (Number.isFinite(n) && String(n) !== "NaN") return n;
+  return t;
+}
+
+// Unterstützt: "/param key=value key2=value2"
+function parseParamCommand(input: string): Partial<SealParameters> | null {
+  const trimmed = input.trim();
+  if (!trimmed.toLowerCase().startsWith("/param ")) return null;
+  const rest = trimmed.slice(7).trim();
+  if (!rest) return {};
+  const out: Record<string, any> = {};
+  for (const part of rest.split(/\s+/g)) {
+    const idx = part.indexOf("=");
+    if (idx <= 0) continue;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    if (!k) continue;
+    out[k] = coerceValue(v);
+  }
+  return out as Partial<SealParameters>;
+}
+
 export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps) {
   const { data: session, status } = useSession();
   const isAuthed = status === "authenticated";
 
-  const storedChatId = useChatThreadId(chatIdProp ?? null);
-  const chatId = chatIdProp ?? storedChatId;
+  const preferredChatId = (chatIdProp ?? "").trim() || null;
+  const storedChatId = useChatThreadId(preferredChatId);
+  const chatId = preferredChatId ?? storedChatId;
   const token = useAccessToken();
   const { connected, streaming, text, lastError, confirmCheckpoint, send, cancel } =
     useChatSseV2({ chatId, token });
@@ -33,12 +64,200 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const [confirmActionBusy, setConfirmActionBusy] = useState(false);
   const [confirmActionError, setConfirmActionError] = useState<string | null>(null);
 
+  // ===== Voll-Parameter-State (für 1:1 Sync) =====
+  const [parameters, setParameters] = useState<SealParameters>({});
+  const [showParamDrawer, setShowParamDrawer] = useState(false);
+  const [paramToast, setParamToast] = useState<string | null>(null);
+  const prevStreamForStateRef = useRef(false);
+  const paramQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const stateAbortRef = useRef<AbortController | null>(null);
+  const patchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const paramSyncTokenRef = useRef(0);
+  const chatIdRef = useRef<string | null>(chatId);
+  const autoPatchOnChange = process.env.NEXT_PUBLIC_AUTO_PATCH_PARAMS === "1";
+  const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
+
   useEffect(() => {
+    paramSyncTokenRef.current += 1;
+    chatIdRef.current = chatId;
     setMessages([]);
     setHasStarted(false);
+    setParameters({});
+    setShowParamDrawer(false);
+    setParamToast(null);
+    paramQueueRef.current = Promise.resolve();
+    stateAbortRef.current?.abort();
+    stateAbortRef.current = null;
+    if (patchDebounceRef.current) {
+      clearTimeout(patchDebounceRef.current);
+      patchDebounceRef.current = null;
+    }
   }, [chatId]);
 
-  // === Scroll "anchor-then-hold" ===
+  useEffect(() => {
+    return () => {
+      stateAbortRef.current?.abort();
+      if (patchDebounceRef.current) {
+        clearTimeout(patchDebounceRef.current);
+        patchDebounceRef.current = null;
+      }
+    };
+  }, []);
+
+  // ===== Öffnen per UI-Event (wie früher) =====
+  useEffect(() => {
+    const onUi = (ev: Event) => {
+      const ua: any = (ev as CustomEvent<any>).detail ?? (ev as any);
+      const action = ua?.ui_action ?? ua?.action ?? ua?.event;
+      if (action === "open_form") setShowParamDrawer(true);
+
+      // optional: prefill/params mergen
+      const pre = ua?.prefill ?? ua?.params;
+      if (pre && typeof pre === "object") {
+        setParameters((prev) => ({ ...prev, ...pre }));
+      }
+    };
+    window.addEventListener("sealai:ui", onUi as EventListener);
+    window.addEventListener("sealai:ui_action", onUi as EventListener);
+    window.addEventListener("sealai:form:patch", onUi as EventListener);
+    return () => {
+      window.removeEventListener("sealai:ui", onUi as EventListener);
+      window.removeEventListener("sealai:ui_action", onUi as EventListener);
+      window.removeEventListener("sealai:form:patch", onUi as EventListener);
+    };
+  }, []);
+
+  const enqueueParamTask = useCallback(<T,>(task: (tokenId: number) => Promise<T>) => {
+    const tokenId = paramSyncTokenRef.current;
+    const next = paramQueueRef.current.catch(() => undefined).then(() => task(tokenId));
+    paramQueueRef.current = next.then(() => undefined, () => undefined);
+    return next;
+  }, []);
+
+  const shouldAbortParamTask = useCallback((tokenId: number, expectedChatId: string | null) => {
+    if (tokenId !== paramSyncTokenRef.current) return true;
+    if (!expectedChatId || chatIdRef.current !== expectedChatId) return true;
+    return false;
+  }, []);
+
+  const runRefresh = useCallback(async (opts: {
+    expectedChatId: string;
+    token: string;
+    patchedKeysCount: number;
+    tokenId: number;
+  }) => {
+    const { expectedChatId, token, patchedKeysCount, tokenId } = opts;
+    if (shouldAbortParamTask(tokenId, expectedChatId)) return;
+    stateAbortRef.current?.abort();
+    const controller = new AbortController();
+    stateAbortRef.current = controller;
+    try {
+      const next = await fetchV2StateParameters({
+        chatId: expectedChatId,
+        token,
+        signal: controller.signal,
+      });
+      if (shouldAbortParamTask(tokenId, expectedChatId)) return;
+      setParameters(next as SealParameters);
+      if (paramSyncDebug) {
+        const refreshedKeysCount = Object.keys(next || {}).length;
+        console.log({
+          chat_id: expectedChatId,
+          patched_keys_count: patchedKeysCount,
+          refreshed_keys_count: refreshedKeysCount,
+        });
+      }
+    } finally {
+      if (stateAbortRef.current === controller) {
+        stateAbortRef.current = null;
+      }
+    }
+  }, [paramSyncDebug, shouldAbortParamTask]);
+
+  const refreshParameters = useCallback(async () => {
+    if (!chatId || !token) return;
+    return enqueueParamTask(async (tokenId) => {
+      await runRefresh({ expectedChatId: chatId, token, patchedKeysCount: 0, tokenId });
+    });
+  }, [chatId, token, enqueueParamTask, runRefresh]);
+
+  // ===== Backend Patch (übernimmt "Parameter übernehmen") =====
+  const patchAllParameters = useCallback(async (patch: Partial<SealParameters>) => {
+    if (!chatId || !token) return;
+    const cleaned: Record<string, any> = {};
+    for (const [k, v] of Object.entries(patch || {})) {
+      if (v === undefined || v === null || v === "") continue;
+      cleaned[k] = v;
+    }
+    if (!Object.keys(cleaned).length) return;
+
+    try {
+      const patchedKeysCount = Object.keys(cleaned).length;
+      await enqueueParamTask(async (tokenId) => {
+        if (shouldAbortParamTask(tokenId, chatId)) return;
+        await patchV2Parameters({
+          chatId,
+          token,
+          parameters: cleaned,
+        });
+        await runRefresh({ expectedChatId: chatId, token, patchedKeysCount, tokenId });
+      });
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+      throw e;
+    }
+  }, [chatId, token, enqueueParamTask, runRefresh, shouldAbortParamTask]);
+
+  const schedulePatchOnChange = useCallback((next: SealParameters) => {
+    if (!autoPatchOnChange) return;
+    if (patchDebounceRef.current) clearTimeout(patchDebounceRef.current);
+    patchDebounceRef.current = setTimeout(() => {
+      patchAllParameters(next).catch((err) => {
+        if (err?.name === "AbortError") return;
+        console.warn("[param-sync] debounced_patch_failed", err);
+      });
+    }, 350);
+  }, [autoPatchOnChange, patchAllParameters]);
+
+  const onParamUpdate = useCallback((name: keyof SealParameters, value: string | number) => {
+    setParameters((prev) => {
+      const next = { ...prev, [name]: value };
+      schedulePatchOnChange(next);
+      return next;
+    });
+  }, [schedulePatchOnChange]);
+
+  const onParamSubmit = useCallback(async () => {
+    try {
+      await patchAllParameters(parameters);
+      setParamToast("Parameter aktualisiert");
+      window.setTimeout(() => setParamToast(null), 1500);
+    } catch (e: any) {
+      setParamToast(`Update fehlgeschlagen: ${String(e?.message || e)}`);
+      window.setTimeout(() => setParamToast(null), 2500);
+    }
+  }, [parameters, patchAllParameters]);
+
+  useEffect(() => {
+    if (!chatId || !token) return;
+    refreshParameters().catch((err) => {
+      if (err?.name === "AbortError") return;
+      console.warn("[param-sync] initial_state_fetch_failed", err);
+    });
+  }, [chatId, token, refreshParameters]);
+
+  useEffect(() => {
+    const wasStreaming = prevStreamForStateRef.current;
+    if (wasStreaming && !streaming) {
+      refreshParameters().catch((err) => {
+        if (err?.name === "AbortError") return;
+        console.warn("[param-sync] post_stream_state_fetch_failed", err);
+      });
+    }
+    prevStreamForStateRef.current = streaming;
+  }, [streaming, refreshParameters]);
+
+  // ===== Scroll "anchor-then-hold" =====
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const prevStreamingRef = useRef(streaming);
@@ -60,7 +279,6 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const onWheel = cancelAutoAnchor;
   const onTouchStart = cancelAutoAnchor;
 
-  // Beim Streamstart Anker ins obere Drittel
   useEffect(() => {
     const was = prevStreamingRef.current;
     prevStreamingRef.current = streaming;
@@ -77,7 +295,6 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     }
   }, [streaming]);
 
-  // Während des Streams dezent nachführen
   useEffect(() => {
     if (!streaming || !autoAnchor) return;
     const cont = scrollRef.current;
@@ -86,7 +303,6 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     if (Math.abs(cont.scrollTop - t) > 40) cont.scrollTo({ top: t, behavior: "auto" });
   }, [text, streaming, autoAnchor]);
 
-  // Nach Streamende lösen
   useEffect(() => {
     if (!streaming) {
       targetTopRef.current = null;
@@ -94,9 +310,9 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     }
   }, [streaming]);
 
-  // ==== WICHTIG: Live-Text in History mergen – nur wenn text !== '' ====
+  // ===== Live-Text in History mergen =====
   useEffect(() => {
-    if (text === "") return; // verhindert, dass am Ende/leeren Start etwas überschrieben wird
+    if (text === "") return;
     setMessages((prev) => {
       const lastIdx = prev.length - 1;
       if (lastIdx >= 0 && prev[lastIdx].role === "assistant") {
@@ -106,9 +322,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       }
       return [...prev, { role: "assistant", content: text }];
     });
-  }, [text]); // absichtlich NUR von text abhängig
+  }, [text]);
 
-  // History während Streaming ohne die live-assistant-Zeile
   const historyMessages = useMemo(() => {
     if (!streaming || messages.length === 0) return messages;
     const last = messages[messages.length - 1];
@@ -120,16 +335,41 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const sendingDisabled = !isAuthed || !connected || !hasThread;
   const isInitial = messages.length === 0 && !hasStarted;
 
-  const handleSend = useCallback((msg: string) => {
+  const handleSend = useCallback(async (msg: string) => {
     if (sendingDisabled) return;
     const content = msg.trim();
     if (!content) return;
+
+    // 1) Parameter direkt im Chat setzen: "/param pressure_bar=5 temperature_C=50 ..."
+    const parsed = parseParamCommand(content);
+    if (parsed) {
+      setParameters((prev) => ({ ...prev, ...parsed }));
+
+      // sofort patchen, damit Backend + UI synchron bleiben
+      try {
+        await patchAllParameters(parsed);
+        setParamToast("Parameter aktualisiert");
+        window.setTimeout(() => setParamToast(null), 1200);
+      } catch (e: any) {
+        setParamToast(`Update fehlgeschlagen: ${String(e?.message || e)}`);
+        window.setTimeout(() => setParamToast(null), 2500);
+      }
+
+      // optional: Chat-Log Eintrag
+      setMessages((m) => [...m, { role: "user", content: `Parameter gesetzt: ${Object.keys(parsed).join(", ")}` }]);
+      setHasStarted(true);
+      setInputValue("");
+      setConfirmActionError(null);
+      return;
+    }
+
+    // normaler Chat
     setMessages((m) => [...m, { role: "user", content }]);
     setHasStarted(true);
     send(content);
     setInputValue("");
     setConfirmActionError(null);
-  }, [sendingDisabled, send]);
+  }, [sendingDisabled, send, patchAllParameters]);
 
   const hasFirstToken = text.trim().length > 0;
 
@@ -146,24 +386,10 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, [confirmCheckpoint]);
 
   const openMissingParameterForm = useCallback(() => {
-    const mapping: Record<string, string> = {
-      medium: "medium",
-      temperature_C: "temp_max_c",
-      pressure_bar: "druck_bar",
-      speed_rpm: "drehzahl_u_min",
-      shaft_diameter: "wellen_mm",
-    };
-    const missingFormKeys = missingCoreFields
-      .map((k) => mapping[k])
-      .filter((v): v is string => typeof v === "string" && v.length > 0);
+    setShowParamDrawer(true);
     window.dispatchEvent(
       new CustomEvent("sealai:ui", {
-        detail: {
-          ui_action: "open_form",
-          action: "open_form",
-          missing: missingFormKeys,
-          source: "confirm_checkpoint",
-        },
+        detail: { ui_action: "open_form", action: "open_form", missing: missingCoreFields, source: "confirm_checkpoint" },
       }),
     );
   }, [missingCoreFields]);
@@ -197,6 +423,56 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
   return (
     <div className="flex flex-col h-full w-full bg-transparent relative">
+      {/* Toggle Button rechts (wie “aufschiebbare” Sidebar) */}
+      <button
+        type="button"
+        onClick={() => setShowParamDrawer(true)}
+        className="absolute top-3 right-3 z-30 rounded-md bg-white/90 hover:bg-white border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm"
+        title="Technische Parameter"
+        aria-label="Technische Parameter"
+      >
+        Parameter
+      </button>
+
+      {/* Toast */}
+      {paramToast ? (
+        <div className="absolute top-14 right-3 z-30 rounded-md bg-indigo-600 text-white text-xs font-semibold px-3 py-2 shadow">
+          {paramToast}
+        </div>
+      ) : null}
+
+      {/* Drawer Overlay rechts */}
+      <div
+        className={[
+          "fixed inset-0 z-40",
+          showParamDrawer ? "pointer-events-auto" : "pointer-events-none",
+        ].join(" ")}
+        aria-hidden={!showParamDrawer}
+      >
+        <div
+          className={[
+            "absolute inset-0 bg-slate-900/30 transition-opacity duration-300 ease-out",
+            showParamDrawer ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+          onClick={() => setShowParamDrawer(false)}
+        />
+        <div
+          className={[
+            "absolute right-0 top-0 h-full",
+            "transform transition-transform duration-300 ease-out will-change-transform",
+            showParamDrawer ? "translate-x-0" : "translate-x-full",
+          ].join(" ")}
+        >
+          <ParameterFormSidebar
+            show={showParamDrawer}
+            parameters={parameters}
+            onUpdate={onParamUpdate}
+            onSubmit={onParamSubmit}
+            onClose={() => setShowParamDrawer(false)}
+          />
+        </div>
+      </div>
+
       {isInitial ? (
         <div className="flex min-h-[80vh] w-full items-center justify-center">
           <div className="w-full max-w-[768px] px-4">
@@ -252,7 +528,6 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         </div>
       ) : (
         <>
-          {/* Scroll-Container */}
           <div
             ref={scrollRef}
             onScroll={onScroll}
@@ -275,12 +550,13 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                       <span className="text-xs">Bitte kurz bestätigen, dann kann die Empfehlung weiter ausgearbeitet werden.</span>
                     )}
                   </div>
+
                   {!confirmCheckpoint.recommendation_go && missingCoreFields.length > 0 ? (
                     <div className="mt-1 text-xs">
-                      Fehlt (Kernfelder):{" "}
-                      <span className="font-semibold">{missingCoreFields.join(", ")}</span>
+                      Fehlt (Kernfelder): <span className="font-semibold">{missingCoreFields.join(", ")}</span>
                     </div>
                   ) : null}
+
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -290,6 +566,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                     >
                       {confirmActionBusy ? "Freigabe läuft…" : "Freigeben (GO)"}
                     </button>
+
                     <button
                       type="button"
                       disabled={streaming || confirmActionBusy}
@@ -301,6 +578,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                     >
                       Daten nachreichen
                     </button>
+
                     {confirmActionError ? (
                       <span className="text-xs text-red-700">Freigabe fehlgeschlagen: {confirmActionError}</span>
                     ) : null}
@@ -311,10 +589,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
             <ChatHistory messages={historyMessages} />
 
-            {/* Anker vor der Live-Bubble */}
             <div ref={anchorRef} aria-hidden />
 
-            {/* Live-Stream-Bubble */}
             {streaming && (
               <div className="w-full max-w-[768px] mx-auto px-4 py-2">
                 <div className="inline-flex items-start gap-2">
@@ -329,7 +605,6 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             )}
           </div>
 
-          {/* Eingabe */}
           <div className="sticky bottom-0 left-0 right-0 z-20 flex justify-center bg-transparent pb-0 w-full">
             <div className="w-full max-w-[768px] pointer-events-auto">
               <ChatInput
@@ -339,16 +614,16 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                 onStop={() => cancel()}
                 disabled={sendingDisabled}
                 streaming={streaming}
-              placeholder={
-                isAuthed
-                  ? !hasThread
-                    ? "Initialisiere Sitzung…"
-                    : connected
-                      ? "Was möchtest du wissen?"
-                      : "Initialisiere…"
-                  : "Bitte anmelden, um zu schreiben"
-              }
-            />
+                placeholder={
+                  isAuthed
+                    ? !hasThread
+                      ? "Initialisiere Sitzung…"
+                      : connected
+                        ? "Was möchtest du wissen?"
+                        : "Initialisiere…"
+                    : "Bitte anmelden, um zu schreiben"
+                }
+              />
               {!isAuthed && (
                 <div className="mt-2 text-xs text-gray-500">
                   Du musst angemeldet sein, um Nachrichten zu senden.
