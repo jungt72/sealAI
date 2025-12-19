@@ -8,7 +8,8 @@ from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages.ai import AIMessageChunk
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
@@ -120,6 +121,8 @@ def _flatten_message_content(message: Any) -> str:
 
 def _extract_stream_token_text(token: Any) -> str | None:
     if token is None:
+        return None
+    if isinstance(token, BaseMessage) and not isinstance(token, AIMessageChunk):
         return None
     text = _flatten_message_content(token)
     return text if text else None
@@ -237,6 +240,7 @@ async def _event_stream_v2(
                 if (not emitted_any_token) and final_text.strip():
                     for chunk in _chunk_text(final_text.strip()):
                         await queue.put(_format_sse("token", {"type": "token", "text": chunk}))
+                        token_count += 1
                         if SSE_DEBUG:
                             logger.info(
                                 "langgraph_v2_sse_event",
