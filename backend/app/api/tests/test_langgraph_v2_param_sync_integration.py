@@ -39,6 +39,7 @@ def _request() -> Request:
 
 
 def test_param_patch_state_chat_config_alignment(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
 
     chat_id = "chat-param-sync"
