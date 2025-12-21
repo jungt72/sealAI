@@ -15,7 +15,7 @@
 
 **Active frontend sender paths**
 - [Low] **Primary sender is `useChatSseV2`**: only the active ChatContainer imports `useChatSseV2` (`frontend/src/app/dashboard/components/Chat/ChatContainer.tsx:10-60`).
-- [Low] **Alternate sender exists only in backup**: the legacy `useChat` hook appears only in `ChatContainer.tsx.backup` (`frontend/src/app/dashboard/components/Chat/ChatContainer.tsx.backup:11-34`).
+- [Low] **Alternate sender exists only in backup**: the legacy `useChat` hook appears only in `ChatContainer.tsx.backup` (`archive/legacy_phase2/frontend/src/app/dashboard/components/Chat/ChatContainer.tsx.backup:11-34`).
 
 ## Part B — Auth & Identity (Keycloak) Correctness
 - [Low] **JWT verification uses issuer + JWKS**: `REALM_ISSUER` and `JWKS_URL` are used to fetch and validate keys (`backend/app/services/auth/token.py:21-30`).
@@ -84,7 +84,7 @@
 - [Low] **HTML injection risk is limited**: ReactMarkdown is configured without `rehypeRaw`, so raw HTML from templates is not rendered (`frontend/src/app/dashboard/components/Chat/MarkdownMessage.tsx:88-116`).
 
 ## Part G — Cleanup Plan Summary (See `docs/cleanup_plan_phase1.md`)
-- [Low] **Legacy/backup artifacts identified**: `.backup` files and legacy graph remain in tree (`backend/app/langgraph_v2/sealai_graph_v2_legacy.py:1-3`, `backend/app/api/v1/endpoints/langgraph_v2.py.backup:1-10`, `backend/app/langgraph_v2/nodes/nodes_flows.py.backup:1-10`, `frontend/src/app/dashboard/components/Chat/ChatContainer.tsx.backup:1-34`).
+- [Low] **Legacy/backup artifacts identified**: `.backup` files and legacy graph remain in tree (`backend/app/langgraph_v2/sealai_graph_v2_legacy.py:1-3`, `archive/legacy_phase2/backend/app/api/v1/endpoints/langgraph_v2.py.backup:1-10`, `archive/legacy_phase2/backend/app/langgraph_v2/nodes/nodes_flows.py.backup:1-10`, `archive/legacy_phase2/frontend/src/app/dashboard/components/Chat/ChatContainer.tsx.backup:1-34`).
 
 ## Prioritized Fix List (Top 10)
 1) [Medium] Switch checkpoint scoping from `preferred_username` to `sub` with backward-compatible username retention (`backend/app/services/auth/dependencies.py:21-42`, `backend/app/langgraph_v2/sealai_graph_v2.py:576-587`).
@@ -96,7 +96,7 @@
 7) [Low] Remove or fix `/api/v1/chat/sse` nginx proxy target (backend route not present) (`nginx/default.conf:162-176`, `backend/app/api/v1/api.py:7-31`).
 8) [Low] Remove or disable nginx `/api/v1/ai/ws` proxy since v1 ai router is not mounted (`nginx/default.conf:132-145`, `backend/app/api/v1/api.py:7-31`).
 9) [Low] Document Jinja variable requirements to reduce StrictUndefined failures (`backend/app/langgraph_v2/utils/jinja.py:15-37`, `backend/app/langgraph_v2/nodes/nodes_flows.py:299-319`).
-10) [Low] Review unused legacy/backup modules for deprecation path (`backend/app/langgraph_v2/sealai_graph_v2_legacy.py:1-3`, `backend/app/api/v1/endpoints/langgraph_v2.py.backup:1-10`, `frontend/src/app/dashboard/components/Chat/ChatContainer.tsx.backup:1-34`).
+10) [Low] Review unused legacy/backup modules for deprecation path (`backend/app/langgraph_v2/sealai_graph_v2_legacy.py:1-3`, `archive/legacy_phase2/backend/app/api/v1/endpoints/langgraph_v2.py.backup:1-10`, `archive/legacy_phase2/frontend/src/app/dashboard/components/Chat/ChatContainer.tsx.backup:1-34`).
 
 ## Phase 1.5 Addendum (Targeted Fixes)
 - [Low] **Auth dependency returns structured user**: RequestUser is now returned and used by chat history endpoints, resolving the `current_user.sub` mismatch (`backend/app/services/auth/dependencies.py:24-73`, `backend/app/api/v1/endpoints/chat_history.py:118-127`).

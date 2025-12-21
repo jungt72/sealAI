@@ -1,0 +1,579 @@
+# path: backend/app/api/v1/endpoints/langgraph_v2.py
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import logging
+import uuid
+from typing import Any, AsyncGenerator, Dict, List
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from pydantic import BaseModel
+import structlog
+
+from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
+from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.utils.llm_factory import run_llm_stream  # noqa: F401
+
+logger = logging.getLogger(__name__)
+structured_logger = structlog.get_logger("langgraph_v2")
+
+router = APIRouter()
+
+_FALLBACK_ANSWER = (
+    "Ich habe intern nur eine sehr knappe Auswertung gefunden. "
+    "Formuliere deine Frage bitte noch einmal etwas ausfuehrlicher, "
+    "damit ich dir eine bessere Empfehlung geben kann."
+)
+
+
+class LangGraphV2Request(BaseModel):
+    input: str
+    thread_id: str
+    user_id: str
+
+
+# ---------------------------------------------------------------------------
+# Helpers: Message-Handling / State-Handling
+# ---------------------------------------------------------------------------
+
+
+def _flatten_message_content(msg: BaseMessage) -> str:
+    """Best-effort Content-Extraktion aus einer LangChain-Message."""
+    content = getattr(msg, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for part in content:
+            if isinstance(part, dict) and "text" in part:
+                parts.append(str(part.get("text", "")))
+            elif isinstance(part, str):
+                parts.append(part)
+        return "".join(parts)
+    return str(content)
+
+
+def _looks_like_structured_json(text: str) -> bool:
+    """Heuristik: Erkennen, ob ein Text eher internes JSON als Nutzertext ist."""
+    stripped = text.strip()
+    if not stripped.startswith("{") and not stripped.startswith("["):
+        return False
+    # Kleine Heuristik: wenn sich der Text als JSON parsen lässt, gehen wir
+    # im Zweifel davon aus, dass es sich um interne Struktur handelt.
+    try:
+        parsed = json.loads(stripped)
+    except Exception:
+        return False
+    return isinstance(parsed, (dict, list))
+
+
+def _is_user_visible_message(token: BaseMessage, meta: Dict[str, Any] | None = None) -> bool:
+    """
+    Entscheidet, ob eine Message wirklich im Frontend sichtbar sein soll.
+
+    Regeln:
+    - HumanMessage: nicht streamen (User-Echo unnötig).
+    - AIMessage:
+        - Wenn additional_kwargs.user_visible explizit gesetzt ist → respektieren.
+        - Wenn additional_kwargs.internal True → nicht streamen.
+        - Sonst:
+            - JSON-artige Inhalte (reines JSON) nicht streamen
+              (Discovery-Summary, Intent-JSON, etc.).
+    - Andere Message-Typen: konservativ zulassen.
+    """
+    meta = meta or {}
+
+    # 1) Menschliche Eingaben nicht zurück-echoen
+    if isinstance(token, HumanMessage):
+        return False
+
+    if isinstance(token, AIMessage):
+        extra = getattr(token, "additional_kwargs", {}) or {}
+
+        # Explizites Flag überschreibt alles.
+        if extra.get("user_visible") is True:
+            return True
+        if extra.get("internal") is True:
+            return False
+
+        # Optional: bestimmte Nodes als internal behandeln (Discovery/Intent etc.)
+        node_name = (
+            meta.get("as_node")
+            or meta.get("node")
+            or meta.get("source")
+            or ""
+        )
+        internal_nodes = {
+            "discovery_intake_node",
+            "discovery_summarize_node",
+            "confirm_gate_node",  # hier ist oft JSON-Summary
+            "intent_projector_node",
+            "coverage_analysis_node",
+        }
+        if node_name in internal_nodes:
+            return False
+
+        # JSON-artige Inhalte sind vermutlich interne Strukturen
+        text = _flatten_message_content(token)
+        if _looks_like_structured_json(text):
+            return False
+
+        # sonst: ok
+        return True
+
+    # Fallback für andere Typen: erst mal zulassen, solange kein reines JSON
+    text = _flatten_message_content(token)
+    if _looks_like_structured_json(text):
+        return False
+    return bool(text.strip())
+
+
+def _extract_event_token_text(raw: Any) -> str | None:
+    """Extrahiere sinnvolle Textteile aus LangGraph-Streaming-Chunks."""
+    if raw is None:
+        return None
+    if isinstance(raw, BaseMessage):
+        return _flatten_message_content(raw).strip() or None
+    if isinstance(raw, str):
+        text = raw.strip()
+        return text or None
+    if isinstance(raw, dict):
+        for key in ("text", "content"):
+            value = raw.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        delta = raw.get("delta")
+        if isinstance(delta, dict):
+            chunk = delta.get("content")
+            if isinstance(chunk, str) and chunk.strip():
+                return chunk.strip()
+    content = getattr(raw, "content", None)
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if isinstance(content, list):
+        joined = "".join(str(part) for part in content if isinstance(part, str)).strip()
+        if joined:
+            return joined
+    delta = getattr(raw, "delta", None)
+    if isinstance(delta, dict):
+        chunk = delta.get("content")
+        if isinstance(chunk, str) and chunk.strip():
+            return chunk.strip()
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            candidate = _extract_event_token_text(item)
+            if candidate:
+                return candidate
+    return None
+
+
+def _extract_state_like(candidate: Any, *, depth: int = 0, max_depth: int = 6) -> Dict[str, Any] | None:
+    if depth >= max_depth:
+        return None
+    if isinstance(candidate, dict):
+        if any(
+            key in candidate
+            for key in (
+                "messages",
+                "final_text",
+                "final_prompt",
+                "last_node",
+                "awaiting_user_input",
+                "phase",
+                "slots",
+            )
+        ):
+            return candidate
+        for key in ("output", "state", "value", "data"):
+            nested = _extract_state_like(candidate.get(key), depth=depth + 1, max_depth=max_depth)
+            if nested:
+                return nested
+    if isinstance(candidate, (list, tuple)):
+        for item in candidate:
+            nested = _extract_state_like(item, depth=depth + 1, max_depth=max_depth)
+            if nested:
+                return nested
+    return None
+
+
+def _extract_final_answer_from_state(state: SealAIState) -> str:
+    """
+    Extrahiere den finalen Text für den User aus dem State.
+    Priorität:
+      1. final_text (zentrale Quelle)
+      2. letzte AIMessage
+      3. recommendation.summary / rationale / material
+      4. working_memory.knowledge_*
+      5. Fallback
+    """
+    if state.final_text and state.final_text.strip():
+        return state.final_text.strip()
+
+    for msg in reversed(state.messages or []):
+        if isinstance(msg, AIMessage):
+            text = (_flatten_message_content(msg) or "").strip()
+            if text:
+                return text
+
+    recommendation_raw = state.recommendation or {}
+    if hasattr(recommendation_raw, "model_dump"):
+        recommendation: Dict[str, Any] = recommendation_raw.model_dump()
+    else:
+        recommendation = (
+            dict(recommendation_raw)
+            if isinstance(recommendation_raw, dict)
+            else {}
+        )
+    for key in ("summary", "rationale", "material"):
+        candidate = str(recommendation.get(key) or "").strip()
+        if candidate:
+            return candidate
+
+    working_memory = state.working_memory or {}
+    for key in ("knowledge_material", "knowledge_lifetime", "knowledge_generic"):
+        candidate = str(working_memory.get(key) or "").strip()
+        if candidate:
+            return candidate
+
+    return _FALLBACK_ANSWER
+
+
+def _format_sse(event: str, payload: Dict[str, Any]) -> str:
+    """
+    Formatiert ein einzelnes SSE-Event.
+    Wichtig: zwei Zeilenumbrüche trennen Events im Stream.
+    """
+    lines: List[str] = []
+    if event:
+        lines.append(f"event: {event}")
+    lines.append(f"data: {json.dumps(payload, ensure_ascii=False)}")
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _chunk_text(text: str, *, size: int = 200) -> List[str]:
+    """Zerlegt langen Text in wohldefinierte Chunks für SSE-Streaming."""
+    if not text:
+        return []
+    return [text[i : i + size] for i in range(0, len(text), size)]
+
+
+def _ensure_state_model(state: Any) -> SealAIState:
+    """Akzeptiert dict/SealAIState und gibt garantiert ein SealAIState-Objekt zurück."""
+    if isinstance(state, SealAIState):
+        return state
+    return SealAIState.model_validate(state or {})
+
+
+def _build_ask_missing_payload(state: SealAIState) -> Dict[str, Any]:
+    """
+    Normalisiert den ask-missing-Zweig aus dem State.
+    Erwartet: awaiting_user_input=True.
+    """
+    missing_fields: List[str] = list(state.missing_params or [])
+    if state.ask_missing_request is not None:
+        request_payload: Dict[str, Any] = state.ask_missing_request.model_dump()
+    else:
+        request_payload = {
+            "missing_fields": missing_fields,
+            "question": state.final_text
+            or "Bitte ergänze noch die fehlenden technischen Angaben.",
+        }
+
+    scope = state.ask_missing_scope or ("technical" if missing_fields else "discovery")
+    message = (
+        request_payload.get("question")
+        or state.final_text
+        or "Bitte ergänze noch die fehlenden Angaben."
+    )
+
+    return {
+        "type": "ask_missing",
+        "scope": scope,
+        "message": message,
+        "request": request_payload,
+    }
+
+
+def _emit_events_for_state(state: SealAIState) -> List[str]:
+    """
+    Helper for tests: generate SSE event strings from a terminal state.
+    (Wird aktuell in deinen Tests genutzt, bleibt unverändert.)
+    """
+    events: List[str] = []
+    result_state = _ensure_state_model(state)
+
+    if bool(result_state.awaiting_user_input):
+        events.append(_format_sse("ask_missing", _build_ask_missing_payload(result_state)))
+        return events
+
+    final_prompt = (result_state.final_prompt or "").strip()
+    if final_prompt:
+        # In Tests: keine echte Token-Streams, nur ein Event.
+        events.append(_format_sse("message", {"type": "message", "text": final_prompt}))
+        events.append(_format_sse("done", {"type": "done"}))
+        return events
+
+    answer_text = _extract_final_answer_from_state(result_state) or _FALLBACK_ANSWER
+    for chunk in _chunk_text(answer_text, size=200):
+        events.append(_format_sse("message", {"type": "message", "text": chunk}))
+    events.append(_format_sse("done", {"type": "done"}))
+    return events
+
+
+# ---------------------------------------------------------------------------
+# Haupt-SSE-Streamer
+# ---------------------------------------------------------------------------
+
+
+async def _event_stream_v2(request: LangGraphV2Request) -> AsyncGenerator[str, None]:
+    """
+    SSE-Streamer für LangGraph v2.
+
+    - graph.astream_events(..., stream_mode="messages") liefert tokenisierte
+      Chat-Model-Events des final_answer_node.
+    - Wir routen die Chunk-Text-Stücke als SSE `event: token`.
+    - Am Ende wird der zuletzt bekannte State (z. B. für ask_missing) ausgewertet.
+    """
+    run_id = str(uuid.uuid4())
+    graph = get_sealai_graph_v2()
+    config = build_v2_config(thread_id=request.thread_id, user_id=request.user_id)
+    logger_ctx = structured_logger.bind(
+        run_id=run_id, thread_id=request.thread_id, user_id=request.user_id
+    )
+
+    initial_state: Dict[str, Any] = {
+        "messages": [HumanMessage(content=request.input)],
+        "thread_id": request.thread_id,
+        "user_id": request.user_id,
+        "run_id": run_id,
+        "phase": "entry",  # PATCH/FIX: State IDs / initial phase for traceability
+    }
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    token_streamed: Dict[str, bool] = {"value": False}
+
+    async def enqueue(event: str, payload: Dict[str, Any]) -> None:
+        await queue.put(_format_sse(event, payload))
+
+    async def stream_graph_into_queue_async() -> Dict[str, Any]:
+        """
+        Läuft async: graph.astream_events(...) liefert Token-Event-Dicts,
+        wir schreiben sie als SSE-Tokens in die Queue.
+        """
+        last_state: Dict[str, Any] = {}
+
+        async for event in graph.astream_events(
+            initial_state,
+            config=config,
+            stream_mode="messages",
+        ):
+            action = str(event.get("event") or "").strip()
+            node_name = str(event.get("name") or event.get("node") or "").strip()
+            data = event.get("data")
+            state_like = _extract_state_like(data)
+            if state_like:
+                last_state = state_like
+
+            if node_name == "final_answer_node" and action in ("on_chat_model_stream", "on_llm_stream"):
+                chunk_source = data.get("chunk") if isinstance(data, dict) else data
+                text = _extract_event_token_text(chunk_source or data)
+                if text:
+                    await enqueue(
+                        "token",
+                        {
+                            "text": text,
+                            "node": node_name,
+                            "action": action,
+                            "run_id": run_id,
+                            "thread_id": request.thread_id,
+                            "user_id": request.user_id,
+                        },
+                    )
+                    token_streamed["value"] = True
+            elif action == "on_error":
+                message = "LangGraph Fehler"
+                if isinstance(data, dict):
+                    message = str(
+                        data.get("error")
+                        or data.get("message")
+                        or data.get("detail")
+                        or message
+                    )
+                raise RuntimeError(message)
+
+        return last_state
+
+    async def enqueue_done(state: SealAIState | None = None) -> None:
+        payload: Dict[str, Any] = {
+            "type": "done",
+            "run_id": run_id,
+            "thread_id": request.thread_id,
+            "user_id": request.user_id,
+        }
+        if state:
+            final_text = state.final_text or _extract_final_answer_from_state(state)
+            if final_text:
+                payload["final_text"] = final_text
+        await enqueue("done", payload)
+
+    async def producer() -> None:
+        done_sent = False
+        try:
+            logger_ctx.info("langgraph_v2_start")
+            try:
+                final_state = await asyncio.wait_for(
+                    stream_graph_into_queue_async(),
+                    timeout=45,
+                )
+            except asyncio.TimeoutError:
+                logger_ctx.error("langgraph_v2_stream_timeout", timeout_s=45)
+                await enqueue(
+                    "error",
+                    {"type": "error", "message": "LangGraph Timeout.", "run_id": run_id},
+                )
+                await enqueue_done()
+                done_sent = True
+                return
+            except RuntimeError as err:
+                await enqueue(
+                    "error",
+                    {
+                        "type": "error",
+                        "message": str(err),
+                        "run_id": run_id,
+                        "thread_id": request.thread_id,
+                        "user_id": request.user_id,
+                    },
+                )
+                await enqueue_done()
+                done_sent = True
+                logger_ctx.error("langgraph_v2_node_error", error=str(err))
+                return
+            except NotImplementedError as err:
+                await enqueue(
+                    "error",
+                    {
+                        "type": "error",
+                        "message": "LangGraph Streaming nicht unterstützt.",
+                        "run_id": run_id,
+                    },
+                )
+                await enqueue_done()
+                done_sent = True
+                logger_ctx.error("langgraph_v2_stream_not_supported", error=str(err))
+                return
+            except Exception as exc:
+                logger_ctx.exception("langgraph_v2_stream_failed", error=str(exc))
+                await enqueue(
+                    "error",
+                    {
+                        "type": "error",
+                        "message": "Interner Fehler im LangGraph.",
+                        "run_id": run_id,
+                    },
+                )
+                await enqueue_done()
+                done_sent = True
+                return
+
+            result_state = _ensure_state_model(final_state)
+
+            if bool(result_state.awaiting_user_input):
+                await enqueue("ask_missing", _build_ask_missing_payload(result_state))
+                await enqueue_done(result_state)
+                done_sent = True
+                logger_ctx.info(
+                    "langgraph_v2_ask_missing",
+                    scope=result_state.ask_missing_scope,
+                    missing=result_state.missing_params,
+                )
+                return
+
+            if not token_streamed["value"]:
+                answer_text = _extract_final_answer_from_state(result_state) or _FALLBACK_ANSWER
+                for chunk in _chunk_text(answer_text, size=200):
+                    await enqueue(
+                        "token",
+                        {
+                            "text": chunk,
+                            "node": "final_answer_node",
+                            "run_id": run_id,
+                            "thread_id": request.thread_id,
+                            "user_id": request.user_id,
+                        },
+                    )
+                token_streamed["value"] = True
+
+            await enqueue_done(result_state)
+            done_sent = True
+            logger_ctx.info("langgraph_v2_done")
+        except Exception as exc:
+            logger_ctx.exception("langgraph_v2_invoke_failed", error=str(exc))
+            if not done_sent:
+                await enqueue(
+                    "error",
+                    {
+                        "type": "error",
+                        "message": "Interner Fehler im LangGraph.",
+                        "run_id": run_id,
+                        "thread_id": request.thread_id,
+                        "user_id": request.user_id,
+                    },
+                )
+                await enqueue_done()
+                done_sent = True
+        finally:
+            if not done_sent:
+                await enqueue_done()
+            await queue.put(None)
+
+    producer_task = asyncio.create_task(producer())
+
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+    finally:
+        producer_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await producer_task
+
+
+@router.post("/chat/v2")
+async def langgraph_chat_v2_endpoint(request: LangGraphV2Request) -> StreamingResponse:
+    """
+    Zentraler SSE-Endpoint für den SealAI LangGraph v2.
+
+    Request-Body:
+    {
+      "input": "<User-Frage>",
+      "thread_id": "<Thread-ID>",
+      "user_id": "<User-ID>"
+    }
+    """
+    structured_logger.info(
+        "langgraph_v2_request_in",
+        thread_id=request.thread_id,
+        user_id=request.user_id,
+        input_chars=len(request.input or ""),
+    )
+
+    if not request.input.strip():
+        raise HTTPException(status_code=400, detail="input must not be empty")
+
+    return StreamingResponse(
+        _event_stream_v2(request),
+        media_type="text/event-stream",
+    )
+
+
+__all__ = ["router"]
+
+# python3 -m compileall backend/app/api/v1/endpoints/langgraph_v2.py
