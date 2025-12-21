@@ -150,7 +150,7 @@ async def get_state(
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     try:
-        # user_id must always come from the authenticated Keycloak JWT (`current_user.sub`).
+        # user_id must always come from the authenticated Keycloak JWT.
         graph, config = await _build_state_config_with_checkpointer(
             thread_id=thread_id, user_id=user.user_id, username=user.username
         )

@@ -1,6 +1,8 @@
 """Constants for LangGraph v2 (models, namespaces, defaults)."""
 
-CHECKPOINTER_NAMESPACE_V2 = ""
+import os
+
+CHECKPOINTER_NAMESPACE_V2 = os.getenv("LANGGRAPH_V2_NAMESPACE", "sealai:v2:").strip()
 
 # Model tier defaults (can be overridden via env in later steps).
 MODEL_NANO = "gpt-5-nano"
