@@ -1,4 +1,5 @@
 # MIGRATION: Phase-2 - Resolver (regel-basierter Fan-in)
+# Legacy v1 module kept for compatibility; not wired into active v2 flows.
 
 from langgraph.types import Send
 from ..state import SealAIState
@@ -11,7 +12,7 @@ async def resolver(state: SealAIState) -> Send:
     
     # Regel: Wenn confidence < threshold, debate
     if confidence < CONFIDENCE_THRESHOLD:
-    return state
+        return state
     else:
         # Go to exit
         return Send("exit_response", state)
