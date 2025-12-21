@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
+import os
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -15,9 +16,10 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, SealParameterUpdate, TechnicalParameters
 from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
-from app.services.auth.dependencies import get_current_request_user
+from app.services.auth.dependencies import RequestUser, get_current_request_user
 
 logger = logging.getLogger(__name__)
+PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 
 router = APIRouter()
 
@@ -135,7 +137,7 @@ async def _build_state_config_with_checkpointer(thread_id: str, user_id: str):
 async def get_state(
     raw_request: Request,
     thread_id: str = Query(..., description="Thread ID"),
-    username: str = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     """Get current LangGraph state for a thread.
 
@@ -145,7 +147,7 @@ async def get_state(
     try:
         # user_id must always come from the authenticated Keycloak JWT (`current_user.sub`).
         graph, config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=username
+            thread_id=thread_id, user_id=user.user_id
         )
         snapshot = await graph.aget_state(config)
 
@@ -153,11 +155,27 @@ async def get_state(
         parameters = _serialize_parameters(state_values.get("parameters"))
         metadata = _collect_metadata(state_values)
 
+        if PARAM_SYNC_DEBUG:
+            configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
+            param_keys = sorted(parameters.keys()) if isinstance(parameters, dict) else []
+            logger.info(
+                "langgraph_v2_state_debug",
+                extra={
+                    "request_id": request_id,
+                    "thread_id": thread_id,
+                    "user_id": user.user_id,
+                    "parameter_count": len(param_keys),
+                    "parameter_keys": param_keys,
+                    "checkpoint_thread_id": configurable.get("thread_id"),
+                    "checkpoint_ns": configurable.get("checkpoint_ns"),
+                },
+            )
+
         logger.info(
             "state_get_success",
             extra={
             "thread_id": thread_id,
-            "user_id": username,
+            "user_id": user.user_id,
             "has_values": bool(snapshot.values),
         },
         )
@@ -180,7 +198,7 @@ async def get_state(
             extra={
                 "request_id": request_id,
                 "thread_id": thread_id,
-                "user_id": username,
+                "user_id": user.user_id,
             },
         )
         raise HTTPException(
@@ -194,7 +212,7 @@ async def update_state(
     body: StateUpdate,
     raw_request: Request,
     thread_id: str = Query(..., description="Thread ID"),
-    username: str = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     """Update parameters in LangGraph state.
 
@@ -211,9 +229,10 @@ async def update_state(
         )
 
     try:
-        # Reuse the authenticated `sub` so the state update is scoped to the Keycloak user.
+        # Reuse the authenticated user_id so the state update is scoped to the Keycloak user.
         graph, config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=username
+            thread_id=thread_id,
+            user_id=user.user_id,
         )
         snapshot = await graph.aget_state(config)
         state_values = _state_to_dict(snapshot.values)
@@ -225,7 +244,7 @@ async def update_state(
                 extra={
                     "request_id": request_id,
                     "thread_id": thread_id,
-                    "user_id": username,
+                    "user_id": user.user_id,
                     "resolved_as_node": resolved,
                     "fallback_as_node": as_node,
                 },
@@ -241,10 +260,10 @@ async def update_state(
             "state_update_success",
             extra={
             "thread_id": thread_id,
-            "user_id": username,
-                "parameters": sanitized_parameters,
-                "as_node": as_node,
-                "source": body.source,
+            "user_id": user.user_id,
+            "parameters": sanitized_parameters,
+            "as_node": as_node,
+            "source": body.source,
                 "timestamp": body.timestamp,
             },
         )
@@ -261,7 +280,7 @@ async def update_state(
             extra={
                 "request_id": request_id,
                 "thread_id": thread_id,
-                "user_id": username,
+                "user_id": user.user_id,
             },
         )
         raise HTTPException(

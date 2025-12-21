@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.langgraph.compile import run_langgraph_stream
 from pydantic import BaseModel, Field
 
-from app.services.auth.dependencies import get_current_request_user
+from app.services.auth.dependencies import RequestUser, get_current_request_user
 
 router = APIRouter()
 
@@ -28,7 +28,7 @@ class ChatStreamRequest(BaseModel):
 async def chat_stream(
     payload: ChatStreamRequest,
     _request: Request,
-    _username: str = Depends(get_current_request_user),
+    _user: RequestUser = Depends(get_current_request_user),
 ) -> Any:
     text = payload.input_text.strip()
     if not text:

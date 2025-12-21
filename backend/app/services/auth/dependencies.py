@@ -9,6 +9,8 @@ Auth-Dependencies für FastAPI-/WebSocket-Endpoints.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from fastapi import Depends, HTTPException, WebSocket, status, Header
 
 from app.core.config import settings              # <-- korrekter Pfad!
@@ -18,11 +20,30 @@ from app.services.auth.token import verify_access_token
 # --------------------------------------------------------------------------- #
 # 1) HTTP-Dependency – für normale FastAPI-Routes
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class RequestUser:
+    user_id: str
+    username: str
+    sub: str
+
+
+def _resolve_user_id(payload: dict) -> str:
+    value = payload.get("preferred_username")
+    if not value:
+        value = payload.get("sub") or payload.get("preferred_username") or payload.get("email")
+    return str(value) if value else "anonymous"
+
+
+def _resolve_username(payload: dict) -> str:
+    value = payload.get("preferred_username") or payload.get("email") or payload.get("sub")
+    return str(value) if value else "anonymous"
+
+
 async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     authorization: str | None = Header(default=None),
-) -> str:
+) -> RequestUser:
     """
-    Liefert den `preferred_username` aus dem gültigen JWT,
+    Liefert ein RequestUser-Objekt aus dem gültigen JWT,
     sonst → 401 UNAUTHORIZED.
     """
     if not authorization or not authorization.startswith("Bearer "):
@@ -39,14 +60,17 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
-    return payload.get("preferred_username", "anonymous")
+    user_id = _resolve_user_id(payload)
+    username = _resolve_username(payload)
+    sub = str(payload.get("sub") or user_id)
+    return RequestUser(user_id=user_id, username=username, sub=sub)
 
 
 # --------------------------------------------------------------------------- #
 # 2) WebSocket-Dependency – für Chat-Streaming
 #    (unterstützt Header *oder* Query-Parameter ?token=/ ?access_token=)
 # --------------------------------------------------------------------------- #
-async def get_current_ws_user(websocket: WebSocket) -> str:
+async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
     """
     Prüft beim WS-Handshake das Access Token.
     Bevorzugt `Authorization: Bearer <token>`, fällt aber auf Query-Parameter
@@ -78,4 +102,7 @@ async def get_current_ws_user(websocket: WebSocket) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
-    return payload.get("preferred_username", "anonymous")
+    user_id = _resolve_user_id(payload)
+    username = _resolve_username(payload)
+    sub = str(payload.get("sub") or user_id)
+    return RequestUser(user_id=user_id, username=username, sub=sub)

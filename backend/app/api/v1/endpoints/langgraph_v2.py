@@ -26,11 +26,12 @@ from app.langgraph_v2.utils.parameter_patch import (
     merge_parameters,
     sanitize_v2_parameter_patch,
 )
-from app.services.auth.dependencies import get_current_request_user
+from app.services.auth.dependencies import RequestUser, get_current_request_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
+PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 
 CONFIRM_GO_AS_NODE = "confirm_recommendation_node"
 PARAMETERS_PATCH_AS_NODE = "supervisor_logic_node"
@@ -350,7 +351,7 @@ async def _event_stream_v2(
 async def langgraph_chat_v2_endpoint(
     request: LangGraphV2Request,
     raw_request: Request,
-    username: str = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user),
 ) -> StreamingResponse:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     logger.info(
@@ -358,7 +359,8 @@ async def langgraph_chat_v2_endpoint(
         extra={
             "request_id": request_id,
             "chat_id": request.chat_id,
-            "user": username,
+            "user": user.user_id,
+            "username": user.username,
             "client_msg_id": request.client_msg_id,
         },
     )
@@ -370,7 +372,7 @@ async def langgraph_chat_v2_endpoint(
     if request_id:
         headers["X-Request-Id"] = request_id
     return StreamingResponse(
-        _event_stream_v2(request, user_id=username, request_id=request_id),
+        _event_stream_v2(request, user_id=user.user_id, request_id=request_id),
         media_type="text/event-stream",
         headers=headers,
     )
@@ -380,13 +382,13 @@ async def langgraph_chat_v2_endpoint(
 async def confirm_go(
     body: ConfirmGoRequest,
     raw_request: Request,
-    username: str = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     try:
         if not (body.chat_id or "").strip():
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
-        graph, config = await _build_graph_config(thread_id=body.chat_id, user_id=username)
+        graph, config = await _build_graph_config(thread_id=body.chat_id, user_id=user.user_id)
         assert_node_exists(
             graph,
             CONFIRM_GO_AS_NODE,
@@ -415,7 +417,7 @@ async def confirm_go(
             ) from exc
         logger.exception(
             "langgraph_v2_confirm_go_error",
-            extra={"request_id": request_id, "chat_id": body.chat_id, "user": username},
+            extra={"request_id": request_id, "chat_id": body.chat_id, "user": user.user_id},
         )
         raise HTTPException(
             status_code=500,
@@ -427,7 +429,7 @@ async def confirm_go(
 async def patch_parameters(
     body: ParametersPatchRequest,
     raw_request: Request,
-    username: str = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     chat_id = (body.chat_id or "").strip()
@@ -438,12 +440,27 @@ async def patch_parameters(
         if not patch:
             raise HTTPException(status_code=400, detail=error_detail("missing_parameters", request_id=request_id))
 
-        graph, config = await _build_graph_config(thread_id=chat_id, user_id=username)
+        graph, config = await _build_graph_config(thread_id=chat_id, user_id=user.user_id)
         assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
         snapshot = await graph.aget_state(config)
         state_values = snapshot.values if isinstance(snapshot.values, dict) else {}
         existing_params = state_values.get("parameters") if isinstance(state_values, dict) else {}
         merged = merge_parameters(existing_params, patch)
+
+        if PARAM_SYNC_DEBUG:
+            configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
+            logger.info(
+                "langgraph_v2_parameters_patch_debug",
+                extra={
+                    "request_id": request_id,
+                    "chat_id": chat_id,
+                    "user": user.user_id,
+                    "patch_keys": sorted(patch.keys()),
+                    "merged_keys": sorted(merged.keys()) if isinstance(merged, dict) else [],
+                    "checkpoint_thread_id": configurable.get("thread_id"),
+                    "checkpoint_ns": configurable.get("checkpoint_ns"),
+                },
+            )
 
         await graph.aupdate_state(
             config,
@@ -477,7 +494,7 @@ async def patch_parameters(
             extra={
                 "request_id": request_id,
                 "chat_id": chat_id,
-                "user": username,
+                "user": user.user_id,
                 "patch_keys": sorted(patch.keys()),
             },
         )
