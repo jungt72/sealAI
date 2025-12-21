@@ -10,6 +10,7 @@ Auth-Dependencies für FastAPI-/WebSocket-Endpoints.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 from fastapi import Depends, HTTPException, WebSocket, status, Header
 
@@ -28,7 +29,13 @@ class RequestUser:
 
 
 def _resolve_user_id(payload: dict) -> str:
-    value = payload.get("preferred_username")
+    claim = (os.getenv("AUTH_USER_ID_CLAIM") or "preferred_username").strip().lower()
+    if claim == "sub":
+        value = payload.get("sub")
+    elif claim in ("preferred_username", "username"):
+        value = payload.get("preferred_username")
+    else:
+        value = payload.get(claim)
     if not value:
         value = payload.get("sub") or payload.get("preferred_username") or payload.get("email")
     return str(value) if value else "anonymous"

@@ -64,16 +64,21 @@ def _chunk_text(text: str, *, max_len: int = 700) -> list[str]:
     return chunks
 
 
-async def _build_graph_config(*, thread_id: str, user_id: str) -> tuple[Any, Dict[str, Any]]:
+async def _build_graph_config(
+    *, thread_id: str, user_id: str, username: str | None = None
+) -> tuple[Any, Dict[str, Any]]:
     graph = await get_sealai_graph_v2()
     config = build_v2_config(thread_id=thread_id, user_id=user_id)
     configurable = config.setdefault("configurable", {})
     configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
+    if username:
+        metadata = config.setdefault("metadata", {})
+        metadata["username"] = username
     return graph, config
 
 
-async def _run_graph_to_state(req: LangGraphV2Request, *, user_id: str) -> SealAIState:
-    graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id)
+async def _run_graph_to_state(req: LangGraphV2Request, *, user_id: str, username: str | None = None) -> SealAIState:
+    graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id, username=username)
     initial_state = SealAIState(
         user_id=user_id,
         thread_id=req.chat_id,
@@ -388,7 +393,11 @@ async def confirm_go(
     try:
         if not (body.chat_id or "").strip():
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
-        graph, config = await _build_graph_config(thread_id=body.chat_id, user_id=user.user_id)
+        graph, config = await _build_graph_config(
+            thread_id=body.chat_id,
+            user_id=user.user_id,
+            username=user.username,
+        )
         assert_node_exists(
             graph,
             CONFIRM_GO_AS_NODE,
@@ -440,7 +449,11 @@ async def patch_parameters(
         if not patch:
             raise HTTPException(status_code=400, detail=error_detail("missing_parameters", request_id=request_id))
 
-        graph, config = await _build_graph_config(thread_id=chat_id, user_id=user.user_id)
+        graph, config = await _build_graph_config(
+            thread_id=chat_id,
+            user_id=user.user_id,
+            username=user.username,
+        )
         assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
         snapshot = await graph.aget_state(config)
         state_values = snapshot.values if isinstance(snapshot.values, dict) else {}

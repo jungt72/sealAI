@@ -124,12 +124,17 @@ def _resolve_update_as_node(state_values: Dict[str, Any]) -> str | None:
     return None
 
 
-async def _build_state_config_with_checkpointer(thread_id: str, user_id: str):
+async def _build_state_config_with_checkpointer(
+    thread_id: str, user_id: str, username: str | None = None
+):
     """Return a v2 config that carries the graph's checkpointer to skip subgraph routing."""
     graph = await get_sealai_graph_v2()
     config = build_v2_config(thread_id=thread_id, user_id=user_id)
     configurable = config.setdefault("configurable", {})
     configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
+    if username:
+        metadata = config.setdefault("metadata", {})
+        metadata["username"] = username
     return graph, config
 
 
@@ -147,7 +152,7 @@ async def get_state(
     try:
         # user_id must always come from the authenticated Keycloak JWT (`current_user.sub`).
         graph, config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=user.user_id
+            thread_id=thread_id, user_id=user.user_id, username=user.username
         )
         snapshot = await graph.aget_state(config)
 
@@ -233,6 +238,7 @@ async def update_state(
         graph, config = await _build_state_config_with_checkpointer(
             thread_id=thread_id,
             user_id=user.user_id,
+            username=user.username,
         )
         snapshot = await graph.aget_state(config)
         state_values = _state_to_dict(snapshot.values)
