@@ -8,8 +8,11 @@ from langchain_community.document_loaders import (
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
-QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "sealai-docs-bge-m3")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "sealai-docs")
+EMBEDDING_MODEL = os.getenv(
+    "EMB_MODEL_NAME",
+    os.getenv("EMBEDDINGS_MODEL", "intfloat/multilingual-e5-base"),
+)
 SUPPORTED_EXTENSIONS = [".pdf", ".txt", ".docx", ".md"]
 
 def load_document(file_path: str):
