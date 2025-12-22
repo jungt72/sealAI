@@ -14,3 +14,11 @@
 - GET /api/v1/langgraph/health -> http_code=000 (curl exit 7: connection refused)
 - POST /api/chat SSE -> connection failed (curl exit 7: localhost:3000 not reachable)
 - GET /api/conversations -> http_code=000 (curl exit 7: connection refused)
+
+## Additional checks (legacy agents profile)
+- Default stack (no legacy agents):
+  - `docker compose up -d`
+  - `docker ps --format '{{.Names}}'` should NOT include `normen-agent` or `material-agent`.
+- Legacy agents enabled:
+  - `docker compose --profile agents-legacy up -d`
+  - `docker ps --format '{{.Names}}'` should include `normen-agent` and `material-agent`.
