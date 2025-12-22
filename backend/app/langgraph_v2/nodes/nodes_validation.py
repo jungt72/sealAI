@@ -8,6 +8,7 @@ from typing import Dict, List
 from langchain_core.messages import HumanMessage, BaseMessage
 
 from app.langgraph_v2.constants import MODEL_PRO
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import get_model_tier
@@ -73,7 +74,7 @@ def answer_synthesizer_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
 
     return {
         "messages": list(messages),
-        "phase": "final",
+        "phase": PHASE.FINAL,
         "last_node": "answer_synthesizer_node",
         "final_prompt": prompt,
         "final_prompt_metadata": prompt_metadata,

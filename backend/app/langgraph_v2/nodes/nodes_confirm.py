@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict
 
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
 
 PARAMETER_LABELS: Dict[str, str] = {
@@ -132,6 +133,6 @@ def confirm_recommendation_node(state: SealAIState, *_args, **_kwargs) -> Dict[s
     return {
         "final_text": final_text,
         "recommendation_go": go,
-        "phase": "confirm",
+        "phase": PHASE.CONFIRM,
         "last_node": "confirm_recommendation_node",
     }

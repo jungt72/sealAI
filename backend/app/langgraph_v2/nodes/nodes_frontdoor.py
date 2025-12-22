@@ -12,6 +12,7 @@ from app.langgraph_v2.state import (
     TechnicalParameters,
     WorkingMemory,
 )
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.sealai_graph_v2 import log_state_debug
 from app.langgraph_v2.utils.json_sanitizer import extract_json_obj
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
@@ -177,7 +178,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         return {
             "intent": intent,
             "working_memory": wm,
-            "phase": "frontdoor",
+            "phase": PHASE.FRONTDOOR,
             "last_node": "frontdoor_discovery_node",
             "parameters": parameters,
         }
@@ -190,7 +191,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         return {
             "intent": intent,
             "working_memory": wm,
-            "phase": "frontdoor",
+            "phase": PHASE.FRONTDOOR,
             "last_node": "frontdoor_discovery_node",
             "parameters": parameters,
         }
@@ -224,7 +225,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         return {
             "intent": intent,
             "working_memory": wm,
-            "phase": "frontdoor",
+            "phase": PHASE.FRONTDOOR,
             "last_node": "frontdoor_discovery_node",
             "parameters": parameters,
         }
@@ -333,7 +334,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     return {
         "intent": intent,
         "working_memory": wm,
-        "phase": "frontdoor",
+        "phase": PHASE.FRONTDOOR,
         "last_node": "frontdoor_discovery_node",
         "parameters": parameters,
         "requires_rag": requires_rag,

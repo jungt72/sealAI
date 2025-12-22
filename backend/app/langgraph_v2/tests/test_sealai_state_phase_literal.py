@@ -1,18 +1,15 @@
+from typing import get_args
+
+from app.langgraph_v2.phase import PHASE_VALUES
 from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.types import PhaseLiteral
 
 
-def test_sealai_state_accepts_supervisor_phase() -> None:
-    state = SealAIState(phase="supervisor")
-    assert state.phase == "supervisor"
+def test_sealai_state_accepts_all_phase_values() -> None:
+    for phase in PHASE_VALUES:
+        state = SealAIState(phase=phase)
+        assert state.phase == phase
 
 
-def test_sealai_state_accepts_panel_phase() -> None:
-    # "panel" is emitted by panel_* nodes in app.langgraph_v2.nodes.nodes_supervisor.
-    state = SealAIState(phase="panel")
-    assert state.phase == "panel"
-
-
-def test_sealai_state_accepts_aggregation_phase() -> None:
-    # "aggregation" is emitted by backend/app/langgraph_v2/nodes/nodes_supervisor.py (aggregator_node).
-    state = SealAIState(phase="aggregation")
-    assert state.phase == "aggregation"
+def test_phase_literal_matches_phase_constants() -> None:
+    assert set(PHASE_VALUES) == set(get_args(PhaseLiteral))

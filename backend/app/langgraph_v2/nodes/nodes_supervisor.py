@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 from pydantic import ValidationError
 
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.sealai_graph_v2 import log_state_debug
 from app.langgraph_v2.state import (
     Budget,
@@ -103,7 +104,7 @@ def supervisor_logic_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     return {
         "working_memory": wm,
         # WICHTIG: Phase auf einen gültigen PhaseLiteral-Wert setzen
-        "phase": "intent",
+        "phase": PHASE.INTENT,
         "last_node": "supervisor_logic_node",
         # Deterministic readiness/coverage for supervisor gating.
         "missing_params": missing,
@@ -285,7 +286,7 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         "decision_log": [*(state.decision_log or []), decision_entry],
         "round_index": new_round,
         "budget": updated_budget,
-        "phase": "supervisor",
+        "phase": PHASE.SUPERVISOR,
         "last_node": "supervisor_policy_node",
     }
     if derived:
@@ -432,7 +433,7 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         "candidates": list(candidates.values()),
         "open_questions": updated_questions,
         "confidence": confidence,
-        "phase": "aggregation",
+        "phase": PHASE.AGGREGATION,
         "last_node": "aggregator_node",
     }
 
@@ -452,7 +453,7 @@ def panel_calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     patch.update(
         {
             "working_memory": wm,
-            "phase": "panel",
+            "phase": PHASE.PANEL,
             "last_node": "panel_calculator_node",
         }
     )
@@ -475,7 +476,7 @@ def panel_material_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
     patch.update(
         {
             "working_memory": wm,
-            "phase": "panel",
+            "phase": PHASE.PANEL,
             "last_node": "panel_material_node",
         }
     )
@@ -520,7 +521,7 @@ def panel_norms_rag_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         "working_memory": wm,
         "sources": existing_sources,
         "requires_rag": True,
-        "phase": "rag",
+        "phase": PHASE.RAG,
         "last_node": "panel_norms_rag_node",
     }
 

@@ -5,6 +5,7 @@ from typing import Dict, List
 
 from langchain_core.messages import HumanMessage
 
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState, WorkingMemory
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text
@@ -36,7 +37,7 @@ def smalltalk_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
 
     return {
         "messages": list(state.get("messages") or []),
-        "phase": "smalltalk",
+        "phase": PHASE.SMALLTALK,
         "last_node": "smalltalk_node",
         "working_memory": wm,
     }
@@ -68,7 +69,7 @@ def out_of_scope_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object
 
     return {
         "messages": list(state.get("messages") or []),
-        "phase": "error",
+        "phase": PHASE.ERROR,
         "last_node": "out_of_scope_node",
         "working_memory": wm,
         "error": reply_text,

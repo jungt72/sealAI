@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 from langchain_core.messages import BaseMessage
 
 from app.langgraph.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import AskMissingScope, CalcResults, SealAIState, TechnicalParameters, WorkingMemory
 from app.langgraph_v2.utils.messages import latest_user_text
 import structlog
@@ -140,7 +141,7 @@ def preflight_use_case_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
         "use_case_raw": use_case_raw,
         "application_category": application_category,
         "motion_type": motion_type,
-        "phase": "preflight_use_case",
+        "phase": PHASE.PREFLIGHT_USE_CASE,
         "last_node": "preflight_use_case_node",
     }
 
@@ -158,7 +159,7 @@ def seal_family_selector_node(state: SealAIState, *_args, **_kwargs) -> Dict[str
 
     return {
         "seal_family": seal_family,
-        "phase": "preflight_parameters",
+        "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "seal_family_selector_node",
     }
 
@@ -184,7 +185,7 @@ def parameter_profile_builder_node(state: SealAIState, *_args, **_kwargs) -> Dic
         "missing_params": missing,
         "ask_missing_request": None,
         "coverage_analysis": None,
-        "phase": "preflight_parameters",
+        "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "parameter_profile_builder_node",
     }
 
@@ -223,7 +224,7 @@ def ingest_missing_user_input_node(state: SealAIState, *_args, **_kwargs) -> Dic
         "ask_missing_request": None,
         "awaiting_user_input": False if awaiting else state.get("awaiting_user_input", False),
         "ask_missing_scope": None,
-        "phase": "preflight_parameters",
+        "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "ingest_missing_user_input_node",
     }
 
@@ -290,7 +291,7 @@ def coverage_analysis_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, o
         "missing_params": missing,
         "ask_missing_request": ask_missing_request,
         "ask_missing_scope": "technical" if missing else None,
-        "phase": "preflight_parameters",
+        "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "coverage_analysis_node",
     }
 
@@ -309,7 +310,7 @@ def calc_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
         "analysis_complete": True,
         "calc_results_ok": True,
         "calc_results": calc_results,
-        "phase": "calculation",
+        "phase": PHASE.CALCULATION,
         "last_node": "calc_node",
     }
 
@@ -352,7 +353,7 @@ def ask_missing_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]
         "awaiting_user_input": True,
         "ask_missing_scope": scope or "technical",
         "messages": list(state.get("messages") or []),
-        "phase": "preflight_parameters" if (scope or "technical") == "technical" else "entry",
+        "phase": PHASE.PREFLIGHT_PARAMETERS if (scope or "technical") == "technical" else PHASE.ENTRY,
         "last_node": "ask_missing_node",
         "working_memory": wm,
     }
@@ -374,7 +375,7 @@ def analysis_gate_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, objec
             error=error_text,
         )  # PATCH/FIX: Observability – error path
         return {
-            "phase": "error",
+            "phase": PHASE.ERROR,
             "error": error_text,
             "last_node": "analysis_gate_node",
             "working_memory": wm,
@@ -385,7 +386,7 @@ def analysis_gate_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, objec
         thread_id=state.thread_id,
     )  # PATCH/FIX: Observability – ok path
     return {
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "analysis_gate_node",
     }
 

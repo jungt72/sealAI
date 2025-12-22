@@ -18,6 +18,7 @@ from langchain_core.messages import BaseMessage  # nur für Typing, keine direkt
 
 from app.langgraph.io import AskMissingRequest
 from app.langgraph_v2.constants import MODEL_NANO
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState, WorkingMemory
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.json_sanitizer import extract_json_obj
@@ -149,7 +150,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args, **_kwargs) -> Dict[str,
         # KEINE messages-Änderung -> keine zusätzliche Chat-Bubble
         "working_memory": wm,
         "parameters": parameters,
-        "phase": "entry",
+        "phase": PHASE.ENTRY,
         "last_node": "frontdoor_discovery_node",
         **_ui_state_payload(
             state,
@@ -219,7 +220,7 @@ def discovery_summarize_node(state: SealAIState, *_args, **_kwargs) -> Dict[str,
         "discovery_coverage": max(0.0, min(1.0, coverage)),
         "discovery_missing": missing[:3] or [],
         "working_memory": wk,
-        "phase": "entry",
+        "phase": PHASE.ENTRY,
         "last_node": "discovery_summarize_node",
         **_ui_state_payload(
             state,
@@ -307,7 +308,7 @@ def confirm_gate_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object
         "ask_missing_request": ask_missing_request,
         "ask_missing_scope": ask_missing_scope,
         "awaiting_user_input": bool(ask_missing_request),
-        "phase": "intent",
+        "phase": PHASE.INTENT,
         "last_node": "confirm_gate_node",
         "working_memory": wm,
         "intent": intent,

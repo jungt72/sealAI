@@ -39,6 +39,7 @@ from typing_extensions import Literal, TypeAlias
 # Phases / stages of the v2 orchestrator
 # ---------------------------------------------------------------------------
 
+# Keep in sync with app.langgraph_v2.phase.PHASE.
 PhaseLiteral: TypeAlias = Literal[
     "entry",
     "frontdoor",

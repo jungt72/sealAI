@@ -4,6 +4,8 @@ Knowledge Nodes mit RAG-Augmentation (Best Practice Nov 2025).
 Jeder Node nutzt search_knowledge_base Tool für faktische Informationen.
 """
 from typing import Dict
+
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state.sealai_state import SealAIState, WorkingMemory
 from app.langgraph_v2.utils.rag_tool import search_knowledge_base
 from app.core.llm_client import run_llm, get_model_tier
@@ -42,7 +44,7 @@ def knowledge_router_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, ob
     
     return {
         "messages": list(state.get("messages") or []),
-        "phase": "knowledge",
+        "phase": PHASE.KNOWLEDGE,
         "last_node": "knowledge_router_node",
         "route": route
     }
@@ -104,7 +106,7 @@ Beantworte die Frage basierend auf dem Kontext. Zitiere Quellen wenn möglich.""
     return {
         "working_memory": wm,
         "messages": list(state.get("messages") or []),
-        "phase": "final",
+        "phase": PHASE.FINAL,
         "last_node": "knowledge_material_node",
     }
 
@@ -167,7 +169,7 @@ Beantworte basierend auf dem Kontext."""
     return {
         "working_memory": wm,
         "messages": list(state.get("messages") or []),
-        "phase": "final",
+        "phase": PHASE.FINAL,
         "last_node": "knowledge_lifetime_node",
     }
 
@@ -228,7 +230,7 @@ Beantworte basierend auf dem Kontext."""
     return {
         "working_memory": wm,
         "messages": list(state.get("messages") or []),
-        "phase": "final",
+        "phase": PHASE.FINAL,
         "last_node": "generic_sealing_qa_node",
     }
 

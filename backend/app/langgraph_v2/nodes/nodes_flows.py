@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, BaseMessage
 
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.sealai_graph_v2 import log_state_debug
 from app.langgraph_v2.state import CalcResults, SealAIState, WorkingMemory
 from app.langgraph_v2.utils.jinja import render_template
@@ -66,7 +67,7 @@ def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
         "working_memory": wm,
         "flags": flags,
         # Phase: Parameter-Vorbereitung
-        "phase": "preflight_parameters",
+        "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "discovery_schema_node",
     }
 
@@ -84,7 +85,7 @@ def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         "working_memory": wm,
         "analysis_complete": True,
         # Noch immer Parameter-Phase
-        "phase": "preflight_parameters",
+        "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "parameter_check_node",
     }
 
@@ -135,7 +136,7 @@ def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         "calc_results_ok": True,
         "working_memory": wm,
         # Phase: Berechnung
-        "phase": "calculation",
+        "phase": PHASE.CALCULATION,
         "last_node": "calculator_node",
     }
 
@@ -172,7 +173,7 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
         "material_choice": state_material,
         "working_memory": wm,
         # Phase: technischer Consulting-Schritt
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "material_agent_node",
     }
 
@@ -193,7 +194,7 @@ def profile_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         "profile_choice": profile,
         "working_memory": wm,
         # Phase: weiterhin Consulting
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "profile_agent_node",
     }
 
@@ -212,7 +213,7 @@ def validation_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
         "validation": validation,
         "working_memory": wm,
         # Phase: Validierung
-        "phase": "validation",
+        "phase": PHASE.VALIDATION,
         "last_node": "validation_agent_node",
     }
 
@@ -247,7 +248,7 @@ def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         "critical": critical,
         "working_memory": wm,
         # Phase: ich ordne Critical Review unter Validierung ein
-        "phase": "validation",
+        "phase": PHASE.VALIDATION,
         "last_node": "critical_review_node",
     }
 
@@ -271,7 +272,7 @@ def product_match_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         "products": products,
         "working_memory": wm,
         # Phase: Consulting (Produkt-Mapping)
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "product_match_node",
     }
 
@@ -291,7 +292,7 @@ def product_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
     return {
         "working_memory": wm,
         # Phase: immer noch Consulting
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "product_explainer_node",
     }
 
@@ -324,7 +325,7 @@ def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     return {
         "working_memory": wm,
         # Phase: Wissens-/Vergleichs-Flow
-        "phase": "knowledge",
+        "phase": PHASE.KNOWLEDGE,
         "last_node": "material_comparison_node",
         "requires_rag": bool(getattr(state, "requires_rag", False) or force_rag),
     }
@@ -339,7 +340,7 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         wm = _update_working_memory(state, {"comparison_notes": notes})
         return {
             "working_memory": wm,
-            "phase": "knowledge",
+            "phase": PHASE.KNOWLEDGE,
             "last_node": "rag_support_node",
         }
     user_text = latest_user_text(state.get("messages")) or ""
@@ -382,7 +383,7 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     return {
         "working_memory": wm,
         # Phase: explizit RAG
-        "phase": "rag",
+        "phase": PHASE.RAG,
         "last_node": "rag_support_node",
     }
 
@@ -423,7 +424,7 @@ def leakage_troubleshooting_node(state: SealAIState, *_args: Any, **_kwargs: Any
         "troubleshooting": updated,
         "working_memory": wm,
         # Phase: Consulting-Flow für Troubleshooting
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "leakage_troubleshooting_node",
     }
 
@@ -451,7 +452,7 @@ def troubleshooting_pattern_node(state: SealAIState, *_args: Any, **_kwargs: Any
         "troubleshooting": updated,
         "working_memory": wm,
         # Phase: weiterhin Troubleshooting-Consulting
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "troubleshooting_pattern_node",
     }
 
@@ -488,7 +489,7 @@ def troubleshooting_explainer_node(state: SealAIState, *_args: Any, **_kwargs: A
         "troubleshooting": updated,
         "working_memory": wm,
         # Phase: weiterhin Consulting
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "troubleshooting_explainer_node",
     }
 

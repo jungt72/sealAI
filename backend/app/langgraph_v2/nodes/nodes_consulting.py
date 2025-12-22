@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, List
 import structlog
 
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import Recommendation, SealAIState, TechnicalParameters, WorkingMemory
 from app.langgraph_v2.utils.llm_factory import run_llm, get_model_tier
 from app.langgraph_v2.constants import MODEL_PRO
@@ -114,7 +115,7 @@ def consulting_supervisor_node(state: SealAIState, *_args, **_kwargs) -> Dict[st
 
     return {
         "working_memory": wm_next,
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "consulting_supervisor_node",
     }
 
@@ -135,7 +136,7 @@ def material_requirements_node(state: SealAIState, *_args, **_kwargs) -> Dict[st
 
     return {
         "working_memory": wm_next,
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "material_requirements_node",
     }
 
@@ -176,7 +177,7 @@ def material_candidate_generation_node(state: SealAIState, *_args, **_kwargs) ->
 
     return {
         "working_memory": wm_next,
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "material_candidate_generation_node",
     }
 
@@ -214,14 +215,14 @@ def material_candidate_ranking_node(state: SealAIState, *_args, **_kwargs) -> Di
     return {
         "recommendation": recommendation_data,
         "working_memory": wm_next,
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "material_candidate_ranking_node",
     }
 
 
 def material_exit_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
     return {
-        "phase": "consulting",
+        "phase": PHASE.CONSULTING,
         "last_node": "material_exit_node",
     }
 
