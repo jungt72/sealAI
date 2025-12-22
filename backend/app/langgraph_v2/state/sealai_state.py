@@ -82,6 +82,54 @@ class Source(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class QuestionItem(BaseModel):
+    id: str
+    question: str
+    reason: str
+    priority: Literal["high", "medium", "low"] = "medium"
+    status: Literal["open", "answered", "deferred"] = "open"
+    source: str = "derived"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class FactItem(BaseModel):
+    value: Any = None
+    source: str = "panel"
+    confidence: float = 0.0
+    evidence_refs: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CandidateItem(BaseModel):
+    kind: str
+    value: str
+    rationale: str = ""
+    evidence_refs: List[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DecisionEntry(BaseModel):
+    round: int = 0
+    action: str = ""
+    reason: str = ""
+    cost: int = 0
+    confidence: float = 0.0
+    open_questions_summary: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class Budget(BaseModel):
+    remaining: int = 8
+    spent: int = 0
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class TechnicalParameters(BaseModel):
     # generische Felder
     medium: Optional[str] = None
@@ -208,6 +256,10 @@ class WorkingMemory(BaseModel):
     comparison_notes: Dict[str, Any] = Field(default_factory=dict)
     troubleshooting_notes: Dict[str, Any] = Field(default_factory=dict)
 
+    panel_calculator: Dict[str, Any] = Field(default_factory=dict)
+    panel_material: Dict[str, Any] = Field(default_factory=dict)
+    panel_norms_rag: Dict[str, Any] = Field(default_factory=dict)
+
     model_config = ConfigDict(extra="ignore")
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -322,6 +374,16 @@ class SealAIState(BaseModel):
         }
     )
 
+    # MAI-DxO supervisor state (feature-flagged)
+    open_questions: List[QuestionItem] = Field(default_factory=list)
+    facts: Dict[str, FactItem] = Field(default_factory=dict)
+    candidates: List[CandidateItem] = Field(default_factory=list)
+    decision_log: List[DecisionEntry] = Field(default_factory=list)
+    budget: Budget = Field(default_factory=Budget)
+    confidence: float = 0.0
+    round_index: int = 0
+    next_action: Optional[str] = None
+
     # UI-State für Reasoning Status
     ui_state: Dict[str, Any] = Field(
         default_factory=lambda: {"current_step": None, "current_label": None}
@@ -346,6 +408,11 @@ __all__ = [
     "CalcResults",
     "Recommendation",
     "Source",
+    "QuestionItem",
+    "FactItem",
+    "CandidateItem",
+    "DecisionEntry",
+    "Budget",
     "SealAIState",
     "AskMissingScope",
     "TechnicalParameters",
