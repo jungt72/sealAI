@@ -97,6 +97,8 @@ services:
       start_period: 30s
 
   normen-agent:
+    # Legacy external agent (disabled by default via profile).
+    profiles: ["agents-legacy"]
     build: { context: ./backend/agents/normen_agent }
     image: ghcr.io/jungt72/sealai-normen-agent:latest
     container_name: normen-agent
@@ -113,6 +115,8 @@ services:
       retries: 5
 
   material-agent:
+    # Legacy external agent (disabled by default via profile).
+    profiles: ["agents-legacy"]
     build: { context: ./backend/agents/material_agent }
     image: ghcr.io/jungt72/sealai-material-agent:latest
     container_name: material-agent
