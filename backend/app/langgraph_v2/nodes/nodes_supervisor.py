@@ -1,10 +1,19 @@
 # backend/app/langgraph_v2/nodes/nodes_supervisor.py
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from app.langgraph_v2.sealai_graph_v2 import log_state_debug
-from app.langgraph_v2.state import SealAIState, WorkingMemory
+from app.langgraph_v2.state import (
+    Budget,
+    CandidateItem,
+    DecisionEntry,
+    FactItem,
+    QuestionItem,
+    SealAIState,
+    Source,
+    WorkingMemory,
+)
 from app.langgraph_v2.utils.messages import latest_user_text
 
 YES_KEYWORDS: List[str] = [
@@ -35,6 +44,30 @@ _REQUIRED_PARAMS_FOR_READY: List[str] = [
 ]
 
 _READY_THRESHOLD = 0.8
+
+ACTION_ASK_USER = "ASK_USER"
+ACTION_RUN_PANEL_CALC = "RUN_PANEL_CALC"
+ACTION_RUN_PANEL_MATERIAL = "RUN_PANEL_MATERIAL"
+ACTION_RUN_PANEL_NORMS_RAG = "RUN_PANEL_NORMS_RAG"
+ACTION_FINALIZE = "FINALIZE"
+
+MAX_SUPERVISOR_ROUNDS = 3
+
+_ACTION_COSTS: Dict[str, int] = {
+    ACTION_ASK_USER: 1,
+    ACTION_RUN_PANEL_CALC: 1,
+    ACTION_RUN_PANEL_MATERIAL: 2,
+    ACTION_RUN_PANEL_NORMS_RAG: 3,
+    ACTION_FINALIZE: 0,
+}
+
+_PARAM_LABELS: Dict[str, str] = {
+    "medium": "Medium",
+    "pressure_bar": "Druck (bar)",
+    "temperature_C": "Temperatur (°C)",
+    "shaft_diameter": "Wellen-Ø (mm)",
+    "speed_rpm": "Drehzahl (rpm)",
+}
 
 
 def _compute_coverage(required: List[str], missing: List[str]) -> float:
@@ -75,6 +108,393 @@ def supervisor_logic_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     }
 
 
+def _coerce_questions(items: List[QuestionItem | Dict[str, Any]] | None) -> List[QuestionItem]:
+    questions: List[QuestionItem] = []
+    for item in items or []:
+        if isinstance(item, QuestionItem):
+            questions.append(item)
+            continue
+        if isinstance(item, dict):
+            questions.append(QuestionItem.model_validate(item))
+    return questions
+
+
+def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
+    seen: set[str] = set()
+    questions: List[QuestionItem] = []
+    for key in (state.missing_params or []):
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        label = _PARAM_LABELS.get(key, key.replace("_", " "))
+        questions.append(
+            QuestionItem(
+                id=key,
+                question=f"Bitte ergänze: {label}.",
+                reason="Benötigt für die Auslegung.",
+                priority="high",
+                status="open",
+                source="missing_params",
+            )
+        )
+    for key in (state.discovery_missing or []):
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        label = _PARAM_LABELS.get(key, key.replace("_", " "))
+        questions.append(
+            QuestionItem(
+                id=key,
+                question=f"Kannst du Details zu {label} ergänzen?",
+                reason="Fehlt in der Discovery.",
+                priority="medium",
+                status="open",
+                source="discovery_missing",
+            )
+        )
+    return questions
+
+
+def _open_questions_summary(questions: List[QuestionItem]) -> str:
+    total = len(questions)
+    high = sum(1 for q in questions if q.priority == "high" and q.status == "open")
+    answered = sum(1 for q in questions if q.status == "answered")
+    return f"open={total} high={high} answered={answered}"
+
+
+def _detect_candidate_contradictions(candidates: List[CandidateItem]) -> List[str]:
+    conflicts: List[str] = []
+    by_kind: Dict[str, Dict[str, int]] = {}
+    for candidate in candidates:
+        if candidate.confidence < 0.6:
+            continue
+        by_kind.setdefault(candidate.kind, {})
+        by_kind[candidate.kind][candidate.value] = by_kind[candidate.kind].get(candidate.value, 0) + 1
+    for kind, values in by_kind.items():
+        if len(values) > 1:
+            conflicts.append(f"{kind} has {len(values)} competing values")
+    return conflicts
+
+
+def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("supervisor_policy_node", state)
+    questions = _coerce_questions(state.open_questions)
+    derived = False
+    if not questions:
+        questions = _derive_open_questions(state)
+        derived = True
+
+    budget = state.budget if isinstance(state.budget, Budget) else Budget.model_validate(state.budget or {})
+    round_index = int(state.round_index or 0)
+    confidence = float(state.confidence or 0.0)
+    awaiting = bool(getattr(state, "awaiting_user_input", False))
+
+    candidates = [item if isinstance(item, CandidateItem) else CandidateItem.model_validate(item) for item in (state.candidates or [])]
+    contradictions = _detect_candidate_contradictions(candidates)
+
+    high_open = [q for q in questions if q.priority == "high" and q.status == "open"]
+
+    reason = "default_finalize"
+    action = ACTION_FINALIZE
+
+    if budget.remaining <= 0:
+        reason = "budget_exhausted"
+        action = ACTION_FINALIZE
+    elif round_index >= MAX_SUPERVISOR_ROUNDS:
+        reason = "max_rounds_reached"
+        action = ACTION_FINALIZE
+    elif confidence >= 0.8 and not high_open:
+        reason = "confidence_high"
+        action = ACTION_FINALIZE
+    elif high_open and not awaiting:
+        reason = "missing_high_priority_inputs"
+        action = ACTION_ASK_USER
+    else:
+        missing_calc = state.calc_results is None or not bool(getattr(state, "calc_results_ok", False))
+        material_choice = state.material_choice or {}
+        missing_material = not bool(material_choice.get("material"))
+        intent_needs_sources = bool(getattr(state.intent, "needs_sources", False)) if state.intent else False
+        intent_need_sources = bool(getattr(state.intent, "need_sources", False)) if state.intent else False
+        needs_rag = bool(
+            getattr(state, "requires_rag", False)
+            or intent_needs_sources
+            or intent_need_sources
+            or getattr(state, "need_sources", False)
+        )
+
+        if missing_calc:
+            reason = "missing_calc_facts"
+            action = ACTION_RUN_PANEL_CALC
+        elif missing_material:
+            reason = "missing_material_decision"
+            action = ACTION_RUN_PANEL_MATERIAL
+        elif contradictions or needs_rag:
+            reason = "resolve_contradictions" if contradictions else "needs_rag"
+            action = ACTION_RUN_PANEL_NORMS_RAG
+        else:
+            reason = "no_action_required"
+            action = ACTION_FINALIZE
+
+    cost = _ACTION_COSTS.get(action, 0)
+    updated_budget = budget.model_copy()
+    if cost > 0:
+        updated_budget = updated_budget.model_copy(
+            update={
+                "remaining": max(0, updated_budget.remaining - cost),
+                "spent": updated_budget.spent + cost,
+            }
+        )
+
+    new_round = round_index + 1
+    decision_entry = DecisionEntry(
+        round=new_round,
+        action=action,
+        reason=reason,
+        cost=cost,
+        confidence=confidence,
+        open_questions_summary=_open_questions_summary(questions),
+    )
+
+    patch: Dict[str, Any] = {
+        "next_action": action,
+        "decision_log": [*(state.decision_log or []), decision_entry],
+        "round_index": new_round,
+        "budget": updated_budget,
+        "phase": "supervisor",
+        "last_node": "supervisor_policy_node",
+    }
+    if derived:
+        patch["open_questions"] = questions
+    return patch
+
+
+def _merge_fact(existing: FactItem | None, update: FactItem) -> FactItem:
+    if not existing:
+        return update
+    merged = existing.model_copy()
+    if update.value is not None:
+        merged = merged.model_copy(update={"value": update.value})
+    merged_refs = list(dict.fromkeys([*existing.evidence_refs, *update.evidence_refs]))
+    merged = merged.model_copy(
+        update={
+            "source": update.source or existing.source,
+            "confidence": max(existing.confidence, update.confidence),
+            "evidence_refs": merged_refs,
+        }
+    )
+    return merged
+
+
+def _merge_candidate(existing: CandidateItem | None, update: CandidateItem) -> CandidateItem:
+    if not existing:
+        return update
+    merged_refs = list(dict.fromkeys([*existing.evidence_refs, *update.evidence_refs]))
+    return existing.model_copy(
+        update={
+            "rationale": update.rationale or existing.rationale,
+            "confidence": max(existing.confidence, update.confidence),
+            "evidence_refs": merged_refs,
+        }
+    )
+
+
+def _compute_confidence(
+    coverage_score: float,
+    evidence_bonus: float,
+    contradiction_penalty: float,
+) -> float:
+    coverage_pct = coverage_score * 100.0 if coverage_score <= 1.0 else coverage_score
+    raw = 0.4 * (coverage_pct / 100.0) + 0.3 * evidence_bonus + 0.3 * (1.0 - contradiction_penalty)
+    return max(0.0, min(1.0, raw))
+
+
+def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("aggregator_node", state)
+    facts: Dict[str, FactItem] = {}
+    for key, value in (state.facts or {}).items():
+        if isinstance(value, FactItem):
+            facts[key] = value
+        elif isinstance(value, dict):
+            facts[key] = FactItem.model_validate(value)
+
+    candidates: Dict[Tuple[str, str], CandidateItem] = {}
+    for item in (state.candidates or []):
+        candidate = item if isinstance(item, CandidateItem) else CandidateItem.model_validate(item)
+        candidates[(candidate.kind, candidate.value)] = candidate
+
+    calc = state.calc_results
+    if calc:
+        if calc.safety_factor is not None:
+            key = "calc.safety_factor"
+            facts[key] = _merge_fact(
+                facts.get(key),
+                FactItem(value=calc.safety_factor, source="panel_calculator", confidence=0.6),
+            )
+        if calc.temperature_margin is not None:
+            key = "calc.temperature_margin"
+            facts[key] = _merge_fact(
+                facts.get(key),
+                FactItem(value=calc.temperature_margin, source="panel_calculator", confidence=0.5),
+            )
+        if calc.pressure_margin is not None:
+            key = "calc.pressure_margin"
+            facts[key] = _merge_fact(
+                facts.get(key),
+                FactItem(value=calc.pressure_margin, source="panel_calculator", confidence=0.5),
+            )
+
+    material_choice = state.material_choice or {}
+    material = material_choice.get("material")
+    if material:
+        key = ("material", str(material))
+        candidates[key] = _merge_candidate(
+            candidates.get(key),
+            CandidateItem(
+                kind="material",
+                value=str(material),
+                rationale=str(material_choice.get("details") or ""),
+                confidence=0.6,
+            ),
+        )
+
+    profile_choice = state.profile_choice or {}
+    profile = profile_choice.get("profile")
+    if profile:
+        key = ("profile", str(profile))
+        candidates[key] = _merge_candidate(
+            candidates.get(key),
+            CandidateItem(
+                kind="profile",
+                value=str(profile),
+                rationale=str(profile_choice.get("rationale") or ""),
+                confidence=0.55,
+            ),
+        )
+
+    sources: List[Source] = []
+    for item in (state.sources or []):
+        if isinstance(item, Source):
+            sources.append(item)
+        elif isinstance(item, dict):
+            sources.append(Source.model_validate(item))
+    source_ids = [s.source for s in sources if s.source]
+
+    questions = _coerce_questions(state.open_questions)
+    updated_questions: List[QuestionItem] = []
+    for question in questions:
+        if question.status != "answered":
+            param_value = None
+            if question.id:
+                param_value = getattr(state.parameters, question.id, None)
+            has_fact = bool(question.id and question.id in facts)
+            if param_value not in (None, "") or has_fact:
+                question = question.model_copy(update={"status": "answered"})
+        updated_questions.append(question)
+
+    contradictions = _detect_candidate_contradictions(list(candidates.values()))
+    contradiction_penalty = min(1.0, 0.2 * len(contradictions))
+    evidence_bonus = min(1.0, 0.1 * len(source_ids) + 0.05 * len([f for f in facts.values() if f.evidence_refs]))
+    coverage_score = float(getattr(state, "coverage_score", 0.0) or 0.0)
+    confidence = _compute_confidence(coverage_score, evidence_bonus, contradiction_penalty)
+
+    return {
+        "facts": facts,
+        "candidates": list(candidates.values()),
+        "open_questions": updated_questions,
+        "confidence": confidence,
+        "phase": "aggregation",
+        "last_node": "aggregator_node",
+    }
+
+
+def panel_calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("panel_calculator_node", state)
+    from app.langgraph_v2.nodes.nodes_flows import calculator_node
+
+    patch = calculator_node(state, *_args, **_kwargs)
+    wm = patch.get("working_memory") or state.working_memory or WorkingMemory()
+    panel_payload = {
+        "calc_results": (patch.get("calc_results") or state.calc_results).model_dump(exclude_none=True)
+        if (patch.get("calc_results") or state.calc_results)
+        else {},
+    }
+    wm = wm.model_copy(update={"panel_calculator": panel_payload})
+    patch.update(
+        {
+            "working_memory": wm,
+            "phase": "panel",
+            "last_node": "panel_calculator_node",
+        }
+    )
+    return patch
+
+
+def panel_material_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("panel_material_node", state)
+    from app.langgraph_v2.nodes.nodes_flows import material_agent_node
+
+    patch = material_agent_node(state, *_args, **_kwargs)
+    wm = patch.get("working_memory") or state.working_memory or WorkingMemory()
+    panel_payload = {
+        "material_choice": patch.get("material_choice") or state.material_choice,
+        "material_candidates": (patch.get("working_memory") or state.working_memory).material_candidates
+        if (patch.get("working_memory") or state.working_memory)
+        else [],
+    }
+    wm = wm.model_copy(update={"panel_material": panel_payload})
+    patch.update(
+        {
+            "working_memory": wm,
+            "phase": "panel",
+            "last_node": "panel_material_node",
+        }
+    )
+    return patch
+
+
+def panel_norms_rag_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("panel_norms_rag_node", state)
+    from app.langgraph_v2.utils.rag_tool import search_knowledge_base
+    from app.langgraph_v2.state import Source
+
+    user_text = latest_user_text(state.messages or []) or "Normenrecherche"
+    rag_context = search_knowledge_base.invoke(
+        {
+            "query": user_text,
+            "category": "norms",
+            "k": 3,
+            "tenant": state.user_id,
+        }
+    )
+    rag_text = (rag_context or "").strip() if isinstance(rag_context, str) else str(rag_context)
+
+    references: List[str] = []
+    for line in rag_text.splitlines():
+        line = line.strip()
+        if line.lower().startswith("quelle:"):
+            source_value = line.split(":", 1)[1].strip()
+            if source_value:
+                references.append(source_value)
+
+    existing_sources = list(state.sources or [])
+    seen_sources = {src.source for src in existing_sources if getattr(src, "source", None)}
+    for ref in references:
+        if ref in seen_sources:
+            continue
+        existing_sources.append(Source(snippet=None, source=ref, metadata={"panel": "norms_rag"}))
+        seen_sources.add(ref)
+
+    wm = state.working_memory or WorkingMemory()
+    wm = wm.model_copy(update={"panel_norms_rag": {"rag_context": rag_text, "rag_reference": references}})
+    return {
+        "working_memory": wm,
+        "sources": existing_sources,
+        "requires_rag": True,
+        "phase": "rag",
+        "last_node": "panel_norms_rag_node",
+    }
+
+
 def supervisor_route(state: SealAIState) -> str:
     goal = getattr(state.intent, "goal", "smalltalk") if state.intent else "smalltalk"
     ready = bool(getattr(state, "recommendation_ready", False))
@@ -108,4 +528,17 @@ def _maybe_set_recommendation_go(state: SealAIState) -> None:
         state.recommendation_go = False
 
 
-__all__ = ["supervisor_logic_node", "supervisor_route"]
+__all__ = [
+    "supervisor_logic_node",
+    "supervisor_route",
+    "supervisor_policy_node",
+    "aggregator_node",
+    "panel_calculator_node",
+    "panel_material_node",
+    "panel_norms_rag_node",
+    "ACTION_ASK_USER",
+    "ACTION_RUN_PANEL_CALC",
+    "ACTION_RUN_PANEL_MATERIAL",
+    "ACTION_RUN_PANEL_NORMS_RAG",
+    "ACTION_FINALIZE",
+]
