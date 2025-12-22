@@ -1,7 +1,10 @@
 # backend/app/langgraph_v2/nodes/nodes_supervisor.py
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Tuple
+
+from pydantic import ValidationError
 
 from app.langgraph_v2.sealai_graph_v2 import log_state_debug
 from app.langgraph_v2.state import (
@@ -15,6 +18,8 @@ from app.langgraph_v2.state import (
     WorkingMemory,
 )
 from app.langgraph_v2.utils.messages import latest_user_text
+
+logger = logging.getLogger(__name__)
 
 YES_KEYWORDS: List[str] = [
     "ja",
@@ -115,7 +120,10 @@ def _coerce_questions(items: List[QuestionItem | Dict[str, Any]] | None) -> List
             questions.append(item)
             continue
         if isinstance(item, dict):
-            questions.append(QuestionItem.model_validate(item))
+            try:
+                questions.append(QuestionItem.model_validate(item))
+            except ValidationError as exc:
+                logger.warning("skip_invalid_open_question", extra={"error": str(exc), "item_keys": list(item.keys())})
     return questions
 
 
@@ -176,6 +184,23 @@ def _detect_candidate_contradictions(candidates: List[CandidateItem]) -> List[st
     return conflicts
 
 
+def _coerce_candidates(items: List[CandidateItem | Dict[str, Any]] | None) -> List[CandidateItem]:
+    candidates: List[CandidateItem] = []
+    for item in items or []:
+        if isinstance(item, CandidateItem):
+            candidates.append(item)
+            continue
+        if isinstance(item, dict):
+            try:
+                candidates.append(CandidateItem.model_validate(item))
+            except ValidationError as exc:
+                logger.warning(
+                    "skip_invalid_candidate",
+                    extra={"error": str(exc), "item_keys": list(item.keys())},
+                )
+    return candidates
+
+
 def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("supervisor_policy_node", state)
     questions = _coerce_questions(state.open_questions)
@@ -189,7 +214,7 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
     confidence = float(state.confidence or 0.0)
     awaiting = bool(getattr(state, "awaiting_user_input", False))
 
-    candidates = [item if isinstance(item, CandidateItem) else CandidateItem.model_validate(item) for item in (state.candidates or [])]
+    candidates = _coerce_candidates(state.candidates)
     contradictions = _detect_candidate_contradictions(candidates)
 
     high_open = [q for q in questions if q.priority == "high" and q.status == "open"]
@@ -315,11 +340,16 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         if isinstance(value, FactItem):
             facts[key] = value
         elif isinstance(value, dict):
-            facts[key] = FactItem.model_validate(value)
+            try:
+                facts[key] = FactItem.model_validate(value)
+            except ValidationError as exc:
+                logger.warning(
+                    "skip_invalid_fact",
+                    extra={"error": str(exc), "fact_key": key, "item_keys": list(value.keys())},
+                )
 
     candidates: Dict[Tuple[str, str], CandidateItem] = {}
-    for item in (state.candidates or []):
-        candidate = item if isinstance(item, CandidateItem) else CandidateItem.model_validate(item)
+    for candidate in _coerce_candidates(state.candidates):
         candidates[(candidate.kind, candidate.value)] = candidate
 
     calc = state.calc_results

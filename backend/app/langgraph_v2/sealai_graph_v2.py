@@ -199,6 +199,7 @@ def _build_final_answer_template_context(
     recommendation_ready: bool,
     recommendation_go: bool,
     latest_user_text: str | None,
+    is_micro_smalltalk: bool,
 ) -> Dict[str, Any]:
     parameters = state.parameters.as_dict()
     calc_results = state.calc_results.model_dump(exclude_none=True) if state.calc_results else {}
@@ -216,6 +217,7 @@ def _build_final_answer_template_context(
             "recommendation_go": recommendation_go,
             "user_text": latest_user_text,
             "latest_user_text": latest_user_text,
+            "is_micro_smalltalk": is_micro_smalltalk,
             "discovery_summary": state.discovery_summary,
             "discovery_missing": state.discovery_missing or [],
             "discovery_coverage": state.discovery_coverage,
@@ -254,6 +256,7 @@ def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
         payload["template_context"].get("goal"),
         payload["template_context"].get("recommendation_go", False),
     )
+    payload["template_context"].setdefault("is_micro_smalltalk", False)
     plan = payload["template_context"].get("plan") or {}
     style_profile = (plan.get("style_profile") or "senior_sealing_engineer_de") if isinstance(plan, dict) else "senior_sealing_engineer_de"
     include_policy = str(style_profile).strip().lower() not in {"off", "none", "disabled", "disable"}
@@ -341,6 +344,7 @@ def _build_final_answer_chain() -> Any:
             recommendation_ready=ready,
             recommendation_go=go,
             latest_user_text=user_text,
+            is_micro_smalltalk=is_micro_smalltalk,
         )
         template_context["user_text_norm"] = user_text_norm
         template_context["is_micro_smalltalk"] = is_micro_smalltalk
