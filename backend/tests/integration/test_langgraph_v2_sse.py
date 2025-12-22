@@ -1,4 +1,5 @@
 import importlib
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -68,4 +69,15 @@ def test_chat_v2_sse_error_is_sanitized(monkeypatch: pytest.MonkeyPatch) -> None
 
     assert "event: error" in text
     assert "secret: do not leak this" not in text
+    assert "request_id" in text
 
+    error_payload = None
+    for block in text.split("\n\n"):
+        if "event: error" in block:
+            for line in block.splitlines():
+                if line.startswith("data: "):
+                    error_payload = json.loads(line.replace("data: ", "", 1))
+                    break
+            break
+    assert error_payload is not None
+    assert error_payload.get("request_id") == "it-sse-2"

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -297,12 +298,28 @@ async def _event_stream_v2(
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # pragma: no cover
+                logger.exception(
+                    "langgraph_v2_sse_stream_error",
+                    extra={
+                        "request_id": request_id,
+                        "chat_id": req.chat_id,
+                        "client_msg_id": req.client_msg_id,
+                        "thread_id": req.chat_id,
+                        "user_id": user_id,
+                        "supervisor_mode": os.getenv("LANGGRAPH_V2_SUPERVISOR_MODE"),
+                    },
+                )
                 message = (
                     "dependency_unavailable"
                     if is_dependency_unavailable_error(exc)
                     else "internal_error"
                 )
-                await queue.put(_format_sse("error", {"type": "error", "message": message}))
+                await queue.put(
+                    _format_sse(
+                        "error",
+                        {"type": "error", "message": message, "request_id": request_id},
+                    )
+                )
                 await queue.put(
                     _format_sse(
                         "done",
@@ -336,8 +353,22 @@ async def _event_stream_v2(
         )
         return
     except Exception as exc:  # pragma: no cover
+        logger.exception(
+            "langgraph_v2_sse_outer_error",
+            extra={
+                "request_id": request_id,
+                "chat_id": req.chat_id,
+                "client_msg_id": req.client_msg_id,
+                "thread_id": req.chat_id,
+                "user_id": user_id,
+                "supervisor_mode": os.getenv("LANGGRAPH_V2_SUPERVISOR_MODE"),
+            },
+        )
         message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
-        yield _format_sse("error", {"type": "error", "message": message})
+        yield _format_sse(
+            "error",
+            {"type": "error", "message": message, "request_id": request_id},
+        )
         yield _format_sse(
             "done",
             {
@@ -359,6 +390,8 @@ async def langgraph_chat_v2_endpoint(
     user: RequestUser = Depends(get_current_request_user),
 ) -> StreamingResponse:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    if not request_id:
+        request_id = str(uuid.uuid4())
     logger.info(
         "langgraph_v2_chat_request",
         extra={
