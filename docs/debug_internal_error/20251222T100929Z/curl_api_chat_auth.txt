@@ -1,0 +1,9 @@
+HTTP/2 401 
+server: nginx/1.29.4
+date: Mon, 22 Dec 2025 10:14:26 GMT
+content-type: application/json
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+cache-control: no-cache, no-transform
+x-request-id: acc8401e-367e-452d-add2-608ca9227f73
+
+{"detail":"Signature has expired."}
