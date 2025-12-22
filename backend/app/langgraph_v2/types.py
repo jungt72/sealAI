@@ -45,6 +45,7 @@ PhaseLiteral: TypeAlias = Literal[
     "smalltalk",
     "intent",
     "supervisor",
+    "aggregation",
     "panel",
     "confirm",
     "preflight_use_case",
