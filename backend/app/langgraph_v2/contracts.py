@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 STABLE_V2_NODE_CONTRACT: frozenset[str] = frozenset(
     {
         # Nodes referenced outside the graph (API / state updates).
-        "supervisor_logic_node",
+        "supervisor_policy_node",
         "confirm_recommendation_node",
     }
 )
@@ -133,4 +133,3 @@ __all__ = [
     "is_dependency_unavailable_error",
     "pick_existing_node",
 ]
-

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 import uuid
 from typing import Any, Dict, List
@@ -123,10 +122,7 @@ from app.langgraph_v2.nodes.nodes_supervisor import (
     aggregator_node,
     panel_calculator_node,
     panel_material_node,
-    panel_norms_rag_node,
-    supervisor_logic_node,
     supervisor_policy_node,
-    supervisor_route,
 )
 from app.langgraph_v2.nodes.nodes_flows import (
     build_final_answer_context,
@@ -414,24 +410,11 @@ def _parameter_check_router(state: SealAIState) -> str:
     go = bool(getattr(state, "recommendation_go", False))
     if ready and go:
         return "calculator_node"
-    return "supervisor_logic_node"
-
-
-def _comparison_rag_router(state: SealAIState) -> str:
-    return "rag" if bool(getattr(state, "requires_rag", False)) else "skip"
-
-
-def _select_supervisor_entry(_state: SealAIState) -> str:
-    mode = str(os.getenv("LANGGRAPH_V2_SUPERVISOR_MODE", "legacy")).strip().lower()
-    return "mai_dxo" if mode == "mai_dxo" else "legacy"
+    return "supervisor_policy_node"
 
 
 def _supervisor_policy_router(state: SealAIState) -> str:
     return str(getattr(state, "next_action", "FINALIZE") or "FINALIZE")
-
-
-async def _supervisor_route_async(state: SealAIState) -> str:
-    return supervisor_route(state)
 
 
 async def _parameter_check_router_async(state: SealAIState) -> str:
@@ -444,14 +427,6 @@ async def _critical_review_router_async(state: SealAIState) -> str:
 
 async def _product_router_async(state: SealAIState) -> str:
     return _product_router(state)
-
-
-async def _comparison_rag_router_async(state: SealAIState) -> str:
-    return _comparison_rag_router(state)
-
-
-async def _supervisor_entry_router_async(state: SealAIState) -> str:
-    return _select_supervisor_entry(state)
 
 
 async def _supervisor_policy_router_async(state: SealAIState) -> str:
@@ -469,12 +444,10 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 
     # Node registration
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
-    builder.add_node("supervisor_logic_node", supervisor_logic_node)
     builder.add_node("supervisor_policy_node", supervisor_policy_node)
     builder.add_node("aggregator_node", aggregator_node)
     builder.add_node("panel_calculator_node", panel_calculator_node)
     builder.add_node("panel_material_node", panel_material_node)
-    builder.add_node("panel_norms_rag_node", panel_norms_rag_node)
     builder.add_node("discovery_schema_node", discovery_schema_node)
     builder.add_node("parameter_check_node", parameter_check_node)
     builder.add_node("calculator_node", calculator_node)
@@ -494,30 +467,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 
     # Entrypoint
     builder.add_edge(START, "frontdoor_discovery_node")
-    builder.add_conditional_edges(
-        "frontdoor_discovery_node",
-        _supervisor_entry_router_async,
-        {
-            "mai_dxo": "supervisor_policy_node",
-            "legacy": "supervisor_logic_node",
-            "__else__": "supervisor_logic_node",
-        },
-    )
-
-    builder.add_conditional_edges(
-        "supervisor_logic_node",
-        _supervisor_route_async,
-        {
-            "intermediate": "final_answer_node",
-            "confirm": "confirm_recommendation_node",
-            "design_flow": "calculator_node",
-            "comparison": "material_comparison_node",
-            "troubleshooting": "leakage_troubleshooting_node",
-            "smalltalk": "final_answer_node",
-            "out_of_scope": "final_answer_node",
-            "__else__": "final_answer_node",
-        },
-    )
+    builder.add_edge("frontdoor_discovery_node", "supervisor_policy_node")
 
     # MAI-DxO supervisor loop (feature flagged)
     builder.add_conditional_edges(
@@ -527,14 +477,17 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
             "ASK_USER": "final_answer_node",
             "RUN_PANEL_CALC": "panel_calculator_node",
             "RUN_PANEL_MATERIAL": "panel_material_node",
-            "RUN_PANEL_NORMS_RAG": "panel_norms_rag_node",
+            "RUN_PANEL_NORMS_RAG": "rag_support_node",
+            "RUN_COMPARISON": "material_comparison_node",
+            "RUN_TROUBLESHOOTING": "leakage_troubleshooting_node",
+            "RUN_CONFIRM": "confirm_recommendation_node",
             "FINALIZE": "final_answer_node",
             "__else__": "final_answer_node",
         },
     )
     builder.add_edge("panel_calculator_node", "aggregator_node")
     builder.add_edge("panel_material_node", "aggregator_node")
-    builder.add_edge("panel_norms_rag_node", "aggregator_node")
+    builder.add_edge("rag_support_node", "aggregator_node")
     builder.add_edge("aggregator_node", "supervisor_policy_node")
 
     # Design flow
@@ -544,8 +497,8 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
         _parameter_check_router_async,
         {
             "calculator_node": "calculator_node",
-            "supervisor_logic_node": "supervisor_logic_node",
-            "__else__": "supervisor_logic_node",
+            "supervisor_policy_node": "supervisor_policy_node",
+            "__else__": "supervisor_policy_node",
         },
     )
     builder.add_edge("calculator_node", "material_agent_node")
@@ -577,16 +530,8 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_edge("product_explainer_node", "final_answer_node")
 
     # Comparison flow
-    builder.add_conditional_edges(
-        "material_comparison_node",
-        _comparison_rag_router_async,
-        {
-            "rag": "rag_support_node",
-            "skip": "final_answer_node",
-            "__else__": "final_answer_node",
-        },
-    )
-    builder.add_edge("rag_support_node", "final_answer_node")
+    builder.add_edge("material_comparison_node", "supervisor_policy_node")
+    builder.add_edge("rag_support_node", "supervisor_policy_node")
 
     # Troubleshooting flow
     builder.add_edge("leakage_troubleshooting_node", "troubleshooting_pattern_node")

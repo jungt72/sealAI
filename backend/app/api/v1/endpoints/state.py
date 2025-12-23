@@ -33,7 +33,7 @@ METADATA_FIELDS = (
     "recommendation_ready",
 )
 
-DEFAULT_STATE_UPDATE_NODE = "supervisor_logic_node"
+DEFAULT_STATE_UPDATE_NODE = "supervisor_policy_node"
 
 
 class StateUpdate(BaseModel):

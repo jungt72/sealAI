@@ -35,7 +35,7 @@ SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 
 CONFIRM_GO_AS_NODE = "confirm_recommendation_node"
-PARAMETERS_PATCH_AS_NODE = "supervisor_logic_node"
+PARAMETERS_PATCH_AS_NODE = "supervisor_policy_node"
 
 
 class LangGraphV2Request(BaseModel):

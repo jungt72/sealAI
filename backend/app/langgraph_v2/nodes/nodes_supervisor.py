@@ -55,6 +55,9 @@ ACTION_ASK_USER = "ASK_USER"
 ACTION_RUN_PANEL_CALC = "RUN_PANEL_CALC"
 ACTION_RUN_PANEL_MATERIAL = "RUN_PANEL_MATERIAL"
 ACTION_RUN_PANEL_NORMS_RAG = "RUN_PANEL_NORMS_RAG"
+ACTION_RUN_COMPARISON = "RUN_COMPARISON"
+ACTION_RUN_TROUBLESHOOTING = "RUN_TROUBLESHOOTING"
+ACTION_CONFIRM_RECOMMENDATION = "RUN_CONFIRM"
 ACTION_FINALIZE = "FINALIZE"
 
 MAX_SUPERVISOR_ROUNDS = 3
@@ -64,6 +67,9 @@ _ACTION_COSTS: Dict[str, int] = {
     ACTION_RUN_PANEL_CALC: 1,
     ACTION_RUN_PANEL_MATERIAL: 2,
     ACTION_RUN_PANEL_NORMS_RAG: 3,
+    ACTION_RUN_COMPARISON: 1,
+    ACTION_RUN_TROUBLESHOOTING: 2,
+    ACTION_CONFIRM_RECOMMENDATION: 1,
     ACTION_FINALIZE: 0,
 }
 
@@ -204,6 +210,10 @@ def _coerce_candidates(items: List[CandidateItem | Dict[str, Any]] | None) -> Li
 
 def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("supervisor_policy_node", state)
+    _maybe_set_recommendation_go(state)
+    missing = _infer_missing_params(state, _REQUIRED_PARAMS_FOR_READY)
+    coverage_score = _compute_coverage(_REQUIRED_PARAMS_FOR_READY, missing)
+    recommendation_ready = coverage_score >= _READY_THRESHOLD
     questions = _coerce_questions(state.open_questions)
     derived = False
     if not questions:
@@ -222,8 +232,31 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
 
     reason = "default_finalize"
     action = ACTION_FINALIZE
+    goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
 
-    if budget.remaining <= 0:
+    if goal in ("smalltalk", "out_of_scope"):
+        reason = "non_technical_goal"
+        action = ACTION_FINALIZE
+    elif goal == "troubleshooting_leakage":
+        reason = "troubleshooting_flow"
+        action = ACTION_RUN_TROUBLESHOOTING
+    elif goal == "explanation_or_comparison":
+        comparison_notes = getattr(state.working_memory, "comparison_notes", {}) if state.working_memory else {}
+        has_comparison = bool(comparison_notes.get("comparison_text"))
+        has_rag = bool(comparison_notes.get("rag_context"))
+        if not has_comparison:
+            reason = "comparison_missing"
+            action = ACTION_RUN_COMPARISON
+        elif bool(getattr(state, "requires_rag", False)) and not has_rag:
+            reason = "comparison_needs_rag"
+            action = ACTION_RUN_PANEL_NORMS_RAG
+        else:
+            reason = "comparison_ready"
+            action = ACTION_FINALIZE
+    elif recommendation_ready and not state.recommendation_go:
+        reason = "await_recommendation_go"
+        action = ACTION_CONFIRM_RECOMMENDATION
+    elif budget.remaining <= 0:
         reason = "budget_exhausted"
         action = ACTION_FINALIZE
     elif round_index >= MAX_SUPERVISOR_ROUNDS:
@@ -288,6 +321,10 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         "budget": updated_budget,
         "phase": PHASE.SUPERVISOR,
         "last_node": "supervisor_policy_node",
+        "missing_params": missing,
+        "coverage_gaps": missing,
+        "coverage_score": coverage_score,
+        "recommendation_ready": recommendation_ready,
     }
     if derived:
         patch["open_questions"] = questions
@@ -571,5 +608,8 @@ __all__ = [
     "ACTION_RUN_PANEL_CALC",
     "ACTION_RUN_PANEL_MATERIAL",
     "ACTION_RUN_PANEL_NORMS_RAG",
+    "ACTION_RUN_COMPARISON",
+    "ACTION_RUN_TROUBLESHOOTING",
+    "ACTION_CONFIRM_RECOMMENDATION",
     "ACTION_FINALIZE",
 ]
