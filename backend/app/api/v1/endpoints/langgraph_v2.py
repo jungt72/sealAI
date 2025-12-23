@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import uuid
+from datetime import datetime
 from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -34,6 +35,10 @@ logger = logging.getLogger(__name__)
 SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 DEDUP_TTL_SEC = int(os.getenv("LANGGRAPH_V2_DEDUP_TTL_SEC", "900"))
+
+
+def _lg_trace_enabled() -> bool:
+    return os.getenv("SEALAI_LG_TRACE") == "1"
 
 try:
     from redis.asyncio import Redis
@@ -170,6 +175,79 @@ def _parse_last_event_id(last_event_id: str | None, *, base_id: str) -> int:
     return 1
 
 
+def _get_dict_value(payload: Any, key: str) -> Any:
+    if isinstance(payload, dict):
+        return payload.get(key)
+    return None
+
+
+def _extract_trace_node(*, meta: Any = None, data: Any = None, state: Any = None) -> str | None:
+    for source in (meta, data):
+        node_value = _get_dict_value(source, "node") or _get_dict_value(source, "name")
+        if isinstance(node_value, str) and node_value:
+            return node_value
+        metadata = _get_dict_value(source, "metadata")
+        node_value = _get_dict_value(metadata, "node") or _get_dict_value(metadata, "name")
+        if isinstance(node_value, str) and node_value:
+            return node_value
+    if isinstance(state, SealAIState):
+        return state.last_node
+    if isinstance(state, dict):
+        node_value = state.get("last_node") or state.get("node") or state.get("name")
+        return node_value if isinstance(node_value, str) else None
+    return None
+
+
+def _extract_trace_phase(*, data: Any = None, state: Any = None) -> str | None:
+    phase_value = _get_dict_value(data, "phase")
+    if isinstance(phase_value, str) and phase_value:
+        return phase_value
+    if isinstance(state, SealAIState):
+        return state.phase
+    if isinstance(state, dict):
+        phase_value = state.get("phase")
+        return phase_value if isinstance(phase_value, str) else None
+    return None
+
+
+def _extract_trace_action(*, data: Any = None, state: Any = None) -> str | None:
+    for key in ("supervisor_action", "supervisor_decision", "action"):
+        action_value = _get_dict_value(data, key)
+        if isinstance(action_value, str) and action_value:
+            return action_value
+    working_memory = _get_dict_value(data, "working_memory")
+    action_value = _get_dict_value(working_memory, "supervisor_decision")
+    if isinstance(action_value, str) and action_value:
+        return action_value
+    if isinstance(state, SealAIState):
+        action_value = getattr(state.working_memory, "supervisor_decision", None)
+        return action_value if isinstance(action_value, str) else None
+    if isinstance(state, dict):
+        working_memory = state.get("working_memory")
+        action_value = _get_dict_value(working_memory, "supervisor_decision")
+        return action_value if isinstance(action_value, str) else None
+    return None
+
+
+def _build_trace_payload(
+    *,
+    mode: str,
+    data: Any,
+    meta: Any,
+    state: Any,
+) -> Dict[str, str]:
+    node_name = _extract_trace_node(meta=meta, data=data, state=state)
+    phase = _extract_trace_phase(data=data, state=state)
+    action = _extract_trace_action(data=data, state=state)
+    payload = {
+        "node": node_name,
+        "type": mode,
+        "phase": phase,
+        "action": action,
+    }
+    return {key: value for key, value in payload.items() if value}
+
+
 _DEDUP_REDIS: Redis | None = None
 
 
@@ -214,6 +292,9 @@ async def _event_stream_v2(
         base_id = req.client_msg_id or request_id or str(uuid.uuid4())
         seq = _parse_last_event_id(last_event_id, base_id=base_id)
         graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id)
+        trace_enabled = _lg_trace_enabled()
+        metadata = config.get("metadata") if isinstance(config, dict) else {}
+        run_id = metadata.get("run_id") if isinstance(metadata, dict) else None
         initial_state = SealAIState(
             user_id=user_id,
             thread_id=req.chat_id,
@@ -224,6 +305,42 @@ async def _event_stream_v2(
         token_count = 0
         done_sent = False
         latest_state: SealAIState | Dict[str, Any] = initial_state
+        last_trace_signature: tuple[Any, Any, Any, Any] | None = None
+
+        async def _emit_trace(mode: str, *, data: Any = None, meta: Any = None, state: Any = None) -> None:
+            nonlocal seq, last_trace_signature
+            if not trace_enabled:
+                return
+            payload = _build_trace_payload(mode=mode, data=data, meta=meta, state=state)
+            if not payload:
+                return
+            signature = (
+                payload.get("node"),
+                payload.get("type"),
+                payload.get("phase"),
+                payload.get("action"),
+            )
+            if signature == last_trace_signature:
+                return
+            last_trace_signature = signature
+            payload["ts"] = datetime.utcnow().isoformat() + "Z"
+            logger.info(
+                "langgraph_v2_trace",
+                extra={
+                    "thread_id": req.chat_id,
+                    "chat_id": req.chat_id,
+                    "user_id": user_id,
+                    "run_id": run_id,
+                    "request_id": request_id,
+                    "node": payload.get("node"),
+                    "event_type": payload.get("type"),
+                    "phase": payload.get("phase"),
+                    "supervisor_action": payload.get("action"),
+                },
+            )
+            event_id = f"{base_id}:{seq}"
+            seq += 1
+            await queue.put(_format_sse("trace", payload, event_id=event_id))
 
         async def _producer() -> None:
             nonlocal emitted_any_token, latest_state, token_count, done_sent, seq
@@ -282,6 +399,7 @@ async def _event_stream_v2(
                                             "chat_id": req.chat_id,
                                         },
                                     )
+                                await _emit_trace("messages", data=None, meta=meta, state=latest_state)
                             continue
 
                         if mode == "values":
@@ -289,6 +407,7 @@ async def _event_stream_v2(
                                 latest_state = data
                             elif isinstance(data, dict):
                                 latest_state = data
+                            await _emit_trace("values", data=data, meta=None, state=latest_state)
                             continue
 
                     # Unexpected shape: treat as terminal state-like output.
@@ -589,6 +708,15 @@ async def patch_parameters(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     chat_id = (body.chat_id or "").strip()
     try:
+        if PARAM_SYNC_DEBUG:
+            logger.info(
+                "langgraph_v2_parameters_patch_payload",
+                extra={
+                    "request_id": request_id,
+                    "chat_id": chat_id,
+                    "parameters": body.parameters,
+                },
+            )
         if not chat_id:
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
         patch = sanitize_v2_parameter_patch(body.parameters)
@@ -638,6 +766,16 @@ async def patch_parameters(
             detail=error_detail("invalid_parameters", request_id=request_id, message=str(exc)),
         ) from exc
     except InvalidUpdateError as exc:
+        if PARAM_SYNC_DEBUG:
+            logger.warning(
+                "langgraph_v2_parameters_patch_invalid_update",
+                exc_info=exc,
+                extra={
+                    "request_id": request_id,
+                    "chat_id": chat_id,
+                    "patch_keys": sorted(patch.keys()) if isinstance(patch, dict) else [],
+                },
+            )
         raise HTTPException(
             status_code=400,
             detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc)),

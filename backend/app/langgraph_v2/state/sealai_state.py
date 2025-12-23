@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Dict, List, Optional
 
 from langchain_core.messages import BaseMessage
@@ -52,6 +53,24 @@ class Intent(BaseModel):
     def _normalize_knowledge_type(cls, value: Any) -> Any:
         """LLM-Rohoutput (de/en) auf canonical KnowledgeType mappen."""
         return normalize_knowledge_type(value)
+
+
+_NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
+
+
+def _coerce_number(value: Any, field_name: str) -> Any:
+    if value is None or isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        normalized = trimmed.replace(",", ".")
+        match = _NUMBER_PATTERN.search(normalized)
+        if not match:
+            raise ValueError(f"{field_name} must be a number (e.g. 10 or 10.5)")
+        return float(match.group(0))
+    return value
 
 
 class CalcResults(BaseModel):
@@ -222,6 +241,11 @@ class TechnicalParameters(BaseModel):
     lifespan: Optional[str] = None
     application_type: Optional[str] = None
     food_grade: Optional[str] = None
+
+    @field_validator("pressure_bar", mode="before")
+    @classmethod
+    def _normalize_pressure_bar(cls, value: Any) -> Any:
+        return _coerce_number(value, "pressure_bar")
 
     # wir erlauben zusätzliche Keys, damit zukünftige Felder nicht wegfallen
     model_config = ConfigDict(extra="allow", populate_by_name=True)

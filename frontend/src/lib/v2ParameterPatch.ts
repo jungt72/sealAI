@@ -45,6 +45,12 @@ export async function patchV2Parameters(opts: {
   token: string;
   parameters: V2ParametersPatch;
 }): Promise<void> {
+  if (process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1") {
+    console.log("[param-sync] patch_payload", {
+      chat_id: opts.chatId,
+      parameters: opts.parameters,
+    });
+  }
   const res = await fetch("/api/v1/langgraph/parameters/patch", {
     method: "POST",
     headers: {
@@ -59,3 +65,36 @@ export async function patchV2Parameters(opts: {
   }
 }
 
+export async function fetchV2StateParameters(opts: {
+  chatId: string;
+  token: string;
+  signal?: AbortSignal;
+}): Promise<V2ParametersPatch> {
+  const url = `/api/v1/langgraph/state?thread_id=${encodeURIComponent(opts.chatId)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${opts.token}`,
+    },
+    signal: opts.signal,
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(msg || `HTTP ${res.status}`);
+  }
+  const body = await res.json().catch(() => ({}));
+  if (body && typeof body.parameters === "object" && body.parameters) {
+    return body.parameters as V2ParametersPatch;
+  }
+  return {};
+}
+
+export async function patchV2ParametersAndFetchState(opts: {
+  chatId: string;
+  token: string;
+  parameters: V2ParametersPatch;
+  signal?: AbortSignal;
+}): Promise<V2ParametersPatch> {
+  await patchV2Parameters(opts);
+  return fetchV2StateParameters({ chatId: opts.chatId, token: opts.token, signal: opts.signal });
+}
