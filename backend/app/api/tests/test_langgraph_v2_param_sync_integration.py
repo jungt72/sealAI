@@ -32,6 +32,7 @@ from starlette.requests import Request  # noqa: E402
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
 from app.api.v1.endpoints import state as state_endpoint  # noqa: E402
 from app.langgraph_v2.utils.parameter_patch import ParametersPatchRequest  # noqa: E402
+from app.services.auth.dependencies import RequestUser  # noqa: E402
 
 
 def _request() -> Request:
@@ -45,14 +46,15 @@ def test_param_patch_state_chat_config_alignment(monkeypatch):
     chat_id = "chat-param-sync"
     user_id = "user-param-sync"
     request = _request()
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test")
 
     patch_body = ParametersPatchRequest(
         chat_id=chat_id,
         parameters={"medium": "oil", "pressure_bar": 2},
     )
-    asyncio.run(endpoint.patch_parameters(patch_body, request, username=user_id))
+    asyncio.run(endpoint.patch_parameters(patch_body, request, user=user))
 
-    state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, username=user_id))
+    state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, user=user))
     assert state_response["parameters"]["medium"] == "oil"
     assert state_response["parameters"]["pressure_bar"] == 2
     assert state_response["config"]["configurable"]["thread_id"] == f"{user_id}|{chat_id}"
