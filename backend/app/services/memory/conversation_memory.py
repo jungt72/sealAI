@@ -27,19 +27,34 @@ def _redis() -> Redis:
     return Redis.from_url(REDIS_URL, decode_responses=True)
 
 
-def _stm_key(chat_id: str) -> str:
-    return f"{STM_PREFIX}:{chat_id}"
+def _normalize_user_id(user_id: str | None) -> str | None:
+    if user_id is None:
+        return None
+    user_id = str(user_id).strip()
+    return user_id or None
 
 
-def _last_agent_key(chat_id: str) -> str:
-    return f"{_stm_key(chat_id)}:{_LAST_AGENT_SUFFIX}"
+def _stm_key(user_id: str | None, chat_id: str) -> str | None:
+    normalized_user = _normalize_user_id(user_id)
+    if not normalized_user or not chat_id:
+        return None
+    return f"{STM_PREFIX}:{normalized_user}:{chat_id}"
 
 
-def add_message(chat_id: str, role: str, content: str) -> None:
+def _last_agent_key(user_id: str | None, chat_id: str) -> str | None:
+    base = _stm_key(user_id, chat_id)
+    if not base:
+        return None
+    return f"{base}:{_LAST_AGENT_SUFFIX}"
+
+
+def add_message(user_id: str | None, chat_id: str, role: str, content: str) -> None:
     entry = json.dumps({"role": role, "content": content})
     try:
         r = _redis()
-        key = _stm_key(chat_id)
+        key = _stm_key(user_id, chat_id)
+        if not key:
+            return
         r.rpush(key, entry)
         r.ltrim(key, -STM_MAX_MSG, -1)
         r.expire(key, STM_TTL_SEC)
@@ -47,10 +62,12 @@ def add_message(chat_id: str, role: str, content: str) -> None:
         return
 
 
-def get_history(chat_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+def get_history(user_id: str | None, chat_id: str, limit: int = 20) -> List[Dict[str, Any]]:
     try:
         r = _redis()
-        key = _stm_key(chat_id)
+        key = _stm_key(user_id, chat_id)
+        if not key:
+            return []
         entries = r.lrange(key, -limit, -1)
         history: List[Dict[str, Any]] = []
         for entry in entries:
@@ -65,7 +82,7 @@ def get_history(chat_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         return []
 
 
-def set_last_agent(chat_id: str, agent: str) -> None:
+def set_last_agent(user_id: str | None, chat_id: str, agent: str) -> None:
     """Persist the last selected agent for a chat thread.
 
     The value is stored with the same TTL as the STM messages so that it
@@ -76,20 +93,24 @@ def set_last_agent(chat_id: str, agent: str) -> None:
         return
     try:
         r = _redis()
-        key = _last_agent_key(chat_id)
+        key = _last_agent_key(user_id, chat_id)
+        if not key:
+            return
         r.set(key, agent, ex=STM_TTL_SEC)
     except Exception:
         return
 
 
-def get_last_agent(chat_id: str) -> str | None:
+def get_last_agent(user_id: str | None, chat_id: str) -> str | None:
     """Return the previously stored agent identifier, if available."""
 
     if not chat_id:
         return None
     try:
         r = _redis()
-        key = _last_agent_key(chat_id)
+        key = _last_agent_key(user_id, chat_id)
+        if not key:
+            return None
         value = r.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -98,14 +119,16 @@ def get_last_agent(chat_id: str) -> str | None:
         return None
 
 
-def clear_last_agent(chat_id: str) -> None:
+def clear_last_agent(user_id: str | None, chat_id: str) -> None:
     """Remove the cached agent hint for the given chat thread."""
 
     if not chat_id:
         return
     try:
         r = _redis()
-        key = _last_agent_key(chat_id)
+        key = _last_agent_key(user_id, chat_id)
+        if not key:
+            return
         r.delete(key)
     except Exception:
         return
