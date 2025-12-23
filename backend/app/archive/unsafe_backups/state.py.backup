@@ -1,0 +1,175 @@
+# backend/app/api/v1/endpoints/state.py
+"""State management endpoints for LangGraph."""
+
+from __future__ import annotations
+
+from datetime import datetime
+import logging
+from typing import Any, Dict
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
+from app.langgraph_v2.state import SealAIState, SealParameterUpdate, TechnicalParameters
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+METADATA_FIELDS = (
+    "thread_id",
+    "user_id",
+    "run_id",
+    "phase",
+    "last_node",
+    "awaiting_user_input",
+    "recommendation_ready",
+)
+
+
+class StateUpdate(BaseModel):
+    """Request body for state updates."""
+
+    parameters: SealParameterUpdate
+    source: str | None = Field(
+        default=None,
+        description="Optional source flag (e.g., 'ui' or 'tool').",
+    )
+    timestamp: datetime | None = Field(
+        default=None,
+        description="Optional ISO timestamp provided by the client.",
+    )
+
+
+def _state_to_dict(values: Any) -> Dict[str, Any]:
+    if values is None:
+        return {}
+    if isinstance(values, SealAIState):
+        return values.model_dump(exclude_none=True)
+    if isinstance(values, dict):
+        return dict(values)
+    try:
+        return dict(values)
+    except Exception:
+        return {}
+
+
+def _serialize_parameters(raw: Any) -> Dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, TechnicalParameters):
+        return raw.model_dump(exclude_none=True)
+    if isinstance(raw, dict):
+        return {key: value for key, value in raw.items() if value is not None}
+    try:
+        return {key: value for key, value in dict(raw).items() if value is not None}
+    except Exception:
+        return {}
+
+
+def _collect_metadata(state_values: Dict[str, Any]) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {}
+    raw_metadata = state_values.get("metadata")
+    if isinstance(raw_metadata, dict):
+        metadata.update(raw_metadata)
+    for key in METADATA_FIELDS:
+        value = state_values.get(key)
+        if value is not None:
+            metadata[key] = value
+    return metadata
+
+
+@router.get("/state")
+async def get_state(
+    thread_id: str = Query(..., description="Thread ID"),
+    user_id: str = Query("frontend-user", description="User ID"),
+) -> Dict[str, Any]:
+    """Get current LangGraph state for a thread.
+
+    Returns the complete state including parameters, messages, etc.
+    """
+    try:
+        config = build_v2_config(thread_id=thread_id, user_id=user_id)
+        graph = await get_sealai_graph_v2()
+        snapshot = await graph.aget_state(config)
+
+        state_values = _state_to_dict(snapshot.values)
+        parameters = _serialize_parameters(state_values.get("parameters"))
+        metadata = _collect_metadata(state_values)
+
+        logger.info(
+            "state_get_success",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user_id,
+                "has_values": bool(snapshot.values),
+            },
+        )
+
+        return {
+            "state": state_values,
+            "parameters": parameters,
+            "metadata": metadata,
+            "next": snapshot.next,
+            "config": snapshot.config,
+        }
+    except Exception as e:
+        logger.error(
+            "state_get_error",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user_id,
+                "error": str(e),
+            },
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to get state: {str(e)}")
+
+
+@router.post("/state")
+async def update_state(
+    body: StateUpdate,
+    thread_id: str = Query(..., description="Thread ID"),
+    user_id: str = Query("frontend-user", description="User ID"),
+) -> Dict[str, Any]:
+    """Update parameters in LangGraph state.
+
+    This allows the frontend to directly update parameters without
+    sending a chat message. The state update will be reflected in
+    the next graph run.
+    """
+    sanitized_parameters = body.parameters.model_dump(exclude_none=True)
+    if not sanitized_parameters:
+        raise HTTPException(status_code=400, detail="No parameters provided")
+
+    try:
+        config = build_v2_config(thread_id=thread_id, user_id=user_id)
+        graph = await get_sealai_graph_v2()
+
+        await graph.aupdate_state(
+            config,
+            {"parameters": sanitized_parameters},
+        )
+
+        logger.info(
+            "state_update_success",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user_id,
+                "parameters": sanitized_parameters,
+                "source": body.source,
+                "timestamp": body.timestamp,
+            },
+        )
+
+        return {"ok": True, "parameters": sanitized_parameters}
+    except Exception as e:
+        logger.error(
+            "state_update_error",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user_id,
+                "error": str(e),
+            },
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to update state: {str(e)}")
