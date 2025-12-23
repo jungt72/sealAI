@@ -28,22 +28,25 @@ type SseState = {
 };
 
 const ENDPOINT_URL = "/api/chat";
+const LAST_EVENT_STORAGE_PREFIX = "sealai:sse:last_event_id:";
 
-function parseSseFrame(frame: string): { event?: string; data?: any } {
+function parseSseFrame(frame: string): { event?: string; data?: any; id?: string } {
   const lines = frame.split('\n').map(l => l.trimEnd());
   let event: string | undefined;
+  let id: string | undefined;
   const dataLines: string[] = [];
   for (const line of lines) {
     if (!line) continue;
+    if (line.startsWith('id:')) id = line.slice('id:'.length).trim();
     if (line.startsWith('event:')) event = line.slice('event:'.length).trim();
     if (line.startsWith('data:')) dataLines.push(line.slice('data:'.length).trim());
   }
   const dataRaw = dataLines.join('\n');
   if (!dataRaw) return { event };
   try {
-    return { event, data: JSON.parse(dataRaw) };
+    return { event, data: JSON.parse(dataRaw), id };
   } catch {
-    return { event, data: dataRaw };
+    return { event, data: dataRaw, id };
   }
 }
 
@@ -55,12 +58,21 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
   const [confirmCheckpoint, setConfirmCheckpoint] = useState<ConfirmCheckpointPayload | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const lastEventIdRef = useRef<string | null>(null);
 
   const endpointUrl = useMemo(() => ENDPOINT_URL, []);
 
   useEffect(() => {
     setConnected(Boolean(endpointUrl));
   }, [endpointUrl]);
+
+  useEffect(() => {
+    if (!chatId || typeof window === "undefined") {
+      lastEventIdRef.current = null;
+      return;
+    }
+    lastEventIdRef.current = sessionStorage.getItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
+  }, [chatId]);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
@@ -88,6 +100,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
       abortRef.current = controller;
       setStreaming(true);
 
+      const lastEventId = lastEventIdRef.current;
       try {
         const res = await fetch(endpointUrl, {
           method: 'POST',
@@ -95,6 +108,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
             'Content-Type': 'application/json',
             Accept: 'text/event-stream',
             Authorization: `Bearer ${token}`,
+            ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
           },
           body: JSON.stringify({
             input: trimmed,
@@ -124,7 +138,13 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
           buffer = parts.pop() || '';
 
           for (const part of parts) {
-            const { event, data } = parseSseFrame(part);
+            const { event, data, id } = parseSseFrame(part);
+            if (id) {
+              lastEventIdRef.current = id;
+              if (chatId && typeof window !== "undefined") {
+                sessionStorage.setItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`, id);
+              }
+            }
             if (event === 'token' && data && typeof data.text === 'string') {
               setText(prev => prev + data.text);
               continue;
@@ -138,11 +158,17 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
               setLastError(msg);
               setStreaming(false);
               abortRef.current = null;
+              if (chatId && typeof window !== "undefined") {
+                sessionStorage.removeItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
+              }
               return;
             }
             if (event === 'done') {
               setStreaming(false);
               abortRef.current = null;
+              if (chatId && typeof window !== "undefined") {
+                sessionStorage.removeItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
+              }
               return;
             }
           }

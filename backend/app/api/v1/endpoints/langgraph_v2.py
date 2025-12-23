@@ -33,6 +33,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
+DEDUP_TTL_SEC = int(os.getenv("LANGGRAPH_V2_DEDUP_TTL_SEC", "900"))
+
+try:
+    from redis.asyncio import Redis
+except Exception:  # pragma: no cover - optional dependency
+    Redis = None
 
 CONFIRM_GO_AS_NODE = "confirm_recommendation_node"
 PARAMETERS_PATCH_AS_NODE = "supervisor_policy_node"
@@ -47,10 +53,11 @@ class LangGraphV2Request(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Optional client metadata")
 
 
-def _format_sse(event: str, payload: Dict[str, Any]) -> bytes:
-    return (f"event: {event}\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n").encode(
-        "utf-8"
-    )
+def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> bytes:
+    prefix = f"id: {event_id}\n" if event_id else ""
+    return (
+        prefix + f"event: {event}\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    ).encode("utf-8")
 
 
 def _chunk_text(text: str, *, max_len: int = 700) -> list[str]:
@@ -147,15 +154,65 @@ def _is_message_chunk(token: BaseMessage) -> bool:
     return token.__class__.__name__.endswith("Chunk")
 
 
+def _parse_last_event_id(last_event_id: str | None, *, base_id: str) -> int:
+    if not last_event_id:
+        return 1
+    if ":" in last_event_id:
+        prefix, _, seq_raw = last_event_id.rpartition(":")
+        if prefix != base_id:
+            return 1
+        try:
+            return int(seq_raw) + 1
+        except (TypeError, ValueError):
+            return 1
+    if last_event_id.isdigit():
+        return int(last_event_id) + 1
+    return 1
+
+
+_DEDUP_REDIS: Redis | None = None
+
+
+async def _get_dedup_redis() -> Redis | None:
+    global _DEDUP_REDIS
+    if _DEDUP_REDIS is not None:
+        return _DEDUP_REDIS
+    if Redis is None:
+        return None
+    conn_string = os.getenv("LANGGRAPH_V2_REDIS_URL") or os.getenv("REDIS_URL")
+    if not conn_string:
+        return None
+    _DEDUP_REDIS = Redis.from_url(conn_string, decode_responses=True)
+    return _DEDUP_REDIS
+
+
+async def _claim_client_msg_id(*, user_id: str, chat_id: str, client_msg_id: str) -> bool:
+    if not client_msg_id:
+        return True
+    client = await _get_dedup_redis()
+    if client is None:
+        return True
+    key = f"langgraph_v2:dedup:{user_id}:{chat_id}:{client_msg_id}"
+    try:
+        claimed = await client.set(key, "1", nx=True, ex=DEDUP_TTL_SEC)
+        return bool(claimed)
+    except Exception:
+        logger.exception("langgraph_v2_dedup_failed", extra={"chat_id": chat_id, "user": user_id})
+        return True
+
+
 async def _event_stream_v2(
     req: LangGraphV2Request,
     *,
     user_id: str,
     request_id: str | None = None,
+    last_event_id: str | None = None,
 ) -> AsyncIterator[bytes]:
     stream_task: asyncio.Task[None] | None = None
     queue: asyncio.Queue[bytes | None] = asyncio.Queue()
     try:
+        base_id = req.client_msg_id or request_id or str(uuid.uuid4())
+        seq = _parse_last_event_id(last_event_id, base_id=base_id)
         graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id)
         initial_state = SealAIState(
             user_id=user_id,
@@ -169,7 +226,7 @@ async def _event_stream_v2(
         latest_state: SealAIState | Dict[str, Any] = initial_state
 
         async def _producer() -> None:
-            nonlocal emitted_any_token, latest_state, token_count, done_sent
+            nonlocal emitted_any_token, latest_state, token_count, done_sent, seq
             try:
                 iterator = graph.astream(
                     initial_state,
@@ -204,7 +261,15 @@ async def _event_stream_v2(
                             if text:
                                 emitted_any_token = True
                                 token_count += 1
-                                await queue.put(_format_sse("token", {"type": "token", "text": text}))
+                                event_id = f"{base_id}:{seq}"
+                                seq += 1
+                                await queue.put(
+                                    _format_sse(
+                                        "token",
+                                        {"type": "token", "text": text},
+                                        event_id=event_id,
+                                    )
+                                )
                                 if SSE_DEBUG:
                                     logger.info(
                                         "langgraph_v2_sse_event",
@@ -241,7 +306,11 @@ async def _event_stream_v2(
 
                 if _should_emit_confirm_checkpoint(result_state):
                     payload = build_confirm_checkpoint_payload(result_state)
-                    await queue.put(_format_sse("confirm_checkpoint", payload))
+                    event_id = f"{base_id}:{seq}"
+                    seq += 1
+                    await queue.put(
+                        _format_sse("confirm_checkpoint", payload, event_id=event_id)
+                    )
                     if SSE_DEBUG:
                         logger.info(
                             "langgraph_v2_sse_event",
@@ -258,7 +327,15 @@ async def _event_stream_v2(
                 final_text = (result_state.final_text or "")
                 if (not emitted_any_token) and final_text.strip():
                     for chunk in _chunk_text(final_text.strip()):
-                        await queue.put(_format_sse("token", {"type": "token", "text": chunk}))
+                        event_id = f"{base_id}:{seq}"
+                        seq += 1
+                        await queue.put(
+                            _format_sse(
+                                "token",
+                                {"type": "token", "text": chunk},
+                                event_id=event_id,
+                            )
+                        )
                         token_count += 1
                         if SSE_DEBUG:
                             logger.info(
@@ -281,7 +358,9 @@ async def _event_stream_v2(
                     "phase": result_state.phase,
                     "last_node": result_state.last_node,
                 }
-                await queue.put(_format_sse("done", done_payload))
+                event_id = f"{base_id}:{seq}"
+                seq += 1
+                await queue.put(_format_sse("done", done_payload, event_id=event_id))
                 done_sent = True
                 if SSE_DEBUG:
                     logger.info(
@@ -314,12 +393,17 @@ async def _event_stream_v2(
                     if is_dependency_unavailable_error(exc)
                     else "internal_error"
                 )
+                event_id = f"{base_id}:{seq}"
+                seq += 1
                 await queue.put(
                     _format_sse(
                         "error",
                         {"type": "error", "message": message, "request_id": request_id},
+                        event_id=event_id,
                     )
                 )
+                event_id = f"{base_id}:{seq}"
+                seq += 1
                 await queue.put(
                     _format_sse(
                         "done",
@@ -329,6 +413,7 @@ async def _event_stream_v2(
                             "request_id": request_id,
                             "client_msg_id": req.client_msg_id,
                         },
+                        event_id=event_id,
                     )
                 )
             finally:
@@ -342,6 +427,7 @@ async def _event_stream_v2(
                 break
             yield item
     except asyncio.CancelledError:
+        event_id = f"{req.client_msg_id or request_id or 'stream'}:1"
         yield _format_sse(
             "done",
             {
@@ -350,6 +436,7 @@ async def _event_stream_v2(
                 "request_id": request_id,
                 "client_msg_id": req.client_msg_id,
             },
+            event_id=event_id,
         )
         return
     except Exception as exc:  # pragma: no cover
@@ -365,10 +452,13 @@ async def _event_stream_v2(
             },
         )
         message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
+        event_id = f"{req.client_msg_id or request_id or 'stream'}:1"
         yield _format_sse(
             "error",
             {"type": "error", "message": message, "request_id": request_id},
+            event_id=event_id,
         )
+        event_id = f"{req.client_msg_id or request_id or 'stream'}:2"
         yield _format_sse(
             "done",
             {
@@ -377,6 +467,7 @@ async def _event_stream_v2(
                 "request_id": request_id,
                 "client_msg_id": req.client_msg_id,
             },
+            event_id=event_id,
         )
     finally:
         if stream_task and not stream_task.done():
@@ -392,6 +483,22 @@ async def langgraph_chat_v2_endpoint(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     if not request_id:
         request_id = str(uuid.uuid4())
+    last_event_id = raw_request.headers.get("Last-Event-ID")
+    if request.client_msg_id:
+        claimed = await _claim_client_msg_id(
+            user_id=user.user_id,
+            chat_id=request.chat_id,
+            client_msg_id=request.client_msg_id,
+        )
+        if not claimed:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "duplicate_client_msg_id",
+                    request_id=request_id,
+                    client_msg_id=request.client_msg_id,
+                ),
+            )
     logger.info(
         "langgraph_v2_chat_request",
         extra={
@@ -400,6 +507,7 @@ async def langgraph_chat_v2_endpoint(
             "user": user.user_id,
             "username": user.username,
             "client_msg_id": request.client_msg_id,
+            "last_event_id": last_event_id,
         },
     )
     headers = {
@@ -410,7 +518,12 @@ async def langgraph_chat_v2_endpoint(
     if request_id:
         headers["X-Request-Id"] = request_id
     return StreamingResponse(
-        _event_stream_v2(request, user_id=user.user_id, request_id=request_id),
+        _event_stream_v2(
+            request,
+            user_id=user.user_id,
+            request_id=request_id,
+            last_event_id=last_event_id,
+        ),
         media_type="text/event-stream",
         headers=headers,
     )

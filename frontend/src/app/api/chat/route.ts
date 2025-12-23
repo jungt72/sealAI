@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
   if (isPlainObject(body.metadata)) payload.metadata = body.metadata;
 
   const url = backendLangGraphChatEndpoint();
+  const lastEventId = req.headers.get("last-event-id") ?? "";
 
   let backendResp: Response;
   try {
@@ -104,6 +105,7 @@ export async function POST(req: NextRequest) {
         Accept: "text/event-stream",
         Authorization: authHeader,
         "X-Request-Id": request_id,
+        ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
       },
       body: JSON.stringify(payload),
       cache: "no-store",
