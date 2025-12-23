@@ -3,12 +3,13 @@ import app.langgraph_v2.sealai_graph_v2  # noqa: F401
 from app.langgraph_v2.nodes.nodes_supervisor import (
     ACTION_ASK_USER,
     ACTION_FINALIZE,
+    ACTION_RUN_COMPARISON,
     ACTION_RUN_PANEL_CALC,
     ACTION_RUN_PANEL_MATERIAL,
     ACTION_RUN_PANEL_NORMS_RAG,
     supervisor_policy_node,
 )
-from app.langgraph_v2.state import Budget, CalcResults, CandidateItem, SealAIState
+from app.langgraph_v2.state import Budget, CalcResults, CandidateItem, Intent, SealAIState, WorkingMemory
 
 
 def test_supervisor_policy_budget_exhausted_finalizes() -> None:
@@ -57,3 +58,34 @@ def test_supervisor_policy_calc_then_material() -> None:
     )
     patch_material = supervisor_policy_node(state_material)
     assert patch_material["next_action"] == ACTION_RUN_PANEL_MATERIAL
+
+
+def test_supervisor_policy_comparison_runs_comparison_first() -> None:
+    state = SealAIState(
+        intent=Intent(goal="explanation_or_comparison"),
+        requires_rag=True,
+    )
+    patch = supervisor_policy_node(state)
+    assert patch["next_action"] == ACTION_RUN_COMPARISON
+
+
+def test_supervisor_policy_comparison_runs_rag_after_comparison() -> None:
+    wm = WorkingMemory(comparison_notes={"comparison_text": "A vs B"})
+    state = SealAIState(
+        intent=Intent(goal="explanation_or_comparison"),
+        requires_rag=True,
+        working_memory=wm,
+    )
+    patch = supervisor_policy_node(state)
+    assert patch["next_action"] == ACTION_RUN_PANEL_NORMS_RAG
+
+
+def test_supervisor_policy_comparison_finalizes_without_rag() -> None:
+    wm = WorkingMemory(comparison_notes={"comparison_text": "A vs B", "rag_context": "ctx"})
+    state = SealAIState(
+        intent=Intent(goal="explanation_or_comparison"),
+        requires_rag=False,
+        working_memory=wm,
+    )
+    patch = supervisor_policy_node(state)
+    assert patch["next_action"] == ACTION_FINALIZE

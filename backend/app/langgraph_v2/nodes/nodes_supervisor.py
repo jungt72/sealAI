@@ -522,45 +522,9 @@ def panel_material_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
 
 def panel_norms_rag_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("panel_norms_rag_node", state)
-    from app.langgraph_v2.utils.rag_tool import search_knowledge_base
-    from app.langgraph_v2.state import Source
+    from app.langgraph_v2.nodes.nodes_flows import rag_support_node
 
-    user_text = latest_user_text(state.messages or []) or "Normenrecherche"
-    rag_context = search_knowledge_base.invoke(
-        {
-            "query": user_text,
-            "category": "norms",
-            "k": 3,
-            "tenant": state.user_id,
-        }
-    )
-    rag_text = (rag_context or "").strip() if isinstance(rag_context, str) else str(rag_context)
-
-    references: List[str] = []
-    for line in rag_text.splitlines():
-        line = line.strip()
-        if line.lower().startswith("quelle:"):
-            source_value = line.split(":", 1)[1].strip()
-            if source_value:
-                references.append(source_value)
-
-    existing_sources = list(state.sources or [])
-    seen_sources = {src.source for src in existing_sources if getattr(src, "source", None)}
-    for ref in references:
-        if ref in seen_sources:
-            continue
-        existing_sources.append(Source(snippet=None, source=ref, metadata={"panel": "norms_rag"}))
-        seen_sources.add(ref)
-
-    wm = state.working_memory or WorkingMemory()
-    wm = wm.model_copy(update={"panel_norms_rag": {"rag_context": rag_text, "rag_reference": references}})
-    return {
-        "working_memory": wm,
-        "sources": existing_sources,
-        "requires_rag": True,
-        "phase": PHASE.RAG,
-        "last_node": "panel_norms_rag_node",
-    }
+    return rag_support_node(state, *_args, **_kwargs)
 
 
 def supervisor_route(state: SealAIState) -> str:

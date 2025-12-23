@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.sealai_graph_v2 import log_state_debug
-from app.langgraph_v2.state import CalcResults, SealAIState, WorkingMemory
+from app.langgraph_v2.state import CalcResults, SealAIState, Source, WorkingMemory
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text
@@ -333,16 +333,8 @@ def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
 
 def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("rag_support_node", state)
+    intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
     notes = dict(state.working_memory.comparison_notes if state.working_memory else {})
-    if not bool(getattr(state, "requires_rag", False)):
-        for key in ("rag_context", "rag_reference", "rag_note"):
-            notes.pop(key, None)
-        wm = _update_working_memory(state, {"comparison_notes": notes})
-        return {
-            "working_memory": wm,
-            "phase": PHASE.KNOWLEDGE,
-            "last_node": "rag_support_node",
-        }
     user_text = latest_user_text(state.get("messages")) or ""
     rag_context = search_knowledge_base.invoke({
         "query": user_text or "Aktuelle technische Frage",
@@ -379,9 +371,24 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             seen.add(src)
             deduped.append(src)
         notes["rag_reference"] = deduped
-    wm = _update_working_memory(state, {"comparison_notes": notes})
+
+    sources = list(state.sources or [])
+    seen_sources = {src.source for src in sources if getattr(src, "source", None)}
+    if notes.get("rag_reference"):
+        for src in notes.get("rag_reference") or []:
+            if src in seen_sources:
+                continue
+            sources.append(Source(snippet=None, source=src, metadata={"panel": "rag_support"}))
+            seen_sources.add(src)
+
+    if intent_goal == "explanation_or_comparison":
+        wm = _update_working_memory(state, {"comparison_notes": notes})
+    else:
+        wm = _update_working_memory(state, {"panel_norms_rag": notes})
+
     return {
         "working_memory": wm,
+        "sources": sources,
         # Phase: explizit RAG
         "phase": PHASE.RAG,
         "last_node": "rag_support_node",
