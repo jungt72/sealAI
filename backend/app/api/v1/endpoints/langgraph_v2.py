@@ -40,6 +40,25 @@ DEDUP_TTL_SEC = int(os.getenv("LANGGRAPH_V2_DEDUP_TTL_SEC", "900"))
 def _lg_trace_enabled() -> bool:
     return os.getenv("SEALAI_LG_TRACE") == "1"
 
+
+def _state_values_to_dict(values: Any) -> Dict[str, Any]:
+    if values is None:
+        return {}
+    if isinstance(values, SealAIState):
+        return values.model_dump(exclude_none=True)
+    if isinstance(values, dict):
+        return dict(values)
+    try:
+        return dict(values)
+    except Exception:
+        return {}
+
+
+def _short_user_id(user_id: str | None) -> str:
+    if not user_id:
+        return ""
+    return f"{user_id[:8]}..." if len(user_id) > 8 else user_id
+
 try:
     from redis.asyncio import Redis
 except Exception:  # pragma: no cover - optional dependency
@@ -707,6 +726,7 @@ async def patch_parameters(
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     chat_id = (body.chat_id or "").strip()
+    patch: Dict[str, Any] = {}
     try:
         if PARAM_SYNC_DEBUG:
             logger.info(
@@ -730,19 +750,30 @@ async def patch_parameters(
         )
         assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
         snapshot = await graph.aget_state(config)
-        state_values = snapshot.values if isinstance(snapshot.values, dict) else {}
+        state_values = _state_values_to_dict(snapshot.values)
         existing_params = state_values.get("parameters") if isinstance(state_values, dict) else {}
         merged = merge_parameters(existing_params, patch)
 
         if PARAM_SYNC_DEBUG:
+            patch_keys = sorted(patch.keys())
+            types = {key: type(patch.get(key)).__name__ for key in patch_keys}
+            before = {}
+            after = {}
+            if isinstance(existing_params, dict):
+                before = {key: existing_params.get(key) for key in patch_keys}
+            if isinstance(merged, dict):
+                after = {key: merged.get(key) for key in patch_keys}
             configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
             logger.info(
                 "langgraph_v2_parameters_patch_debug",
                 extra={
                     "request_id": request_id,
                     "chat_id": chat_id,
-                    "user": user.user_id,
-                    "patch_keys": sorted(patch.keys()),
+                    "user": _short_user_id(user.user_id),
+                    "patch_keys": patch_keys,
+                    "patch_types": types,
+                    "patch_before": before,
+                    "patch_after": after,
                     "merged_keys": sorted(merged.keys()) if isinstance(merged, dict) else [],
                     "checkpoint_thread_id": configurable.get("thread_id"),
                     "checkpoint_ns": configurable.get("checkpoint_ns"),
@@ -761,6 +792,17 @@ async def patch_parameters(
     except HTTPException:
         raise
     except ValueError as exc:
+        if PARAM_SYNC_DEBUG:
+            logger.warning(
+                "langgraph_v2_parameters_patch_invalid_payload",
+                extra={
+                    "request_id": request_id,
+                    "chat_id": chat_id,
+                    "user": _short_user_id(user.user_id),
+                    "error": str(exc),
+                    "patch_keys": sorted(patch.keys()) if isinstance(patch, dict) else [],
+                },
+            )
         raise HTTPException(
             status_code=400,
             detail=error_detail("invalid_parameters", request_id=request_id, message=str(exc)),

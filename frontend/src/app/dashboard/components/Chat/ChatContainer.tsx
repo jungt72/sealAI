@@ -10,6 +10,12 @@ import type { Message } from "@/types/chat";
 import { useChatSseV2 } from "@/lib/useChatSseV2";
 import { useChatThreadId } from "@/lib/useChatThreadId";
 import { fetchV2StateParameters, patchV2Parameters } from "@/lib/v2ParameterPatch";
+import {
+  buildDirtyPatch,
+  cleanParameterPatch,
+  mergeServerParameters,
+  type ParameterSyncState,
+} from "@/lib/parameterSync";
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -55,8 +61,17 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const storedChatId = useChatThreadId(preferredChatId);
   const chatId = preferredChatId ?? storedChatId;
   const token = useAccessToken();
-  const { connected, streaming, text, lastError, confirmCheckpoint, send, cancel } =
-    useChatSseV2({ chatId, token });
+  const {
+    connected,
+    streaming,
+    text,
+    lastError,
+    confirmCheckpoint,
+    send,
+    cancel,
+    lastEventId,
+    lastDoneEvent,
+  } = useChatSseV2({ chatId, token });
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -65,7 +80,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const [confirmActionError, setConfirmActionError] = useState<string | null>(null);
 
   // ===== Voll-Parameter-State (für 1:1 Sync) =====
-  const [parameters, setParameters] = useState<SealParameters>({});
+  const [paramState, setParamState] = useState<ParameterSyncState>({
+    values: {},
+    dirty: new Set(),
+  });
+  const parameters = paramState.values;
   const [showParamDrawer, setShowParamDrawer] = useState(false);
   const [paramToast, setParamToast] = useState<string | null>(null);
   const prevStreamForStateRef = useRef(false);
@@ -74,6 +93,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const patchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const paramSyncTokenRef = useRef(0);
   const chatIdRef = useRef<string | null>(chatId);
+  const lastSseEventIdRef = useRef<string | null>(null);
   const autoPatchOnChange = process.env.NEXT_PUBLIC_AUTO_PATCH_PARAMS === "1";
   const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
 
@@ -82,12 +102,13 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     chatIdRef.current = chatId;
     setMessages([]);
     setHasStarted(false);
-    setParameters({});
+    setParamState({ values: {}, dirty: new Set() });
     setShowParamDrawer(false);
     setParamToast(null);
     paramQueueRef.current = Promise.resolve();
     stateAbortRef.current?.abort();
     stateAbortRef.current = null;
+    lastSseEventIdRef.current = null;
     if (patchDebounceRef.current) {
       clearTimeout(patchDebounceRef.current);
       patchDebounceRef.current = null;
@@ -104,7 +125,39 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     };
   }, []);
 
+  useEffect(() => {
+    lastSseEventIdRef.current = lastEventId ?? null;
+  }, [lastEventId]);
+
   // ===== Öffnen per UI-Event (wie früher) =====
+  const applyLocalParameters = useCallback(
+    (patch: Partial<SealParameters>, opts?: { markDirty?: boolean; clearDirty?: boolean }) => {
+      if (!patch || typeof patch !== "object") return;
+      const { markDirty = false, clearDirty = false } = opts || {};
+      setParamState((prev) => {
+        const nextValues = { ...prev.values, ...patch };
+        const nextDirty = new Set(prev.dirty);
+        const keys = Object.keys(patch) as (keyof SealParameters)[];
+        if (markDirty) {
+          for (const key of keys) nextDirty.add(key);
+        }
+        if (clearDirty) {
+          for (const key of keys) nextDirty.delete(key);
+        }
+        return { values: nextValues, dirty: nextDirty };
+      });
+    },
+    [],
+  );
+
+  const applyServerParameters = useCallback((next: SealParameters, eventId?: string | null) => {
+    setParamState((prev) => ({
+      values: mergeServerParameters(prev.values, next, prev.dirty),
+      dirty: prev.dirty,
+      lastServerEventId: eventId ?? prev.lastServerEventId ?? null,
+    }));
+  }, []);
+
   useEffect(() => {
     const onUi = (ev: Event) => {
       const ua: any = (ev as CustomEvent<any>).detail ?? (ev as any);
@@ -114,7 +167,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       // optional: prefill/params mergen
       const pre = ua?.prefill ?? ua?.params;
       if (pre && typeof pre === "object") {
-        setParameters((prev) => ({ ...prev, ...pre }));
+        applyLocalParameters(pre, { markDirty: false });
       }
     };
     window.addEventListener("sealai:ui", onUi as EventListener);
@@ -125,7 +178,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       window.removeEventListener("sealai:ui_action", onUi as EventListener);
       window.removeEventListener("sealai:form:patch", onUi as EventListener);
     };
-  }, []);
+  }, [applyLocalParameters]);
 
   const enqueueParamTask = useCallback(<T,>(task: (tokenId: number) => Promise<T>) => {
     const tokenId = paramSyncTokenRef.current;
@@ -145,8 +198,9 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     token: string;
     patchedKeysCount: number;
     tokenId: number;
+    expectedEventId?: string | null;
   }) => {
-    const { expectedChatId, token, patchedKeysCount, tokenId } = opts;
+    const { expectedChatId, token, patchedKeysCount, tokenId, expectedEventId } = opts;
     if (shouldAbortParamTask(tokenId, expectedChatId)) return;
     stateAbortRef.current?.abort();
     const controller = new AbortController();
@@ -158,7 +212,10 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         signal: controller.signal,
       });
       if (shouldAbortParamTask(tokenId, expectedChatId)) return;
-      setParameters(next as SealParameters);
+      if (expectedEventId && lastSseEventIdRef.current && expectedEventId !== lastSseEventIdRef.current) {
+        return;
+      }
+      applyServerParameters(next as SealParameters, expectedEventId ?? null);
       if (paramSyncDebug) {
         const refreshedKeysCount = Object.keys(next || {}).length;
         console.log({
@@ -172,23 +229,25 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         stateAbortRef.current = null;
       }
     }
-  }, [paramSyncDebug, shouldAbortParamTask]);
+  }, [applyServerParameters, paramSyncDebug, shouldAbortParamTask]);
 
-  const refreshParameters = useCallback(async () => {
+  const refreshParameters = useCallback(async (opts?: { expectedEventId?: string | null }) => {
     if (!chatId || !token) return;
     return enqueueParamTask(async (tokenId) => {
-      await runRefresh({ expectedChatId: chatId, token, patchedKeysCount: 0, tokenId });
+      await runRefresh({
+        expectedChatId: chatId,
+        token,
+        patchedKeysCount: 0,
+        tokenId,
+        expectedEventId: opts?.expectedEventId ?? null,
+      });
     });
   }, [chatId, token, enqueueParamTask, runRefresh]);
 
   // ===== Backend Patch (übernimmt "Parameter übernehmen") =====
   const patchAllParameters = useCallback(async (patch: Partial<SealParameters>) => {
     if (!chatId || !token) return;
-    const cleaned: Record<string, any> = {};
-    for (const [k, v] of Object.entries(patch || {})) {
-      if (v === undefined || v === null || v === "") continue;
-      cleaned[k] = v;
-    }
+    const cleaned = cleanParameterPatch(patch);
     if (!Object.keys(cleaned).length) return;
 
     try {
@@ -220,42 +279,85 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, [autoPatchOnChange, patchAllParameters]);
 
   const onParamUpdate = useCallback((name: keyof SealParameters, value: string | number) => {
-    setParameters((prev) => {
-      const next = { ...prev, [name]: value };
-      schedulePatchOnChange(next);
-      return next;
+    if (paramSyncDebug) {
+      const normalized = cleanParameterPatch({ [name]: value });
+      const normalizedValue =
+        Object.prototype.hasOwnProperty.call(normalized, name) ? normalized[name] : undefined;
+      console.log("[param-sync] input_change", {
+        chat_id: chatId,
+        field: name,
+        raw_value: value,
+        normalized_value: normalizedValue,
+      });
+    }
+    setParamState((prev) => {
+      const nextValues = { ...prev.values, [name]: value };
+      const nextDirty = new Set(prev.dirty);
+      nextDirty.add(name);
+      schedulePatchOnChange(nextValues);
+      return { values: nextValues, dirty: nextDirty };
     });
-  }, [schedulePatchOnChange]);
+  }, [chatId, paramSyncDebug, schedulePatchOnChange]);
 
   const onParamSubmit = useCallback(async () => {
     try {
-      await patchAllParameters(parameters);
+      const cleaned = cleanParameterPatch(buildDirtyPatch(paramState.values, paramState.dirty));
+      if (paramSyncDebug) {
+        console.log("[param-sync] submit", {
+          chat_id: chatId,
+          dirty_keys: Array.from(paramState.dirty),
+          payload_keys: Object.keys(cleaned),
+        });
+      }
+      if (!Object.keys(cleaned).length) {
+        setParamToast("Keine Änderungen");
+        window.setTimeout(() => setParamToast(null), 1200);
+        return;
+      }
+      await patchAllParameters(cleaned);
+      setParamState((prev) => {
+        const nextDirty = new Set(prev.dirty);
+        for (const key of Object.keys(cleaned) as (keyof SealParameters)[]) {
+          nextDirty.delete(key);
+        }
+        return { values: prev.values, dirty: nextDirty };
+      });
       setParamToast("Parameter aktualisiert");
       window.setTimeout(() => setParamToast(null), 1500);
     } catch (e: any) {
       setParamToast(`Update fehlgeschlagen: ${String(e?.message || e)}`);
       window.setTimeout(() => setParamToast(null), 2500);
     }
-  }, [parameters, patchAllParameters]);
+  }, [chatId, paramState, paramSyncDebug, patchAllParameters]);
 
   useEffect(() => {
     if (!chatId || !token) return;
-    refreshParameters().catch((err) => {
+    refreshParameters({ expectedEventId: lastEventId ?? null }).catch((err) => {
       if (err?.name === "AbortError") return;
       console.warn("[param-sync] initial_state_fetch_failed", err);
     });
-  }, [chatId, token, refreshParameters]);
+  }, [chatId, token, lastEventId, refreshParameters]);
 
   useEffect(() => {
     const wasStreaming = prevStreamForStateRef.current;
     if (wasStreaming && !streaming) {
-      refreshParameters().catch((err) => {
+      refreshParameters({ expectedEventId: lastEventId ?? null }).catch((err) => {
         if (err?.name === "AbortError") return;
         console.warn("[param-sync] post_stream_state_fetch_failed", err);
       });
     }
     prevStreamForStateRef.current = streaming;
-  }, [streaming, refreshParameters]);
+  }, [streaming, lastEventId, refreshParameters]);
+
+  useEffect(() => {
+    if (!lastDoneEvent || !chatId) return;
+    const doneChatId = String(lastDoneEvent.data?.chat_id || "");
+    if (!doneChatId || doneChatId !== chatId) return;
+    refreshParameters({ expectedEventId: lastDoneEvent.id ?? null }).catch((err) => {
+      if (err?.name === "AbortError") return;
+      console.warn("[param-sync] done_event_state_fetch_failed", err);
+    });
+  }, [lastDoneEvent, chatId, refreshParameters]);
 
   // ===== Scroll "anchor-then-hold" =====
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -343,7 +445,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     // 1) Parameter direkt im Chat setzen: "/param pressure_bar=5 temperature_C=50 ..."
     const parsed = parseParamCommand(content);
     if (parsed) {
-      setParameters((prev) => ({ ...prev, ...parsed }));
+      applyLocalParameters(parsed, { clearDirty: true });
 
       // sofort patchen, damit Backend + UI synchron bleiben
       try {
@@ -369,7 +471,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     send(content);
     setInputValue("");
     setConfirmActionError(null);
-  }, [sendingDisabled, send, patchAllParameters]);
+  }, [sendingDisabled, send, patchAllParameters, applyLocalParameters]);
 
   const hasFirstToken = text.trim().length > 0;
 
