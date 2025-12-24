@@ -66,3 +66,29 @@ def test_param_patch_state_chat_config_alignment(monkeypatch):
     params = state_endpoint._serialize_parameters(state_values.get("parameters"))
     assert params["medium"] == "oil"
     assert params["pressure_bar"] == 2
+
+
+def test_param_patch_merges_existing_parameters(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
+
+    chat_id = "chat-param-merge"
+    user_id = "user-param-merge"
+    request = _request()
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test")
+
+    first_patch = ParametersPatchRequest(
+        chat_id=chat_id,
+        parameters={"medium": "oil"},
+    )
+    asyncio.run(endpoint.patch_parameters(first_patch, request, user=user))
+
+    second_patch = ParametersPatchRequest(
+        chat_id=chat_id,
+        parameters={"pressure_bar": 10},
+    )
+    asyncio.run(endpoint.patch_parameters(second_patch, request, user=user))
+
+    state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, user=user))
+    assert state_response["parameters"]["medium"] == "oil"
+    assert state_response["parameters"]["pressure_bar"] == 10
