@@ -38,12 +38,12 @@ fi
 
 docker_compose_available=0
 compose_cmd=""
-if ((docker_available)) && docker compose version >/dev/null 2>&1; then
-  docker_compose_available=1
-  compose_cmd="docker compose"
-elif command_exists docker-compose && docker-compose version >/dev/null 2>&1; then
+if command_exists docker-compose && docker-compose version >/dev/null 2>&1; then
   docker_compose_available=1
   compose_cmd="docker-compose"
+elif ((docker_available)) && docker compose version >/dev/null 2>&1; then
+  docker_compose_available=1
+  compose_cmd="docker compose"
 fi
 
 compose_ps_output="compose not available"
