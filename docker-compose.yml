@@ -51,8 +51,9 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/sealai
       KC_DB_USERNAME: sealai
-      KC_PROXY: edge
       KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "true"
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
     ports: ["8080:8080"]
