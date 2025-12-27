@@ -37,16 +37,21 @@ else
 fi
 
 docker_compose_available=0
+compose_cmd=""
 if ((docker_available)) && docker compose version >/dev/null 2>&1; then
   docker_compose_available=1
+  compose_cmd="docker compose"
+elif command_exists docker-compose && docker-compose version >/dev/null 2>&1; then
+  docker_compose_available=1
+  compose_cmd="docker-compose"
 fi
 
-compose_ps_output="docker compose not available"
+compose_ps_output="compose not available"
 if ((docker_compose_available)); then
-  if compose_ps_output=$(run_capture docker compose ps); then
+  if compose_ps_output=$(run_capture $compose_cmd ps); then
     :
   else
-    compose_ps_output="docker compose ps failed: ${compose_ps_output}"
+    compose_ps_output="compose ps failed: ${compose_ps_output}"
   fi
 fi
 
@@ -151,7 +156,7 @@ PY
 
 strapi_service_defined="unknown"
 if ((docker_compose_available)); then
-  if services_output=$(run_capture docker compose config --services); then
+  if services_output=$(run_capture $compose_cmd config --services); then
     if echo "$services_output" | grep -Fxq "strapi"; then
       strapi_service_defined="yes"
     else
@@ -166,8 +171,8 @@ postgres_version=""
 postgres_cmd=""
 postgres_note=""
 if ((docker_usable)) && container_running "postgres"; then
-  postgres_cmd="docker exec -it postgres psql -U postgres -c \"SELECT version();\""
-  if out=$(run_capture docker exec -it postgres psql -U postgres -c "SELECT version();"); then
+  postgres_cmd="docker exec postgres psql -U postgres -c \"SELECT version();\""
+  if out=$(run_capture docker exec postgres psql -U postgres -c "SELECT version();"); then
     postgres_version=$(printf '%s\n' "$out" | parse_psql_version)
   else
     postgres_note="first attempt failed: ${out}"
