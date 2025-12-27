@@ -1,7 +1,7 @@
 # SealAI Keycloak – enable health + metrics at build time (KC 25.x)
 # Path: keycloak/Dockerfile
 
-FROM quay.io/keycloak/keycloak:25.0.4
+FROM quay.io/keycloak/keycloak:26.4.7
 
 # Build-time features so /health/* works
 RUN /opt/keycloak/bin/kc.sh build \
