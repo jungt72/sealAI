@@ -1,0 +1,20 @@
+"use client";
+
+import ChatContainer from "./components/Chat/ChatContainer";
+import ContextSidebar from "./components/ContextSidebar";
+import { ContextStateProvider } from "./context/ContextStateProvider";
+
+export default function DashboardClient() {
+  return (
+    <ContextStateProvider>
+      <div className="flex min-h-screen flex-col bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <main className="mx-auto flex w-full max-w-7xl flex-1 gap-6 px-6 py-6">
+          <section className="flex min-h-[80vh] flex-1 flex-col gap-4">
+            <ChatContainer />
+          </section>
+          <ContextSidebar />
+        </main>
+      </div>
+    </ContextStateProvider>
+  );
+}

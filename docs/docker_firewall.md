@@ -10,6 +10,7 @@ The helper now:
 3. Inserts `OUTPUT -d <bridge-subnet> -j ACCEPT` at the top of the host’s `OUTPUT` chain so host processes can reach containers regardless of the broader `DROP`.
 4. Removes the redundant TCP port and `lo` accept rules that previously lived in `DOCKER-USER`, keeping the chain predictable and focused on subnet permissions.
 5. Reports every planned `iptables` command when invoked with `--dry-run`, and skips execution in that mode.
+6. Ensures DOCKER-USER already returns on `127.0.0.0/8` and inserts an `OUTPUT -d 127.0.0.0/8 -j ACCEPT` so local probes against `http://127.0.0.1:<port>` work even when the host policy is drop-all.
 
 All commands are logged as `[docker-firewall] …`, and the helper exits if any required binary (`ip`, `iptables`, or `python3`) is missing.
 

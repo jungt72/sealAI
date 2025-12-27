@@ -63,6 +63,23 @@ export function mergeServerParameters(
   return merged;
 }
 
+export function reconcileDirtyWithServer(
+  current: SealParameters,
+  incoming: SealParameters,
+  dirty: Set<keyof SealParameters>,
+): Set<keyof SealParameters> {
+  const nextDirty = new Set(dirty);
+  for (const [key, value] of Object.entries(incoming || {})) {
+    const typedKey = key as keyof SealParameters;
+    if (!nextDirty.has(typedKey)) continue;
+    if (value === undefined) continue;
+    if (current[typedKey] === value) {
+      nextDirty.delete(typedKey);
+    }
+  }
+  return nextDirty;
+}
+
 export function buildDirtyPatch(
   values: SealParameters,
   dirty: Set<keyof SealParameters>,

@@ -83,6 +83,16 @@ export async function fetchV2StateParameters(opts: {
     throw new Error(msg || `HTTP ${res.status}`);
   }
   const body = await res.json().catch(() => ({}));
+  if (process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1") {
+    const rawParams = body && typeof body.parameters === "object" ? body.parameters : {};
+    const keys = rawParams && typeof rawParams === "object" ? Object.keys(rawParams) : [];
+    console.log("[param-sync] state_payload", {
+      chat_id: opts.chatId,
+      keys: keys.slice(0, 8),
+      keys_count: keys.length,
+      pressure_bar: rawParams?.pressure_bar,
+    });
+  }
   if (body && typeof body.parameters === "object" && body.parameters) {
     return body.parameters as V2ParametersPatch;
   }

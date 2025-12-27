@@ -4,22 +4,20 @@ from typing import Any, Dict, Iterable, Mapping
 
 from pydantic import BaseModel, Field
 
+from app.langgraph_v2.state import TechnicalParameters
 
-ALLOWED_V2_PARAMETER_KEYS = {
-    # Core fields used for readiness/confirm gating.
-    "medium",
-    "temperature_C",
-    "pressure_bar",
-    "speed_rpm",
-    "shaft_diameter",
-    # Optional helpful fields (kept small on purpose).
-    "temperature_min",
-    "temperature_max",
-    "p_min",
-    "p_max",
-    "housing_diameter",
-    "housing_axial_space",
-}
+
+def _build_allowed_keys() -> set[str]:
+    keys: set[str] = set()
+    for name, field in TechnicalParameters.model_fields.items():
+        keys.add(name)
+        alias = getattr(field, "alias", None)
+        if isinstance(alias, str) and alias:
+            keys.add(alias)
+    return keys
+
+
+ALLOWED_V2_PARAMETER_KEYS = _build_allowed_keys()
 
 
 class ParametersPatchRequest(BaseModel):

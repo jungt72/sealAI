@@ -35,7 +35,6 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.15.0
     container_name: qdrant
-    command: ["./entrypoint.sh"]
     restart: unless-stopped
     ports: ["6333:6333", "6334:6334"]
     volumes:
@@ -47,7 +46,7 @@ services:
     container_name: keycloak
     depends_on: [postgres]
     restart: unless-stopped
-    env_file: [.env.dev]
+    env_file: [ ./.env.dev ]
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/sealai
@@ -59,7 +58,7 @@ services:
     ports: ["8080:8080"]
 
   backend:
-    image: ghcr.io/jungt72/sealai-backend:latest
+    image: sealai-backend:dev
     container_name: backend
     build: { context: ./backend }
     depends_on:
@@ -68,43 +67,48 @@ services:
       qdrant:   { condition: service_started }
       keycloak: { condition: service_started }
     restart: unless-stopped
-    env_file: [ ./backend/.env, ./.env.dev ]
+    env_file:
+      - ./backend/.env
+      - ./.env.dev
     environment:
-      ROUTER_MODEL: gpt-5-nano
+      # Router
+      ROUTER_MODEL: "gpt-5-nano"
       ROUTER_TEMP: "0.0"
       ROUTER_MAX_TOKENS: "256"
       ROUTER_JSON_MODE: "1"
-      SEALAI_LOG_LEVEL: DEBUG
 
-      GENERATION_MODEL: gpt-5-large
+      # Generation
+      GENERATION_MODEL: "gpt-5-large"
       GENERATION_TEMP: "0.2"
       GENERATION_MAX_TOKENS: "1024"
 
-      WS_AUTH_OPTIONAL: "1"
+      # Debug / Logging
+      SEALAI_LOG_LEVEL: "DEBUG"
       CONSULT_GRAPH_DEBUG: "1"
       CONSULT_GRAPH_DEBUG_LEVEL: "debug"
+      WS_AUTH_OPTIONAL: "1"
+
+      # LangGraph Trace (Node-by-Node Flow)
+      SEALAI_LG_TRACE: "1"
+
     command: ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--log-level","debug"]
     ports: ["8000:8000"]
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -fsS http://127.0.0.1:8000/api/v1/langgraph/health >/dev/null",
-        ]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/langgraph/health >/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
 
   normen-agent:
-    # Legacy external agent (disabled by default via profile).
+    # Legacy external agent (disabled by default)
     profiles: ["agents-legacy"]
     build: { context: ./backend/agents/normen_agent }
     image: ghcr.io/jungt72/sealai-normen-agent:latest
     container_name: normen-agent
     restart: unless-stopped
     environment:
-      UVICORN_HOST: 0.0.0.0
+      UVICORN_HOST: "0.0.0.0"
       UVICORN_PORT: "9101"
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9101"]
     ports: ["9101:9101"]
@@ -115,14 +119,14 @@ services:
       retries: 5
 
   material-agent:
-    # Legacy external agent (disabled by default via profile).
+    # Legacy external agent (disabled by default)
     profiles: ["agents-legacy"]
     build: { context: ./backend/agents/material_agent }
     image: ghcr.io/jungt72/sealai-material-agent:latest
     container_name: material-agent
     restart: unless-stopped
     environment:
-      UVICORN_HOST: 0.0.0.0
+      UVICORN_HOST: "0.0.0.0"
       UVICORN_PORT: "9102"
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9102"]
     ports: ["9102:9102"]
@@ -138,27 +142,23 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_BASE:   "${NEXT_PUBLIC_API_BASE:-http://localhost:8000}"
-        NEXT_PUBLIC_SITE_URL:   "${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}"
-        NEXTAUTH_URL:           "${NEXTAUTH_URL:-http://localhost:3000}"
-        KEYCLOAK_ISSUER:        "${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/sealAI}"
-        KEYCLOAK_CLIENT_ID:     "${KEYCLOAK_CLIENT_ID:-nextauth}"
-        BUILD_ID: ${BUILD_ID:-dev}
+        NEXT_PUBLIC_API_BASE: "${NEXT_PUBLIC_API_BASE:-http://localhost:8000}"
+        NEXT_PUBLIC_SITE_URL: "${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}"
+        NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
+        KEYCLOAK_ISSUER: "${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/sealAI}"
+        KEYCLOAK_CLIENT_ID: "${KEYCLOAK_CLIENT_ID:-nextauth}"
+        BUILD_ID: "${BUILD_ID:-dev}"
         NEXT_PUBLIC_STRAPI_URL: "${NEXT_PUBLIC_STRAPI_URL:-https://sealai.net/strapi}"
-        NEXT_PUBLIC_IMAGE_BASE_URL: "${NEXT_PUBLIC_IMAGE_BASE_URL:-${NEXT_PUBLIC_STRAPI_URL:-https://sealai.net/strapi}}"
+        NEXT_PUBLIC_IMAGE_BASE_URL: "${NEXT_PUBLIC_IMAGE_BASE_URL:-https://sealai.net/strapi}"
     depends_on:
       backend: { condition: service_healthy }
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_STRAPI_URL: "${NEXT_PUBLIC_STRAPI_URL:-https://sealai.net/strapi}"
-      NEXT_PUBLIC_IMAGE_BASE_URL: "${NEXT_PUBLIC_IMAGE_BASE_URL:-${NEXT_PUBLIC_STRAPI_URL:-https://sealai.net/strapi}}"
+      NEXT_PUBLIC_IMAGE_BASE_URL: "${NEXT_PUBLIC_IMAGE_BASE_URL:-https://sealai.net/strapi}"
     ports: ["3000:3000"]
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -qO- http://127.0.0.1:3000/api/health >/dev/null",
-        ]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 5

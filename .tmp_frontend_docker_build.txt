@@ -1,0 +1,114 @@
+#0 building with "default" instance using docker driver
+
+#1 [frontend internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.32kB done
+#1 DONE 0.0s
+
+#2 [frontend internal] load metadata for docker.io/library/node:20-alpine
+#2 DONE 0.3s
+
+#3 [frontend internal] load .dockerignore
+#3 transferring context: 68B done
+#3 DONE 0.0s
+
+#4 [frontend builder 1/8] FROM docker.io/library/node:20-alpine@sha256:643e7036aa985317ebfee460005e322aa550c6b6883000d01daefb58689a58e2
+#4 DONE 0.0s
+
+#5 [frontend builder 2/8] WORKDIR /app
+#5 CACHED
+
+#6 [frontend internal] load build context
+#6 transferring context: 14.71kB 0.0s done
+#6 DONE 0.0s
+
+#7 [frontend builder 3/8] COPY package.json package-lock.json ./
+#7 DONE 0.1s
+
+#8 [frontend builder 4/8] COPY .npmrc ./
+#8 DONE 0.1s
+
+#9 [frontend builder 5/8] RUN npm ci --include=dev --no-audit --no-fund --legacy-peer-deps
+#9 9.609 
+#9 9.609 added 334 packages in 9s
+#9 DONE 10.6s
+
+#10 [frontend builder 6/8] RUN echo "BUILD_ID=9adee4f" && node -p "require('next/package.json').version" | tee /app/NEXT_VERSION
+#10 0.196 BUILD_ID=9adee4f
+#10 0.226 16.0.10
+#10 DONE 0.3s
+
+#11 [frontend builder 7/8] COPY . .
+#11 DONE 0.2s
+
+#12 [frontend builder 8/8] RUN npm run build
+#12 0.381 
+#12 0.381 > sealai-frontend@0.1.0 build
+#12 0.381 > next build
+#12 0.381 
+#12 1.044    ▲ Next.js 16.0.10 (Turbopack)
+#12 1.045    - Environments: .env
+#12 1.045 
+#12 1.074    Creating an optimized production build ...
+#12 6.782 Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+#12 6.782   npx update-browserslist-db@latest
+#12 6.782   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+#12 20.31  ✓ Compiled successfully in 18.9s
+#12 20.31    Skipping validation of types
+#12 20.48    Collecting page data using 1 worker ...
+#12 21.22    Generating static pages using 1 worker (0/8) ...
+#12 21.93    Generating static pages using 1 worker (2/8) 
+#12 21.93    Generating static pages using 1 worker (4/8) 
+#12 21.93    Generating static pages using 1 worker (6/8) 
+#12 21.93  ✓ Generating static pages using 1 worker (8/8) in 706.8ms
+#12 21.94    Finalizing page optimization ...
+#12 22.36 
+#12 22.36 Route (app)
+#12 22.36 ┌ ○ /
+#12 22.36 ├ ○ /_not-found
+#12 22.36 ├ ƒ /api/auth/[...nextauth]
+#12 22.36 ├ ƒ /api/auth/custom-logout
+#12 22.36 ├ ƒ /api/auth/sso-logout
+#12 22.36 ├ ƒ /api/ccx/jobs
+#12 22.36 ├ ƒ /api/ccx/jobs/[jobId]/events
+#12 22.36 ├ ƒ /api/ccx/jobs/[jobId]/summary
+#12 22.36 ├ ƒ /api/chat
+#12 22.36 ├ ƒ /api/state
+#12 22.36 ├ ƒ /auth/error
+#12 22.36 ├ ○ /auth/signed-out
+#12 22.36 ├ ○ /auth/signin
+#12 22.36 ├ ○ /chat
+#12 22.36 ├ ƒ /chat/[conversationId]
+#12 22.36 ├ ƒ /dashboard
+#12 22.36 ├ ƒ /dashboard/ccx
+#12 22.36 ├ ƒ /dashboard/ccx/[jobId]
+#12 22.36 └ ○ /register
+#12 22.36 
+#12 22.36 
+#12 22.36 ƒ Proxy (Middleware)
+#12 22.36 
+#12 22.36 ○  (Static)   prerendered as static content
+#12 22.36 ƒ  (Dynamic)  server-rendered on demand
+#12 22.36 
+#12 DONE 22.5s
+
+#13 [frontend runner 3/7] COPY --from=builder /app/.next/standalone ./
+#13 DONE 0.4s
+
+#14 [frontend runner 4/7] COPY --from=builder /app/.next/static ./.next/static
+#14 DONE 0.1s
+
+#15 [frontend runner 5/7] COPY --from=builder /app/public ./public
+#15 DONE 0.1s
+
+#16 [frontend runner 6/7] COPY --from=builder /app/NEXT_VERSION ./NEXT_VERSION
+#16 DONE 0.0s
+
+#17 [frontend runner 7/7] RUN addgroup -g 10001 -S app && adduser -S app -u 10001 -G app
+#17 DONE 0.2s
+
+#18 [frontend] exporting to image
+#18 exporting layers
+#18 exporting layers 0.3s done
+#18 writing image sha256:09cf6c7ae1790910caf80d2de058d48c31afc164c6d20b8b9c3f828d1da335fc done
+#18 naming to docker.io/library/sealai-frontend:9adee4f done
+#18 DONE 0.4s

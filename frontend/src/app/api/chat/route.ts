@@ -91,7 +91,12 @@ export async function POST(req: NextRequest) {
   const payload: ChatV2Payload = { input, chat_id };
   const client_msg_id = typeof body.client_msg_id === "string" ? body.client_msg_id.trim() : "";
   if (client_msg_id) payload.client_msg_id = client_msg_id;
-  if (isPlainObject(body.metadata)) payload.metadata = body.metadata;
+  const metadata = isPlainObject(body.metadata) ? body.metadata : undefined;
+  if (metadata) payload.metadata = metadata;
+  if (metadata?.source === "param_apply") {
+    const keys = Array.isArray(metadata.keys) ? metadata.keys.length : undefined;
+    console.info("[api/chat] param_apply", { request_id, chat_id, keys });
+  }
 
   const url = backendLangGraphChatEndpoint();
   const lastEventId = req.headers.get("last-event-id") ?? "";

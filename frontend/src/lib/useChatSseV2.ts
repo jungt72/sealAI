@@ -23,7 +23,9 @@ type SseState = {
   text: string;
   lastError: string | null;
   confirmCheckpoint: ConfirmCheckpointPayload | null;
-  send: (input: string) => void;
+  lastEventId: string | null;
+  lastDoneEvent: { id: string | null; data: Record<string, unknown> } | null;
+  send: (input: string, metadata?: Record<string, unknown>) => void;
   cancel: () => void;
 };
 
@@ -56,6 +58,8 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
   const [text, setText] = useState('');
   const [lastError, setLastError] = useState<string | null>(null);
   const [confirmCheckpoint, setConfirmCheckpoint] = useState<ConfirmCheckpointPayload | null>(null);
+  const [lastEventId, setLastEventId] = useState<string | null>(null);
+  const [lastDoneEvent, setLastDoneEvent] = useState<{ id: string | null; data: Record<string, unknown> } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
@@ -69,9 +73,14 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
   useEffect(() => {
     if (!chatId || typeof window === "undefined") {
       lastEventIdRef.current = null;
+      setLastEventId(null);
+      setLastDoneEvent(null);
       return;
     }
-    lastEventIdRef.current = sessionStorage.getItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
+    const stored = sessionStorage.getItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
+    lastEventIdRef.current = stored;
+    setLastEventId(stored);
+    setLastDoneEvent(null);
   }, [chatId]);
 
   const cancel = useCallback(() => {
@@ -81,7 +90,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
   }, []);
 
   const send = useCallback(
-    async (input: string) => {
+    async (input: string, metadata?: Record<string, unknown>) => {
       if (!endpointUrl) return;
       if (!chatId) return;
       if (!token) {
@@ -95,6 +104,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
       setLastError(null);
       setText('');
       setConfirmCheckpoint(null);
+      setLastDoneEvent(null);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -116,6 +126,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
             client_msg_id: (typeof crypto !== "undefined" && "randomUUID" in crypto)
               ? crypto.randomUUID()
               : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            ...(metadata && Object.keys(metadata).length ? { metadata } : {}),
           }),
           signal: controller.signal,
         });
@@ -144,6 +155,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
               if (chatId && typeof window !== "undefined") {
                 sessionStorage.setItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`, id);
               }
+              setLastEventId(id);
             }
             if (event === 'token' && data && typeof data.text === 'string') {
               setText(prev => prev + data.text);
@@ -164,6 +176,9 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
               return;
             }
             if (event === 'done') {
+              const payload =
+                data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+              setLastDoneEvent({ id: id ?? null, data: payload });
               setStreaming(false);
               abortRef.current = null;
               if (chatId && typeof window !== "undefined") {
@@ -186,5 +201,15 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
     [cancel, chatId, endpointUrl, token],
   );
 
-  return { connected, streaming, text, lastError, confirmCheckpoint, send, cancel };
+  return {
+    connected,
+    streaming,
+    text,
+    lastError,
+    confirmCheckpoint,
+    lastEventId,
+    lastDoneEvent,
+    send,
+    cancel,
+  };
 }

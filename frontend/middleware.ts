@@ -26,16 +26,27 @@ export async function middleware(req: NextRequest) {
 
   const hasCookie = hasSessionCookie(req);
   let hasJwt = false;
-  try { hasJwt = !!(await getToken({ req })); } catch {}
+  try {
+    hasJwt = !!(await getToken({ req }));
+  } catch {}
 
-  if (hasCookie || hasJwt) return NextResponse.next();
-
-  const envBase = (process.env.NEXTAUTH_URL ?? "").replace(/\/+$/,"");
+  const envBase = (process.env.NEXTAUTH_URL ?? "").replace(/\/+$/, "");
   const base = envBase || `https://${req.headers.get("host")}`;
-  // *** v5-kompatibel: Query-Variante ***
+  const chatId = req.nextUrl.searchParams.get("chat_id");
+  const targetPath = chatId ? `/chat/${encodeURIComponent(chatId)}` : "/chat";
+  const targetUrl = `${base}${targetPath}`;
+
+  if (hasCookie || hasJwt) {
+    const currentPathWithQuery = `${req.nextUrl.pathname}${req.nextUrl.search}`;
+    if (currentPathWithQuery !== targetPath) {
+      return NextResponse.redirect(targetUrl);
+    }
+    return NextResponse.next();
+  }
+
   const redirect = new URL("/api/auth/signin", base);
   redirect.searchParams.set("provider", "keycloak");
-  redirect.searchParams.set("callbackUrl", `${base}${req.nextUrl.pathname}${req.nextUrl.search}`);
+  redirect.searchParams.set("callbackUrl", targetUrl);
   redirect.searchParams.set("prompt", "login");
   return NextResponse.redirect(redirect);
 }

@@ -13,7 +13,7 @@ export default function DashboardClient() {
   useEffect(() => {
     if (status === 'unauthenticated') {
       const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
-      signIn('keycloak', { callbackUrl: `${base}/dashboard` });
+      signIn('keycloak', { callbackUrl: `${base}/chat` });
     }
   }, [status]);
 

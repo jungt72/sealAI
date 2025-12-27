@@ -1,0 +1,21 @@
+{
+  "collectionName": "components_shared_accordion_items",
+  "info": {
+    "displayName": "Accordion Item",
+    "icon": "list"
+  },
+  "options": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text",
+      "required": true
+    },
+    "link": {
+      "type": "string"
+    }
+  }
+}

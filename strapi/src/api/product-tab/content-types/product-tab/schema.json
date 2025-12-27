@@ -1,0 +1,35 @@
+{
+  "kind": "collectionType",
+  "collectionName": "product_tabs",
+  "info": {
+    "singularName": "product-tab",
+    "pluralName": "product-tabs",
+    "displayName": "Product Tab",
+    "description": "Tabs for the product section"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "image": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["images"]
+    },
+    "accordionItems": {
+      "type": "component",
+      "repeatable": true,
+      "component": "shared.accordion-item"
+    },
+    "order": {
+      "type": "integer",
+      "default": 0
+    }
+  }
+}

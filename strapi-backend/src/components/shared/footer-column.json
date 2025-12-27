@@ -1,0 +1,19 @@
+{
+  "collectionName": "components_shared_footer_columns",
+  "info": {
+    "displayName": "Footer Column",
+    "description": "A footer column with title and links"
+  },
+  "options": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "links": {
+      "type": "component",
+      "repeatable": true,
+      "component": "shared.link"
+    }
+  }
+}

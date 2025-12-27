@@ -10,10 +10,12 @@ import type { Message } from "@/types/chat";
 import { useChatSseV2 } from "@/lib/useChatSseV2";
 import { useChatThreadId } from "@/lib/useChatThreadId";
 import { fetchV2StateParameters, patchV2Parameters } from "@/lib/v2ParameterPatch";
+import { applyParametersWithChatMessage } from "@/lib/parameterApplyChat";
 import {
   buildDirtyPatch,
   cleanParameterPatch,
   mergeServerParameters,
+  reconcileDirtyWithServer,
   type ParameterSyncState,
 } from "@/lib/parameterSync";
 
@@ -151,12 +153,27 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   );
 
   const applyServerParameters = useCallback((next: SealParameters, eventId?: string | null) => {
-    setParamState((prev) => ({
-      values: mergeServerParameters(prev.values, next, prev.dirty),
-      dirty: prev.dirty,
-      lastServerEventId: eventId ?? prev.lastServerEventId ?? null,
-    }));
-  }, []);
+    setParamState((prev) => {
+      const merged = mergeServerParameters(prev.values, next, prev.dirty);
+      const nextDirty = reconcileDirtyWithServer(prev.values, next, prev.dirty);
+      if (paramSyncDebug) {
+        const incomingKeys = Object.keys(next || {});
+        console.log("[param-sync] store_apply", {
+          chat_id: chatId,
+          incoming_keys: incomingKeys.slice(0, 8),
+          incoming_keys_count: incomingKeys.length,
+          incoming_pressure_bar: (next as SealParameters).pressure_bar,
+          merged_pressure_bar: merged.pressure_bar,
+          dirty_keys: Array.from(nextDirty).slice(0, 8),
+        });
+      }
+      return {
+        values: merged,
+        dirty: nextDirty,
+        lastServerEventId: eventId ?? prev.lastServerEventId ?? null,
+      };
+    });
+  }, [chatId, paramSyncDebug]);
 
   useEffect(() => {
     const onUi = (ev: Event) => {
@@ -212,9 +229,6 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         signal: controller.signal,
       });
       if (shouldAbortParamTask(tokenId, expectedChatId)) return;
-      if (expectedEventId && lastSseEventIdRef.current && expectedEventId !== lastSseEventIdRef.current) {
-        return;
-      }
       applyServerParameters(next as SealParameters, expectedEventId ?? null);
       if (paramSyncDebug) {
         const refreshedKeysCount = Object.keys(next || {}).length;
@@ -303,7 +317,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     try {
       const cleaned = cleanParameterPatch(buildDirtyPatch(paramState.values, paramState.dirty));
       if (paramSyncDebug) {
-        console.log("[param-sync] submit", {
+        console.log("[param-sync] applyParameters clicked", {
           chat_id: chatId,
           dirty_keys: Array.from(paramState.dirty),
           payload_keys: Object.keys(cleaned),
@@ -314,7 +328,39 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         window.setTimeout(() => setParamToast(null), 1200);
         return;
       }
-      await patchAllParameters(cleaned);
+      const metadata = {
+        source: "param_apply",
+        kind: "parameter_summary",
+        keys: Object.keys(cleaned),
+      };
+
+      const canSendChatMessage = isAuthed && connected && Boolean(chatId);
+      const { summary } = await applyParametersWithChatMessage({
+        patch: cleaned,
+        patchParameters: patchAllParameters,
+        sendChatMessage: (content, meta) => {
+          if (!canSendChatMessage) return;
+          setMessages((m) => [...m, { role: "user", content }]);
+          setHasStarted(true);
+          send(content, meta);
+          setConfirmActionError(null);
+        },
+        metadata,
+      });
+
+      if (paramSyncDebug) {
+        console.log("[param-sync] applyParameters patched", {
+          chat_id: chatId,
+          patched_keys: Object.keys(cleaned),
+        });
+        if (summary && canSendChatMessage) {
+          console.log("[param-sync] sending chat message due to parameter apply", {
+            chat_id: chatId,
+            endpoint: "/api/chat",
+            preview: summary.slice(0, 140),
+          });
+        }
+      }
       setParamState((prev) => {
         const nextDirty = new Set(prev.dirty);
         for (const key of Object.keys(cleaned) as (keyof SealParameters)[]) {
@@ -328,7 +374,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       setParamToast(`Update fehlgeschlagen: ${String(e?.message || e)}`);
       window.setTimeout(() => setParamToast(null), 2500);
     }
-  }, [chatId, paramState, paramSyncDebug, patchAllParameters]);
+  }, [chatId, paramState, paramSyncDebug, patchAllParameters, send, isAuthed, connected]);
 
   useEffect(() => {
     if (!chatId || !token) return;

@@ -6,7 +6,7 @@ export default function SignInButton() {
   return (
     <button
       onClick={() =>
-        signIn('keycloak', { callbackUrl: '/dashboard' })  // ← wichtig!
+        signIn('keycloak', { callbackUrl: '/chat' }) // ← wichtig!
       }
       className="px-6 py-3 rounded bg-blue-600 text-white hover:bg-blue-700"
     >

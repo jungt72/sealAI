@@ -8,6 +8,7 @@ APPLY_UFW=1
 RUN_TESTS=0
 OPS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_SMOKE="$OPS_DIR/stack_smoke.sh"
+LOCALHOST_CIDR="127.0.0.0/8"
 
 usage() {
   cat <<'EOF'
@@ -199,6 +200,25 @@ ensure_output_accept_for_subnet() {
   run_command iptables -I OUTPUT 1 -d "$subnet" -j ACCEPT
 }
 
+ensure_loopback_return_rules() {
+  log "ensuring DOCKER-USER return rules for localhost traffic"
+  ensure_return_rule_at_top -s "$LOCALHOST_CIDR"
+  ensure_return_rule_at_top -d "$LOCALHOST_CIDR"
+}
+
+ensure_loopback_output_accept() {
+  if [[ "$OUTPUT_POLICY" != "DROP" ]]; then
+    log "OUTPUT policy is ${OUTPUT_POLICY}; skipping loopback OUTPUT rule"
+    return 0
+  fi
+  if iptables -C OUTPUT -d "$LOCALHOST_CIDR" -j ACCEPT >/dev/null 2>&1; then
+    log "OUTPUT already accepts ${LOCALHOST_CIDR}"
+    return 0
+  fi
+  log "ensuring OUTPUT accepts localhost traffic"
+  run_command iptables -I OUTPUT 1 -d "$LOCALHOST_CIDR" -j ACCEPT
+}
+
 ensure_ufw_relaxed_rules() {
   if [[ "$APPLY_UFW" -eq 0 ]]; then
     log "ufw adjustments disabled by flag; skipping relaxed mode"
@@ -285,6 +305,7 @@ else
 fi
 
 ensure_chain_exists
+ensure_loopback_return_rules
 
 mapfile -t BRIDGES < <(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(br-[[:alnum:]]+|docker0)$' || true)
 
@@ -329,6 +350,7 @@ OUTPUT_POLICY=$(iptables -L OUTPUT -n | awk 'NR==1 {print $4}' | tr -d ')')
 for subnet in "${SUBNETS[@]}"; do
   ensure_output_accept_for_subnet "$subnet"
 done
+ensure_loopback_output_accept
 
 if [[ "$MODE" == "relaxed" ]]; then
   ensure_ufw_relaxed_rules

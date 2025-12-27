@@ -13,6 +13,15 @@ def _parse_number(match: Optional[re.Match[str]]) -> Optional[float]:
         return None
 
 
+def _parse_number_str(value: Optional[str]) -> Optional[float]:
+    if not value:
+        return None
+    try:
+        return float(value.replace(",", "."))
+    except ValueError:
+        return None
+
+
 def _compile_pattern(pattern: str, flags: int = 0) -> Pattern[str]:
     return re.compile(pattern, flags | re.IGNORECASE)
 
@@ -27,6 +36,12 @@ def extract_parameters_from_text(text: str) -> Dict[str, float | str]:
     # Pressure [bar]
     pressure_match = _compile_pattern(r"(\d+(?:[.,]\d+)?)\s*bar").search(normalized)
     pressure_value = _parse_number(pressure_match)
+    if pressure_value is None:
+        pressure_match = _compile_pattern(
+            r"(?:betriebsdruck|druck)[^\d\r\n]*?(\d+(?:[.,]\d+)?)(?:[^\d\r\n]+(\d+(?:[.,]\d+)?))?"
+        ).search(normalized)
+        if pressure_match:
+            pressure_value = _parse_number_str(pressure_match.group(2) or pressure_match.group(1))
     if pressure_value is not None:
         params["pressure_bar"] = pressure_value
 

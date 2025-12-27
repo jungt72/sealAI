@@ -197,6 +197,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         }
 
     # 2) LLM-basierter Frontdoor-Intent
+    extracted_params = extract_parameters_from_text(user_text)
     system = _build_frontdoor_system_prompt()
     prompt = user_text.strip() or ""
 
@@ -218,6 +219,10 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         # 2b) Fallback: defensiver Default-Intent
         logger.warning("frontdoor_llm_failed", error=str(exc), user_text=user_text)
         intent = Intent(goal="design_recommendation", confidence=0.6, high_impact_gaps=[])
+        if extracted_params:
+            merged_params = parameters.as_dict()
+            merged_params.update(extracted_params)
+            parameters = TechnicalParameters.model_validate(merged_params)
         wm_updates["frontdoor_reply"] = (
             "Danke für deine Nachricht. Ich sammele gleich mehr Kontext und melde mich mit einem technischen Vorschlag."
         )
@@ -306,7 +311,6 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     wm = _get_working_memory(state, wm_updates)
 
     # [PATCH] Extract parameters
-    extracted_params = extract_parameters_from_text(user_text)
     if extracted_params:
         merged_params = parameters.as_dict()
         merged_params.update(extracted_params)

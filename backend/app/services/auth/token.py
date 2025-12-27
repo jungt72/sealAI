@@ -20,7 +20,7 @@ log = logging.getLogger("uvicorn.error")
 
 REALM_ISSUER: Final[str] = settings.backend_keycloak_issuer
 JWKS_URL: Final[str] = settings.keycloak_jwks_url
-ALLOWED_AUDS: Final[set[str]] = {"nextauth", "sealai-backend-api"}
+ALLOWED_AUDS: Final[set[str]] = {"nextauth", "sealai-backend-api", "sealai-cli"}
 ALLOWED_ALGS: Final[tuple[str, ...]] = ("RS256",)  # ✅ fixiert
 
 @functools.lru_cache(maxsize=1)
