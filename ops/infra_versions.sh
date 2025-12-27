@@ -94,7 +94,19 @@ container_ports() {
 }
 
 parse_psql_version() {
-  awk -F'|' '/PostgreSQL/ {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}'
+  awk '
+    /PostgreSQL/ {
+      if (index($0, "|")) {
+        split($0, parts, "|")
+        gsub(/^[ \t]+|[ \t]+$/, "", parts[2])
+        print parts[2]
+      } else {
+        gsub(/^[ \t]+|[ \t]+$/, "", $0)
+        print $0
+      }
+      exit
+    }
+  '
 }
 
 parse_redis_version() {
