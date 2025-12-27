@@ -73,5 +73,33 @@ docker-compose up -d redis qdrant
 ```
 
 ## Notes
-- Keycloak upgrade is not performed in this runbook. TODO: evaluate 26.x migration and apply in a dedicated change.
+- Keycloak upgrade is documented below; follow the dedicated section and verify auth flows.
 - Strapi is not part of the main compose stack. TODO: plan a separate upgrade if/when `docker-compose.biz.yml` is used in production.
+
+## Keycloak Upgrade 25 -> 26.4.7
+Reference:
+- Release notes and migration changes: https://www.keycloak.org/docs/latest/release_notes/index.html
+- Upgrading guide: https://www.keycloak.org/docs/latest/upgrading/index.html
+- Downloads: https://www.keycloak.org/downloads
+
+Key points:
+- Review migration changes and any breaking defaults before rollout.
+- Expect session/cache changes; validate login flows after upgrade.
+- Monitor logs for liquibase or migration warnings.
+
+Steps:
+1) Backup Postgres (see Backups section above).
+2) Build Keycloak image:
+   - Update `keycloak/Dockerfile` to `quay.io/keycloak/keycloak:26.4.7`.
+   - `docker-compose build keycloak`
+3) Deploy:
+   - `docker-compose up -d keycloak`
+4) Verify:
+   - `docker exec keycloak /opt/keycloak/bin/kc.sh --version`
+   - `curl -fsS http://127.0.0.1:9000/health/ready`
+   - `curl -fsS https://auth.sealai.net/realms/sealAI/.well-known/openid-configuration | head`
+   - `curl -fsS http://127.0.0.1:8000/api/v1/langgraph/health`
+5) Rollback (if needed):
+   - Revert `keycloak/Dockerfile` to 25.0.4.
+   - `docker-compose build keycloak`
+   - `docker-compose up -d keycloak`
