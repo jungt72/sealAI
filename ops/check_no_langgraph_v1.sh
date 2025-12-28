@@ -11,16 +11,20 @@ if rg -n 'app\.langgraph\.compile' backend/app --glob '!backend/app/archive/**' 
   cat /tmp/rg_langgraph_compile.txt >&2
   exit 1
 fi
+echo "OK: no v1 backend imports found"
 
-allowed_re='^frontend/src/(app/api/langgraph/|lib/langgraphApi\.ts)'
-if rg -n '/api/v1/langgraph/' frontend/src >/tmp/rg_langgraph_paths.txt; then
-  if ! awk -v re="$allowed_re" 'BEGIN{bad=0} {if ($1 !~ re) {bad=1; print}} END{exit bad}' /tmp/rg_langgraph_paths.txt; then
-    echo "OK: v2-only checks passed"
-    exit 0
-  fi
+matches=$(rg -n '/api/v1/langgraph/' frontend/src || true)
+if [ -z "$matches" ]; then
+  echo "OK: v2-only frontend checks passed"
+  exit 0
+fi
+
+allowed_re='^(frontend/src/app/api/langgraph/|frontend/src/lib/langgraphApi\.ts)'
+illegal=$(printf "%s\n" "$matches" | grep -Ev "$allowed_re" || true)
+if [ -n "$illegal" ]; then
   echo "FAIL: forbidden /api/v1/langgraph/ usage in client code" >&2
-  cat /tmp/rg_langgraph_paths.txt >&2
+  printf "%s\n" "$illegal" >&2
   exit 1
 fi
 
-echo "OK: v2-only checks passed"
+echo "OK: v2-only frontend checks passed"
