@@ -64,18 +64,34 @@ export function buildParameterApplySummary(patch: Partial<SealParameters>): stri
   return `Parameter übernommen: ${entries.join(", ")}`;
 }
 
+function pickConfirmedValues(
+  keys: string[],
+  confirmed: Partial<SealParameters> | null | undefined,
+): Partial<SealParameters> {
+  if (!confirmed) return {};
+  const out: Partial<SealParameters> = {};
+  for (const key of keys) {
+    const typedKey = key as keyof SealParameters;
+    if (confirmed[typedKey] === undefined) continue;
+    out[typedKey] = confirmed[typedKey];
+  }
+  return out;
+}
+
 export async function applyParametersWithChatMessage(opts: {
   patch: Partial<SealParameters>;
-  patchParameters: (patch: Partial<SealParameters>) => Promise<void>;
+  patchParameters: (patch: Partial<SealParameters>) => Promise<Partial<SealParameters> | null | void>;
   sendChatMessage: (content: string, metadata?: Record<string, unknown>) => void;
   metadata?: Record<string, unknown>;
 }): Promise<{ summary: string }> {
   const patchKeys = Object.keys(opts.patch || {});
   if (!patchKeys.length) return { summary: "" };
 
-  await opts.patchParameters(opts.patch);
-
-  const summary = buildParameterApplySummary(opts.patch);
+  const confirmed = await opts.patchParameters(opts.patch);
+  const summaryPatch = pickConfirmedValues(patchKeys, confirmed ?? undefined);
+  const summary = buildParameterApplySummary(
+    Object.keys(summaryPatch).length ? summaryPatch : {},
+  );
   if (summary) {
     opts.sendChatMessage(summary, opts.metadata);
   }

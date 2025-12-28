@@ -5,7 +5,10 @@ import { applyParametersWithChatMessage } from "../src/lib/parameterApplyChat";
 describe("applyParametersWithChatMessage", () => {
   it("patches and sends a summary message", async () => {
     const patch = { pressure_bar: 5, temperature_C: 80 };
-    const patchParameters = vi.fn().mockResolvedValue(undefined);
+    const patchParameters = vi.fn().mockResolvedValue({
+      pressure_bar: 6,
+      temperature_C: 80,
+    });
     const sendChatMessage = vi.fn();
     const metadata = {
       source: "param_apply",
@@ -24,10 +27,10 @@ describe("applyParametersWithChatMessage", () => {
     expect(patchParameters).toHaveBeenCalledWith(patch);
     expect(sendChatMessage).toHaveBeenCalledTimes(1);
     expect(sendChatMessage).toHaveBeenCalledWith(
-      "Parameter übernommen: Druck=5 bar, Temperatur=80 °C",
+      "Parameter übernommen: Druck=6 bar, Temperatur=80 °C",
       metadata,
     );
-    expect(result.summary).toBe("Parameter übernommen: Druck=5 bar, Temperatur=80 °C");
+    expect(result.summary).toBe("Parameter übernommen: Druck=6 bar, Temperatur=80 °C");
   });
 
   it("skips patching when no parameters are provided", async () => {

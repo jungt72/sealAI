@@ -17,6 +17,7 @@ import {
   emitParamPatchTelemetry,
   mergeServerParameters,
   reconcileDirtyWithServer,
+  areParamValuesEquivalent,
   type ParameterSyncState,
 } from "@/lib/parameterSync";
 
@@ -225,13 +226,16 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
   const applyServerParameters = useCallback((next: SealParameters, eventId?: string | null) => {
     setParamState((prev) => {
-      const merged = mergeServerParameters(prev.values, next, prev.dirty);
       const nextDirty = reconcileDirtyWithServer(prev.values, next, prev.dirty);
+      const merged = mergeServerParameters(prev.values, next, nextDirty);
       const appliedKeys = computeAppliedKeys(prev.values, next, prev.dirty);
       const nextApplied: Partial<Record<keyof SealParameters, number>> = {
         ...(prev.applied ?? {}),
       };
       const nextPending = new Set(prev.pending);
+      for (const key of Array.from(nextPending)) {
+        if (!nextDirty.has(key)) nextPending.delete(key);
+      }
       const appliedAt = Date.now();
       for (const key of appliedKeys) {
         nextApplied[key] = appliedAt;
@@ -302,7 +306,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     patchedKeysCount: number;
     tokenId: number;
     expectedEventId?: string | null;
-  }) => {
+  }): Promise<SealParameters | null> => {
     const { expectedChatId, token, patchedKeysCount, tokenId, expectedEventId } = opts;
     if (shouldAbortParamTask(tokenId, expectedChatId)) return;
     stateAbortRef.current?.abort();
@@ -324,6 +328,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
           refreshed_keys_count: refreshedKeysCount,
         });
       }
+      return next as SealParameters;
     } finally {
       if (stateAbortRef.current === controller) {
         stateAbortRef.current = null;
@@ -355,7 +360,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     try {
       const patchedKeysCount = Object.keys(cleaned).length;
       const dirtyKeys = new Set(paramState.dirty);
-      await enqueueParamTask(async (tokenId) => {
+      return await enqueueParamTask(async (tokenId) => {
         if (shouldAbortParamTask(tokenId, chatId)) return;
         if (dirtyKeys.size) {
           setParamState((prev) => {
@@ -376,7 +381,23 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         } finally {
           emitParamPatchTelemetry(patchedKeysCount, performance.now() - patchStart, ok);
         }
-        await runRefresh({ expectedChatId: chatId, token, patchedKeysCount, tokenId });
+        const refreshed = await runRefresh({ expectedChatId: chatId, token, patchedKeysCount, tokenId });
+        if (!refreshed) return null;
+        const mismatchKeys = Object.keys(cleaned).filter((rawKey) => {
+          const key = rawKey as keyof SealParameters;
+          return !areParamValuesEquivalent(key, cleaned[key], refreshed[key]);
+        });
+        if (mismatchKeys.length) {
+          setParamState((prev) => {
+            const nextPending = new Set(prev.pending);
+            for (const key of mismatchKeys) nextPending.delete(key as keyof SealParameters);
+            return { ...prev, pending: nextPending };
+          });
+          setParamToast("Parameter nicht übernommen. Bitte erneut versuchen.");
+          window.setTimeout(() => setParamToast(null), 2500);
+          return null;
+        }
+        return refreshed;
       });
     } catch (e: any) {
       setParamState((prev) => {
@@ -385,7 +406,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         for (const key of pendingKeys) nextPending.delete(key);
         return { ...prev, pending: nextPending };
       });
-      if (e?.name === "AbortError") return;
+      if (e?.name === "AbortError") return null;
       throw e;
     }
   }, [chatId, token, enqueueParamTask, runRefresh, shouldAbortParamTask, paramState.dirty, paramState.pending.size]);

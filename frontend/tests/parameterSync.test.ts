@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildDirtyPatch, cleanParameterPatch, mergeServerParameters } from "../src/lib/parameterSync";
+import {
+  areParamValuesEquivalent,
+  buildDirtyPatch,
+  cleanParameterPatch,
+  mergeServerParameters,
+  reconcileDirtyWithServer,
+} from "../src/lib/parameterSync";
 import type { SealParameters } from "../src/lib/types/sealParameters";
 
 type ParametersPatchInput = Partial<Record<keyof SealParameters, unknown>>;
@@ -62,5 +68,16 @@ describe("parameter sync helpers", () => {
     const cleaned = cleanParameterPatch(patch);
 
     expect(cleaned).toEqual({ pressure_bar: 10, temperature_C: 80, medium: "oil" });
+  });
+
+  it("treats numeric strings and numbers as equivalent for dirty reconciliation", () => {
+    const current = { pressure_bar: "5" } as unknown as SealParameters;
+    const incoming = { pressure_bar: 5 } as SealParameters;
+    const dirty = new Set(["pressure_bar"] as const);
+
+    const nextDirty = reconcileDirtyWithServer(current, incoming, dirty);
+
+    expect(nextDirty.has("pressure_bar")).toBe(false);
+    expect(areParamValuesEquivalent("pressure_bar", current.pressure_bar, incoming.pressure_bar)).toBe(true);
   });
 });

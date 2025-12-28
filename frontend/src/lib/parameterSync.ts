@@ -51,6 +51,30 @@ export type ParameterSyncState = {
   lastServerEventId?: string | null;
 };
 
+function normalizeParamValue(
+  key: keyof SealParameters,
+  value: SealParameters[keyof SealParameters] | undefined,
+): SealParameters[keyof SealParameters] | undefined {
+  if (value === undefined || value === null) return value;
+  if (NUMERIC_PARAMETER_KEYS.has(key)) {
+    const normalized = normalizeNumericInput(value);
+    return normalized === undefined ? value : (normalized as SealParameters[keyof SealParameters]);
+  }
+  if (typeof value === "string") return value.trim() as SealParameters[keyof SealParameters];
+  return value;
+}
+
+export function areParamValuesEquivalent(
+  key: keyof SealParameters,
+  left: SealParameters[keyof SealParameters] | undefined,
+  right: SealParameters[keyof SealParameters] | undefined,
+): boolean {
+  const normalizedLeft = normalizeParamValue(key, left);
+  const normalizedRight = normalizeParamValue(key, right);
+  if (normalizedLeft === undefined || normalizedRight === undefined) return false;
+  return Object.is(normalizedLeft, normalizedRight);
+}
+
 export function mergeServerParameters(
   current: SealParameters,
   incoming: SealParameters,
@@ -76,7 +100,7 @@ export function reconcileDirtyWithServer(
     const typedKey = key as keyof SealParameters;
     if (!nextDirty.has(typedKey)) continue;
     if (value === undefined) continue;
-    if (current[typedKey] === value) {
+    if (areParamValuesEquivalent(typedKey, current[typedKey], value as SealParameters[keyof SealParameters])) {
       nextDirty.delete(typedKey);
     }
   }
@@ -93,7 +117,7 @@ export function computeAppliedKeys(
     const typedKey = key as keyof SealParameters;
     if (!dirty.has(typedKey)) continue;
     if (value === undefined) continue;
-    if (current[typedKey] === value) {
+    if (areParamValuesEquivalent(typedKey, current[typedKey], value as SealParameters[keyof SealParameters])) {
       applied.add(typedKey);
     }
   }
