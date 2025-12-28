@@ -549,7 +549,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     setConfirmActionBusy(true);
     setConfirmActionError(null);
     try {
-      const res = await fetch("/api/v1/langgraph/confirm/go", {
+      const res = await fetch("/api/langgraph/confirm/go", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

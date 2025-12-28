@@ -51,7 +51,7 @@ export async function patchV2Parameters(opts: {
       parameters: opts.parameters,
     });
   }
-  const res = await fetch("/api/v1/langgraph/parameters/patch", {
+  const res = await fetch("/api/langgraph/parameters/patch", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -70,7 +70,7 @@ export async function fetchV2StateParameters(opts: {
   token: string;
   signal?: AbortSignal;
 }): Promise<V2ParametersPatch> {
-  const url = `/api/v1/langgraph/state?thread_id=${encodeURIComponent(opts.chatId)}`;
+  const url = `/api/langgraph/state?thread_id=${encodeURIComponent(opts.chatId)}`;
   const res = await fetch(url, {
     method: "GET",
     headers: {
