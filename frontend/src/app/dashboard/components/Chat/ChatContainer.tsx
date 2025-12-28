@@ -134,6 +134,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const [paramState, setParamState] = useState<ParameterSyncState>({
     values: {},
     dirty: new Set(),
+    pending: new Set(),
     applied: {},
   });
   const parameters = paramState.values;
@@ -155,7 +156,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     chatIdRef.current = chatId;
     setMessages([]);
     setHasStarted(false);
-    setParamState({ values: {}, dirty: new Set(), applied: {} });
+    setParamState({ values: {}, dirty: new Set(), pending: new Set(), applied: {} });
     setShowParamDrawer(false);
     setParamToast(null);
     paramQueueRef.current = Promise.resolve();
@@ -198,21 +199,24 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       setParamState((prev) => {
         const nextValues = { ...prev.values, ...patch };
         const nextDirty = new Set(prev.dirty);
+        const nextPending = new Set(prev.pending);
         const keys = Object.keys(patch) as (keyof SealParameters)[];
         const nextApplied = { ...(prev.applied ?? {}) };
         if (markDirty) {
           for (const key of keys) {
             nextDirty.add(key);
+            nextPending.delete(key);
             delete nextApplied[key];
           }
         }
         if (clearDirty) {
           for (const key of keys) {
             nextDirty.delete(key);
+            nextPending.delete(key);
             delete nextApplied[key];
           }
         }
-        return { values: nextValues, dirty: nextDirty, applied: nextApplied };
+        return { values: nextValues, dirty: nextDirty, pending: nextPending, applied: nextApplied };
       });
     },
     [],
@@ -226,9 +230,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       const nextApplied: Partial<Record<keyof SealParameters, number>> = {
         ...(prev.applied ?? {}),
       };
+      const nextPending = new Set(prev.pending);
       const appliedAt = Date.now();
       for (const key of appliedKeys) {
         nextApplied[key] = appliedAt;
+        nextPending.delete(key);
       }
       for (const key of nextDirty) {
         delete nextApplied[key];
@@ -247,6 +253,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       return {
         values: merged,
         dirty: nextDirty,
+        pending: nextPending,
         applied: nextApplied,
         lastServerEventId: eventId ?? prev.lastServerEventId ?? null,
       };
@@ -341,11 +348,21 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     if (!chatId || !token) return;
     const cleaned = cleanParameterPatch(patch);
     if (!Object.keys(cleaned).length) return;
+    if (paramState.pending.size > 0) return;
 
     try {
       const patchedKeysCount = Object.keys(cleaned).length;
+      const dirtyKeys = new Set(paramState.dirty);
+      const pendingKeys = Array.from(dirtyKeys);
       await enqueueParamTask(async (tokenId) => {
         if (shouldAbortParamTask(tokenId, chatId)) return;
+        if (dirtyKeys.size) {
+          setParamState((prev) => {
+            const nextPending = new Set(prev.pending);
+            for (const key of dirtyKeys) nextPending.add(key);
+            return { ...prev, pending: nextPending };
+          });
+        }
         await patchV2Parameters({
           chatId,
           token,
@@ -354,16 +371,22 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         await runRefresh({ expectedChatId: chatId, token, patchedKeysCount, tokenId });
       });
     } catch (e: any) {
+      setParamState((prev) => {
+        if (!pendingKeys.length) return prev;
+        const nextPending = new Set(prev.pending);
+        for (const key of pendingKeys) nextPending.delete(key);
+        return { ...prev, pending: nextPending };
+      });
       if (e?.name === "AbortError") return;
       throw e;
     }
-  }, [chatId, token, enqueueParamTask, runRefresh, shouldAbortParamTask]);
+  }, [chatId, token, enqueueParamTask, runRefresh, shouldAbortParamTask, paramState.dirty, paramState.pending.size]);
 
-  const schedulePatchOnChange = useCallback((next: SealParameters) => {
+  const schedulePatchOnChange = useCallback((patch: Partial<SealParameters>) => {
     if (!autoPatchOnChange) return;
     if (patchDebounceRef.current) clearTimeout(patchDebounceRef.current);
     patchDebounceRef.current = setTimeout(() => {
-      patchAllParameters(next).catch((err) => {
+      patchAllParameters(patch).catch((err) => {
         if (err?.name === "AbortError") return;
         console.warn("[param-sync] debounced_patch_failed", err);
       });
@@ -386,10 +409,12 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       const nextValues = { ...prev.values, [name]: value };
       const nextDirty = new Set(prev.dirty);
       const nextApplied = { ...(prev.applied ?? {}) };
+      const nextPending = new Set(prev.pending);
       nextDirty.add(name);
+      nextPending.delete(name);
       delete nextApplied[name];
-      schedulePatchOnChange(nextValues);
-      return { values: nextValues, dirty: nextDirty, applied: nextApplied };
+      schedulePatchOnChange(buildDirtyPatch(nextValues, nextDirty));
+      return { values: nextValues, dirty: nextDirty, pending: nextPending, applied: nextApplied };
     });
   }, [chatId, paramSyncDebug, schedulePatchOnChange]);
 
@@ -405,6 +430,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       }
       if (!Object.keys(cleaned).length) {
         setParamToast("Keine Änderungen");
+        window.setTimeout(() => setParamToast(null), 1200);
+        return;
+      }
+      if (paramState.pending.size > 0) {
+        setParamToast("Bitte warten…");
         window.setTimeout(() => setParamToast(null), 1200);
         return;
       }
@@ -708,6 +738,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             show={showParamDrawer}
             parameters={parameters}
             dirtyKeys={paramState.dirty}
+            pendingKeys={paramState.pending}
             appliedMap={paramState.applied ?? {}}
             onUpdate={onParamUpdate}
             onSubmit={onParamSubmit}

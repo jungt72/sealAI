@@ -45,6 +45,7 @@ const NUMERIC_PARAMETER_KEYS = new Set<keyof SealParameters>([
 export type ParameterSyncState = {
   values: SealParameters;
   dirty: Set<keyof SealParameters>;
+  pending: Set<keyof SealParameters>;
   applied?: Partial<Record<keyof SealParameters, number>>;
   lastServerEventId?: string | null;
 };

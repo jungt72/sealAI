@@ -8,6 +8,7 @@ interface ParameterFormSidebarProps {
   show: boolean;
   parameters: SealParameters;
   dirtyKeys: Set<keyof SealParameters>;
+  pendingKeys: Set<keyof SealParameters>;
   appliedMap: Partial<Record<keyof SealParameters, number>>;
   onUpdate: (name: keyof SealParameters, value: string | number) => void;
   onSubmit: () => void;
@@ -93,6 +94,7 @@ export default function ParameterFormSidebar({
   show,
   parameters,
   dirtyKeys,
+  pendingKeys,
   appliedMap,
   onUpdate,
   onSubmit,
@@ -101,6 +103,7 @@ export default function ParameterFormSidebar({
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
   const dirtyCount = dirtyKeys.size;
+  const pendingCount = pendingKeys.size;
 
   useEffect(() => {
     if (!show || !paramSyncDebug) return;
@@ -179,7 +182,8 @@ export default function ParameterFormSidebar({
                     const displayValue =
                       fieldValue !== undefined && fieldValue !== null ? String(fieldValue) : "";
                     const isDirty = dirtyKeys.has(field.name);
-                    const isApplied = Boolean(appliedMap?.[field.name]) && !isDirty;
+                    const isPending = pendingKeys.has(field.name);
+                    const isApplied = Boolean(appliedMap?.[field.name]) && !isDirty && !isPending;
 
                     return (
                       <div className="form-group flex flex-col gap-1.5" key={inputId}>
@@ -189,7 +193,13 @@ export default function ParameterFormSidebar({
                           title={field.label}
                         >
                           <span className="truncate">{field.label}</span>
-                          {isDirty ? (
+                          {isPending ? (
+                            <span
+                              className="inline-block h-2 w-2 rounded-full border border-white/40 border-t-transparent animate-spin"
+                              title="Wird übernommen..."
+                              aria-label="Wird übernommen..."
+                            />
+                          ) : isDirty ? (
                             <span
                               className="inline-block h-2 w-2 rounded-full bg-amber-400"
                               title="Änderung noch nicht übernommen"
@@ -247,14 +257,20 @@ export default function ParameterFormSidebar({
         <div className="pt-2 sticky bottom-0 bg-[#14141e] pb-0 -mx-2 px-2 z-10">
           <button
             type="submit"
-            disabled={dirtyCount === 0}
+            disabled={dirtyCount === 0 || pendingCount > 0}
             className={[
               "w-full flex items-center justify-center gap-2 font-medium py-3 rounded-lg shadow-lg transition-all active:scale-[0.98]",
-              dirtyCount === 0
+              dirtyCount === 0 || pendingCount > 0
                 ? "bg-indigo-500/40 text-white/60 cursor-not-allowed shadow-none"
                 : "bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-indigo-500/25",
             ].join(" ")}
-            title={dirtyCount === 0 ? "Keine Änderungen" : "Parameter übernehmen"}
+            title={
+              dirtyCount === 0
+                ? "Keine Änderungen"
+                : pendingCount > 0
+                ? "Änderungen werden übernommen"
+                : "Parameter übernehmen"
+            }
           >
             <Check className="w-4 h-4" />
             Parameter übernehmen
