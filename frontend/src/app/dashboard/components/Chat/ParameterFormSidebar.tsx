@@ -119,6 +119,10 @@ export default function ParameterFormSidebar({
       keys_count: keys.length,
       pressure_bar: displayPressure,
     });
+    console.log("[param-wire] sidebar_render", {
+      pressure_bar: pressureValue,
+      pressure_bar_type: typeof pressureValue,
+    });
   }, [parameters, paramSyncDebug, show]);
 
   if (!show) return null;
@@ -187,6 +191,12 @@ export default function ParameterFormSidebar({
                     const isDirty = resolvedDirtyKeys.has(field.name);
                     const isPending = resolvedPendingKeys.has(field.name);
                     const isApplied = Boolean(resolvedAppliedMap[field.name]) && !isDirty && !isPending;
+                    if (paramSyncDebug && field.name === "pressure_bar") {
+                      console.log("[param-wire] input_render", {
+                        pressure_bar_value: displayValue,
+                        pressure_bar_value_type: typeof displayValue,
+                      });
+                    }
 
                     return (
                       <div className="form-group flex flex-col gap-1.5" key={inputId}>

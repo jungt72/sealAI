@@ -246,6 +246,14 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         delete nextApplied[key];
       }
       if (paramSyncDebug) {
+        const pressureValue = merged.pressure_bar;
+        console.log("[param-wire] apply_server", {
+          chat_id: chatId,
+          pressure_bar: pressureValue,
+          pressure_bar_type: typeof pressureValue,
+        });
+      }
+      if (paramSyncDebug) {
         const incomingKeys = Object.keys(next || {});
         const changedKeys = incomingKeys.filter((key) => {
           const typedKey = key as keyof SealParameters;
@@ -326,6 +334,17 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         signal: controller.signal,
       });
       if (shouldAbortParamTask(tokenId, expectedChatId)) return;
+      if (paramSyncDebug) {
+        const serverPressure = (next as SealParameters).pressure_bar;
+        const serverAlias = (next as SealParameters).pressure;
+        console.log("[param-wire] refresh_payload", {
+          chat_id: expectedChatId,
+          pressure_bar: serverPressure,
+          pressure_bar_type: typeof serverPressure,
+          pressure_alias: serverAlias,
+          pressure_alias_type: typeof serverAlias,
+        });
+      }
       applyServerParameters(next as SealParameters, expectedEventId ?? null);
       if (paramSyncDebug) {
         const refreshedKeysCount = Object.keys(next || {}).length;
@@ -440,6 +459,14 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         raw_value: value,
         normalized_value: normalizedValue,
       });
+      if (name === "pressure_bar") {
+        console.log("[param-wire] input_change", {
+          chat_id: chatId,
+          field: name,
+          value,
+          value_type: typeof value,
+        });
+      }
     }
     setParamState((prev) => {
       const nextValues = { ...prev.values, [name]: value };

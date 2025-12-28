@@ -6,6 +6,17 @@ export type SidebarFormPatch = Record<string, unknown>;
 
 export type V2ParametersPatch = Record<string, string | number | boolean>;
 
+const normalizeV2StateParameters = (raw: V2ParametersPatch): V2ParametersPatch => {
+  const normalized: V2ParametersPatch = { ...raw };
+  if ("pressure" in normalized && !("pressure_bar" in normalized)) {
+    normalized.pressure_bar = normalized.pressure;
+  }
+  if ("pressure_bar" in normalized) {
+    delete normalized.pressure;
+  }
+  return normalized;
+};
+
 export function normalizeSidebarFormPatchToV2(patch: SidebarFormPatch): V2ParametersPatch {
   const out: V2ParametersPatch = {};
 
@@ -115,7 +126,7 @@ export async function fetchV2StateParameters(opts: {
     });
   }
   if (body && typeof body.parameters === "object" && body.parameters) {
-    return body.parameters as V2ParametersPatch;
+    return normalizeV2StateParameters(body.parameters as V2ParametersPatch);
   }
   return {};
 }
