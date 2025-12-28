@@ -1,5 +1,4 @@
 # Legacy Notice
 
-Der frühere LangGraph-v1-Code wurde nach `app/archive/langgraph_v1` verschoben.
-Bitte verwende ausschließlich `app.langgraph_v2` als aktive Implementation.
-
+LangGraph v1 ist entfernt und wird nicht mehr ausgefuehrt.
+Bitte verwende ausschliesslich `app.langgraph_v2` sowie die v2-Endpunkte unter `/api/v1/langgraph/*`.
