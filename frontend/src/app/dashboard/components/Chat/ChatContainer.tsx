@@ -14,6 +14,7 @@ import {
   buildDirtyPatch,
   cleanParameterPatch,
   computeAppliedKeys,
+  emitParamPatchTelemetry,
   mergeServerParameters,
   reconcileDirtyWithServer,
   type ParameterSyncState,
@@ -363,11 +364,18 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             return { ...prev, pending: nextPending };
           });
         }
-        await patchV2Parameters({
-          chatId,
-          token,
-          parameters: cleaned,
-        });
+        const patchStart = performance.now();
+        let ok = false;
+        try {
+          await patchV2Parameters({
+            chatId,
+            token,
+            parameters: cleaned,
+          });
+          ok = true;
+        } finally {
+          emitParamPatchTelemetry(patchedKeysCount, performance.now() - patchStart, ok);
+        }
         await runRefresh({ expectedChatId: chatId, token, patchedKeysCount, tokenId });
       });
     } catch (e: any) {

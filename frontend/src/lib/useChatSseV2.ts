@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { emit } from "@/lib/telemetry";
 
 type UseChatSseV2Opts = {
   chatId?: string | null;
@@ -85,6 +86,8 @@ export function useChatSseV2({
   );
   const lastRequestRef = useRef<{ input: string; metadata?: Record<string, unknown> } | null>(null);
   const textBufferRef = useRef('');
+  const streamStartRef = useRef<number | null>(null);
+  const ttftEmittedRef = useRef(false);
 
   const endpointUrl = useMemo(() => ENDPOINT_URL, []);
   const connected = status !== 'idle' && status !== 'error';
@@ -147,6 +150,12 @@ export function useChatSseV2({
       setStatus('error');
       return;
     }
+    emit({
+      type: "chat_retry",
+      chatId: chatId ?? "unknown",
+      attempt: attempt + 1,
+      reason,
+    });
     setLastError(reason);
     setStatus('retrying');
     const delay = Math.min(1000 * 2 ** attempt, 15000);
@@ -179,8 +188,12 @@ export function useChatSseV2({
         resetRetry();
         lastRequestRef.current = { input: trimmed, metadata };
         textBufferRef.current = '';
+        streamStartRef.current = performance.now();
+        ttftEmittedRef.current = false;
         onStart?.(false);
       } else {
+        streamStartRef.current = performance.now();
+        ttftEmittedRef.current = false;
         onStart?.(true);
       }
 
@@ -219,6 +232,11 @@ export function useChatSseV2({
         if (!res.ok || !res.body) {
           const detail = await res.text().catch(() => "");
           if (res.status === 401 || res.status === 403) {
+            emit({
+              type: "chat_error",
+              chatId: chatId ?? "unknown",
+              code: res.status,
+            });
             setLastError(detail || `HTTP ${res.status}`);
             setStatus('error');
             setStreaming(false);
@@ -250,6 +268,14 @@ export function useChatSseV2({
               hasFirstChunk = true;
               setStatus('streaming');
               resetRetry();
+              if (!ttftEmittedRef.current && streamStartRef.current !== null) {
+                emit({
+                  type: "chat_ttft",
+                  chatId: chatId ?? "unknown",
+                  ms: performance.now() - streamStartRef.current,
+                });
+                ttftEmittedRef.current = true;
+              }
             }
             const { event, data, id } = parseSseFrame(part);
             if (id) {
@@ -288,6 +314,14 @@ export function useChatSseV2({
               abortRef.current = null;
               setStatus('done');
               resetRetry();
+              if (streamStartRef.current !== null) {
+                emit({
+                  type: "chat_stream_done",
+                  chatId: chatId ?? "unknown",
+                  ms: performance.now() - streamStartRef.current,
+                });
+                streamStartRef.current = null;
+              }
               if (textBufferRef.current) onDone?.(textBufferRef.current);
               if (chatId && typeof window !== "undefined") {
                 sessionStorage.removeItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
@@ -301,6 +335,14 @@ export function useChatSseV2({
         abortRef.current = null;
         setStatus('done');
         resetRetry();
+        if (streamStartRef.current !== null) {
+          emit({
+            type: "chat_stream_done",
+            chatId: chatId ?? "unknown",
+            ms: performance.now() - streamStartRef.current,
+          });
+          streamStartRef.current = null;
+        }
         if (textBufferRef.current) onDone?.(textBufferRef.current);
       } catch (e: any) {
         if (e?.name === 'AbortError') return;

@@ -1,5 +1,6 @@
 import type { SealParameters } from "@/lib/types/sealParameters";
 import { normalizeNumericInput } from "@/lib/normalizeNumericInput";
+import { emit } from "@/lib/telemetry";
 
 const NUMERIC_PARAMETER_KEYS = new Set<keyof SealParameters>([
   "pressure_bar",
@@ -125,4 +126,8 @@ export function cleanParameterPatch(patch: Partial<SealParameters>): Partial<Sea
     cleaned[typedKey] = value as SealParameters[keyof SealParameters];
   }
   return cleaned;
+}
+
+export function emitParamPatchTelemetry(fields: number, ms: number, ok: boolean): void {
+  emit({ type: "param_patch", fields, ms, ok });
 }
