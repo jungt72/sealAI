@@ -4,6 +4,7 @@ import React, { ReactNode, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import '@/styles/chat-markdown.css';
+import Image from 'next/image';
 
 function CodeBlock({
   inline,
@@ -95,8 +96,8 @@ export default function MarkdownMessage({
           h2: (p) => <h2 className="cm-h2" {...p} />,
           h3: (p) => <h3 className="cm-h3" {...p} />,
           h4: (p) => <h4 className="cm-h4" {...p} />,
-          p: ({ node, ...props }) => <p className="cm-p" {...props} />,
-          a: ({ node, ...props }) => <a className="cm-a" target="_blank" rel="noreferrer" {...props} />,
+          p: (props) => <p className="cm-p" {...props} />,
+          a: (props) => <a className="cm-a" target="_blank" rel="noreferrer" {...props} />,
           ul: (p) => <ul className="cm-ul" {...p} />,
           ol: (p) => <ol className="cm-ol" {...p} />,
           li: (p) => <li className="cm-li" {...p} />,
@@ -110,7 +111,20 @@ export default function MarkdownMessage({
           thead: (p) => <thead className="cm-thead" {...p} />,
           th: (p) => <th className="cm-th" {...p} />,
           td: (p) => <td className="cm-td" {...p} />,
-          img: (p) => <img className="cm-img" {...p} />,
+          img: ({ src, alt, title }) =>
+            src ? (
+              <Image
+                className="cm-img"
+                src={src}
+                alt={alt || ""}
+                title={title}
+                width={800}
+                height={450}
+                sizes="100vw"
+                unoptimized
+                style={{ height: "auto", width: "100%" }}
+              />
+            ) : null,
           code: CodeBlock,
         }}
       >

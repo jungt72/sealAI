@@ -74,4 +74,6 @@ const StreamingMessage = forwardRef<StreamingMessageHandle, StreamingMessageProp
   },
 );
 
+StreamingMessage.displayName = "StreamingMessage";
+
 export default memo(StreamingMessage);

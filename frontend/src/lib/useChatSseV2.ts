@@ -86,6 +86,7 @@ export function useChatSseV2({
   );
   const lastRequestRef = useRef<{ input: string; metadata?: Record<string, unknown> } | null>(null);
   const textBufferRef = useRef('');
+  const internalSendRef = useRef<((input: string, metadata?: Record<string, unknown>, isRetry?: boolean) => void) | null>(null);
   const streamStartRef = useRef<number | null>(null);
   const ttftEmittedRef = useRef(false);
 
@@ -126,10 +127,11 @@ export function useChatSseV2({
   }, [abortStream]);
 
   useEffect(() => {
+    const retryState = retryRef.current;
     return () => {
       abortStream();
-      if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
-      retryRef.current.timer = null;
+      if (retryState.timer) clearTimeout(retryState.timer);
+      retryState.timer = null;
     };
   }, [abortStream]);
 
@@ -167,9 +169,13 @@ export function useChatSseV2({
         setStatus('error');
         return;
       }
-      internalSend(lastRequestRef.current.input, lastRequestRef.current.metadata, true);
+      internalSendRef.current?.(
+        lastRequestRef.current.input,
+        lastRequestRef.current.metadata,
+        true,
+      );
     }, delay);
-  }, [clearRetryTimer, retryMax]);
+  }, [chatId, clearRetryTimer, retryMax]);
 
   const internalSend = useCallback(
     async (input: string, metadata?: Record<string, unknown>, isRetry?: boolean) => {
@@ -255,7 +261,6 @@ export function useChatSseV2({
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
 
-        // eslint-disable-next-line no-constant-condition
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -360,6 +365,10 @@ export function useChatSseV2({
     },
     [internalSend],
   );
+
+  useEffect(() => {
+    internalSendRef.current = internalSend;
+  }, [internalSend]);
 
   const retryNow = useCallback(() => {
     if (!lastRequestRef.current) return;

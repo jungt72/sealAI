@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Menu, Search } from "lucide-react";
-import { shell } from "@/lib/layout";
 import { NavbarData } from "@/lib/types";
 
 interface NavbarProps {

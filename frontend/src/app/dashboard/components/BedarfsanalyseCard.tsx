@@ -44,7 +44,7 @@ const normalizeDict = (value: unknown): [string, string][] => {
   const entries = Object.entries(value as Record<string, unknown>);
   return entries
     .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)] as [string, string])
-    .filter(([_, v]) => v.trim().length > 0);
+    .filter(([, v]) => v.trim().length > 0);
 };
 
 export default function BedarfsanalyseCard({ data }: BedarfsanalyseCardProps) {

@@ -131,7 +131,6 @@ function FormInner({
   patch,
   submitAll,
   clearAll,
-  containerRef,
 }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
@@ -139,7 +138,6 @@ function FormInner({
   patch: (k: keyof FormState, v: any) => void;
   submitAll: () => void;
   clearAll: () => void;
-  containerRef: React.RefObject<HTMLDivElement>;
 }) {
   const isMissing = React.useCallback(
     (key: keyof FormState) => missing.includes(String(key)) && !filled(form[key]),
@@ -499,7 +497,6 @@ export default function SidebarForm({ embedded = false }: Props) {
           patch={patch}
           submitAll={submitAll}
           clearAll={clearAll}
-          containerRef={containerRef}
         />
       </div>
     );
@@ -550,7 +547,6 @@ export default function SidebarForm({ embedded = false }: Props) {
             patch={patch}
             submitAll={submitAll}
             clearAll={clearAll}
-            containerRef={containerRef}
           />
         </div>
       </div>

@@ -11,7 +11,6 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-require-imports": "off",
       "react-hooks/immutability": "off",
       "react-hooks/set-state-in-effect": "off",
-      "react/display-name": "off",
     },
   },
   // Override default ignores of eslint-config-next.

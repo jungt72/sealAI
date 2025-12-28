@@ -350,11 +350,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     const cleaned = cleanParameterPatch(patch);
     if (!Object.keys(cleaned).length) return;
     if (paramState.pending.size > 0) return;
+    const pendingKeys = Array.from(paramState.dirty);
 
     try {
       const patchedKeysCount = Object.keys(cleaned).length;
       const dirtyKeys = new Set(paramState.dirty);
-      const pendingKeys = Array.from(dirtyKeys);
       await enqueueParamTask(async (tokenId) => {
         if (shouldAbortParamTask(tokenId, chatId)) return;
         if (dirtyKeys.size) {

@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 type CcxSummary = {
   jobId: string;
@@ -48,7 +48,7 @@ export default function CcxResultCard({ jobId }: { jobId: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
       setErr(null);
@@ -64,7 +64,7 @@ export default function CcxResultCard({ jobId }: { jobId: string }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [jobId]);
 
   useEffect(() => {
     load();
@@ -83,7 +83,7 @@ export default function CcxResultCard({ jobId }: { jobId: string }) {
       /* auto-retry by browser */
     };
     return () => es.close();
-  }, [jobId]);
+  }, [jobId, load]);
 
   const statusPill = useMemo(() => {
     if (!data) return <Pill label="lädt…" tone="muted" />;
