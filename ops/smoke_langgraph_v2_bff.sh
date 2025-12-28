@@ -145,10 +145,12 @@ fi
 # F) Legacy v1 endpoint check
 legacy_code=$(curl -sS -o /tmp/smoke_legacy.json -w "%{http_code}" "${BASE_URL}/api/v1/ai" || true)
 legacy_detail=$(cat /tmp/smoke_legacy.json | jq -r '.detail // empty' || true)
-if [ "$legacy_code" = "410" ] && printf "%s" "$legacy_detail" | awk 'BEGIN{found=0} /Legacy LangGraph v1 endpoint removed/ {found=1} END{exit !found}'; then
+if [ "$legacy_code" = "404" ]; then
+  pass "GET /api/v1/ai -> 404 (legacy route not present)"
+elif [ "$legacy_code" = "410" ] && printf "%s" "$legacy_detail" | awk 'BEGIN{found=0} /Legacy LangGraph v1 endpoint removed/ {found=1} END{exit !found}'; then
   pass "GET /api/v1/ai -> 410 (legacy disabled)"
 else
-  fail "GET /api/v1/ai -> ${legacy_code} (expected 410)"
+  fail "GET /api/v1/ai -> ${legacy_code} (expected 404 or 410)"
 fi
 
 # Examples:

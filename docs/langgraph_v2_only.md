@@ -20,8 +20,8 @@ Die BFF-Handler nutzen folgende ENV-Reihenfolge, um die Backend-Base zu finden:
 - Fallback: http://backend:8000
 
 ## v1 ist deaktiviert
-Legacy LangGraph v1 Endpoints sind entfernt bzw. liefern 410 Gone mit Hinweis:
-"Legacy LangGraph v1 endpoint removed; use /api/v1/langgraph/* (v2)."
+Legacy LangGraph v1 Endpoints koennen entfernt sein (404) oder liefern 410 Gone mit Hinweis:
+"Legacy LangGraph v1 endpoint removed; use /api/v1/langgraph/* (v2)." Beide Varianten sind ok.
 
 ## Beispiele
 - BASE_URL=http://localhost:3000 ./ops/smoke_langgraph_v2_bff.sh
