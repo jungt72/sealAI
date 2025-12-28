@@ -7,9 +7,9 @@ import type { SealParameters } from "@/lib/types/sealParameters";
 interface ParameterFormSidebarProps {
   show: boolean;
   parameters: SealParameters;
-  dirtyKeys: Set<keyof SealParameters>;
-  pendingKeys: Set<keyof SealParameters>;
-  appliedMap: Partial<Record<keyof SealParameters, number>>;
+  dirtyKeys?: Set<keyof SealParameters>;
+  pendingKeys?: Set<keyof SealParameters>;
+  appliedMap?: Partial<Record<keyof SealParameters, number>>;
   onUpdate: (name: keyof SealParameters, value: string | number) => void;
   onSubmit: () => void;
   onClose: () => void;
@@ -102,8 +102,11 @@ export default function ParameterFormSidebar({
 }: ParameterFormSidebarProps) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
-  const dirtyCount = dirtyKeys.size;
-  const pendingCount = pendingKeys.size;
+  const resolvedDirtyKeys = dirtyKeys ?? new Set<keyof SealParameters>();
+  const resolvedPendingKeys = pendingKeys ?? new Set<keyof SealParameters>();
+  const resolvedAppliedMap = appliedMap ?? {};
+  const dirtyCount = resolvedDirtyKeys.size;
+  const pendingCount = resolvedPendingKeys.size;
 
   useEffect(() => {
     if (!show || !paramSyncDebug) return;
@@ -181,9 +184,9 @@ export default function ParameterFormSidebar({
                     const fieldValue = parameters[field.name];
                     const displayValue =
                       fieldValue !== undefined && fieldValue !== null ? String(fieldValue) : "";
-                    const isDirty = dirtyKeys.has(field.name);
-                    const isPending = pendingKeys.has(field.name);
-                    const isApplied = Boolean(appliedMap?.[field.name]) && !isDirty && !isPending;
+                    const isDirty = resolvedDirtyKeys.has(field.name);
+                    const isPending = resolvedPendingKeys.has(field.name);
+                    const isApplied = Boolean(resolvedAppliedMap[field.name]) && !isDirty && !isPending;
 
                     return (
                       <div className="form-group flex flex-col gap-1.5" key={inputId}>
