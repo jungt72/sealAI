@@ -1,5 +1,7 @@
 "use client";
 
+import { dbg, isParamSyncDebug } from "@/lib/paramSyncDebug";
+
 export type SidebarFormPatch = Record<string, unknown>;
 
 export type V2ParametersPatch = Record<string, string | number | boolean>;
@@ -45,10 +47,18 @@ export async function patchV2Parameters(opts: {
   token: string;
   parameters: V2ParametersPatch;
 }): Promise<void> {
-  if (process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1") {
-    console.log("[param-sync] patch_payload", {
+  const start = performance.now();
+  if (isParamSyncDebug()) {
+    const entries = Object.entries(opts.parameters || {}).map(([key, value]) => ({
+      key,
+      value,
+      type: typeof value,
+    }));
+    dbg("patch_payload", {
       chat_id: opts.chatId,
-      parameters: opts.parameters,
+      keys: entries.map((entry) => entry.key),
+      values: entries,
+      ts: new Date().toISOString(),
     });
   }
   const res = await fetch("/api/langgraph/parameters/patch", {
@@ -63,6 +73,9 @@ export async function patchV2Parameters(opts: {
     const msg = await res.text().catch(() => "");
     throw new Error(msg || `HTTP ${res.status}`);
   }
+  if (isParamSyncDebug()) {
+    dbg("patch_done", { chat_id: opts.chatId, ms: performance.now() - start });
+  }
 }
 
 export async function fetchV2StateParameters(opts: {
@@ -71,6 +84,7 @@ export async function fetchV2StateParameters(opts: {
   signal?: AbortSignal;
 }): Promise<V2ParametersPatch> {
   const url = `/api/langgraph/state?thread_id=${encodeURIComponent(opts.chatId)}`;
+  const start = performance.now();
   const res = await fetch(url, {
     method: "GET",
     headers: {
@@ -83,14 +97,21 @@ export async function fetchV2StateParameters(opts: {
     throw new Error(msg || `HTTP ${res.status}`);
   }
   const body = await res.json().catch(() => ({}));
-  if (process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1") {
+  if (isParamSyncDebug()) {
     const rawParams = body && typeof body.parameters === "object" ? body.parameters : {};
-    const keys = rawParams && typeof rawParams === "object" ? Object.keys(rawParams) : [];
-    console.log("[param-sync] state_payload", {
+    const entries = rawParams && typeof rawParams === "object"
+      ? Object.entries(rawParams).map(([key, value]) => ({
+        key,
+        value,
+        type: typeof value,
+      }))
+      : [];
+    dbg("state_payload", {
       chat_id: opts.chatId,
-      keys: keys.slice(0, 8),
-      keys_count: keys.length,
-      pressure_bar: rawParams?.pressure_bar,
+      keys: entries.map((entry) => entry.key),
+      values: entries,
+      ms: performance.now() - start,
+      ts: new Date().toISOString(),
     });
   }
   if (body && typeof body.parameters === "object" && body.parameters) {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { SealParameters } from "@/lib/types/sealParameters";
+import { dbg, isParamSyncDebug } from "@/lib/paramSyncDebug";
 
 type ParamLabel = {
   label: string;
@@ -89,6 +90,18 @@ export async function applyParametersWithChatMessage(opts: {
 
   const confirmed = await opts.patchParameters(opts.patch);
   const summaryPatch = pickConfirmedValues(patchKeys, confirmed ?? undefined);
+  if (isParamSyncDebug()) {
+    const entries = Object.entries(summaryPatch).map(([key, value]) => ({
+      key,
+      value,
+      type: typeof value,
+    }));
+    dbg("summary_source", {
+      source: Object.keys(summaryPatch).length ? "confirmed_state" : "patch_raw",
+      keys: patchKeys,
+      summary_values: entries,
+    });
+  }
   const summary = buildParameterApplySummary(
     Object.keys(summaryPatch).length ? summaryPatch : {},
   );

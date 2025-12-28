@@ -80,4 +80,30 @@ describe("parameter sync helpers", () => {
     expect(nextDirty.has("pressure_bar")).toBe(false);
     expect(areParamValuesEquivalent("pressure_bar", current.pressure_bar, incoming.pressure_bar)).toBe(true);
   });
+
+  it("accepts server-normalized value when key is still pending", () => {
+    const current = { pressure_bar: "5.4" } as unknown as SealParameters;
+    const incoming = { pressure_bar: 5 } as SealParameters;
+    const dirty = new Set(["pressure_bar"] as const);
+    const pending = new Set(["pressure_bar"] as const);
+
+    const nextDirty = reconcileDirtyWithServer(current, incoming, dirty, pending);
+    const merged = mergeServerParameters(current, incoming, nextDirty);
+
+    expect(nextDirty.has("pressure_bar")).toBe(false);
+    expect(merged.pressure_bar).toBe(5);
+  });
+
+  it("keeps local edit when server refresh arrives after re-dirtying", () => {
+    const current = { pressure_bar: "6" } as unknown as SealParameters;
+    const incoming = { pressure_bar: 5 } as SealParameters;
+    const dirty = new Set(["pressure_bar"] as const);
+    const pending = new Set<keyof SealParameters>();
+
+    const nextDirty = reconcileDirtyWithServer(current, incoming, dirty, pending);
+    const merged = mergeServerParameters(current, incoming, nextDirty);
+
+    expect(nextDirty.has("pressure_bar")).toBe(true);
+    expect(merged.pressure_bar).toBe("6");
+  });
 });

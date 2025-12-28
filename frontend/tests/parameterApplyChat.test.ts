@@ -33,6 +33,24 @@ describe("applyParametersWithChatMessage", () => {
     expect(result.summary).toBe("Parameter übernommen: Druck=6 bar, Temperatur=80 °C");
   });
 
+  it("uses confirmed values instead of raw patch values", async () => {
+    const patch = { pressure_bar: "5.0" };
+    const patchParameters = vi.fn().mockResolvedValue({ pressure_bar: 5 });
+    const sendChatMessage = vi.fn();
+
+    const result = await applyParametersWithChatMessage({
+      patch,
+      patchParameters,
+      sendChatMessage,
+    });
+
+    expect(sendChatMessage).toHaveBeenCalledWith(
+      "Parameter übernommen: Druck=5 bar",
+      undefined,
+    );
+    expect(result.summary).toBe("Parameter übernommen: Druck=5 bar");
+  });
+
   it("skips patching when no parameters are provided", async () => {
     const patchParameters = vi.fn().mockResolvedValue(undefined);
     const sendChatMessage = vi.fn();

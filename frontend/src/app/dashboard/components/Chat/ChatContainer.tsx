@@ -24,6 +24,7 @@ import {
 import ParameterFormSidebar from "./ParameterFormSidebar";
 import type { SealParameters } from "@/lib/types/sealParameters";
 import StreamingMessage, { type StreamingMessageHandle } from "./StreamingMessage";
+import { dbg, isParamSyncDebug } from "@/lib/paramSyncDebug";
 
 type ChatContainerProps = {
   chatId?: string | null;
@@ -151,7 +152,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const chatIdRef = useRef<string | null>(chatId);
   const lastSseEventIdRef = useRef<string | null>(null);
   const autoPatchOnChange = process.env.NEXT_PUBLIC_AUTO_PATCH_PARAMS === "1";
-  const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
+  const paramSyncDebug = isParamSyncDebug();
 
   useEffect(() => {
     paramSyncTokenRef.current += 1;
@@ -226,7 +227,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
   const applyServerParameters = useCallback((next: SealParameters, eventId?: string | null) => {
     setParamState((prev) => {
-      const nextDirty = reconcileDirtyWithServer(prev.values, next, prev.dirty);
+      const nextDirty = reconcileDirtyWithServer(prev.values, next, prev.dirty, prev.pending);
       const merged = mergeServerParameters(prev.values, next, nextDirty);
       const appliedKeys = computeAppliedKeys(prev.values, next, prev.dirty);
       const nextApplied: Partial<Record<keyof SealParameters, number>> = {
@@ -246,13 +247,19 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       }
       if (paramSyncDebug) {
         const incomingKeys = Object.keys(next || {});
-        console.log("[param-sync] store_apply", {
+        const changedKeys = incomingKeys.filter((key) => {
+          const typedKey = key as keyof SealParameters;
+          return !areParamValuesEquivalent(typedKey, prev.values[typedKey], merged[typedKey]);
+        });
+        dbg("store_apply", {
           chat_id: chatId,
-          incoming_keys: incomingKeys.slice(0, 8),
-          incoming_keys_count: incomingKeys.length,
-          incoming_pressure_bar: (next as SealParameters).pressure_bar,
-          merged_pressure_bar: merged.pressure_bar,
-          dirty_keys: Array.from(nextDirty).slice(0, 8),
+          incoming_keys: incomingKeys,
+          dirty_before: Array.from(prev.dirty),
+          dirty_after: Array.from(nextDirty),
+          pending_before: Array.from(prev.pending),
+          pending_after: Array.from(nextPending),
+          applied_keys: Array.from(appliedKeys),
+          merged_changed_keys: changedKeys,
         });
       }
       return {

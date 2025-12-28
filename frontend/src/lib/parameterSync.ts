@@ -1,6 +1,7 @@
 import type { SealParameters } from "@/lib/types/sealParameters";
 import { normalizeNumericInput } from "@/lib/normalizeNumericInput";
 import { emit } from "@/lib/telemetry";
+import { dbg, isParamSyncDebug } from "@/lib/paramSyncDebug";
 
 const NUMERIC_PARAMETER_KEYS = new Set<keyof SealParameters>([
   "pressure_bar",
@@ -94,14 +95,47 @@ export function reconcileDirtyWithServer(
   current: SealParameters,
   incoming: SealParameters,
   dirty: Set<keyof SealParameters>,
+  pending?: Set<keyof SealParameters>,
 ): Set<keyof SealParameters> {
   const nextDirty = new Set(dirty);
   for (const [key, value] of Object.entries(incoming || {})) {
     const typedKey = key as keyof SealParameters;
     if (!nextDirty.has(typedKey)) continue;
     if (value === undefined) continue;
-    if (areParamValuesEquivalent(typedKey, current[typedKey], value as SealParameters[keyof SealParameters])) {
+    const equivalent = areParamValuesEquivalent(
+      typedKey,
+      current[typedKey],
+      value as SealParameters[keyof SealParameters],
+    );
+    if (equivalent) {
       nextDirty.delete(typedKey);
+      continue;
+    }
+    if (pending?.has(typedKey)) {
+      nextDirty.delete(typedKey);
+      if (isParamSyncDebug()) {
+        const left = current[typedKey];
+        const right = value as SealParameters[keyof SealParameters];
+        dbg("reconcile_accept_pending", {
+          key: typedKey,
+          client_value: left,
+          client_type: typeof left,
+          server_value: right,
+          server_type: typeof right,
+        });
+      }
+      continue;
+    }
+    if (isParamSyncDebug()) {
+      const left = current[typedKey];
+      const right = value as SealParameters[keyof SealParameters];
+      dbg("reconcile_mismatch", {
+        key: typedKey,
+        client_value: left,
+        client_type: typeof left,
+        server_value: right,
+        server_type: typeof right,
+      });
     }
   }
   return nextDirty;
