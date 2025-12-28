@@ -13,6 +13,7 @@ import { applyParametersWithChatMessage } from "@/lib/parameterApplyChat";
 import {
   buildDirtyPatch,
   cleanParameterPatch,
+  computeAppliedKeys,
   mergeServerParameters,
   reconcileDirtyWithServer,
   type ParameterSyncState,
@@ -133,6 +134,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const [paramState, setParamState] = useState<ParameterSyncState>({
     values: {},
     dirty: new Set(),
+    applied: {},
   });
   const parameters = paramState.values;
   const [showParamDrawer, setShowParamDrawer] = useState(false);
@@ -141,6 +143,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const paramQueueRef = useRef<Promise<void>>(Promise.resolve());
   const stateAbortRef = useRef<AbortController | null>(null);
   const patchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appliedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const paramSyncTokenRef = useRef(0);
   const chatIdRef = useRef<string | null>(chatId);
   const lastSseEventIdRef = useRef<string | null>(null);
@@ -152,12 +155,16 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     chatIdRef.current = chatId;
     setMessages([]);
     setHasStarted(false);
-    setParamState({ values: {}, dirty: new Set() });
+    setParamState({ values: {}, dirty: new Set(), applied: {} });
     setShowParamDrawer(false);
     setParamToast(null);
     paramQueueRef.current = Promise.resolve();
     stateAbortRef.current?.abort();
     stateAbortRef.current = null;
+    if (appliedTimeoutRef.current) {
+      clearTimeout(appliedTimeoutRef.current);
+      appliedTimeoutRef.current = null;
+    }
     lastSseEventIdRef.current = null;
     if (patchDebounceRef.current) {
       clearTimeout(patchDebounceRef.current);
@@ -171,6 +178,10 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       if (patchDebounceRef.current) {
         clearTimeout(patchDebounceRef.current);
         patchDebounceRef.current = null;
+      }
+      if (appliedTimeoutRef.current) {
+        clearTimeout(appliedTimeoutRef.current);
+        appliedTimeoutRef.current = null;
       }
     };
   }, []);
@@ -188,13 +199,20 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         const nextValues = { ...prev.values, ...patch };
         const nextDirty = new Set(prev.dirty);
         const keys = Object.keys(patch) as (keyof SealParameters)[];
+        const nextApplied = { ...(prev.applied ?? {}) };
         if (markDirty) {
-          for (const key of keys) nextDirty.add(key);
+          for (const key of keys) {
+            nextDirty.add(key);
+            delete nextApplied[key];
+          }
         }
         if (clearDirty) {
-          for (const key of keys) nextDirty.delete(key);
+          for (const key of keys) {
+            nextDirty.delete(key);
+            delete nextApplied[key];
+          }
         }
-        return { values: nextValues, dirty: nextDirty };
+        return { values: nextValues, dirty: nextDirty, applied: nextApplied };
       });
     },
     [],
@@ -204,6 +222,17 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     setParamState((prev) => {
       const merged = mergeServerParameters(prev.values, next, prev.dirty);
       const nextDirty = reconcileDirtyWithServer(prev.values, next, prev.dirty);
+      const appliedKeys = computeAppliedKeys(prev.values, next, prev.dirty);
+      const nextApplied: Partial<Record<keyof SealParameters, number>> = {
+        ...(prev.applied ?? {}),
+      };
+      const appliedAt = Date.now();
+      for (const key of appliedKeys) {
+        nextApplied[key] = appliedAt;
+      }
+      for (const key of nextDirty) {
+        delete nextApplied[key];
+      }
       if (paramSyncDebug) {
         const incomingKeys = Object.keys(next || {});
         console.log("[param-sync] store_apply", {
@@ -218,6 +247,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       return {
         values: merged,
         dirty: nextDirty,
+        applied: nextApplied,
         lastServerEventId: eventId ?? prev.lastServerEventId ?? null,
       };
     });
@@ -355,9 +385,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     setParamState((prev) => {
       const nextValues = { ...prev.values, [name]: value };
       const nextDirty = new Set(prev.dirty);
+      const nextApplied = { ...(prev.applied ?? {}) };
       nextDirty.add(name);
+      delete nextApplied[name];
       schedulePatchOnChange(nextValues);
-      return { values: nextValues, dirty: nextDirty };
+      return { values: nextValues, dirty: nextDirty, applied: nextApplied };
     });
   }, [chatId, paramSyncDebug, schedulePatchOnChange]);
 
@@ -409,20 +441,39 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
           });
         }
       }
-      setParamState((prev) => {
-        const nextDirty = new Set(prev.dirty);
-        for (const key of Object.keys(cleaned) as (keyof SealParameters)[]) {
-          nextDirty.delete(key);
-        }
-        return { values: prev.values, dirty: nextDirty };
-      });
-      setParamToast("Parameter aktualisiert");
+      setParamToast("Parameter gesendet");
       window.setTimeout(() => setParamToast(null), 1500);
     } catch (e: any) {
       setParamToast(`Update fehlgeschlagen: ${String(e?.message || e)}`);
       window.setTimeout(() => setParamToast(null), 2500);
     }
   }, [chatId, paramState, paramSyncDebug, patchAllParameters, send, isAuthed, sseStatus]);
+
+  useEffect(() => {
+    const applied = paramState.applied ?? {};
+    const appliedEntries = Object.entries(applied);
+    if (!appliedEntries.length) return;
+    const ttlMs = 1500;
+    const now = Date.now();
+    const nextExpiry = Math.min(...appliedEntries.map(([, ts]) => (ts || 0) + ttlMs));
+    const delay = Math.max(nextExpiry - now, 50);
+    if (appliedTimeoutRef.current) clearTimeout(appliedTimeoutRef.current);
+    appliedTimeoutRef.current = setTimeout(() => {
+      setParamState((prev) => {
+        const currentApplied = prev.applied ?? {};
+        const nextApplied: Partial<Record<keyof SealParameters, number>> = {};
+        const nowTs = Date.now();
+        for (const [key, ts] of Object.entries(currentApplied)) {
+          if (!ts) continue;
+          if (nowTs - ts < ttlMs) {
+            nextApplied[key as keyof SealParameters] = ts;
+          }
+        }
+        if (Object.keys(nextApplied).length === Object.keys(currentApplied).length) return prev;
+        return { ...prev, applied: nextApplied };
+      });
+    }, delay);
+  }, [paramState.applied]);
 
   useEffect(() => {
     if (!chatId || !token) return;
@@ -656,6 +707,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
           <ParameterFormSidebar
             show={showParamDrawer}
             parameters={parameters}
+            dirtyKeys={paramState.dirty}
+            appliedMap={paramState.applied ?? {}}
             onUpdate={onParamUpdate}
             onSubmit={onParamSubmit}
             onClose={() => setShowParamDrawer(false)}

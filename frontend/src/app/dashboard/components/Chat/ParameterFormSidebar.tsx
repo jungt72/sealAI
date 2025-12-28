@@ -7,6 +7,8 @@ import type { SealParameters } from "@/lib/types/sealParameters";
 interface ParameterFormSidebarProps {
   show: boolean;
   parameters: SealParameters;
+  dirtyKeys: Set<keyof SealParameters>;
+  appliedMap: Partial<Record<keyof SealParameters, number>>;
   onUpdate: (name: keyof SealParameters, value: string | number) => void;
   onSubmit: () => void;
   onClose: () => void;
@@ -90,12 +92,15 @@ const FORM_SECTIONS: FormSection[] = [
 export default function ParameterFormSidebar({
   show,
   parameters,
+  dirtyKeys,
+  appliedMap,
   onUpdate,
   onSubmit,
   onClose,
 }: ParameterFormSidebarProps) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
+  const dirtyCount = dirtyKeys.size;
 
   useEffect(() => {
     if (!show || !paramSyncDebug) return;
@@ -173,15 +178,30 @@ export default function ParameterFormSidebar({
                     const fieldValue = parameters[field.name];
                     const displayValue =
                       fieldValue !== undefined && fieldValue !== null ? String(fieldValue) : "";
+                    const isDirty = dirtyKeys.has(field.name);
+                    const isApplied = Boolean(appliedMap?.[field.name]) && !isDirty;
 
                     return (
                       <div className="form-group flex flex-col gap-1.5" key={inputId}>
                         <label
                           htmlFor={inputId}
-                          className="text-xs text-white/70 font-medium truncate"
+                          className="text-xs text-white/70 font-medium truncate flex items-center gap-1.5"
                           title={field.label}
                         >
-                          {field.label}
+                          <span className="truncate">{field.label}</span>
+                          {isDirty ? (
+                            <span
+                              className="inline-block h-2 w-2 rounded-full bg-amber-400"
+                              title="Änderung noch nicht übernommen"
+                              aria-label="Änderung noch nicht übernommen"
+                            />
+                          ) : isApplied ? (
+                            <Check
+                              className="h-3 w-3 text-emerald-400"
+                              title="Übernommen"
+                              aria-label="Übernommen"
+                            />
+                          ) : null}
                         </label>
 
                         {field.options && field.options.length ? (
@@ -227,7 +247,14 @@ export default function ParameterFormSidebar({
         <div className="pt-2 sticky bottom-0 bg-[#14141e] pb-0 -mx-2 px-2 z-10">
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg shadow-lg hover:shadow-indigo-500/25 transition-all active:scale-[0.98]"
+            disabled={dirtyCount === 0}
+            className={[
+              "w-full flex items-center justify-center gap-2 font-medium py-3 rounded-lg shadow-lg transition-all active:scale-[0.98]",
+              dirtyCount === 0
+                ? "bg-indigo-500/40 text-white/60 cursor-not-allowed shadow-none"
+                : "bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-indigo-500/25",
+            ].join(" ")}
+            title={dirtyCount === 0 ? "Keine Änderungen" : "Parameter übernehmen"}
           >
             <Check className="w-4 h-4" />
             Parameter übernehmen

@@ -45,6 +45,7 @@ const NUMERIC_PARAMETER_KEYS = new Set<keyof SealParameters>([
 export type ParameterSyncState = {
   values: SealParameters;
   dirty: Set<keyof SealParameters>;
+  applied?: Partial<Record<keyof SealParameters, number>>;
   lastServerEventId?: string | null;
 };
 
@@ -78,6 +79,23 @@ export function reconcileDirtyWithServer(
     }
   }
   return nextDirty;
+}
+
+export function computeAppliedKeys(
+  current: SealParameters,
+  incoming: SealParameters,
+  dirty: Set<keyof SealParameters>,
+): Set<keyof SealParameters> {
+  const applied = new Set<keyof SealParameters>();
+  for (const [key, value] of Object.entries(incoming || {})) {
+    const typedKey = key as keyof SealParameters;
+    if (!dirty.has(typedKey)) continue;
+    if (value === undefined) continue;
+    if (current[typedKey] === value) {
+      applied.add(typedKey);
+    }
+  }
+  return applied;
 }
 
 export function buildDirtyPatch(
