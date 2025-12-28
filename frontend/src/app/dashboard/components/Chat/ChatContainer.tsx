@@ -56,15 +56,17 @@ function parseParamCommand(input: string): Partial<SealParameters> | null {
 }
 
 export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps) {
-  const { data: session, status } = useSession();
-  const isAuthed = status === "authenticated";
+  const { data: session, status: authStatus } = useSession();
+  const isAuthed = authStatus === "authenticated";
 
   const preferredChatId = (chatIdProp ?? "").trim() || null;
   const storedChatId = useChatThreadId(preferredChatId);
   const chatId = preferredChatId ?? storedChatId;
   const token = useAccessToken();
   const {
-    connected,
+    status: sseStatus,
+    retryAttempt,
+    retryMax,
     streaming,
     text,
     lastError,
@@ -73,6 +75,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     cancel,
     lastEventId,
     lastDoneEvent,
+    retryNow,
   } = useChatSseV2({ chatId, token });
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -334,7 +337,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         keys: Object.keys(cleaned),
       };
 
-      const canSendChatMessage = isAuthed && connected && Boolean(chatId);
+      const canSendChatMessage = isAuthed && Boolean(chatId) && sseStatus !== "error";
       const { summary } = await applyParametersWithChatMessage({
         patch: cleaned,
         patchParameters: patchAllParameters,
@@ -374,7 +377,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       setParamToast(`Update fehlgeschlagen: ${String(e?.message || e)}`);
       window.setTimeout(() => setParamToast(null), 2500);
     }
-  }, [chatId, paramState, paramSyncDebug, patchAllParameters, send, isAuthed, connected]);
+  }, [chatId, paramState, paramSyncDebug, patchAllParameters, send, isAuthed, sseStatus]);
 
   useEffect(() => {
     if (!chatId || !token) return;
@@ -480,8 +483,18 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
   const firstName = (session?.user?.name || "").split(" ")[0] || "";
   const hasThread = Boolean(chatId);
-  const sendingDisabled = !isAuthed || !connected || !hasThread;
+  const sendingDisabled = !isAuthed || !hasThread;
   const isInitial = messages.length === 0 && !hasStarted;
+  const statusLabel = useMemo(() => {
+    if (!isAuthed) return "Bitte anmelden";
+    if (!hasThread) return "Initialisiere Sitzung…";
+    if (sseStatus === "connecting") return "Verbinde…";
+    if (sseStatus === "retrying") return `Verbinde erneut (${retryAttempt}/${retryMax})…`;
+    if (sseStatus === "streaming") return "Streaming…";
+    if (sseStatus === "done") return "Streaming beendet";
+    if (sseStatus === "error") return "Verbindung verloren";
+    return "Bereit";
+  }, [isAuthed, hasThread, sseStatus, retryAttempt, retryMax]);
 
   const handleSend = useCallback(async (msg: string) => {
     if (sendingDisabled) return;
@@ -631,17 +644,20 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
               Schön, dass du hier bist.
             </div>
             <div className="text-xs text-center mb-4">
-              {isAuthed ? (
-                !hasThread ? (
-                  <span className="text-amber-600">Initialisiere Sitzung…</span>
-                ) : connected ? (
-                  <span className="text-emerald-600">Streaming bereit</span>
-                ) : (
-                  <span className="text-amber-600">Initialisiere Streaming…</span>
-                )
-              ) : (
-                <span className="text-gray-500">Bitte anmelden</span>
-              )}
+              <span
+                className={
+                  sseStatus === "error"
+                    ? "text-red-600"
+                    : sseStatus === "streaming"
+                      ? "text-emerald-600"
+                      : "text-amber-600"
+                }
+              >
+                {statusLabel}
+              </span>
+              {sseStatus === "error" && lastError ? (
+                <span className="block mt-1 text-[11px] text-red-500">Fehler: {lastError}</span>
+              ) : null}
             </div>
 
             <ChatInput
@@ -651,27 +667,34 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
               onStop={() => cancel()}
               disabled={sendingDisabled}
               streaming={streaming}
-              placeholder={
-                isAuthed
-                  ? !hasThread
-                    ? "Initialisiere Sitzung…"
-                    : connected
-                      ? "Was möchtest du wissen?"
-                      : "Initialisiere…"
+                placeholder={
+                  isAuthed
+                    ? !hasThread
+                      ? "Initialisiere Sitzung…"
+                    : sseStatus === "connecting" || sseStatus === "retrying"
+                      ? "Verbinde…"
+                      : "Was möchtest du wissen?"
                   : "Bitte anmelden, um zu schreiben"
-              }
-            />
+                }
+              />
 
             {!isAuthed && (
               <div className="mt-2 text-xs text-gray-500 text-center">
                 Du musst angemeldet sein, um Nachrichten zu senden.
               </div>
             )}
-            {lastError && (
+            {sseStatus === "error" ? (
               <div className="mt-2 text-xs text-red-500 text-center select-none">
-                Fehler: {lastError}
+                Fehler: {lastError || "Verbindung verloren."}
+                <button
+                  type="button"
+                  onClick={retryNow}
+                  className="ml-2 text-xs font-semibold text-sky-600 hover:text-sky-700 underline underline-offset-2"
+                >
+                  Erneut versuchen
+                </button>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       ) : (
@@ -766,9 +789,9 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                   isAuthed
                     ? !hasThread
                       ? "Initialisiere Sitzung…"
-                      : connected
-                        ? "Was möchtest du wissen?"
-                        : "Initialisiere…"
+                      : sseStatus === "connecting" || sseStatus === "retrying"
+                        ? "Verbinde…"
+                        : "Was möchtest du wissen?"
                     : "Bitte anmelden, um zu schreiben"
                 }
               />
@@ -777,11 +800,24 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                   Du musst angemeldet sein, um Nachrichten zu senden.
                 </div>
               )}
-              {lastError && (
-                <div className="mt-2 text-xs text-red-500 select-none">
-                  Fehler: {lastError}
+              <div className="mt-2 text-xs text-gray-500">
+                Status: <span className={sseStatus === "error" ? "text-red-600" : "text-gray-600"}>{statusLabel}</span>
+                {sseStatus === "retrying" ? (
+                  <span className="ml-2 text-[11px] text-amber-600">(auto)</span>
+                ) : null}
+              </div>
+              {sseStatus === "error" ? (
+                <div className="mt-1 text-xs text-red-500 select-none">
+                  Fehler: {lastError || "Verbindung verloren."}
+                  <button
+                    type="button"
+                    onClick={retryNow}
+                    className="ml-2 text-xs font-semibold text-sky-600 hover:text-sky-700 underline underline-offset-2"
+                  >
+                    Erneut versuchen
+                  </button>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         </>

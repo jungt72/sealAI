@@ -7,6 +7,8 @@ type UseChatSseV2Opts = {
   token?: string | null;
 };
 
+export type SseStatus = 'idle' | 'connecting' | 'streaming' | 'done' | 'retrying' | 'error';
+
 export type ConfirmCheckpointPayload = {
   type: 'confirm_checkpoint';
   phase?: string;
@@ -19,6 +21,9 @@ export type ConfirmCheckpointPayload = {
 
 type SseState = {
   connected: boolean;
+  status: SseStatus;
+  retryAttempt: number;
+  retryMax: number;
   streaming: boolean;
   text: string;
   lastError: string | null;
@@ -27,6 +32,7 @@ type SseState = {
   lastDoneEvent: { id: string | null; data: Record<string, unknown> } | null;
   send: (input: string, metadata?: Record<string, unknown>) => void;
   cancel: () => void;
+  retryNow: () => void;
 };
 
 const ENDPOINT_URL = "/api/chat";
@@ -53,7 +59,9 @@ function parseSseFrame(frame: string): { event?: string; data?: any; id?: string
 }
 
 export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
-  const [connected, setConnected] = useState(false);
+  const retryMax = 5;
+  const [status, setStatus] = useState<SseStatus>('idle');
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const [streaming, setStreaming] = useState(false);
   const [text, setText] = useState('');
   const [lastError, setLastError] = useState<string | null>(null);
@@ -63,18 +71,24 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
 
   const abortRef = useRef<AbortController | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
+  const retryRef = useRef<{ attempt: number; timer: ReturnType<typeof setTimeout> | null }>(
+    { attempt: 0, timer: null },
+  );
+  const lastRequestRef = useRef<{ input: string; metadata?: Record<string, unknown> } | null>(null);
 
   const endpointUrl = useMemo(() => ENDPOINT_URL, []);
-
-  useEffect(() => {
-    setConnected(Boolean(endpointUrl));
-  }, [endpointUrl]);
+  const connected = status !== 'idle' && status !== 'error';
 
   useEffect(() => {
     if (!chatId || typeof window === "undefined") {
       lastEventIdRef.current = null;
       setLastEventId(null);
       setLastDoneEvent(null);
+      setStatus('idle');
+      setRetryAttempt(0);
+      retryRef.current.attempt = 0;
+      if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
+      retryRef.current.timer = null;
       return;
     }
     const stored = sessionStorage.getItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
@@ -83,34 +97,91 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
     setLastDoneEvent(null);
   }, [chatId]);
 
-  const cancel = useCallback(() => {
+  const abortStream = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(false);
   }, []);
 
-  const send = useCallback(
-    async (input: string, metadata?: Record<string, unknown>) => {
+  const cancel = useCallback(() => {
+    abortStream();
+    setStatus('idle');
+    retryRef.current.attempt = 0;
+    setRetryAttempt(0);
+    if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
+    retryRef.current.timer = null;
+  }, [abortStream]);
+
+  useEffect(() => {
+    return () => {
+      abortStream();
+      if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
+      retryRef.current.timer = null;
+    };
+  }, [abortStream]);
+
+  const clearRetryTimer = useCallback(() => {
+    if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
+    retryRef.current.timer = null;
+  }, []);
+
+  const resetRetry = useCallback(() => {
+    retryRef.current.attempt = 0;
+    setRetryAttempt(0);
+    clearRetryTimer();
+  }, [clearRetryTimer]);
+
+  const scheduleRetry = useCallback((reason: string) => {
+    const attempt = retryRef.current.attempt;
+    if (attempt >= retryMax) {
+      setStatus('error');
+      return;
+    }
+    setLastError(reason);
+    setStatus('retrying');
+    const delay = Math.min(1000 * 2 ** attempt, 15000);
+    retryRef.current.attempt += 1;
+    setRetryAttempt(retryRef.current.attempt);
+    clearRetryTimer();
+    retryRef.current.timer = setTimeout(() => {
+      if (!lastRequestRef.current) {
+        setStatus('error');
+        return;
+      }
+      internalSend(lastRequestRef.current.input, lastRequestRef.current.metadata, true);
+    }, delay);
+  }, [clearRetryTimer, retryMax]);
+
+  const internalSend = useCallback(
+    async (input: string, metadata?: Record<string, unknown>, isRetry?: boolean) => {
       if (!endpointUrl) return;
       if (!chatId) return;
       if (!token) {
         setLastError("Nicht angemeldet (Token fehlt).");
+        setStatus('error');
         return;
       }
       const trimmed = (input || '').trim();
       if (!trimmed) return;
 
-      cancel();
+      if (!isRetry) {
+        resetRetry();
+        lastRequestRef.current = { input: trimmed, metadata };
+      }
+
+      abortStream();
       setLastError(null);
       setText('');
       setConfirmCheckpoint(null);
       setLastDoneEvent(null);
+      setStatus('connecting');
 
       const controller = new AbortController();
       abortRef.current = controller;
       setStreaming(true);
 
       const lastEventId = lastEventIdRef.current;
+      let hasFirstChunk = false;
       try {
         const res = await fetch(endpointUrl, {
           method: 'POST',
@@ -133,7 +204,18 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
 
         if (!res.ok || !res.body) {
           const detail = await res.text().catch(() => "");
-          throw new Error(detail || `HTTP ${res.status}`);
+          if (res.status === 401 || res.status === 403) {
+            setLastError(detail || `HTTP ${res.status}`);
+            setStatus('error');
+            setStreaming(false);
+            abortRef.current = null;
+            resetRetry();
+            return;
+          }
+          scheduleRetry(detail || `HTTP ${res.status}`);
+          setStreaming(false);
+          abortRef.current = null;
+          return;
         }
 
         const reader = res.body.getReader();
@@ -149,6 +231,11 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
           buffer = parts.pop() || '';
 
           for (const part of parts) {
+            if (!hasFirstChunk) {
+              hasFirstChunk = true;
+              setStatus('streaming');
+              resetRetry();
+            }
             const { event, data, id } = parseSseFrame(part);
             if (id) {
               lastEventIdRef.current = id;
@@ -168,8 +255,10 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
             if (event === 'error') {
               const msg = data && typeof data.message === 'string' ? data.message : 'unknown error';
               setLastError(msg);
+              setStatus('error');
               setStreaming(false);
               abortRef.current = null;
+              resetRetry();
               if (chatId && typeof window !== "undefined") {
                 sessionStorage.removeItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
               }
@@ -181,6 +270,8 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
               setLastDoneEvent({ id: id ?? null, data: payload });
               setStreaming(false);
               abortRef.current = null;
+              setStatus('done');
+              resetRetry();
               if (chatId && typeof window !== "undefined") {
                 sessionStorage.removeItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
               }
@@ -191,18 +282,36 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
 
         setStreaming(false);
         abortRef.current = null;
+        setStatus('done');
+        resetRetry();
       } catch (e: any) {
         if (e?.name === 'AbortError') return;
-        setLastError(String(e?.message || e));
+        scheduleRetry(String(e?.message || e));
         setStreaming(false);
         abortRef.current = null;
       }
     },
-    [cancel, chatId, endpointUrl, token],
+    [cancel, chatId, endpointUrl, resetRetry, scheduleRetry, token],
   );
+
+  const send = useCallback(
+    (input: string, metadata?: Record<string, unknown>) => {
+      internalSend(input, metadata, false);
+    },
+    [internalSend],
+  );
+
+  const retryNow = useCallback(() => {
+    if (!lastRequestRef.current) return;
+    resetRetry();
+    internalSend(lastRequestRef.current.input, lastRequestRef.current.metadata, true);
+  }, [internalSend, resetRetry]);
 
   return {
     connected,
+    status,
+    retryAttempt,
+    retryMax,
     streaming,
     text,
     lastError,
@@ -211,5 +320,6 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
     lastDoneEvent,
     send,
     cancel,
+    retryNow,
   };
 }
