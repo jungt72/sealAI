@@ -8,6 +8,7 @@ type UseChatSseV2Opts = {
   onToken?: (chunk: string) => void;
   onDone?: (finalText: string) => void;
   onStart?: (isRetry: boolean) => void;
+  onAuthExpired?: () => void;
 };
 
 export type SseStatus = 'idle' | 'connecting' | 'streaming' | 'done' | 'retrying' | 'error';
@@ -66,6 +67,7 @@ export function useChatSseV2({
   onToken,
   onDone,
   onStart,
+  onAuthExpired,
 }: UseChatSseV2Opts): SseState {
   const retryMax = 5;
   const [status, setStatus] = useState<SseStatus>('idle');
@@ -167,6 +169,7 @@ export function useChatSseV2({
       if (!token) {
         setLastError("Nicht angemeldet (Token fehlt).");
         setStatus('error');
+        onAuthExpired?.();
         return;
       }
       const trimmed = (input || '').trim();
@@ -221,6 +224,7 @@ export function useChatSseV2({
             setStreaming(false);
             abortRef.current = null;
             resetRetry();
+            onAuthExpired?.();
             return;
           }
           scheduleRetry(detail || `HTTP ${res.status}`);
@@ -305,7 +309,7 @@ export function useChatSseV2({
         abortRef.current = null;
       }
     },
-    [abortStream, chatId, endpointUrl, onDone, onStart, onToken, resetRetry, scheduleRetry, token],
+    [abortStream, chatId, endpointUrl, onAuthExpired, onDone, onStart, onToken, resetRetry, scheduleRetry, token],
   );
 
   const send = useCallback(

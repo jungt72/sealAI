@@ -12,8 +12,9 @@ const makeRequestId = (): string => {
 export async function POST(req: NextRequest) {
   const request_id = makeRequestId();
   const authHeader = req.headers.get("authorization") ?? "";
-  if (!authHeader.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ detail: "Missing Authorization: Bearer token", request_id }), {
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!bearerToken) {
+    return new Response(JSON.stringify({ detail: "session_expired", request_id }), {
       status: 401,
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": contentType,
-        Authorization: authHeader,
+        Authorization: `Bearer ${bearerToken}`,
       },
       body: bodyText,
       cache: "no-store",

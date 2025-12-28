@@ -80,9 +80,10 @@ export async function POST(req: NextRequest) {
   }
 
   const authHeader = req.headers.get("authorization") ?? "";
-  if (!authHeader.startsWith("Bearer ")) {
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!bearerToken) {
     console.info("[api/chat] missing_auth", { request_id, chat_id });
-    return new Response(JSON.stringify({ detail: "Missing Authorization: Bearer token", request_id }), {
+    return new Response(JSON.stringify({ detail: "session_expired", request_id }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
-        Authorization: authHeader,
+        Authorization: `Bearer ${bearerToken}`,
         "X-Request-Id": request_id,
         ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
       },

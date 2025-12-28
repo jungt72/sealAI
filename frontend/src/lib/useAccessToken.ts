@@ -3,51 +3,50 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 
-type MaybeSession = Record<string, unknown> | null | undefined;
+export type AccessTokenState = {
+  token?: string;
+  error?: "expired" | "missing";
+};
 
-function pickToken(source: MaybeSession): string | undefined {
-  if (!source || typeof source !== "object") return undefined;
-  const candidates = [
-    (source as Record<string, unknown>).accessToken,
-    (source as Record<string, unknown>).idToken,
-    (source as Record<string, unknown>).access_token,
-    (source as Record<string, unknown>).token,
-    (source as Record<string, unknown>).user && (source as Record<string, unknown>).user as Record<string, unknown>,
-  ];
-  for (const candidate of candidates) {
-    if (candidate && typeof candidate === "string" && candidate.length > 0) {
-      return candidate;
-    }
-    if (candidate && typeof candidate === "object") {
-      const nested = pickToken(candidate as MaybeSession);
-      if (nested) return nested;
-    }
-  }
-  return undefined;
-}
+type SessionShape = {
+  accessToken?: string | null;
+  error?: string | null;
+};
 
-export function useAccessToken(): string | undefined {
+export function useAccessToken(): AccessTokenState {
   const { data, status } = useSession();
-  const [token, setToken] = useState<string | undefined>();
+  const [state, setState] = useState<AccessTokenState>({ error: "missing" });
 
   useEffect(() => {
     if (status !== "authenticated") {
-      setToken(undefined);
+      setState({ error: "missing" });
       return;
     }
-    setToken(pickToken(data));
+    const session = (data || {}) as SessionShape;
+    if (session.error === "RefreshAccessTokenError") {
+      setState({ error: "expired" });
+      return;
+    }
+    const token = session.accessToken ?? undefined;
+    if (!token) {
+      setState({ error: "missing" });
+      return;
+    }
+    setState({ token });
   }, [status, data]);
 
-  return token;
+  return state;
 }
 
-export async function fetchFreshAccessToken(): Promise<string | undefined> {
+export async function fetchFreshAccessToken(): Promise<AccessTokenState> {
   try {
     const res = await fetch("/api/auth/session", { cache: "no-store" });
-    if (!res.ok) return undefined;
-    const json = (await res.json()) as MaybeSession;
-    return pickToken(json);
+    if (!res.ok) return { error: "missing" };
+    const json = (await res.json()) as SessionShape;
+    if (json.error === "RefreshAccessTokenError") return { error: "expired" };
+    if (!json.accessToken) return { error: "missing" };
+    return { token: json.accessToken };
   } catch {
-    return undefined;
+    return { error: "missing" };
   }
 }

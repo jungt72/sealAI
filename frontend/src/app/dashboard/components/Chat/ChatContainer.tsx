@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { useAccessToken } from "@/lib/useAccessToken";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import ChatHistory from "./ChatHistory";
@@ -59,7 +59,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const preferredChatId = (chatIdProp ?? "").trim() || null;
   const storedChatId = useChatThreadId(preferredChatId);
   const chatId = preferredChatId ?? storedChatId;
-  const token = useAccessToken();
+  const { token, error: tokenError } = useAccessToken();
   const streamingRef = useRef<StreamingMessageHandle | null>(null);
   const handleStreamToken = useCallback((chunk: string) => {
     streamingRef.current?.append(chunk);
@@ -73,6 +73,20 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     }
     streamingRef.current?.reset();
   }, []);
+
+  const [authExpired, setAuthExpired] = useState(false);
+
+  useEffect(() => {
+    if (tokenError === "expired") {
+      setAuthExpired(true);
+      return;
+    }
+    if (tokenError === "missing") {
+      setAuthExpired(authStatus === "authenticated");
+      return;
+    }
+    setAuthExpired(false);
+  }, [tokenError, authStatus]);
 
   const {
     status: sseStatus,
@@ -92,6 +106,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     onToken: handleStreamToken,
     onStart: handleStreamStart,
     onDone: handleStreamDone,
+    onAuthExpired: () => setAuthExpired(true),
   });
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -479,9 +494,10 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
   const firstName = (session?.user?.name || "").split(" ")[0] || "";
   const hasThread = Boolean(chatId);
-  const sendingDisabled = !isAuthed || !hasThread;
+  const sendingDisabled = !isAuthed || authExpired || !hasThread;
   const isInitial = messages.length === 0 && !hasStarted;
   const statusLabel = useMemo(() => {
+    if (authExpired) return "Sitzung abgelaufen";
     if (!isAuthed) return "Bitte anmelden";
     if (!hasThread) return "Initialisiere Sitzung…";
     if (sseStatus === "connecting") return "Verbinde…";
@@ -490,7 +506,12 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     if (sseStatus === "done") return "Streaming beendet";
     if (sseStatus === "error") return "Verbindung verloren";
     return "Bereit";
-  }, [isAuthed, hasThread, sseStatus, retryAttempt, retryMax]);
+  }, [authExpired, isAuthed, hasThread, sseStatus, retryAttempt, retryMax]);
+
+  const handleReauth = useCallback(() => {
+    const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+    signIn("keycloak", { callbackUrl: `${base}/chat` });
+  }, []);
 
   const handleSend = useCallback(async (msg: string) => {
     if (sendingDisabled) return;
@@ -661,23 +682,36 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
               onStop={() => cancel()}
               disabled={sendingDisabled}
               streaming={streaming}
-                placeholder={
-                  isAuthed
-                    ? !hasThread
-                      ? "Initialisiere Sitzung…"
+              placeholder={
+                authExpired
+                  ? "Sitzung abgelaufen"
+                  : isAuthed
+                  ? !hasThread
+                    ? "Initialisiere Sitzung…"
                     : sseStatus === "connecting" || sseStatus === "retrying"
                       ? "Verbinde…"
                       : "Was möchtest du wissen?"
                   : "Bitte anmelden, um zu schreiben"
-                }
-              />
+              }
+            />
 
             {!isAuthed && (
               <div className="mt-2 text-xs text-gray-500 text-center">
                 Du musst angemeldet sein, um Nachrichten zu senden.
               </div>
             )}
-            {sseStatus === "error" ? (
+            {authExpired ? (
+              <div className="mt-2 text-xs text-red-500 text-center select-none">
+                Sitzung abgelaufen.
+                <button
+                  type="button"
+                  onClick={handleReauth}
+                  className="ml-2 text-xs font-semibold text-sky-600 hover:text-sky-700 underline underline-offset-2"
+                >
+                  Neu anmelden
+                </button>
+              </div>
+            ) : sseStatus === "error" ? (
               <div className="mt-2 text-xs text-red-500 text-center select-none">
                 Fehler: {lastError || "Verbindung verloren."}
                 <button
@@ -773,7 +807,9 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                 disabled={sendingDisabled}
                 streaming={streaming}
                 placeholder={
-                  isAuthed
+                  authExpired
+                    ? "Sitzung abgelaufen"
+                    : isAuthed
                     ? !hasThread
                       ? "Initialisiere Sitzung…"
                       : sseStatus === "connecting" || sseStatus === "retrying"
@@ -793,7 +829,18 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                   <span className="ml-2 text-[11px] text-amber-600">(auto)</span>
                 ) : null}
               </div>
-              {sseStatus === "error" ? (
+              {authExpired ? (
+                <div className="mt-1 text-xs text-red-500 select-none">
+                  Sitzung abgelaufen.
+                  <button
+                    type="button"
+                    onClick={handleReauth}
+                    className="ml-2 text-xs font-semibold text-sky-600 hover:text-sky-700 underline underline-offset-2"
+                  >
+                    Neu anmelden
+                  </button>
+                </div>
+              ) : sseStatus === "error" ? (
                 <div className="mt-1 text-xs text-red-500 select-none">
                   Fehler: {lastError || "Verbindung verloren."}
                   <button

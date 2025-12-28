@@ -25,20 +25,8 @@ function resolveBackendBase(): string {
 
 function pickToken(session: any): string | undefined {
   if (!session || typeof session !== "object") return undefined;
-
-  const direct =
-    session.accessToken ||
-    session.access_token ||
-    session.token ||
-    session.idToken ||
-    session.id_token;
-
+  const direct = session.accessToken;
   if (typeof direct === "string" && direct.length > 0) return direct;
-
-  // manchmal steckt es in session.user
-  const user = session.user;
-  if (user && typeof user === "object") return pickToken(user);
-
   return undefined;
 }
 
@@ -51,7 +39,7 @@ export async function GET() {
     // Das ist der klassische Fall "Failed to read session"
     return NextResponse.json(
       {
-        detail: "Failed to read session",
+        detail: "session_expired",
         reason: "session_read_failed",
         error: String(e?.message || e),
       },
@@ -62,7 +50,7 @@ export async function GET() {
   if (!session) {
     return NextResponse.json(
       {
-        detail: "Unauthorized",
+        detail: "session_expired",
         reason: "no_session",
       },
       { status: 401 },
@@ -73,7 +61,7 @@ export async function GET() {
   if (sessionExpired) {
     return NextResponse.json(
       {
-        detail: "Session expired",
+        detail: "session_expired",
         reason: "refresh_failed",
       },
       { status: 401 },
@@ -84,7 +72,7 @@ export async function GET() {
   if (!accessToken) {
     return NextResponse.json(
       {
-        detail: "Unauthorized",
+        detail: "session_expired",
         reason: "no_access_token",
       },
       { status: 401 },

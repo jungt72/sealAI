@@ -363,7 +363,7 @@ function FormInner({
 }
 
 export default function SidebarForm({ embedded = false }: Props) {
-  const token = useAccessToken();
+  const { token } = useAccessToken();
   const chatId = useChatThreadId();
 
   const [open, setOpen] = React.useState(false);
