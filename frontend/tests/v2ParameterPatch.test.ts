@@ -37,7 +37,7 @@ describe("v2 parameter patch helpers", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     const [patchUrl, patchInit] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(patchUrl).toBe("/api/v1/langgraph/parameters/patch");
+    expect(patchUrl).toBe("/api/langgraph/parameters/patch");
     expect(patchInit.method).toBe("POST");
     expect(patchInit.headers).toMatchObject({
       "Content-Type": "application/json",
@@ -48,7 +48,7 @@ describe("v2 parameter patch helpers", () => {
     );
 
     const [stateUrl, stateInit] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(stateUrl).toBe("/api/v1/langgraph/state?thread_id=chat-123");
+    expect(stateUrl).toBe("/api/langgraph/state?thread_id=chat-123");
     expect(stateInit.method).toBe("GET");
     expect(stateInit.headers).toMatchObject({
       Authorization: "Bearer token-abc",
@@ -73,7 +73,7 @@ describe("v2 parameter patch helpers", () => {
 
     expect(params).toEqual({ pressure_bar: 2, medium: "oil" });
     const [stateUrl, stateInit] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(stateUrl).toBe("/api/v1/langgraph/state?thread_id=chat-456");
+    expect(stateUrl).toBe("/api/langgraph/state?thread_id=chat-456");
     expect(stateInit.method).toBe("GET");
     expect(stateInit.headers).toMatchObject({
       Authorization: "Bearer token-xyz",
