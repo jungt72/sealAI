@@ -27,3 +27,13 @@ Legacy LangGraph v1 Endpoints sind entfernt bzw. liefern 410 Gone mit Hinweis:
 - BASE_URL=http://localhost:3000 ./ops/smoke_langgraph_v2_bff.sh
 - BASE_URL=https://sealai.net BEARER_TOKEN=... ./ops/smoke_langgraph_v2_bff.sh
 - ./ops/check_no_langgraph_v1.sh
+
+## CI Guardrails
+Der Workflow `.github/workflows/langgraph-v2-guardrails.yml` fuehrt folgende Checks aus:
+- v2-only Code Check (failt bei v1 Imports oder direkten Client-Calls zu `/api/v1/langgraph/*`).
+- Smoke-Test gegen die BFF-Routen ohne Token (401 gilt als Erfolg).
+
+Der Build bricht ab bei:
+- v1 Importen ausserhalb `backend/app/archive/**`.
+- Direkten Client-Calls zu `/api/v1/langgraph/*` ausserhalb der erlaubten Server-Routen.
+- Nicht erreichbaren BFF-Routen (z.B. fehlender 401/200).
