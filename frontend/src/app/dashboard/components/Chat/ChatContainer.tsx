@@ -4,7 +4,6 @@ import { useSession } from "next-auth/react";
 import { useAccessToken } from "@/lib/useAccessToken";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import ChatHistory from "./ChatHistory";
-import Thinking from "./Thinking";
 import ChatInput from "./ChatInput";
 import type { Message } from "@/types/chat";
 import { useChatSseV2 } from "@/lib/useChatSseV2";
@@ -19,11 +18,9 @@ import {
   type ParameterSyncState,
 } from "@/lib/parameterSync";
 
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-
 import ParameterFormSidebar from "./ParameterFormSidebar";
 import type { SealParameters } from "@/lib/types/sealParameters";
+import StreamingMessage, { type StreamingMessageHandle } from "./StreamingMessage";
 
 type ChatContainerProps = {
   chatId?: string | null;
@@ -63,12 +60,25 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const storedChatId = useChatThreadId(preferredChatId);
   const chatId = preferredChatId ?? storedChatId;
   const token = useAccessToken();
+  const streamingRef = useRef<StreamingMessageHandle | null>(null);
+  const handleStreamToken = useCallback((chunk: string) => {
+    streamingRef.current?.append(chunk);
+  }, []);
+  const handleStreamStart = useCallback((isRetry: boolean) => {
+    if (!isRetry) streamingRef.current?.reset();
+  }, []);
+  const handleStreamDone = useCallback((finalText: string) => {
+    if (finalText && finalText.trim()) {
+      setMessages((m) => [...m, { role: "assistant", content: finalText }]);
+    }
+    streamingRef.current?.reset();
+  }, []);
+
   const {
     status: sseStatus,
     retryAttempt,
     retryMax,
     streaming,
-    text,
     lastError,
     confirmCheckpoint,
     send,
@@ -76,7 +86,13 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     lastEventId,
     lastDoneEvent,
     retryNow,
-  } = useChatSseV2({ chatId, token });
+  } = useChatSseV2({
+    chatId,
+    token,
+    onToken: handleStreamToken,
+    onStart: handleStreamStart,
+    onDone: handleStreamDone,
+  });
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -446,13 +462,13 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     }
   }, [streaming]);
 
-  useEffect(() => {
+  const syncAutoAnchor = useCallback(() => {
     if (!streaming || !autoAnchor) return;
     const cont = scrollRef.current;
     const t = targetTopRef.current;
     if (!cont || t == null) return;
     if (Math.abs(cont.scrollTop - t) > 40) cont.scrollTo({ top: t, behavior: "auto" });
-  }, [text, streaming, autoAnchor]);
+  }, [streaming, autoAnchor]);
 
   useEffect(() => {
     if (!streaming) {
@@ -460,26 +476,6 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       setAutoAnchor(false);
     }
   }, [streaming]);
-
-  // ===== Live-Text in History mergen =====
-  useEffect(() => {
-    if (text === "") return;
-    setMessages((prev) => {
-      const lastIdx = prev.length - 1;
-      if (lastIdx >= 0 && prev[lastIdx].role === "assistant") {
-        const copy = [...prev];
-        copy[lastIdx] = { ...copy[lastIdx], content: text };
-        return copy;
-      }
-      return [...prev, { role: "assistant", content: text }];
-    });
-  }, [text]);
-
-  const historyMessages = useMemo(() => {
-    if (!streaming || messages.length === 0) return messages;
-    const last = messages[messages.length - 1];
-    return last.role === "assistant" ? messages.slice(0, -1) : messages;
-  }, [messages, streaming]);
 
   const firstName = (session?.user?.name || "").split(" ")[0] || "";
   const hasThread = Boolean(chatId);
@@ -531,8 +527,6 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     setInputValue("");
     setConfirmActionError(null);
   }, [sendingDisabled, send, patchAllParameters, applyLocalParameters]);
-
-  const hasFirstToken = text.trim().length > 0;
 
   const missingCoreFields = useMemo(() => {
     const knownCore = ["medium", "temperature_C", "pressure_bar", "speed_rpm", "shaft_diameter"];
@@ -758,20 +752,13 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
               </div>
             ) : null}
 
-            <ChatHistory messages={historyMessages} />
+            <ChatHistory messages={messages} />
 
             <div ref={anchorRef} aria-hidden />
 
             {streaming && (
               <div className="w-full max-w-[768px] mx-auto px-4 py-2">
-                <div className="inline-flex items-start gap-2">
-                  {!hasFirstToken ? <Thinking /> : null}
-                  <div className="max-w-[680px] chat-markdown cm-assistant">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {text || (hasFirstToken ? "" : " ")}
-                    </ReactMarkdown>
-                  </div>
-                </div>
+                <StreamingMessage ref={streamingRef} onFrame={syncAutoAnchor} />
               </div>
             )}
           </div>

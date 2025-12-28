@@ -5,6 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 type UseChatSseV2Opts = {
   chatId?: string | null;
   token?: string | null;
+  onToken?: (chunk: string) => void;
+  onDone?: (finalText: string) => void;
+  onStart?: (isRetry: boolean) => void;
 };
 
 export type SseStatus = 'idle' | 'connecting' | 'streaming' | 'done' | 'retrying' | 'error';
@@ -25,7 +28,6 @@ type SseState = {
   retryAttempt: number;
   retryMax: number;
   streaming: boolean;
-  text: string;
   lastError: string | null;
   confirmCheckpoint: ConfirmCheckpointPayload | null;
   lastEventId: string | null;
@@ -58,12 +60,17 @@ function parseSseFrame(frame: string): { event?: string; data?: any; id?: string
   }
 }
 
-export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
+export function useChatSseV2({
+  chatId,
+  token,
+  onToken,
+  onDone,
+  onStart,
+}: UseChatSseV2Opts): SseState {
   const retryMax = 5;
   const [status, setStatus] = useState<SseStatus>('idle');
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [streaming, setStreaming] = useState(false);
-  const [text, setText] = useState('');
   const [lastError, setLastError] = useState<string | null>(null);
   const [confirmCheckpoint, setConfirmCheckpoint] = useState<ConfirmCheckpointPayload | null>(null);
   const [lastEventId, setLastEventId] = useState<string | null>(null);
@@ -75,6 +82,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
     { attempt: 0, timer: null },
   );
   const lastRequestRef = useRef<{ input: string; metadata?: Record<string, unknown> } | null>(null);
+  const textBufferRef = useRef('');
 
   const endpointUrl = useMemo(() => ENDPOINT_URL, []);
   const connected = status !== 'idle' && status !== 'error';
@@ -167,11 +175,14 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
       if (!isRetry) {
         resetRetry();
         lastRequestRef.current = { input: trimmed, metadata };
+        textBufferRef.current = '';
+        onStart?.(false);
+      } else {
+        onStart?.(true);
       }
 
       abortStream();
       setLastError(null);
-      setText('');
       setConfirmCheckpoint(null);
       setLastDoneEvent(null);
       setStatus('connecting');
@@ -245,7 +256,8 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
               setLastEventId(id);
             }
             if (event === 'token' && data && typeof data.text === 'string') {
-              setText(prev => prev + data.text);
+              textBufferRef.current = `${textBufferRef.current}${data.text}`;
+              onToken?.(data.text);
               continue;
             }
             if (event === 'confirm_checkpoint' && data && typeof data === 'object') {
@@ -272,6 +284,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
               abortRef.current = null;
               setStatus('done');
               resetRetry();
+              if (textBufferRef.current) onDone?.(textBufferRef.current);
               if (chatId && typeof window !== "undefined") {
                 sessionStorage.removeItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
               }
@@ -284,6 +297,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
         abortRef.current = null;
         setStatus('done');
         resetRetry();
+        if (textBufferRef.current) onDone?.(textBufferRef.current);
       } catch (e: any) {
         if (e?.name === 'AbortError') return;
         scheduleRetry(String(e?.message || e));
@@ -291,7 +305,7 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
         abortRef.current = null;
       }
     },
-    [cancel, chatId, endpointUrl, resetRetry, scheduleRetry, token],
+    [abortStream, chatId, endpointUrl, onDone, onStart, onToken, resetRetry, scheduleRetry, token],
   );
 
   const send = useCallback(
@@ -313,7 +327,6 @@ export function useChatSseV2({ chatId, token }: UseChatSseV2Opts): SseState {
     retryAttempt,
     retryMax,
     streaming,
-    text,
     lastError,
     confirmCheckpoint,
     lastEventId,
