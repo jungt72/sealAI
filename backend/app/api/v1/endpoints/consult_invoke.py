@@ -1,25 +1,14 @@
 # backend/app/api/v1/endpoints/consult_invoke.py
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
-from app.langgraph.compile import run_langgraph_stream
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, status
 
-router = APIRouter(prefix="/test", tags=["test"])  # wird unter /api/v1 gemountet
+router = APIRouter(prefix="/test", tags=["test"])
 
-class ConsultInvokeIn(BaseModel):
-    text: str = Field(..., description="Nutzereingabe")
-    chat_id: str = Field(..., description="Thread/Chat ID")
 
-class ConsultInvokeOut(BaseModel):
-    text: str
-
-@router.post("/consult/invoke", response_model=ConsultInvokeOut)
-async def consult_invoke_endpoint(request: Request, payload: ConsultInvokeIn):
-    text = (payload.text or "").strip()
-    if not text:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="text empty")
-
-    request.state.langgraph_payload = payload.model_dump()
-    result = await run_langgraph_stream(request)
-    return result
+@router.api_route("/consult/invoke", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def legacy_langgraph_v1_consult_gone() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy LangGraph v1 endpoint removed; use /api/v1/langgraph/* (v2).",
+    )

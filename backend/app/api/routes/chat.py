@@ -1,43 +1,17 @@
-"""Chat endpoint placeholder emitting HTTP 503 while LangGraph rebuilds."""
+"""Legacy chat endpoint removed in favor of LangGraph v2."""
 from __future__ import annotations
 
-from typing import Any
-
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from app.langgraph.compile import run_langgraph_stream
-from pydantic import BaseModel, Field
-
-from app.services.auth.dependencies import RequestUser, get_current_request_user
+from fastapi import APIRouter, HTTPException, status
 
 router = APIRouter()
 
 
-class ParameterItem(BaseModel):
-    name: str
-    value: int | float | str | bool
-    unit: str = Field(default="none")
-    source: str = Field(default="user")
-
-
-class ChatStreamRequest(BaseModel):
-    chat_id: str = Field(..., min_length=1)
-    input_text: str = Field(..., min_length=1)
-
-
-@router.post("/chat/stream", status_code=status.HTTP_200_OK)
-async def chat_stream(
-    payload: ChatStreamRequest,
-    _request: Request,
-    _user: RequestUser = Depends(get_current_request_user),
-) -> Any:
-    text = payload.input_text.strip()
-    if not text:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="input_text empty")
-
-    request = _request
-    request.state.langgraph_payload = payload.model_dump()
-    result = await run_langgraph_stream(request)
-    return result
+@router.api_route("/chat/stream", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def legacy_langgraph_v1_stream_gone() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy LangGraph v1 endpoint removed; use /api/v1/langgraph/* (v2).",
+    )
 
 
 __all__ = ["router"]
