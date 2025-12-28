@@ -80,6 +80,40 @@ expect_protected "GET" "${BASE_URL}/api/langgraph/state?thread_id=${THREAD_ID}" 
 patch_payload=$(jq -c -n --arg tid "$THREAD_ID" '{chat_id:$tid,parameters:{pressure_bar:1}}')
 expect_protected "POST" "${BASE_URL}/api/langgraph/parameters/patch" "$patch_payload" "$expected_protected"
 
+# C2) Normalization check (token required)
+if [ -z "$BEARER_TOKEN" ]; then
+  echo "SKIP: normalization check (no token)"
+else
+  norm_patch=$(jq -c -n --arg tid "$THREAD_ID" '{chat_id:$tid,parameters:{pressure_bar:"5.4"}}')
+  norm_code=$(curl -sS -o /tmp/smoke_norm_patch.json -w "%{http_code}" \
+    -X POST -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${BEARER_TOKEN}" \
+    -d "$norm_patch" \
+    "${BASE_URL}/api/langgraph/parameters/patch")
+  if [ "$norm_code" -ge 200 ] && [ "$norm_code" -lt 300 ]; then
+    pass "POST /api/langgraph/parameters/patch (normalize) -> ${norm_code}"
+  else
+    fail "POST /api/langgraph/parameters/patch (normalize) -> ${norm_code}"
+  fi
+
+  state_code=$(curl -sS -o /tmp/smoke_norm_state.json -w "%{http_code}" \
+    -H "Authorization: Bearer ${BEARER_TOKEN}" \
+    "${BASE_URL}/api/langgraph/state?thread_id=${THREAD_ID}")
+  if [ "$state_code" -ge 200 ] && [ "$state_code" -lt 300 ]; then
+    pass "GET /api/langgraph/state (normalize) -> ${state_code}"
+  else
+    fail "GET /api/langgraph/state (normalize) -> ${state_code}"
+  fi
+
+  if jq -e '.parameters.pressure_bar | type == "number"' /tmp/smoke_norm_state.json >/dev/null; then
+    pass "state.parameters.pressure_bar is number (normalized)"
+  else
+    echo "state response:" >&2
+    cat /tmp/smoke_norm_state.json >&2
+    fail "state.parameters.pressure_bar is not number"
+  fi
+fi
+
 # D) Confirm GO
 confirm_payload=$(jq -c -n --arg tid "$THREAD_ID" '{chat_id:$tid,go:true}')
 expect_protected "POST" "${BASE_URL}/api/langgraph/confirm/go" "$confirm_payload" "$expected_protected"
