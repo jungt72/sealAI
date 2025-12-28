@@ -15,6 +15,8 @@ type ConversationListItem = {
 };
 
 const SESSION_EXPIRED_MESSAGE = "Sitzung abgelaufen – neu anmelden";
+const CACHE_TTL_MS = 45 * 1000;
+const INVALIDATE_EVENT = "sealai:conversations:invalidate";
 
 const SECTION_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
@@ -79,10 +81,20 @@ export default function ConversationSidebar() {
   const authStateRef = useRef(authState);
   const abortControllerRef = useRef<AbortController | null>(null);
   const didReauthFetchRef = useRef(false);
+  const cacheRef = useRef<{ items: ConversationListItem[]; fetchedAt: number } | null>(null);
 
-  const fetchConversations = useCallback(async () => {
+  const fetchConversations = useCallback(async (opts?: { force?: boolean }) => {
     if (authStateRef.current === "expired") {
       setLoading(false);
+      return;
+    }
+
+    const cached = cacheRef.current;
+    const isFresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
+    if (!opts?.force && isFresh) {
+      setConversations(cached.items);
+      setLoading(false);
+      setError(null);
       return;
     }
 
@@ -123,8 +135,10 @@ export default function ConversationSidebar() {
 
       if (Array.isArray(payload)) {
         setConversations(payload as ConversationListItem[]);
+        cacheRef.current = { items: payload as ConversationListItem[], fetchedAt: Date.now() };
       } else {
         setConversations([]);
+        cacheRef.current = { items: [], fetchedAt: Date.now() };
       }
       setAuthState("ok");
     } catch (e: any) {
@@ -148,7 +162,7 @@ export default function ConversationSidebar() {
   useEffect(() => {
     if (status === "loading") return;
     void fetchConversations();
-  }, [fetchConversations, pathname, status]);
+  }, [fetchConversations, status]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -159,14 +173,36 @@ export default function ConversationSidebar() {
         didReauthFetchRef.current = true;
         authStateRef.current = "ok";
         setAuthState("ok");
-        void fetchConversations();
+        void fetchConversations({ force: true });
       }
       return;
     }
 
     // Reset one-shot guard when leaving authenticated state.
     didReauthFetchRef.current = false;
+    cacheRef.current = null;
+    setConversations([]);
+    setError(null);
   }, [status, fetchConversations]);
+
+  useEffect(() => {
+    const onInvalidate = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ reason?: string }>).detail;
+      if (detail?.reason === "auth_expired") {
+        cacheRef.current = null;
+        setConversations([]);
+        setError(SESSION_EXPIRED_MESSAGE);
+        setAuthState("expired");
+        return;
+      }
+      cacheRef.current = null;
+      void fetchConversations({ force: true });
+    };
+    window.addEventListener(INVALIDATE_EVENT, onInvalidate as EventListener);
+    return () => {
+      window.removeEventListener(INVALIDATE_EVENT, onInvalidate as EventListener);
+    };
+  }, [fetchConversations]);
 
   const recent = useMemo(() => {
     const now = Date.now();
@@ -184,6 +220,7 @@ export default function ConversationSidebar() {
 
   const handleNewConversation = useCallback(() => {
     const newId = makeConversationId();
+    window.dispatchEvent(new CustomEvent(INVALIDATE_EVENT, { detail: { reason: "new_conversation" } }));
     router.push(`/chat/${newId}`);
   }, [router]);
 
@@ -324,6 +361,15 @@ export default function ConversationSidebar() {
                       Neu anmelden
                     </button>
                   )}
+                  {!sessionExpired && (
+                    <button
+                      type="button"
+                      onClick={() => fetchConversations({ force: true })}
+                      className="ml-2 text-xs font-semibold uppercase tracking-wide text-sky-600 underline-offset-4 transition hover:text-sky-800"
+                    >
+                      Erneut laden
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -343,7 +389,16 @@ export default function ConversationSidebar() {
                 {renderList(older)}
 
                 {!error && recent.length === 0 && older.length === 0 && (
-                  <div className="px-2 py-2 text-sm text-slate-500">Keine Unterhaltungen gefunden.</div>
+                  <div className="px-2 py-2 text-sm text-slate-500">
+                    Noch keine Unterhaltungen.
+                    <button
+                      type="button"
+                      onClick={handleNewConversation}
+                      className="ml-2 text-xs font-semibold text-sky-600 underline underline-offset-2 hover:text-sky-800"
+                    >
+                      Neue Unterhaltung starten
+                    </button>
+                  </div>
                 )}
               </div>
             )}

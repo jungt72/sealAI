@@ -70,6 +70,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const handleStreamDone = useCallback((finalText: string) => {
     if (finalText && finalText.trim()) {
       setMessages((m) => [...m, { role: "assistant", content: finalText }]);
+      window.dispatchEvent(
+        new CustomEvent("sealai:conversations:invalidate", {
+          detail: { reason: "message_committed" },
+        }),
+      );
     }
     streamingRef.current?.reset();
   }, []);
@@ -87,6 +92,15 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     }
     setAuthExpired(false);
   }, [tokenError, authStatus]);
+
+  useEffect(() => {
+    if (!authExpired) return;
+    window.dispatchEvent(
+      new CustomEvent("sealai:conversations:invalidate", {
+        detail: { reason: "auth_expired" },
+      }),
+    );
+  }, [authExpired]);
 
   const {
     status: sseStatus,
