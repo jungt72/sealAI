@@ -19,11 +19,12 @@ from langchain_core.messages import BaseMessage  # nur für Typing, keine direkt
 from app.langgraph.io import AskMissingRequest
 from app.langgraph_v2.constants import MODEL_NANO
 from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import SealAIState, WorkingMemory
+from app.langgraph_v2.state import SealAIState, TechnicalParameters, WorkingMemory
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.json_sanitizer import extract_json_obj
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.parameter_extraction import extract_parameters_from_text
+from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
 
 logger = structlog.get_logger("langgraph_v2.nodes_discovery")
 
@@ -128,10 +129,15 @@ def frontdoor_discovery_node(state: SealAIState, *_args, **_kwargs) -> Dict[str,
 
     
     # Merge with existing parameters
-    parameters = dict(state.parameters or {})
-    logger.info("frontdoor_before_merge", old_parameters=parameters, extracted_params=extracted_params)
-    parameters.update(extracted_params)
-    logger.info("frontdoor_after_merge", merged_parameters=parameters)
+    existing_params = state.parameters.as_dict() if state.parameters else {}
+    logger.info("frontdoor_before_merge", old_parameters=existing_params, extracted_params=extracted_params)
+    merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+        existing_params,
+        extracted_params,
+        state.parameter_provenance,
+        source="user",
+    )
+    logger.info("frontdoor_after_merge", merged_parameters=merged_params)
 
 
     # WorkingMemory um interne Discovery-Infos erweitern (bleibt „unsichtbar“ für den User)
@@ -149,7 +155,8 @@ def frontdoor_discovery_node(state: SealAIState, *_args, **_kwargs) -> Dict[str,
     return {
         # KEINE messages-Änderung -> keine zusätzliche Chat-Bubble
         "working_memory": wm,
-        "parameters": parameters,
+        "parameters": TechnicalParameters.model_validate(merged_params),
+        "parameter_provenance": merged_provenance,
         "phase": PHASE.ENTRY,
         "last_node": "frontdoor_discovery_node",
         **_ui_state_payload(

@@ -49,7 +49,7 @@ def _event(event: str, **data: Any) -> None:
 
 def _iso_utc() -> str:
     import datetime as _dt
-    return _dt.datetime.utcnow().replace(tzinfo=_dt.timezone.utc).isoformat()
+    return _dt.datetime.now(_dt.timezone.utc).isoformat()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Init / warmup

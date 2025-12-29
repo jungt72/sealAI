@@ -21,6 +21,7 @@ from app.langgraph_v2.utils.checkpointer import make_v2_checkpointer_async
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI
 from app.langgraph_v2.utils.messages import latest_user_text
+from app.langgraph_v2.utils.threading import stable_thread_key
 
 logger = structlog.get_logger("langgraph_v2.graph")
 state_logger = logging.getLogger("langgraph_v2.state")
@@ -117,12 +118,18 @@ def log_state_debug(node_name: str, state: Any) -> None:
 # ---------------------------------------------------------------------------
 
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
-from app.langgraph_v2.nodes.nodes_confirm import confirm_recommendation_node
+from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node, confirm_recommendation_node
 from app.langgraph_v2.nodes.nodes_supervisor import (
     aggregator_node,
     panel_calculator_node,
     panel_material_node,
     supervisor_policy_node,
+)
+from app.langgraph_v2.nodes.response_node import response_node
+from app.langgraph_v2.nodes.nodes_resume import (
+    confirm_reject_node,
+    confirm_resume_node,
+    resume_router_node,
 )
 from app.langgraph_v2.nodes.nodes_flows import (
     build_final_answer_context,
@@ -417,6 +424,13 @@ def _supervisor_policy_router(state: SealAIState) -> str:
     return str(getattr(state, "next_action", "FINALIZE") or "FINALIZE")
 
 
+def _resume_router(state: SealAIState) -> str:
+    if state.awaiting_user_confirmation and (state.confirm_decision or "").strip():
+        decision = (state.confirm_decision or "").strip().lower()
+        return "reject" if decision == "reject" else "resume"
+    return "frontdoor"
+
+
 async def _parameter_check_router_async(state: SealAIState) -> str:
     return _parameter_check_router(state)
 
@@ -433,6 +447,10 @@ async def _supervisor_policy_router_async(state: SealAIState) -> str:
     return _supervisor_policy_router(state)
 
 
+async def _resume_router_async(state: SealAIState) -> str:
+    return _resume_router(state)
+
+
 # ---------------------------------------------------------------------------
 # Graph-Definition
 # ---------------------------------------------------------------------------
@@ -443,6 +461,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     logger.debug("create_sealai_graph_v2_start")
 
     # Node registration
+    builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
     builder.add_node("supervisor_policy_node", supervisor_policy_node)
     builder.add_node("aggregator_node", aggregator_node)
@@ -462,11 +481,25 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_node("leakage_troubleshooting_node", leakage_troubleshooting_node)
     builder.add_node("troubleshooting_pattern_node", troubleshooting_pattern_node)
     builder.add_node("troubleshooting_explainer_node", troubleshooting_explainer_node)
+    builder.add_node("confirm_checkpoint_node", confirm_checkpoint_node)
+    builder.add_node("confirm_resume_node", confirm_resume_node)
+    builder.add_node("confirm_reject_node", confirm_reject_node)
     builder.add_node("confirm_recommendation_node", confirm_recommendation_node)
     builder.add_node("final_answer_node", _build_final_answer_chain())
+    builder.add_node("response_node", response_node)
 
     # Entrypoint
-    builder.add_edge(START, "frontdoor_discovery_node")
+    builder.add_edge(START, "resume_router_node")
+    builder.add_conditional_edges(
+        "resume_router_node",
+        _resume_router_async,
+        {
+            "reject": "confirm_reject_node",
+            "resume": "confirm_resume_node",
+            "frontdoor": "frontdoor_discovery_node",
+            "default": "response_node",
+        },
+    )
     builder.add_edge("frontdoor_discovery_node", "supervisor_policy_node")
 
     # MAI-DxO supervisor loop (feature flagged)
@@ -481,6 +514,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
             "RUN_COMPARISON": "material_comparison_node",
             "RUN_TROUBLESHOOTING": "leakage_troubleshooting_node",
             "RUN_CONFIRM": "confirm_recommendation_node",
+            "REQUIRE_CONFIRM": "confirm_checkpoint_node",
             "FINALIZE": "final_answer_node",
             "__else__": "final_answer_node",
         },
@@ -489,6 +523,23 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_edge("panel_material_node", "aggregator_node")
     builder.add_edge("rag_support_node", "aggregator_node")
     builder.add_edge("aggregator_node", "supervisor_policy_node")
+
+    builder.add_conditional_edges(
+        "confirm_resume_node",
+        _supervisor_policy_router_async,
+        {
+            "ASK_USER": "final_answer_node",
+            "RUN_PANEL_CALC": "panel_calculator_node",
+            "RUN_PANEL_MATERIAL": "panel_material_node",
+            "RUN_PANEL_NORMS_RAG": "rag_support_node",
+            "RUN_COMPARISON": "material_comparison_node",
+            "RUN_TROUBLESHOOTING": "leakage_troubleshooting_node",
+            "RUN_CONFIRM": "confirm_recommendation_node",
+            "REQUIRE_CONFIRM": "confirm_checkpoint_node",
+            "FINALIZE": "final_answer_node",
+            "__else__": "final_answer_node",
+        },
+    )
 
     # Design flow
     builder.add_edge("discovery_schema_node", "parameter_check_node")
@@ -539,9 +590,12 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_edge("troubleshooting_explainer_node", "final_answer_node")
 
     builder.add_edge("confirm_recommendation_node", END)
+    builder.add_edge("confirm_checkpoint_node", END)
+    builder.add_edge("confirm_reject_node", END)
 
     # Smalltalk / out-of-scope share final answer node (already defined in supervisor routing)
     builder.add_edge("final_answer_node", END)
+    builder.add_edge("response_node", END)
 
     return builder.compile(checkpointer=checkpointer)
 
@@ -579,7 +633,7 @@ def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
     run_id = str(uuid.uuid4())
     # Checkpointer identity must be stable per (user_id, thread_id) so that state
     # can be recovered reliably and isolated across users.
-    checkpoint_thread_id = f"{user_id}|{thread_id}"
+    checkpoint_thread_id = stable_thread_key(user_id, thread_id)
     configurable: Dict[str, Any] = {
         "thread_id": checkpoint_thread_id,
         "checkpoint_ns": CHECKPOINTER_NAMESPACE_V2,

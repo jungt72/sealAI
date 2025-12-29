@@ -1,7 +1,9 @@
 'use client';
 
 import { signIn, useSession } from "next-auth/react";
-import { useAccessToken } from "@/lib/useAccessToken";
+import { usePathname } from "next/navigation";
+import { fetchFreshAccessToken, useAccessToken } from "@/lib/useAccessToken";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import ChatHistory from "./ChatHistory";
 import ChatInput from "./ChatInput";
@@ -18,6 +20,7 @@ import {
   mergeServerParameters,
   reconcileDirtyWithServer,
   areParamValuesEquivalent,
+  type ParameterMeta,
   type ParameterSyncState,
 } from "@/lib/parameterSync";
 
@@ -28,6 +31,48 @@ import { dbg, isParamSyncDebug } from "@/lib/paramSyncDebug";
 
 type ChatContainerProps = {
   chatId?: string | null;
+};
+
+type LanggraphState = Record<string, unknown> & {
+  parameters?: Record<string, unknown>;
+  parameter_meta?: Record<string, unknown>;
+};
+
+const normalizeIncomingParameters = (raw: Record<string, unknown>): Partial<SealParameters> => {
+  const normalized: Record<string, unknown> = { ...raw };
+  if ("pressure" in normalized && !("pressure_bar" in normalized)) {
+    normalized.pressure_bar = normalized.pressure;
+  }
+  if ("pressure_bar" in normalized) {
+    delete normalized.pressure;
+  }
+  return normalized as Partial<SealParameters>;
+};
+
+const normalizeIncomingParameterMeta = (raw: Record<string, unknown>): ParameterMeta => {
+  const normalized: Record<string, unknown> = { ...raw };
+  if ("pressure" in normalized && !("pressure_bar" in normalized)) {
+    normalized.pressure_bar = normalized.pressure;
+  }
+  if ("pressure_bar" in normalized) {
+    delete normalized.pressure;
+  }
+  return normalized as ParameterMeta;
+};
+
+const extractParametersFromDelta = (delta: Record<string, unknown>): Partial<SealParameters> | null => {
+  if (!delta || typeof delta !== "object") return null;
+  const direct =
+    delta.parameters && typeof delta.parameters === "object"
+      ? (delta.parameters as Record<string, unknown>)
+      : null;
+  if (direct) return normalizeIncomingParameters(direct);
+  const nestedState =
+    delta.state && typeof delta.state === "object" ? (delta.state as Record<string, unknown>) : null;
+  if (nestedState && nestedState.parameters && typeof nestedState.parameters === "object") {
+    return normalizeIncomingParameters(nestedState.parameters as Record<string, unknown>);
+  }
+  return null;
 };
 
 function coerceValue(v: string): string | number {
@@ -56,13 +101,59 @@ function parseParamCommand(input: string): Partial<SealParameters> | null {
   return out as Partial<SealParameters>;
 }
 
+function parseParamEdits(input: string): Partial<SealParameters> | null {
+  if (!input) return null;
+  const out: Record<string, any> = {};
+  for (const rawLine of input.split(/\n|,/g)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const idx = line.indexOf("=");
+    if (idx <= 0) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    if (!key) continue;
+    out[key] = coerceValue(value);
+  }
+  return out as Partial<SealParameters>;
+}
+
+const normalizeStatePayload = (body: any): LanggraphState | null => {
+  if (!body || typeof body !== "object") return null;
+  const state = body.state && typeof body.state === "object" ? { ...(body.state as Record<string, unknown>) } : {};
+  const parameters =
+    body.parameters && typeof body.parameters === "object"
+      ? (body.parameters as Record<string, unknown>)
+      : undefined;
+  const normalized: LanggraphState = { ...state };
+  if (parameters) normalized.parameters = parameters;
+  return Object.keys(normalized).length ? normalized : null;
+};
+
+const mergeState = (prev: LanggraphState | null, delta: LanggraphState | null): LanggraphState | null => {
+  if (!delta || typeof delta !== "object") return prev;
+  if (!prev || typeof prev !== "object") return { ...(delta as LanggraphState) };
+  const prevParams = prev.parameters && typeof prev.parameters === "object" ? prev.parameters : {};
+  const nextParams = delta.parameters && typeof delta.parameters === "object" ? delta.parameters : null;
+  return {
+    ...prev,
+    ...delta,
+    ...(nextParams ? { parameters: { ...prevParams, ...nextParams } } : {}),
+  };
+};
+
 export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps) {
   const { data: session, status: authStatus } = useSession();
+  const pathname = usePathname();
   const isAuthed = authStatus === "authenticated";
 
   const preferredChatId = (chatIdProp ?? "").trim() || null;
   const storedChatId = useChatThreadId(preferredChatId);
   const chatId = preferredChatId ?? storedChatId;
+  const urlConversationId = useMemo(() => {
+    const segments = (pathname ?? "").split("/").filter(Boolean);
+    if (segments[0] !== "chat") return null;
+    return segments[1] ?? null;
+  }, [pathname]);
   const { token, error: tokenError } = useAccessToken();
   const streamingRef = useRef<StreamingMessageHandle | null>(null);
   const handleStreamToken = useCallback((chunk: string) => {
@@ -91,7 +182,19 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       return;
     }
     if (tokenError === "missing") {
-      setAuthExpired(authStatus === "authenticated");
+      if (authStatus !== "authenticated") {
+        setAuthExpired(false);
+        return;
+      }
+      void fetchFreshAccessToken().then((fresh) => {
+        if (fresh.status === 401 || fresh.error === "expired") {
+          setAuthExpired(true);
+          return;
+        }
+        if (fresh.token) {
+          setAuthExpired(false);
+        }
+      });
       return;
     }
     setAuthExpired(false);
@@ -124,7 +227,45 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     onToken: handleStreamToken,
     onStart: handleStreamStart,
     onDone: handleStreamDone,
-    onAuthExpired: () => setAuthExpired(true),
+    onAuthExpired: () => {
+      void fetchFreshAccessToken().then((fresh) => {
+        if (fresh.status === 401 || fresh.error === "expired") {
+          setAuthExpired(true);
+          return;
+        }
+        if (fresh.token) {
+          setAuthExpired(false);
+        }
+      });
+    },
+    onStateDelta: (delta, meta, payload) => {
+      if (chatIdRef.current && chatIdRef.current !== chatId) return;
+      setCurrentState((prev) => mergeState(prev, delta));
+      const params = extractParametersFromDelta(delta);
+      const metaPayload =
+        payload?.parameter_meta && typeof payload.parameter_meta === "object"
+          ? (payload.parameter_meta as Record<string, unknown>)
+          : delta?.parameter_meta && typeof delta.parameter_meta === "object"
+            ? (delta.parameter_meta as Record<string, unknown>)
+            : null;
+      if (metaPayload) {
+        lastParamMetaRef.current = {
+          eventId: meta?.id ?? null,
+          meta: normalizeIncomingParameterMeta(metaPayload),
+        };
+      }
+      if (params && Object.keys(params).length) {
+        if (paramSyncDebug) {
+          console.log("[param-sync] sse_state_update", {
+            chat_id: chatId,
+            event: meta?.event,
+            event_id: meta?.id ?? null,
+            keys: Object.keys(params),
+          });
+        }
+        if (meta?.id) lastParamEventIdRef.current = meta.id;
+      }
+    },
   });
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -132,6 +273,17 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const [hasStarted, setHasStarted] = useState(false);
   const [confirmActionBusy, setConfirmActionBusy] = useState(false);
   const [confirmActionError, setConfirmActionError] = useState<string | null>(null);
+  const [dismissedCheckpointId, setDismissedCheckpointId] = useState<string | null>(null);
+  const [showConfirmEdit, setShowConfirmEdit] = useState(false);
+  const [confirmEditInstructions, setConfirmEditInstructions] = useState("");
+  const [confirmEditParams, setConfirmEditParams] = useState("");
+
+  useEffect(() => {
+    if (!confirmCheckpoint?.checkpoint_id) return;
+    setDismissedCheckpointId((prev) =>
+      prev && prev !== confirmCheckpoint.checkpoint_id ? null : prev,
+    );
+  }, [confirmCheckpoint?.checkpoint_id]);
 
   // ===== Voll-Parameter-State (für 1:1 Sync) =====
   const [paramState, setParamState] = useState<ParameterSyncState>({
@@ -142,17 +294,23 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   });
   const parameters = paramState.values;
   const [showParamDrawer, setShowParamDrawer] = useState(false);
+  const [userClosedDrawer, setUserClosedDrawer] = useState(false);
   const [paramToast, setParamToast] = useState<string | null>(null);
+  const [currentState, setCurrentState] = useState<LanggraphState | null>(null);
   const prevStreamForStateRef = useRef(false);
   const paramQueueRef = useRef<Promise<void>>(Promise.resolve());
   const stateAbortRef = useRef<AbortController | null>(null);
+  const currentStateAbortRef = useRef<AbortController | null>(null);
   const patchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appliedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const paramSyncTokenRef = useRef(0);
   const chatIdRef = useRef<string | null>(chatId);
   const lastSseEventIdRef = useRef<string | null>(null);
+  const lastParamEventIdRef = useRef<string | null>(null);
+  const prevParamValuesRef = useRef<SealParameters>({});
   const autoPatchOnChange = process.env.NEXT_PUBLIC_AUTO_PATCH_PARAMS === "1";
   const paramSyncDebug = isParamSyncDebug();
+  const lastParamMetaRef = useRef<{ eventId: string | null; meta: ParameterMeta } | null>(null);
 
   useEffect(() => {
     paramSyncTokenRef.current += 1;
@@ -161,15 +319,26 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     setHasStarted(false);
     setParamState({ values: {}, dirty: new Set(), pending: new Set(), applied: {} });
     setShowParamDrawer(false);
+    setUserClosedDrawer(false);
     setParamToast(null);
+    setCurrentState(null);
+    setDismissedCheckpointId(null);
+    setShowConfirmEdit(false);
+    setConfirmEditInstructions("");
+    setConfirmEditParams("");
+    setConfirmActionError(null);
     paramQueueRef.current = Promise.resolve();
     stateAbortRef.current?.abort();
     stateAbortRef.current = null;
+    currentStateAbortRef.current?.abort();
+    currentStateAbortRef.current = null;
     if (appliedTimeoutRef.current) {
       clearTimeout(appliedTimeoutRef.current);
       appliedTimeoutRef.current = null;
     }
     lastSseEventIdRef.current = null;
+    lastParamEventIdRef.current = null;
+    lastParamMetaRef.current = null;
     if (patchDebounceRef.current) {
       clearTimeout(patchDebounceRef.current);
       patchDebounceRef.current = null;
@@ -179,6 +348,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   useEffect(() => {
     return () => {
       stateAbortRef.current?.abort();
+      currentStateAbortRef.current?.abort();
       if (patchDebounceRef.current) {
         clearTimeout(patchDebounceRef.current);
         patchDebounceRef.current = null;
@@ -193,6 +363,58 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   useEffect(() => {
     lastSseEventIdRef.current = lastEventId ?? null;
   }, [lastEventId]);
+
+  useEffect(() => {
+    if (!paramSyncDebug) {
+      prevParamValuesRef.current = paramState.values;
+      return;
+    }
+    const prev = prevParamValuesRef.current;
+    const next = paramState.values;
+    const keys = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);
+    const changedKeys: string[] = [];
+    for (const key of keys) {
+      const typedKey = key as keyof SealParameters;
+      if (!areParamValuesEquivalent(typedKey, prev?.[typedKey], next?.[typedKey])) {
+        changedKeys.push(key);
+      }
+    }
+    if (changedKeys.length) {
+      console.log("[param-sync] values_changed", {
+        chat_id: chatId,
+        keys: changedKeys,
+      });
+    }
+    prevParamValuesRef.current = next;
+  }, [chatId, paramState.values, paramSyncDebug]);
+
+  const refreshCurrentState = useCallback(async () => {
+    if (!chatId || !token) return;
+    const expectedChatId = chatId;
+    currentStateAbortRef.current?.abort();
+    const controller = new AbortController();
+    currentStateAbortRef.current = controller;
+    try {
+      const res = await fetchWithAuth(`/api/langgraph/state?thread_id=${encodeURIComponent(chatId)}`, token, {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        throw new Error(msg || `HTTP ${res.status}`);
+      }
+      const body = await res.json().catch(() => null);
+      const normalized = normalizeStatePayload(body);
+      if (normalized && chatIdRef.current === expectedChatId) {
+        setCurrentState((prev) => mergeState(prev, normalized));
+      }
+    } finally {
+      if (currentStateAbortRef.current === controller) {
+        currentStateAbortRef.current = null;
+      }
+    }
+  }, [chatId, token]);
 
   // ===== Öffnen per UI-Event (wie früher) =====
   const applyLocalParameters = useCallback(
@@ -225,60 +447,98 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     [],
   );
 
-  const applyServerParameters = useCallback((next: SealParameters, eventId?: string | null) => {
-    setParamState((prev) => {
-      const nextDirty = reconcileDirtyWithServer(prev.values, next, prev.dirty, prev.pending);
-      const merged = mergeServerParameters(prev.values, next, nextDirty);
-      const appliedKeys = computeAppliedKeys(prev.values, next, prev.dirty);
-      const nextApplied: Partial<Record<keyof SealParameters, number>> = {
-        ...(prev.applied ?? {}),
-      };
-      const nextPending = new Set(prev.pending);
-      for (const key of Array.from(nextPending)) {
-        if (!nextDirty.has(key)) nextPending.delete(key);
-      }
-      const appliedAt = Date.now();
-      for (const key of appliedKeys) {
-        nextApplied[key] = appliedAt;
-        nextPending.delete(key);
-      }
-      for (const key of nextDirty) {
-        delete nextApplied[key];
-      }
-      if (paramSyncDebug) {
-        const pressureValue = merged.pressure_bar;
-        console.log("[param-wire] apply_server", {
-          chat_id: chatId,
-          pressure_bar: pressureValue,
-          pressure_bar_type: typeof pressureValue,
-        });
-      }
-      if (paramSyncDebug) {
-        const incomingKeys = Object.keys(next || {});
-        const changedKeys = incomingKeys.filter((key) => {
-          const typedKey = key as keyof SealParameters;
-          return !areParamValuesEquivalent(typedKey, prev.values[typedKey], merged[typedKey]);
-        });
-        dbg("store_apply", {
-          chat_id: chatId,
-          incoming_keys: incomingKeys,
-          dirty_before: Array.from(prev.dirty),
-          dirty_after: Array.from(nextDirty),
-          pending_before: Array.from(prev.pending),
-          pending_after: Array.from(nextPending),
-          applied_keys: Array.from(appliedKeys),
-          merged_changed_keys: changedKeys,
-        });
-      }
-      return {
-        values: merged,
-        dirty: nextDirty,
-        pending: nextPending,
-        applied: nextApplied,
-        lastServerEventId: eventId ?? prev.lastServerEventId ?? null,
-      };
-    });
-  }, [chatId, paramSyncDebug]);
+  const applyServerParameters = useCallback(
+    (next: SealParameters, eventId?: string | null, meta?: ParameterMeta) => {
+      setParamState((prev) => {
+        if (paramSyncDebug && Object.prototype.hasOwnProperty.call(next || {}, "pressure_bar")) {
+          console.log("[param-sync] incoming_pressure", {
+            chat_id: chatId,
+            event_id: eventId ?? null,
+            incoming_pressure_bar: next.pressure_bar,
+            dirty_has_pressure_bar: prev.dirty.has("pressure_bar"),
+            force_overwrite_pressure_bar: Boolean(meta?.pressure_bar?.force_overwrite),
+          });
+        }
+        const nextDirty = reconcileDirtyWithServer(prev.values, next, prev.dirty, prev.pending);
+        const nextPending = new Set(prev.pending);
+        const forceOverwriteKeys = new Set<keyof SealParameters>();
+        if (meta) {
+          for (const [key, entry] of Object.entries(meta)) {
+            const typedKey = key as keyof SealParameters;
+            if (entry?.force_overwrite) {
+              forceOverwriteKeys.add(typedKey);
+              nextDirty.delete(typedKey);
+              nextPending.delete(typedKey);
+            }
+          }
+        }
+        const merged = mergeServerParameters(prev.values, next, nextDirty, meta);
+        const appliedKeys = computeAppliedKeys(prev.values, next, prev.dirty);
+        const nextApplied: Partial<Record<keyof SealParameters, number>> = {
+          ...(prev.applied ?? {}),
+        };
+        for (const key of Array.from(nextPending)) {
+          if (!nextDirty.has(key)) nextPending.delete(key);
+        }
+        const appliedAt = Date.now();
+        for (const key of appliedKeys) {
+          if (forceOverwriteKeys.has(key)) continue;
+          nextApplied[key] = appliedAt;
+          nextPending.delete(key);
+        }
+        for (const key of nextDirty) {
+          delete nextApplied[key];
+        }
+        for (const key of forceOverwriteKeys) {
+          delete nextApplied[key];
+        }
+        if (paramSyncDebug) {
+          const pressureValue = merged.pressure_bar;
+          console.log("[param-wire] apply_server", {
+            chat_id: chatId,
+            pressure_bar: pressureValue,
+            pressure_bar_type: typeof pressureValue,
+          });
+        }
+        if (paramSyncDebug) {
+          const incomingKeys = Object.keys(next || {});
+          const changedKeys = incomingKeys.filter((key) => {
+            const typedKey = key as keyof SealParameters;
+            return !areParamValuesEquivalent(typedKey, prev.values[typedKey], merged[typedKey]);
+          });
+          dbg("store_apply", {
+            chat_id: chatId,
+            incoming_keys: incomingKeys,
+            dirty_before: Array.from(prev.dirty),
+            dirty_after: Array.from(nextDirty),
+            pending_before: Array.from(prev.pending),
+            pending_after: Array.from(nextPending),
+            applied_keys: Array.from(appliedKeys),
+            merged_changed_keys: changedKeys,
+          });
+        }
+        return {
+          values: merged,
+          dirty: nextDirty,
+          pending: nextPending,
+          applied: nextApplied,
+          lastServerEventId: eventId ?? prev.lastServerEventId ?? null,
+        };
+      });
+    },
+    [chatId, paramSyncDebug],
+  );
+
+  useEffect(() => {
+    if (!currentState?.parameters || typeof currentState.parameters !== "object") return;
+    const normalized = normalizeIncomingParameters(currentState.parameters as Record<string, unknown>);
+    if (!Object.keys(normalized).length) return;
+    const metaState = lastParamMetaRef.current;
+    const eventId = lastParamEventIdRef.current ?? null;
+    const meta = metaState && metaState.eventId === eventId ? metaState.meta : undefined;
+    applyServerParameters(normalized as SealParameters, eventId, meta);
+    lastParamMetaRef.current = null;
+  }, [applyServerParameters, currentState?.parameters]);
 
   useEffect(() => {
     const onUi = (ev: Event) => {
@@ -385,6 +645,14 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
     try {
       const patchedKeysCount = Object.keys(cleaned).length;
+      if (paramSyncDebug) {
+        console.log("[param-sync] patch_request", {
+          chat_id: chatId,
+          thread_id: chatId,
+          keys: Object.keys(cleaned),
+          dirty_keys: Array.from(paramState.dirty),
+        });
+      }
       const dirtyKeys = new Set(paramState.dirty);
       return await enqueueParamTask(async (tokenId) => {
         if (shouldAbortParamTask(tokenId, chatId)) return;
@@ -577,6 +845,14 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, [chatId, token, lastEventId, refreshParameters]);
 
   useEffect(() => {
+    if (!chatId || !token) return;
+    refreshCurrentState().catch((err) => {
+      if (err?.name === "AbortError") return;
+      console.warn("[state] initial_fetch_failed", err);
+    });
+  }, [chatId, token, refreshCurrentState]);
+
+  useEffect(() => {
     const wasStreaming = prevStreamForStateRef.current;
     if (wasStreaming && !streaming) {
       refreshParameters({ expectedEventId: lastEventId ?? null }).catch((err) => {
@@ -707,17 +983,29 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     setConfirmActionError(null);
   }, [sendingDisabled, send, patchAllParameters, applyLocalParameters]);
 
+  const activeCheckpoint = useMemo(() => {
+    if (!confirmCheckpoint) return null;
+    if (dismissedCheckpointId && confirmCheckpoint.checkpoint_id === dismissedCheckpointId) return null;
+    return confirmCheckpoint;
+  }, [confirmCheckpoint, dismissedCheckpointId]);
+
+  useEffect(() => {
+    if (activeCheckpoint) {
+      if (!userClosedDrawer) setShowParamDrawer(true);
+    } else {
+      setUserClosedDrawer(false);
+    }
+  }, [activeCheckpoint, userClosedDrawer]);
+
   const missingCoreFields = useMemo(() => {
     const knownCore = ["medium", "temperature_C", "pressure_bar", "speed_rpm", "shaft_diameter"];
     const raw =
-      (confirmCheckpoint as any)?.missing_core ??
-      (confirmCheckpoint as any)?.missingCore ??
-      (confirmCheckpoint as any)?.coverage_gaps ??
+      (activeCheckpoint as any)?.preview?.coverage_gaps ??
       [];
     const list = Array.isArray(raw) ? raw.filter((v) => typeof v === "string") : [];
     const filtered = list.filter((k) => knownCore.includes(k));
     return Array.from(new Set(filtered));
-  }, [confirmCheckpoint]);
+  }, [activeCheckpoint]);
 
   const openMissingParameterForm = useCallback(() => {
     setShowParamDrawer(true);
@@ -728,39 +1016,92 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     );
   }, [missingCoreFields]);
 
-  const approveConfirmGo = useCallback(async () => {
-    if (!chatId) return;
-    if (!token) return;
-    if (confirmActionBusy) return;
-    setConfirmActionBusy(true);
-    setConfirmActionError(null);
-    try {
-      const res = await fetch("/api/langgraph/confirm/go", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ chat_id: chatId, go: true }),
-      });
-      if (!res.ok) {
-        const msg = await res.text().catch(() => "");
-        throw new Error(msg || `HTTP ${res.status}`);
+  const submitConfirmDecision = useCallback(
+    async (decision: "approve" | "reject" | "edit", edits?: { parameters?: Partial<SealParameters>; instructions?: string }) => {
+      if (!chatId) return;
+      if (!token) return;
+      if (!activeCheckpoint) return;
+      if (confirmActionBusy) return;
+      setConfirmActionBusy(true);
+      setConfirmActionError(null);
+      try {
+        const res = await fetchWithAuth("/api/langgraph/confirm/go", token, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            chat_id: chatId,
+            checkpoint_id: activeCheckpoint.checkpoint_id,
+            decision,
+            ...(edits ? { edits } : {}),
+          }),
+        });
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "");
+          throw new Error(msg || `HTTP ${res.status}`);
+        }
+        const payload = await res.json().catch(() => null);
+        setConfirmActionBusy(false);
+        setDismissedCheckpointId(activeCheckpoint.checkpoint_id);
+        if (payload?.final_text && typeof payload.final_text === "string") {
+          setMessages((m) => [...m, { role: "assistant", content: payload.final_text }]);
+        }
+      } catch (e: any) {
+        setConfirmActionBusy(false);
+        setConfirmActionError(String(e?.message || e));
       }
-      setConfirmActionBusy(false);
-      handleSend("Freigabe erteilt. Bitte Empfehlung ausarbeiten.");
-    } catch (e: any) {
-      setConfirmActionBusy(false);
-      setConfirmActionError(String(e?.message || e));
+    },
+    [activeCheckpoint, chatId, confirmActionBusy, token],
+  );
+
+  const approveConfirmGo = useCallback(async () => {
+    await submitConfirmDecision("approve");
+  }, [submitConfirmDecision]);
+
+  const rejectConfirmGo = useCallback(async () => {
+    await submitConfirmDecision("reject");
+  }, [submitConfirmDecision]);
+
+  const confirmEditGo = useCallback(async () => {
+    const instructions = confirmEditInstructions.trim();
+    const parsedParams = parseParamEdits(confirmEditParams);
+    const patch = parsedParams && Object.keys(parsedParams).length ? parsedParams : null;
+    if (patch) {
+      applyLocalParameters(patch, { clearDirty: true });
+      try {
+        await patchAllParameters(patch);
+      } catch (e: any) {
+        setConfirmActionError(`Parameter-Update fehlgeschlagen: ${String(e?.message || e)}`);
+        return;
+      }
     }
-  }, [chatId, token, confirmActionBusy, handleSend]);
+    await submitConfirmDecision("edit", {
+      parameters: patch ?? undefined,
+      instructions: instructions || undefined,
+    });
+    setShowConfirmEdit(false);
+    setConfirmEditInstructions("");
+    setConfirmEditParams("");
+  }, [confirmEditInstructions, confirmEditParams, applyLocalParameters, patchAllParameters, submitConfirmDecision]);
 
   return (
     <div className="flex flex-col h-full w-full bg-transparent relative">
+      {paramSyncDebug ? (
+        <div className="absolute left-3 top-3 z-40 rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-[11px] text-slate-700 shadow-sm">
+          <div>url_conversation_id: {urlConversationId ?? "null"}</div>
+          <div>chat_id: {chatId ?? "null"}</div>
+          <div>paramState.pressure_bar: {String(paramState.values.pressure_bar ?? "null")}</div>
+          <div>currentState.pressure_bar: {String((currentState?.parameters as any)?.pressure_bar ?? "null")}</div>
+        </div>
+      ) : null}
       {/* Toggle Button rechts (wie “aufschiebbare” Sidebar) */}
       <button
         type="button"
-        onClick={() => setShowParamDrawer(true)}
+        onClick={() => {
+          setUserClosedDrawer(false);
+          setShowParamDrawer(true);
+        }}
         className="absolute top-3 right-3 z-30 rounded-md bg-white/90 hover:bg-white border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm"
         title="Technische Parameter"
         aria-label="Technische Parameter"
@@ -788,7 +1129,10 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             "absolute inset-0 bg-slate-900/30 transition-opacity duration-300 ease-out",
             showParamDrawer ? "opacity-100" : "opacity-0",
           ].join(" ")}
-          onClick={() => setShowParamDrawer(false)}
+          onClick={() => {
+            setShowParamDrawer(false);
+            setUserClosedDrawer(true);
+          }}
         />
         <div
           className={[
@@ -800,12 +1144,22 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
           <ParameterFormSidebar
             show={showParamDrawer}
             parameters={parameters}
+            currentState={currentState}
             dirtyKeys={paramState.dirty}
             pendingKeys={paramState.pending}
             appliedMap={paramState.applied ?? {}}
             onUpdate={onParamUpdate}
             onSubmit={onParamSubmit}
-            onClose={() => setShowParamDrawer(false)}
+            onClose={() => {
+              setShowParamDrawer(false);
+              setUserClosedDrawer(true);
+            }}
+            activeCheckpoint={activeCheckpoint}
+            confirmBusy={confirmActionBusy}
+            confirmError={confirmActionError}
+            onApprove={approveConfirmGo}
+            onReject={rejectConfirmGo}
+            onEdit={() => setShowConfirmEdit(true)}
           />
         </div>
       </div>
@@ -896,24 +1250,28 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             className="flex-1 overflow-y-auto w-full pb-36"
             style={{ minHeight: 0 }}
           >
-            {confirmCheckpoint ? (
+            {activeCheckpoint ? (
               <div className="w-full max-w-[768px] mx-auto px-4 pt-3">
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                  <div className="font-semibold">Abnahme-Checkpoint</div>
+                  <div className="font-semibold">Freigabe erforderlich</div>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wide">
-                      Status: {confirmCheckpoint.recommendation_go ? "GO" : "NO-GO"}
+                      Aktion: {activeCheckpoint.action}
                     </span>
-                    {!confirmCheckpoint.recommendation_go ? (
-                      <span className="text-xs">Freigabe erforderlich (bitte fehlende Kernangaben ergänzen).</span>
-                    ) : (
-                      <span className="text-xs">Bitte kurz bestätigen, dann kann die Empfehlung weiter ausgearbeitet werden.</span>
-                    )}
+                    <span className="text-xs">
+                      Risiko: {activeCheckpoint.risk === "high" ? "hoch" : activeCheckpoint.risk === "low" ? "niedrig" : "mittel"}
+                    </span>
                   </div>
 
-                  {!confirmCheckpoint.recommendation_go && missingCoreFields.length > 0 ? (
+                  {missingCoreFields.length > 0 ? (
                     <div className="mt-1 text-xs">
                       Fehlt (Kernfelder): <span className="font-semibold">{missingCoreFields.join(", ")}</span>
+                    </div>
+                  ) : null}
+
+                  {activeCheckpoint.preview?.text ? (
+                    <div className="mt-2 whitespace-pre-wrap text-xs text-amber-900">
+                      {activeCheckpoint.preview.text}
                     </div>
                   ) : null}
 
@@ -924,24 +1282,94 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                       onClick={approveConfirmGo}
                       className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                     >
-                      {confirmActionBusy ? "Freigabe läuft…" : "Freigeben (GO)"}
+                      {confirmActionBusy ? "Freigabe läuft…" : "Freigeben"}
                     </button>
 
                     <button
                       type="button"
                       disabled={streaming || confirmActionBusy}
-                      onClick={() => {
-                        setInputValue("Ich reiche Daten nach: ");
-                        openMissingParameterForm();
-                      }}
+                      onClick={rejectConfirmGo}
                       className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 ring-1 ring-amber-300 disabled:opacity-50"
                     >
-                      Daten nachreichen
+                      Ablehnen
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={streaming || confirmActionBusy}
+                      onClick={() => setShowConfirmEdit(true)}
+                      className="rounded-md bg-amber-800 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Bearbeiten
                     </button>
 
                     {confirmActionError ? (
                       <span className="text-xs text-red-700">Freigabe fehlgeschlagen: {confirmActionError}</span>
                     ) : null}
+                  </div>
+
+                  {missingCoreFields.length > 0 ? (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        disabled={streaming || confirmActionBusy}
+                        onClick={() => {
+                          setInputValue("Ich reiche Daten nach: ");
+                          openMissingParameterForm();
+                        }}
+                        className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 ring-1 ring-amber-300 disabled:opacity-50"
+                      >
+                        Daten nachreichen
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {showConfirmEdit && activeCheckpoint ? (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+                <div className="w-full max-w-[520px] rounded-lg bg-white p-4 shadow-lg">
+                  <div className="text-sm font-semibold text-slate-800">Checkpoint bearbeiten</div>
+                  <div className="mt-2 text-xs text-slate-500">
+                    Optional: Parameter anpassen oder eine kurze Anweisung hinterlassen.
+                  </div>
+                  <label className="mt-3 block text-xs font-semibold text-slate-600">
+                    Anweisung
+                  </label>
+                  <textarea
+                    value={confirmEditInstructions}
+                    onChange={(e) => setConfirmEditInstructions(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-800"
+                    rows={3}
+                    placeholder="Kurze Anweisung (optional)"
+                  />
+                  <label className="mt-3 block text-xs font-semibold text-slate-600">
+                    Parameter-Edits (key=value, eine pro Zeile)
+                  </label>
+                  <textarea
+                    value={confirmEditParams}
+                    onChange={(e) => setConfirmEditParams(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-800"
+                    rows={4}
+                    placeholder="pressure_bar=6&#10;temperature_C=80"
+                  />
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmEdit(false)}
+                      className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                    >
+                      Abbrechen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmEditGo}
+                      disabled={confirmActionBusy}
+                      className="rounded-md bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Speichern &amp; Fortsetzen
+                    </button>
                   </div>
                 </div>
               </div>

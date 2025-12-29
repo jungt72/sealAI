@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Dict, Mapping, MutableMapping, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -78,9 +78,35 @@ def merge_parameters(existing: Any, patch: Mapping[str, Any]) -> Dict[str, Any]:
     return base
 
 
+def apply_parameter_patch_with_provenance(
+    existing: Any,
+    patch: Mapping[str, Any],
+    provenance: Mapping[str, str] | None,
+    *,
+    source: str,
+    allow_user_override: bool = False,
+) -> Tuple[Dict[str, Any], Dict[str, str]]:
+    """
+    Merge parameters while honoring provenance rules.
+
+    - "user" provenance wins unless allow_user_override=True.
+    - The source string is stored for each applied key.
+    """
+    merged = merge_parameters(existing, {})
+    updated_provenance: MutableMapping[str, str] = dict(provenance or {})
+    for key, value in dict(patch or {}).items():
+        existing_source = updated_provenance.get(key)
+        if existing_source == "user" and source != "user" and not allow_user_override:
+            continue
+        merged[key] = value
+        updated_provenance[key] = source
+    return merged, dict(updated_provenance)
+
+
 __all__ = [
     "ALLOWED_V2_PARAMETER_KEYS",
     "ParametersPatchRequest",
     "sanitize_v2_parameter_patch",
     "merge_parameters",
+    "apply_parameter_patch_with_provenance",
 ]

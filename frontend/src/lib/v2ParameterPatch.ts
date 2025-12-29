@@ -1,6 +1,7 @@
 "use client";
 
 import { dbg, isParamSyncDebug } from "@/lib/paramSyncDebug";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 export type SidebarFormPatch = Record<string, unknown>;
 
@@ -72,11 +73,10 @@ export async function patchV2Parameters(opts: {
       ts: new Date().toISOString(),
     });
   }
-  const res = await fetch("/api/langgraph/parameters/patch", {
+  const res = await fetchWithAuth("/api/langgraph/parameters/patch", opts.token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${opts.token}`,
     },
     body: JSON.stringify({ chat_id: opts.chatId, parameters: opts.parameters }),
   });
@@ -96,11 +96,8 @@ export async function fetchV2StateParameters(opts: {
 }): Promise<V2ParametersPatch> {
   const url = `/api/langgraph/state?thread_id=${encodeURIComponent(opts.chatId)}`;
   const start = performance.now();
-  const res = await fetch(url, {
+  const res = await fetchWithAuth(url, opts.token, {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${opts.token}`,
-    },
     signal: opts.signal,
   });
   if (!res.ok) {

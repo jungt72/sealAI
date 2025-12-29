@@ -20,7 +20,18 @@ log = logging.getLogger("uvicorn.error")
 
 REALM_ISSUER: Final[str] = settings.backend_keycloak_issuer
 JWKS_URL: Final[str] = settings.keycloak_jwks_url
-ALLOWED_AUDS: Final[set[str]] = {"nextauth", "sealai-backend-api", "sealai-cli"}
+def _build_allowed_auds() -> set[str]:
+    candidates = {
+        settings.keycloak_client_id,
+        settings.keycloak_expected_azp,
+        "nextauth",
+        "sealai-backend-api",
+        "sealai-cli",
+    }
+    return {value for value in candidates if value}
+
+
+ALLOWED_AUDS: Final[set[str]] = _build_allowed_auds()
 ALLOWED_ALGS: Final[tuple[str, ...]] = ("RS256",)  # ✅ fixiert
 
 @functools.lru_cache(maxsize=1)

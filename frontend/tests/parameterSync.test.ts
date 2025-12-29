@@ -106,4 +106,15 @@ describe("parameter sync helpers", () => {
     expect(nextDirty.has("pressure_bar")).toBe(true);
     expect(merged.pressure_bar).toBe("6");
   });
+
+  it("force-overwrites dirty fields when marked in parameter meta", () => {
+    const current = { pressure_bar: 10 } as SealParameters;
+    const incoming = { pressure_bar: 7 } as SealParameters;
+    const dirty = new Set(["pressure_bar"] as const);
+    const meta = { pressure_bar: { force_overwrite: true, source: "user" } };
+
+    const merged = mergeServerParameters(current, incoming, dirty, meta);
+
+    expect(merged.pressure_bar).toBe(7);
+  });
 });

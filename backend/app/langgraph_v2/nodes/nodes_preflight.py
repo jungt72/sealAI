@@ -11,6 +11,7 @@ from app.langgraph.io import AskMissingRequest, CoverageAnalysis, ParameterProfi
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import AskMissingScope, CalcResults, SealAIState, TechnicalParameters, WorkingMemory
 from app.langgraph_v2.utils.messages import latest_user_text
+from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
 import structlog
 
 logger = structlog.get_logger("langgraph_v2.nodes_preflight")
@@ -213,13 +214,19 @@ def ingest_missing_user_input_node(state: SealAIState, *_args, **_kwargs) -> Dic
 
     user_text = latest_user_text(state.get("messages"))
     parsed = _parse_user_params(user_text, expected_keys)
-    for key, value in parsed.items():
-        parameters[key] = value
+    merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+        parameters,
+        parsed,
+        state.parameter_provenance,
+        source="user",
+    )
+    for key in parsed:
         if key in missing:
             missing.remove(key)
 
     return {
-        "parameters": TechnicalParameters.model_validate(parameters),
+        "parameters": TechnicalParameters.model_validate(merged_params),
+        "parameter_provenance": merged_provenance,
         "missing_params": missing,
         "ask_missing_request": None,
         "awaiting_user_input": False if awaiting else state.get("awaiting_user_input", False),

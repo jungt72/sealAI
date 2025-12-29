@@ -7,7 +7,7 @@ def test_rag_support_node_is_supervisor_gated() -> None:
     graph = create_sealai_graph_v2(checkpointer=MemorySaver())
     compiled = graph.get_graph()
     sources = [edge.source for edge in compiled.edges if edge.target == "rag_support_node"]
-    assert sources == ["supervisor_policy_node"]
+    assert set(sources) == {"confirm_resume_node", "supervisor_policy_node"}
 
     direct_edges = [
         edge

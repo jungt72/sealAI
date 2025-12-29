@@ -152,12 +152,13 @@ async def get_state(
     try:
         # user_id must always come from the authenticated Keycloak JWT.
         graph, config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=user.user_id, username=user.username
+            thread_id=thread_id, user_id=user.sub, username=user.username
         )
         snapshot = await graph.aget_state(config)
 
         state_values = _state_to_dict(snapshot.values)
         parameters = _serialize_parameters(state_values.get("parameters"))
+        parameter_provenance = state_values.get("parameter_provenance") if isinstance(state_values, dict) else {}
         metadata = _collect_metadata(state_values)
 
         if PARAM_SYNC_DEBUG:
@@ -188,6 +189,7 @@ async def get_state(
         return {
             "state": state_values,
             "parameters": parameters,
+            "parameter_provenance": parameter_provenance,
             "metadata": metadata,
             "next": snapshot.next,
             "config": _sanitize_config_for_client(snapshot.config),
@@ -237,7 +239,7 @@ async def update_state(
         # Reuse the authenticated user_id so the state update is scoped to the Keycloak user.
         graph, config = await _build_state_config_with_checkpointer(
             thread_id=thread_id,
-            user_id=user.user_id,
+            user_id=user.sub,
             username=user.username,
         )
         snapshot = await graph.aget_state(config)

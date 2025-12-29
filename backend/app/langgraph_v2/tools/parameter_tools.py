@@ -100,8 +100,10 @@ def set_parameters(
     """
     # Get current parameters from state
     current_params = {}
+    current_provenance = {}
     if state and hasattr(state, "parameters"):
         current_params = state.parameters.as_dict() if hasattr(state.parameters, "as_dict") else dict(state.parameters)
+        current_provenance = getattr(state, "parameter_provenance", {}) or {}
     
     # Update with new values (only non-None values)
     updates = {}
@@ -115,19 +117,28 @@ def set_parameters(
             else:
                 updates[key] = value
 
-    # Merge with current parameters
-    current_params.update(updates)
+    # Merge with current parameters respecting user provenance.
+    from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
+    merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+        current_params,
+        updates,
+        current_provenance,
+        source="llm",
+    )
     
     logger.info(
         "set_parameters_tool_called",
         updates=updates,
-        merged_params=current_params,
+        merged_params=merged_params,
     )
     
     # Return TechnicalParameters object
     from app.langgraph_v2.state import TechnicalParameters
     # Ensure ignore extra fields if any mismatch, but TechnicalParameters allows extra via config if set.
     # But since we updated TechnicalParameters, it should be fine.
-    return {"parameters": TechnicalParameters(**current_params)}
+    return {
+        "parameters": TechnicalParameters(**merged_params),
+        "parameter_provenance": merged_provenance,
+    }
 
 __all__ = ["set_parameters"]

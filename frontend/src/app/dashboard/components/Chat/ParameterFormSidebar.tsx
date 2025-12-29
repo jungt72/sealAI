@@ -3,16 +3,24 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Check, X } from "lucide-react";
 import type { SealParameters } from "@/lib/types/sealParameters";
+import type { ConfirmCheckpointPayload } from "@/lib/useChatSseV2";
 
 interface ParameterFormSidebarProps {
   show: boolean;
   parameters: SealParameters;
+  currentState?: Record<string, unknown> | null;
   dirtyKeys?: Set<keyof SealParameters>;
   pendingKeys?: Set<keyof SealParameters>;
   appliedMap?: Partial<Record<keyof SealParameters, number>>;
   onUpdate: (name: keyof SealParameters, value: string | number) => void;
   onSubmit: () => void;
   onClose: () => void;
+  activeCheckpoint?: ConfirmCheckpointPayload | null;
+  confirmBusy?: boolean;
+  confirmError?: string | null;
+  onApprove?: () => void;
+  onReject?: () => void;
+  onEdit?: () => void;
 }
 
 interface FormField {
@@ -99,6 +107,12 @@ export default function ParameterFormSidebar({
   onUpdate,
   onSubmit,
   onClose,
+  activeCheckpoint,
+  confirmBusy,
+  confirmError,
+  onApprove,
+  onReject,
+  onEdit,
 }: ParameterFormSidebarProps) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
@@ -159,6 +173,58 @@ export default function ParameterFormSidebar({
       </div>
 
       <form onSubmit={handleSubmit} className="sidebar-form">
+        <div className="form-section bg-[#1E1E2D] rounded-lg border border-white/10 overflow-hidden">
+          <div className="w-full flex items-center justify-between p-3 bg-white/5 text-left">
+            <span className="text-sm font-semibold text-white/90 uppercase tracking-wider">HITL</span>
+          </div>
+          <div className="p-3 flex flex-col gap-2">
+            {activeCheckpoint ? (
+              <>
+                <div className="text-xs text-white/70">
+                  Checkpoint: <span className="text-white/90">{activeCheckpoint.checkpoint_id}</span>
+                </div>
+                <div className="text-xs text-white/70">
+                  Aktion: <span className="text-white/90">{activeCheckpoint.action}</span>
+                </div>
+                <div className="text-xs text-white/70">
+                  Risiko: <span className="text-white/90">{activeCheckpoint.risk}</span>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={onApprove}
+                    disabled={!onApprove || confirmBusy}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    {confirmBusy ? "Freigabe läuft…" : "Freigeben"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onReject}
+                    disabled={!onReject || confirmBusy}
+                    className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 ring-1 ring-amber-300 disabled:opacity-50"
+                  >
+                    Ablehnen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    disabled={!onEdit || confirmBusy}
+                    className="rounded-md bg-amber-800 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    Bearbeiten
+                  </button>
+                </div>
+                {confirmError ? (
+                  <div className="text-xs text-red-400">Freigabe fehlgeschlagen: {confirmError}</div>
+                ) : null}
+              </>
+            ) : (
+              <div className="text-xs text-white/60">Keine Freigabe erforderlich.</div>
+            )}
+          </div>
+        </div>
+
         {FORM_SECTIONS.map((section) => {
           const isCollapsed = collapsedSections.has(section.title);
           return (

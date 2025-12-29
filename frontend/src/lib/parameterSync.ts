@@ -52,6 +52,10 @@ export type ParameterSyncState = {
   lastServerEventId?: string | null;
 };
 
+export type ParameterMeta = Partial<
+  Record<keyof SealParameters, { source?: string; force_overwrite?: boolean }>
+>;
+
 function normalizeParamValue(
   key: keyof SealParameters,
   value: SealParameters[keyof SealParameters] | undefined,
@@ -80,12 +84,31 @@ export function mergeServerParameters(
   current: SealParameters,
   incoming: SealParameters,
   dirty: Set<keyof SealParameters>,
+  meta?: ParameterMeta,
 ): SealParameters {
   const merged: SealParameters = { ...current };
+  const debug = isParamSyncDebug();
   for (const [key, value] of Object.entries(incoming || {})) {
     const typedKey = key as keyof SealParameters;
-    if (dirty.has(typedKey)) continue;
+    const forceOverwrite = Boolean(meta?.[typedKey]?.force_overwrite);
+    if (dirty.has(typedKey) && !forceOverwrite) {
+      if (debug) {
+        dbg("merge_blocked_dirty", {
+          key: typedKey,
+          current_value: current[typedKey],
+          incoming_value: value,
+        });
+      }
+      continue;
+    }
     if (value === undefined) continue;
+    if (forceOverwrite && debug) {
+      dbg("merge_force_overwrite", {
+        key: typedKey,
+        from: current[typedKey],
+        to: value,
+      });
+    }
     merged[typedKey] = value as SealParameters[keyof SealParameters];
   }
   return merged;

@@ -58,6 +58,7 @@ ACTION_RUN_PANEL_NORMS_RAG = "RUN_PANEL_NORMS_RAG"
 ACTION_RUN_COMPARISON = "RUN_COMPARISON"
 ACTION_RUN_TROUBLESHOOTING = "RUN_TROUBLESHOOTING"
 ACTION_CONFIRM_RECOMMENDATION = "RUN_CONFIRM"
+ACTION_REQUIRE_CONFIRM = "REQUIRE_CONFIRM"
 ACTION_FINALIZE = "FINALIZE"
 
 MAX_SUPERVISOR_ROUNDS = 3
@@ -70,6 +71,7 @@ _ACTION_COSTS: Dict[str, int] = {
     ACTION_RUN_COMPARISON: 1,
     ACTION_RUN_TROUBLESHOOTING: 2,
     ACTION_CONFIRM_RECOMMENDATION: 1,
+    ACTION_REQUIRE_CONFIRM: 0,
     ACTION_FINALIZE: 0,
 }
 
@@ -294,6 +296,20 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
             reason = "no_action_required"
             action = ACTION_FINALIZE
 
+    requires_confirm = (
+        action == ACTION_RUN_PANEL_NORMS_RAG
+        and action not in (state.confirmed_actions or [])
+        and not state.awaiting_user_confirmation
+    )
+    if requires_confirm:
+        pending_action = action
+        action = ACTION_REQUIRE_CONFIRM
+    else:
+        pending_action = state.pending_action
+
+    if state.awaiting_user_confirmation and pending_action:
+        action = ACTION_REQUIRE_CONFIRM
+
     cost = _ACTION_COSTS.get(action, 0)
     updated_budget = budget.model_copy()
     if cost > 0:
@@ -316,6 +332,7 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
 
     patch: Dict[str, Any] = {
         "next_action": action,
+        "pending_action": pending_action,
         "decision_log": [*(state.decision_log or []), decision_entry],
         "round_index": new_round,
         "budget": updated_budget,
@@ -575,5 +592,6 @@ __all__ = [
     "ACTION_RUN_COMPARISON",
     "ACTION_RUN_TROUBLESHOOTING",
     "ACTION_CONFIRM_RECOMMENDATION",
+    "ACTION_REQUIRE_CONFIRM",
     "ACTION_FINALIZE",
 ]

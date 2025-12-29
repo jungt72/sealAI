@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, LogOut, MessageSquare, Plus } from "lucide-react";
 import { signIn, useSession } from "next-auth/react";
+import { fetchFreshAccessToken } from "@/lib/useAccessToken";
 
 import { cn } from "@/lib/utils";
 import { ChatBrandRail } from "@/app/chat/components/ChatBrandRail";
@@ -121,9 +122,16 @@ export default function ConversationSidebar() {
 
       if (!res.ok) {
         if (res.status === 401) {
-          didReauthFetchRef.current = false;
-          setAuthState("expired");
-          setError(SESSION_EXPIRED_MESSAGE);
+          const fresh = await fetchFreshAccessToken();
+          if (fresh.status === 401 || fresh.error === "expired") {
+            didReauthFetchRef.current = false;
+            setAuthState("expired");
+            setError(SESSION_EXPIRED_MESSAGE);
+            return;
+          }
+          const msg = payload?.detail || "Autorisierung fehlgeschlagen.";
+          setConversations([]);
+          setError(msg);
           return;
         }
 

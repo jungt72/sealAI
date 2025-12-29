@@ -4,6 +4,13 @@ from typing import Dict
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
+
+_ACTION_RISK = {
+    "RUN_PANEL_NORMS_RAG": "high",
+    "RUN_PANEL_MATERIAL": "med",
+    "RUN_PANEL_CALC": "low",
+}
 
 PARAMETER_LABELS: Dict[str, str] = {
     "medium": "Medium",
@@ -136,3 +143,25 @@ def confirm_recommendation_node(state: SealAIState, *_args, **_kwargs) -> Dict[s
         "phase": PHASE.CONFIRM,
         "last_node": "confirm_recommendation_node",
     }
+
+
+def confirm_checkpoint_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
+    """
+    Generic HITL checkpoint for high-impact actions.
+    """
+    action = state.pending_action or state.next_action or "FINALIZE"
+    risk = _ACTION_RISK.get(action, "med")
+    payload = build_confirm_checkpoint_payload(state, action=action, risk=risk)
+    return {
+        "confirm_checkpoint": payload,
+        "confirm_checkpoint_id": payload["checkpoint_id"],
+        "confirm_status": "pending",
+        "confirm_resolved_at": None,
+        "awaiting_user_confirmation": True,
+        "pending_action": action,
+        "phase": PHASE.CONFIRM,
+        "last_node": "confirm_checkpoint_node",
+    }
+
+
+__all__ = ["confirm_recommendation_node", "confirm_checkpoint_node"]

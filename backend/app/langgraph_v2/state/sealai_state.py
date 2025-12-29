@@ -324,6 +324,7 @@ class SealAIState(BaseModel):
     # Parameter / Berechnung
     parameter_profile: Optional[ParameterProfile] = None
     parameters: TechnicalParameters = Field(default_factory=TechnicalParameters)
+    parameter_provenance: Dict[str, str] = Field(default_factory=dict)
     missing_params: List[str] = Field(default_factory=list)
     coverage_analysis: Optional[CoverageAnalysis] = None
     ask_missing_request: Optional[AskMissingRequest] = None
@@ -353,6 +354,17 @@ class SealAIState(BaseModel):
     final_text: Optional[str] = None
     final_prompt: Optional[str] = None
     final_prompt_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    # Human-in-the-loop confirmation
+    pending_action: Optional[str] = None
+    confirmed_actions: List[str] = Field(default_factory=list)
+    awaiting_user_confirmation: bool = False
+    confirm_checkpoint_id: Optional[str] = None
+    confirm_checkpoint: Dict[str, Any] = Field(default_factory=dict)
+    confirm_status: Optional[Literal["pending", "resolved"]] = None
+    confirm_resolved_at: Optional[str] = None
+    confirm_decision: Optional[str] = None
+    confirm_edits: Dict[str, Any] = Field(default_factory=dict)
 
     # Flags zur Parameter-Completeness
     flags: Dict[str, Any] = Field(

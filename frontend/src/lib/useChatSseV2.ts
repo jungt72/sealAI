@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { emit } from "@/lib/telemetry";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 type UseChatSseV2Opts = {
   chatId?: string | null;
@@ -10,18 +11,37 @@ type UseChatSseV2Opts = {
   onDone?: (finalText: string) => void;
   onStart?: (isRetry: boolean) => void;
   onAuthExpired?: () => void;
+  onStateDelta?: (
+    delta: Record<string, unknown>,
+    meta?: { event: string; id?: string | null },
+    payload?: Record<string, unknown>,
+  ) => void;
+  onEvent?: (event: { event: string; data?: unknown; id?: string | null }) => void;
 };
 
 export type SseStatus = 'idle' | 'connecting' | 'streaming' | 'done' | 'retrying' | 'error';
 
 export type ConfirmCheckpointPayload = {
-  type: 'confirm_checkpoint';
-  phase?: string;
-  recommendation_go?: boolean;
-  coverage_score?: number;
-  coverage_gaps?: string[];
-  missing_core?: string[];
-  text?: string;
+  checkpoint_id: string;
+  required_user_sub: string;
+  conversation_id: string;
+  action: string;
+  risk: 'low' | 'med' | 'high';
+  preview: {
+    text?: string;
+    summary?: string;
+    parameters?: Record<string, unknown>;
+    coverage_score?: number;
+    coverage_gaps?: string[];
+  };
+  diff?: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type PendingCheckpointSignal = {
+  checkpointId?: string | null;
+  awaitingConfirmation?: boolean | null;
+  checkpointPayload?: Record<string, unknown> | null;
 };
 
 type SseState = {
@@ -34,6 +54,7 @@ type SseState = {
   confirmCheckpoint: ConfirmCheckpointPayload | null;
   lastEventId: string | null;
   lastDoneEvent: { id: string | null; data: Record<string, unknown> } | null;
+  lastEvent: { event: string; data?: unknown; id?: string | null } | null;
   send: (input: string, metadata?: Record<string, unknown>) => void;
   cancel: () => void;
   retryNow: () => void;
@@ -69,6 +90,8 @@ export function useChatSseV2({
   onDone,
   onStart,
   onAuthExpired,
+  onStateDelta,
+  onEvent,
 }: UseChatSseV2Opts): SseState {
   const retryMax = 5;
   const [status, setStatus] = useState<SseStatus>('idle');
@@ -78,6 +101,7 @@ export function useChatSseV2({
   const [confirmCheckpoint, setConfirmCheckpoint] = useState<ConfirmCheckpointPayload | null>(null);
   const [lastEventId, setLastEventId] = useState<string | null>(null);
   const [lastDoneEvent, setLastDoneEvent] = useState<{ id: string | null; data: Record<string, unknown> } | null>(null);
+  const [lastEvent, setLastEvent] = useState<{ event: string; data?: unknown; id?: string | null } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
@@ -89,6 +113,7 @@ export function useChatSseV2({
   const internalSendRef = useRef<((input: string, metadata?: Record<string, unknown>, isRetry?: boolean) => void) | null>(null);
   const streamStartRef = useRef<number | null>(null);
   const ttftEmittedRef = useRef(false);
+  const confirmCheckpointRef = useRef<ConfirmCheckpointPayload | null>(null);
 
   const endpointUrl = useMemo(() => ENDPOINT_URL, []);
   const connected = status !== 'idle' && status !== 'error';
@@ -98,6 +123,7 @@ export function useChatSseV2({
       lastEventIdRef.current = null;
       setLastEventId(null);
       setLastDoneEvent(null);
+      setConfirmCheckpoint(null);
       setStatus('idle');
       setRetryAttempt(0);
       retryRef.current.attempt = 0;
@@ -109,7 +135,58 @@ export function useChatSseV2({
     lastEventIdRef.current = stored;
     setLastEventId(stored);
     setLastDoneEvent(null);
+    setConfirmCheckpoint(null);
   }, [chatId]);
+
+  useEffect(() => {
+    confirmCheckpointRef.current = confirmCheckpoint;
+  }, [confirmCheckpoint]);
+
+  const buildCheckpointFromSignal = useCallback((signal: PendingCheckpointSignal): ConfirmCheckpointPayload | null => {
+    const checkpointId = (signal.checkpointId || "").trim();
+    if (!checkpointId) return null;
+    const payload = signal.checkpointPayload && typeof signal.checkpointPayload === "object"
+      ? signal.checkpointPayload
+      : null;
+    const preview =
+      payload && typeof payload.preview === "object"
+        ? (payload.preview as ConfirmCheckpointPayload["preview"])
+        : {
+            text: undefined,
+            summary: undefined,
+            parameters: undefined,
+            coverage_score: undefined,
+            coverage_gaps: undefined,
+          };
+    return {
+      checkpoint_id: checkpointId,
+      required_user_sub: String(payload?.required_user_sub || ""),
+      conversation_id: String(payload?.conversation_id || chatId || ""),
+      action: String(payload?.action || "CONFIRM"),
+      risk: (payload?.risk as ConfirmCheckpointPayload["risk"]) || "med",
+      preview,
+      diff: (payload?.diff as Record<string, unknown> | null) ?? null,
+      created_at: String(payload?.created_at || new Date().toISOString()),
+    };
+  }, [chatId]);
+
+  const extractPendingCheckpointSignal = useCallback((data: Record<string, unknown>): PendingCheckpointSignal => {
+    const checkpointId =
+      typeof data.confirm_checkpoint_id === "string"
+        ? data.confirm_checkpoint_id
+        : typeof data.checkpoint_id === "string"
+          ? data.checkpoint_id
+          : null;
+    const awaitingConfirmation =
+      typeof data.awaiting_user_confirmation === "boolean"
+        ? data.awaiting_user_confirmation
+        : null;
+    const checkpointPayload =
+      data.confirm_checkpoint && typeof data.confirm_checkpoint === "object"
+        ? (data.confirm_checkpoint as Record<string, unknown>)
+        : null;
+    return { checkpointId, awaitingConfirmation, checkpointPayload };
+  }, []);
 
   const abortStream = useCallback(() => {
     abortRef.current?.abort();
@@ -205,7 +282,9 @@ export function useChatSseV2({
 
       abortStream();
       setLastError(null);
-      setConfirmCheckpoint(null);
+      if (!confirmCheckpointRef.current) {
+        setConfirmCheckpoint(null);
+      }
       setLastDoneEvent(null);
       setStatus('connecting');
 
@@ -216,12 +295,11 @@ export function useChatSseV2({
       const lastEventId = lastEventIdRef.current;
       let hasFirstChunk = false;
       try {
-        const res = await fetch(endpointUrl, {
+        const res = await fetchWithAuth(endpointUrl, token, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Accept: 'text/event-stream',
-            Authorization: `Bearer ${token}`,
             ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
           },
           body: JSON.stringify({
@@ -290,13 +368,63 @@ export function useChatSseV2({
               }
               setLastEventId(id);
             }
+            if (event) {
+              const evtPayload = { event, data, id: id ?? null };
+              setLastEvent(evtPayload);
+              onEvent?.(evtPayload);
+            }
             if (event === 'token' && data && typeof data.text === 'string') {
               textBufferRef.current = `${textBufferRef.current}${data.text}`;
               onToken?.(data.text);
               continue;
             }
-            if (event === 'confirm_checkpoint' && data && typeof data === 'object') {
-              setConfirmCheckpoint(data as ConfirmCheckpointPayload);
+            if (
+              event &&
+              ["state_update", "state", "partial_state", "patch", "parameter_update"].includes(event) &&
+              data &&
+              typeof data === "object"
+            ) {
+              const payload = data as Record<string, unknown>;
+              const delta =
+                payload.delta && typeof payload.delta === "object"
+                  ? (payload.delta as Record<string, unknown>)
+                  : payload;
+              const signal = extractPendingCheckpointSignal(payload);
+              const deltaSignal = payload !== delta ? extractPendingCheckpointSignal(delta) : signal;
+              const mergedSignal: PendingCheckpointSignal = {
+                checkpointId: signal.checkpointId || deltaSignal.checkpointId,
+                awaitingConfirmation:
+                  signal.awaitingConfirmation !== null ? signal.awaitingConfirmation : deltaSignal.awaitingConfirmation,
+                checkpointPayload: signal.checkpointPayload || deltaSignal.checkpointPayload,
+              };
+              const nextCheckpoint = buildCheckpointFromSignal(mergedSignal);
+              if (nextCheckpoint) {
+                setConfirmCheckpoint((prev) => {
+                  if (prev?.checkpoint_id === nextCheckpoint.checkpoint_id) return prev;
+                  return nextCheckpoint;
+                });
+              } else if (
+                mergedSignal.awaitingConfirmation === false ||
+                Object.prototype.hasOwnProperty.call(payload, "confirm_checkpoint_id") ||
+                Object.prototype.hasOwnProperty.call(payload, "checkpoint_id")
+              ) {
+                const hasId =
+                  typeof mergedSignal.checkpointId === "string" && mergedSignal.checkpointId.trim().length > 0;
+                if (!hasId && confirmCheckpointRef.current) {
+                  setConfirmCheckpoint(null);
+                }
+              }
+              onStateDelta?.(delta, { event, id: id ?? null }, payload);
+              continue;
+            }
+            if ((event === 'checkpoint_required' || event === 'confirm_checkpoint') && data && typeof data === 'object') {
+              const signal = extractPendingCheckpointSignal(data as Record<string, unknown>);
+              const nextCheckpoint = buildCheckpointFromSignal({
+                checkpointId: signal.checkpointId || (data as any)?.checkpoint_id,
+                awaitingConfirmation: signal.awaitingConfirmation,
+                checkpointPayload: (data as Record<string, unknown>) || null,
+              });
+              setConfirmCheckpoint(nextCheckpoint ?? (data as ConfirmCheckpointPayload));
               continue;
             }
             if (event === 'error') {
@@ -356,7 +484,7 @@ export function useChatSseV2({
         abortRef.current = null;
       }
     },
-    [abortStream, chatId, endpointUrl, onAuthExpired, onDone, onStart, onToken, resetRetry, scheduleRetry, token],
+    [abortStream, chatId, endpointUrl, onAuthExpired, onDone, onStart, onToken, onStateDelta, resetRetry, scheduleRetry, token],
   );
 
   const send = useCallback(
@@ -386,6 +514,7 @@ export function useChatSseV2({
     confirmCheckpoint,
     lastEventId,
     lastDoneEvent,
+    lastEvent,
     send,
     cancel,
     retryNow,

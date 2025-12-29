@@ -113,6 +113,26 @@ class DummyGraphError:
         return gen()
 
 
+class DummyGraphConfirmCheckpoint:
+    checkpointer = object()
+
+    def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
+        async def gen():
+            yield (
+                "values",
+                {
+                    "phase": "confirm",
+                    "last_node": "confirm_checkpoint_node",
+                    "pending_action": "RUN_PANEL_NORMS_RAG",
+                    "awaiting_user_confirmation": True,
+                    "user_id": "user-1",
+                    "thread_id": "chat-1",
+                },
+            )
+
+        return gen()
+
+
 def test_event_stream_v2_streams_tokens_and_done(monkeypatch):
     async def _dummy_graph():
         return DummyGraphTokens()
@@ -190,6 +210,19 @@ def test_event_stream_v2_ignores_full_message_after_chunks(monkeypatch):
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
     assert "".join(tokens) == "Hallo Welt"
+
+
+def test_event_stream_v2_emits_checkpoint_required(monkeypatch):
+    async def _dummy_graph():
+        return DummyGraphConfirmCheckpoint()
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
+    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    events = _parse_sse_frames(chunks)
+
+    assert any(evt == "checkpoint_required" for evt, _, _ in events)
 
 
 def test_claim_client_msg_id_deduplicates(monkeypatch):

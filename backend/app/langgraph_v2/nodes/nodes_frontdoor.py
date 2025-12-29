@@ -18,6 +18,7 @@ from app.langgraph_v2.utils.json_sanitizer import extract_json_obj
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.parameter_extraction import extract_parameters_from_text
+from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
 from app.langgraph_v2.utils.jinja import render_template
 
 logger = structlog.get_logger("langgraph_v2.nodes_frontdoor")
@@ -220,8 +221,12 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         logger.warning("frontdoor_llm_failed", error=str(exc), user_text=user_text)
         intent = Intent(goal="design_recommendation", confidence=0.6, high_impact_gaps=[])
         if extracted_params:
-            merged_params = parameters.as_dict()
-            merged_params.update(extracted_params)
+            merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+                parameters.as_dict(),
+                extracted_params,
+                state.parameter_provenance,
+                source="user",
+            )
             parameters = TechnicalParameters.model_validate(merged_params)
         wm_updates["frontdoor_reply"] = (
             "Danke für deine Nachricht. Ich sammele gleich mehr Kontext und melde mich mit einem technischen Vorschlag."
@@ -233,6 +238,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             "phase": PHASE.FRONTDOOR,
             "last_node": "frontdoor_discovery_node",
             "parameters": parameters,
+            "parameter_provenance": merged_provenance if extracted_params else state.parameter_provenance,
         }
 
     # 3) Robust JSON-Parsing
@@ -312,8 +318,12 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
 
     # [PATCH] Extract parameters
     if extracted_params:
-        merged_params = parameters.as_dict()
-        merged_params.update(extracted_params)
+        merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+            parameters.as_dict(),
+            extracted_params,
+            state.parameter_provenance,
+            source="user",
+        )
         parameters = TechnicalParameters.model_validate(merged_params)
     # [PATCH] End
 
@@ -341,6 +351,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         "phase": PHASE.FRONTDOOR,
         "last_node": "frontdoor_discovery_node",
         "parameters": parameters,
+        "parameter_provenance": merged_provenance if extracted_params else state.parameter_provenance,
         "requires_rag": requires_rag,
     }
 

@@ -7,6 +7,7 @@ from app.langgraph_v2.nodes.nodes_supervisor import (
     ACTION_RUN_PANEL_CALC,
     ACTION_RUN_PANEL_MATERIAL,
     ACTION_RUN_PANEL_NORMS_RAG,
+    ACTION_REQUIRE_CONFIRM,
     supervisor_policy_node,
 )
 from app.langgraph_v2.state import Budget, CalcResults, CandidateItem, Intent, SealAIState, WorkingMemory
@@ -37,7 +38,7 @@ def test_supervisor_policy_contradictions_run_norms_panel() -> None:
         confidence=0.3,
     )
     patch = supervisor_policy_node(state)
-    assert patch["next_action"] == ACTION_RUN_PANEL_NORMS_RAG
+    assert patch["next_action"] == ACTION_REQUIRE_CONFIRM
 
 
 def test_supervisor_policy_high_confidence_finalizes() -> None:
@@ -77,7 +78,7 @@ def test_supervisor_policy_comparison_runs_rag_after_comparison() -> None:
         working_memory=wm,
     )
     patch = supervisor_policy_node(state)
-    assert patch["next_action"] == ACTION_RUN_PANEL_NORMS_RAG
+    assert patch["next_action"] == ACTION_REQUIRE_CONFIRM
 
 
 def test_supervisor_policy_comparison_finalizes_without_rag() -> None:

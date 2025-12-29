@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 export type AccessTokenState = {
   token?: string;
   error?: "expired" | "missing";
+  status?: number;
 };
 
 type SessionShape = {
@@ -41,11 +42,12 @@ export function useAccessToken(): AccessTokenState {
 export async function fetchFreshAccessToken(): Promise<AccessTokenState> {
   try {
     const res = await fetch("/api/auth/session", { cache: "no-store" });
-    if (!res.ok) return { error: "missing" };
+    if (res.status === 401) return { error: "expired", status: 401 };
+    if (!res.ok) return { error: "missing", status: res.status };
     const json = (await res.json()) as SessionShape;
-    if (json.error === "RefreshAccessTokenError") return { error: "expired" };
-    if (!json.accessToken) return { error: "missing" };
-    return { token: json.accessToken };
+    if (json.error === "RefreshAccessTokenError") return { error: "expired", status: res.status };
+    if (!json.accessToken) return { error: "missing", status: res.status };
+    return { token: json.accessToken, status: res.status };
   } catch {
     return { error: "missing" };
   }

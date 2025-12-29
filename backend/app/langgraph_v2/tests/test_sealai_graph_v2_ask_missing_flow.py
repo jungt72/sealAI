@@ -6,11 +6,9 @@ pytest.skip(
 )
 
 import asyncio
-import os
-
 from langchain_core.messages import HumanMessage
 
-from app.langgraph_v2.sealai_graph_v2_legacy import build_v2_config, get_sealai_graph_v2
+from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.nodes import nodes_intent, nodes_discovery
 

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 # Ensure backend is on path
 sys.path.append(str(Path(__file__).resolve().parents[3]))
@@ -26,20 +26,6 @@ os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.js
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 
-def _client() -> TestClient:
-    import importlib
-
-    app_mod = importlib.import_module("app.main")
-    return TestClient(getattr(app_mod, "app"))
-
-
-def _auth(monkeypatch: pytest.MonkeyPatch, *, user: str = "test-user") -> None:
-    import importlib
-
-    deps = importlib.import_module("app.services.auth.dependencies")
-    monkeypatch.setattr(deps, "verify_access_token", lambda _t: {"preferred_username": user})
-
-
 class DummyGraphTrace:
     checkpointer = object()
 
@@ -53,24 +39,14 @@ class DummyGraphTrace:
         return gen()
 
 
-def _stream_text(client: TestClient) -> str:
+async def _collect(gen) -> str:
     text = ""
-    with client.stream(
-        "POST",
-        "/api/v1/langgraph/chat/v2",
-        headers={"Authorization": "Bearer test-token", "X-Request-Id": "trace-1"},
-        json={"input": "hi", "chat_id": "default"},
-    ) as res:
-        assert res.status_code == 200
-        for chunk in res.iter_text():
-            text += chunk
-            if "event: done" in text:
-                break
+    async for chunk in gen:
+        text += chunk.decode("utf-8")
     return text
 
 
 def test_chat_v2_sse_trace_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    _auth(monkeypatch)
     monkeypatch.setenv("SEALAI_LG_TRACE", "1")
 
     import importlib
@@ -82,12 +58,12 @@ def test_chat_v2_sse_trace_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
-    text = _stream_text(_client())
+    req = ep.LangGraphV2Request(input="hi", chat_id="default")
+    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-1")))
     assert "event: trace" in text
 
 
 def test_chat_v2_sse_trace_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    _auth(monkeypatch)
     monkeypatch.setenv("SEALAI_LG_TRACE", "0")
 
     import importlib
@@ -99,5 +75,6 @@ def test_chat_v2_sse_trace_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
-    text = _stream_text(_client())
+    req = ep.LangGraphV2Request(input="hi", chat_id="default")
+    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-2")))
     assert "event: trace" not in text

@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,13 +19,13 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from langgraph.errors import InvalidUpdateError
 
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
-from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.state import SealAIState, TechnicalParameters
 from app.langgraph_v2.contracts import assert_node_exists, error_detail, is_dependency_unavailable_error
 from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
 from app.langgraph_v2.utils.parameter_patch import (
     ParametersPatchRequest,
-    merge_parameters,
+    apply_parameter_patch_with_provenance,
     sanitize_v2_parameter_patch,
 )
 from app.services.auth.dependencies import RequestUser, get_current_request_user
@@ -106,6 +106,7 @@ async def _build_graph_config(
     if username:
         metadata = config.setdefault("metadata", {})
         metadata["username"] = username
+        metadata["user_sub"] = user_id
     return graph, config
 
 
@@ -125,11 +126,38 @@ async def _run_graph_to_state(req: LangGraphV2Request, *, user_id: str, username
 
 
 def _should_emit_confirm_checkpoint(state: SealAIState) -> bool:
+    if getattr(state, "awaiting_user_confirmation", False):
+        return True
+    if state.confirm_checkpoint:
+        return True
     if (state.phase or "") == "confirm":
         return True
     if (state.last_node or "") == "confirm_recommendation_node":
         return True
     return False
+
+
+def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str, Any]:
+    values = _state_values_to_dict(state)
+    parameters = values.get("parameters") if isinstance(values, dict) else {}
+    if isinstance(parameters, TechnicalParameters):
+        parameters = parameters.model_dump(exclude_none=True)
+    payload = {
+        "type": "state_update",
+        "phase": values.get("phase"),
+        "last_node": values.get("last_node"),
+        "awaiting_user_input": values.get("awaiting_user_input"),
+        "awaiting_user_confirmation": values.get("awaiting_user_confirmation"),
+        "recommendation_ready": values.get("recommendation_ready"),
+        "recommendation_go": values.get("recommendation_go"),
+        "coverage_score": values.get("coverage_score"),
+        "coverage_gaps": values.get("coverage_gaps"),
+        "missing_params": values.get("missing_params"),
+        "parameters": parameters if isinstance(parameters, dict) else {},
+        "pending_action": values.get("pending_action"),
+        "confirm_checkpoint_id": values.get("confirm_checkpoint_id"),
+    }
+    return {key: value for key, value in payload.items() if value is not None}
 
 
 def _flatten_message_content(message: Any) -> str:
@@ -314,6 +342,7 @@ async def _event_stream_v2(
         trace_enabled = _lg_trace_enabled()
         metadata = config.get("metadata") if isinstance(config, dict) else {}
         run_id = metadata.get("run_id") if isinstance(metadata, dict) else None
+        prev_parameters: Dict[str, Any] = {}
         initial_state = SealAIState(
             user_id=user_id,
             thread_id=req.chat_id,
@@ -342,7 +371,7 @@ async def _event_stream_v2(
             if signature == last_trace_signature:
                 return
             last_trace_signature = signature
-            payload["ts"] = datetime.utcnow().isoformat() + "Z"
+            payload["ts"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             logger.info(
                 "langgraph_v2_trace",
                 extra={
@@ -362,7 +391,7 @@ async def _event_stream_v2(
             await queue.put(_format_sse("trace", payload, event_id=event_id))
 
         async def _producer() -> None:
-            nonlocal emitted_any_token, latest_state, token_count, done_sent, seq
+            nonlocal emitted_any_token, latest_state, token_count, done_sent, seq, prev_parameters
             try:
                 iterator = graph.astream(
                     initial_state,
@@ -426,6 +455,65 @@ async def _event_stream_v2(
                                 latest_state = data
                             elif isinstance(data, dict):
                                 latest_state = data
+                            payload = _build_state_update_payload(latest_state)
+                            if payload:
+                                parameters = payload.get("parameters")
+                                current_params = parameters if isinstance(parameters, dict) else {}
+                                delta_keys = [
+                                    key
+                                    for key, value in current_params.items()
+                                    if key not in prev_parameters or prev_parameters.get(key) != value
+                                ]
+                                removed_keys = [key for key in prev_parameters.keys() if key not in current_params]
+                                if delta_keys or removed_keys:
+                                    logger.info(
+                                        "langgraph_v2_state_update_params",
+                                        extra={
+                                            "chat_id": req.chat_id,
+                                            "user_id": user_id,
+                                            "run_id": run_id,
+                                            "request_id": request_id,
+                                            "last_node": payload.get("last_node"),
+                                            "phase": payload.get("phase"),
+                                            "delta_keys": delta_keys,
+                                            "removed_keys": removed_keys,
+                                            "pressure_bar_before": prev_parameters.get("pressure_bar"),
+                                            "pressure_bar_after": current_params.get("pressure_bar"),
+                                        },
+                                    )
+                                prev_parameters = dict(current_params)
+                                provenance: Dict[str, Any] = {}
+                                if isinstance(latest_state, SealAIState):
+                                    provenance = latest_state.parameter_provenance or {}
+                                elif isinstance(latest_state, dict):
+                                    prov_value = latest_state.get("parameter_provenance")
+                                    if isinstance(prov_value, dict):
+                                        provenance = prov_value
+                                parameter_meta: Dict[str, Dict[str, Any]] = {}
+                                if delta_keys and provenance:
+                                    for key in delta_keys:
+                                        if provenance.get(key) != "user":
+                                            continue
+                                        parameter_meta[key] = {
+                                            "source": "user",
+                                            "force_overwrite": True,
+                                        }
+                                if parameter_meta:
+                                    payload["parameter_meta"] = parameter_meta
+                                if PARAM_SYNC_DEBUG and delta_keys:
+                                    logger.info(
+                                        "langgraph_v2_state_update_meta",
+                                        extra={
+                                            "chat_id": req.chat_id,
+                                            "last_node": payload.get("last_node"),
+                                            "delta_keys": delta_keys,
+                                            "provenance_by_key": {key: provenance.get(key) for key in delta_keys},
+                                            "parameter_meta_attached": bool(parameter_meta),
+                                        },
+                                    )
+                                event_id = f"{base_id}:{seq}"
+                                seq += 1
+                                await queue.put(_format_sse("state_update", payload, event_id=event_id))
                             await _emit_trace("values", data=data, meta=None, state=latest_state)
                             continue
 
@@ -443,17 +531,25 @@ async def _event_stream_v2(
                 )
 
                 if _should_emit_confirm_checkpoint(result_state):
-                    payload = build_confirm_checkpoint_payload(result_state)
+                    payload = (
+                        result_state.confirm_checkpoint
+                        if isinstance(result_state.confirm_checkpoint, dict) and result_state.confirm_checkpoint
+                        else build_confirm_checkpoint_payload(
+                            result_state,
+                            action=result_state.pending_action or result_state.next_action or "FINALIZE",
+                            checkpoint_id=result_state.confirm_checkpoint_id,
+                        )
+                    )
                     event_id = f"{base_id}:{seq}"
                     seq += 1
                     await queue.put(
-                        _format_sse("confirm_checkpoint", payload, event_id=event_id)
+                        _format_sse("checkpoint_required", payload, event_id=event_id)
                     )
                     if SSE_DEBUG:
                         logger.info(
                             "langgraph_v2_sse_event",
                             extra={
-                                "event_type": "confirm_checkpoint",
+                                "event_type": "checkpoint_required",
                                 "data_len": len(json.dumps(payload, ensure_ascii=False)),
                                 "token_count": token_count,
                                 "done_sent": done_sent,
@@ -495,6 +591,8 @@ async def _event_stream_v2(
                     "client_msg_id": req.client_msg_id,
                     "phase": result_state.phase,
                     "last_node": result_state.last_node,
+                    "awaiting_confirmation": bool(result_state.awaiting_user_confirmation),
+                    "checkpoint_id": result_state.confirm_checkpoint_id,
                 }
                 event_id = f"{base_id}:{seq}"
                 seq += 1
@@ -624,7 +722,7 @@ async def langgraph_chat_v2_endpoint(
     last_event_id = raw_request.headers.get("Last-Event-ID")
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
-            user_id=user.user_id,
+            user_id=user.sub,
             chat_id=request.chat_id,
             client_msg_id=request.client_msg_id,
         )
@@ -658,7 +756,7 @@ async def langgraph_chat_v2_endpoint(
     return StreamingResponse(
         _event_stream_v2(
             request,
-            user_id=user.user_id,
+            user_id=user.sub,
             request_id=request_id,
             last_event_id=last_event_id,
         ),
@@ -677,24 +775,79 @@ async def confirm_go(
     try:
         if not (body.chat_id or "").strip():
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
+        if not body.decision:
+            raise HTTPException(status_code=400, detail=error_detail("missing_decision", request_id=request_id))
         graph, config = await _build_graph_config(
             thread_id=body.chat_id,
-            user_id=user.user_id,
+            user_id=user.sub,
             username=user.username,
         )
+        snapshot = await graph.aget_state(config)
+        state_values = _state_values_to_dict(snapshot.values)
+        confirm_payload = state_values.get("confirm_checkpoint") if isinstance(state_values, dict) else {}
+        confirm_status = state_values.get("confirm_status") if isinstance(state_values, dict) else None
+        required_sub = ""
+        if isinstance(confirm_payload, dict):
+            required_sub = str(confirm_payload.get("required_user_sub") or "")
+        pending_action = state_values.get("pending_action") if isinstance(state_values, dict) else None
+        if confirm_status == "resolved":
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail("checkpoint_already_resolved", request_id=request_id),
+            )
+        if not pending_action and not confirm_payload:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail("no_pending_checkpoint", request_id=request_id),
+            )
+        if isinstance(confirm_payload, dict):
+            conversation_id = str(confirm_payload.get("conversation_id") or "")
+            if conversation_id != body.chat_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail=error_detail("checkpoint_conversation_mismatch", request_id=request_id),
+                )
+        if required_sub and required_sub != user.sub:
+            raise HTTPException(status_code=403, detail=error_detail("forbidden", request_id=request_id))
+        checkpoint_id = state_values.get("confirm_checkpoint_id") if isinstance(state_values, dict) else None
+        if body.checkpoint_id and checkpoint_id and body.checkpoint_id != checkpoint_id:
+            raise HTTPException(status_code=409, detail=error_detail("checkpoint_mismatch", request_id=request_id))
+
+        edits_payload = body.edits.model_dump(exclude_none=True) if body.edits else {}
+        edit_parameters = {}
+        if edits_payload.get("parameters"):
+            edit_parameters = sanitize_v2_parameter_patch(edits_payload.get("parameters") or {})
+        edits = {
+            "parameters": edit_parameters,
+            "instructions": (edits_payload.get("instructions") or "").strip() or None,
+        }
+
         assert_node_exists(
             graph,
-            CONFIRM_GO_AS_NODE,
+            "confirm_checkpoint_node",
             request_id=request_id,
             status_code=500,
             code="server_misconfigured",
         )
         await graph.aupdate_state(
             config,
-            {"recommendation_go": bool(body.go)},
-            as_node=CONFIRM_GO_AS_NODE,
+            {
+                "confirm_decision": body.decision,
+                "confirm_edits": edits,
+            },
+            as_node="confirm_checkpoint_node",
         )
-        return {"ok": True, "chat_id": body.chat_id, "recommendation_go": bool(body.go)}
+
+        result = await graph.ainvoke({}, config=config)
+        state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result or {})
+        return {
+            "ok": True,
+            "chat_id": body.chat_id,
+            "decision": body.decision,
+            "final_text": state.final_text or "",
+            "phase": state.phase,
+            "last_node": state.last_node,
+        }
     except HTTPException:
         raise
     except InvalidUpdateError as exc:
@@ -745,14 +898,22 @@ async def patch_parameters(
 
         graph, config = await _build_graph_config(
             thread_id=chat_id,
-            user_id=user.user_id,
+            user_id=user.sub,
             username=user.username,
         )
         assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
         snapshot = await graph.aget_state(config)
         state_values = _state_values_to_dict(snapshot.values)
         existing_params = state_values.get("parameters") if isinstance(state_values, dict) else {}
-        merged = merge_parameters(existing_params, patch)
+        existing_provenance = {}
+        if isinstance(state_values, dict):
+            existing_provenance = state_values.get("parameter_provenance") or {}
+        merged, merged_provenance = apply_parameter_patch_with_provenance(
+            existing_params,
+            patch,
+            existing_provenance,
+            source="user",
+        )
 
         if PARAM_SYNC_DEBUG:
             patch_keys = sorted(patch.keys())
@@ -782,7 +943,7 @@ async def patch_parameters(
 
         await graph.aupdate_state(
             config,
-            {"parameters": merged},
+            {"parameters": merged, "parameter_provenance": merged_provenance},
             # LangGraph requires `as_node` to be an existing node in the compiled graph.
             # Parameter patches are UI-driven and should not advance the graph; we attach
             # the update to a stable, always-present node.

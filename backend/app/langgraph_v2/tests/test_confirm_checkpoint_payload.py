@@ -7,6 +7,8 @@ def test_build_confirm_checkpoint_payload() -> None:
         phase="confirm",
         last_node="confirm_recommendation_node",
         final_text="**Abnahme-Checkpoint (vorläufig)**\n- Status: GO",
+        user_id="user-1",
+        thread_id="conv-1",
         recommendation_go=True,
         coverage_score=0.9,
         coverage_gaps=["medium"],
@@ -18,9 +20,11 @@ def test_build_confirm_checkpoint_payload() -> None:
             shaft_diameter=50,
         ),
     )
-    payload = build_confirm_checkpoint_payload(state)
-    assert payload["type"] == "confirm_checkpoint"
-    assert payload["phase"] == "confirm"
-    assert payload["recommendation_go"] is True
-    assert payload["coverage_score"] == 0.9
-    assert payload["missing_core"] == ["medium"]
+    payload = build_confirm_checkpoint_payload(state, action="RUN_PANEL_NORMS_RAG", checkpoint_id="chk-1")
+    assert payload["checkpoint_id"] == "chk-1"
+    assert payload["required_user_sub"] == state.user_id
+    assert payload["conversation_id"] == state.thread_id
+    assert payload["action"] == "RUN_PANEL_NORMS_RAG"
+    assert payload["risk"] == "med"
+    assert payload["preview"]["coverage_score"] == 0.9
+    assert payload["preview"]["coverage_gaps"] == ["medium"]

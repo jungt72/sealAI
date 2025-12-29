@@ -13,6 +13,7 @@ STABLE_V2_NODE_CONTRACT: frozenset[str] = frozenset(
         # Nodes referenced outside the graph (API / state updates).
         "supervisor_policy_node",
         "confirm_recommendation_node",
+        "confirm_checkpoint_node",
     }
 )
 
