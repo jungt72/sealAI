@@ -38,6 +38,21 @@ type LanggraphState = Record<string, unknown> & {
   parameter_meta?: Record<string, unknown>;
 };
 
+const THREAD_STORAGE_PREFIX = "sealai:thread:";
+
+export const clearAllThreadStorage = (): number => {
+  if (typeof window === "undefined") return 0;
+  const keys: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i += 1) {
+    const key = sessionStorage.key(i);
+    if (key && key.startsWith(THREAD_STORAGE_PREFIX)) keys.push(key);
+  }
+  for (const key of keys) {
+    sessionStorage.removeItem(key);
+  }
+  return keys.length;
+};
+
 const normalizeIncomingParameters = (raw: Record<string, unknown>): Partial<SealParameters> => {
   const normalized: Record<string, unknown> = { ...raw };
   if ("pressure" in normalized && !("pressure_bar" in normalized)) {
@@ -146,14 +161,14 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const pathname = usePathname();
   const isAuthed = authStatus === "authenticated";
 
-  const preferredChatId = (chatIdProp ?? "").trim() || null;
-  const storedChatId = useChatThreadId(preferredChatId);
-  const chatId = preferredChatId ?? storedChatId;
   const urlConversationId = useMemo(() => {
     const segments = (pathname ?? "").split("/").filter(Boolean);
     if (segments[0] !== "chat") return null;
     return segments[1] ?? null;
   }, [pathname]);
+  const preferredChatId = (urlConversationId ?? chatIdProp ?? "").trim() || null;
+  const storedChatId = useChatThreadId(preferredChatId);
+  const chatId = preferredChatId ?? storedChatId;
   const { token, error: tokenError } = useAccessToken();
   const streamingRef = useRef<StreamingMessageHandle | null>(null);
   const handleStreamToken = useCallback((chunk: string) => {
@@ -175,6 +190,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, []);
 
   const [authExpired, setAuthExpired] = useState(false);
+  const applyServerParametersRef = useRef<((next: SealParameters, eventId?: string | null, meta?: ParameterMeta) => void) | null>(null);
+  const prevUrlConversationIdRef = useRef<string | null>(urlConversationId ?? null);
 
   useEffect(() => {
     if (tokenError === "expired") {
@@ -242,16 +259,19 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       if (chatIdRef.current && chatIdRef.current !== chatId) return;
       setCurrentState((prev) => mergeState(prev, delta));
       const params = extractParametersFromDelta(delta);
-      const metaPayload =
+      const rawMeta =
         payload?.parameter_meta && typeof payload.parameter_meta === "object"
           ? (payload.parameter_meta as Record<string, unknown>)
-          : delta?.parameter_meta && typeof delta.parameter_meta === "object"
-            ? (delta.parameter_meta as Record<string, unknown>)
-            : null;
+          : payload?.delta && typeof payload.delta === "object" && (payload.delta as any).parameter_meta
+            ? ((payload.delta as any).parameter_meta as Record<string, unknown>)
+            : delta?.parameter_meta && typeof delta.parameter_meta === "object"
+              ? (delta.parameter_meta as Record<string, unknown>)
+              : null;
+      const metaPayload = rawMeta ? normalizeIncomingParameterMeta(rawMeta) : undefined;
       if (metaPayload) {
         lastParamMetaRef.current = {
           eventId: meta?.id ?? null,
-          meta: normalizeIncomingParameterMeta(metaPayload),
+          meta: metaPayload,
         };
       }
       if (params && Object.keys(params).length) {
@@ -263,7 +283,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             keys: Object.keys(params),
           });
         }
-        if (meta?.id) lastParamEventIdRef.current = meta.id;
+        lastParamEventIdRef.current = meta?.id ?? null;
+        applyServerParametersRef.current?.(params as SealParameters, meta?.id ?? null, metaPayload);
       }
     },
   });
@@ -313,6 +334,42 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const lastParamMetaRef = useRef<{ eventId: string | null; meta: ParameterMeta } | null>(null);
 
   useEffect(() => {
+    const prevUrlId = prevUrlConversationIdRef.current;
+    if (prevUrlId === urlConversationId) return;
+    if (prevUrlId) {
+      const removedCount = clearAllThreadStorage();
+      if (paramSyncDebug) {
+        console.log("[param-sync] hard_reset", {
+          prev_url_conversation_id: prevUrlId,
+          next_url_conversation_id: urlConversationId ?? null,
+          removed_thread_keys: removedCount,
+        });
+      }
+      cancel();
+      stateAbortRef.current?.abort();
+      stateAbortRef.current = null;
+      currentStateAbortRef.current?.abort();
+      currentStateAbortRef.current = null;
+      setCurrentState(null);
+      setParamState({ values: {}, dirty: new Set(), pending: new Set(), applied: {} });
+      lastSseEventIdRef.current = null;
+      lastParamEventIdRef.current = null;
+      lastParamMetaRef.current = null;
+      chatIdRef.current = urlConversationId ?? null;
+      paramQueueRef.current = Promise.resolve();
+      if (patchDebounceRef.current) {
+        clearTimeout(patchDebounceRef.current);
+        patchDebounceRef.current = null;
+      }
+      if (appliedTimeoutRef.current) {
+        clearTimeout(appliedTimeoutRef.current);
+        appliedTimeoutRef.current = null;
+      }
+    }
+    prevUrlConversationIdRef.current = urlConversationId ?? null;
+  }, [cancel, paramSyncDebug, urlConversationId]);
+
+  useEffect(() => {
     paramSyncTokenRef.current += 1;
     chatIdRef.current = chatId;
     setMessages([]);
@@ -328,6 +385,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     setConfirmEditParams("");
     setConfirmActionError(null);
     paramQueueRef.current = Promise.resolve();
+    cancel();
     stateAbortRef.current?.abort();
     stateAbortRef.current = null;
     currentStateAbortRef.current?.abort();
@@ -343,7 +401,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       clearTimeout(patchDebounceRef.current);
       patchDebounceRef.current = null;
     }
-  }, [chatId]);
+  }, [chatId, cancel]);
 
   useEffect(() => {
     return () => {
@@ -406,8 +464,15 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       }
       const body = await res.json().catch(() => null);
       const normalized = normalizeStatePayload(body);
-      if (normalized && chatIdRef.current === expectedChatId) {
-        setCurrentState((prev) => mergeState(prev, normalized));
+      if (!normalized) return;
+      if (controller.signal.aborted) return;
+      if (chatIdRef.current !== expectedChatId) return;
+      setCurrentState((prev) => mergeState(prev, normalized));
+      if (normalized.parameters && typeof normalized.parameters === "object") {
+        const normalizedParams = normalizeIncomingParameters(normalized.parameters as Record<string, unknown>);
+        if (Object.keys(normalizedParams).length) {
+          applyServerParametersRef.current?.(normalizedParams as SealParameters, null);
+        }
       }
     } finally {
       if (currentStateAbortRef.current === controller) {
@@ -530,15 +595,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   );
 
   useEffect(() => {
-    if (!currentState?.parameters || typeof currentState.parameters !== "object") return;
-    const normalized = normalizeIncomingParameters(currentState.parameters as Record<string, unknown>);
-    if (!Object.keys(normalized).length) return;
-    const metaState = lastParamMetaRef.current;
-    const eventId = lastParamEventIdRef.current ?? null;
-    const meta = metaState && metaState.eventId === eventId ? metaState.meta : undefined;
-    applyServerParameters(normalized as SealParameters, eventId, meta);
-    lastParamMetaRef.current = null;
-  }, [applyServerParameters, currentState?.parameters]);
+    applyServerParametersRef.current = applyServerParameters;
+  }, [applyServerParameters]);
 
   useEffect(() => {
     const onUi = (ev: Event) => {

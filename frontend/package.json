@@ -16,6 +16,7 @@
     "build:turbo": "next build --turbo",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
     "test:unit": "vitest run"
   },
   "dependencies": {

@@ -6,6 +6,16 @@ describe("v2 parameter patch helpers", () => {
     vi.restoreAllMocks();
   });
 
+  const toHeaderObject = (headers: RequestInit["headers"]) => {
+    if (!headers) return {};
+    const raw = headers instanceof Headers ? Object.fromEntries(headers.entries()) : headers;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw || {})) {
+      out[key.toLowerCase()] = String(value);
+    }
+    return out;
+  };
+
   it("patches with chat_id and refreshes state", async () => {
     const patchResponse = {
       ok: true,
@@ -39,9 +49,9 @@ describe("v2 parameter patch helpers", () => {
     const [patchUrl, patchInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(patchUrl).toBe("/api/langgraph/parameters/patch");
     expect(patchInit.method).toBe("POST");
-    expect(patchInit.headers).toMatchObject({
-      "Content-Type": "application/json",
-      Authorization: "Bearer token-abc",
+    expect(toHeaderObject(patchInit.headers)).toMatchObject({
+      "content-type": "application/json",
+      authorization: "Bearer token-abc",
     });
     expect(patchInit.body).toBe(
       JSON.stringify({ chat_id: "chat-123", parameters: { medium: "oil" } })
@@ -50,8 +60,8 @@ describe("v2 parameter patch helpers", () => {
     const [stateUrl, stateInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(stateUrl).toBe("/api/langgraph/state?thread_id=chat-123");
     expect(stateInit.method).toBe("GET");
-    expect(stateInit.headers).toMatchObject({
-      Authorization: "Bearer token-abc",
+    expect(toHeaderObject(stateInit.headers)).toMatchObject({
+      authorization: "Bearer token-abc",
     });
   });
 
@@ -75,8 +85,8 @@ describe("v2 parameter patch helpers", () => {
     const [stateUrl, stateInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(stateUrl).toBe("/api/langgraph/state?thread_id=chat-456");
     expect(stateInit.method).toBe("GET");
-    expect(stateInit.headers).toMatchObject({
-      Authorization: "Bearer token-xyz",
+    expect(toHeaderObject(stateInit.headers)).toMatchObject({
+      authorization: "Bearer token-xyz",
     });
   });
 });
