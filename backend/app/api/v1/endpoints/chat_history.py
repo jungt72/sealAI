@@ -179,17 +179,15 @@ async def delete_conversation_endpoint(
             pass
         except Exception as exc:
             logger.warning(
-                "Failed to delete checkpointer thread",
-                exc=str(exc),
-                user_id=str(user_id),
-                conversation_id=conversation_id,
+                "Failed to delete checkpointer thread: %s",
+                exc,
+                extra={"user_id": str(user_id), "conversation_id": conversation_id},
             )
     except Exception as exc:
         logger.warning(
-            "Failed to resolve graph for conversation deletion",
-            exc=str(exc),
-            user_id=str(user_id),
-            conversation_id=conversation_id,
+            "Failed to resolve graph for conversation deletion: %s",
+            exc,
+            extra={"user_id": str(user_id), "conversation_id": conversation_id},
         )
 
     return {"deleted": True}

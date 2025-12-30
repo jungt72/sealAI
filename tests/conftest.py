@@ -4,6 +4,31 @@ from pathlib import Path
 import types
 import pytest
 
+# Provide safe defaults so settings can initialize during test collection.
+_TEST_ENV_DEFAULTS = {
+    "POSTGRES_USER": "test",
+    "POSTGRES_PASSWORD": "test",
+    "POSTGRES_HOST": "localhost",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_DB": "test",
+    "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:5432/test",
+    "POSTGRES_SYNC_URL": "postgresql+psycopg2://test:test@localhost:5432/test",
+    "OPENAI_API_KEY": "test-key",
+    "QDRANT_URL": "http://localhost",
+    "QDRANT_COLLECTION": "test",
+    "REDIS_URL": "redis://localhost:6379/0",
+    "NEXTAUTH_URL": "http://localhost",
+    "NEXTAUTH_SECRET": "secret",
+    "KEYCLOAK_ISSUER": "http://localhost/realms/test",
+    "KEYCLOAK_JWKS_URL": "http://localhost/realms/test/protocol/openid-connect/certs",
+    "KEYCLOAK_CLIENT_ID": "test-client",
+    "KEYCLOAK_CLIENT_SECRET": "secret",
+    "KEYCLOAK_EXPECTED_AZP": "test",
+}
+for key, value in _TEST_ENV_DEFAULTS.items():
+    os.environ.setdefault(key, value)
+os.environ.setdefault("ANYIO_BACKEND", "asyncio")
+
 # Ensure backend/ is on sys.path so "from app.main import app" works
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
@@ -23,6 +48,11 @@ def fastapi_app():
     except Exception as e:
         pytest.skip(f"Konnte app nicht importieren (app.main:app): {e}")
     return app
+
+
+@pytest.fixture()
+def app(fastapi_app):
+    return fastapi_app
 
 @pytest.fixture()
 def client(fastapi_app):

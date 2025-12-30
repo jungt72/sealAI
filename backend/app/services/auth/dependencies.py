@@ -15,7 +15,7 @@ import os
 from fastapi import Depends, HTTPException, WebSocket, status, Header
 
 from app.core.config import settings              # <-- korrekter Pfad!
-from app.services.auth.token import verify_access_token
+import app.services.auth.token as auth_token
 
 
 # --------------------------------------------------------------------------- #
@@ -61,7 +61,7 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
 
     token = authorization.removeprefix("Bearer ").strip()
     try:
-        payload = verify_access_token(token)
+        payload = auth_token.verify_access_token(token)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -103,7 +103,7 @@ async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
         )
 
     try:
-        payload = verify_access_token(token)
+        payload = auth_token.verify_access_token(token)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

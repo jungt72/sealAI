@@ -73,6 +73,8 @@ class Settings(BaseSettings):
 
     # Feature-Flags
     ltm_enable: bool = True
+    chat_max_conversations_per_user: int = 50
+    chat_history_ttl_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",

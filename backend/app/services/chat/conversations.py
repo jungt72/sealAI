@@ -107,10 +107,9 @@ def _cleanup_excess_conversations(r: Redis, user_id: str, key_set: str) -> None:
             delete_conversation(user_id, conversation_id, reason="limit")
     except Exception as exc:
         logger.warning(
-            "Failed to enforce conversation limit",
-            exc=str(exc),
-            user_id=user_id,
-            conversation_limit=limit,
+            "Failed to enforce conversation limit: %s",
+            exc,
+            extra={"user_id": user_id, "conversation_limit": limit},
         )
 
 
@@ -167,10 +166,9 @@ def upsert_conversation(
         _cleanup_excess_conversations(r, user_id, key_set)
     except Exception as exc:
         logger.warning(
-            "Failed to upsert conversation metadata",
-            exc=str(exc),
-            user_id=user_id,
-            conversation_id=conversation_id,
+            "Failed to upsert conversation metadata: %s",
+            exc,
+            extra={"user_id": user_id, "conversation_id": conversation_id},
         )
 
 
@@ -212,9 +210,9 @@ def list_conversations(user_id: str) -> List[ConversationMeta]:
         return result
     except Exception as exc:
         logger.warning(
-            "Failed to list conversation metadata",
-            exc=str(exc),
-            user_id=user_id,
+            "Failed to list conversation metadata: %s",
+            exc,
+            extra={"user_id": user_id},
         )
         return []
 
@@ -241,8 +239,7 @@ def delete_conversation(user_id: str, conversation_id: str, *, reason: str = "ma
         )
     except Exception as exc:
         logger.warning(
-            "Failed to delete conversation metadata",
-            exc=str(exc),
-            user_id=user_id,
-            conversation_id=conversation_id,
+            "Failed to delete conversation metadata: %s",
+            exc,
+            extra={"user_id": user_id, "conversation_id": conversation_id},
         )

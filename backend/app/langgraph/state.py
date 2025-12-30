@@ -10,6 +10,12 @@ class ContextRef(TypedDict, total=False):
     id: str
     meta: Optional[Dict[str, Any]]
 
+class LongTermMemoryRef(TypedDict, total=False):
+    storage: str
+    id: str
+    summary: str
+    score: float
+
 class Routing(TypedDict, total=False):
     domains: List[str]
     primary_domain: Optional[str]
