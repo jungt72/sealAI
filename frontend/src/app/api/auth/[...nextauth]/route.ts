@@ -12,7 +12,8 @@ const normalizeExpires = (value: string | number | null | undefined): number | n
 };
 
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: 1800, updateAge: 300 },
+  jwt: { maxAge: 1800 },
 
   providers: [
     KeycloakProvider({
