@@ -7,6 +7,8 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 type UseChatSseV2Opts = {
   chatId?: string | null;
   token?: string | null;
+  tokenExpiresAt?: number | null;
+  refreshAccessToken?: () => Promise<string | null>;
   onToken?: (chunk: string) => void;
   onDone?: (finalText: string) => void;
   onStart?: (isRetry: boolean) => void;
@@ -62,6 +64,7 @@ type SseState = {
 
 const ENDPOINT_URL = "/api/chat";
 const LAST_EVENT_STORAGE_PREFIX = "sealai:sse:last_event_id:";
+const PREEMPTIVE_REFRESH_WINDOW_SEC = 60;
 
 function parseSseFrame(frame: string): { event?: string; data?: any; id?: string } {
   const lines = frame.split('\n').map(l => l.trimEnd());
@@ -86,6 +89,8 @@ function parseSseFrame(frame: string): { event?: string; data?: any; id?: string
 export function useChatSseV2({
   chatId,
   token,
+  tokenExpiresAt,
+  refreshAccessToken,
   onToken,
   onDone,
   onStart,
@@ -110,13 +115,25 @@ export function useChatSseV2({
   );
   const lastRequestRef = useRef<{ input: string; metadata?: Record<string, unknown> } | null>(null);
   const textBufferRef = useRef('');
-  const internalSendRef = useRef<((input: string, metadata?: Record<string, unknown>, isRetry?: boolean) => void) | null>(null);
+  const internalSendRef = useRef<
+    ((input: string, metadata?: Record<string, unknown>, isRetry?: boolean, didRefresh?: boolean) => void) | null
+  >(null);
   const streamStartRef = useRef<number | null>(null);
   const ttftEmittedRef = useRef(false);
   const confirmCheckpointRef = useRef<ConfirmCheckpointPayload | null>(null);
+  const tokenRef = useRef<string | null | undefined>(token);
+  const tokenExpiresAtRef = useRef<number | null | undefined>(tokenExpiresAt);
 
   const endpointUrl = useMemo(() => ENDPOINT_URL, []);
   const connected = status !== 'idle' && status !== 'error';
+
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+
+  useEffect(() => {
+    tokenExpiresAtRef.current = tokenExpiresAt;
+  }, [tokenExpiresAt]);
 
   useEffect(() => {
     if (!chatId || typeof window === "undefined") {
@@ -223,7 +240,7 @@ export function useChatSseV2({
     clearRetryTimer();
   }, [clearRetryTimer]);
 
-  const scheduleRetry = useCallback((reason: string) => {
+  const scheduleRetry = useCallback((reason: string, didRefresh?: boolean) => {
     const attempt = retryRef.current.attempt;
     if (attempt >= retryMax) {
       setStatus('error');
@@ -250,15 +267,37 @@ export function useChatSseV2({
         lastRequestRef.current.input,
         lastRequestRef.current.metadata,
         true,
+        didRefresh,
       );
     }, delay);
   }, [chatId, clearRetryTimer, retryMax]);
 
   const internalSend = useCallback(
-    async (input: string, metadata?: Record<string, unknown>, isRetry?: boolean) => {
+    async (
+      input: string,
+      metadata?: Record<string, unknown>,
+      isRetry?: boolean,
+      didRefresh?: boolean,
+    ) => {
       if (!endpointUrl) return;
       if (!chatId) return;
-      if (!token) {
+      const now = Math.floor(Date.now() / 1000);
+      const exp = tokenExpiresAtRef.current;
+      if (exp && now >= exp - PREEMPTIVE_REFRESH_WINDOW_SEC) {
+        if (refreshAccessToken) {
+          const refreshed = await refreshAccessToken();
+          if (refreshed) {
+            tokenRef.current = refreshed;
+          } else {
+            setLastError("Sitzung abgelaufen (Token-Refresh fehlgeschlagen).");
+            setStatus('error');
+            onAuthExpired?.();
+            return;
+          }
+        }
+      }
+      const activeToken = tokenRef.current ?? token;
+      if (!activeToken) {
         setLastError("Nicht angemeldet (Token fehlt).");
         setStatus('error');
         onAuthExpired?.();
@@ -295,7 +334,7 @@ export function useChatSseV2({
       const lastEventId = lastEventIdRef.current;
       let hasFirstChunk = false;
       try {
-        const res = await fetchWithAuth(endpointUrl, token, {
+        const res = await fetchWithAuth(endpointUrl, activeToken, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -316,6 +355,16 @@ export function useChatSseV2({
         if (!res.ok || !res.body) {
           const detail = await res.text().catch(() => "");
           if (res.status === 401 || res.status === 403) {
+            if (refreshAccessToken && !didRefresh) {
+              const refreshed = await refreshAccessToken();
+              if (refreshed) {
+                tokenRef.current = refreshed;
+                scheduleRetry("auth_refresh", true);
+                setStreaming(false);
+                abortRef.current = null;
+                return;
+              }
+            }
             emit({
               type: "chat_error",
               chatId: chatId ?? "unknown",
@@ -484,7 +533,20 @@ export function useChatSseV2({
         abortRef.current = null;
       }
     },
-    [abortStream, chatId, endpointUrl, onAuthExpired, onDone, onStart, onToken, onStateDelta, resetRetry, scheduleRetry, token],
+    [
+      abortStream,
+      chatId,
+      endpointUrl,
+      onAuthExpired,
+      onDone,
+      onStart,
+      onToken,
+      onStateDelta,
+      refreshAccessToken,
+      resetRetry,
+      scheduleRetry,
+      token,
+    ],
   );
 
   const send = useCallback(

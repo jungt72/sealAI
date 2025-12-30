@@ -160,6 +160,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const { data: session, status: authStatus } = useSession();
   const pathname = usePathname();
   const isAuthed = authStatus === "authenticated";
+  const tokenExpiresAt = (session as any)?.expires_at ?? null;
 
   const urlConversationId = useMemo(() => {
     const segments = (pathname ?? "").split("/").filter(Boolean);
@@ -226,6 +227,19 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     );
   }, [authExpired]);
 
+  const refreshTokenForSse = useCallback(async () => {
+    const fresh = await fetchFreshAccessToken();
+    if (fresh.status === 401 || fresh.error === "expired") {
+      setAuthExpired(true);
+      return null;
+    }
+    if (fresh.token) {
+      setAuthExpired(false);
+      return fresh.token;
+    }
+    return null;
+  }, []);
+
   const {
     status: sseStatus,
     retryAttempt,
@@ -241,6 +255,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   } = useChatSseV2({
     chatId,
     token,
+    tokenExpiresAt,
+    refreshAccessToken: refreshTokenForSse,
     onToken: handleStreamToken,
     onStart: handleStreamStart,
     onDone: handleStreamDone,
