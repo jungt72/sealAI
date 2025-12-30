@@ -11,9 +11,13 @@ const normalizeExpires = (value: string | number | null | undefined): number | n
   return null;
 };
 
+const SESSION_MAX_AGE_SECONDS = 1800;
+const SESSION_UPDATE_AGE_SECONDS = 300;
+
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt", maxAge: 1800, updateAge: 300 },
-  jwt: { maxAge: 1800 },
+  // Keep session/jwt lifetimes explicit to avoid ghost sessions when SSO expires.
+  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SECONDS, updateAge: SESSION_UPDATE_AGE_SECONDS },
+  jwt: { maxAge: SESSION_MAX_AGE_SECONDS },
 
   providers: [
     KeycloakProvider({
@@ -36,7 +40,7 @@ export const authOptions: NextAuthOptions = {
         const refreshExpiresAt =
           typeof refreshExpiresIn === "number" && refreshExpiresIn > 0
             ? now + refreshExpiresIn
-            : null;
+            : now + SESSION_MAX_AGE_SECONDS;
         (token as any).accessToken = (account as any).access_token ?? null;
         (token as any).idToken = (account as any).id_token ?? null;
         (token as any).refreshToken = (account as any).refresh_token ?? null;
@@ -50,10 +54,7 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
 
-      if (
-        (token as any).refreshToken &&
-        isRefreshTokenExpired((token as any).refreshTokenExpires)
-      ) {
+      if ((token as any).refreshToken && isRefreshTokenExpired((token as any).refreshTokenExpires)) {
         return {
           ...token,
           accessToken: null,
@@ -63,6 +64,20 @@ export const authOptions: NextAuthOptions = {
           accessTokenExpires: null,
           refreshTokenExpires: null,
           error: "RefreshTokenExpired",
+        } as typeof token;
+      }
+
+      if (isTokenExpired((token as any).expires_at) && !(token as any).refreshToken) {
+        console.warn("Keycloak refresh token missing while access token expired.");
+        return {
+          ...token,
+          accessToken: null,
+          refreshToken: null,
+          idToken: null,
+          expires_at: null,
+          accessTokenExpires: null,
+          refreshTokenExpires: null,
+          error: "RefreshTokenMissing",
         } as typeof token;
       }
 

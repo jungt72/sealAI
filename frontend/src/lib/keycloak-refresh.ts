@@ -1,5 +1,6 @@
 const CLOCK_SKEW_SECONDS = 60;
 const REFRESH_TIMEOUT_MS = 10_000;
+const SESSION_MAX_AGE_SECONDS = Number(process.env.NEXTAUTH_SESSION_MAXAGE ?? "1800");
 
 export type KeycloakToken = {
   accessToken?: string | null;
@@ -34,7 +35,17 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
   const clientId = process.env.KEYCLOAK_CLIENT_ID;
 
   if (!issuer || !clientId || !token.refreshToken) {
-    return token;
+    console.warn("Keycloak refresh skipped: missing issuer/client or refresh token.");
+    return {
+      ...token,
+      accessToken: null,
+      refreshToken: null,
+      idToken: null,
+      expires_at: null,
+      accessTokenExpires: null,
+      refreshTokenExpires: null,
+      error: "RefreshAccessTokenError",
+    };
   }
 
   const controller = new AbortController();
@@ -74,7 +85,7 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
     const refreshExpiresAt =
       Number.isFinite(refreshExpiresIn) && refreshExpiresIn > 0
         ? now + refreshExpiresIn
-        : token.refreshTokenExpires ?? null;
+        : token.refreshTokenExpires ?? now + SESSION_MAX_AGE_SECONDS;
 
     return {
       ...token,
@@ -92,6 +103,7 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
     });
     return {
       ...token,
+      // Clear tokens on refresh failure to avoid ghost sessions.
       accessToken: null,
       refreshToken: null,
       idToken: null,

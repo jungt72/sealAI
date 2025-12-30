@@ -64,6 +64,7 @@ type SseState = {
 
 const ENDPOINT_URL = "/api/chat";
 const LAST_EVENT_STORAGE_PREFIX = "sealai:sse:last_event_id:";
+// Preflight refresh keeps SSE from starting with near-expired tokens.
 const PREEMPTIVE_REFRESH_WINDOW_SEC = 60;
 
 function parseSseFrame(frame: string): { event?: string; data?: any; id?: string } {
@@ -283,6 +284,9 @@ export function useChatSseV2({
       if (!chatId) return;
       const now = Math.floor(Date.now() / 1000);
       const exp = tokenExpiresAtRef.current;
+      if (exp && now >= exp) {
+        console.warn("SSE start requested with expired token.");
+      }
       if (exp && now >= exp - PREEMPTIVE_REFRESH_WINDOW_SEC) {
         if (refreshAccessToken) {
           const refreshed = await refreshAccessToken();
