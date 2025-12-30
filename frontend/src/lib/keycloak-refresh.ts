@@ -6,6 +6,8 @@ export type KeycloakToken = {
   refreshToken?: string | null;
   idToken?: string | null;
   expires_at?: number | null;
+  accessTokenExpires?: number | null;
+  refreshTokenExpires?: number | null;
   error?: string | null;
 };
 
@@ -17,6 +19,12 @@ export const isTokenExpired = (expiresAt?: number | null): boolean => {
   if (typeof expiresAt !== "number") return true;
   const now = Math.floor(Date.now() / 1000);
   return now >= expiresAt - CLOCK_SKEW_SECONDS;
+};
+
+export const isRefreshTokenExpired = (refreshExpiresAt?: number | null): boolean => {
+  if (typeof refreshExpiresAt !== "number") return true;
+  const now = Math.floor(Date.now() / 1000);
+  return now >= refreshExpiresAt - CLOCK_SKEW_SECONDS;
 };
 
 const buildTokenEndpoint = (issuer: string) => `${issuer}/protocol/openid-connect/token`;
@@ -62,6 +70,11 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
     const expiresIn = Number(data.expires_in);
     const expiresAt =
       Number.isFinite(expiresIn) && expiresIn > 0 ? now + expiresIn : token.expires_at ?? null;
+    const refreshExpiresIn = Number(data.refresh_expires_in ?? data.refresh_token_expires_in);
+    const refreshExpiresAt =
+      Number.isFinite(refreshExpiresIn) && refreshExpiresIn > 0
+        ? now + refreshExpiresIn
+        : token.refreshTokenExpires ?? null;
 
     return {
       ...token,
@@ -69,6 +82,8 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
       refreshToken: data.refresh_token ?? token.refreshToken,
       idToken: data.id_token ?? token.idToken,
       expires_at: expiresAt,
+      accessTokenExpires: expiresAt,
+      refreshTokenExpires: refreshExpiresAt,
       error: null,
     };
   } catch (error) {
@@ -78,7 +93,11 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
     return {
       ...token,
       accessToken: null,
+      refreshToken: null,
+      idToken: null,
       expires_at: null,
+      accessTokenExpires: null,
+      refreshTokenExpires: null,
       error: "RefreshAccessTokenError",
     };
   } finally {

@@ -1,6 +1,6 @@
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import KeycloakProvider from "next-auth/providers/keycloak";
-import { isTokenExpired, refreshAccessToken } from "@/lib/keycloak-refresh";
+import { isRefreshTokenExpired, isTokenExpired, refreshAccessToken } from "@/lib/keycloak-refresh";
 
 const normalizeExpires = (value: string | number | null | undefined): number | null => {
   if (typeof value === "number") return value;
@@ -28,15 +28,42 @@ export const authOptions: NextAuthOptions = {
     // legt das access/id/refresh token beim ersten Login in den JWT
     async jwt({ token, account }) {
       if (account) {
+        const expiresAt = normalizeExpires((account as any).expires_at ?? null);
+        const refreshExpiresIn = normalizeExpires(
+          (account as any).refresh_expires_in ?? (account as any).refresh_token_expires_in ?? null,
+        );
+        const now = Math.floor(Date.now() / 1000);
+        const refreshExpiresAt =
+          typeof refreshExpiresIn === "number" && refreshExpiresIn > 0
+            ? now + refreshExpiresIn
+            : null;
         (token as any).accessToken = (account as any).access_token ?? null;
         (token as any).idToken = (account as any).id_token ?? null;
         (token as any).refreshToken = (account as any).refresh_token ?? null;
-        (token as any).expires_at = normalizeExpires((account as any).expires_at ?? null);
+        (token as any).expires_at = expiresAt;
+        (token as any).accessTokenExpires = expiresAt;
+        (token as any).refreshTokenExpires = refreshExpiresAt;
         (token as any).error = null;
       }
 
       if ((token as any).error === "RefreshAccessTokenError") {
         return token;
+      }
+
+      if (
+        (token as any).refreshToken &&
+        isRefreshTokenExpired((token as any).refreshTokenExpires)
+      ) {
+        return {
+          ...token,
+          accessToken: null,
+          refreshToken: null,
+          idToken: null,
+          expires_at: null,
+          accessTokenExpires: null,
+          refreshTokenExpires: null,
+          error: "RefreshTokenExpired",
+        } as typeof token;
       }
 
       if (isTokenExpired((token as any).expires_at) && (token as any).refreshToken) {

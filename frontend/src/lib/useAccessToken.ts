@@ -24,7 +24,7 @@ export function useAccessToken(): AccessTokenState {
       return;
     }
     const session = (data || {}) as SessionShape;
-    if (session.error === "RefreshAccessTokenError") {
+    if (session.error === "RefreshAccessTokenError" || session.error === "RefreshTokenExpired") {
       setState({ error: "expired" });
       return;
     }
@@ -45,7 +45,9 @@ export async function fetchFreshAccessToken(): Promise<AccessTokenState> {
     if (res.status === 401) return { error: "expired", status: 401 };
     if (!res.ok) return { error: "missing", status: res.status };
     const json = (await res.json()) as SessionShape;
-    if (json.error === "RefreshAccessTokenError") return { error: "expired", status: res.status };
+    if (json.error === "RefreshAccessTokenError" || json.error === "RefreshTokenExpired") {
+      return { error: "expired", status: res.status };
+    }
     if (!json.accessToken) return { error: "missing", status: res.status };
     return { token: json.accessToken, status: res.status };
   } catch {
