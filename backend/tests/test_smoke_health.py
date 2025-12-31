@@ -34,6 +34,12 @@ def test_fastapi_app_imports():
     assert hasattr(app_mod, "app")
 
 
+def test_api_router_imports():
+    _ensure_env()
+    api_mod = importlib.import_module("app.api.v1.api")
+    assert hasattr(api_mod, "api_router")
+
+
 def test_health_route_exists():
     _ensure_env()
     app_mod = importlib.import_module("app.main"); app = getattr(app_mod, "app")

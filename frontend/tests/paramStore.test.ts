@@ -60,6 +60,61 @@ describe("paramStore reducer", () => {
     expect(next.byChatId["chat-1"].updatedAt.pressure_bar).toBe(200);
   });
 
+  it("marks local edits as dirty", () => {
+    const seeded = reduceParamStore(emptyState, {
+      type: "init",
+      payload: { chatId: "chat-1" },
+    });
+    const next = reduceParamStore(seeded, {
+      type: "apply_local",
+      payload: { chatId: "chat-1", patch: { pressure_bar: 5 }, markDirty: true },
+    });
+    expect(next.byChatId["chat-1"].dirty.has("pressure_bar")).toBe(true);
+  });
+
+  it("applies SSE deltas and clears dirty when forced", () => {
+    const seeded = reduceParamStore(emptyState, {
+      type: "apply_local",
+      payload: { chatId: "chat-1", patch: { pressure_bar: 5 }, markDirty: true },
+    });
+    const next = reduceParamStore(seeded, {
+      type: "apply_delta",
+      payload: {
+        chatId: "chat-1",
+        incoming: { pressure_bar: 7 },
+        meta: { pressure_bar: { force_overwrite: true, source: "user" } },
+        eventId: "evt-1",
+      },
+    });
+    expect(next.byChatId["chat-1"].parameters.pressure_bar).toBe(7);
+    expect(next.byChatId["chat-1"].dirty.has("pressure_bar")).toBe(false);
+    expect(next.byChatId["chat-1"].lastServerEventId).toBe("evt-1");
+  });
+
+  it("clears pending keys on patch ack", () => {
+    const seeded = reduceParamStore(emptyState, {
+      type: "apply_local",
+      payload: { chatId: "chat-1", patch: { pressure_bar: 5 }, markDirty: true },
+    });
+    const pending = reduceParamStore(seeded, {
+      type: "set_pending",
+      payload: { chatId: "chat-1", keys: new Set(["pressure_bar"]) },
+    });
+    const next = reduceParamStore(pending, {
+      type: "apply_patch",
+      payload: {
+        chatId: "chat-1",
+        ack: {
+          patch: { pressure_bar: 8 },
+          versions: { pressure_bar: 2 },
+          updated_at: { pressure_bar: 200 },
+          rejected_fields: [],
+        },
+      },
+    });
+    expect(next.byChatId["chat-1"].pending.has("pressure_bar")).toBe(false);
+  });
+
   it("builds a snapshot from state", () => {
     const seeded = reduceParamStore(emptyState, {
       type: "replace",

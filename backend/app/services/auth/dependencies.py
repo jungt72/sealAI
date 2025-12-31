@@ -28,6 +28,10 @@ class RequestUser:
     sub: str
 
 
+def verify_access_token(token: str) -> dict:
+    return auth_token.verify_access_token(token)
+
+
 def _resolve_user_id(payload: dict) -> str:
     claim = (os.getenv("AUTH_USER_ID_CLAIM") or "preferred_username").strip().lower()
     if claim == "sub":
@@ -61,7 +65,7 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
 
     token = authorization.removeprefix("Bearer ").strip()
     try:
-        payload = auth_token.verify_access_token(token)
+        payload = verify_access_token(token)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -103,7 +107,7 @@ async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
         )
 
     try:
-        payload = auth_token.verify_access_token(token)
+        payload = verify_access_token(token)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

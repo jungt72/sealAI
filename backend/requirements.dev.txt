@@ -1,2 +1,0 @@
-# backend/requirements.dev.txt
-# LangGraph-spezifische Dev-Abhängigkeiten wurden entfernt.

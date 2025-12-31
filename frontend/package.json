@@ -17,7 +17,8 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "test:fast": "vitest run tests/paramStore.test.ts tests/useChatSseV2.test.ts tests/v2ParameterPatch.test.ts tests/chatRoute.test.ts"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

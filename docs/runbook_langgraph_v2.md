@@ -154,9 +154,25 @@ PY"
 
 ```bash
 cd backend
+python3 -m pytest -q \
+  tests/test_auth_dependencies.py \
+  tests/test_security.py \
+  tests/test_sse_broadcast.py \
+  tests/test_sse_replay_backend.py \
+  tests/test_parameter_guardrails.py \
+  tests/test_parameter_lww.py \
+  tests/test_param_snapshot.py \
+  tests/test_langgraph_compile.py
 pytest -q
 pytest -q tests/integration/test_langgraph_v2_http.py
 pytest -q tests/integration/test_langgraph_v2_sse.py
+```
+
+Frontend fast gate (HOST only; do not run in container):
+
+```bash
+cd frontend
+npm -s run test:fast
 ```
 
 ### Compose Wiring (optional)
