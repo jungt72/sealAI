@@ -10,6 +10,7 @@ type ChatV2Payload = {
   chat_id: string;
   client_msg_id?: string;
   metadata?: Record<string, unknown>;
+  client_context?: Record<string, unknown>;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
   const input = String(body.input ?? "").trim();
   const chat_id = String(body.chat_id ?? "").trim();
 
-  const allowedKeys = new Set(["input", "chat_id", "client_msg_id", "metadata"]);
+  const allowedKeys = new Set(["input", "chat_id", "client_msg_id", "metadata", "client_context"]);
   const unknownKeys = Object.keys(body).filter((key) => !allowedKeys.has(key));
   if (unknownKeys.length > 0) {
     console.info("[api/chat] forbidden_keys", { request_id, chat_id, unknownKeys });
@@ -94,6 +95,8 @@ export async function POST(req: NextRequest) {
   if (client_msg_id) payload.client_msg_id = client_msg_id;
   const metadata = isPlainObject(body.metadata) ? body.metadata : undefined;
   if (metadata) payload.metadata = metadata;
+  const client_context = isPlainObject(body.client_context) ? body.client_context : undefined;
+  if (client_context) payload.client_context = client_context;
   if (metadata?.source === "param_apply") {
     const keys = Array.isArray(metadata.keys) ? metadata.keys.length : undefined;
     console.info("[api/chat] param_apply", { request_id, chat_id, keys });

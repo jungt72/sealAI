@@ -325,6 +325,8 @@ class SealAIState(BaseModel):
     parameter_profile: Optional[ParameterProfile] = None
     parameters: TechnicalParameters = Field(default_factory=TechnicalParameters)
     parameter_provenance: Dict[str, str] = Field(default_factory=dict)
+    parameter_versions: Dict[str, int] = Field(default_factory=dict)
+    parameter_updated_at: Dict[str, float] = Field(default_factory=dict)
     missing_params: List[str] = Field(default_factory=list)
     coverage_analysis: Optional[CoverageAnalysis] = None
     ask_missing_request: Optional[AskMissingRequest] = None

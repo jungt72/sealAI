@@ -107,7 +107,10 @@ def test_patch_works_with_stable_node_returns_200(monkeypatch: pytest.MonkeyPatc
     body = res.json()
     assert body["ok"] is True
     assert body["chat_id"] == "default"
-    assert body["updated"] == {"medium": "oil"}
+    assert body["applied_fields"] == ["medium"]
+    assert body["rejected_fields"] == []
+    assert body["versions"]["medium"] == 1
+    assert isinstance(body["updated_at"]["medium"], float)
 
     assert len(fake_graph.calls) == 1
     assert fake_graph.calls[0]["as_node"] == "supervisor_logic_node"

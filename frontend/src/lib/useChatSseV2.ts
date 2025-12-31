@@ -13,6 +13,7 @@ type UseChatSseV2Opts = {
   onDone?: (finalText: string) => void;
   onStart?: (isRetry: boolean) => void;
   onAuthExpired?: () => void;
+  getClientContext?: () => Record<string, unknown> | null;
   onStateDelta?: (
     delta: Record<string, unknown>,
     meta?: { event: string; id?: string | null },
@@ -21,7 +22,7 @@ type UseChatSseV2Opts = {
   onEvent?: (event: { event: string; data?: unknown; id?: string | null }) => void;
 };
 
-export type SseStatus = 'idle' | 'connecting' | 'streaming' | 'done' | 'retrying' | 'error';
+export type SseStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'offline';
 
 export type ConfirmCheckpointPayload = {
   checkpoint_id: string;
@@ -60,12 +61,24 @@ type SseState = {
   send: (input: string, metadata?: Record<string, unknown>) => void;
   cancel: () => void;
   retryNow: () => void;
+  reconnect: () => void;
 };
 
 const ENDPOINT_URL = "/api/chat";
 const LAST_EVENT_STORAGE_PREFIX = "sealai:sse:last_event_id:";
 // Preflight refresh keeps SSE from starting with near-expired tokens.
 const PREEMPTIVE_REFRESH_WINDOW_SEC = 60;
+
+function buildLastEventStorageKey(chatId: string, clientMsgId: string): string {
+  return `${LAST_EVENT_STORAGE_PREFIX}${chatId}:${clientMsgId}`;
+}
+
+function generateClientMsgId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function parseSseFrame(frame: string): { event?: string; data?: any; id?: string } {
   const lines = frame.split('\n').map(l => l.trimEnd());
@@ -87,6 +100,24 @@ function parseSseFrame(frame: string): { event?: string; data?: any; id?: string
   }
 }
 
+export function buildChatRequestPayload(opts: {
+  input: string;
+  chatId: string;
+  clientMsgId: string | null;
+  metadata?: Record<string, unknown>;
+  clientContext?: Record<string, unknown> | null;
+}) {
+  return {
+    input: opts.input,
+    chat_id: opts.chatId,
+    client_msg_id: opts.clientMsgId,
+    ...(opts.metadata && Object.keys(opts.metadata).length ? { metadata: opts.metadata } : {}),
+    ...(opts.clientContext && Object.keys(opts.clientContext).length
+      ? { client_context: opts.clientContext }
+      : {}),
+  };
+}
+
 export function useChatSseV2({
   chatId,
   token,
@@ -96,10 +127,11 @@ export function useChatSseV2({
   onDone,
   onStart,
   onAuthExpired,
+  getClientContext,
   onStateDelta,
   onEvent,
 }: UseChatSseV2Opts): SseState {
-  const retryMax = 5;
+  const retryMax = 0;
   const [status, setStatus] = useState<SseStatus>('idle');
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [streaming, setStreaming] = useState(false);
@@ -111,13 +143,17 @@ export function useChatSseV2({
 
   const abortRef = useRef<AbortController | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
+  const lastEventByRunRef = useRef<Map<string, string>>(new Map());
+  const clientMsgIdRef = useRef<string | null>(null);
+  const clientMsgIdByChatRef = useRef<Map<string, string>>(new Map());
   const retryRef = useRef<{ attempt: number; timer: ReturnType<typeof setTimeout> | null }>(
     { attempt: 0, timer: null },
   );
+  const generationRef = useRef(0);
   const lastRequestRef = useRef<{ input: string; metadata?: Record<string, unknown> } | null>(null);
   const textBufferRef = useRef('');
   const internalSendRef = useRef<
-    ((input: string, metadata?: Record<string, unknown>, isRetry?: boolean, didRefresh?: boolean) => void) | null
+    ((input: string, metadata?: Record<string, unknown>, isRetry?: boolean) => void) | null
   >(null);
   const streamStartRef = useRef<number | null>(null);
   const ttftEmittedRef = useRef(false);
@@ -126,7 +162,7 @@ export function useChatSseV2({
   const tokenExpiresAtRef = useRef<number | null | undefined>(tokenExpiresAt);
 
   const endpointUrl = useMemo(() => ENDPOINT_URL, []);
-  const connected = status !== 'idle' && status !== 'error';
+  const connected = status === 'connected';
 
   useEffect(() => {
     tokenRef.current = token;
@@ -147,11 +183,12 @@ export function useChatSseV2({
       retryRef.current.attempt = 0;
       if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
       retryRef.current.timer = null;
+      generationRef.current += 1;
       return;
     }
-    const stored = sessionStorage.getItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
-    lastEventIdRef.current = stored;
-    setLastEventId(stored);
+    clientMsgIdRef.current = null;
+    lastEventIdRef.current = null;
+    setLastEventId(null);
     setLastDoneEvent(null);
     setConfirmCheckpoint(null);
   }, [chatId]);
@@ -219,6 +256,7 @@ export function useChatSseV2({
     setRetryAttempt(0);
     if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
     retryRef.current.timer = null;
+    generationRef.current += 1;
   }, [abortStream]);
 
   useEffect(() => {
@@ -241,10 +279,11 @@ export function useChatSseV2({
     clearRetryTimer();
   }, [clearRetryTimer]);
 
-  const scheduleRetry = useCallback((reason: string, didRefresh?: boolean) => {
+  const scheduleRetry = useCallback((reason: string) => {
     const attempt = retryRef.current.attempt;
-    if (attempt >= retryMax) {
-      setStatus('error');
+    const maxAttempts = retryMax > 0 ? retryMax : Number.POSITIVE_INFINITY;
+    if (attempt >= maxAttempts) {
+      setStatus('offline');
       return;
     }
     emit({
@@ -254,21 +293,24 @@ export function useChatSseV2({
       reason,
     });
     setLastError(reason);
-    setStatus('retrying');
-    const delay = Math.min(1000 * 2 ** attempt, 15000);
+    setStatus('reconnecting');
+    const baseDelay = Math.min(1000 * 2 ** attempt, 15000);
+    const jitter = Math.round(baseDelay * 0.1 * (Math.random() - 0.5));
+    const delay = Math.max(250, baseDelay + jitter);
     retryRef.current.attempt += 1;
     setRetryAttempt(retryRef.current.attempt);
     clearRetryTimer();
+    const scheduledGeneration = generationRef.current;
     retryRef.current.timer = setTimeout(() => {
+      if (generationRef.current !== scheduledGeneration) return;
       if (!lastRequestRef.current) {
-        setStatus('error');
+        setStatus('offline');
         return;
       }
       internalSendRef.current?.(
         lastRequestRef.current.input,
         lastRequestRef.current.metadata,
         true,
-        didRefresh,
       );
     }, delay);
   }, [chatId, clearRetryTimer, retryMax]);
@@ -278,10 +320,11 @@ export function useChatSseV2({
       input: string,
       metadata?: Record<string, unknown>,
       isRetry?: boolean,
-      didRefresh?: boolean,
     ) => {
       if (!endpointUrl) return;
       if (!chatId) return;
+      generationRef.current += 1;
+      clearRetryTimer();
       const now = Math.floor(Date.now() / 1000);
       const exp = tokenExpiresAtRef.current;
       if (exp && now >= exp) {
@@ -294,7 +337,7 @@ export function useChatSseV2({
             tokenRef.current = refreshed;
           } else {
             setLastError("Sitzung abgelaufen (Token-Refresh fehlgeschlagen).");
-            setStatus('error');
+            setStatus('offline');
             onAuthExpired?.();
             return;
           }
@@ -303,7 +346,7 @@ export function useChatSseV2({
       const activeToken = tokenRef.current ?? token;
       if (!activeToken) {
         setLastError("Nicht angemeldet (Token fehlt).");
-        setStatus('error');
+        setStatus('offline');
         onAuthExpired?.();
         return;
       }
@@ -329,13 +372,39 @@ export function useChatSseV2({
         setConfirmCheckpoint(null);
       }
       setLastDoneEvent(null);
-      setStatus('connecting');
+      setStatus(isRetry ? 'reconnecting' : 'connecting');
 
       const controller = new AbortController();
       abortRef.current = controller;
       setStreaming(true);
 
-      const lastEventId = lastEventIdRef.current;
+      let clientMsgId = clientMsgIdByChatRef.current.get(chatId) ?? null;
+      if (!isRetry || !clientMsgId) {
+        const prevId = clientMsgId;
+        clientMsgId = generateClientMsgId();
+        clientMsgIdByChatRef.current.set(chatId, clientMsgId);
+        clientMsgIdRef.current = clientMsgId;
+        if (prevId && typeof window !== "undefined") {
+          sessionStorage.removeItem(buildLastEventStorageKey(chatId, prevId));
+        }
+        lastEventByRunRef.current.delete(`${chatId}:${prevId ?? ""}`);
+        lastEventIdRef.current = null;
+        setLastEventId(null);
+      } else {
+        clientMsgIdRef.current = clientMsgId;
+      }
+
+      const runKey = `${chatId}:${clientMsgId}`;
+      let lastEventId = lastEventByRunRef.current.get(runKey) ?? null;
+      if (!lastEventId && typeof window !== "undefined") {
+        const stored = sessionStorage.getItem(buildLastEventStorageKey(chatId, clientMsgId));
+        if (stored) {
+          lastEventId = stored;
+          lastEventByRunRef.current.set(runKey, stored);
+          lastEventIdRef.current = stored;
+          setLastEventId(stored);
+        }
+      }
       let hasFirstChunk = false;
       try {
         const res = await fetchWithAuth(endpointUrl, activeToken, {
@@ -345,37 +414,28 @@ export function useChatSseV2({
             Accept: 'text/event-stream',
             ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
           },
-          body: JSON.stringify({
-            input: trimmed,
-            chat_id: chatId,
-            client_msg_id: (typeof crypto !== "undefined" && "randomUUID" in crypto)
-              ? crypto.randomUUID()
-              : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            ...(metadata && Object.keys(metadata).length ? { metadata } : {}),
-          }),
+          body: JSON.stringify(
+            buildChatRequestPayload({
+              input: trimmed,
+              chatId,
+              clientMsgId,
+              metadata,
+              clientContext: getClientContext?.() ?? null,
+            }),
+          ),
           signal: controller.signal,
         });
 
         if (!res.ok || !res.body) {
           const detail = await res.text().catch(() => "");
           if (res.status === 401 || res.status === 403) {
-            if (refreshAccessToken && !didRefresh) {
-              const refreshed = await refreshAccessToken();
-              if (refreshed) {
-                tokenRef.current = refreshed;
-                scheduleRetry("auth_refresh", true);
-                setStreaming(false);
-                abortRef.current = null;
-                return;
-              }
-            }
             emit({
               type: "chat_error",
               chatId: chatId ?? "unknown",
               code: res.status,
             });
             setLastError(detail || `HTTP ${res.status}`);
-            setStatus('error');
+            setStatus('offline');
             setStreaming(false);
             abortRef.current = null;
             resetRetry();
@@ -387,6 +447,10 @@ export function useChatSseV2({
           abortRef.current = null;
           return;
         }
+
+        setStatus('connected');
+        setLastError(null);
+        resetRetry();
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder('utf-8');
@@ -402,8 +466,6 @@ export function useChatSseV2({
           for (const part of parts) {
             if (!hasFirstChunk) {
               hasFirstChunk = true;
-              setStatus('streaming');
-              resetRetry();
               if (!ttftEmittedRef.current && streamStartRef.current !== null) {
                 emit({
                   type: "chat_ttft",
@@ -416,8 +478,12 @@ export function useChatSseV2({
             const { event, data, id } = parseSseFrame(part);
             if (id) {
               lastEventIdRef.current = id;
-              if (chatId && typeof window !== "undefined") {
-                sessionStorage.setItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`, id);
+              if (chatId && clientMsgIdRef.current) {
+                const key = `${chatId}:${clientMsgIdRef.current}`;
+                lastEventByRunRef.current.set(key, id);
+                if (typeof window !== "undefined") {
+                  sessionStorage.setItem(buildLastEventStorageKey(chatId, clientMsgIdRef.current), id);
+                }
               }
               setLastEventId(id);
             }
@@ -483,12 +549,16 @@ export function useChatSseV2({
             if (event === 'error') {
               const msg = data && typeof data.message === 'string' ? data.message : 'unknown error';
               setLastError(msg);
-              setStatus('error');
+              setStatus('offline');
               setStreaming(false);
               abortRef.current = null;
               resetRetry();
-              if (chatId && typeof window !== "undefined") {
-                sessionStorage.removeItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
+              if (chatId && clientMsgIdRef.current) {
+                const key = `${chatId}:${clientMsgIdRef.current}`;
+                lastEventByRunRef.current.delete(key);
+                if (typeof window !== "undefined") {
+                  sessionStorage.removeItem(buildLastEventStorageKey(chatId, clientMsgIdRef.current));
+                }
               }
               return;
             }
@@ -498,7 +568,7 @@ export function useChatSseV2({
               setLastDoneEvent({ id: id ?? null, data: payload });
               setStreaming(false);
               abortRef.current = null;
-              setStatus('done');
+              setStatus('connected');
               resetRetry();
               if (streamStartRef.current !== null) {
                 emit({
@@ -509,8 +579,12 @@ export function useChatSseV2({
                 streamStartRef.current = null;
               }
               if (textBufferRef.current) onDone?.(textBufferRef.current);
-              if (chatId && typeof window !== "undefined") {
-                sessionStorage.removeItem(`${LAST_EVENT_STORAGE_PREFIX}${chatId}`);
+              if (chatId && clientMsgIdRef.current) {
+                const key = `${chatId}:${clientMsgIdRef.current}`;
+                lastEventByRunRef.current.delete(key);
+                if (typeof window !== "undefined") {
+                  sessionStorage.removeItem(buildLastEventStorageKey(chatId, clientMsgIdRef.current));
+                }
               }
               return;
             }
@@ -519,7 +593,7 @@ export function useChatSseV2({
 
         setStreaming(false);
         abortRef.current = null;
-        setStatus('done');
+        setStatus('connected');
         resetRetry();
         if (streamStartRef.current !== null) {
           emit({
@@ -547,6 +621,7 @@ export function useChatSseV2({
       onToken,
       onStateDelta,
       refreshAccessToken,
+      getClientContext,
       resetRetry,
       scheduleRetry,
       token,
@@ -584,5 +659,6 @@ export function useChatSseV2({
     send,
     cancel,
     retryNow,
+    reconnect: retryNow,
   };
 }

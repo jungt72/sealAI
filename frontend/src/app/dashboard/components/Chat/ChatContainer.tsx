@@ -22,7 +22,9 @@ import {
   areParamValuesEquivalent,
   type ParameterMeta,
   type ParameterSyncState,
+  type ParameterPatchAckPayload,
 } from "@/lib/parameterSync";
+import { useParamStore } from "@/lib/stores/paramStore";
 
 import ParameterFormSidebar from "./ParameterFormSidebar";
 import type { SealParameters } from "@/lib/types/sealParameters";
@@ -73,6 +75,30 @@ const normalizeIncomingParameterMeta = (raw: Record<string, unknown>): Parameter
     delete normalized.pressure;
   }
   return normalized as ParameterMeta;
+};
+
+const normalizeIncomingParameterVersions = (
+  raw: unknown,
+): Partial<Record<keyof SealParameters, number>> => {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Partial<Record<keyof SealParameters, number>> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    out[key as keyof SealParameters] = value;
+  }
+  return out;
+};
+
+const normalizeIncomingParameterUpdatedAt = (
+  raw: unknown,
+): Partial<Record<keyof SealParameters, number>> => {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Partial<Record<keyof SealParameters, number>> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    out[key as keyof SealParameters] = value;
+  }
+  return out;
 };
 
 const extractParametersFromDelta = (delta: Record<string, unknown>): Partial<SealParameters> | null => {
@@ -171,6 +197,16 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const storedChatId = useChatThreadId(preferredChatId);
   const chatId = preferredChatId ?? storedChatId;
   const { token, error: tokenError } = useAccessToken();
+  const {
+    parameters,
+    versions: parameterVersions,
+    updatedAt: parameterUpdatedAt,
+    initChat: initParamChat,
+    replaceFromServer: replaceParamFromServer,
+    setLocalOptimistic,
+    applyPatchAck: applyParamPatchAck,
+    getSnapshot: getParamSnapshot,
+  } = useParamStore(chatId);
   const streamingRef = useRef<StreamingMessageHandle | null>(null);
   const handleStreamToken = useCallback((chunk: string) => {
     streamingRef.current?.append(chunk);
@@ -240,10 +276,65 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     return null;
   }, []);
 
+  const resyncStateFromServer = (reason: string) => {
+    const expectedChatId = chatId;
+    const expectedToken = token;
+    if (!expectedChatId || !expectedToken) return;
+    currentStateAbortRef.current?.abort();
+    const controller = new AbortController();
+    currentStateAbortRef.current = controller;
+    fetchWithAuth(`/api/langgraph/state?thread_id=${encodeURIComponent(expectedChatId)}`, expectedToken, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return res.json().catch(() => null);
+      })
+      .then((body) => {
+        if (!body || controller.signal.aborted) return;
+        if (chatIdRef.current !== expectedChatId) return;
+        const normalized = normalizeStatePayload(body);
+        setCurrentState(normalized);
+        const state = body.state && typeof body.state === "object" ? body.state : {};
+        const versions = normalizeIncomingParameterVersions(
+          (state as Record<string, unknown>).parameter_versions,
+        );
+        const updatedAt = normalizeIncomingParameterUpdatedAt(
+          (state as Record<string, unknown>).parameter_updated_at,
+        );
+        const params =
+          normalized?.parameters && typeof normalized.parameters === "object"
+            ? normalizeIncomingParameters(normalized.parameters as Record<string, unknown>)
+            : {};
+        replaceParamFromServer({
+          chatId: expectedChatId,
+          parameters: params as SealParameters,
+          versions,
+          updatedAt,
+        });
+        setParamState((prev) => ({
+          ...prev,
+          dirty: new Set(),
+          pending: new Set(),
+          applied: {},
+        }));
+      })
+      .catch((err) => {
+        console.warn("[param-sync] resync_failed", { reason, err });
+      })
+      .finally(() => {
+        if (currentStateAbortRef.current === controller) {
+          currentStateAbortRef.current = null;
+        }
+      });
+  };
+
   const {
     status: sseStatus,
-    retryAttempt,
-    retryMax,
     streaming,
     lastError,
     confirmCheckpoint,
@@ -251,12 +342,17 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     cancel,
     lastEventId,
     lastDoneEvent,
-    retryNow,
+    reconnect,
   } = useChatSseV2({
     chatId,
     token,
     tokenExpiresAt,
     refreshAccessToken: refreshTokenForSse,
+    getClientContext: () => {
+      const snapshot = getParamSnapshot(chatId);
+      if (!snapshot) return null;
+      return { param_snapshot: snapshot };
+    },
     onToken: handleStreamToken,
     onStart: handleStreamStart,
     onDone: handleStreamDone,
@@ -303,6 +399,53 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         applyServerParametersRef.current?.(params as SealParameters, meta?.id ?? null, metaPayload);
       }
     },
+    onEvent: (evt) => {
+      if (!evt?.event || !evt.data || typeof evt.data !== "object") return;
+      if (chatIdRef.current && chatIdRef.current !== chatId) return;
+      if (evt.event === "parameter_patch_ack") {
+        const payload = evt.data as ParameterPatchAckPayload;
+        if (chatId) {
+          applyParamPatchAck(chatId, payload);
+        }
+        setParamState((prev) => {
+          const nextDirty = new Set(prev.dirty);
+          const nextPending = new Set(prev.pending);
+          const nextApplied = { ...(prev.applied ?? {}) };
+          const appliedAt = Date.now();
+          const applied = new Set<keyof SealParameters>();
+          for (const [key, version] of Object.entries(payload.versions || {})) {
+            const typedKey = key as keyof SealParameters;
+            const localVersion = versionsRef.current?.[typedKey] ?? 0;
+            if (typeof version !== "number" || version <= localVersion) continue;
+            applied.add(typedKey);
+          }
+          for (const key of applied) {
+            nextDirty.delete(key);
+            nextPending.delete(key);
+            nextApplied[key] = appliedAt;
+          }
+          for (const rejected of payload.rejected_fields || []) {
+            if (!rejected?.field) continue;
+            nextPending.delete(rejected.field as keyof SealParameters);
+          }
+          return {
+            ...prev,
+            dirty: nextDirty,
+            pending: nextPending,
+            applied: nextApplied,
+          };
+        });
+        if ((payload.rejected_fields || []).length) {
+          resyncStateFromServer("rejected_fields");
+        }
+      }
+      if (evt.event === "resync_required") {
+        resyncStateFromServer("resync_required");
+      }
+      if (evt.event === "slow_client") {
+        console.warn("[sse] slow_client", { chat_id: chatId });
+      }
+    },
   });
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -314,6 +457,23 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const [showConfirmEdit, setShowConfirmEdit] = useState(false);
   const [confirmEditInstructions, setConfirmEditInstructions] = useState("");
   const [confirmEditParams, setConfirmEditParams] = useState("");
+  const snapshotMaxVersion = useMemo(() => {
+    const versions = Object.values(parameterVersions || {});
+    if (!versions.length) return 0;
+    return Math.max(0, ...versions.filter((value) => Number.isFinite(value)));
+  }, [parameterVersions]);
+  const snapshotMaxUpdatedAt = useMemo(() => {
+    const updated = Object.values(parameterUpdatedAt || {});
+    if (!updated.length) return null;
+    const maxValue = Math.max(...updated.filter((value) => Number.isFinite(value)));
+    return Number.isFinite(maxValue) && maxValue > 0 ? maxValue : null;
+  }, [parameterUpdatedAt]);
+  const snapshotLabel = useMemo(() => {
+    if (!snapshotMaxVersion) return null;
+    if (!snapshotMaxUpdatedAt) return `Parameter-Stand: v${snapshotMaxVersion}`;
+    const ts = new Date(snapshotMaxUpdatedAt * 1000);
+    return `Parameter-Stand: v${snapshotMaxVersion} · ${ts.toLocaleString()}`;
+  }, [snapshotMaxUpdatedAt, snapshotMaxVersion]);
 
   useEffect(() => {
     if (!confirmCheckpoint?.checkpoint_id) return;
@@ -328,8 +488,10 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     dirty: new Set(),
     pending: new Set(),
     applied: {},
+    versions: {},
   });
-  const parameters = paramState.values;
+  const paramsRef = useRef<SealParameters>({});
+  const versionsRef = useRef<Partial<Record<keyof SealParameters, number>>>({});
   const [showParamDrawer, setShowParamDrawer] = useState(false);
   const [userClosedDrawer, setUserClosedDrawer] = useState(false);
   const [paramToast, setParamToast] = useState<string | null>(null);
@@ -350,6 +512,14 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const lastParamMetaRef = useRef<{ eventId: string | null; meta: ParameterMeta } | null>(null);
 
   useEffect(() => {
+    paramsRef.current = parameters ?? {};
+  }, [parameters]);
+
+  useEffect(() => {
+    versionsRef.current = parameterVersions ?? {};
+  }, [parameterVersions]);
+
+  useEffect(() => {
     const prevUrlId = prevUrlConversationIdRef.current;
     if (prevUrlId === urlConversationId) return;
     if (prevUrlId) {
@@ -367,7 +537,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       currentStateAbortRef.current?.abort();
       currentStateAbortRef.current = null;
       setCurrentState(null);
-      setParamState({ values: {}, dirty: new Set(), pending: new Set(), applied: {} });
+      setParamState({ values: {}, dirty: new Set(), pending: new Set(), applied: {}, versions: {} });
       lastSseEventIdRef.current = null;
       lastParamEventIdRef.current = null;
       lastParamMetaRef.current = null;
@@ -390,7 +560,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     chatIdRef.current = chatId;
     setMessages([]);
     setHasStarted(false);
-    setParamState({ values: {}, dirty: new Set(), pending: new Set(), applied: {} });
+    setParamState({ values: {}, dirty: new Set(), pending: new Set(), applied: {}, versions: {} });
     setShowParamDrawer(false);
     setUserClosedDrawer(false);
     setParamToast(null);
@@ -420,6 +590,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, [chatId, cancel]);
 
   useEffect(() => {
+    if (!chatId) return;
+    initParamChat({ chatId });
+  }, [chatId, initParamChat]);
+
+  useEffect(() => {
     return () => {
       stateAbortRef.current?.abort();
       currentStateAbortRef.current?.abort();
@@ -440,11 +615,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
   useEffect(() => {
     if (!paramSyncDebug) {
-      prevParamValuesRef.current = paramState.values;
+      prevParamValuesRef.current = parameters;
       return;
     }
     const prev = prevParamValuesRef.current;
-    const next = paramState.values;
+    const next = parameters;
     const keys = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);
     const changedKeys: string[] = [];
     for (const key of keys) {
@@ -460,7 +635,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       });
     }
     prevParamValuesRef.current = next;
-  }, [chatId, paramState.values, paramSyncDebug]);
+  }, [chatId, parameters, paramSyncDebug]);
 
   const refreshCurrentState = useCallback(async () => {
     if (!chatId || !token) return;
@@ -484,11 +659,21 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       if (controller.signal.aborted) return;
       if (chatIdRef.current !== expectedChatId) return;
       setCurrentState((prev) => mergeState(prev, normalized));
+      const state = body.state && typeof body.state === "object" ? body.state : {};
       if (normalized.parameters && typeof normalized.parameters === "object") {
         const normalizedParams = normalizeIncomingParameters(normalized.parameters as Record<string, unknown>);
-        if (Object.keys(normalizedParams).length) {
-          applyServerParametersRef.current?.(normalizedParams as SealParameters, null);
-        }
+        const versions = normalizeIncomingParameterVersions(
+          (state as Record<string, unknown>).parameter_versions,
+        );
+        const updatedAt = normalizeIncomingParameterUpdatedAt(
+          (state as Record<string, unknown>).parameter_updated_at,
+        );
+        replaceParamFromServer({
+          chatId: expectedChatId,
+          parameters: normalizedParams as SealParameters,
+          versions,
+          updatedAt,
+        });
       }
     } finally {
       if (currentStateAbortRef.current === controller) {
@@ -501,9 +686,13 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const applyLocalParameters = useCallback(
     (patch: Partial<SealParameters>, opts?: { markDirty?: boolean; clearDirty?: boolean }) => {
       if (!patch || typeof patch !== "object") return;
+      if (chatId) {
+        setLocalOptimistic(chatId, patch);
+      }
       const { markDirty = false, clearDirty = false } = opts || {};
       setParamState((prev) => {
-        const nextValues = { ...prev.values, ...patch };
+        const currentValues = paramsRef.current ?? {};
+        const nextValues = { ...currentValues, ...patch };
         const nextDirty = new Set(prev.dirty);
         const nextPending = new Set(prev.pending);
         const keys = Object.keys(patch) as (keyof SealParameters)[];
@@ -522,15 +711,22 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             delete nextApplied[key];
           }
         }
-        return { values: nextValues, dirty: nextDirty, pending: nextPending, applied: nextApplied };
+        return {
+          values: prev.values ?? {},
+          dirty: nextDirty,
+          pending: nextPending,
+          applied: nextApplied,
+          versions: prev.versions ?? {},
+        };
       });
     },
-    [],
+    [chatId, setLocalOptimistic],
   );
 
   const applyServerParameters = useCallback(
     (next: SealParameters, eventId?: string | null, meta?: ParameterMeta) => {
       setParamState((prev) => {
+        const currentValues = paramsRef.current ?? {};
         if (paramSyncDebug && Object.prototype.hasOwnProperty.call(next || {}, "pressure_bar")) {
           console.log("[param-sync] incoming_pressure", {
             chat_id: chatId,
@@ -540,7 +736,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             force_overwrite_pressure_bar: Boolean(meta?.pressure_bar?.force_overwrite),
           });
         }
-        const nextDirty = reconcileDirtyWithServer(prev.values, next, prev.dirty, prev.pending);
+        const nextDirty = reconcileDirtyWithServer(currentValues, next, prev.dirty, prev.pending);
         const nextPending = new Set(prev.pending);
         const forceOverwriteKeys = new Set<keyof SealParameters>();
         if (meta) {
@@ -553,8 +749,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             }
           }
         }
-        const merged = mergeServerParameters(prev.values, next, nextDirty, meta);
-        const appliedKeys = computeAppliedKeys(prev.values, next, prev.dirty);
+        const merged = mergeServerParameters(currentValues, next, nextDirty, meta);
+        const appliedKeys = computeAppliedKeys(currentValues, next, prev.dirty);
         const nextApplied: Partial<Record<keyof SealParameters, number>> = {
           ...(prev.applied ?? {}),
         };
@@ -585,7 +781,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
           const incomingKeys = Object.keys(next || {});
           const changedKeys = incomingKeys.filter((key) => {
             const typedKey = key as keyof SealParameters;
-            return !areParamValuesEquivalent(typedKey, prev.values[typedKey], merged[typedKey]);
+            return !areParamValuesEquivalent(typedKey, currentValues[typedKey], merged[typedKey]);
           });
           dbg("store_apply", {
             chat_id: chatId,
@@ -598,16 +794,20 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             merged_changed_keys: changedKeys,
           });
         }
+        if (chatId) {
+          setLocalOptimistic(chatId, merged);
+        }
         return {
-          values: merged,
+          values: prev.values ?? {},
           dirty: nextDirty,
           pending: nextPending,
           applied: nextApplied,
           lastServerEventId: eventId ?? prev.lastServerEventId ?? null,
+          versions: prev.versions ?? {},
         };
       });
     },
-    [chatId, paramSyncDebug],
+    [chatId, paramSyncDebug, setLocalOptimistic],
   );
 
   useEffect(() => {
@@ -715,7 +915,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     const cleaned = cleanParameterPatch(patch);
     if (!Object.keys(cleaned).length) return;
     if (paramState.pending.size > 0) return;
-    const pendingKeys = Array.from(paramState.dirty);
+        const pendingKeys = Array.from(paramState.dirty);
 
     try {
       const patchedKeysCount = Object.keys(cleaned).length;
@@ -734,16 +934,23 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
           setParamState((prev) => {
             const nextPending = new Set(prev.pending);
             for (const key of dirtyKeys) nextPending.add(key);
-            return { ...prev, pending: nextPending };
+            return { ...prev, pending: nextPending, versions: prev.versions ?? {} };
           });
         }
         const patchStart = performance.now();
         let ok = false;
         try {
+          const baseVersions: Record<string, number> = {};
+          for (const key of Object.keys(cleaned)) {
+            const typedKey = key as keyof SealParameters;
+            const localVersion = versionsRef.current?.[typedKey];
+            baseVersions[key] = typeof localVersion === "number" ? localVersion : 0;
+          }
           await patchV2Parameters({
             chatId,
             token,
             parameters: cleaned,
+            baseVersions,
           });
           ok = true;
         } finally {
@@ -759,7 +966,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
           setParamState((prev) => {
             const nextPending = new Set(prev.pending);
             for (const key of mismatchKeys) nextPending.delete(key as keyof SealParameters);
-            return { ...prev, pending: nextPending };
+            return { ...prev, pending: nextPending, versions: prev.versions ?? {} };
           });
           setParamToast("Parameter nicht übernommen. Bitte erneut versuchen.");
           window.setTimeout(() => setParamToast(null), 2500);
@@ -772,7 +979,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         if (!pendingKeys.length) return prev;
         const nextPending = new Set(prev.pending);
         for (const key of pendingKeys) nextPending.delete(key);
-        return { ...prev, pending: nextPending };
+        return { ...prev, pending: nextPending, versions: prev.versions ?? {} };
       });
       if (e?.name === "AbortError") return null;
       throw e;
@@ -810,8 +1017,12 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         });
       }
     }
+    if (chatId) {
+      setLocalOptimistic(chatId, { [name]: value });
+    }
     setParamState((prev) => {
-      const nextValues = { ...prev.values, [name]: value };
+      const currentValues = paramsRef.current ?? {};
+      const nextValues = { ...currentValues, [name]: value };
       const nextDirty = new Set(prev.dirty);
       const nextApplied = { ...(prev.applied ?? {}) };
       const nextPending = new Set(prev.pending);
@@ -819,13 +1030,19 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       nextPending.delete(name);
       delete nextApplied[name];
       schedulePatchOnChange(buildDirtyPatch(nextValues, nextDirty));
-      return { values: nextValues, dirty: nextDirty, pending: nextPending, applied: nextApplied };
+      return {
+        values: prev.values ?? {},
+        dirty: nextDirty,
+        pending: nextPending,
+        applied: nextApplied,
+        versions: prev.versions ?? {},
+      };
     });
-  }, [chatId, paramSyncDebug, schedulePatchOnChange]);
+  }, [chatId, paramSyncDebug, schedulePatchOnChange, setLocalOptimistic]);
 
   const onParamSubmit = useCallback(async () => {
     try {
-      const cleaned = cleanParameterPatch(buildDirtyPatch(paramState.values, paramState.dirty));
+      const cleaned = cleanParameterPatch(buildDirtyPatch(parameters, paramState.dirty));
       if (paramSyncDebug) {
         console.log("[param-sync] applyParameters clicked", {
           chat_id: chatId,
@@ -849,7 +1066,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         keys: Object.keys(cleaned),
       };
 
-      const canSendChatMessage = isAuthed && Boolean(chatId) && sseStatus !== "error";
+      const canSendChatMessage = isAuthed && Boolean(chatId) && sseStatus !== "offline";
       const { summary } = await applyParametersWithChatMessage({
         patch: cleaned,
         patchParameters: patchAllParameters,
@@ -1004,17 +1221,41 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const hasThread = Boolean(chatId);
   const sendingDisabled = !isAuthed || authExpired || !hasThread;
   const isInitial = messages.length === 0 && !hasStarted;
+  const [showReconnectLost, setShowReconnectLost] = useState(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (sseStatus === "reconnecting") {
+      setShowReconnectLost(false);
+      reconnectTimerRef.current = setTimeout(() => {
+        setShowReconnectLost(true);
+      }, 10000);
+    } else {
+      setShowReconnectLost(false);
+    }
+    return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+  }, [sseStatus]);
+
+  const showConnectionLost = sseStatus === "offline" || (sseStatus === "reconnecting" && showReconnectLost);
   const statusLabel = useMemo(() => {
-    if (authExpired) return "Sitzung abgelaufen";
+    if (authExpired) return "Bitte neu anmelden";
     if (!isAuthed) return "Bitte anmelden";
     if (!hasThread) return "Initialisiere Sitzung…";
+    if (showConnectionLost) return "Verbindung verloren";
+    if (streaming) return "Streaming…";
     if (sseStatus === "connecting") return "Verbinde…";
-    if (sseStatus === "retrying") return `Verbinde erneut (${retryAttempt}/${retryMax})…`;
-    if (sseStatus === "streaming") return "Streaming…";
-    if (sseStatus === "done") return "Streaming beendet";
-    if (sseStatus === "error") return "Verbindung verloren";
+    if (sseStatus === "reconnecting") return "Verbinde…";
     return "Bereit";
-  }, [authExpired, isAuthed, hasThread, sseStatus, retryAttempt, retryMax]);
+  }, [authExpired, hasThread, isAuthed, showConnectionLost, sseStatus, streaming]);
 
   const handleReauth = useCallback(() => {
     const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
@@ -1165,7 +1406,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         <div className="absolute left-3 top-3 z-40 rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-[11px] text-slate-700 shadow-sm">
           <div>url_conversation_id: {urlConversationId ?? "null"}</div>
           <div>chat_id: {chatId ?? "null"}</div>
-          <div>paramState.pressure_bar: {String(paramState.values.pressure_bar ?? "null")}</div>
+          <div>paramState.pressure_bar: {String(parameters.pressure_bar ?? "null")}</div>
           <div>currentState.pressure_bar: {String((currentState?.parameters as any)?.pressure_bar ?? "null")}</div>
         </div>
       ) : null}
@@ -1250,16 +1491,16 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             <div className="text-xs text-center mb-4">
               <span
                 className={
-                  sseStatus === "error"
+                  showConnectionLost
                     ? "text-red-600"
-                    : sseStatus === "streaming"
+                    : streaming
                       ? "text-emerald-600"
                       : "text-amber-600"
                 }
               >
                 {statusLabel}
               </span>
-              {sseStatus === "error" && lastError ? (
+              {showConnectionLost && lastError ? (
                 <span className="block mt-1 text-[11px] text-red-500">Fehler: {lastError}</span>
               ) : null}
             </div>
@@ -1273,17 +1514,22 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
               streaming={streaming}
               placeholder={
                 authExpired
-                  ? "Sitzung abgelaufen"
+                  ? "Bitte neu anmelden"
                   : isAuthed
                   ? !hasThread
                     ? "Initialisiere Sitzung…"
-                    : sseStatus === "connecting" || sseStatus === "retrying"
+                    : sseStatus === "connecting" || sseStatus === "reconnecting"
                       ? "Verbinde…"
                       : "Was möchtest du wissen?"
                   : "Bitte anmelden, um zu schreiben"
               }
             />
 
+            {snapshotLabel ? (
+              <div className="mt-1 text-[11px] text-gray-500 text-center">
+                {snapshotLabel}
+              </div>
+            ) : null}
             {!isAuthed && (
               <div className="mt-2 text-xs text-gray-500 text-center">
                 Du musst angemeldet sein, um Nachrichten zu senden.
@@ -1291,7 +1537,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
             )}
             {authExpired ? (
               <div className="mt-2 text-xs text-red-500 text-center select-none">
-                Sitzung abgelaufen.
+                Bitte neu anmelden.
                 <button
                   type="button"
                   onClick={handleReauth}
@@ -1300,12 +1546,12 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                   Neu anmelden
                 </button>
               </div>
-            ) : sseStatus === "error" ? (
+            ) : showConnectionLost ? (
               <div className="mt-2 text-xs text-red-500 text-center select-none">
                 Fehler: {lastError || "Verbindung verloren."}
                 <button
                   type="button"
-                  onClick={retryNow}
+                  onClick={reconnect}
                   className="ml-2 text-xs font-semibold text-sky-600 hover:text-sky-700 underline underline-offset-2"
                 >
                   Erneut versuchen
@@ -1471,11 +1717,11 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                 streaming={streaming}
                 placeholder={
                   authExpired
-                    ? "Sitzung abgelaufen"
+                    ? "Bitte neu anmelden"
                     : isAuthed
                     ? !hasThread
                       ? "Initialisiere Sitzung…"
-                      : sseStatus === "connecting" || sseStatus === "retrying"
+                      : sseStatus === "connecting" || sseStatus === "reconnecting"
                         ? "Verbinde…"
                         : "Was möchtest du wissen?"
                     : "Bitte anmelden, um zu schreiben"
@@ -1487,14 +1733,16 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                 </div>
               )}
               <div className="mt-2 text-xs text-gray-500">
-                Status: <span className={sseStatus === "error" ? "text-red-600" : "text-gray-600"}>{statusLabel}</span>
-                {sseStatus === "retrying" ? (
-                  <span className="ml-2 text-[11px] text-amber-600">(auto)</span>
-                ) : null}
+                Status: <span className={showConnectionLost ? "text-red-600" : "text-gray-600"}>{statusLabel}</span>
               </div>
+              {snapshotLabel ? (
+                <div className="mt-1 text-[11px] text-gray-500">
+                  {snapshotLabel}
+                </div>
+              ) : null}
               {authExpired ? (
                 <div className="mt-1 text-xs text-red-500 select-none">
-                  Sitzung abgelaufen.
+                  Bitte neu anmelden.
                   <button
                     type="button"
                     onClick={handleReauth}
@@ -1503,12 +1751,12 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                     Neu anmelden
                   </button>
                 </div>
-              ) : sseStatus === "error" ? (
+              ) : showConnectionLost ? (
                 <div className="mt-1 text-xs text-red-500 select-none">
                   Fehler: {lastError || "Verbindung verloren."}
                   <button
                     type="button"
-                    onClick={retryNow}
+                    onClick={reconnect}
                     className="ml-2 text-xs font-semibold text-sky-600 hover:text-sky-700 underline underline-offset-2"
                   >
                     Erneut versuchen

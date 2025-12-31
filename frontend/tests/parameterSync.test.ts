@@ -3,6 +3,7 @@ import {
   areParamValuesEquivalent,
   buildDirtyPatch,
   cleanParameterPatch,
+  applyParameterPatchAck,
   mergeServerParameters,
   reconcileDirtyWithServer,
 } from "../src/lib/parameterSync";
@@ -116,5 +117,37 @@ describe("parameter sync helpers", () => {
     const merged = mergeServerParameters(current, incoming, dirty, meta);
 
     expect(merged.pressure_bar).toBe(7);
+  });
+
+  it("ignores stale patch ack versions", () => {
+    const current = { pressure_bar: 5 } as SealParameters;
+    const versions = { pressure_bar: 2 } as const;
+    const ack = {
+      patch: { pressure_bar: 7 },
+      versions: { pressure_bar: 1 },
+      rejected_fields: [],
+    };
+
+    const result = applyParameterPatchAck(current, versions, ack);
+
+    expect(result.values.pressure_bar).toBe(5);
+    expect(result.versions.pressure_bar).toBe(2);
+    expect(result.applied.size).toBe(0);
+  });
+
+  it("applies patch ack when version advances", () => {
+    const current = { pressure_bar: 5 } as SealParameters;
+    const versions = { pressure_bar: 2 } as const;
+    const ack = {
+      patch: { pressure_bar: 7 },
+      versions: { pressure_bar: 3 },
+      rejected_fields: [],
+    };
+
+    const result = applyParameterPatchAck(current, versions, ack);
+
+    expect(result.values.pressure_bar).toBe(7);
+    expect(result.versions.pressure_bar).toBe(3);
+    expect(result.applied.has("pressure_bar")).toBe(true);
   });
 });

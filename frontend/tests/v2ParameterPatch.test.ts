@@ -40,7 +40,8 @@ describe("v2 parameter patch helpers", () => {
     const params = await patchV2ParametersAndFetchState({
       chatId: "chat-123",
       token: "token-abc",
-      parameters: { medium: "oil" },
+      parameters: { medium: "oil", pressure_bar: 2 },
+      baseVersions: { medium: 3, pressure_bar: 7, ignored: 9 },
     });
 
     expect(params).toEqual({ medium: "oil" });
@@ -54,7 +55,11 @@ describe("v2 parameter patch helpers", () => {
       authorization: "Bearer token-abc",
     });
     expect(patchInit.body).toBe(
-      JSON.stringify({ chat_id: "chat-123", parameters: { medium: "oil" } })
+      JSON.stringify({
+        chat_id: "chat-123",
+        parameters: { medium: "oil", pressure_bar: 2 },
+        base_versions: { medium: 3, pressure_bar: 7 },
+      })
     );
 
     const [stateUrl, stateInit] = fetchMock.mock.calls[1] as [string, RequestInit];

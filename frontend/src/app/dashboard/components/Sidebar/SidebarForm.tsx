@@ -4,6 +4,7 @@ import * as React from "react";
 import { useAccessToken } from "@/lib/useAccessToken";
 import { useChatThreadId } from "@/lib/useChatThreadId";
 import { normalizeSidebarFormPatchToV2, patchV2Parameters } from "@/lib/v2ParameterPatch";
+import { useParamStore } from "@/lib/stores/paramStore";
 
 type Props = { embedded?: boolean };
 
@@ -363,6 +364,7 @@ function FormInner({
 export default function SidebarForm({ embedded = false }: Props) {
   const { token } = useAccessToken();
   const chatId = useChatThreadId();
+  const { versions: parameterVersions } = useParamStore(chatId);
 
   const [open, setOpen] = React.useState(false);
   const [missing, setMissing] = React.useState<string[]>([]);
@@ -447,14 +449,19 @@ export default function SidebarForm({ embedded = false }: Props) {
         if (!chatId || !token) return;
         const mapped = normalizeSidebarFormPatchToV2({ [k]: payloadValue });
         if (!Object.keys(mapped).length) return;
-        patchV2Parameters({ chatId, token, parameters: mapped }).catch((err) => {
+        const baseVersions: Record<string, number> = {};
+        for (const key of Object.keys(mapped)) {
+          const version = parameterVersions?.[key as keyof typeof parameterVersions];
+          baseVersions[key] = typeof version === "number" ? version : 0;
+        }
+        patchV2Parameters({ chatId, token, parameters: mapped, baseVersions }).catch((err) => {
           try {
             console.warn("[sealai] v2 parameter patch failed", err);
           } catch {}
         });
       }, 180);
     },
-    [chatId, token],
+    [chatId, token, parameterVersions],
   );
 
   const submitAll = () => {
@@ -467,7 +474,12 @@ export default function SidebarForm({ embedded = false }: Props) {
     if (token) {
       const mapped = normalizeSidebarFormPatchToV2(cleaned);
       if (Object.keys(mapped).length) {
-        patchV2Parameters({ chatId, token, parameters: mapped }).catch((err) => {
+        const baseVersions: Record<string, number> = {};
+        for (const key of Object.keys(mapped)) {
+          const version = parameterVersions?.[key as keyof typeof parameterVersions];
+          baseVersions[key] = typeof version === "number" ? version : 0;
+        }
+        patchV2Parameters({ chatId, token, parameters: mapped, baseVersions }).catch((err) => {
           try {
             console.warn("[sealai] v2 parameter submit failed", err);
           } catch {}

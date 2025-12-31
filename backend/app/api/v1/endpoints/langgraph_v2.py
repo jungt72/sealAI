@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, Optional
@@ -25,16 +26,22 @@ from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_p
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
 from app.langgraph_v2.utils.parameter_patch import (
     ParametersPatchRequest,
-    apply_parameter_patch_with_provenance,
+    apply_parameter_patch_lww,
     sanitize_v2_parameter_patch,
 )
 from app.services.auth.dependencies import RequestUser, get_current_request_user
+from app.services.sse_broadcast import sse_broadcast
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 DEDUP_TTL_SEC = int(os.getenv("LANGGRAPH_V2_DEDUP_TTL_SEC", "900"))
+SSE_RETRY_MS = int(os.getenv("SEALAI_SSE_RETRY_MS", "3000"))
+SSE_QUEUE_MAXSIZE = int(os.getenv("SEALAI_SSE_QUEUE_MAXSIZE", "200"))
+SSE_SLOW_NOTICE_SEC = float(os.getenv("SEALAI_SSE_SLOW_NOTICE_SEC", "5"))
+REQUIRE_PARAM_SNAPSHOT = os.getenv("SEALAI_REQUIRE_PARAM_SNAPSHOT") == "1"
+WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") == "1"
 
 
 def _lg_trace_enabled() -> bool:
@@ -75,6 +82,7 @@ class LangGraphV2Request(BaseModel):
     chat_id: str = Field(default="default", description="Conversation/thread id")
     client_msg_id: Optional[str] = Field(default=None, description="Client message id for tracing")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Optional client metadata")
+    client_context: Dict[str, Any] = Field(default_factory=dict, description="Optional client context")
 
 
 def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> bytes:
@@ -206,26 +214,48 @@ def _is_message_chunk(token: BaseMessage) -> bool:
     return token.__class__.__name__.endswith("Chunk")
 
 
-def _parse_last_event_id(last_event_id: str | None, *, base_id: str) -> int:
-    if not last_event_id:
-        return 1
-    if ":" in last_event_id:
-        prefix, _, seq_raw = last_event_id.rpartition(":")
-        if prefix != base_id:
-            return 1
-        try:
-            return int(seq_raw) + 1
-        except (TypeError, ValueError):
-            return 1
-    if last_event_id.isdigit():
-        return int(last_event_id) + 1
-    return 1
+def _parse_last_event_id(last_event_id: str | None, *, chat_id: str) -> int | None:
+    return sse_broadcast.parse_last_event_id(chat_id, last_event_id)
 
 
 def _get_dict_value(payload: Any, key: str) -> Any:
     if isinstance(payload, dict):
         return payload.get(key)
     return None
+
+
+def _extract_param_snapshot(req: LangGraphV2Request) -> Dict[str, Any] | None:
+    if not isinstance(req.client_context, dict):
+        return None
+    snapshot = req.client_context.get("param_snapshot")
+    return snapshot if isinstance(snapshot, dict) else None
+
+
+def _snapshot_stats(snapshot: Dict[str, Any] | None) -> tuple[int, float | None]:
+    if not snapshot:
+        return 0, None
+    versions = snapshot.get("versions") if isinstance(snapshot, dict) else None
+    updated_at = snapshot.get("updated_at") if isinstance(snapshot, dict) else None
+    version_count = len(versions) if isinstance(versions, dict) else 0
+    updated_values = []
+    if isinstance(updated_at, dict):
+        for value in updated_at.values():
+            if isinstance(value, (int, float)):
+                updated_values.append(float(value))
+    return version_count, (max(updated_values) if updated_values else None)
+
+
+def _snapshot_versions(snapshot: Dict[str, Any] | None) -> Dict[str, int]:
+    if not snapshot:
+        return {}
+    raw = snapshot.get("versions") if isinstance(snapshot, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    versions: Dict[str, int] = {}
+    for key, value in raw.items():
+        if isinstance(value, (int, float)):
+            versions[str(key)] = int(value)
+    return versions
 
 
 def _extract_trace_node(*, meta: Any = None, data: Any = None, state: Any = None) -> str | None:
@@ -334,11 +364,144 @@ async def _event_stream_v2(
     last_event_id: str | None = None,
 ) -> AsyncIterator[bytes]:
     stream_task: asyncio.Task[None] | None = None
-    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+    broadcast_task: asyncio.Task[None] | None = None
+    broadcast_queue: asyncio.Queue[tuple[int, str, Dict[str, Any]]] | None = None
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
+    last_slow_notice = 0.0
     try:
-        base_id = req.client_msg_id or request_id or str(uuid.uuid4())
-        seq = _parse_last_event_id(last_event_id, base_id=base_id)
+        async def _enqueue_frame(frame: bytes, *, allow_slow_notice: bool = True) -> None:
+            nonlocal last_slow_notice
+            if queue.maxsize <= 0:
+                queue.put_nowait(frame)
+                return
+
+            send_slow_notice = False
+            if queue.full():
+                now = time.time()
+                if allow_slow_notice and now - last_slow_notice >= SSE_SLOW_NOTICE_SEC:
+                    send_slow_notice = True
+                    last_slow_notice = now
+
+                while queue.qsize() > queue.maxsize - 1:
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+            if queue.qsize() <= queue.maxsize - 1:
+                queue.put_nowait(frame)
+
+            if send_slow_notice and queue.maxsize >= 2:
+                while queue.qsize() > queue.maxsize - 1:
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                if queue.qsize() <= queue.maxsize - 1:
+                    slow_seq = await sse_broadcast.record_event(
+                        user_id=user_id,
+                        chat_id=req.chat_id,
+                        event="slow_client",
+                        data={"reason": "backpressure"},
+                    )
+                    slow_frame = _format_sse(
+                        "slow_client",
+                        {"reason": "backpressure"},
+                        event_id=str(slow_seq),
+                    )
+                    queue.put_nowait(slow_frame)
+
+        async def _emit_event(event_name: str, payload: Dict[str, Any]) -> None:
+            seq = await sse_broadcast.record_event(
+                user_id=user_id,
+                chat_id=req.chat_id,
+                event=event_name,
+                data=payload,
+            )
+            frame = _format_sse(event_name, payload, event_id=str(seq))
+            await _enqueue_frame(frame)
+
+        broadcast_queue = await sse_broadcast.subscribe(user_id=user_id, chat_id=req.chat_id)
+
+        async def _broadcast_forwarder() -> None:
+            if broadcast_queue is None:
+                return
+            try:
+                while True:
+                    item = await broadcast_queue.get()
+                    if not item:
+                        continue
+                    seq, event_name, payload = item
+                    frame = _format_sse(event_name, payload, event_id=str(seq))
+                    await _enqueue_frame(frame)
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                logger.exception(
+                    "langgraph_v2_sse_broadcast_error",
+                    extra={"chat_id": req.chat_id, "user_id": user_id},
+                )
+
+        await _enqueue_frame(f"retry: {SSE_RETRY_MS}\n\n".encode("utf-8"), allow_slow_notice=False)
+
+        last_seq = _parse_last_event_id(last_event_id, chat_id=req.chat_id)
+        if last_seq is not None:
+            replay, buffer_miss = await sse_broadcast.replay_after(
+                user_id=user_id,
+                chat_id=req.chat_id,
+                last_seq=last_seq,
+            )
+            if buffer_miss:
+                await _emit_event(
+                    "resync_required",
+                    {"reason": "buffer_miss"},
+                )
+            else:
+                for item in replay:
+                    frame = _format_sse(
+                        item.get("event", ""),
+                        item.get("data", {}),
+                        event_id=str(item.get("seq", 0)),
+                    )
+                    await _enqueue_frame(frame)
+
+        broadcast_task = asyncio.create_task(_broadcast_forwarder())
         graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id)
+        snapshot = _extract_param_snapshot(req)
+        snapshot_versions = _snapshot_versions(snapshot)
+        if WARN_STALE_PARAM_SNAPSHOT and snapshot_versions:
+            try:
+                server_snapshot = await graph.aget_state(config)
+                state_values = _state_values_to_dict(server_snapshot.values)
+                server_versions = (
+                    state_values.get("parameter_versions") if isinstance(state_values, dict) else {}
+                )
+                stale_count = 0
+                if isinstance(server_versions, dict):
+                    for key, snap_value in snapshot_versions.items():
+                        server_value = server_versions.get(key)
+                        if isinstance(server_value, (int, float)) and int(snap_value) < int(server_value):
+                            stale_count += 1
+                if stale_count:
+                    logger.warning(
+                        "stale_param_snapshot",
+                        extra={
+                            "request_id": request_id,
+                            "chat_id": req.chat_id,
+                            "user_id": user_id,
+                            "stale_count": stale_count,
+                            "snapshot_versions_count": len(snapshot_versions),
+                        },
+                    )
+            except Exception:
+                logger.exception(
+                    "param_snapshot_compare_failed",
+                    extra={
+                        "request_id": request_id,
+                        "chat_id": req.chat_id,
+                        "user_id": user_id,
+                    },
+                )
         trace_enabled = _lg_trace_enabled()
         metadata = config.get("metadata") if isinstance(config, dict) else {}
         run_id = metadata.get("run_id") if isinstance(metadata, dict) else None
@@ -356,7 +519,7 @@ async def _event_stream_v2(
         last_trace_signature: tuple[Any, Any, Any, Any] | None = None
 
         async def _emit_trace(mode: str, *, data: Any = None, meta: Any = None, state: Any = None) -> None:
-            nonlocal seq, last_trace_signature
+            nonlocal last_trace_signature
             if not trace_enabled:
                 return
             payload = _build_trace_payload(mode=mode, data=data, meta=meta, state=state)
@@ -386,9 +549,7 @@ async def _event_stream_v2(
                     "supervisor_action": payload.get("action"),
                 },
             )
-            event_id = f"{base_id}:{seq}"
-            seq += 1
-            await queue.put(_format_sse("trace", payload, event_id=event_id))
+            await _emit_event("trace", payload)
 
         async def _producer() -> None:
             nonlocal emitted_any_token, latest_state, token_count, done_sent, seq, prev_parameters
@@ -403,7 +564,7 @@ async def _event_stream_v2(
                     try:
                         item = await asyncio.wait_for(iterator.__anext__(), timeout=15.0)
                     except asyncio.TimeoutError:
-                        await queue.put(b": keepalive\n\n")
+                        await _enqueue_frame(b": keepalive\n\n", allow_slow_notice=False)
                         continue
                     except StopAsyncIteration:
                         break
@@ -426,14 +587,9 @@ async def _event_stream_v2(
                             if text:
                                 emitted_any_token = True
                                 token_count += 1
-                                event_id = f"{base_id}:{seq}"
-                                seq += 1
-                                await queue.put(
-                                    _format_sse(
-                                        "token",
-                                        {"type": "token", "text": text},
-                                        event_id=event_id,
-                                    )
+                                await _emit_event(
+                                    "token",
+                                    {"type": "token", "text": text},
                                 )
                                 if SSE_DEBUG:
                                     logger.info(
@@ -511,9 +667,7 @@ async def _event_stream_v2(
                                             "parameter_meta_attached": bool(parameter_meta),
                                         },
                                     )
-                                event_id = f"{base_id}:{seq}"
-                                seq += 1
-                                await queue.put(_format_sse("state_update", payload, event_id=event_id))
+                                await _emit_event("state_update", payload)
                             await _emit_trace("values", data=data, meta=None, state=latest_state)
                             continue
 
@@ -540,11 +694,7 @@ async def _event_stream_v2(
                             checkpoint_id=result_state.confirm_checkpoint_id,
                         )
                     )
-                    event_id = f"{base_id}:{seq}"
-                    seq += 1
-                    await queue.put(
-                        _format_sse("checkpoint_required", payload, event_id=event_id)
-                    )
+                    await _emit_event("checkpoint_required", payload)
                     if SSE_DEBUG:
                         logger.info(
                             "langgraph_v2_sse_event",
@@ -561,14 +711,9 @@ async def _event_stream_v2(
                 final_text = (result_state.final_text or "")
                 if (not emitted_any_token) and final_text.strip():
                     for chunk in _chunk_text(final_text.strip()):
-                        event_id = f"{base_id}:{seq}"
-                        seq += 1
-                        await queue.put(
-                            _format_sse(
-                                "token",
-                                {"type": "token", "text": chunk},
-                                event_id=event_id,
-                            )
+                        await _emit_event(
+                            "token",
+                            {"type": "token", "text": chunk},
                         )
                         token_count += 1
                         if SSE_DEBUG:
@@ -594,9 +739,7 @@ async def _event_stream_v2(
                     "awaiting_confirmation": bool(result_state.awaiting_user_confirmation),
                     "checkpoint_id": result_state.confirm_checkpoint_id,
                 }
-                event_id = f"{base_id}:{seq}"
-                seq += 1
-                await queue.put(_format_sse("done", done_payload, event_id=event_id))
+                await _emit_event("done", done_payload)
                 done_sent = True
                 if SSE_DEBUG:
                     logger.info(
@@ -629,28 +772,18 @@ async def _event_stream_v2(
                     if is_dependency_unavailable_error(exc)
                     else "internal_error"
                 )
-                event_id = f"{base_id}:{seq}"
-                seq += 1
-                await queue.put(
-                    _format_sse(
-                        "error",
-                        {"type": "error", "message": message, "request_id": request_id},
-                        event_id=event_id,
-                    )
+                await _emit_event(
+                    "error",
+                    {"type": "error", "message": message, "request_id": request_id},
                 )
-                event_id = f"{base_id}:{seq}"
-                seq += 1
-                await queue.put(
-                    _format_sse(
-                        "done",
-                        {
-                            "type": "done",
-                            "chat_id": req.chat_id,
-                            "request_id": request_id,
-                            "client_msg_id": req.client_msg_id,
-                        },
-                        event_id=event_id,
-                    )
+                await _emit_event(
+                    "done",
+                    {
+                        "type": "done",
+                        "chat_id": req.chat_id,
+                        "request_id": request_id,
+                        "client_msg_id": req.client_msg_id,
+                    },
                 )
             finally:
                 await queue.put(None)
@@ -663,17 +796,19 @@ async def _event_stream_v2(
                 break
             yield item
     except asyncio.CancelledError:
-        event_id = f"{req.client_msg_id or request_id or 'stream'}:1"
-        yield _format_sse(
-            "done",
-            {
-                "type": "done",
-                "chat_id": req.chat_id,
-                "request_id": request_id,
-                "client_msg_id": req.client_msg_id,
-            },
-            event_id=event_id,
+        done_payload = {
+            "type": "done",
+            "chat_id": req.chat_id,
+            "request_id": request_id,
+            "client_msg_id": req.client_msg_id,
+        }
+        seq = await sse_broadcast.record_event(
+            user_id=user_id,
+            chat_id=req.chat_id,
+            event="done",
+            data=done_payload,
         )
+        yield _format_sse("done", done_payload, event_id=str(seq))
         return
     except Exception as exc:  # pragma: no cover
         logger.exception(
@@ -688,26 +823,38 @@ async def _event_stream_v2(
             },
         )
         message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
-        event_id = f"{req.client_msg_id or request_id or 'stream'}:1"
-        yield _format_sse(
-            "error",
-            {"type": "error", "message": message, "request_id": request_id},
-            event_id=event_id,
+        error_payload = {"type": "error", "message": message, "request_id": request_id}
+        error_seq = await sse_broadcast.record_event(
+            user_id=user_id,
+            chat_id=req.chat_id,
+            event="error",
+            data=error_payload,
         )
-        event_id = f"{req.client_msg_id or request_id or 'stream'}:2"
-        yield _format_sse(
-            "done",
-            {
-                "type": "done",
-                "chat_id": req.chat_id,
-                "request_id": request_id,
-                "client_msg_id": req.client_msg_id,
-            },
-            event_id=event_id,
+        yield _format_sse("error", error_payload, event_id=str(error_seq))
+        done_payload = {
+            "type": "done",
+            "chat_id": req.chat_id,
+            "request_id": request_id,
+            "client_msg_id": req.client_msg_id,
+        }
+        done_seq = await sse_broadcast.record_event(
+            user_id=user_id,
+            chat_id=req.chat_id,
+            event="done",
+            data=done_payload,
         )
+        yield _format_sse("done", done_payload, event_id=str(done_seq))
     finally:
         if stream_task and not stream_task.done():
             stream_task.cancel()
+        if broadcast_task and not broadcast_task.done():
+            broadcast_task.cancel()
+        if broadcast_queue is not None:
+            await sse_broadcast.unsubscribe(
+                user_id=user_id,
+                chat_id=req.chat_id,
+                queue=broadcast_queue,
+            )
 
 
 @router.post("/chat/v2")
@@ -720,6 +867,13 @@ async def langgraph_chat_v2_endpoint(
     if not request_id:
         request_id = str(uuid.uuid4())
     last_event_id = raw_request.headers.get("Last-Event-ID")
+    snapshot = _extract_param_snapshot(request)
+    version_count, updated_max = _snapshot_stats(snapshot)
+    if REQUIRE_PARAM_SNAPSHOT and not snapshot:
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail("missing_param_snapshot", request_id=request_id),
+        )
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
             user_id=user.sub,
@@ -744,6 +898,9 @@ async def langgraph_chat_v2_endpoint(
             "username": user.username,
             "client_msg_id": request.client_msg_id,
             "last_event_id": last_event_id,
+            "param_snapshot_present": bool(snapshot),
+            "param_snapshot_versions_count": version_count,
+            "param_snapshot_updated_at_max": updated_max,
         },
     )
     headers = {
@@ -906,13 +1063,27 @@ async def patch_parameters(
         state_values = _state_values_to_dict(snapshot.values)
         existing_params = state_values.get("parameters") if isinstance(state_values, dict) else {}
         existing_provenance = {}
+        existing_versions: Dict[str, int] = {}
+        existing_updated_at: Dict[str, float] = {}
         if isinstance(state_values, dict):
             existing_provenance = state_values.get("parameter_provenance") or {}
-        merged, merged_provenance = apply_parameter_patch_with_provenance(
+            existing_versions = state_values.get("parameter_versions") or {}
+            existing_updated_at = state_values.get("parameter_updated_at") or {}
+        (
+            merged,
+            merged_provenance,
+            merged_versions,
+            merged_updated_at,
+            applied_fields,
+            rejected_fields,
+        ) = apply_parameter_patch_lww(
             existing_params,
             patch,
             existing_provenance,
             source="user",
+            parameter_versions=existing_versions,
+            parameter_updated_at=existing_updated_at,
+            base_versions=body.base_versions,
         )
 
         if PARAM_SYNC_DEBUG:
@@ -943,13 +1114,43 @@ async def patch_parameters(
 
         await graph.aupdate_state(
             config,
-            {"parameters": merged, "parameter_provenance": merged_provenance},
+            {
+                "parameters": merged,
+                "parameter_provenance": merged_provenance,
+                "parameter_versions": merged_versions,
+                "parameter_updated_at": merged_updated_at,
+            },
             # LangGraph requires `as_node` to be an existing node in the compiled graph.
             # Parameter patches are UI-driven and should not advance the graph; we attach
             # the update to a stable, always-present node.
             as_node=PARAMETERS_PATCH_AS_NODE,
         )
-        return {"ok": True, "chat_id": body.chat_id, "updated": patch}
+        response_fields = sorted(patch.keys())
+        response_payload = {
+            "ok": True,
+            "chat_id": body.chat_id,
+            "applied_fields": applied_fields,
+            "rejected_fields": rejected_fields,
+            "versions": {field: merged_versions.get(field, 0) for field in response_fields},
+            "updated_at": {field: merged_updated_at.get(field) for field in response_fields},
+        }
+        ack_payload = {
+            "chat_id": body.chat_id,
+            "patch": patch,
+            "applied_fields": applied_fields,
+            "rejected_fields": rejected_fields,
+            "versions": response_payload["versions"],
+            "updated_at": response_payload["updated_at"],
+            "source": "patch_endpoint",
+            "request_id": request_id,
+        }
+        await sse_broadcast.broadcast(
+            user_id=user.sub,
+            chat_id=chat_id,
+            event="parameter_patch_ack",
+            data=ack_payload,
+        )
+        return response_payload
     except HTTPException:
         raise
     except ValueError as exc:

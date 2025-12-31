@@ -50,11 +50,20 @@ export type ParameterSyncState = {
   pending: Set<keyof SealParameters>;
   applied?: Partial<Record<keyof SealParameters, number>>;
   lastServerEventId?: string | null;
+  versions?: Partial<Record<keyof SealParameters, number>>;
 };
 
 export type ParameterMeta = Partial<
   Record<keyof SealParameters, { source?: string; force_overwrite?: boolean }>
 >;
+
+export type ParameterPatchAckPayload = {
+  patch?: Partial<SealParameters>;
+  applied_fields?: string[];
+  rejected_fields?: Array<{ field?: string | null; reason?: string }>;
+  versions?: Record<string, number>;
+  updated_at?: Record<string, number>;
+};
 
 function normalizeParamValue(
   key: keyof SealParameters,
@@ -211,4 +220,34 @@ export function cleanParameterPatch(patch: Partial<SealParameters>): Partial<Sea
 
 export function emitParamPatchTelemetry(fields: number, ms: number, ok: boolean): void {
   emit({ type: "param_patch", fields, ms, ok });
+}
+
+export function applyParameterPatchAck(
+  current: SealParameters,
+  versions: Partial<Record<keyof SealParameters, number>>,
+  ack: ParameterPatchAckPayload,
+): { values: SealParameters; versions: Partial<Record<keyof SealParameters, number>>; applied: Set<keyof SealParameters> } {
+  const nextValues: SealParameters = { ...current };
+  const nextVersions: Partial<Record<keyof SealParameters, number>> = { ...versions };
+  const rejected = new Set(
+    (ack.rejected_fields || [])
+      .map((entry) => (entry?.field ? String(entry.field) : ""))
+      .filter(Boolean),
+  );
+  const patch = (ack.patch || {}) as Record<string, unknown>;
+  const applied = new Set<keyof SealParameters>();
+
+  for (const [key, incomingVersion] of Object.entries(ack.versions || {})) {
+    if (typeof incomingVersion !== "number") continue;
+    const typedKey = key as keyof SealParameters;
+    const localVersion = nextVersions[typedKey] ?? 0;
+    if (incomingVersion <= localVersion) continue;
+    nextVersions[typedKey] = incomingVersion;
+    if (rejected.has(key)) continue;
+    if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
+    nextValues[typedKey] = patch[key] as SealParameters[keyof SealParameters];
+    applied.add(typedKey);
+  }
+
+  return { values: nextValues, versions: nextVersions, applied };
 }

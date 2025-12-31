@@ -58,8 +58,14 @@ export async function patchV2Parameters(opts: {
   chatId: string;
   token: string;
   parameters: V2ParametersPatch;
+  baseVersions?: Record<string, number>;
 }): Promise<void> {
   const start = performance.now();
+  const baseVersions: Record<string, number> = {};
+  for (const key of Object.keys(opts.parameters || {})) {
+    const raw = opts.baseVersions?.[key];
+    baseVersions[key] = typeof raw === "number" ? raw : 0;
+  }
   if (isParamSyncDebug()) {
     const entries = Object.entries(opts.parameters || {}).map(([key, value]) => ({
       key,
@@ -78,7 +84,11 @@ export async function patchV2Parameters(opts: {
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ chat_id: opts.chatId, parameters: opts.parameters }),
+    body: JSON.stringify({
+      chat_id: opts.chatId,
+      parameters: opts.parameters,
+      base_versions: baseVersions,
+    }),
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => "");
@@ -132,6 +142,7 @@ export async function patchV2ParametersAndFetchState(opts: {
   chatId: string;
   token: string;
   parameters: V2ParametersPatch;
+  baseVersions?: Record<string, number>;
   signal?: AbortSignal;
 }): Promise<V2ParametersPatch> {
   await patchV2Parameters(opts);
