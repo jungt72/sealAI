@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { logout } from "../../lib/logout";
-import SidebarLeft from "./components/Sidebar/SidebarLeft";
+import ContextSidebar from "./components/ContextSidebar";
+import { ContextStateProvider } from "./context/ContextStateProvider";
 
 function LogoutButton() {
   const { status } = useSession();
@@ -33,34 +33,21 @@ function LogoutButton() {
 }
 
 export default function DashboardShell({ children }: { children: ReactNode }) {
-  const [showAskMissing, setShowAskMissing] = useState(false);
-
-  useEffect(() => {
-    const onUi = (ev: Event) => {
-      const ua: any = (ev as CustomEvent<any>).detail ?? (ev as any);
-      const action = ua?.ui_action ?? ua?.action ?? ua?.event;
-      try { console.debug("[sealai] UI event received", ua); } catch {}
-      if (action) setShowAskMissing(true);
-    };
-    window.addEventListener("sealai:ui", onUi as EventListener);
-    window.addEventListener("sealai:ui_action", onUi as EventListener);
-    window.addEventListener("sai:need-params", onUi as EventListener);
-    return () => {
-      window.removeEventListener("sealai:ui", onUi as EventListener);
-      window.removeEventListener("sealai:ui_action", onUi as EventListener);
-      window.removeEventListener("sai:need-params", onUi as EventListener);
-    };
-  }, []);
-
   return (
-    <div className="min-h-screen w-full bg-white">
-      <header className="sticky top-0 z-30 flex items-center justify-end px-4 py-3 bg-white/80 backdrop-blur border-b">
-        <LogoutButton />
-      </header>
-      <div className="flex min-h-[calc(100vh-56px)]">
-        <SidebarLeft open={showAskMissing} onOpenChange={(v) => setShowAskMissing(v)} />
-        <main className="flex-1 min-w-0">{children}</main>
+    <ContextStateProvider>
+      <div className="flex h-full w-full flex-col bg-white min-h-0 overflow-hidden">
+        <header className="sticky top-0 z-30 flex items-center justify-end px-4 py-3 bg-white/80 backdrop-blur border-b shrink-0">
+          <LogoutButton />
+        </header>
+
+        {/* KEY: min-h-0 + overflow-hidden => der Main kann wirklich scrollen */}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <main className="flex-1 min-w-0 min-h-0 overflow-y-auto">{children}</main>
+          <div className="hidden xl:flex w-[360px] shrink-0 border-l border-slate-100 bg-white px-4 py-4 overflow-y-auto">
+            <ContextSidebar />
+          </div>
+        </div>
       </div>
-    </div>
+    </ContextStateProvider>
   );
 }
