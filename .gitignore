@@ -76,3 +76,10 @@ frontend_backup_*/
 *.bak
 *.swp
 *~
+
+# dumps / exports / secrets
+code_dump_*.txt
+*.dump
+*.log
+*.env
+.env.*
