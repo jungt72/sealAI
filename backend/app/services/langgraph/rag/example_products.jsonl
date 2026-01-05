@@ -1,0 +1,3 @@
+{"doc_id":"rwdr-0001","vendor_id":"VEND_A","title":"RWDR TC 16x22x4 FKM","profile":"TC","material":"FKM","paid_tier":"gold","contract_valid_until":"2026-12-31","active":true,"score":0.92,"url":"https://partner-a.example/rwdr-tc-16x22x4"}
+{"doc_id":"rwdr-0002","vendor_id":"VEND_B","title":"RWDR TB 16x22x4 NBR","profile":"TB","material":"NBR","paid_tier":"silver","contract_valid_until":"2026-03-31","active":true,"score":0.88,"url":"https://partner-b.example/rwdr-tb-16x22x4"}
+{"doc_id":"rwdr-0004","vendor_id":"VEND_C","title":"RWDR PTFE 16x22x4","profile":"Custom","material":"PTFE","paid_tier":"basic","contract_valid_until":"2025-12-31","active":true,"score":0.86,"url":"https://partner-c.example/rwdr-ptfe-16x22x4"}

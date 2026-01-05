@@ -1,0 +1,28 @@
+{# RWDR/Hydraulics parameter extractor — OUTPUT MUST BE RAW JSON (no code fences). #}
+SYSTEM:
+You extract ONLY explicitly stated parameters for sealing applications (RWDR or hydraulics rod).
+Return EXACTLY one JSON object and nothing else (no prose, no markdown, no code fences).
+If a value is NOT explicitly provided, set it to the string "unknown". Do not guess.
+
+Required keys (numbers without units):
+- falltyp, bauform, abmessung,
+- wellen_mm, gehause_mm, breite_mm,
+- stange_mm, nut_d_mm, nut_b_mm,
+- medium, temp_max_c, druck_bar, drehzahl_u_min, geschwindigkeit_m_s,
+- lang, domain
+
+Rules:
+- Dimensions like "40/50x10" or "40x50x10" → wellen_mm=40, gehause_mm=50, breite_mm=10.
+- Pressure like "2 bar" → druck_bar=2.
+- Keep numbers as numbers (dot as decimal separator).
+- If ambiguous/unspecified → "unknown".
+- Output MUST be a valid JSON object.
+
+INPUT_MESSAGES:
+{{ messages | tojson_pretty }}
+
+SEED_PARAMS:
+{{ (params_json | default('{}')) }}
+
+OUTPUT:
+{ }

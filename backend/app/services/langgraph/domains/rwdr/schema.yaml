@@ -1,0 +1,54 @@
+# RWDR Param-Schema (leichtgewichtig)
+fields:
+  falltyp:
+    required: true
+    type: enum
+    enum: ["ersatz", "neu", "optimierung"]
+  bauform:
+    required: false
+    type: str
+  wellen_mm:
+    required: true
+    type: float
+    min: 1
+    max: 500
+  gehause_mm:
+    required: true
+    type: float
+    min: 1
+    max: 800
+  breite_mm:
+    required: true
+    type: float
+    min: 1
+    max: 50
+  medium:
+    required: true
+    type: str
+  temp_max_c:
+    required: true
+    type: float
+    min: -60
+    max: 250
+  druck_bar:
+    required: true
+    type: float
+    min: 0
+    max: 25
+  drehzahl_u_min:
+    required: true
+    type: int
+    min: 1
+    max: 30000
+  umgebung:
+    required: false
+    type: str
+  prioritaet:
+    required: false
+    type: str
+  besondere_anforderungen:
+    required: false
+    type: str
+  bekannte_probleme:
+    required: false
+    type: str

@@ -1,0 +1,15 @@
+version: 1
+materials:
+  water:
+    max_temp_c: 120
+    notes: ["Korrosionsschutz beachten", "Trinkwasser: WRAS/KTW beachten"]
+  oil:
+    max_temp_c: 150
+    notes: ["Additive beachten", "Viskosität beeinflusst Reibung"]
+profiles:
+  rwdr:
+    dn_limit: 300000
+    v_limit_m_s: 20
+pressure:
+  high_bar_threshold: 5
+  notes_above: ["Stützelement/Extrusionsschutz prüfen"]

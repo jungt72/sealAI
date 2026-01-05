@@ -1,0 +1,19 @@
+agents:
+  supervisor:
+    lang: de
+    files:
+      - partials/tone.de.md
+      - partials/safety.de.md
+      - agents/consult_supervisor.de.md
+
+  rwdr:
+    lang: de
+    files:
+      - partials/tone.de.md
+      - agents/rwdr_agent.de.md
+
+  hydraulics_rod:
+    lang: de
+    files:
+      - partials/tone.de.md
+      - agents/hyd_rod_agent.de.md
