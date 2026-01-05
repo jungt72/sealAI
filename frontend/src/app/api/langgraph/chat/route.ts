@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       process.env.NEXT_PUBLIC_BACKEND_URL ||
       "http://localhost:8000").replace(/\/$/, "");
 
-  const backendRes = await fetch(`${base}/api/v1/langgraph/chat/stream`, {
+  const backendRes = await fetch(`${base}//chat/stream`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
