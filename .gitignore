@@ -67,3 +67,12 @@ test_input.json
 .trash/
 _audits/
 frontend_backup_*/
+
+# editor/backup files
+*.save
+*.save.*
+*.backup
+*.backup_*
+*.bak
+*.swp
+*~
