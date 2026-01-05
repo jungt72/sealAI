@@ -94,3 +94,11 @@ docker-pytest-backend: ## Pytest im Compose-Netz (BASE=http://$(BACKEND_CONTAINE
 	@echo "Running pytest in docker (network=$(NETWORK_BACKEND)), BASE=http://$(BACKEND_CONTAINER):8000"
 	@docker run --rm --network $(NETWORK_BACKEND) -v $$PWD/tests:/tests python:3.12-slim \
 		sh -lc 'pip install -q pytest requests && BASE="http://$(BACKEND_CONTAINER):8000" pytest -q /tests/test_consult_e2e.py'
+.PHONY: test
+test:
+\tdocker exec -t -w /app backend python -m pytest -q
+.PHONY: test bench
+test:
+	docker exec -t -w /app backend python -m pytest -q
+bench:
+	docker exec -t -w /app backend python scripts/run_benchmarks.py

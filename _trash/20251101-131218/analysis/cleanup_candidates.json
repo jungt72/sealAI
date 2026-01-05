@@ -1,0 +1,23 @@
+{
+  "backend/agents/material_agent/main.py": "Legacy FastAPI micro-app never imported; flagged by vulture/deptry",
+  "backend/agents/normen_agent/main.py": "Ditto legacy micro-app; unused",
+  "backend/app/api/routes/chat.py": "SSE fallback declared unused and imports missing deps",
+  "frontend/src/components/organisms/Sidebar.tsx": "Unused per knip/ts-prune; replaced by new dashboard",
+  "frontend/src/components/ui/card.tsx": "Unused duplication of card component",
+  "frontend/src/app/dashboard/Dashboard.tsx": "Legacy dashboard wrapper not referenced",
+  "frontend/src/app/dashboard/ChatScreen.tsx": "Legacy component; ts-prune unused",
+  "frontend/src/lib/logout.ts": "Duplicate logout helper; unused export handleLogout",
+  "frontend/src/lib/useAccessToken.ts": "Unused fetchFreshAccessToken export (unused by runtime)",
+  "frontend/.next": "Build artifact; remove via cleanup script",
+  ".pytest_cache": "Test cache; remove",
+  "backend/app/__pycache__": "Bytecode cache",
+  ".env.bak.1754931391": "Duplicated env backup file",
+  ".env.bak.1754931465": "Duplicated env backup file",
+  ".env.bak.1754931261": "Duplicated env backup file",
+  "analysis": "Generated artifacts should remain; not deleting",
+  "frontend/src/components/Fog.tsx": "Unused 3D component flagged by ts-prune",
+  "frontend/src/components/HeroBackground.tsx": "Unused 3D hero",
+  "frontend/src/components/organisms/Header.tsx": "Unused layout component",
+  "frontend/src/app/dashboard/components/Sidebar/Sidebar.tsx": "Unused wrapper per ts-prune",
+  "frontend/src/app/dashboard/components/Sidebar/SidebarRight.tsx": "Unused"
+}

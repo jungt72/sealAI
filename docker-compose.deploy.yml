@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  backend:
+    image: ghcr.io/jungt72/sealai-backend:latest
+  frontend:
+    # Empfohlen: FRONTEND_TAG auf einen unveränderlichen Tag setzen (z.B. git sha); Default bleibt "latest" für Backward-Compatibility.
+    image: "ghcr.io/jungt72/sealai-frontend:${FRONTEND_TAG:-latest}"
+  keycloak:
+    image: ghcr.io/jungt72/sealai-keycloak:latest

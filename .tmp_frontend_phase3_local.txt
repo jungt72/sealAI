@@ -1,0 +1,56 @@
+### npm ci
+
+added 334 packages in 9s
+
+### next version
+16.0.10
+
+### npm run build
+
+> sealai-frontend@0.1.0 build
+> next build
+
+   ▲ Next.js 16.0.10 (Turbopack)
+   - Environments: .env
+
+   Creating an optimized production build ...
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+ ✓ Compiled successfully in 12.8s
+   Skipping validation of types
+   Collecting page data using 1 worker ...
+   Generating static pages using 1 worker (0/8) ...
+   Generating static pages using 1 worker (2/8) 
+   Generating static pages using 1 worker (4/8) 
+   Generating static pages using 1 worker (6/8) 
+ ✓ Generating static pages using 1 worker (8/8) in 504.9ms
+   Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/auth/custom-logout
+├ ƒ /api/auth/sso-logout
+├ ƒ /api/ccx/jobs
+├ ƒ /api/ccx/jobs/[jobId]/events
+├ ƒ /api/ccx/jobs/[jobId]/summary
+├ ƒ /api/chat
+├ ƒ /api/state
+├ ƒ /auth/error
+├ ○ /auth/signed-out
+├ ○ /auth/signin
+├ ○ /chat
+├ ƒ /chat/[conversationId]
+├ ƒ /dashboard
+├ ƒ /dashboard/ccx
+├ ƒ /dashboard/ccx/[jobId]
+└ ○ /register
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

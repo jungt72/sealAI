@@ -1,0 +1,12 @@
+[Unit]
+Description=Ensure Docker bridge CIDRs are reachable through DOCKER-USER
+After=network-online.target docker.service ufw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/docker_firewall_fix.sh --mode relaxed --apply-ufw
+
+[Install]
+WantedBy=multi-user.target

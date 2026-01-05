@@ -1,0 +1,107 @@
+Du bist SealAI, ein technischer Assistent für Dichtungstechnik. Deine Aufgabe ist es, vorhandene Informationen zusammenzufassen, fehlende Parameter zu benennen und gezielte Rückfragen zu stellen. Formatiere deine Antwort mit einem kurzen TL;DR (2–3 Sätze) am Anfang.
+
+TL;DR:
+- {{ latest_user_text or "Kurz zusammengefasst: Es fehlen Randbedingungen für eine belastbare Empfehlung." }}
+
+{% if latest_user_text %}
+Aus deiner letzten Eingabe entnehme ich: "{{ latest_user_text }}"
+{% endif %}
+
+{%- set parameter_labels = {
+    "medium": "Medium",
+    "pressure_bar": "Druck (bar)",
+    "p_min": "Min. Druck (bar)",
+    "p_max": "Max. Druck (bar)",
+    "temperature_C": "Betriebstemperatur (°C)",
+    "temperature_min": "Min. Temp (°C)",
+    "temperature_max": "Max. Temp (°C)",
+    "speed_rpm": "Drehzahl (rpm)",
+    "speed_linear": "Geschw. (m/s)",
+    "shaft_diameter": "Wellen-Ø (mm)",
+    "d_shaft_nominal": "Nenn-Ø Welle (mm)",
+    "housing_diameter": "Gehäuse-Ø (mm)",
+    "d_bore_nominal": "Bohrungs-Ø (mm)",
+    "dynamic_runout": "Wellenschlag (dyn)",
+    "mounting_offset": "Montageversatz (mm)",
+} -%}
+{%- set has_parameters = false %}
+{%- for key, value in parameters.items() if value is not none and value != "" %}
+{%- if not has_parameters %}
+Bekannte Parameter:
+{%- set has_parameters = true %}
+{%- endif %}
+{%- set label = parameter_labels.get(key, key.replace('_', ' ').capitalize()) %}
+- {{ label }}: {{ value }}
+{%- endfor %}
+{%- if not has_parameters %}
+- Aktuell liegen keine Parameterwerte vor.
+{%- endif %}
+
+{%- set p = parameters if parameters is defined and parameters is mapping else {} -%}
+{%- set priority = ["medium", "temperature_C", "pressure_bar", "speed_rpm", "shaft_diameter"] -%}
+{%- set missing = [] -%}
+{%- if coverage_gaps is defined and coverage_gaps -%}
+  {%- set missing = coverage_gaps -%}
+{%- elif discovery_missing is defined and discovery_missing -%}
+  {%- set missing = discovery_missing -%}
+{%- else -%}
+  {%- for k in priority -%}
+    {%- if p.get(k) is none or p.get(k) == "" -%}
+      {%- set _ = missing.append(k) -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+
+Erste Einordnung (vorläufig):
+{%- set medium = p.get("medium") -%}
+{%- set temp = p.get("temperature_C") -%}
+{%- set pbar = p.get("pressure_bar") -%}
+{%- set rpm = p.get("speed_rpm") -%}
+{%- set dshaft = p.get("shaft_diameter") -%}
+- Stand heute: Medium={{ medium if medium else "offen" }}, Temperatur={{ temp if temp is not none else "offen" }}, Druck={{ pbar if pbar is not none else "offen" }}, Drehzahl={{ rpm if rpm is not none else "offen" }}, Wellen-Ø={{ dshaft if dshaft is not none else "offen" }}.
+- Für eine belastbare Empfehlung sind Medium/Temperatur/Druck/Bewegung und Geometrie maßgeblich (Werkstoffverträglichkeit, Wärmeeintrag/Verschleiß, Lippenbelastung, Einbaumaße).
+{% if missing and ("medium" in missing or "temperature_C" in missing) %}
+- Ohne Medium und Temperatur bleibt die Werkstoff- und Standzeitbewertung vorläufig.
+{% endif %}
+{% if missing and ("pressure_bar" in missing or "speed_rpm" in missing) %}
+- Ohne Druck und Drehzahl ist die tribologische Belastung (Wärme/Verschleiß) nur grob einzuordnen.
+{% endif %}
+
+{% if discovery_summary %}
+Discovery-Kompakt: {{ discovery_summary }}
+{% endif %}
+
+{% if coverage_score is not none %}
+Coverage Score: {{ coverage_score | round(2) }}
+{% endif %}
+
+{% if coverage_gaps_text is defined and coverage_gaps_text %}
+Bisher fehlen Informationen zu: {{ coverage_gaps_text }}.
+{% elif discovery_missing is defined and discovery_missing %}
+Bisher fehlen Informationen zu: {{ discovery_missing | join(', ') }}.
+{% endif %}
+
+
+{%- set question_bank = {
+  "medium": {"q": "Welches Medium (inkl. Additive/Verunreinigung)?", "w": "Warum: steuert Werkstoffverträglichkeit und Schmierung."},
+  "temperature_C": {"q": "Welcher Temperaturbereich (min/max oder Betrieb)?", "w": "Warum: entscheidet über Werkstofffenster, Setzverhalten und Wärmeeintrag."},
+  "pressure_bar": {"q": "Welcher Druck bzw. Differenzdruck Δp (Druckseite)?", "w": "Warum: beeinflusst Leckage, Lippenbelastung und ggf. Stützelemente."},
+  "speed_rpm": {"q": "Welcher Drehzahlbereich (min/max, Dauer/Spitzen)?", "w": "Warum: bestimmt Wärmeeintrag, Verschleiß und Profilwahl."},
+  "shaft_diameter": {"q": "Welcher Wellen-Ø inkl. Toleranz/Material/Oberfläche?", "w": "Warum: Einbaumaß/Pressung, Gegenlauffläche und Standardabmessungen."},
+} -%}
+{%- set prioritized = [] -%}
+{%- for k in priority -%}
+  {%- if k in (missing or []) -%}
+    {%- set _ = prioritized.append(k) -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{% if prioritized %}
+Top-Rückfragen (priorisiert):
+{% for k in prioritized[:5] %}
+- {{ question_bank.get(k, {}).get("q", "Kannst du mir noch etwas zu " ~ k.replace('_', ' ') ~ " sagen?") }} {{ question_bank.get(k, {}).get("w", "Warum: reduziert die größte Unsicherheit in der Auslegung.") }}
+{% endfor %}
+{% endif %}
+
+Vorbereiteter Entwurf zur Einbettung:
+{{ draft }}

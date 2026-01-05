@@ -1,38 +1,40 @@
+# backend/app/api/v1/api.py
 from __future__ import annotations
-from app.api.v1.endpoints import rfq as rfq_endpoint
+
 from fastapi import APIRouter
 
+# REST-/Service-Endpunkte
 from app.api.v1.endpoints import (
-    ai,
     auth,
-    chat_stream,
-    chat_ws,
-    consult_invoke,
-    langgraph_sse,
+    langgraph_health,
+    langgraph_v2,  # LangGraph v2 HTTP/SSE-Endpunkte
+    state,
     memory,
-    system,
+    ping,
     users,
-    sse_test,        # ⬅️ NEU
+    chat_history,  # <-- WICHTIG: Chat-History/Conversations wieder aktivieren
+    rag,
 )
+from app.api.v1.endpoints import rfq as rfq_endpoint
 
 api_router = APIRouter()
 
-# SSE
-api_router.include_router(langgraph_sse.router, prefix="/langgraph", tags=["langgraph"])
-api_router.include_router(chat_stream.router, tags=["sse"])
-api_router.include_router(sse_test.router, prefix="/sse", tags=["sse"])  # ⬅️ NEU → /api/v1/sse/test
+# Health / Liveness
+api_router.include_router(ping.router)
 
-# WebSocket (ohne extra Prefix → /api/v1/ai/ws)
-api_router.include_router(chat_ws.router, tags=["ws"])
+# Chat History / Conversations (Keycloak-scoped)
+api_router.include_router(chat_history.router)  # <-- /api/v1/chat/...
 
-# Sync-Invoke (Debug)
-api_router.include_router(consult_invoke.router, tags=["test"])
+# LangGraph HTTP/SSE-API (v2)
+api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph-v2"])
+api_router.include_router(langgraph_health.router, prefix="/langgraph", tags=["langgraph-v2"])
+api_router.include_router(state.router, prefix="/langgraph", tags=["langgraph-v2"])
 
-# REST
-api_router.include_router(ai.router, prefix="/ai")   # ⬅️ Prefix ergänzt → /api/v1/ai/beratung
+# Weitere Subsysteme
 api_router.include_router(auth.router)
 api_router.include_router(memory.router)
-api_router.include_router(system.router)
 api_router.include_router(users.router)
+api_router.include_router(rag.router)
 
+# RFQ
 api_router.include_router(rfq_endpoint.router, prefix="/rfq", tags=["rfq"])

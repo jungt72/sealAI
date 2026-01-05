@@ -1,6 +1,10 @@
 'use client';
 import Chat from './components/Chat/ChatContainer';
 
-export default function ChatScreen() {
-  return <Chat />;
+type ChatScreenProps = {
+  conversationId?: string;
+};
+
+export default function ChatScreen({ conversationId }: ChatScreenProps) {
+  return <Chat chatId={conversationId ?? null} />;
 }

@@ -1,0 +1,152 @@
+version: 1
+prompts:
+  - id: MAT-001
+    prompt: "Welche Dichtung empfiehlst du für eine heiße Ölpumpe bei 180 °C?"
+    expected_agent: material
+    expected_mode: single
+    allow_rag: false
+  - id: MAT-002
+    prompt: "Wir brauchen ein Material für 250 °C und 3 bar in einem chemischen Rührwerk."
+    expected_agent: material
+    expected_mode: single
+    allow_rag: false
+  - id: MAT-003
+    prompt: "Welche Werkstoffe eignen sich für Kontakt mit Methanol bei 120 °C?"
+    expected_agent: material
+    expected_mode: single
+    allow_rag: false
+  - id: MAT-004
+    prompt: "Gibt es eine hitzebeständige Dichtung für 320 °C in Abgasanwendungen?"
+    expected_agent: material
+    expected_mode: parallel
+    allow_rag: false
+  - id: MAT-005
+    prompt: "Empfehlung für eine dynamische Dichtung bei 1.500 U/min und 90 °C?"
+    expected_agent: material
+    expected_mode: single
+    allow_rag: false
+  - id: MAT-006
+    prompt: "Wir suchen ein Dichtmaterial für Lebensmittelkontakt bei 80 °C."
+    expected_agent: material
+    expected_mode: single
+    allow_rag: false
+  - id: APP-007
+    prompt: "Die Anwendung ist eine Hydraulikstange mit 250 bar – welche Dichtung passt?"
+    expected_agent: anwendung
+    expected_mode: single
+    allow_rag: false
+  - id: APP-008
+    prompt: "Für einen Rührkessel müssen wir Temperatur und Geschwindigkeit abstimmen. Was schlägst du vor?"
+    expected_agent: anwendung
+    expected_mode: parallel
+    allow_rag: false
+  - id: APP-009
+    prompt: "Welche Dichtungslösung für ein Pneumatiksystem mit niedrigen Temperaturen?"
+    expected_agent: anwendung
+    expected_mode: single
+    allow_rag: false
+  - id: APP-010
+    prompt: "Wir haben Verschleiß an der Packungspresse – welche Anwendungsempfehlung gibt es?"
+    expected_agent: anwendung
+    expected_mode: fallback
+    allow_rag: true
+  - id: NOR-011
+    prompt: "Welche DIN- oder ISO-Normen muss eine RWDR-Dichtung für Trinkwasser erfüllen?"
+    expected_agent: normen
+    expected_mode: parallel
+    allow_rag: true
+  - id: NOR-012
+    prompt: "Bitte prüfe die relevanten Normen für FDA-konforme Dichtungen."
+    expected_agent: normen
+    expected_mode: parallel
+    allow_rag: true
+  - id: NOR-013
+    prompt: "Welche Zertifizierungen gelten für explosionsgeschützte Dichtungssysteme?"
+    expected_agent: normen
+    expected_mode: parallel
+    allow_rag: true
+  - id: NOR-014
+    prompt: "Welche ISO-Regeln gelten für Hochtemperatur-Kompressoren?"
+    expected_agent: normen
+    expected_mode: parallel
+    allow_rag: true
+  - id: NOR-015
+    prompt: "Welche Prüfberichte brauchen wir für die CE-Kennzeichnung einer Dichtungseinheit?"
+    expected_agent: normen
+    expected_mode: fallback
+    allow_rag: true
+  - id: SAF-016
+    prompt: "Ist die Kombination aus PTFE und Fluoröl sicher bei 280 °C?"
+    expected_agent: safety
+    expected_mode: parallel
+    allow_rag: false
+  - id: SAF-017
+    prompt: "Bewerte das Risiko eines Wellendichtrings bei 350 °C und 4 bar."
+    expected_agent: safety
+    expected_mode: parallel
+    allow_rag: false
+  - id: SAF-018
+    prompt: "Gibt es Sicherheitsbedenken für EPDM bei Kontakt mit Bremsflüssigkeit?"
+    expected_agent: safety
+    expected_mode: single
+    allow_rag: false
+  - id: SAF-019
+    prompt: "Müssen wir eine zusätzliche Schutzmaßnahme einplanen, wenn Normen unbekannt sind?"
+    expected_agent: safety
+    expected_mode: fallback
+    allow_rag: true
+  - id: MKT-020
+    prompt: "Welche Markttrends siehst du für Hochleistungsdichtungen in der Chemieindustrie?"
+    expected_agent: markt
+    expected_mode: single
+    allow_rag: true
+  - id: MKT-021
+    prompt: "Braucht es RAG um Wettbewerberpreise für RWDR zu recherchieren?"
+    expected_agent: markt
+    expected_mode: fallback
+    allow_rag: true
+  - id: MKT-022
+    prompt: "Wie entwickelt sich die Nachfrage nach biobasierten Dichtwerkstoffen?"
+    expected_agent: markt
+    expected_mode: single
+    allow_rag: true
+  - id: PRD-023
+    prompt: "Welches Produkt aus unserem Portfolio passt für 200 °C und 2 bar?"
+    expected_agent: produkt
+    expected_mode: single
+    allow_rag: false
+  - id: PRD-024
+    prompt: "Hast du eine Produktempfehlung für hochdynamische Anwendungen?"
+    expected_agent: produkt
+    expected_mode: parallel
+    allow_rag: false
+  - id: PRD-025
+    prompt: "Welche Seriennummer deckt die Hydraulikdichtung mit FDA-Freigabe ab?"
+    expected_agent: produkt
+    expected_mode: fallback
+    allow_rag: true
+  - id: HYB-026
+    prompt: "Vergleiche NBR und HNBR für Temperaturen über 160 °C."
+    expected_agent: material
+    expected_mode: single
+    allow_rag: false
+  - id: HYB-027
+    prompt: "Was ist besser für Vakuumanwendungen: PTFE oder FKM?"
+    expected_agent: material
+    expected_mode: single
+    allow_rag: false
+  - id: HYB-028
+    prompt: "Welche Parameter fehlen, um eine optimale Empfehlung zu geben?"
+    expected_agent: anwendung
+    expected_mode: fallback
+    allow_rag: false
+  - id: HYB-029
+    prompt: "Bitte starte mit einer Discovery und sag mir, welche Daten du brauchst."
+    expected_agent: anwendung
+    expected_mode: fallback
+    allow_rag: false
+  - id: HYB-030
+    prompt: "Kannst du die Sicherheits- und Normlage für Hochdruck-Dichtsysteme zusammenfassen?"
+    expected_agent: safety
+    expected_mode: parallel
+    allow_rag: true

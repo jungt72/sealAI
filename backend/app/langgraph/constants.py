@@ -1,0 +1,11 @@
+"""Constants used by LangGraph."""
+
+END = "__end__"
+
+# Redis Namespaces
+REDIS_URL = "redis://localhost:6379"
+CHECKPOINTER_NAMESPACE_MAIN = "sealai:main"
+CHECKPOINTER_NAMESPACE_MATERIAL = "sealai:material"
+CHECKPOINTER_NAMESPACE_DEBATE = "sealai:debate"
+
+__all__ = ["END", "REDIS_URL", "CHECKPOINTER_NAMESPACE_MAIN", "CHECKPOINTER_NAMESPACE_MATERIAL", "CHECKPOINTER_NAMESPACE_DEBATE"]

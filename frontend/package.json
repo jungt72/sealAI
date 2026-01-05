@@ -2,33 +2,39 @@
   "name": "sealai-frontend",
   "version": "0.1.0",
   "private": true,
-  "installConfig": { "legacy-peer-deps": true },
+  "installConfig": {
+    "legacy-peer-deps": true
+  },
   "overrides": {
-    "@react-three/fiber": "8.15.16"
+    "@react-three/fiber": "8.15.16",
+    "glob": "10.5.0",
+    "mdast-util-to-hast": "13.2.1"
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
+    "build:turbo": "next build --turbo",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:fast": "vitest run tests/paramStore.test.ts tests/useChatSseV2.test.ts tests/v2ParameterPatch.test.ts tests/chatRoute.test.ts"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "@microsoft/fetch-event-source": "^2.0.1",
-    "@react-three/drei": "9.122.0",
     "@react-three/fiber": "8.15.16",
     "@tailwindcss/typography": "^0.5.16",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.23.26",
     "highlight.js": "^11.8.0",
     "lucide-react": "^0.173.0",
-    "next": "15.2.2",
-    "next-auth": "^4.24.11",
-    "node-extend": "^0.2.0",
+    "next": "16.0.10",
+    "next-auth": "4.24.13",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "react-icons": "^4.10.1",
     "react-markdown": "^10.1.0",
-    "react-textarea-autosize": "^8.5.9",
+    "redis": "^4.6.13",
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
@@ -39,8 +45,14 @@
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "autoprefixer": "^10.4.14",
+    "eslint": "^9.34.0",
+    "eslint-config-next": "^16.0.10",
+    "jsdom": "^26.0.0",
     "postcss": "^8.4.21",
+    "react-test-renderer": "^18.2.0",
     "tailwindcss": "^3.3.3",
-    "typescript": "^5.4.0"
+    "ts-prune": "0.10.3",
+    "typescript": "^5.4.0",
+    "vitest": "^4.0.16"
   }
 }

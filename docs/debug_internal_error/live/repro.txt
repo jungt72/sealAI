@@ -1,0 +1,71 @@
+* Host localhost:443 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:443...
+* Connected to localhost (::1) port 443
+* ALPN: curl offers h2,http/1.1
+} [5 bytes data]
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+} [512 bytes data]
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+{ [122 bytes data]
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+{ [41 bytes data]
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+{ [2050 bytes data]
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+{ [79 bytes data]
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+{ [52 bytes data]
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+} [1 bytes data]
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+} [52 bytes data]
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519 / id-ecPublicKey
+* ALPN: server accepted h2
+* Server certificate:
+*  subject: CN=sealai.net
+*  start date: Nov 26 11:06:15 2025 GMT
+*  expire date: Feb 24 11:06:14 2026 GMT
+*  issuer: C=US; O=Let's Encrypt; CN=E8
+*  SSL certificate verify result: unable to get local issuer certificate (20), continuing anyway.
+*   Certificate level 0: Public key type EC/prime256v1 (256/128 Bits/secBits), signed using ecdsa-with-SHA384
+*   Certificate level 1: Public key type EC/secp384r1 (384/192 Bits/secBits), signed using sha256WithRSAEncryption
+} [5 bytes data]
+* using HTTP/2
+* [HTTP/2] [1] OPENED stream for https://localhost/api/chat
+* [HTTP/2] [1] [:method: POST]
+* [HTTP/2] [1] [:scheme: https]
+* [HTTP/2] [1] [:authority: localhost]
+* [HTTP/2] [1] [:path: /api/chat]
+* [HTTP/2] [1] [user-agent: curl/8.5.0]
+* [HTTP/2] [1] [authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJVcnhGelM4MlRjMmlTcWJObEVrYnp3TllSbk1HVU1NSDdHeGE4YVg5aldBIn0.eyJleHAiOjE3NjY0MDA2OTksImlhdCI6MTc2NjQwMDM5OSwiYXV0aF90aW1lIjoxNzY2NDAwMzk5LCJqdGkiOiJjNjQ0ZDc2NS1iNThkLTRhNTgtYWZkNy1lNmRhNzkzYTNhODMiLCJpc3MiOiJodHRwczovL2F1dGguc2VhbGFpLm5ldC9yZWFsbXMvc2VhbEFJIiwiYXVkIjoiYWNjb3VudCIsInN1YiI6IjdhODgyMTU5LTU1MjMtNGFlMi1hOWNmLWIxYTAzMzQwZDc2OCIsInR5cCI6IkJlYXJlciIsImF6cCI6Im5leHRhdXRoIiwic2lkIjoiNGE1ZjliM2YtNDA4Yy00MDhlLWEwYTYtMmM1ZTFhMThmYzg0IiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyJodHRwczovL3NlYWxhaS5uZXQiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9mZmxpbmVfYWNjZXNzIiwiYWRtaW4iLCJkZWZhdWx0LXJvbGVzLXNlYWxhaSIsInVtYV9hdXRob3JpemF0aW9uIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19fSwic2NvcGUiOiJvcGVuaWQgb2ZmbGluZV9hY2Nlc3MgZW1haWwgcHJvZmlsZSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiVGhvcnN0ZW4gSnVuZyIsInByZWZlcnJlZF91c2VybmFtZSI6Imp1bmd0NzIiLCJnaXZlbl9uYW1lIjoiVGhvcnN0ZW4iLCJmYW1pbHlfbmFtZSI6Ikp1bmciLCJlbWFpbCI6Im1haWxAdGhvcnN0ZW4tanVuZy5kZSJ9.XLMomFBxADvt66Kyc4RQIQp2weo0jv7fIwdsIIcdA4UV4OkElnoRyFKEN9mKkbXqb7RLk0obr4EJqAAUMEsg6B1SlXXG5zJ4BwPvEVAj8K0ed_E-C6og-1sqqLd-sVMZSogEC6_63Te5Oy4jskow6nz-jyYnzDd3g4DTmtooU80th5JlP_2PoCq0O8VzUzaaQ_aMHSI_5J1x1hqFQz8skMl-KBRF2N7q5BygrqjJU-0P3KDB8ldjXZ2ZvCQ3bUduu5dOPr4AgSglnOjUwLqNxqVq3bgKVe7rizxdUaDka0hdVpp1ycpSahi9o7Fbzh96qDwbfi-vPwhKFPVp1RdVCQ,idToken:eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJVcnhGelM4MlRjMmlTcWJObEVrYnp3TllSbk1HVU1NSDdHeGE4YVg5aldBIn0.eyJleHAiOjE3NjY0MDA2OTksImlhdCI6MTc2NjQwMDM5OSwiYXV0aF90aW1lIjoxNzY2NDAwMzk5LCJqdGkiOiIxZjA5OTY5OC0wZjc3LTQ5ZmEtYmI4MS1jYjk3NDI5ZDA0MTAiLCJpc3MiOiJodHRwczovL2F1dGguc2VhbGFpLm5ldC9yZWFsbXMvc2VhbEFJIiwiYXVkIjoibmV4dGF1dGgiLCJzdWIiOiI3YTg4MjE1OS01NTIzLTRhZTItYTljZi1iMWEwMzM0MGQ3NjgiLCJ0eXAiOiJJRCIsImF6cCI6Im5leHRhdXRoIiwic2lkIjoiNGE1ZjliM2YtNDA4Yy00MDhlLWEwYTYtMmM1ZTFhMThmYzg0IiwiYXRfaGFzaCI6IlJqalNidEZuVDh0RmVBNEJVUTBHd1EiLCJhY3I
+* [HTTP/2] [1] [accept: text/event-stream]
+* [HTTP/2] [1] [content-type: application/json]
+* [HTTP/2] [1] [content-length: 131]
+} [5 bytes data]
+> POST /api/chat HTTP/2
+> Host: localhost
+> User-Agent: curl/8.5.0
+> Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJVcnhGelM4MlRjMmlTcWJObEVrYnp3TllSbk1HVU1NSDdHeGE4YVg5aldBIn0.eyJleHAiOjE3NjY0MDA2OTksImlhdCI6MTc2NjQwMDM5OSwiYXV0aF90aW1lIjoxNzY2NDAwMzk5LCJqdGkiOiJjNjQ0ZDc2NS1iNThkLTRhNTgtYWZkNy1lNmRhNzkzYTNhODMiLCJpc3MiOiJodHRwczovL2F1dGguc2VhbGFpLm5ldC9yZWFsbXMvc2VhbEFJIiwiYXVkIjoiYWNjb3VudCIsInN1YiI6IjdhODgyMTU5LTU1MjMtNGFlMi1hOWNmLWIxYTAzMzQwZDc2OCIsInR5cCI6IkJlYXJlciIsImF6cCI6Im5leHRhdXRoIiwic2lkIjoiNGE1ZjliM2YtNDA4Yy00MDhlLWEwYTYtMmM1ZTFhMThmYzg0IiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyJodHRwczovL3NlYWxhaS5uZXQiLCJodHRwOi8vbG9jYWxob3N0OjMwMDAiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9mZmxpbmVfYWNjZXNzIiwiYWRtaW4iLCJkZWZhdWx0LXJvbGVzLXNlYWxhaSIsInVtYV9hdXRob3JpemF0aW9uIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19fSwic2NvcGUiOiJvcGVuaWQgb2ZmbGluZV9hY2Nlc3MgZW1haWwgcHJvZmlsZSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiVGhvcnN0ZW4gSnVuZyIsInByZWZlcnJlZF91c2VybmFtZSI6Imp1bmd0NzIiLCJnaXZlbl9uYW1lIjoiVGhvcnN0ZW4iLCJmYW1pbHlfbmFtZSI6Ikp1bmciLCJlbWFpbCI6Im1haWxAdGhvcnN0ZW4tanVuZy5kZSJ9.XLMomFBxADvt66Kyc4RQIQp2weo0jv7fIwdsIIcdA4UV4OkElnoRyFKEN9mKkbXqb7RLk0obr4EJqAAUMEsg6B1SlXXG5zJ4BwPvEVAj8K0ed_E-C6og-1sqqLd-sVMZSogEC6_63Te5Oy4jskow6nz-jyYnzDd3g4DTmtooU80th5JlP_2PoCq0O8VzUzaaQ_aMHSI_5J1x1hqFQz8skMl-KBRF2N7q5BygrqjJU-0P3KDB8ldjXZ2ZvCQ3bUduu5dOPr4AgSglnOjUwLqNxqVq3bgKVe7rizxdUaDka0hdVpp1ycpSahi9o7Fbzh96qDwbfi-vPwhKFPVp1RdVCQ,idToken:eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJVcnhGelM4MlRjMmlTcWJObEVrYnp3TllSbk1HVU1NSDdHeGE4YVg5aldBIn0.eyJleHAiOjE3NjY0MDA2OTksImlhdCI6MTc2NjQwMDM5OSwiYXV0aF90aW1lIjoxNzY2NDAwMzk5LCJqdGkiOiIxZjA5OTY5OC0wZjc3LTQ5ZmEtYmI4MS1jYjk3NDI5ZDA0MTAiLCJpc3MiOiJodHRwczovL2F1dGguc2VhbGFpLm5ldC9yZWFsbXMvc2VhbEFJIiwiYXVkIjoibmV4dGF1dGgiLCJzdWIiOiI3YTg4MjE1OS01NTIzLTRhZTItYTljZi1iMWEwMzM0MGQ3NjgiLCJ0eXAiOiJJRCIsImF6cCI6Im5leHRhdXRoIiwic2lkIjoiNGE1ZjliM2YtNDA4Yy00MDhlLWEwYTYtMmM1ZTFhMThmYzg0IiwiYXRfaGFzaCI6IlJqalNidEZuVDh0RmVBNEJVUTBHd1EiLCJhY3IiOiIxIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsIm5hbWUiOiJUaG9yc3RlbiBKdW5nIiwicHJlZmVycmVkX3VzZXJuYW1lIjoianVuZ3Q3MiIsImdpdmVuX25hbWUiOiJUaG9yc3RlbiIsImZhbWlseV9uYW1lIjoiSnVuZyIsImVtYWlsIjoibWFpbEB0aG9yc3Rlbi1qdW5nLmRlIn0.y1csfPJ-vYwryMTtJcKEicQ_dFNpEFea2Uq8eBgDgzI9QSoYLGPbJNZxSZihk3-RHfJMj_4qO79ECsKqQ25b1WQT0VpbJX1GT8bbZhn3Ljo9_oF7hLk85U_fo1barv0delb5v0OjVqah6SbWCtaNRbEl8gL0YZDOQPiBGiGE-ZZ11VvK2jtwINDXbhMnrZgBpU_5HNeold5YlVt0zOsharXO0WFFR-y8lkTOBd7mwdzN-uciPeKkXKQhvMUoP3BMFsrdS2YrIDeqn2PuZwE7wNULcX9-O8-_V1s7DgoMi4uBOfwfZKPbfPoMemKvJd59o6zSDgFsaCD4N_-_d5SQ7w
+> Accept: text/event-stream
+> Content-Type: application/json
+> Content-Length: 131
+> 
+} [131 bytes data]
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+{ [265 bytes data]
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+{ [265 bytes data]
+* old SSL session ID is stale, removing
+{ [5 bytes data]
+< HTTP/2 401 
+< server: nginx/1.29.4
+< date: Mon, 22 Dec 2025 10:52:42 GMT
+< content-type: application/json
+< vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+< cache-control: no-cache, no-transform
+< x-request-id: d3b21ad4-494b-4c1c-867c-9590260f7cde
+< 
+{ [5 bytes data]
+{"detail":"Signature verification failed."}* Connection #0 to host localhost left intact

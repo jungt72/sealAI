@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sealai-config
+  namespace: sealai
+data:
+  # Backend core
+  LOG_LEVEL: "INFO"
+  ENV: "production"
+  HOST: "0.0.0.0"
+  PORT: "8000"
+  WORKERS: "1"
+
+  # CORS/Origins (adjust to your domain)
+  ALLOWED_ORIGIN: "https://sealai.net,https://www.sealai.net"
+  WS_REQUIRE_ORIGIN: "0"
+  WS_AUTH_OPTIONAL: "1"
+
+  # LLM defaults
+  LLM_MODEL_DEFAULT: "gpt-5-mini"
+  OPENAI_MODEL: "gpt-5-mini"
+  OPENAI_INTENT_MODEL: "gpt-5-mini"
+  OPENAI_INTENT_FALLBACK_MODEL: "gpt-5-mini"
+  OPENAI_ROUTER_MODEL: "gpt-5-mini"
+
+  # Redis / Qdrant
+  REDIS_URL: "redis://redis:6379/0"
+  REDIS_CHECKPOINTER_URL: "redis://redis:6379/0"
+  QDRANT_URL: "http://qdrant:6333"
+  QDRANT_COLLECTION: "sealai-docs"
+  QDRANT_COLLECTION_PREFIX: "sealai-docs"
+  LTM_COLLECTION: "sealai_ltm"
+  LTM_EMB_MODEL: "intfloat/multilingual-e5-base"
+  LTM_DISABLE_PREWARM: "1"
+
+  # Agents (cluster-internal URLs)
+  AGENT_NORMEN_URL: "http://normen-agent.sealai.svc.cluster.local:9101"
+  AGENT_MATERIAL_URL: "http://material-agent.sealai.svc.cluster.local:9102"
+
+  # Graph builder
+  GRAPH_BUILDER: "supervisor"
+  ENABLE_RAG: "1"
+  ENABLE_CONSULT_FLOW: "1"
+  ENABLE_SUPERVISOR: "1"
+
+  # RAG tuning (safe defaults)
+  RAG_HYBRID_K: "12"
+  RAG_FINAL_K: "6"
+  RAG_RRF_K: "60"
+  RAG_SCORE_THRESHOLD: "0.0"
+
+  # Database URLs (sync+async)
+  # NOTE: Set POSTGRES_PASSWORD via Secret. Username/db name must match Postgres manifest.
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "sealai"
+  POSTGRES_USER: "sealai"
+  SQLALCHEMY_ECHO: "0"

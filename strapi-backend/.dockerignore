@@ -1,0 +1,9 @@
+node_modules
+dist
+.cache
+.tmp
+.env
+Dockerfile.local
+.vscode
+.idea
+*.log

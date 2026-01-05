@@ -1,0 +1,14 @@
+{
+  "collectionName": "components_shared_keywords",
+  "info": {
+    "displayName": "Keyword",
+    "icon": "pencil-alt"
+  },
+  "options": {},
+  "attributes": {
+    "text": {
+      "type": "string",
+      "required": true
+    }
+  }
+}

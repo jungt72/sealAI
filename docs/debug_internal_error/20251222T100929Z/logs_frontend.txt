@@ -1,0 +1,53 @@
+   ▲ Next.js 16.0.10
+   - Local:         http://localhost:3000
+   - Network:       http://0.0.0.0:3000
+
+ ✓ Starting...
+ ✓ Ready in 85ms
+Error: Failed to find Server Action "x". This request might be from an older or newer deployment.
+Read more: https://nextjs.org/docs/messages/failed-to-find-server-action
+    at ignore-listed frames
+ ⨯ Failed to write image to cache 3Sv6tbczX6j9PjNCFY3PtKHvJb3WH7Z9DbJ5zcF3adI Error: EACCES: permission denied, mkdir '/app/.next/cache'
+    at ignore-listed frames {
+  errno: -13,
+  code: 'EACCES',
+  syscall: 'mkdir',
+  path: '/app/.next/cache'
+}
+[api/chat] proxy {
+  request_id: '90afe9b8-f33e-415e-b109-a6a2ee89fb9c',
+  chat_id: 'thread-aa206ab1-e426-4914-a1d7-8b11d0143243',
+  status: 200,
+  ms: 16
+}
+Error: Failed to find Server Action "x". This request might be from an older or newer deployment.
+Read more: https://nextjs.org/docs/messages/failed-to-find-server-action
+    at ignore-listed frames
+Error: Failed to find Server Action "x". This request might be from an older or newer deployment.
+Read more: https://nextjs.org/docs/messages/failed-to-find-server-action
+    at ignore-listed frames
+Error: Failed to find Server Action "x". This request might be from an older or newer deployment.
+Read more: https://nextjs.org/docs/messages/failed-to-find-server-action
+    at ignore-listed frames
+Error: Failed to find Server Action "x". This request might be from an older or newer deployment.
+Read more: https://nextjs.org/docs/messages/failed-to-find-server-action
+    at ignore-listed frames
+Error: Failed to find Server Action "x". This request might be from an older or newer deployment.
+Read more: https://nextjs.org/docs/messages/failed-to-find-server-action
+    at ignore-listed frames
+Error: Failed to find Server Action "x". This request might be from an older or newer deployment.
+Read more: https://nextjs.org/docs/messages/failed-to-find-server-action
+    at ignore-listed frames
+[api/chat] proxy {
+  request_id: 'f37eab1a-1dd0-445d-b6dd-1fd2d2a58193',
+  chat_id: 'thread-aa206ab1-e426-4914-a1d7-8b11d0143243',
+  status: 200,
+  ms: 43
+}
+Error: Failed to find Server Action "x". This request might be from an older or newer deployment.
+Read more: https://nextjs.org/docs/messages/failed-to-find-server-action
+    at ignore-listed frames
+[api/chat] missing_auth {
+  request_id: 'c84002e7-617c-4a8f-a0d8-bf21f5b899c7',
+  chat_id: 'debug-thread'
+}

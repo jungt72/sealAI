@@ -1,0 +1,42 @@
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Starting sealAI-backend vdev
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:33100 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58814 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58812 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33728 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:59938 - "GET /api/v1/langgraph/state?thread_id=thread-f24d4a85-302c-4337-9079-2d5eaf19bd9c HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:59954 - "GET /api/v1/langgraph/state?thread_id=thread-aa206ab1-e426-4914-a1d7-8b11d0143243 HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:59966 - "GET /api/v1/chat/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49776 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:41660 - "GET /api/v1/langgraph/state?thread_id=thread-aa206ab1-e426-4914-a1d7-8b11d0143243 HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:41670 - "GET /api/v1/chat/conversations HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:41684 - "GET /api/v1/chat/conversations HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:41686 - "POST /api/v1/langgraph/chat/v2 HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:41694 - "GET /api/v1/langgraph/state?thread_id=thread-aa206ab1-e426-4914-a1d7-8b11d0143243 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45760 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33098 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:38856 - "POST /api/v1/langgraph/chat/v2 HTTP/1.1" 200 OK
+DEBUG:    JWT verified (kid=UrxFzS82Tc2iSqbNlEkbzwNYRnMGUMMH7Gxa8aX9jWA, alg=RS256, iss ok, aud ok)
+INFO:     172.18.0.8:38862 - "GET /api/v1/langgraph/state?thread_id=thread-aa206ab1-e426-4914-a1d7-8b11d0143243 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38892 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41154 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43538 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39590 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35572 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43670 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33968 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43210 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47142 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK
+INFO:     172.18.0.8:49748 - "GET /api/v1/langgraph/health HTTP/1.1" 200 OK

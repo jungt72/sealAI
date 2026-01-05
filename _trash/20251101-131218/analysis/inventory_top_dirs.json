@@ -1,0 +1,754 @@
+[
+  [
+    "frontend",
+    {
+      "files": 92,
+      "bytes": 3796771,
+      "loc": 16294
+    }
+  ],
+  [
+    "sealai-code-dump-2025-09-26.md",
+    {
+      "files": 1,
+      "bytes": 690747,
+      "loc": 20523
+    }
+  ],
+  [
+    "langgraph_backup",
+    {
+      "files": 23,
+      "bytes": 652787,
+      "loc": 1827
+    }
+  ],
+  [
+    "code_bundle_focus.txt",
+    {
+      "files": 1,
+      "bytes": 508567,
+      "loc": 13872
+    }
+  ],
+  [
+    "sealai-stack-20250918-1753.txt",
+    {
+      "files": 1,
+      "bytes": 500653,
+      "loc": 12299
+    }
+  ],
+  [
+    "code_dump_2025-09-25_1338.txt",
+    {
+      "files": 1,
+      "bytes": 281503,
+      "loc": 6640
+    }
+  ],
+  [
+    "package-lock.json",
+    {
+      "files": 1,
+      "bytes": 274003,
+      "loc": 7219
+    }
+  ],
+  [
+    "backend",
+    {
+      "files": 164,
+      "bytes": 252775,
+      "loc": 7486
+    }
+  ],
+  [
+    "backend_review.txt",
+    {
+      "files": 1,
+      "bytes": 175910,
+      "loc": 4840
+    }
+  ],
+  [
+    "consultgraph_full_dump.txt",
+    {
+      "files": 1,
+      "bytes": 85689,
+      "loc": 2018
+    }
+  ],
+  [
+    "keycloak",
+    {
+      "files": 14,
+      "bytes": 76755,
+      "loc": 2396
+    }
+  ],
+  [
+    "sidebar_chat_dump_20250915_140151.txt",
+    {
+      "files": 1,
+      "bytes": 73457,
+      "loc": 1839
+    }
+  ],
+  [
+    "calc_best_practice_backend.txt",
+    {
+      "files": 1,
+      "bytes": 50037,
+      "loc": 1441
+    }
+  ],
+  [
+    "nginx",
+    {
+      "files": 16,
+      "bytes": 49731,
+      "loc": 1454
+    }
+  ],
+  [
+    "docs",
+    {
+      "files": 9,
+      "bytes": 47626,
+      "loc": 783
+    }
+  ],
+  [
+    "frontend_review.txt",
+    {
+      "files": 1,
+      "bytes": 19867,
+      "loc": 637
+    }
+  ],
+  [
+    "grok-clone.html",
+    {
+      "files": 1,
+      "bytes": 18674,
+      "loc": 2
+    }
+  ],
+  [
+    "tests",
+    {
+      "files": 5,
+      "bytes": 16687,
+      "loc": 435
+    }
+  ],
+  [
+    "root@ubuntu-8gb-nbg1-1:~#",
+    {
+      "files": 1,
+      "bytes": 15481,
+      "loc": 379
+    }
+  ],
+  [
+    "audits",
+    {
+      "files": 2,
+      "bytes": 13920,
+      "loc": 356
+    }
+  ],
+  [
+    "archive",
+    {
+      "files": 10,
+      "bytes": 12384,
+      "loc": 346
+    }
+  ],
+  [
+    "k8s",
+    {
+      "files": 11,
+      "bytes": 9825,
+      "loc": 423
+    }
+  ],
+  [
+    "calc_best_practice_frontend.txt",
+    {
+      "files": 1,
+      "bytes": 9509,
+      "loc": 288
+    }
+  ],
+  [
+    "prompts",
+    {
+      "files": 6,
+      "bytes": 6544,
+      "loc": 102
+    }
+  ],
+  [
+    "Makefile",
+    {
+      "files": 1,
+      "bytes": 6127,
+      "loc": 104
+    }
+  ],
+  [
+    "loginpage_nextauth_correct.html",
+    {
+      "files": 1,
+      "bytes": 5604,
+      "loc": 120
+    }
+  ],
+  [
+    "benchmarks",
+    {
+      "files": 1,
+      "bytes": 5358,
+      "loc": 152
+    }
+  ],
+  [
+    "scripts",
+    {
+      "files": 1,
+      "bytes": 5295,
+      "loc": 168
+    }
+  ],
+  [
+    "default.conf",
+    {
+      "files": 1,
+      "bytes": 5265,
+      "loc": 148
+    }
+  ],
+  [
+    "docker-compose.yml",
+    {
+      "files": 1,
+      "bytes": 5092,
+      "loc": 169
+    }
+  ],
+  [
+    "research_agent.py",
+    {
+      "files": 1,
+      "bytes": 4755,
+      "loc": 121
+    }
+  ],
+  [
+    "certs",
+    {
+      "files": 2,
+      "bytes": 3096,
+      "loc": 52
+    }
+  ],
+  [
+    ".env.bak.1754931261",
+    {
+      "files": 1,
+      "bytes": 2978,
+      "loc": 84
+    }
+  ],
+  [
+    ".env.bak.1754931391",
+    {
+      "files": 1,
+      "bytes": 2974,
+      "loc": 84
+    }
+  ],
+  [
+    ".env.bak.1754931465",
+    {
+      "files": 1,
+      "bytes": 2974,
+      "loc": 84
+    }
+  ],
+  [
+    "ai.py",
+    {
+      "files": 1,
+      "bytes": 2768,
+      "loc": 64
+    }
+  ],
+  [
+    "keycloak.html",
+    {
+      "files": 1,
+      "bytes": 2736,
+      "loc": 98
+    }
+  ],
+  [
+    "refactor.sh",
+    {
+      "files": 1,
+      "bytes": 2685,
+      "loc": 88
+    }
+  ],
+  [
+    ".env.dev",
+    {
+      "files": 1,
+      "bytes": 2202,
+      "loc": 68
+    }
+  ],
+  [
+    ".github",
+    {
+      "files": 2,
+      "bytes": 2128,
+      "loc": 77
+    }
+  ],
+  [
+    ".env.example",
+    {
+      "files": 1,
+      "bytes": 2063,
+      "loc": 70
+    }
+  ],
+  [
+    "client.json",
+    {
+      "files": 1,
+      "bytes": 2047,
+      "loc": 54
+    }
+  ],
+  [
+    ".env.dev.bak",
+    {
+      "files": 1,
+      "bytes": 1979,
+      "loc": 59
+    }
+  ],
+  [
+    "MIGRATION_NOTES.md",
+    {
+      "files": 1,
+      "bytes": 1920,
+      "loc": 17
+    }
+  ],
+  [
+    "loginpage_nextauth.html",
+    {
+      "files": 1,
+      "bytes": 1797,
+      "loc": 48
+    }
+  ],
+  [
+    "requirements.txt",
+    {
+      "files": 1,
+      "bytes": 1783,
+      "loc": 93
+    }
+  ],
+  [
+    "nextauth (1).json",
+    {
+      "files": 1,
+      "bytes": 1752,
+      "loc": 65
+    }
+  ],
+  [
+    "loginpage.html",
+    {
+      "files": 1,
+      "bytes": 1726,
+      "loc": 47
+    }
+  ],
+  [
+    "calculix",
+    {
+      "files": 1,
+      "bytes": 1678,
+      "loc": 34
+    }
+  ],
+  [
+    "summarization_node.py",
+    {
+      "files": 1,
+      "bytes": 1676,
+      "loc": 39
+    }
+  ],
+  [
+    "migrate_structure.sh",
+    {
+      "files": 1,
+      "bytes": 1482,
+      "loc": 40
+    }
+  ],
+  [
+    "nginx-certbot",
+    {
+      "files": 2,
+      "bytes": 1417,
+      "loc": 47
+    }
+  ],
+  [
+    "kalkulation.py",
+    {
+      "files": 1,
+      "bytes": 1341,
+      "loc": 29
+    }
+  ],
+  [
+    "example-clone.html",
+    {
+      "files": 1,
+      "bytes": 1248,
+      "loc": 45
+    }
+  ],
+  [
+    "cleanup.sh",
+    {
+      "files": 1,
+      "bytes": 1225,
+      "loc": 42
+    }
+  ],
+  [
+    ".env.prod",
+    {
+      "files": 1,
+      "bytes": 1179,
+      "loc": 42
+    }
+  ],
+  [
+    "alembic.ini",
+    {
+      "files": 1,
+      "bytes": 1165,
+      "loc": 56
+    }
+  ],
+  [
+    "smoke_test.py",
+    {
+      "files": 1,
+      "bytes": 1039,
+      "loc": 34
+    }
+  ],
+  [
+    "deploy_notes.md",
+    {
+      "files": 1,
+      "bytes": 1008,
+      "loc": 22
+    }
+  ],
+  [
+    "CHANGELOG.md",
+    {
+      "files": 1,
+      "bytes": 878,
+      "loc": 16
+    }
+  ],
+  [
+    "package.json",
+    {
+      "files": 1,
+      "bytes": 844,
+      "loc": 35
+    }
+  ],
+  [
+    "test_langchain.py",
+    {
+      "files": 1,
+      "bytes": 824,
+      "loc": 22
+    }
+  ],
+  [
+    "PURGE_PLAN_20250828T065842Z.sh",
+    {
+      "files": 1,
+      "bytes": 814,
+      "loc": 37
+    }
+  ],
+  [
+    "langchain_core_stub",
+    {
+      "files": 2,
+      "bytes": 804,
+      "loc": 38
+    }
+  ],
+  [
+    "check_versions.sh",
+    {
+      "files": 1,
+      "bytes": 775,
+      "loc": 22
+    }
+  ],
+  [
+    "README.md",
+    {
+      "files": 1,
+      "bytes": 728,
+      "loc": 23
+    }
+  ],
+  [
+    "config",
+    {
+      "files": 1,
+      "bytes": 709,
+      "loc": 35
+    }
+  ],
+  [
+    ".gitignore",
+    {
+      "files": 1,
+      "bytes": 668,
+      "loc": 57
+    }
+  ],
+  [
+    "PURGE_PLAN_20250828T065932Z.sh",
+    {
+      "files": 1,
+      "bytes": 646,
+      "loc": 34
+    }
+  ],
+  [
+    "Dockerfile",
+    {
+      "files": 1,
+      "bytes": 625,
+      "loc": 26
+    }
+  ],
+  [
+    "Dockerfile.postgres",
+    {
+      "files": 1,
+      "bytes": 576,
+      "loc": 18
+    }
+  ],
+  [
+    "clone-grok.js",
+    {
+      "files": 1,
+      "bytes": 549,
+      "loc": 23
+    }
+  ],
+  [
+    "CLEANUP_PLAN_20250828T064323Z.sh",
+    {
+      "files": 1,
+      "bytes": 484,
+      "loc": 14
+    }
+  ],
+  [
+    "docker-compose.override.yml",
+    {
+      "files": 1,
+      "bytes": 484,
+      "loc": 29
+    }
+  ],
+  [
+    "test_stream.py",
+    {
+      "files": 1,
+      "bytes": 471,
+      "loc": 17
+    }
+  ],
+  [
+    "test_llm.py",
+    {
+      "files": 1,
+      "bytes": 438,
+      "loc": 13
+    }
+  ],
+  [
+    "cookies.txt",
+    {
+      "files": 1,
+      "bytes": 410,
+      "loc": 6
+    }
+  ],
+  [
+    "tailwind.config.cjs",
+    {
+      "files": 1,
+      "bytes": 353,
+      "loc": 12
+    }
+  ],
+  [
+    ".env",
+    {
+      "files": 1,
+      "bytes": 313,
+      "loc": 13
+    }
+  ],
+  [
+    "test_input.json",
+    {
+      "files": 1,
+      "bytes": 224,
+      "loc": 8
+    }
+  ],
+  [
+    "realm-export.json",
+    {
+      "files": 1,
+      "bytes": 220,
+      "loc": 13
+    }
+  ],
+  [
+    "docker-compose.deploy.yml",
+    {
+      "files": 1,
+      "bytes": 209,
+      "loc": 8
+    }
+  ],
+  [
+    "client_nextauth.json",
+    {
+      "files": 1,
+      "bytes": 121,
+      "loc": 1
+    }
+  ],
+  [
+    "test_example.py",
+    {
+      "files": 1,
+      "bytes": 89,
+      "loc": 5
+    }
+  ],
+  [
+    "postcss.config.js",
+    {
+      "files": 1,
+      "bytes": 83,
+      "loc": 6
+    }
+  ],
+  [
+    ".dockerignore",
+    {
+      "files": 1,
+      "bytes": 61,
+      "loc": 9
+    }
+  ],
+  [
+    ".env.keycloak",
+    {
+      "files": 1,
+      "bytes": 51,
+      "loc": 2
+    }
+  ],
+  [
+    ".env.local",
+    {
+      "files": 1,
+      "bytes": 40,
+      "loc": 1
+    }
+  ],
+  [
+    ".grok",
+    {
+      "files": 1,
+      "bytes": 33,
+      "loc": 3
+    }
+  ],
+  [
+    "=",
+    {
+      "files": 1,
+      "bytes": 0,
+      "loc": 0
+    }
+  ],
+  [
+    "PING",
+    {
+      "files": 1,
+      "bytes": 0,
+      "loc": 0
+    }
+  ],
+  [
+    "TEXT",
+    {
+      "files": 1,
+      "bytes": 0,
+      "loc": 0
+    }
+  ],
+  [
+    "next",
+    {
+      "files": 1,
+      "bytes": 0,
+      "loc": 0
+    }
+  ],
+  [
+    "{chat_id:",
+    {
+      "files": 1,
+      "bytes": 0,
+      "loc": 0
+    }
+  ]
+]

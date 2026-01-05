@@ -1,0 +1,25 @@
+{
+  "collectionName": "components_shared_product_tabs",
+  "info": {
+    "displayName": "Product Tab",
+    "icon": "layer-group"
+  },
+  "options": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "accordionItems": {
+      "type": "component",
+      "repeatable": true,
+      "component": "shared.accordion-item"
+    },
+    "image": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["images"]
+    }
+  }
+}

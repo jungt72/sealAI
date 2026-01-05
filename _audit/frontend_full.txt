@@ -1,0 +1,669 @@
+GESPEICHERT_UNTER: /root/sealai/_audit/frontend_full.txt
+###############################################################################
+# FILE: frontend/src/app/layout.tsx
+###############################################################################
+// src/app/layout.tsx
+import Providers from './providers'
+import type { ReactNode } from 'react'
+import '../styles/globals.css'
+import SiteBackground from '../components/SiteBackground'
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="de">
+      <body className="bg-black text-zinc-200 antialiased">
+        {/* Globaler Hintergrund für die komplette Seite */}
+        <SiteBackground />
+
+        <Providers>
+          {children}
+        </Providers>
+      </body>
+    </html>
+  )
+}
+
+
+###############################################################################
+# FILE: frontend/src/app/providers.tsx
+###############################################################################
+// src/app/providers.tsx
+'use client'
+
+import { SessionProvider } from 'next-auth/react'
+import type { ReactNode } from 'react'
+
+export default function Providers({ children }: { children: ReactNode }) {
+  return <SessionProvider>{children}</SessionProvider>
+}
+
+
+###############################################################################
+# FILE: frontend/src/app/api/langgraph/chat/route.ts
+###############################################################################
+import { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
+
+export const dynamic = "force-dynamic";
+
+export async function POST(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  let accessToken: string | undefined = undefined;
+
+  if (authHeader?.startsWith("Bearer ")) {
+    accessToken = authHeader.replace("Bearer ", "");
+  } else {
+    const token = await getToken({ req });
+    if (token && typeof token === "object") {
+      accessToken = (token as any).accessToken || (token as any).access_token;
+    }
+  }
+
+  if (!accessToken) {
+    return new Response("Unauthorized", { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+
+  const json = await req.text();
+
+  const base =
+    (process.env.BACKEND_URL ||
+      process.env.NEXT_PUBLIC_BACKEND_URL ||
+      "http://localhost:8000").replace(/\/$/, "");
+
+  const backendRes = await fetch(`${base}/api/v1/langgraph/chat/stream`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: json,
+  });
+
+  return new Response(backendRes.body, {
+    status: backendRes.status,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform, no-store",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
+
+###############################################################################
+# FILE: frontend/src/app/api/langgraph/chat/[conversationId]/chat_stream/route.ts
+###############################################################################
+// WS-only: SSE-Proxy deaktiviert.
+// Gibt 410 zurück, damit nichts mehr über SSE läuft.
+
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
+
+function gone() {
+  return new Response(
+    JSON.stringify({
+      error: "SSE removed. Please use WebSocket at /api/v1/ai/ws.",
+    }),
+    {
+      status: 410,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      },
+    }
+  );
+}
+
+export async function GET() {
+  return gone();
+}
+
+export async function POST() {
+  return gone();
+}
+
+
+###############################################################################
+# FILE: frontend/src/app/api/ai/chat/stream/route.ts
+###############################################################################
+/**
+ * Edge-Proxy für SSE zum FastAPI-Backend.
+ * Korrigiert auf /api/v1/langgraph/chat/stream2.
+ */
+import { NextRequest } from "next/server";
+
+export const runtime = "edge";
+
+const BASE = (process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "http://localhost:8000").replace(/\/$/, "");
+
+export async function POST(req: NextRequest) {
+  const body = await req.text();
+
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  });
+  const auth = req.headers.get("authorization");
+  if (auth) headers.set("authorization", auth);
+
+  const backendResp = await fetch(`${BASE}/api/v1/langgraph/chat/stream2`, {
+    method: "POST",
+    headers,
+    body,
+  });
+
+  return new Response(backendResp.body, {
+    status: backendResp.status,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform, no-store",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
+
+###############################################################################
+# FILE: frontend/src/lib/useChatWs.ts
+###############################################################################
+"use client";
+
+import * as React from "react";
+import ChatWsClient from "./ws";
+import { useAccessToken, fetchFreshAccessToken } from "./useAccessToken";
+
+export type UseChatWsArgs = { chatId?: string; endpoint?: string };
+
+type UseChatWsState = {
+  connected: boolean;
+  streaming: boolean;
+  threadId?: string;
+  agent?: string;
+  text: string;             // transient Stream-Puffer (wird nach DONE geleert)
+  lastError?: string;
+  lastUiAction?: any;       // zuletzt empfangenes UI-Event
+};
+
+export function useChatWs({ chatId = "default", endpoint }: UseChatWsArgs = {}) {
+  const { token } = useAccessToken();
+  const [state, setState] = React.useState<UseChatWsState>({
+    connected: false,
+    streaming: false,
+    text: "",
+  });
+
+  const clientRef = React.useRef<ChatWsClient>();
+  const awaitingSendRef = React.useRef(false);
+
+  const getToken = React.useCallback(async () => {
+    const fresh = await fetchFreshAccessToken().catch(() => undefined);
+    return fresh ?? token;
+  }, [token]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    if (!token) return;
+
+    const client = new ChatWsClient({
+      url: endpoint ?? "/api/v1/ai/ws",
+      getToken,
+      onOpen: () => mounted && setState((s) => ({ ...s, connected: true })),
+      onClose: () =>
+        mounted && setState((s) => ({ ...s, connected: false, streaming: false })),
+      onError: (ev: Event) =>
+        mounted &&
+        setState((s) => ({
+          ...s,
+          lastError: String((ev as any)?.message ?? "WebSocket error"),
+        })),
+      onStreamStart: ({ threadId, agent }) => {
+        if (!mounted || !awaitingSendRef.current) return;
+        setState((s) => ({
+          ...s,
+          streaming: true,
+          threadId,
+          agent,
+          text: "",
+        }));
+      },
+      onStreamDelta: ({ delta }) =>
+        mounted &&
+        setState((s) => ({
+          ...s,
+          text: (s.text ?? "") + String(delta),
+        })),
+      onStreamDone: () => {
+        if (!mounted) return;
+        awaitingSendRef.current = false;
+        setState((s) => ({ ...s, streaming: false, text: "" }));
+      },
+      onUiAction: (ua) => {
+        if (!mounted) return;
+        setState((s) => ({ ...s, lastUiAction: ua }));
+        // globales Event, damit Shell den linken Drawer öffnen kann
+        window.dispatchEvent(new CustomEvent("sealai:ui_action", { detail: ua }));
+      },
+    });
+
+    clientRef.current = client;
+    client.connect().catch((e: any) => {
+      if (!mounted) return;
+      setState((s) => ({ ...s, lastError: String(e?.message ?? e) }));
+    });
+
+    return () => {
+      mounted = false;
+      client.close();
+      clientRef.current = undefined;
+    };
+  }, [token, endpoint, getToken]);
+
+  const send = React.useCallback(
+    (input: string, extra?: Record<string, unknown>) => {
+      const trimmed = input?.trim();
+      if (!trimmed) return;
+      awaitingSendRef.current = true;
+      clientRef.current?.request(trimmed, chatId, extra);
+    },
+    [chatId],
+  );
+
+  const cancel = React.useCallback(() => {
+    clientRef.current?.cancel(state.threadId);
+    awaitingSendRef.current = false;
+    setState((s) => ({ ...s, streaming: false, text: "" }));
+  }, [state.threadId]);
+
+  const reset = React.useCallback(() => {
+    awaitingSendRef.current = false;
+    setState({ connected: !!state.connected, streaming: false, text: "" });
+  }, [state.connected]);
+
+  return { ...state, send, cancel, reset };
+}
+
+
+###############################################################################
+# FILE: frontend/src/lib/useChatSse.ts
+###############################################################################
+"use client";
+
+import * as React from "react";
+import { useSession } from "next-auth/react";
+
+type State = {
+  streaming: boolean;
+  text: string;
+  error: string | null;
+};
+
+export function useChatSse(endpoint: string = "/api/langgraph/chat") {
+  const { status } = useSession();
+  const [state, setState] = React.useState<State>({ streaming: false, text: "", error: null });
+  const controllerRef = React.useRef<AbortController | null>(null);
+
+  const send = React.useCallback(async (input: string, bodyExtra?: Record<string, unknown>) => {
+    if (status !== "authenticated") {
+      setState((s) => ({ ...s, error: "unauthenticated" }));
+      return;
+    }
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    controllerRef.current?.abort();
+    controllerRef.current = new AbortController();
+
+    setState({ streaming: true, text: "", error: null });
+
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({ input: trimmed, stream: true, ...(bodyExtra || {}) }),
+      signal: controllerRef.current.signal,
+    }).catch((e) => {
+      setState({ streaming: false, text: "", error: String(e?.message || "network_error") });
+      return null as any;
+    });
+
+    if (!resp || !resp.ok || !resp.body) {
+      if (resp) setState({ streaming: false, text: "", error: `http_${resp.status}` });
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const frames = buf.split("\n\n");
+        buf = frames.pop() ?? "";
+        for (const frame of frames) {
+          const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
+          if (!dataLine) continue;
+          try {
+            const payload = JSON.parse(dataLine.slice(6));
+            if (typeof payload?.delta === "string" && payload.delta.length) {
+              setState((s) => ({ ...s, text: s.text + payload.delta }));
+            } else if (payload?.final?.text) {
+              setState((s) => ({ ...s, text: payload.final.text }));
+            } else if (payload?.error) {
+              setState((s) => ({ ...s, error: String(payload.error) }));
+            }
+          } catch {
+            // ignore malformed frames
+          }
+        }
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") {
+        setState((s) => ({ ...s, error: String(e?.message || "stream_error") }));
+      }
+    } finally {
+      try { await reader.cancel(); } catch {}
+      setState((s) => ({ ...s, streaming: false }));
+    }
+  }, [status, endpoint]);
+
+  const cancel = React.useCallback(() => {
+    controllerRef.current?.abort();
+    setState((s) => ({ ...s, streaming: false }));
+  }, []);
+
+  const reset = React.useCallback(() => {
+    controllerRef.current?.abort();
+    setState({ streaming: false, text: "", error: null });
+  }, []);
+
+  return { ...state, send, cancel, reset };
+}
+
+
+###############################################################################
+# FILE: frontend/src/lib/utils.ts
+###############################################################################
+// 📁 frontend/app/lib/utils.ts
+export function cn(...classes: (string | false | null | undefined)[]) {
+  return classes.filter(Boolean).join(" ");
+}
+
+
+###############################################################################
+# FILE: frontend/src/types/chat.ts
+###############################################################################
+export type Message = {
+  role: "user" | "assistant" | "system";
+  content: string;
+};
+
+
+###############################################################################
+# FILE: frontend/src/styles/chat-markdown.css
+###############################################################################
+/* ===== Grok-like Markdown UX for SealAI ===== */
+:root{
+  --md-font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol", sans-serif;
+  --md-font-size: 15.5px;
+  --md-line-height: 1.65;
+  --md-tight-line: 1.45;
+
+  --md-fg: #111827;        /* text */
+  --md-fg-soft: #4B5563;   /* muted */
+  --md-fg-strong: #0F172A;
+
+  --md-hr: #E5E7EB;
+  --md-border: #E5E7EB;
+
+  --code-bg: #0F172A;      /* Grok: dark code blocks */
+  --code-fg: #F9FAFB;
+  --code-inline-bg: #F3F4F6;
+  --code-inline-fg: #374151;
+
+  --space-xxs: 0.25rem;
+  --space-xs:  0.375rem;
+  --space-sm:  0.5rem;
+  --space-md:  0.75rem;   /* primary paragraph gap ~12px */
+  --space-lg:  1rem;
+  --space-xl:  1.25rem;
+}
+
+/* Root container used by MarkdownMessage */
+.chat-markdown,
+.markdown-content,
+.markdown-body{
+  font-family: var(--md-font-family);
+  font-size: var(--md-font-size);
+  line-height: var(--md-line-height);
+  color: var(--md-fg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Paragraphs: compact like Grok */
+.chat-markdown p,
+.markdown-content p,
+.markdown-body p{
+  margin: var(--space-md) 0;
+}
+
+/* Headings: clear, not oversized */
+.chat-markdown h1, .markdown-content h1, .markdown-body h1{
+  font-size: 1.35rem;
+  line-height: var(--md-tight-line);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: var(--space-lg) 0 var(--space-sm);
+  color: var(--md-fg);
+}
+.chat-markdown h2, .markdown-content h2, .markdown-body h2{
+  font-size: 1.18rem;
+  line-height: var(--md-tight-line);
+  font-weight: 600;
+  margin: var(--space-lg) 0 var(--space-sm);
+}
+.chat-markdown h3, .markdown-content h3, .markdown-body h3{
+  font-size: 1.05rem;
+  line-height: var(--md-tight-line);
+  font-weight: 600;
+  margin: var(--space-md) 0 var(--space-xs);
+}
+.chat-markdown h4, .markdown-content h4, .markdown-body h4{
+  font-size: .98rem;
+  line-height: var(--md-tight-line);
+  font-weight: 600;
+  margin: var(--space-sm) 0 var(--space-xxs);
+}
+
+/* Links */
+.chat-markdown a,
+.markdown-content a,
+.markdown-body a{
+  color: #2563EB;
+  text-decoration: none;
+}
+.chat-markdown a:hover,
+.markdown-content a:hover,
+.markdown-body a:hover{
+  text-decoration: underline;
+}
+
+/* Blockquote: subtle */
+.chat-markdown blockquote,
+.markdown-content blockquote,
+.markdown-body blockquote{
+  margin: var(--space-md) 0;
+  padding: var(--space-xs) var(--space-md);
+  border-left: 3px solid var(--md-border);
+  color: var(--md-fg-soft);
+  background: #FAFAFA;
+  border-radius: 0 8px 8px 0;
+}
+
+/* Strong */
+.chat-markdown strong,
+.markdown-content strong,
+.markdown-body strong{
+  font-weight: 600;
+  color: var(--md-fg-strong);
+}
+
+/* Lists: top-level compact bullets, nested level as indented "–" dashes */
+.chat-markdown ul,
+.markdown-content ul,
+.markdown-body ul,
+.chat-markdown ol,
+.markdown-content ol,
+.markdown-body ol{
+  margin: var(--space-sm) 0;
+  padding-left: 1.15rem;
+}
+
+.chat-markdown li,
+.markdown-content li,
+.markdown-body li{
+  margin: 0.18rem 0;
+}
+
+/* Nested UL one level deeper → dash style with extra indent */
+.chat-markdown ul ul,
+.markdown-content ul ul,
+.markdown-body ul ul{
+  list-style: none;
+  padding-left: 1.25rem;
+  margin-top: 0.15rem;
+}
+.chat-markdown ul ul > li,
+.markdown-content ul ul > li,
+.markdown-body ul ul > li{
+  position: relative;
+  padding-left: 0.8rem;
+}
+.chat-markdown ul ul > li::before,
+.markdown-content ul ul > li::before,
+.markdown-body ul ul > li::before{
+  content: "–";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #374151;
+}
+
+/* Horizontal rule */
+.chat-markdown hr,
+.markdown-content hr,
+.markdown-body hr{
+  border: none;
+  border-top: 1px solid var(--md-hr);
+  margin: var(--space-lg) 0;
+}
+
+/* Images */
+.chat-markdown img,
+.markdown-content img,
+.markdown-body img{
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: var(--space-sm) 0;
+}
+
+/* Inline code */
+.chat-markdown code,
+.markdown-content code,
+.markdown-body code{
+  font-size: 0.92em;
+  padding: 0.15em 0.35em;
+  border-radius: 0.3em;
+  background: var(--code-inline-bg);
+  color: var(--code-inline-fg);
+}
+
+/* Code blocks */
+.chat-markdown pre,
+.markdown-content pre,
+.markdown-body pre{
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border-radius: 10px;
+  padding: 0.9em 1em;
+  margin: var(--space-sm) 0;
+  overflow-x: auto;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+/* Tables */
+.chat-markdown table,
+.markdown-content table,
+.markdown-body table{
+  border-collapse: collapse;
+  margin: var(--space-sm) 0;
+  width: 100%;
+}
+.chat-markdown th, .chat-markdown td,
+.markdown-content th, .markdown-content td,
+.markdown-body th, .markdown-body td{
+  border: 1px solid var(--md-border);
+  padding: 0.45rem 0.6rem;
+}
+.chat-markdown th,
+.markdown-content th,
+.markdown-body th{
+  background: #F8FAFC;
+  font-weight: 600;
+}
+
+/* Trim first/last margins inside message bubbles */
+.chat-markdown > :first-child,
+.markdown-content > :first-child,
+.markdown-body > :first-child{ margin-top: 0 !important; }
+.chat-markdown > :last-child,
+.markdown-content > :last-child,
+.markdown-body > :last-child{ margin-bottom: 0 !important; }
+
+/* ===== Components used by MarkdownMessage (cm-*) ===== */
+.cm-p,
+.cm-h1, .cm-h2, .cm-h3, .cm-h4,
+.cm-li, .cm-ul, .cm-ol,
+.cm-quote, .cm-a, .cm-th, .cm-td, .cm-table{
+  color: var(--md-fg);
+  font-size: var(--md-font-size);
+  line-height: var(--md-line-height);
+}
+
+.cm-h1 { font-size: 1.35rem; font-weight: 600; margin: var(--space-lg) 0 var(--space-sm); }
+.cm-h2 { font-size: 1.18rem; font-weight: 600; margin: var(--space-lg) 0 var(--space-sm); }
+.cm-h3 { font-size: 1.05rem; font-weight: 600; margin: var(--space-md) 0 var(--space-xs); }
+.cm-h4 { font-size: .98rem;  font-weight: 600; margin: var(--space-sm) 0 var(--space-xxs); }
+
+.cm-quote{
+  border-left: 3px solid var(--md-border);
+  background: #FAFAFA;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: 0 8px 8px 0;
+  color: var(--md-fg-soft);
+}
+
+.cm-a{ color:#2563EB; text-decoration:none; }
+.cm-a:hover{ text-decoration:underline; }
+
+.cm-th, .cm-td{
+  border: 1px solid var(--md-border);
+  padding: 0.45rem 0.6rem;
+}
+.cm-th{ background:#F8FAFC; font-weight:600; }
+
+
+

@@ -1,0 +1,192 @@
+*** Update File: backend/app/langgraph/state.py
+@@
+-from langchain_core.messages import BaseMessage
+-from langgraph.graph import add_messages
++from langchain_core.messages import (
++    AIMessage,
++    BaseMessage,
++    HumanMessage,
++    ToolMessage,
++)
++from langgraph.graph import add_messages
+@@
+-class SealAIState(TypedDict, total=False):
+-    messages: Annotated[List[BaseMessage], add_messages]  # Append-only
+-    slots: Dict[str, Any]  # Kleine primitive Werte
+-    routing: Routing
+-    context_refs: List[ContextRef]  # Nur IDs/Meta
+-    meta: MetaInfo
++class SealAIState(TypedDict, total=False):
++    messages: Annotated[List[BaseMessage], add_messages]
++    slots: Dict[str, Any]
++    routing: Routing
++    context_refs: List[ContextRef]
++    meta: MetaInfo
++
++
++def new_user_message(content: str, *, user_id: str, msg_id: str) -> HumanMessage:
++    return HumanMessage(content=content, id=msg_id, name=user_id)
++
++
++def new_assistant_message(content: str, *, msg_id: str) -> AIMessage:
++    return AIMessage(content=content, id=msg_id)
+*** End Patch
+*** Update File: backend/app/langgraph/nodes/entry_frontend.py
+@@
+-from ..state import SealAIState
+-from ..utils.ids import generate_message_id
++from langchain_core.messages import HumanMessage
++
++from ..state import SealAIState
++from ..utils.ids import generate_message_id
+@@
+-    message = {
+-        "id": generate_message_id(),
+-        "role": "user",
+-        "content": user_query,
+-    }
+-    messages = state.get("messages", []) or []
+-    return {"messages": messages + [message]}
++    messages = state.get("messages", []) or []
++    message = HumanMessage(
++        content=user_query,
++        id=generate_message_id(),
++        name=state.get("meta", {}).get("user_id", "user"),
++    )
++    return {"messages": [message], "slots": {**(state.get("slots") or {}), "last_query": user_query}}
+*** End Patch
+*** Update File: backend/app/langgraph/nodes/discovery_intake.py
+@@
+-from ..state import SealAIState
+-from ..utils.ids import generate_message_id
++from langchain_core.messages import AIMessage, HumanMessage
++
++from ..state import SealAIState
++from ..utils.ids import generate_message_id
+@@
+-    last_user_msg = next((m for m in reversed(state["messages"]) if m.type == "human"), None)
++    last_user_msg = next(
++        (m for m in reversed(state.get("messages", [])) if isinstance(m, HumanMessage)),
++        None,
++    )
+@@
+-    messages = state["messages"] + [{"id": generate_message_id(), "role": "assistant", "content": content}]
++    assistant_msg = AIMessage(content=content, id=generate_message_id())
++    messages = [assistant_msg]
+*** End Patch
+*** Update File: backend/app/langgraph/compile.py
+@@
+-from langgraph.graph import StateGraph
+-from langgraph.constants import END
++from langgraph.constants import END
++from langgraph.graph import StateGraph
++from langgraph.graph.state import CompiledStateGraph
+@@
+-from .subgraphs.material.compile import create_material_subgraph
+-from .subgraphs.debate.compile import create_debate_subgraph
+-from .utils.checkpointer import make_redis_checkpointer
++from .subgraphs.material.compile import create_material_subgraph
++from .subgraphs.debate.compile import create_debate_subgraph
++from .utils.checkpointer import make_redis_checkpointer
+@@
+-async def create_main_graph() -> Any:
++async def create_main_graph() -> CompiledStateGraph:
+@@
+-    graph.add_node("material_subgraph", create_material_subgraph())
+-    graph.add_node("debate_subgraph", create_debate_subgraph())
++    graph.add_compiled_graph("material_subgraph", create_material_subgraph())
++    graph.add_compiled_graph("debate_subgraph", create_debate_subgraph())
+@@
+-    checkpointer = await make_redis_checkpointer(redis_url, CHECKPOINTER_NAMESPACE_MAIN)
+-    if checkpointer is None:
+-        from langgraph.checkpoint.memory import MemorySaver
+-        checkpointer = MemorySaver()
+-    return graph.compile(checkpointer=checkpointer)
++    checkpointer = await make_redis_checkpointer(redis_url, CHECKPOINTER_NAMESPACE_MAIN)
++    compiled = graph.compile(checkpointer=checkpointer, interrupt_before=[])
++    return compiled
+*** End Patch
+*** Update File: backend/app/langgraph/utils/checkpointer.py
+@@
+-try:
+-    from redis.asyncio import Redis
+-    from langgraph.checkpoint.redis import AsyncRedisSaver
+-except ImportError:
+-    Redis = None
+-    AsyncRedisSaver = None
++try:
++    from redis.asyncio import Redis
++    from langgraph.checkpoint.redis import RedisSaver
++except ImportError:
++    Redis = None
++    RedisSaver = None
+@@
+-    if not redis_url or not Redis or not AsyncRedisSaver:
++    if not redis_url or not Redis or not RedisSaver:
+         return None
+-    client = Redis.from_url(redis_url)
+-    saver = AsyncRedisSaver(redis_client=client)
+-    await saver.setup()  # Einrichtung der Redis-Strukturen
+-    return saver
++    client = Redis.from_url(redis_url)
++    saver = RedisSaver(redis_client=client, namespace=namespace)
++    await saver.setup()
++    return saver
+*** End Patch
+*** Update File: backend/app/services/chat/ws_streaming.py
+@@
+-from app.services.chat.ws_commons import send_json_safe
+-from langgraph.constants import END  # wichtig
++from app.services.chat.ws_commons import send_json_safe
+@@
+-async def stream_langgraph(ws, payload):
++async def stream_langgraph(ws, payload):
+@@
+-        initial_state = SealAIState(
+-            messages=[],
+-            slots={"user_query": user_input},
+-            routing=Routing(),
+-            context_refs=[],
+-            meta=MetaInfo(thread_id=chat_id, user_id="ws_user", trace_id=str(uuid4())),
+-        )
+-
+-        config = {"configurable": {"thread_id": chat_id, "checkpoint_ns": CHECKPOINTER_NAMESPACE_MAIN}}
+-
+-        seen_messages = 0
+-        async for event in graph.astream(initial_state, config=config):
+-            for node, state in event.items():
+-                st = state or {}
+-                messages = st.get("messages", []) or []
+-
+-                if len(messages) > seen_messages:
+-                    new_messages = messages[seen_messages:]
+-                    for msg in new_messages:
+-                        if (msg.get("role") == "assistant") and ("content" in msg):
+-                            await send_json_safe(ws, {"event": "text", "text": msg.get("content", "")})
+-                    seen_messages = len(messages)
+-
+-                if node == END:
+-                    await send_json_safe(ws, {"event": "done"})
+-                    return
+-
+-        await send_json_safe(ws, {"event": "done"})
++        config = {
++            "configurable": {
++                "thread_id": chat_id,
++                "user_id": payload.get("user_id") or "ws_user",
++                "checkpoint_ns": CHECKPOINTER_NAMESPACE_MAIN,
++            }
++        }
++
++        async for event in graph.astream_events(
++            {"messages": [MetaInfo.new_user_message(user_input, chat_id)]},
++            config=config,
++            stream_mode="messages",
++        ):
++            if event["event"] == "messages":
++                for msg in event["data"]:
++                    await send_json_safe(ws, {"event": "text", "text": msg.content})
++            if event["event"] == "end":
++                await send_json_safe(ws, {"event": "done"})
++                return
+*** End Patch

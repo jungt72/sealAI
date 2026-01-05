@@ -9,20 +9,75 @@ Auth-Dependencies für FastAPI-/WebSocket-Endpoints.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import os
+
 from fastapi import Depends, HTTPException, WebSocket, status, Header
 
 from app.core.config import settings              # <-- korrekter Pfad!
-from app.services.auth.token import verify_access_token
+import app.services.auth.token as auth_token
+from app.langgraph_v2.contracts import error_detail
 
 
 # --------------------------------------------------------------------------- #
 # 1) HTTP-Dependency – für normale FastAPI-Routes
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class RequestUser:
+    user_id: str
+    username: str
+    sub: str
+    roles: list[str]
+
+
+def verify_access_token(token: str) -> dict:
+    return auth_token.verify_access_token(token)
+
+
+def _resolve_user_id(payload: dict) -> str:
+    claim = (os.getenv("AUTH_USER_ID_CLAIM") or "sub").strip()
+    value = payload.get(claim)
+    if value is None or value == "":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_id_claim", claim=claim),
+        )
+    return str(value)
+
+
+def _resolve_username(payload: dict) -> str:
+    value = payload.get("preferred_username") or payload.get("email") or payload.get("sub")
+    return str(value) if value else "anonymous"
+
+
+def _extract_roles(payload: dict) -> list[str]:
+    roles: set[str] = set()
+    realm_access = payload.get("realm_access")
+    if isinstance(realm_access, dict):
+        for role in realm_access.get("roles", []) or []:
+            if role:
+                roles.add(str(role))
+    resource_access = payload.get("resource_access")
+    if isinstance(resource_access, dict):
+        for entry in resource_access.values():
+            if not isinstance(entry, dict):
+                continue
+            for role in entry.get("roles", []) or []:
+                if role:
+                    roles.add(str(role))
+    return sorted(roles)
+
+
+def canonical_user_id(user: RequestUser) -> str:
+    """Return the canonical user id for scoping (claim-based preferred)."""
+    return user.user_id or user.sub
+
+
 async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     authorization: str | None = Header(default=None),
-) -> str:
+) -> RequestUser:
     """
-    Liefert den `preferred_username` aus dem gültigen JWT,
+    Liefert ein RequestUser-Objekt aus dem gültigen JWT,
     sonst → 401 UNAUTHORIZED.
     """
     if not authorization or not authorization.startswith("Bearer "):
@@ -32,15 +87,25 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
         )
 
     token = authorization.removeprefix("Bearer ").strip()
-    payload = verify_access_token(token)
-    return payload.get("preferred_username", "anonymous")
+    try:
+        payload = verify_access_token(token)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    user_id = _resolve_user_id(payload)
+    username = _resolve_username(payload)
+    sub = str(payload.get("sub") or user_id)
+    roles = _extract_roles(payload)
+    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)
 
 
 # --------------------------------------------------------------------------- #
 # 2) WebSocket-Dependency – für Chat-Streaming
 #    (unterstützt Header *oder* Query-Parameter ?token=/ ?access_token=)
 # --------------------------------------------------------------------------- #
-async def get_current_ws_user(websocket: WebSocket) -> str:
+async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
     """
     Prüft beim WS-Handshake das Access Token.
     Bevorzugt `Authorization: Bearer <token>`, fällt aber auf Query-Parameter
@@ -65,5 +130,15 @@ async def get_current_ws_user(websocket: WebSocket) -> str:
             detail="Kein Token gefunden (weder Authorization-Header noch Query-Param).",
         )
 
-    payload = verify_access_token(token)
-    return payload.get("preferred_username", "anonymous")
+    try:
+        payload = verify_access_token(token)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    user_id = _resolve_user_id(payload)
+    username = _resolve_username(payload)
+    sub = str(payload.get("sub") or user_id)
+    roles = _extract_roles(payload)
+    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)

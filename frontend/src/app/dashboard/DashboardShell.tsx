@@ -1,16 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useSession } from "next-auth/react";
-import SidebarLeft from "./components/Sidebar/SidebarLeft";
-import ChatScreen from "./ChatScreen";
+import { logout } from "../../lib/logout";
+import ContextSidebar from "./components/ContextSidebar";
 
 function LogoutButton() {
   const { status } = useSession();
   if (status !== "authenticated") return null;
 
-  const handleLogout = () => {
-    window.location.assign("/api/auth/sso-logout");
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error("Logout failed", error);
+      window.location.assign("/");
+    }
   };
 
   return (
@@ -26,42 +31,19 @@ function LogoutButton() {
   );
 }
 
-export default function DashboardShell() {
-  const [drawerOpen, setDrawerOpen] = useState(false);
-
-  useEffect(() => {
-    const onNeed = () => setDrawerOpen(true);
-    const onUi = (ev: any) => {
-      const ua = ev?.detail ?? ev;
-      const action = (typeof ua === "string") ? ua : (ua?.ui_action ?? ua?.action);
-      if (action === "open_form") setDrawerOpen(true);
-    };
-    window.addEventListener("sai:need-params", onNeed as EventListener);
-    window.addEventListener("sealai:ui_action", onUi as EventListener);
-    return () => {
-      window.removeEventListener("sai:need-params", onNeed as EventListener);
-      window.removeEventListener("sealai:ui_action", onUi as EventListener);
-    };
-  }, []);
-
-  // Esc schließt Drawer
-  useEffect(() => {
-    if (!drawerOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawerOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen]);
-
+export default function DashboardShell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen w-full bg-white">
-      <header className="sticky top-0 z-30 flex items-center justify-end px-4 py-3 bg-white/80 backdrop-blur border-b">
+    <div className="flex h-full w-full flex-col bg-white min-h-0 overflow-hidden">
+      <header className="sticky top-0 z-30 flex items-center justify-end px-4 py-3 bg-white/80 backdrop-blur border-b shrink-0">
         <LogoutButton />
       </header>
-      <div className="flex min-h-[calc(100vh-56px)]">
-        <SidebarLeft open={drawerOpen} onOpenChange={setDrawerOpen} />
-        <main className="flex-1 min-w-0">
-          <ChatScreen />
-        </main>
+
+      {/* KEY: min-h-0 + overflow-hidden => der Main kann wirklich scrollen */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto">{children}</main>
+        <div className="hidden xl:flex w-[360px] shrink-0 border-l border-slate-100 bg-white px-4 py-4 overflow-y-auto">
+          <ContextSidebar />
+        </div>
       </div>
     </div>
   );
