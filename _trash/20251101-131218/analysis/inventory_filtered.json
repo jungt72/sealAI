@@ -1,0 +1,3075 @@
+[
+  {
+    "path": ".dockerignore",
+    "size_bytes": 61,
+    "mtime_iso": "2025-07-02T17:53:33.879580+00:00",
+    "language": "binary",
+    "loc": 9
+  },
+  {
+    "path": ".env",
+    "size_bytes": 313,
+    "mtime_iso": "2025-10-10T19:36:34.320542+00:00",
+    "language": "binary",
+    "loc": 13
+  },
+  {
+    "path": ".env.bak.1754931261",
+    "size_bytes": 2978,
+    "mtime_iso": "2025-08-11T16:46:24.862873+00:00",
+    "language": "1754931261",
+    "loc": 84
+  },
+  {
+    "path": ".env.bak.1754931391",
+    "size_bytes": 2974,
+    "mtime_iso": "2025-08-11T16:54:21.110444+00:00",
+    "language": "1754931391",
+    "loc": 84
+  },
+  {
+    "path": ".env.bak.1754931465",
+    "size_bytes": 2974,
+    "mtime_iso": "2025-08-11T16:56:31.639779+00:00",
+    "language": "1754931465",
+    "loc": 84
+  },
+  {
+    "path": ".env.dev",
+    "size_bytes": 2202,
+    "mtime_iso": "2025-10-09T12:51:53.917987+00:00",
+    "language": "dev",
+    "loc": 68
+  },
+  {
+    "path": ".env.dev.bak",
+    "size_bytes": 1979,
+    "mtime_iso": "2025-09-30T08:49:33.752363+00:00",
+    "language": "bak",
+    "loc": 59
+  },
+  {
+    "path": ".env.example",
+    "size_bytes": 2063,
+    "mtime_iso": "2025-09-25T12:40:53.853652+00:00",
+    "language": "example",
+    "loc": 70
+  },
+  {
+    "path": ".env.keycloak",
+    "size_bytes": 51,
+    "mtime_iso": "2025-05-14T09:51:18.814798+00:00",
+    "language": "keycloak",
+    "loc": 2
+  },
+  {
+    "path": ".env.local",
+    "size_bytes": 40,
+    "mtime_iso": "2025-03-07T07:40:22.643681+00:00",
+    "language": "local",
+    "loc": 1
+  },
+  {
+    "path": ".env.prod",
+    "size_bytes": 1179,
+    "mtime_iso": "2025-09-01T10:39:31.007475+00:00",
+    "language": "prod",
+    "loc": 42
+  },
+  {
+    "path": ".github/workflows/ci.yml",
+    "size_bytes": 1139,
+    "mtime_iso": "2025-10-02T06:57:05.189199+00:00",
+    "language": "yml",
+    "loc": 50
+  },
+  {
+    "path": ".github/workflows/deploy.yml",
+    "size_bytes": 989,
+    "mtime_iso": "2025-09-25T12:46:55.982833+00:00",
+    "language": "yml",
+    "loc": 27
+  },
+  {
+    "path": ".gitignore",
+    "size_bytes": 668,
+    "mtime_iso": "2025-09-25T12:46:55.982833+00:00",
+    "language": "binary",
+    "loc": 57
+  },
+  {
+    "path": ".grok/settings.json",
+    "size_bytes": 33,
+    "mtime_iso": "2025-10-09T13:52:04.220338+00:00",
+    "language": "json",
+    "loc": 3
+  },
+  {
+    "path": "=",
+    "size_bytes": 0,
+    "mtime_iso": "2025-09-25T12:46:55.982833+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "CHANGELOG.md",
+    "size_bytes": 878,
+    "mtime_iso": "2025-10-06T12:07:13.627416+00:00",
+    "language": "md",
+    "loc": 16
+  },
+  {
+    "path": "CLEANUP_PLAN_20250828T064323Z.sh",
+    "size_bytes": 484,
+    "mtime_iso": "2025-09-25T12:46:55.982833+00:00",
+    "language": "sh",
+    "loc": 14
+  },
+  {
+    "path": "Dockerfile",
+    "size_bytes": 625,
+    "mtime_iso": "2025-07-02T17:50:36.697611+00:00",
+    "language": "binary",
+    "loc": 26
+  },
+  {
+    "path": "Dockerfile.postgres",
+    "size_bytes": 576,
+    "mtime_iso": "2025-03-14T08:22:31.065296+00:00",
+    "language": "postgres",
+    "loc": 18
+  },
+  {
+    "path": "MIGRATION_NOTES.md",
+    "size_bytes": 1920,
+    "mtime_iso": "2025-10-06T12:06:35.551603+00:00",
+    "language": "md",
+    "loc": 17
+  },
+  {
+    "path": "Makefile",
+    "size_bytes": 6127,
+    "mtime_iso": "2025-10-06T10:45:31.301223+00:00",
+    "language": "binary",
+    "loc": 104
+  },
+  {
+    "path": "PING",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-12T13:30:44.461051+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "PURGE_PLAN_20250828T065842Z.sh",
+    "size_bytes": 814,
+    "mtime_iso": "2025-08-28T06:58:42.439804+00:00",
+    "language": "sh",
+    "loc": 37
+  },
+  {
+    "path": "PURGE_PLAN_20250828T065932Z.sh",
+    "size_bytes": 646,
+    "mtime_iso": "2025-08-28T06:59:32.829552+00:00",
+    "language": "sh",
+    "loc": 34
+  },
+  {
+    "path": "README.md",
+    "size_bytes": 728,
+    "mtime_iso": "2025-10-13T07:06:35.649156+00:00",
+    "language": "md",
+    "loc": 23
+  },
+  {
+    "path": "TEXT",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-12T13:30:44.767050+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "ai.py",
+    "size_bytes": 2768,
+    "mtime_iso": "2025-09-25T12:46:55.991833+00:00",
+    "language": "py",
+    "loc": 64
+  },
+  {
+    "path": "alembic.ini",
+    "size_bytes": 1165,
+    "mtime_iso": "2025-09-25T12:46:55.991833+00:00",
+    "language": "ini",
+    "loc": 56
+  },
+  {
+    "path": "archive/langgraph_legacy/nodes/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-09-25T12:46:55.998833+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "archive/langgraph_legacy/nodes/deterministic.py",
+    "size_bytes": 1785,
+    "mtime_iso": "2025-09-25T12:46:55.998833+00:00",
+    "language": "py",
+    "loc": 49
+  },
+  {
+    "path": "archive/langgraph_legacy/nodes/explain_nodes.py",
+    "size_bytes": 1255,
+    "mtime_iso": "2025-09-25T12:46:55.998833+00:00",
+    "language": "py",
+    "loc": 31
+  },
+  {
+    "path": "archive/langgraph_legacy/nodes/rag_nodes.py",
+    "size_bytes": 1478,
+    "mtime_iso": "2025-09-25T12:46:55.998833+00:00",
+    "language": "py",
+    "loc": 36
+  },
+  {
+    "path": "archive/langgraph_legacy/nodes/rfq_nodes.py",
+    "size_bytes": 1777,
+    "mtime_iso": "2025-09-25T12:46:55.998833+00:00",
+    "language": "py",
+    "loc": 42
+  },
+  {
+    "path": "archive/langgraph_legacy/policies/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-09-25T12:46:55.999833+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "archive/langgraph_legacy/policies/model_routing.py",
+    "size_bytes": 2004,
+    "mtime_iso": "2025-09-25T12:46:55.999833+00:00",
+    "language": "py",
+    "loc": 59
+  },
+  {
+    "path": "archive/langgraph_legacy/redis_checkpointer.py",
+    "size_bytes": 1798,
+    "mtime_iso": "2025-10-01T14:30:19.855614+00:00",
+    "language": "py",
+    "loc": 46
+  },
+  {
+    "path": "archive/langgraph_legacy/sealai_consult_flow.py",
+    "size_bytes": 954,
+    "mtime_iso": "2025-09-25T12:46:55.998833+00:00",
+    "language": "py",
+    "loc": 27
+  },
+  {
+    "path": "archive/langgraph_legacy/state.py",
+    "size_bytes": 1333,
+    "mtime_iso": "2025-09-25T12:46:55.998833+00:00",
+    "language": "py",
+    "loc": 56
+  },
+  {
+    "path": "audits/llm_audit_20250825_060042/files.clean",
+    "size_bytes": 6960,
+    "mtime_iso": "2025-09-25T12:46:55.991833+00:00",
+    "language": "clean",
+    "loc": 178
+  },
+  {
+    "path": "audits/llm_audit_20250825_060042/files.list",
+    "size_bytes": 6960,
+    "mtime_iso": "2025-09-25T12:46:55.991833+00:00",
+    "language": "list",
+    "loc": 178
+  },
+  {
+    "path": "backend/.env",
+    "size_bytes": 3329,
+    "mtime_iso": "2025-10-12T11:14:05.988345+00:00",
+    "language": "binary",
+    "loc": 120
+  },
+  {
+    "path": "backend/.env.example",
+    "size_bytes": 504,
+    "mtime_iso": "2025-09-30T09:20:05.821386+00:00",
+    "language": "example",
+    "loc": 15
+  },
+  {
+    "path": "backend/Dockerfile",
+    "size_bytes": 1733,
+    "mtime_iso": "2025-10-25T08:29:25.075793+00:00",
+    "language": "binary",
+    "loc": 54
+  },
+  {
+    "path": "backend/LLM_FLOW.md",
+    "size_bytes": 2181,
+    "mtime_iso": "2025-10-02T06:51:19.404957+00:00",
+    "language": "md",
+    "loc": 43
+  },
+  {
+    "path": "backend/agents/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-13T10:20:08.314077+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/agents/material_agent/Dockerfile",
+    "size_bytes": 241,
+    "mtime_iso": "2025-09-30T09:26:21.001532+00:00",
+    "language": "binary",
+    "loc": 8
+  },
+  {
+    "path": "backend/agents/material_agent/main.py",
+    "size_bytes": 1539,
+    "mtime_iso": "2025-10-10T19:35:44.784791+00:00",
+    "language": "py",
+    "loc": 51
+  },
+  {
+    "path": "backend/agents/material_agent/requirements.txt",
+    "size_bytes": 60,
+    "mtime_iso": "2025-09-30T09:26:18.682543+00:00",
+    "language": "txt",
+    "loc": 4
+  },
+  {
+    "path": "backend/agents/normen_agent/Dockerfile",
+    "size_bytes": 240,
+    "mtime_iso": "2025-09-30T09:05:46.248618+00:00",
+    "language": "binary",
+    "loc": 7
+  },
+  {
+    "path": "backend/agents/normen_agent/main.py",
+    "size_bytes": 1299,
+    "mtime_iso": "2025-10-10T19:35:44.786792+00:00",
+    "language": "py",
+    "loc": 44
+  },
+  {
+    "path": "backend/agents/normen_agent/requirements.txt",
+    "size_bytes": 59,
+    "mtime_iso": "2025-09-30T09:05:35.631670+00:00",
+    "language": "txt",
+    "loc": 3
+  },
+  {
+    "path": "backend/agents/supervisor_stack.py",
+    "size_bytes": 11903,
+    "mtime_iso": "2025-10-13T13:08:44.795749+00:00",
+    "language": "py",
+    "loc": 316
+  },
+  {
+    "path": "backend/alembic.ini",
+    "size_bytes": 669,
+    "mtime_iso": "2025-09-25T12:46:55.991833+00:00",
+    "language": "ini",
+    "loc": 34
+  },
+  {
+    "path": "backend/alembic/env.py",
+    "size_bytes": 1776,
+    "mtime_iso": "2025-10-10T19:35:44.826791+00:00",
+    "language": "py",
+    "loc": 58
+  },
+  {
+    "path": "backend/alembic/script.py.mako",
+    "size_bytes": 650,
+    "mtime_iso": "2025-04-16T11:57:06.756754+00:00",
+    "language": "mako",
+    "loc": 19
+  },
+  {
+    "path": "backend/alembic/versions/70968fe4c62e_add_form_results_table.py",
+    "size_bytes": 1022,
+    "mtime_iso": "2025-10-10T19:35:44.822791+00:00",
+    "language": "py",
+    "loc": 30
+  },
+  {
+    "path": "backend/alembic/versions/8b7f4c21d3ab_add_user_profiles_table.py",
+    "size_bytes": 964,
+    "mtime_iso": "2025-10-10T19:35:44.824791+00:00",
+    "language": "py",
+    "loc": 38
+  },
+  {
+    "path": "backend/alembic/versions/963dc293d186_initial_schema.py",
+    "size_bytes": 1565,
+    "mtime_iso": "2025-10-10T19:35:44.819791+00:00",
+    "language": "py",
+    "loc": 40
+  },
+  {
+    "path": "backend/app/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.682792+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/api/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.731792+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/api/routes/__init__.py",
+    "size_bytes": 70,
+    "mtime_iso": "2025-10-10T19:35:44.733792+00:00",
+    "language": "py",
+    "loc": 3
+  },
+  {
+    "path": "backend/app/api/routes/chat.py",
+    "size_bytes": 2063,
+    "mtime_iso": "2025-10-13T14:08:17.700251+00:00",
+    "language": "py",
+    "loc": 69
+  },
+  {
+    "path": "backend/app/api/routes/chat_utils.py",
+    "size_bytes": 443,
+    "mtime_iso": "2025-10-13T06:31:58.163209+00:00",
+    "language": "py",
+    "loc": 18
+  },
+  {
+    "path": "backend/app/api/v1/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.706792+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/api/v1/api.py",
+    "size_bytes": 1038,
+    "mtime_iso": "2025-10-10T19:35:44.716792+00:00",
+    "language": "py",
+    "loc": 37
+  },
+  {
+    "path": "backend/app/api/v1/dependencies/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.708792+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/api/v1/dependencies/auth.py",
+    "size_bytes": 12085,
+    "mtime_iso": "2025-10-10T19:35:44.710792+00:00",
+    "language": "py",
+    "loc": 344
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.717792+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/ai.py",
+    "size_bytes": 8337,
+    "mtime_iso": "2025-10-13T10:20:27.907983+00:00",
+    "language": "py",
+    "loc": 240
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/ai.py.bak",
+    "size_bytes": 7130,
+    "mtime_iso": "2025-10-13T07:43:42.876357+00:00",
+    "language": "bak",
+    "loc": 212
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/auth.py",
+    "size_bytes": 1466,
+    "mtime_iso": "2025-10-10T19:35:44.727792+00:00",
+    "language": "py",
+    "loc": 44
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/consult_invoke.py",
+    "size_bytes": 1016,
+    "mtime_iso": "2025-10-13T06:34:16.017538+00:00",
+    "language": "py",
+    "loc": 30
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/memory.py",
+    "size_bytes": 5447,
+    "mtime_iso": "2025-10-10T19:35:44.721792+00:00",
+    "language": "py",
+    "loc": 142
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/rfq.py",
+    "size_bytes": 448,
+    "mtime_iso": "2025-10-10T19:35:44.728792+00:00",
+    "language": "py",
+    "loc": 12
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/system.py",
+    "size_bytes": 737,
+    "mtime_iso": "2025-10-13T06:33:54.792641+00:00",
+    "language": "py",
+    "loc": 27
+  },
+  {
+    "path": "backend/app/api/v1/endpoints/users.py",
+    "size_bytes": 241,
+    "mtime_iso": "2025-10-10T19:35:44.730792+00:00",
+    "language": "py",
+    "loc": 8
+  },
+  {
+    "path": "backend/app/api/v1/schemas/chat.py",
+    "size_bytes": 924,
+    "mtime_iso": "2025-10-10T19:35:44.712792+00:00",
+    "language": "py",
+    "loc": 28
+  },
+  {
+    "path": "backend/app/api/v1/schemas/form.py",
+    "size_bytes": 447,
+    "mtime_iso": "2025-10-10T19:35:44.714792+00:00",
+    "language": "py",
+    "loc": 17
+  },
+  {
+    "path": "backend/app/cli/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.689792+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/common/obs.py",
+    "size_bytes": 3291,
+    "mtime_iso": "2025-10-10T19:35:44.685792+00:00",
+    "language": "py",
+    "loc": 102
+  },
+  {
+    "path": "backend/app/core/config.py",
+    "size_bytes": 2484,
+    "mtime_iso": "2025-10-10T19:35:44.681792+00:00",
+    "language": "py",
+    "loc": 94
+  },
+  {
+    "path": "backend/app/database.py",
+    "size_bytes": 844,
+    "mtime_iso": "2025-10-10T19:35:44.474793+00:00",
+    "language": "py",
+    "loc": 31
+  },
+  {
+    "path": "backend/app/langgraph/__init__.py",
+    "size_bytes": 44,
+    "mtime_iso": "2025-10-13T07:03:10.041138+00:00",
+    "language": "py",
+    "loc": 1
+  },
+  {
+    "path": "backend/app/langgraph/compile.py",
+    "size_bytes": 2511,
+    "mtime_iso": "2025-10-13T13:53:24.154640+00:00",
+    "language": "py",
+    "loc": 65
+  },
+  {
+    "path": "backend/app/langgraph/compile.py.bak",
+    "size_bytes": 2375,
+    "mtime_iso": "2025-10-13T13:36:47.408545+00:00",
+    "language": "bak",
+    "loc": 64
+  },
+  {
+    "path": "backend/app/langgraph/config/agents.yaml",
+    "size_bytes": 1058,
+    "mtime_iso": "2025-10-13T07:17:10.630100+00:00",
+    "language": "yaml",
+    "loc": 45
+  },
+  {
+    "path": "backend/app/langgraph/constants.py",
+    "size_bytes": 384,
+    "mtime_iso": "2025-10-13T10:32:12.297575+00:00",
+    "language": "py",
+    "loc": 11
+  },
+  {
+    "path": "backend/app/langgraph/nodes/confirm_gate.py",
+    "size_bytes": 286,
+    "mtime_iso": "2025-10-13T13:45:26.383994+00:00",
+    "language": "py",
+    "loc": 8
+  },
+  {
+    "path": "backend/app/langgraph/nodes/discovery_intake.py",
+    "size_bytes": 841,
+    "mtime_iso": "2025-10-13T13:45:13.018059+00:00",
+    "language": "py",
+    "loc": 18
+  },
+  {
+    "path": "backend/app/langgraph/nodes/entry_frontend.py",
+    "size_bytes": 569,
+    "mtime_iso": "2025-10-13T13:44:45.002198+00:00",
+    "language": "py",
+    "loc": 18
+  },
+  {
+    "path": "backend/app/langgraph/nodes/exit_response.py",
+    "size_bytes": 540,
+    "mtime_iso": "2025-10-13T13:46:42.800617+00:00",
+    "language": "py",
+    "loc": 17
+  },
+  {
+    "path": "backend/app/langgraph/nodes/intent_projector.py",
+    "size_bytes": 667,
+    "mtime_iso": "2025-10-13T13:45:55.759849+00:00",
+    "language": "py",
+    "loc": 22
+  },
+  {
+    "path": "backend/app/langgraph/nodes/resolver.py",
+    "size_bytes": 578,
+    "mtime_iso": "2025-10-13T13:46:19.175734+00:00",
+    "language": "py",
+    "loc": 18
+  },
+  {
+    "path": "backend/app/langgraph/nodes/supervisor.py",
+    "size_bytes": 203,
+    "mtime_iso": "2025-10-13T13:46:08.312787+00:00",
+    "language": "py",
+    "loc": 7
+  },
+  {
+    "path": "backend/app/langgraph/prompts/debate/initiator.md",
+    "size_bytes": 90,
+    "mtime_iso": "2025-10-13T07:06:24.243210+00:00",
+    "language": "md",
+    "loc": 3
+  },
+  {
+    "path": "backend/app/langgraph/prompts/material_agent.md",
+    "size_bytes": 172,
+    "mtime_iso": "2025-10-13T07:04:43.534691+00:00",
+    "language": "md",
+    "loc": 5
+  },
+  {
+    "path": "backend/app/langgraph/prompts/synthesis.md",
+    "size_bytes": 110,
+    "mtime_iso": "2025-10-13T07:11:41.215693+00:00",
+    "language": "md",
+    "loc": 3
+  },
+  {
+    "path": "backend/app/langgraph/state.py",
+    "size_bytes": 1236,
+    "mtime_iso": "2025-10-13T10:56:30.450528+00:00",
+    "language": "py",
+    "loc": 37
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/debate/__init__.py",
+    "size_bytes": 38,
+    "mtime_iso": "2025-10-13T07:04:17.020818+00:00",
+    "language": "py",
+    "loc": 1
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/debate/compile.py",
+    "size_bytes": 380,
+    "mtime_iso": "2025-10-13T12:56:59.566237+00:00",
+    "language": "py",
+    "loc": 13
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/debate/nodes/debate_agent.py",
+    "size_bytes": 649,
+    "mtime_iso": "2025-10-13T13:50:34.234477+00:00",
+    "language": "py",
+    "loc": 17
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/__init__.py",
+    "size_bytes": 40,
+    "mtime_iso": "2025-10-13T07:03:12.212127+00:00",
+    "language": "py",
+    "loc": 1
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/compile.py",
+    "size_bytes": 871,
+    "mtime_iso": "2025-10-13T12:56:38.502344+00:00",
+    "language": "py",
+    "loc": 23
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/nodes/material_agent.py",
+    "size_bytes": 845,
+    "mtime_iso": "2025-10-13T13:47:53.888267+00:00",
+    "language": "py",
+    "loc": 23
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+    "size_bytes": 1099,
+    "mtime_iso": "2025-10-13T13:48:48.332999+00:00",
+    "language": "py",
+    "loc": 29
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/nodes/synthesis.py",
+    "size_bytes": 1406,
+    "mtime_iso": "2025-10-13T13:49:48.531702+00:00",
+    "language": "py",
+    "loc": 39
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/nodes/tools_node.py",
+    "size_bytes": 220,
+    "mtime_iso": "2025-10-13T11:00:37.730335+00:00",
+    "language": "py",
+    "loc": 7
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/state.py",
+    "size_bytes": 115,
+    "mtime_iso": "2025-10-13T07:05:20.179516+00:00",
+    "language": "py",
+    "loc": 3
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/profil/__init__.py",
+    "size_bytes": 38,
+    "mtime_iso": "2025-10-13T07:04:11.663843+00:00",
+    "language": "py",
+    "loc": 1
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/validierung/__init__.py",
+    "size_bytes": 43,
+    "mtime_iso": "2025-10-13T07:04:13.591834+00:00",
+    "language": "py",
+    "loc": 1
+  },
+  {
+    "path": "backend/app/langgraph/tests/test_hybrid_flow.py",
+    "size_bytes": 1005,
+    "mtime_iso": "2025-10-13T10:32:07.898597+00:00",
+    "language": "py",
+    "loc": 34
+  },
+  {
+    "path": "backend/app/langgraph/tests/test_interrupt_resume.py",
+    "size_bytes": 177,
+    "mtime_iso": "2025-10-13T07:04:53.340644+00:00",
+    "language": "py",
+    "loc": 5
+  },
+  {
+    "path": "backend/app/langgraph/tests/test_rag_ref_only.py",
+    "size_bytes": 712,
+    "mtime_iso": "2025-10-13T07:12:12.829540+00:00",
+    "language": "py",
+    "loc": 17
+  },
+  {
+    "path": "backend/app/langgraph/tests/test_resolver_determinism.py",
+    "size_bytes": 437,
+    "mtime_iso": "2025-10-13T07:12:18.808511+00:00",
+    "language": "py",
+    "loc": 13
+  },
+  {
+    "path": "backend/app/langgraph/tests/test_singleflow_entry_to_exit.py",
+    "size_bytes": 1683,
+    "mtime_iso": "2025-10-13T07:15:09.951683+00:00",
+    "language": "py",
+    "loc": 43
+  },
+  {
+    "path": "backend/app/langgraph/tests/test_state.py",
+    "size_bytes": 649,
+    "mtime_iso": "2025-10-13T07:04:46.406677+00:00",
+    "language": "py",
+    "loc": 21
+  },
+  {
+    "path": "backend/app/langgraph/tests/test_toolnode_errors.py",
+    "size_bytes": 165,
+    "mtime_iso": "2025-10-13T07:04:50.942656+00:00",
+    "language": "py",
+    "loc": 5
+  },
+  {
+    "path": "backend/app/langgraph/tools/material_calculator.py",
+    "size_bytes": 1159,
+    "mtime_iso": "2025-10-13T07:11:52.933636+00:00",
+    "language": "py",
+    "loc": 39
+  },
+  {
+    "path": "backend/app/langgraph/types.py",
+    "size_bytes": 647,
+    "mtime_iso": "2025-10-13T10:11:01.893722+00:00",
+    "language": "py",
+    "loc": 26
+  },
+  {
+    "path": "backend/app/langgraph/utils/checkpointer.py",
+    "size_bytes": 759,
+    "mtime_iso": "2025-10-13T13:55:30.299019+00:00",
+    "language": "py",
+    "loc": 25
+  },
+  {
+    "path": "backend/app/langgraph/utils/checkpointer.py.bak",
+    "size_bytes": 455,
+    "mtime_iso": "2025-10-13T13:40:14.971528+00:00",
+    "language": "bak",
+    "loc": 15
+  },
+  {
+    "path": "backend/app/langgraph/utils/checkpointer.py.bak2",
+    "size_bytes": 492,
+    "mtime_iso": "2025-10-13T12:52:03.044733+00:00",
+    "language": "bak2",
+    "loc": 17
+  },
+  {
+    "path": "backend/app/langgraph/utils/errors.py",
+    "size_bytes": 122,
+    "mtime_iso": "2025-10-13T07:04:38.549715+00:00",
+    "language": "py",
+    "loc": 7
+  },
+  {
+    "path": "backend/app/langgraph/utils/ids.py",
+    "size_bytes": 266,
+    "mtime_iso": "2025-10-13T07:04:40.671705+00:00",
+    "language": "py",
+    "loc": 12
+  },
+  {
+    "path": "backend/app/langgraph/utils/jinja_renderer.py",
+    "size_bytes": 284,
+    "mtime_iso": "2025-10-13T07:04:32.093746+00:00",
+    "language": "py",
+    "loc": 9
+  },
+  {
+    "path": "backend/app/langgraph/utils/llm.py",
+    "size_bytes": 1000,
+    "mtime_iso": "2025-10-13T13:47:24.687411+00:00",
+    "language": "py",
+    "loc": 28
+  },
+  {
+    "path": "backend/app/langgraph/utils/logging.py",
+    "size_bytes": 211,
+    "mtime_iso": "2025-10-13T07:04:36.440725+00:00",
+    "language": "py",
+    "loc": 9
+  },
+  {
+    "path": "backend/app/main.py",
+    "size_bytes": 2146,
+    "mtime_iso": "2025-10-13T06:33:33.952743+00:00",
+    "language": "py",
+    "loc": 82
+  },
+  {
+    "path": "backend/app/models/beratungsergebnis.py",
+    "size_bytes": 559,
+    "mtime_iso": "2025-10-10T19:35:44.701792+00:00",
+    "language": "py",
+    "loc": 16
+  },
+  {
+    "path": "backend/app/models/chat_message.py",
+    "size_bytes": 501,
+    "mtime_iso": "2025-10-10T19:35:44.703792+00:00",
+    "language": "py",
+    "loc": 14
+  },
+  {
+    "path": "backend/app/models/form_result.py",
+    "size_bytes": 579,
+    "mtime_iso": "2025-10-10T19:35:44.698792+00:00",
+    "language": "py",
+    "loc": 15
+  },
+  {
+    "path": "backend/app/models/long_term_memory.py",
+    "size_bytes": 499,
+    "mtime_iso": "2025-10-10T19:35:44.694792+00:00",
+    "language": "py",
+    "loc": 12
+  },
+  {
+    "path": "backend/app/models/postgres_logger.py",
+    "size_bytes": 880,
+    "mtime_iso": "2025-10-10T19:35:44.705792+00:00",
+    "language": "py",
+    "loc": 35
+  },
+  {
+    "path": "backend/app/services/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.486793+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/services/auth/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.479793+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/services/auth/dependencies.py",
+    "size_bytes": 2739,
+    "mtime_iso": "2025-10-10T19:35:44.476793+00:00",
+    "language": "py",
+    "loc": 69
+  },
+  {
+    "path": "backend/app/services/auth/jwt_utils.py",
+    "size_bytes": 551,
+    "mtime_iso": "2025-10-10T19:35:44.480793+00:00",
+    "language": "py",
+    "loc": 18
+  },
+  {
+    "path": "backend/app/services/auth/token.py",
+    "size_bytes": 3413,
+    "mtime_iso": "2025-10-10T19:35:44.478793+00:00",
+    "language": "py",
+    "loc": 102
+  },
+  {
+    "path": "backend/app/services/chat/__init__.py",
+    "size_bytes": 79,
+    "mtime_iso": "2025-10-11T14:20:52.489723+00:00",
+    "language": "py",
+    "loc": 3
+  },
+  {
+    "path": "backend/app/services/chat/tests/test_ws_prompt_composition.py",
+    "size_bytes": 607,
+    "mtime_iso": "2025-10-10T19:35:44.496793+00:00",
+    "language": "py",
+    "loc": 21
+  },
+  {
+    "path": "backend/app/services/chat/ws_commons.py",
+    "size_bytes": 2083,
+    "mtime_iso": "2025-10-13T14:12:18.345069+00:00",
+    "language": "py",
+    "loc": 68
+  },
+  {
+    "path": "backend/app/services/chat/ws_commons.py.bak",
+    "size_bytes": 1634,
+    "mtime_iso": "2025-10-13T14:07:55.593359+00:00",
+    "language": "bak",
+    "loc": 62
+  },
+  {
+    "path": "backend/app/services/chat/ws_config.py",
+    "size_bytes": 2380,
+    "mtime_iso": "2025-10-10T19:35:44.492793+00:00",
+    "language": "py",
+    "loc": 83
+  },
+  {
+    "path": "backend/app/services/chat/ws_streaming.py",
+    "size_bytes": 3040,
+    "mtime_iso": "2025-10-13T13:53:40.781558+00:00",
+    "language": "py",
+    "loc": 74
+  },
+  {
+    "path": "backend/app/services/chat/ws_streaming.py.bak",
+    "size_bytes": 2843,
+    "mtime_iso": "2025-10-13T12:59:06.462598+00:00",
+    "language": "bak",
+    "loc": 71
+  },
+  {
+    "path": "backend/app/services/memory/__init__.py",
+    "size_bytes": 0,
+    "mtime_iso": "2025-10-10T19:35:44.481793+00:00",
+    "language": "py",
+    "loc": 0
+  },
+  {
+    "path": "backend/app/services/memory/conversation_memory.py",
+    "size_bytes": 2937,
+    "mtime_iso": "2025-10-11T14:45:28.642401+00:00",
+    "language": "py",
+    "loc": 111
+  },
+  {
+    "path": "backend/app/services/memory/memory_core.py",
+    "size_bytes": 4766,
+    "mtime_iso": "2025-10-10T19:35:44.485793+00:00",
+    "language": "py",
+    "loc": 159
+  },
+  {
+    "path": "backend/app/services/openai_payload.py",
+    "size_bytes": 3785,
+    "mtime_iso": "2025-10-10T19:35:44.679792+00:00",
+    "language": "py",
+    "loc": 99
+  },
+  {
+    "path": "backend/app/services/rag/__init__.py",
+    "size_bytes": 332,
+    "mtime_iso": "2025-10-10T19:35:44.499793+00:00",
+    "language": "py",
+    "loc": 11
+  },
+  {
+    "path": "backend/app/services/rag/rag_ingest.py",
+    "size_bytes": 2518,
+    "mtime_iso": "2025-10-10T19:35:44.502793+00:00",
+    "language": "py",
+    "loc": 69
+  },
+  {
+    "path": "backend/app/services/rag/rag_orchestrator.py",
+    "size_bytes": 13578,
+    "mtime_iso": "2025-10-10T19:35:44.501793+00:00",
+    "language": "py",
+    "loc": 313
+  },
+  {
+    "path": "backend/app/utils/json.py",
+    "size_bytes": 3511,
+    "mtime_iso": "2025-10-13T14:08:09.681290+00:00",
+    "language": "py",
+    "loc": 103
+  },
+  {
+    "path": "backend/app/ws_stream_test.py",
+    "size_bytes": 3374,
+    "mtime_iso": "2025-10-10T19:35:44.687792+00:00",
+    "language": "py",
+    "loc": 103
+  },
+  {
+    "path": "backend/backend/README.md",
+    "size_bytes": 4209,
+    "mtime_iso": "2025-10-12T16:42:29.912746+00:00",
+    "language": "md",
+    "loc": 157
+  },
+  {
+    "path": "backend/backend/app/langgraph/config/agents.yaml",
+    "size_bytes": 2738,
+    "mtime_iso": "2025-10-12T16:34:46.142964+00:00",
+    "language": "yaml",
+    "loc": 138
+  },
+  {
+    "path": "backend/backend/app/langgraph/prompts/intent_projector.md",
+    "size_bytes": 819,
+    "mtime_iso": "2025-10-12T16:38:05.643013+00:00",
+    "language": "md",
+    "loc": 21
+  },
+  {
+    "path": "backend/backend/app/langgraph/prompts/material/material_agent.md",
+    "size_bytes": 772,
+    "mtime_iso": "2025-10-12T16:37:03.656309+00:00",
+    "language": "md",
+    "loc": 20
+  },
+  {
+    "path": "backend/backend/app/langgraph/prompts/material/synthesis.md",
+    "size_bytes": 790,
+    "mtime_iso": "2025-10-12T16:37:16.240249+00:00",
+    "language": "md",
+    "loc": 24
+  },
+  {
+    "path": "backend/backend/app/langgraph/prompts/profil/profil_agent.md",
+    "size_bytes": 733,
+    "mtime_iso": "2025-10-12T16:37:08.968284+00:00",
+    "language": "md",
+    "loc": 20
+  },
+  {
+    "path": "backend/backend/app/langgraph/prompts/profil/synthesis.md",
+    "size_bytes": 792,
+    "mtime_iso": "2025-10-12T16:37:58.199049+00:00",
+    "language": "md",
+    "loc": 24
+  },
+  {
+    "path": "backend/backend/app/langgraph/prompts/validierung/synthesis.md",
+    "size_bytes": 808,
+    "mtime_iso": "2025-10-12T16:38:01.389034+00:00",
+    "language": "md",
+    "loc": 24
+  },
+  {
+    "path": "backend/backend/app/langgraph/prompts/validierung/validierung_agent.md",
+    "size_bytes": 696,
+    "mtime_iso": "2025-10-12T16:37:12.538267+00:00",
+    "language": "md",
+    "loc": 20
+  },
+  {
+    "path": "backend/backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+    "size_bytes": 3817,
+    "mtime_iso": "2025-10-12T16:40:51.141224+00:00",
+    "language": "py",
+    "loc": 114
+  },
+  {
+    "path": "backend/backend/app/langgraph/tests/test_prompts_exist_and_bind.py",
+    "size_bytes": 3787,
+    "mtime_iso": "2025-10-12T16:41:47.699951+00:00",
+    "language": "py",
+    "loc": 116
+  },
+  {
+    "path": "backend/backend/app/langgraph/tests/test_rag_ref_only.py",
+    "size_bytes": 2819,
+    "mtime_iso": "2025-10-12T16:41:41.479981+00:00",
+    "language": "py",
+    "loc": 88
+  },
+  {
+    "path": "backend/backend/app/langgraph/tests/test_toolnode_parallelism.py",
+    "size_bytes": 5461,
+    "mtime_iso": "2025-10-12T16:41:56.651907+00:00",
+    "language": "py",
+    "loc": 171
+  },
+  {
+    "path": "backend/backend/app/langgraph/utils/rag_cache.py",
+    "size_bytes": 2607,
+    "mtime_iso": "2025-10-12T16:40:27.940336+00:00",
+    "language": "py",
+    "loc": 81
+  },
+  {
+    "path": "backend/constraints.txt",
+    "size_bytes": 561,
+    "mtime_iso": "2025-10-25T09:16:46.612949+00:00",
+    "language": "txt",
+    "loc": 28
+  },
+  {
+    "path": "backend/docs/baseline_report.md",
+    "size_bytes": 4744,
+    "mtime_iso": "2025-10-12T16:33:55.316206+00:00",
+    "language": "md",
+    "loc": 143
+  },
+  {
+    "path": "backend/docs/migration_plan.md",
+    "size_bytes": 7493,
+    "mtime_iso": "2025-10-12T16:34:11.163131+00:00",
+    "language": "md",
+    "loc": 276
+  },
+  {
+    "path": "backend/e2e_test.py",
+    "size_bytes": 1637,
+    "mtime_iso": "2025-10-10T19:36:50.360461+00:00",
+    "language": "py",
+    "loc": 49
+  },
+  {
+    "path": "backend/prompt_renderer.py",
+    "size_bytes": 3148,
+    "mtime_iso": "2025-10-10T19:35:44.471793+00:00",
+    "language": "py",
+    "loc": 80
+  },
+  {
+    "path": "backend/requirements-dev.txt",
+    "size_bytes": 560,
+    "mtime_iso": "2025-09-25T12:46:56.002833+00:00",
+    "language": "txt",
+    "loc": 21
+  },
+  {
+    "path": "backend/requirements.dev.txt",
+    "size_bytes": 92,
+    "mtime_iso": "2025-10-13T06:36:10.821980+00:00",
+    "language": "txt",
+    "loc": 2
+  },
+  {
+    "path": "backend/requirements.txt",
+    "size_bytes": 2433,
+    "mtime_iso": "2025-10-25T09:18:10.702511+00:00",
+    "language": "txt",
+    "loc": 74
+  },
+  {
+    "path": "backend/simple_test.py",
+    "size_bytes": 826,
+    "mtime_iso": "2025-10-10T19:36:19.840615+00:00",
+    "language": "py",
+    "loc": 28
+  },
+  {
+    "path": "backend/templates_backup/ask_missing.jinja2",
+    "size_bytes": 1072,
+    "mtime_iso": "2025-10-10T19:35:34.188845+00:00",
+    "language": "jinja2",
+    "loc": 31
+  },
+  {
+    "path": "backend/templates_backup/ask_missing_followups.jinja2",
+    "size_bytes": 714,
+    "mtime_iso": "2025-10-10T19:35:34.188845+00:00",
+    "language": "jinja2",
+    "loc": 13
+  },
+  {
+    "path": "backend/templates_backup/ask_missing_llm_user.jinja2",
+    "size_bytes": 1337,
+    "mtime_iso": "2025-10-10T19:35:34.188845+00:00",
+    "language": "jinja2",
+    "loc": 38
+  },
+  {
+    "path": "backend/templates_backup/calc_agent.jinja2",
+    "size_bytes": 295,
+    "mtime_iso": "2025-10-10T19:35:34.189845+00:00",
+    "language": "jinja2",
+    "loc": 4
+  },
+  {
+    "path": "backend/templates_backup/consult_extract_params.jinja2",
+    "size_bytes": 976,
+    "mtime_iso": "2025-10-10T19:35:34.189845+00:00",
+    "language": "jinja2",
+    "loc": 28
+  },
+  {
+    "path": "backend/templates_backup/critique.jinja2",
+    "size_bytes": 371,
+    "mtime_iso": "2025-10-10T19:35:34.190845+00:00",
+    "language": "jinja2",
+    "loc": 11
+  },
+  {
+    "path": "backend/templates_backup/domain_router.jinja2",
+    "size_bytes": 1833,
+    "mtime_iso": "2025-10-10T19:35:34.190845+00:00",
+    "language": "jinja2",
+    "loc": 27
+  },
+  {
+    "path": "backend/templates_backup/explain.jinja2",
+    "size_bytes": 1931,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 66
+  },
+  {
+    "path": "backend/templates_backup/explain_v2.jinja2",
+    "size_bytes": 2286,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 77
+  },
+  {
+    "path": "backend/templates_backup/global_system.jinja2",
+    "size_bytes": 1366,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 30
+  },
+  {
+    "path": "backend/templates_backup/global_system_v2.jinja2",
+    "size_bytes": 1691,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 39
+  },
+  {
+    "path": "backend/templates_backup/intake_triage.jinja2",
+    "size_bytes": 1587,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 49
+  },
+  {
+    "path": "backend/templates_backup/intent_router.jinja2",
+    "size_bytes": 1705,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 49
+  },
+  {
+    "path": "backend/templates_backup/material_agent.jinja2",
+    "size_bytes": 259,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 4
+  },
+  {
+    "path": "backend/templates_backup/material_agent_v2.jinja2",
+    "size_bytes": 1105,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 23
+  },
+  {
+    "path": "backend/templates_backup/profile_agent.jinja2",
+    "size_bytes": 279,
+    "mtime_iso": "2025-10-10T19:35:34.191845+00:00",
+    "language": "jinja2",
+    "loc": 4
+  },
+  {
+    "path": "backend/templates_backup/recommend.jinja2",
+    "size_bytes": 1156,
+    "mtime_iso": "2025-10-10T19:35:34.192845+00:00",
+    "language": "jinja2",
+    "loc": 21
+  },
+  {
+    "path": "backend/templates_backup/report_agent.jinja2",
+    "size_bytes": 248,
+    "mtime_iso": "2025-10-10T19:35:34.192845+00:00",
+    "language": "jinja2",
+    "loc": 4
+  },
+  {
+    "path": "backend/templates_backup/smalltalk.jinja2",
+    "size_bytes": 542,
+    "mtime_iso": "2025-10-10T19:35:34.192845+00:00",
+    "language": "jinja2",
+    "loc": 10
+  },
+  {
+    "path": "backend/templates_backup/supervisor_prompt.jinja2",
+    "size_bytes": 4520,
+    "mtime_iso": "2025-10-10T19:35:34.192845+00:00",
+    "language": "jinja2",
+    "loc": 62
+  },
+  {
+    "path": "backend/templates_backup/system_consultant.jinja2",
+    "size_bytes": 576,
+    "mtime_iso": "2025-10-10T19:35:34.193845+00:00",
+    "language": "jinja2",
+    "loc": 12
+  },
+  {
+    "path": "backend/test_graph.py",
+    "size_bytes": 938,
+    "mtime_iso": "2025-10-13T13:13:46.688275+00:00",
+    "language": "py",
+    "loc": 34
+  },
+  {
+    "path": "backend/test_graph_astream.py",
+    "size_bytes": 1538,
+    "mtime_iso": "2025-10-13T13:57:26.466448+00:00",
+    "language": "py",
+    "loc": 46
+  },
+  {
+    "path": "backend/test_prompts.py",
+    "size_bytes": 1665,
+    "mtime_iso": "2025-10-10T19:35:44.788791+00:00",
+    "language": "py",
+    "loc": 47
+  },
+  {
+    "path": "backend/tests/test_hybrid_routing.py",
+    "size_bytes": 2337,
+    "mtime_iso": "2025-10-10T19:35:44.798791+00:00",
+    "language": "py",
+    "loc": 61
+  },
+  {
+    "path": "backend/tests/test_obs_min.py",
+    "size_bytes": 1693,
+    "mtime_iso": "2025-10-10T19:35:44.790792+00:00",
+    "language": "py",
+    "loc": 60
+  },
+  {
+    "path": "backend/ws_test.py",
+    "size_bytes": 1203,
+    "mtime_iso": "2025-10-10T19:35:44.473793+00:00",
+    "language": "py",
+    "loc": 37
+  },
+  {
+    "path": "backend_review.txt",
+    "size_bytes": 175910,
+    "mtime_iso": "2025-09-25T12:46:56.004833+00:00",
+    "language": "txt",
+    "loc": 4840
+  },
+  {
+    "path": "benchmarks/routing/default.yaml",
+    "size_bytes": 5358,
+    "mtime_iso": "2025-10-06T11:58:52.981873+00:00",
+    "language": "yaml",
+    "loc": 152
+  },
+  {
+    "path": "calc_best_practice_backend.txt",
+    "size_bytes": 50037,
+    "mtime_iso": "2025-09-25T12:46:56.005833+00:00",
+    "language": "txt",
+    "loc": 1441
+  },
+  {
+    "path": "calc_best_practice_frontend.txt",
+    "size_bytes": 9509,
+    "mtime_iso": "2025-09-25T12:46:56.006833+00:00",
+    "language": "txt",
+    "loc": 288
+  },
+  {
+    "path": "calculix/Dockerfile",
+    "size_bytes": 1678,
+    "mtime_iso": "2025-08-26T11:00:41.200516+00:00",
+    "language": "binary",
+    "loc": 34
+  },
+  {
+    "path": "certs/tls.crt",
+    "size_bytes": 2855,
+    "mtime_iso": "2025-07-04T10:35:10.421836+00:00",
+    "language": "crt",
+    "loc": 47
+  },
+  {
+    "path": "certs/tls.key",
+    "size_bytes": 241,
+    "mtime_iso": "2025-07-04T10:35:10.424836+00:00",
+    "language": "key",
+    "loc": 5
+  },
+  {
+    "path": "check_versions.sh",
+    "size_bytes": 775,
+    "mtime_iso": "2025-10-13T09:24:42.465092+00:00",
+    "language": "sh",
+    "loc": 22
+  },
+  {
+    "path": "cleanup.sh",
+    "size_bytes": 1225,
+    "mtime_iso": "2025-10-13T06:22:06.364030+00:00",
+    "language": "sh",
+    "loc": 42
+  },
+  {
+    "path": "client.json",
+    "size_bytes": 2047,
+    "mtime_iso": "2025-09-25T12:46:56.006833+00:00",
+    "language": "json",
+    "loc": 54
+  },
+  {
+    "path": "client_nextauth.json",
+    "size_bytes": 121,
+    "mtime_iso": "2025-09-25T12:46:56.006833+00:00",
+    "language": "json",
+    "loc": 1
+  },
+  {
+    "path": "clone-grok.js",
+    "size_bytes": 549,
+    "mtime_iso": "2025-09-25T12:46:56.006833+00:00",
+    "language": "js",
+    "loc": 23
+  },
+  {
+    "path": "code_bundle_focus.txt",
+    "size_bytes": 508567,
+    "mtime_iso": "2025-10-10T06:07:46.545687+00:00",
+    "language": "txt",
+    "loc": 13872
+  },
+  {
+    "path": "code_dump_2025-09-25_1338.txt",
+    "size_bytes": 281503,
+    "mtime_iso": "2025-09-25T13:38:38.243227+00:00",
+    "language": "txt",
+    "loc": 6640
+  },
+  {
+    "path": "config/routing.yml",
+    "size_bytes": 709,
+    "mtime_iso": "2025-10-06T07:38:56.738464+00:00",
+    "language": "yml",
+    "loc": 35
+  },
+  {
+    "path": "consultgraph_full_dump.txt",
+    "size_bytes": 85689,
+    "mtime_iso": "2025-09-25T12:46:56.006833+00:00",
+    "language": "txt",
+    "loc": 2018
+  },
+  {
+    "path": "cookies.txt",
+    "size_bytes": 410,
+    "mtime_iso": "2025-09-25T12:46:56.006833+00:00",
+    "language": "txt",
+    "loc": 6
+  },
+  {
+    "path": "default.conf",
+    "size_bytes": 5265,
+    "mtime_iso": "2025-07-03T17:00:42.041987+00:00",
+    "language": "conf",
+    "loc": 148
+  },
+  {
+    "path": "deploy_notes.md",
+    "size_bytes": 1008,
+    "mtime_iso": "2025-10-10T19:36:39.978513+00:00",
+    "language": "md",
+    "loc": 22
+  },
+  {
+    "path": "docker-compose.deploy.yml",
+    "size_bytes": 209,
+    "mtime_iso": "2025-09-25T12:46:56.006833+00:00",
+    "language": "yml",
+    "loc": 8
+  },
+  {
+    "path": "docker-compose.override.yml",
+    "size_bytes": 484,
+    "mtime_iso": "2025-10-13T08:33:31.635812+00:00",
+    "language": "yml",
+    "loc": 29
+  },
+  {
+    "path": "docker-compose.yml",
+    "size_bytes": 5092,
+    "mtime_iso": "2025-10-12T11:14:10.007325+00:00",
+    "language": "yml",
+    "loc": 169
+  },
+  {
+    "path": "docs/architecture/button_intent_routing_rfc.md",
+    "size_bytes": 14825,
+    "mtime_iso": "2025-10-06T07:28:16.429624+00:00",
+    "language": "md",
+    "loc": 268
+  },
+  {
+    "path": "docs/architecture/stack_audit_report.md",
+    "size_bytes": 16621,
+    "mtime_iso": "2025-10-06T06:35:45.333002+00:00",
+    "language": "md",
+    "loc": 211
+  },
+  {
+    "path": "docs/baseline_report.md",
+    "size_bytes": 721,
+    "mtime_iso": "2025-10-13T07:02:41.071276+00:00",
+    "language": "md",
+    "loc": 17
+  },
+  {
+    "path": "docs/graph_current.md",
+    "size_bytes": 1847,
+    "mtime_iso": "2025-10-13T07:02:34.271309+00:00",
+    "language": "md",
+    "loc": 39
+  },
+  {
+    "path": "docs/langgraph_supervisor_evaluation.md",
+    "size_bytes": 7082,
+    "mtime_iso": "2025-10-13T10:32:27.592501+00:00",
+    "language": "md",
+    "loc": 92
+  },
+  {
+    "path": "docs/migration_plan.md",
+    "size_bytes": 2229,
+    "mtime_iso": "2025-10-13T07:02:51.879225+00:00",
+    "language": "md",
+    "loc": 35
+  },
+  {
+    "path": "docs/repo_map.md",
+    "size_bytes": 1368,
+    "mtime_iso": "2025-10-13T07:02:11.795416+00:00",
+    "language": "md",
+    "loc": 70
+  },
+  {
+    "path": "docs/runbooks/hybrid_routing_backend.md",
+    "size_bytes": 2915,
+    "mtime_iso": "2025-10-06T07:40:56.324862+00:00",
+    "language": "md",
+    "loc": 50
+  },
+  {
+    "path": "docs/runbooks/routing_overhaul_notes.md",
+    "size_bytes": 18,
+    "mtime_iso": "2025-10-06T12:07:00.949478+00:00",
+    "language": "md",
+    "loc": 1
+  },
+  {
+    "path": "example-clone.html",
+    "size_bytes": 1248,
+    "mtime_iso": "2025-09-25T12:46:56.007833+00:00",
+    "language": "html",
+    "loc": 45
+  },
+  {
+    "path": "frontend/.dockerignore",
+    "size_bytes": 28,
+    "mtime_iso": "2025-03-03T11:58:01.958847+00:00",
+    "language": "binary",
+    "loc": 4
+  },
+  {
+    "path": "frontend/.env",
+    "size_bytes": 72,
+    "mtime_iso": "2025-09-21T11:48:53.639241+00:00",
+    "language": "binary",
+    "loc": 2
+  },
+  {
+    "path": "frontend/.env.local",
+    "size_bytes": 386,
+    "mtime_iso": "2025-09-21T14:06:06.790962+00:00",
+    "language": "local",
+    "loc": 13
+  },
+  {
+    "path": "frontend/.env.local.bak",
+    "size_bytes": 387,
+    "mtime_iso": "2025-09-20T14:51:40.423065+00:00",
+    "language": "bak",
+    "loc": 13
+  },
+  {
+    "path": "frontend/.gitignore",
+    "size_bytes": 480,
+    "mtime_iso": "2025-03-01T21:08:34.376629+00:00",
+    "language": "binary",
+    "loc": 41
+  },
+  {
+    "path": "frontend/.npmrc",
+    "size_bytes": 22,
+    "mtime_iso": "2025-05-09T09:33:15.905586+00:00",
+    "language": "binary",
+    "loc": 1
+  },
+  {
+    "path": "frontend/Dockerfile",
+    "size_bytes": 1242,
+    "mtime_iso": "2025-09-25T12:46:56.007833+00:00",
+    "language": "binary",
+    "loc": 51
+  },
+  {
+    "path": "frontend/README.md",
+    "size_bytes": 1450,
+    "mtime_iso": "2025-03-01T21:08:34.376629+00:00",
+    "language": "md",
+    "loc": 36
+  },
+  {
+    "path": "frontend/middleware.ts",
+    "size_bytes": 1512,
+    "mtime_iso": "2025-09-25T12:46:56.007833+00:00",
+    "language": "ts",
+    "loc": 43
+  },
+  {
+    "path": "frontend/next-env.d.ts",
+    "size_bytes": 211,
+    "mtime_iso": "2025-10-12T12:25:15.181333+00:00",
+    "language": "ts",
+    "loc": 5
+  },
+  {
+    "path": "frontend/next.config.js",
+    "size_bytes": 466,
+    "mtime_iso": "2025-09-25T12:46:56.007833+00:00",
+    "language": "js",
+    "loc": 18
+  },
+  {
+    "path": "frontend/out.css",
+    "size_bytes": 5379,
+    "mtime_iso": "2025-05-06T07:19:17.682300+00:00",
+    "language": "css",
+    "loc": 258
+  },
+  {
+    "path": "frontend/package-lock.json",
+    "size_bytes": 197707,
+    "mtime_iso": "2025-09-25T12:46:56.009833+00:00",
+    "language": "json",
+    "loc": 5408
+  },
+  {
+    "path": "frontend/package.json",
+    "size_bytes": 1194,
+    "mtime_iso": "2025-08-15T19:37:42.350864+00:00",
+    "language": "json",
+    "loc": 46
+  },
+  {
+    "path": "frontend/pnpm-lock.yaml",
+    "size_bytes": 236584,
+    "mtime_iso": "2025-05-06T10:24:24.542444+00:00",
+    "language": "yaml",
+    "loc": 6069
+  },
+  {
+    "path": "frontend/postcss.config.js",
+    "size_bytes": 83,
+    "mtime_iso": "2025-05-09T09:27:19.429054+00:00",
+    "language": "js",
+    "loc": 6
+  },
+  {
+    "path": "frontend/public/file.svg",
+    "size_bytes": 391,
+    "mtime_iso": "2025-03-01T21:08:34.376629+00:00",
+    "language": "svg",
+    "loc": 1
+  },
+  {
+    "path": "frontend/public/globe.svg",
+    "size_bytes": 1035,
+    "mtime_iso": "2025-03-01T21:08:34.377629+00:00",
+    "language": "svg",
+    "loc": 1
+  },
+  {
+    "path": "frontend/public/hg_startseite.webp",
+    "size_bytes": 153496,
+    "mtime_iso": "2025-03-04T17:27:25.444851+00:00",
+    "language": "webp",
+    "loc": 0
+  },
+  {
+    "path": "frontend/public/logo_sai.png",
+    "size_bytes": 1382664,
+    "mtime_iso": "2025-05-05T06:39:48.879203+00:00",
+    "language": "png",
+    "loc": 0
+  },
+  {
+    "path": "frontend/public/logo_sai.svg",
+    "size_bytes": 5373,
+    "mtime_iso": "2025-05-05T06:42:44.540924+00:00",
+    "language": "svg",
+    "loc": 82
+  },
+  {
+    "path": "frontend/public/logo_sealAI.PNG",
+    "size_bytes": 1643060,
+    "mtime_iso": "2025-04-02T11:32:48.821452+00:00",
+    "language": "png",
+    "loc": 0
+  },
+  {
+    "path": "frontend/public/next.svg",
+    "size_bytes": 1375,
+    "mtime_iso": "2025-03-01T21:08:34.377629+00:00",
+    "language": "svg",
+    "loc": 1
+  },
+  {
+    "path": "frontend/public/vercel.svg",
+    "size_bytes": 128,
+    "mtime_iso": "2025-03-01T21:08:34.377629+00:00",
+    "language": "svg",
+    "loc": 1
+  },
+  {
+    "path": "frontend/public/window.svg",
+    "size_bytes": 385,
+    "mtime_iso": "2025-03-01T21:08:34.377629+00:00",
+    "language": "svg",
+    "loc": 1
+  },
+  {
+    "path": "frontend/src/app/api/auth/[...nextauth]/route.ts",
+    "size_bytes": 1464,
+    "mtime_iso": "2025-09-25T12:46:56.009833+00:00",
+    "language": "ts",
+    "loc": 43
+  },
+  {
+    "path": "frontend/src/app/api/auth/custom-logout/route.ts",
+    "size_bytes": 329,
+    "mtime_iso": "2025-09-25T12:46:56.009833+00:00",
+    "language": "ts",
+    "loc": 9
+  },
+  {
+    "path": "frontend/src/app/api/auth/sso-logout/route.ts",
+    "size_bytes": 1222,
+    "mtime_iso": "2025-09-25T12:46:56.010833+00:00",
+    "language": "ts",
+    "loc": 31
+  },
+  {
+    "path": "frontend/src/app/api/ccx/jobs/[jobId]/events/route.js",
+    "size_bytes": 596,
+    "mtime_iso": "2025-09-25T12:46:56.010833+00:00",
+    "language": "js",
+    "loc": 19
+  },
+  {
+    "path": "frontend/src/app/api/ccx/jobs/[jobId]/summary/route.js",
+    "size_bytes": 1561,
+    "mtime_iso": "2025-09-25T12:46:56.010833+00:00",
+    "language": "js",
+    "loc": 57
+  },
+  {
+    "path": "frontend/src/app/api/ccx/jobs/route.js",
+    "size_bytes": 1561,
+    "mtime_iso": "2025-09-25T12:46:56.010833+00:00",
+    "language": "js",
+    "loc": 54
+  },
+  {
+    "path": "frontend/src/app/auth/error/error-client.tsx",
+    "size_bytes": 778,
+    "mtime_iso": "2025-06-24T09:55:24.868230+00:00",
+    "language": "tsx",
+    "loc": 24
+  },
+  {
+    "path": "frontend/src/app/auth/error/page.tsx",
+    "size_bytes": 336,
+    "mtime_iso": "2025-05-06T12:37:33.761319+00:00",
+    "language": "tsx",
+    "loc": 13
+  },
+  {
+    "path": "frontend/src/app/auth/signin/page.tsx",
+    "size_bytes": 472,
+    "mtime_iso": "2025-09-25T12:46:56.010833+00:00",
+    "language": "tsx",
+    "loc": 16
+  },
+  {
+    "path": "frontend/src/app/auth/signin/signin-client.tsx",
+    "size_bytes": 478,
+    "mtime_iso": "2025-06-24T09:23:40.860507+00:00",
+    "language": "tsx",
+    "loc": 19
+  },
+  {
+    "path": "frontend/src/app/components/ui/card.tsx",
+    "size_bytes": 555,
+    "mtime_iso": "2025-05-05T15:57:40.845723+00:00",
+    "language": "tsx",
+    "loc": 23
+  },
+  {
+    "path": "frontend/src/app/dashboard/ChatScreen.tsx",
+    "size_bytes": 127,
+    "mtime_iso": "2025-09-21T11:47:46.157557+00:00",
+    "language": "tsx",
+    "loc": 6
+  },
+  {
+    "path": "frontend/src/app/dashboard/Dashboard.tsx",
+    "size_bytes": 332,
+    "mtime_iso": "2025-06-25T11:04:34.847650+00:00",
+    "language": "tsx",
+    "loc": 13
+  },
+  {
+    "path": "frontend/src/app/dashboard/DashboardClient.tsx",
+    "size_bytes": 825,
+    "mtime_iso": "2025-09-25T12:46:56.010833+00:00",
+    "language": "tsx",
+    "loc": 24
+  },
+  {
+    "path": "frontend/src/app/dashboard/DashboardShell.tsx",
+    "size_bytes": 2299,
+    "mtime_iso": "2025-09-26T10:03:59.473116+00:00",
+    "language": "tsx",
+    "loc": 66
+  },
+  {
+    "path": "frontend/src/app/dashboard/ccx/[jobId]/page.tsx",
+    "size_bytes": 457,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "tsx",
+    "loc": 17
+  },
+  {
+    "path": "frontend/src/app/dashboard/ccx/page.tsx",
+    "size_bytes": 612,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "tsx",
+    "loc": 17
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/CcxResultCard.tsx",
+    "size_bytes": 6023,
+    "mtime_iso": "2025-08-26T11:52:58.338261+00:00",
+    "language": "tsx",
+    "loc": 200
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/ChatContainer.tsx",
+    "size_bytes": 8959,
+    "mtime_iso": "2025-10-01T13:32:22.291768+00:00",
+    "language": "tsx",
+    "loc": 250
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/ChatContainer.tsx.save.1",
+    "size_bytes": 0,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "1",
+    "loc": 0
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/ChatContainer.tsx.save.2",
+    "size_bytes": 0,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "2",
+    "loc": 0
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/ChatHistory.tsx",
+    "size_bytes": 1624,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "tsx",
+    "loc": 54
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/ChatHistory.tsx.save.1",
+    "size_bytes": 0,
+    "mtime_iso": "2025-06-25T15:13:40.773063+00:00",
+    "language": "1",
+    "loc": 0
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/ChatInput.tsx",
+    "size_bytes": 6840,
+    "mtime_iso": "2025-08-18T10:55:07.372184+00:00",
+    "language": "tsx",
+    "loc": 207
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/MarkdownMessage.tsx",
+    "size_bytes": 3350,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "tsx",
+    "loc": 121
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/MarkdownMessage.tsx.save.1",
+    "size_bytes": 0,
+    "mtime_iso": "2025-06-26T10:24:14.030872+00:00",
+    "language": "1",
+    "loc": 0
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/MarkdownMessage.tsx.save.2",
+    "size_bytes": 268,
+    "mtime_iso": "2025-06-26T10:25:24.905457+00:00",
+    "language": "2",
+    "loc": 9
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/MarkdownMessage.tsx.save.3",
+    "size_bytes": 0,
+    "mtime_iso": "2025-06-26T10:34:44.922147+00:00",
+    "language": "3",
+    "loc": 0
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Chat/Thinking.tsx",
+    "size_bytes": 721,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "tsx",
+    "loc": 16
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/InfoBar.tsx",
+    "size_bytes": 1299,
+    "mtime_iso": "2025-06-24T07:15:51.286929+00:00",
+    "language": "tsx",
+    "loc": 42
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/LogoutButton.tsx",
+    "size_bytes": 868,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "tsx",
+    "loc": 21
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Sidebar.tsx",
+    "size_bytes": 679,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "tsx",
+    "loc": 23
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Sidebar/AccordionTabs.tsx",
+    "size_bytes": 3801,
+    "mtime_iso": "2025-06-25T14:55:23.422614+00:00",
+    "language": "tsx",
+    "loc": 116
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Sidebar/CalcCard.tsx",
+    "size_bytes": 2649,
+    "mtime_iso": "2025-09-25T12:46:56.011832+00:00",
+    "language": "tsx",
+    "loc": 74
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Sidebar/Sidebar.tsx",
+    "size_bytes": 2395,
+    "mtime_iso": "2025-05-17T06:23:19.559054+00:00",
+    "language": "tsx",
+    "loc": 73
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Sidebar/SidebarForm.tsx",
+    "size_bytes": 17456,
+    "mtime_iso": "2025-10-01T13:31:31.746988+00:00",
+    "language": "tsx",
+    "loc": 509
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Sidebar/SidebarLeft.tsx",
+    "size_bytes": 954,
+    "mtime_iso": "2025-09-25T12:46:56.012833+00:00",
+    "language": "tsx",
+    "loc": 37
+  },
+  {
+    "path": "frontend/src/app/dashboard/components/Sidebar/SidebarRight.tsx",
+    "size_bytes": 645,
+    "mtime_iso": "2025-09-25T12:46:56.012833+00:00",
+    "language": "tsx",
+    "loc": 22
+  },
+  {
+    "path": "frontend/src/app/dashboard/layout.tsx",
+    "size_bytes": 295,
+    "mtime_iso": "2025-09-25T12:46:56.012833+00:00",
+    "language": "tsx",
+    "loc": 9
+  },
+  {
+    "path": "frontend/src/app/dashboard/page.tsx",
+    "size_bytes": 214,
+    "mtime_iso": "2025-09-25T12:46:56.012833+00:00",
+    "language": "tsx",
+    "loc": 9
+  },
+  {
+    "path": "frontend/src/app/favicon.ico",
+    "size_bytes": 25931,
+    "mtime_iso": "2025-03-01T21:08:34.376629+00:00",
+    "language": "ico",
+    "loc": 0
+  },
+  {
+    "path": "frontend/src/app/layout.tsx",
+    "size_bytes": 539,
+    "mtime_iso": "2025-08-11T10:27:08.670565+00:00",
+    "language": "tsx",
+    "loc": 20
+  },
+  {
+    "path": "frontend/src/app/page.tsx",
+    "size_bytes": 7020,
+    "mtime_iso": "2025-09-26T10:03:56.626128+00:00",
+    "language": "tsx",
+    "loc": 153
+  },
+  {
+    "path": "frontend/src/app/providers.tsx",
+    "size_bytes": 261,
+    "mtime_iso": "2025-05-06T12:24:53.681593+00:00",
+    "language": "tsx",
+    "loc": 9
+  },
+  {
+    "path": "frontend/src/app/register/page.js",
+    "size_bytes": 767,
+    "mtime_iso": "2025-03-04T11:08:18.647269+00:00",
+    "language": "js",
+    "loc": 32
+  },
+  {
+    "path": "frontend/src/components/Fog.tsx",
+    "size_bytes": 4971,
+    "mtime_iso": "2025-08-11T10:36:46.611599+00:00",
+    "language": "tsx",
+    "loc": 135
+  },
+  {
+    "path": "frontend/src/components/HeroBackground.tsx",
+    "size_bytes": 2432,
+    "mtime_iso": "2025-07-17T14:46:49.236431+00:00",
+    "language": "tsx",
+    "loc": 86
+  },
+  {
+    "path": "frontend/src/components/HeroGrok.tsx",
+    "size_bytes": 4033,
+    "mtime_iso": "2025-08-11T10:41:15.048229+00:00",
+    "language": "tsx",
+    "loc": 99
+  },
+  {
+    "path": "frontend/src/components/SiteBackground.tsx",
+    "size_bytes": 783,
+    "mtime_iso": "2025-08-11T10:26:53.846642+00:00",
+    "language": "tsx",
+    "loc": 27
+  },
+  {
+    "path": "frontend/src/components/Starfield.tsx",
+    "size_bytes": 2144,
+    "mtime_iso": "2025-08-11T09:34:20.477932+00:00",
+    "language": "tsx",
+    "loc": 63
+  },
+  {
+    "path": "frontend/src/components/organisms/Header.tsx",
+    "size_bytes": 623,
+    "mtime_iso": "2025-05-06T10:05:10.989445+00:00",
+    "language": "tsx",
+    "loc": 24
+  },
+  {
+    "path": "frontend/src/components/organisms/Sidebar.tsx",
+    "size_bytes": 1007,
+    "mtime_iso": "2025-05-05T17:08:44.221062+00:00",
+    "language": "tsx",
+    "loc": 37
+  },
+  {
+    "path": "frontend/src/components/ui/card.tsx",
+    "size_bytes": 394,
+    "mtime_iso": "2025-05-02T06:15:50.660785+00:00",
+    "language": "tsx",
+    "loc": 19
+  },
+  {
+    "path": "frontend/src/lib/logout.ts",
+    "size_bytes": 1171,
+    "mtime_iso": "2025-08-11T08:51:46.100172+00:00",
+    "language": "ts",
+    "loc": 40
+  },
+  {
+    "path": "frontend/src/lib/types/langgraph.ts",
+    "size_bytes": 791,
+    "mtime_iso": "2025-10-12T05:10:23.071933+00:00",
+    "language": "ts",
+    "loc": 36
+  },
+  {
+    "path": "frontend/src/lib/useAccessToken.ts",
+    "size_bytes": 1414,
+    "mtime_iso": "2025-09-25T12:46:56.012833+00:00",
+    "language": "ts",
+    "loc": 51
+  },
+  {
+    "path": "frontend/src/lib/useChatThreadId.ts",
+    "size_bytes": 1960,
+    "mtime_iso": "2025-10-01T13:30:23.430282+00:00",
+    "language": "ts",
+    "loc": 59
+  },
+  {
+    "path": "frontend/src/lib/useChatWs.ts",
+    "size_bytes": 18315,
+    "mtime_iso": "2025-10-12T12:24:50.292454+00:00",
+    "language": "ts",
+    "loc": 534
+  },
+  {
+    "path": "frontend/src/lib/utils.ts",
+    "size_bytes": 152,
+    "mtime_iso": "2025-04-24T11:40:10.075629+00:00",
+    "language": "ts",
+    "loc": 4
+  },
+  {
+    "path": "frontend/src/styles/chat-markdown.css",
+    "size_bytes": 6738,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "css",
+    "loc": 273
+  },
+  {
+    "path": "frontend/src/styles/globals.css",
+    "size_bytes": 2615,
+    "mtime_iso": "2025-08-13T13:41:11.688371+00:00",
+    "language": "css",
+    "loc": 93
+  },
+  {
+    "path": "frontend/src/types/chat.ts",
+    "size_bytes": 87,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "ts",
+    "loc": 4
+  },
+  {
+    "path": "frontend/src/types/markdown-to-jsx.d.ts",
+    "size_bytes": 34,
+    "mtime_iso": "2025-05-09T09:50:03.646443+00:00",
+    "language": "ts",
+    "loc": 1
+  },
+  {
+    "path": "frontend/src/types/next-auth.d.ts",
+    "size_bytes": 348,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "ts",
+    "loc": 18
+  },
+  {
+    "path": "frontend/src/types/ui.ts",
+    "size_bytes": 486,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "ts",
+    "loc": 19
+  },
+  {
+    "path": "frontend/tailwind.config.js",
+    "size_bytes": 2543,
+    "mtime_iso": "2025-05-16T08:24:32.529808+00:00",
+    "language": "js",
+    "loc": 70
+  },
+  {
+    "path": "frontend/tsconfig.json",
+    "size_bytes": 1058,
+    "mtime_iso": "2025-05-14T10:01:07.904902+00:00",
+    "language": "json",
+    "loc": 44
+  },
+  {
+    "path": "frontend_review.txt",
+    "size_bytes": 19867,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "txt",
+    "loc": 637
+  },
+  {
+    "path": "grok-clone.html",
+    "size_bytes": 18674,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "html",
+    "loc": 2
+  },
+  {
+    "path": "k8s/backend.yaml",
+    "size_bytes": 1080,
+    "mtime_iso": "2025-09-30T09:23:00.870521+00:00",
+    "language": "yaml",
+    "loc": 43
+  },
+  {
+    "path": "k8s/cert-issuer.yaml",
+    "size_bytes": 643,
+    "mtime_iso": "2025-09-30T09:24:28.257089+00:00",
+    "language": "yaml",
+    "loc": 30
+  },
+  {
+    "path": "k8s/configmap.yaml",
+    "size_bytes": 1539,
+    "mtime_iso": "2025-09-30T09:24:19.746131+00:00",
+    "language": "yaml",
+    "loc": 58
+  },
+  {
+    "path": "k8s/ingress-backend.yaml",
+    "size_bytes": 633,
+    "mtime_iso": "2025-09-30T09:24:22.938115+00:00",
+    "language": "yaml",
+    "loc": 26
+  },
+  {
+    "path": "k8s/material-agent.yaml",
+    "size_bytes": 988,
+    "mtime_iso": "2025-09-30T09:22:29.995673+00:00",
+    "language": "yaml",
+    "loc": 42
+  },
+  {
+    "path": "k8s/namespace.yaml",
+    "size_bytes": 57,
+    "mtime_iso": "2025-09-30T09:21:37.858931+00:00",
+    "language": "yaml",
+    "loc": 5
+  },
+  {
+    "path": "k8s/normen-agent.yaml",
+    "size_bytes": 974,
+    "mtime_iso": "2025-09-30T09:22:25.032698+00:00",
+    "language": "yaml",
+    "loc": 42
+  },
+  {
+    "path": "k8s/postgres.yaml",
+    "size_bytes": 1320,
+    "mtime_iso": "2025-09-30T09:21:58.303830+00:00",
+    "language": "yaml",
+    "loc": 57
+  },
+  {
+    "path": "k8s/qdrant.yaml",
+    "size_bytes": 1027,
+    "mtime_iso": "2025-09-30T09:22:09.053777+00:00",
+    "language": "yaml",
+    "loc": 54
+  },
+  {
+    "path": "k8s/redis.yaml",
+    "size_bytes": 1034,
+    "mtime_iso": "2025-09-30T09:22:03.259805+00:00",
+    "language": "yaml",
+    "loc": 51
+  },
+  {
+    "path": "k8s/secret.example.yaml",
+    "size_bytes": 530,
+    "mtime_iso": "2025-09-30T09:22:56.626542+00:00",
+    "language": "yaml",
+    "loc": 15
+  },
+  {
+    "path": "kalkulation.py",
+    "size_bytes": 1341,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "py",
+    "loc": 29
+  },
+  {
+    "path": "keycloak.html",
+    "size_bytes": 2736,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "html",
+    "loc": 98
+  },
+  {
+    "path": "keycloak/=",
+    "size_bytes": 0,
+    "mtime_iso": "2025-03-23T12:43:24.004177+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "keycloak/Dockerfile",
+    "size_bytes": 547,
+    "mtime_iso": "2025-09-25T12:46:56.013833+00:00",
+    "language": "binary",
+    "loc": 18
+  },
+  {
+    "path": "keycloak/certs/cert.pem",
+    "size_bytes": 1822,
+    "mtime_iso": "2025-07-04T08:58:22.250045+00:00",
+    "language": "pem",
+    "loc": 30
+  },
+  {
+    "path": "keycloak/certs/key.pem",
+    "size_bytes": 3272,
+    "mtime_iso": "2025-07-04T08:58:22.244045+00:00",
+    "language": "pem",
+    "loc": 52
+  },
+  {
+    "path": "keycloak/exporting",
+    "size_bytes": 0,
+    "mtime_iso": "2025-03-23T12:43:23.817178+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "keycloak/keycloak.conf",
+    "size_bytes": 84,
+    "mtime_iso": "2025-05-06T17:25:43.247476+00:00",
+    "language": "conf",
+    "loc": 4
+  },
+  {
+    "path": "keycloak/naming",
+    "size_bytes": 0,
+    "mtime_iso": "2025-03-23T12:43:24.004177+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "keycloak/realm-export.json",
+    "size_bytes": 68773,
+    "mtime_iso": "2025-03-27T07:31:08.159592+00:00",
+    "language": "json",
+    "loc": 2204
+  },
+  {
+    "path": "keycloak/themes/sealai/login/login.ftl",
+    "size_bytes": 2123,
+    "mtime_iso": "2025-03-27T10:25:42.782794+00:00",
+    "language": "ftl",
+    "loc": 80
+  },
+  {
+    "path": "keycloak/themes/sealai/login/resources/css/login.css",
+    "size_bytes": 0,
+    "mtime_iso": "2025-03-27T10:25:42.784794+00:00",
+    "language": "css",
+    "loc": 0
+  },
+  {
+    "path": "keycloak/themes/sealai/login/theme.properties",
+    "size_bytes": 33,
+    "mtime_iso": "2025-03-27T10:25:42.781794+00:00",
+    "language": "properties",
+    "loc": 2
+  },
+  {
+    "path": "keycloak/themes/theme.properties",
+    "size_bytes": 101,
+    "mtime_iso": "2025-03-27T10:25:08.610972+00:00",
+    "language": "properties",
+    "loc": 6
+  },
+  {
+    "path": "keycloak/transferring",
+    "size_bytes": 0,
+    "mtime_iso": "2025-03-23T12:43:23.478180+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "keycloak/writing",
+    "size_bytes": 0,
+    "mtime_iso": "2025-03-23T12:43:23.911178+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "langchain_core_stub/__init__.py",
+    "size_bytes": 169,
+    "mtime_iso": "2025-10-12T04:42:26.729161+00:00",
+    "language": "py",
+    "loc": 5
+  },
+  {
+    "path": "langchain_core_stub/messages.py",
+    "size_bytes": 635,
+    "mtime_iso": "2025-10-12T12:20:10.757840+00:00",
+    "language": "py",
+    "loc": 33
+  },
+  {
+    "path": "langgraph_backup/.codespellignore",
+    "size_bytes": 0,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "langgraph_backup/.env.example",
+    "size_bytes": 550,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "example",
+    "loc": 27
+  },
+  {
+    "path": "langgraph_backup/.github/workflows/integration-tests.yml",
+    "size_bytes": 2075,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "yml",
+    "loc": 61
+  },
+  {
+    "path": "langgraph_backup/.github/workflows/unit-tests.yml",
+    "size_bytes": 1657,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "yml",
+    "loc": 57
+  },
+  {
+    "path": "langgraph_backup/.gitignore",
+    "size_bytes": 3157,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "binary",
+    "loc": 164
+  },
+  {
+    "path": "langgraph_backup/LICENSE",
+    "size_bytes": 1066,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "binary",
+    "loc": 21
+  },
+  {
+    "path": "langgraph_backup/Makefile",
+    "size_bytes": 1941,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "binary",
+    "loc": 64
+  },
+  {
+    "path": "langgraph_backup/README.md",
+    "size_bytes": 26934,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "md",
+    "loc": 718
+  },
+  {
+    "path": "langgraph_backup/langgraph.json",
+    "size_bytes": 187,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "json",
+    "loc": 8
+  },
+  {
+    "path": "langgraph_backup/langgraph/__init__.py",
+    "size_bytes": 543,
+    "mtime_iso": "2025-10-13T10:41:00.511021+00:00",
+    "language": "py",
+    "loc": 25
+  },
+  {
+    "path": "langgraph_backup/langgraph/checkpoint/__init__.py",
+    "size_bytes": 119,
+    "mtime_iso": "2025-10-13T09:04:34.976840+00:00",
+    "language": "py",
+    "loc": 6
+  },
+  {
+    "path": "langgraph_backup/langgraph/checkpoint/memory.py",
+    "size_bytes": 728,
+    "mtime_iso": "2025-10-12T04:39:40.959975+00:00",
+    "language": "py",
+    "loc": 25
+  },
+  {
+    "path": "langgraph_backup/langgraph/checkpoint/redis.py",
+    "size_bytes": 1998,
+    "mtime_iso": "2025-10-13T09:04:44.509794+00:00",
+    "language": "py",
+    "loc": 62
+  },
+  {
+    "path": "langgraph_backup/langgraph/constants.py",
+    "size_bytes": 91,
+    "mtime_iso": "2025-10-11T14:22:20.962286+00:00",
+    "language": "py",
+    "loc": 5
+  },
+  {
+    "path": "langgraph_backup/langgraph/graph.py",
+    "size_bytes": 12286,
+    "mtime_iso": "2025-10-13T09:03:31.542145+00:00",
+    "language": "py",
+    "loc": 333
+  },
+  {
+    "path": "langgraph_backup/langgraph/tool_node.py",
+    "size_bytes": 3881,
+    "mtime_iso": "2025-10-13T09:04:25.960883+00:00",
+    "language": "py",
+    "loc": 113
+  },
+  {
+    "path": "langgraph_backup/langgraph/types.py",
+    "size_bytes": 647,
+    "mtime_iso": "2025-10-13T09:03:50.155055+00:00",
+    "language": "py",
+    "loc": 26
+  },
+  {
+    "path": "langgraph_backup/pyproject.toml",
+    "size_bytes": 1669,
+    "mtime_iso": "2025-09-25T12:46:56.014832+00:00",
+    "language": "toml",
+    "loc": 64
+  },
+  {
+    "path": "langgraph_backup/static/studio_ui.png",
+    "size_bytes": 591670,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "png",
+    "loc": 0
+  },
+  {
+    "path": "langgraph_backup/tests/integration_tests/__init__.py",
+    "size_bytes": 40,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "py",
+    "loc": 1
+  },
+  {
+    "path": "langgraph_backup/tests/integration_tests/test_graph.py",
+    "size_bytes": 1354,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "py",
+    "loc": 41
+  },
+  {
+    "path": "langgraph_backup/tests/unit_tests/__init__.py",
+    "size_bytes": 33,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "py",
+    "loc": 1
+  },
+  {
+    "path": "langgraph_backup/tests/unit_tests/test_configuration.py",
+    "size_bytes": 161,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "py",
+    "loc": 5
+  },
+  {
+    "path": "loginpage.html",
+    "size_bytes": 1726,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "html",
+    "loc": 47
+  },
+  {
+    "path": "loginpage_nextauth.html",
+    "size_bytes": 1797,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "html",
+    "loc": 48
+  },
+  {
+    "path": "loginpage_nextauth_correct.html",
+    "size_bytes": 5604,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "html",
+    "loc": 120
+  },
+  {
+    "path": "migrate_structure.sh",
+    "size_bytes": 1482,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "sh",
+    "loc": 40
+  },
+  {
+    "path": "next",
+    "size_bytes": 0,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "binary",
+    "loc": 0
+  },
+  {
+    "path": "nextauth (1).json",
+    "size_bytes": 1752,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "json",
+    "loc": 65
+  },
+  {
+    "path": "nginx-certbot/Dockerfile",
+    "size_bytes": 328,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "binary",
+    "loc": 12
+  },
+  {
+    "path": "nginx-certbot/default.conf",
+    "size_bytes": 1089,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "conf",
+    "loc": 35
+  },
+  {
+    "path": "nginx/00-tuning.conf",
+    "size_bytes": 816,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "conf",
+    "loc": 27
+  },
+  {
+    "path": "nginx/Dockerfile",
+    "size_bytes": 119,
+    "mtime_iso": "2025-03-06T13:16:12.013262+00:00",
+    "language": "binary",
+    "loc": 4
+  },
+  {
+    "path": "nginx/backend.conf",
+    "size_bytes": 1847,
+    "mtime_iso": "2025-03-07T15:10:10.583346+00:00",
+    "language": "conf",
+    "loc": 58
+  },
+  {
+    "path": "nginx/certbot/.well-known/acme-challenge/testfile.txt",
+    "size_bytes": 8,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "txt",
+    "loc": 1
+  },
+  {
+    "path": "nginx/certbot/accounts/acme-v02.api.letsencrypt.org/directory/a3f2c75de640d602c8973920a5253801/meta.json",
+    "size_bytes": 113,
+    "mtime_iso": "2025-03-01T15:34:56.152870+00:00",
+    "language": "json",
+    "loc": 1
+  },
+  {
+    "path": "nginx/certbot/accounts/acme-v02.api.letsencrypt.org/directory/a3f2c75de640d602c8973920a5253801/private_key.json",
+    "size_bytes": 1632,
+    "mtime_iso": "2025-03-01T15:34:54.154859+00:00",
+    "language": "json",
+    "loc": 1
+  },
+  {
+    "path": "nginx/certbot/accounts/acme-v02.api.letsencrypt.org/directory/a3f2c75de640d602c8973920a5253801/regr.json",
+    "size_bytes": 80,
+    "mtime_iso": "2025-03-01T15:34:54.154859+00:00",
+    "language": "json",
+    "loc": 1
+  },
+  {
+    "path": "nginx/cookies.txt",
+    "size_bytes": 410,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "txt",
+    "loc": 6
+  },
+  {
+    "path": "nginx/default.conf",
+    "size_bytes": 5863,
+    "mtime_iso": "2025-09-25T12:46:56.019833+00:00",
+    "language": "conf",
+    "loc": 181
+  },
+  {
+    "path": "nginx/docker-entrypoint-wait.sh",
+    "size_bytes": 247,
+    "mtime_iso": "2025-07-18T10:26:45.382321+00:00",
+    "language": "sh",
+    "loc": 9
+  },
+  {
+    "path": "nginx/package-lock.json",
+    "size_bytes": 36612,
+    "mtime_iso": "2025-03-04T09:32:11.805978+00:00",
+    "language": "json",
+    "loc": 1098
+  },
+  {
+    "path": "nginx/package.json",
+    "size_bytes": 56,
+    "mtime_iso": "2025-03-04T09:32:11.789978+00:00",
+    "language": "json",
+    "loc": 5
+  },
+  {
+    "path": "nginx/snippets/keycloak_proxy.conf",
+    "size_bytes": 486,
+    "mtime_iso": "2025-08-09T10:22:14.681731+00:00",
+    "language": "conf",
+    "loc": 12
+  },
+  {
+    "path": "nginx/snippets/sealai_proxy_headers.conf",
+    "size_bytes": 536,
+    "mtime_iso": "2025-08-11T07:23:43.522129+00:00",
+    "language": "conf",
+    "loc": 11
+  },
+  {
+    "path": "nginx/streaming.conf",
+    "size_bytes": 374,
+    "mtime_iso": "2025-03-10T07:09:09.546633+00:00",
+    "language": "conf",
+    "loc": 14
+  },
+  {
+    "path": "nginx/tuning.conf",
+    "size_bytes": 532,
+    "mtime_iso": "2025-08-11T07:11:59.546866+00:00",
+    "language": "conf",
+    "loc": 25
+  },
+  {
+    "path": "package-lock.json",
+    "size_bytes": 274003,
+    "mtime_iso": "2025-09-25T12:46:56.020833+00:00",
+    "language": "json",
+    "loc": 7219
+  },
+  {
+    "path": "package.json",
+    "size_bytes": 844,
+    "mtime_iso": "2025-09-25T12:46:56.020833+00:00",
+    "language": "json",
+    "loc": 35
+  },
+  {
+    "path": "postcss.config.js",
+    "size_bytes": 83,
+    "mtime_iso": "2025-05-05T13:32:05.353945+00:00",
+    "language": "js",
+    "loc": 6
+  },
+  {
+    "path": "prompts/begruessung_node.txt",
+    "size_bytes": 449,
+    "mtime_iso": "2025-09-25T12:46:56.020833+00:00",
+    "language": "txt",
+    "loc": 3
+  },
+  {
+    "path": "prompts/beratung_node.txt",
+    "size_bytes": 1027,
+    "mtime_iso": "2025-10-10T08:02:06.236508+00:00",
+    "language": "txt",
+    "loc": 17
+  },
+  {
+    "path": "prompts/chat_chain.txt",
+    "size_bytes": 742,
+    "mtime_iso": "2025-09-25T12:46:56.020833+00:00",
+    "language": "txt",
+    "loc": 25
+  },
+  {
+    "path": "prompts/sealai_system_prompt.txt",
+    "size_bytes": 3435,
+    "mtime_iso": "2025-09-25T12:46:56.020833+00:00",
+    "language": "txt",
+    "loc": 44
+  },
+  {
+    "path": "prompts/smalltalk_node.txt",
+    "size_bytes": 353,
+    "mtime_iso": "2025-09-25T12:46:56.020833+00:00",
+    "language": "txt",
+    "loc": 3
+  },
+  {
+    "path": "prompts/werkstoff_berater_node.txt",
+    "size_bytes": 538,
+    "mtime_iso": "2025-09-25T12:46:56.020833+00:00",
+    "language": "txt",
+    "loc": 10
+  },
+  {
+    "path": "realm-export.json",
+    "size_bytes": 220,
+    "mtime_iso": "2025-03-25T09:37:20.201883+00:00",
+    "language": "json",
+    "loc": 13
+  },
+  {
+    "path": "refactor.sh",
+    "size_bytes": 2685,
+    "mtime_iso": "2025-10-13T06:25:07.893182+00:00",
+    "language": "sh",
+    "loc": 88
+  },
+  {
+    "path": "requirements.txt",
+    "size_bytes": 1783,
+    "mtime_iso": "2025-09-25T12:46:56.020833+00:00",
+    "language": "txt",
+    "loc": 93
+  },
+  {
+    "path": "research_agent.py",
+    "size_bytes": 4755,
+    "mtime_iso": "2025-10-13T13:09:18.959582+00:00",
+    "language": "py",
+    "loc": 121
+  },
+  {
+    "path": "root@ubuntu-8gb-nbg1-1:~#",
+    "size_bytes": 15481,
+    "mtime_iso": "2025-08-17T13:55:37.666043+00:00",
+    "language": "binary",
+    "loc": 379
+  },
+  {
+    "path": "scripts/run_benchmarks.py",
+    "size_bytes": 5295,
+    "mtime_iso": "2025-10-06T11:59:17.072754+00:00",
+    "language": "py",
+    "loc": 168
+  },
+  {
+    "path": "sealai-code-dump-2025-09-26.md",
+    "size_bytes": 690747,
+    "mtime_iso": "2025-09-26T11:52:48.104568+00:00",
+    "language": "md",
+    "loc": 20523
+  },
+  {
+    "path": "sealai-stack-20250918-1753.txt",
+    "size_bytes": 500653,
+    "mtime_iso": "2025-09-25T12:46:56.022832+00:00",
+    "language": "txt",
+    "loc": 12299
+  },
+  {
+    "path": "sidebar_chat_dump_20250915_140151.txt",
+    "size_bytes": 73457,
+    "mtime_iso": "2025-09-15T14:01:51.759792+00:00",
+    "language": "txt",
+    "loc": 1839
+  },
+  {
+    "path": "smoke_test.py",
+    "size_bytes": 1039,
+    "mtime_iso": "2025-10-12T10:22:18.820176+00:00",
+    "language": "py",
+    "loc": 34
+  },
+  {
+    "path": "summarization_node.py",
+    "size_bytes": 1676,
+    "mtime_iso": "2025-09-25T12:46:56.022832+00:00",
+    "language": "py",
+    "loc": 39
+  },
+  {
+    "path": "tailwind.config.cjs",
+    "size_bytes": 353,
+    "mtime_iso": "2025-05-05T13:31:51.035038+00:00",
+    "language": "cjs",
+    "loc": 12
+  },
+  {
+    "path": "test_example.py",
+    "size_bytes": 89,
+    "mtime_iso": "2025-10-10T15:30:05.267134+00:00",
+    "language": "py",
+    "loc": 5
+  },
+  {
+    "path": "test_input.json",
+    "size_bytes": 224,
+    "mtime_iso": "2025-05-23T16:11:29.802348+00:00",
+    "language": "json",
+    "loc": 8
+  },
+  {
+    "path": "test_langchain.py",
+    "size_bytes": 824,
+    "mtime_iso": "2025-06-30T06:32:20.494571+00:00",
+    "language": "py",
+    "loc": 22
+  },
+  {
+    "path": "test_llm.py",
+    "size_bytes": 438,
+    "mtime_iso": "2025-06-30T06:32:18.377584+00:00",
+    "language": "py",
+    "loc": 13
+  },
+  {
+    "path": "test_stream.py",
+    "size_bytes": 471,
+    "mtime_iso": "2025-06-30T06:32:20.494571+00:00",
+    "language": "py",
+    "loc": 17
+  },
+  {
+    "path": "tests/test_api_langgraph.py",
+    "size_bytes": 497,
+    "mtime_iso": "2025-10-11T14:23:06.203062+00:00",
+    "language": "py",
+    "loc": 17
+  },
+  {
+    "path": "tests/test_consult_e2e.py",
+    "size_bytes": 2382,
+    "mtime_iso": "2025-08-13T08:24:51.117536+00:00",
+    "language": "py",
+    "loc": 54
+  },
+  {
+    "path": "tests/test_consult_graph_nodes.py",
+    "size_bytes": 8181,
+    "mtime_iso": "2025-10-07T10:36:33.753065+00:00",
+    "language": "py",
+    "loc": 211
+  },
+  {
+    "path": "tests/test_recommend_node.py",
+    "size_bytes": 2574,
+    "mtime_iso": "2025-10-10T15:40:48.677979+00:00",
+    "language": "py",
+    "loc": 69
+  },
+  {
+    "path": "tests/test_supervisor_router.py",
+    "size_bytes": 3053,
+    "mtime_iso": "2025-09-26T14:25:26.882950+00:00",
+    "language": "py",
+    "loc": 84
+  },
+  {
+    "path": "{chat_id:",
+    "size_bytes": 0,
+    "mtime_iso": "2025-08-01T10:19:45.545733+00:00",
+    "language": "binary",
+    "loc": 0
+  }
+]

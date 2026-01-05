@@ -1,0 +1,138 @@
+# MIGRATION: Phase-2 – expanded agent configuration with full specification
+material:
+  model:
+    name: gpt-4.1-mini
+    temperature: 0.1
+    max_output_tokens: 2048
+  prompt:
+    agent: prompts/material/material_agent.md
+    synthesis: prompts/material/synthesis.md
+    variant: default
+  rag:
+    index_id: materials
+    top_k: 5
+    hybrid: true
+    filters:
+      domain: material
+    cache_ttl_seconds: 3600
+  tools:
+    list:
+      - material_calculator
+      - standards_lookup
+    timeout_ms: 30000
+    concurrency: 2
+    circuit_breaker:
+      enabled: true
+      threshold: 5
+    retry:
+      max_tries: 3
+      backoff_ms: 1000
+  limits:
+    latency_ms: 20000
+    rounds: 5
+    tokens_out: 2048
+  budget:
+    max_tool_calls: 10
+    max_llm_calls: 5
+
+profil:
+  model:
+    name: gpt-4.1-mini
+    temperature: 0.1
+    max_output_tokens: 2048
+  prompt:
+    agent: prompts/profil/profil_agent.md
+    synthesis: prompts/profil/synthesis.md
+    variant: default
+  rag:
+    index_id: profiles
+    top_k: 5
+    hybrid: true
+    filters:
+      domain: profil
+    cache_ttl_seconds: 3600
+  tools:
+    list:
+      - standards_lookup
+    timeout_ms: 30000
+    concurrency: 2
+    circuit_breaker:
+      enabled: true
+      threshold: 5
+    retry:
+      max_tries: 3
+      backoff_ms: 1000
+  limits:
+    latency_ms: 15000
+    rounds: 5
+    tokens_out: 2048
+  budget:
+    max_tool_calls: 8
+    max_llm_calls: 4
+
+validierung:
+  model:
+    name: gpt-4.1-mini
+    temperature: 0.1
+    max_output_tokens: 2048
+  prompt:
+    agent: prompts/validierung/validierung_agent.md
+    synthesis: prompts/validierung/synthesis.md
+    variant: default
+  rag:
+    index_id: regulations
+    top_k: 5
+    hybrid: true
+    filters:
+      domain: validierung
+    cache_ttl_seconds: 3600
+  tools:
+    list: []
+    timeout_ms: 30000
+    concurrency: 1
+    circuit_breaker:
+      enabled: true
+      threshold: 5
+    retry:
+      max_tries: 3
+      backoff_ms: 1000
+  limits:
+    latency_ms: 15000
+    rounds: 5
+    tokens_out: 2048
+  budget:
+    max_tool_calls: 5
+    max_llm_calls: 3
+
+debate:
+  model:
+    name: gpt-4.1-mini
+    temperature: 0.1
+    max_output_tokens: 2048
+  prompt:
+    initiator: prompts/debate/initiator.md
+    pro_agent: prompts/debate/pro_agent.md
+    contra_agent: prompts/debate/contra_agent.md
+    moderator: prompts/debate/moderator.md
+    judge: prompts/debate/judge.md
+    variant: default
+  limits:
+    latency_ms: 30000
+    rounds: 3
+    tokens_out: 2048
+  budget:
+    max_llm_calls: 10
+
+intent:
+  model:
+    name: gpt-4.1-mini
+    temperature: 0.1
+    max_output_tokens: 1024
+  prompt:
+    intent: prompts/intent_projector.md
+    variant: default
+  limits:
+    latency_ms: 10000
+    tokens_out: 1024
+  budget:
+    max_llm_calls: 2

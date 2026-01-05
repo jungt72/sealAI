@@ -1,0 +1,12 @@
+[Unit]
+Description=Start SealAI backend and frontend services
+After=network-online.target docker.service ufw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/docker compose -f /root/sealai/docker-compose.yml -f /root/sealai/docker-compose.deploy.yml up -d --remove-orphans backend frontend
+
+[Install]
+WantedBy=multi-user.target

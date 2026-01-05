@@ -1,0 +1,33 @@
+{
+  "kind": "collectionType",
+  "collectionName": "next_steps",
+  "info": {
+    "singularName": "next-step",
+    "pluralName": "next-steps",
+    "displayName": "Next Step"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text"
+    },
+    "cta_text": {
+      "type": "string"
+    },
+    "cta_link": {
+      "type": "string"
+    },
+    "image": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["images"]
+    }
+  }
+}

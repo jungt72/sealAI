@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
 import { getToken } from "next-auth/jwt";
+import { getAuthOptions } from "@/lib/auth-options";
+import { getTokens } from "@/lib/auth-token-store";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +13,15 @@ export async function GET(req: NextRequest) {
     const clientId = process.env.KEYCLOAK_CLIENT_ID!;
     if (!issuer || !clientId) throw new Error("Missing KEYCLOAK_ISSUER or KEYCLOAK_CLIENT_ID");
 
-    const jwt = (await getToken({ req }).catch(() => null)) as any;
-    const idToken = jwt?.idToken;
+    const authOptions = await getAuthOptions();
+    await getServerSession(authOptions);
+    let jwt: any = null;
+    try {
+      jwt = await getToken({ req });
+    } catch {}
+    const jti = typeof jwt?.jti === "string" ? jwt.jti : null;
+    const stored = jti ? await getTokens(jti) : null;
+    const idToken = stored?.idToken ?? null;
 
     // Nach Keycloak-Logout auf Seite leiten, die NextAuth signOut automatisch POSTet
     const postLogout = new URL("/auth/signed-out", base);

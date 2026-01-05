@@ -1,0 +1,1810 @@
+{
+  "all": [
+    {
+      "module": "prompt_renderer",
+      "path": "backend/prompt_renderer.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "simple_test",
+      "path": "backend/simple_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "ws_test",
+      "path": "backend/ws_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "e2e_test",
+      "path": "backend/e2e_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_prompts",
+      "path": "backend/test_prompts.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_graph_astream",
+      "path": "backend/test_graph_astream.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "main",
+      "path": "backend/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_graph",
+      "path": "backend/test_graph.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.database",
+      "path": "backend/app/database.py",
+      "total_imports": 5,
+      "non_test_imports": 5
+    },
+    {
+      "module": "app",
+      "path": "backend/app/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.ws_stream_test",
+      "path": "backend/app/ws_stream_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.main",
+      "path": "backend/app/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents",
+      "path": "backend/agents/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents.supervisor_stack",
+      "path": "backend/agents/supervisor_stack.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "tests.test_obs_min",
+      "path": "backend/tests/test_obs_min.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "tests.test_hybrid_routing",
+      "path": "backend/tests/test_hybrid_routing.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.env",
+      "path": "backend/alembic/env.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.utils.json",
+      "path": "backend/app/utils/json.py",
+      "total_imports": 2,
+      "non_test_imports": 2
+    },
+    {
+      "module": "app.services",
+      "path": "backend/app/services/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.openai_payload",
+      "path": "backend/app/services/openai_payload.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.core.config",
+      "path": "backend/app/core/config.py",
+      "total_imports": 6,
+      "non_test_imports": 6
+    },
+    {
+      "module": "app.common.obs",
+      "path": "backend/app/common/obs.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.cli",
+      "path": "backend/app/cli/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.long_term_memory",
+      "path": "backend/app/models/long_term_memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.form_result",
+      "path": "backend/app/models/form_result.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.beratungsergebnis",
+      "path": "backend/app/models/beratungsergebnis.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.chat_message",
+      "path": "backend/app/models/chat_message.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.models.postgres_logger",
+      "path": "backend/app/models/postgres_logger.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api",
+      "path": "backend/app/api/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.types",
+      "path": "backend/app/langgraph/types.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph",
+      "path": "backend/app/langgraph/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.constants",
+      "path": "backend/app/langgraph/constants.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.langgraph.compile",
+      "path": "backend/app/langgraph/compile.py",
+      "total_imports": 3,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.langgraph.state",
+      "path": "backend/app/langgraph/state.py",
+      "total_imports": 5,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.auth.dependencies",
+      "path": "backend/app/services/auth/dependencies.py",
+      "total_imports": 2,
+      "non_test_imports": 2
+    },
+    {
+      "module": "app.services.auth.token",
+      "path": "backend/app/services/auth/token.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.auth",
+      "path": "backend/app/services/auth/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.auth.jwt_utils",
+      "path": "backend/app/services/auth/jwt_utils.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.memory",
+      "path": "backend/app/services/memory/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.memory.conversation_memory",
+      "path": "backend/app/services/memory/conversation_memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.memory.memory_core",
+      "path": "backend/app/services/memory/memory_core.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.chat",
+      "path": "backend/app/services/chat/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.chat.ws_streaming",
+      "path": "backend/app/services/chat/ws_streaming.py",
+      "total_imports": 2,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.chat.ws_config",
+      "path": "backend/app/services/chat/ws_config.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.chat.ws_commons",
+      "path": "backend/app/services/chat/ws_commons.py",
+      "total_imports": 2,
+      "non_test_imports": 2
+    },
+    {
+      "module": "app.services.rag",
+      "path": "backend/app/services/rag/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.rag.rag_orchestrator",
+      "path": "backend/app/services/rag/rag_orchestrator.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.rag.rag_ingest",
+      "path": "backend/app/services/rag/rag_ingest.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.chat.tests.test_ws_prompt_composition",
+      "path": "backend/app/services/chat/tests/test_ws_prompt_composition.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1",
+      "path": "backend/app/api/v1/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.api",
+      "path": "backend/app/api/v1/api.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.api.routes",
+      "path": "backend/app/api/routes/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.routes.chat",
+      "path": "backend/app/api/routes/chat.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.routes.chat_utils",
+      "path": "backend/app/api/routes/chat_utils.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.api.v1.dependencies",
+      "path": "backend/app/api/v1/dependencies/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.dependencies.auth",
+      "path": "backend/app/api/v1/dependencies/auth.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.schemas.chat",
+      "path": "backend/app/api/v1/schemas/chat.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.schemas.form",
+      "path": "backend/app/api/v1/schemas/form.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints",
+      "path": "backend/app/api/v1/endpoints/__init__.py",
+      "total_imports": 2,
+      "non_test_imports": 2
+    },
+    {
+      "module": "app.api.v1.endpoints.consult_invoke",
+      "path": "backend/app/api/v1/endpoints/consult_invoke.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.memory",
+      "path": "backend/app/api/v1/endpoints/memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.ai",
+      "path": "backend/app/api/v1/endpoints/ai.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.system",
+      "path": "backend/app/api/v1/endpoints/system.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.auth",
+      "path": "backend/app/api/v1/endpoints/auth.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.rfq",
+      "path": "backend/app/api/v1/endpoints/rfq.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.users",
+      "path": "backend/app/api/v1/endpoints/users.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.checkpointer",
+      "path": "backend/app/langgraph/utils/checkpointer.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.ids",
+      "path": "backend/app/langgraph/utils/ids.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.llm",
+      "path": "backend/app/langgraph/utils/llm.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.errors",
+      "path": "backend/app/langgraph/utils/errors.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.logging",
+      "path": "backend/app/langgraph/utils/logging.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.jinja_renderer",
+      "path": "backend/app/langgraph/utils/jinja_renderer.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.resolver",
+      "path": "backend/app/langgraph/nodes/resolver.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.supervisor",
+      "path": "backend/app/langgraph/nodes/supervisor.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.confirm_gate",
+      "path": "backend/app/langgraph/nodes/confirm_gate.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.discovery_intake",
+      "path": "backend/app/langgraph/nodes/discovery_intake.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.entry_frontend",
+      "path": "backend/app/langgraph/nodes/entry_frontend.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.exit_response",
+      "path": "backend/app/langgraph/nodes/exit_response.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.intent_projector",
+      "path": "backend/app/langgraph/nodes/intent_projector.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_interrupt_resume",
+      "path": "backend/app/langgraph/tests/test_interrupt_resume.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_toolnode_errors",
+      "path": "backend/app/langgraph/tests/test_toolnode_errors.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_state",
+      "path": "backend/app/langgraph/tests/test_state.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_resolver_determinism",
+      "path": "backend/app/langgraph/tests/test_resolver_determinism.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_singleflow_entry_to_exit",
+      "path": "backend/app/langgraph/tests/test_singleflow_entry_to_exit.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_hybrid_flow",
+      "path": "backend/app/langgraph/tests/test_hybrid_flow.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_rag_ref_only",
+      "path": "backend/app/langgraph/tests/test_rag_ref_only.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tools.material_calculator",
+      "path": "backend/app/langgraph/tools/material_calculator.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate",
+      "path": "backend/app/langgraph/subgraphs/debate/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate.compile",
+      "path": "backend/app/langgraph/subgraphs/debate/compile.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material",
+      "path": "backend/app/langgraph/subgraphs/material/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.compile",
+      "path": "backend/app/langgraph/subgraphs/material/compile.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.state",
+      "path": "backend/app/langgraph/subgraphs/material/state.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.validierung",
+      "path": "backend/app/langgraph/subgraphs/validierung/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.profil",
+      "path": "backend/app/langgraph/subgraphs/profil/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate.nodes.debate_agent",
+      "path": "backend/app/langgraph/subgraphs/debate/nodes/debate_agent.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.rag_select",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.tools_node",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/tools_node.py",
+      "total_imports": 5,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.synthesis",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/synthesis.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.material_agent",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/material_agent.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.utils.rag_cache",
+      "path": "backend/backend/app/langgraph/utils/rag_cache.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_prompts_exist_and_bind",
+      "path": "backend/backend/app/langgraph/tests/test_prompts_exist_and_bind.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_toolnode_parallelism",
+      "path": "backend/backend/app/langgraph/tests/test_toolnode_parallelism.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_rag_ref_only",
+      "path": "backend/backend/app/langgraph/tests/test_rag_ref_only.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.subgraphs.material.nodes.rag_select",
+      "path": "backend/backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents.material_agent.main",
+      "path": "backend/agents/material_agent/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents.normen_agent.main",
+      "path": "backend/agents/normen_agent/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.963dc293d186_initial_schema",
+      "path": "backend/alembic/versions/963dc293d186_initial_schema.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.70968fe4c62e_add_form_results_table",
+      "path": "backend/alembic/versions/70968fe4c62e_add_form_results_table.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.8b7f4c21d3ab_add_user_profiles_table",
+      "path": "backend/alembic/versions/8b7f4c21d3ab_add_user_profiles_table.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    }
+  ],
+  "selten": [
+    {
+      "module": "prompt_renderer",
+      "path": "backend/prompt_renderer.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "simple_test",
+      "path": "backend/simple_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "ws_test",
+      "path": "backend/ws_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "e2e_test",
+      "path": "backend/e2e_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_prompts",
+      "path": "backend/test_prompts.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_graph_astream",
+      "path": "backend/test_graph_astream.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "main",
+      "path": "backend/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_graph",
+      "path": "backend/test_graph.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app",
+      "path": "backend/app/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.ws_stream_test",
+      "path": "backend/app/ws_stream_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.main",
+      "path": "backend/app/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents",
+      "path": "backend/agents/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents.supervisor_stack",
+      "path": "backend/agents/supervisor_stack.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "tests.test_obs_min",
+      "path": "backend/tests/test_obs_min.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "tests.test_hybrid_routing",
+      "path": "backend/tests/test_hybrid_routing.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.env",
+      "path": "backend/alembic/env.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services",
+      "path": "backend/app/services/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.openai_payload",
+      "path": "backend/app/services/openai_payload.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.common.obs",
+      "path": "backend/app/common/obs.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.cli",
+      "path": "backend/app/cli/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.long_term_memory",
+      "path": "backend/app/models/long_term_memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.form_result",
+      "path": "backend/app/models/form_result.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.beratungsergebnis",
+      "path": "backend/app/models/beratungsergebnis.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.chat_message",
+      "path": "backend/app/models/chat_message.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.models.postgres_logger",
+      "path": "backend/app/models/postgres_logger.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api",
+      "path": "backend/app/api/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.types",
+      "path": "backend/app/langgraph/types.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph",
+      "path": "backend/app/langgraph/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.constants",
+      "path": "backend/app/langgraph/constants.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.auth.token",
+      "path": "backend/app/services/auth/token.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.auth",
+      "path": "backend/app/services/auth/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.auth.jwt_utils",
+      "path": "backend/app/services/auth/jwt_utils.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.memory",
+      "path": "backend/app/services/memory/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.memory.conversation_memory",
+      "path": "backend/app/services/memory/conversation_memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.memory.memory_core",
+      "path": "backend/app/services/memory/memory_core.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.chat",
+      "path": "backend/app/services/chat/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.chat.ws_config",
+      "path": "backend/app/services/chat/ws_config.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.rag",
+      "path": "backend/app/services/rag/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.rag.rag_orchestrator",
+      "path": "backend/app/services/rag/rag_orchestrator.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.services.rag.rag_ingest",
+      "path": "backend/app/services/rag/rag_ingest.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.chat.tests.test_ws_prompt_composition",
+      "path": "backend/app/services/chat/tests/test_ws_prompt_composition.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1",
+      "path": "backend/app/api/v1/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.api",
+      "path": "backend/app/api/v1/api.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.api.routes",
+      "path": "backend/app/api/routes/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.routes.chat",
+      "path": "backend/app/api/routes/chat.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.routes.chat_utils",
+      "path": "backend/app/api/routes/chat_utils.py",
+      "total_imports": 1,
+      "non_test_imports": 1
+    },
+    {
+      "module": "app.api.v1.dependencies",
+      "path": "backend/app/api/v1/dependencies/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.dependencies.auth",
+      "path": "backend/app/api/v1/dependencies/auth.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.schemas.chat",
+      "path": "backend/app/api/v1/schemas/chat.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.schemas.form",
+      "path": "backend/app/api/v1/schemas/form.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.consult_invoke",
+      "path": "backend/app/api/v1/endpoints/consult_invoke.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.memory",
+      "path": "backend/app/api/v1/endpoints/memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.ai",
+      "path": "backend/app/api/v1/endpoints/ai.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.system",
+      "path": "backend/app/api/v1/endpoints/system.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.auth",
+      "path": "backend/app/api/v1/endpoints/auth.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.rfq",
+      "path": "backend/app/api/v1/endpoints/rfq.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.users",
+      "path": "backend/app/api/v1/endpoints/users.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.checkpointer",
+      "path": "backend/app/langgraph/utils/checkpointer.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.ids",
+      "path": "backend/app/langgraph/utils/ids.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.llm",
+      "path": "backend/app/langgraph/utils/llm.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.errors",
+      "path": "backend/app/langgraph/utils/errors.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.logging",
+      "path": "backend/app/langgraph/utils/logging.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.jinja_renderer",
+      "path": "backend/app/langgraph/utils/jinja_renderer.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.resolver",
+      "path": "backend/app/langgraph/nodes/resolver.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.supervisor",
+      "path": "backend/app/langgraph/nodes/supervisor.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.confirm_gate",
+      "path": "backend/app/langgraph/nodes/confirm_gate.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.discovery_intake",
+      "path": "backend/app/langgraph/nodes/discovery_intake.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.entry_frontend",
+      "path": "backend/app/langgraph/nodes/entry_frontend.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.exit_response",
+      "path": "backend/app/langgraph/nodes/exit_response.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.intent_projector",
+      "path": "backend/app/langgraph/nodes/intent_projector.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_interrupt_resume",
+      "path": "backend/app/langgraph/tests/test_interrupt_resume.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_toolnode_errors",
+      "path": "backend/app/langgraph/tests/test_toolnode_errors.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_state",
+      "path": "backend/app/langgraph/tests/test_state.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_resolver_determinism",
+      "path": "backend/app/langgraph/tests/test_resolver_determinism.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_singleflow_entry_to_exit",
+      "path": "backend/app/langgraph/tests/test_singleflow_entry_to_exit.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_hybrid_flow",
+      "path": "backend/app/langgraph/tests/test_hybrid_flow.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_rag_ref_only",
+      "path": "backend/app/langgraph/tests/test_rag_ref_only.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tools.material_calculator",
+      "path": "backend/app/langgraph/tools/material_calculator.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate",
+      "path": "backend/app/langgraph/subgraphs/debate/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate.compile",
+      "path": "backend/app/langgraph/subgraphs/debate/compile.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material",
+      "path": "backend/app/langgraph/subgraphs/material/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.compile",
+      "path": "backend/app/langgraph/subgraphs/material/compile.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.state",
+      "path": "backend/app/langgraph/subgraphs/material/state.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.validierung",
+      "path": "backend/app/langgraph/subgraphs/validierung/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.profil",
+      "path": "backend/app/langgraph/subgraphs/profil/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate.nodes.debate_agent",
+      "path": "backend/app/langgraph/subgraphs/debate/nodes/debate_agent.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.rag_select",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.synthesis",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/synthesis.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.material_agent",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/material_agent.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.utils.rag_cache",
+      "path": "backend/backend/app/langgraph/utils/rag_cache.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_prompts_exist_and_bind",
+      "path": "backend/backend/app/langgraph/tests/test_prompts_exist_and_bind.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_toolnode_parallelism",
+      "path": "backend/backend/app/langgraph/tests/test_toolnode_parallelism.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_rag_ref_only",
+      "path": "backend/backend/app/langgraph/tests/test_rag_ref_only.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.subgraphs.material.nodes.rag_select",
+      "path": "backend/backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents.material_agent.main",
+      "path": "backend/agents/material_agent/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents.normen_agent.main",
+      "path": "backend/agents/normen_agent/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.963dc293d186_initial_schema",
+      "path": "backend/alembic/versions/963dc293d186_initial_schema.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.70968fe4c62e_add_form_results_table",
+      "path": "backend/alembic/versions/70968fe4c62e_add_form_results_table.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.8b7f4c21d3ab_add_user_profiles_table",
+      "path": "backend/alembic/versions/8b7f4c21d3ab_add_user_profiles_table.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    }
+  ],
+  "only_tests": [
+    {
+      "module": "prompt_renderer",
+      "path": "backend/prompt_renderer.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.common.obs",
+      "path": "backend/app/common/obs.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.jinja_renderer",
+      "path": "backend/app/langgraph/utils/jinja_renderer.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.rag_select",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+      "total_imports": 1,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.tools_node",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/tools_node.py",
+      "total_imports": 5,
+      "non_test_imports": 0
+    }
+  ],
+  "never_imported": [
+    {
+      "module": "simple_test",
+      "path": "backend/simple_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "ws_test",
+      "path": "backend/ws_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "e2e_test",
+      "path": "backend/e2e_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_prompts",
+      "path": "backend/test_prompts.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_graph_astream",
+      "path": "backend/test_graph_astream.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "main",
+      "path": "backend/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "test_graph",
+      "path": "backend/test_graph.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app",
+      "path": "backend/app/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.ws_stream_test",
+      "path": "backend/app/ws_stream_test.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.main",
+      "path": "backend/app/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents",
+      "path": "backend/agents/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "tests.test_obs_min",
+      "path": "backend/tests/test_obs_min.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "tests.test_hybrid_routing",
+      "path": "backend/tests/test_hybrid_routing.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.env",
+      "path": "backend/alembic/env.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services",
+      "path": "backend/app/services/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.openai_payload",
+      "path": "backend/app/services/openai_payload.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.cli",
+      "path": "backend/app/cli/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.long_term_memory",
+      "path": "backend/app/models/long_term_memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.form_result",
+      "path": "backend/app/models/form_result.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.beratungsergebnis",
+      "path": "backend/app/models/beratungsergebnis.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.models.postgres_logger",
+      "path": "backend/app/models/postgres_logger.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api",
+      "path": "backend/app/api/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.types",
+      "path": "backend/app/langgraph/types.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph",
+      "path": "backend/app/langgraph/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.auth",
+      "path": "backend/app/services/auth/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.auth.jwt_utils",
+      "path": "backend/app/services/auth/jwt_utils.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.memory",
+      "path": "backend/app/services/memory/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.memory.conversation_memory",
+      "path": "backend/app/services/memory/conversation_memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.chat",
+      "path": "backend/app/services/chat/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.chat.ws_config",
+      "path": "backend/app/services/chat/ws_config.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.rag",
+      "path": "backend/app/services/rag/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.rag.rag_ingest",
+      "path": "backend/app/services/rag/rag_ingest.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.services.chat.tests.test_ws_prompt_composition",
+      "path": "backend/app/services/chat/tests/test_ws_prompt_composition.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1",
+      "path": "backend/app/api/v1/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.routes",
+      "path": "backend/app/api/routes/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.routes.chat",
+      "path": "backend/app/api/routes/chat.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.dependencies",
+      "path": "backend/app/api/v1/dependencies/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.dependencies.auth",
+      "path": "backend/app/api/v1/dependencies/auth.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.schemas.chat",
+      "path": "backend/app/api/v1/schemas/chat.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.schemas.form",
+      "path": "backend/app/api/v1/schemas/form.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.consult_invoke",
+      "path": "backend/app/api/v1/endpoints/consult_invoke.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.memory",
+      "path": "backend/app/api/v1/endpoints/memory.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.ai",
+      "path": "backend/app/api/v1/endpoints/ai.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.system",
+      "path": "backend/app/api/v1/endpoints/system.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.auth",
+      "path": "backend/app/api/v1/endpoints/auth.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.rfq",
+      "path": "backend/app/api/v1/endpoints/rfq.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.api.v1.endpoints.users",
+      "path": "backend/app/api/v1/endpoints/users.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.checkpointer",
+      "path": "backend/app/langgraph/utils/checkpointer.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.ids",
+      "path": "backend/app/langgraph/utils/ids.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.llm",
+      "path": "backend/app/langgraph/utils/llm.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.errors",
+      "path": "backend/app/langgraph/utils/errors.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.utils.logging",
+      "path": "backend/app/langgraph/utils/logging.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.resolver",
+      "path": "backend/app/langgraph/nodes/resolver.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.supervisor",
+      "path": "backend/app/langgraph/nodes/supervisor.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.confirm_gate",
+      "path": "backend/app/langgraph/nodes/confirm_gate.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.discovery_intake",
+      "path": "backend/app/langgraph/nodes/discovery_intake.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.entry_frontend",
+      "path": "backend/app/langgraph/nodes/entry_frontend.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.exit_response",
+      "path": "backend/app/langgraph/nodes/exit_response.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.nodes.intent_projector",
+      "path": "backend/app/langgraph/nodes/intent_projector.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_interrupt_resume",
+      "path": "backend/app/langgraph/tests/test_interrupt_resume.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_toolnode_errors",
+      "path": "backend/app/langgraph/tests/test_toolnode_errors.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_state",
+      "path": "backend/app/langgraph/tests/test_state.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_resolver_determinism",
+      "path": "backend/app/langgraph/tests/test_resolver_determinism.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_singleflow_entry_to_exit",
+      "path": "backend/app/langgraph/tests/test_singleflow_entry_to_exit.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_hybrid_flow",
+      "path": "backend/app/langgraph/tests/test_hybrid_flow.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tests.test_rag_ref_only",
+      "path": "backend/app/langgraph/tests/test_rag_ref_only.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.tools.material_calculator",
+      "path": "backend/app/langgraph/tools/material_calculator.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate",
+      "path": "backend/app/langgraph/subgraphs/debate/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate.compile",
+      "path": "backend/app/langgraph/subgraphs/debate/compile.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material",
+      "path": "backend/app/langgraph/subgraphs/material/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.compile",
+      "path": "backend/app/langgraph/subgraphs/material/compile.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.state",
+      "path": "backend/app/langgraph/subgraphs/material/state.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.validierung",
+      "path": "backend/app/langgraph/subgraphs/validierung/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.profil",
+      "path": "backend/app/langgraph/subgraphs/profil/__init__.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.debate.nodes.debate_agent",
+      "path": "backend/app/langgraph/subgraphs/debate/nodes/debate_agent.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.synthesis",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/synthesis.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "app.langgraph.subgraphs.material.nodes.material_agent",
+      "path": "backend/app/langgraph/subgraphs/material/nodes/material_agent.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.utils.rag_cache",
+      "path": "backend/backend/app/langgraph/utils/rag_cache.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_prompts_exist_and_bind",
+      "path": "backend/backend/app/langgraph/tests/test_prompts_exist_and_bind.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_toolnode_parallelism",
+      "path": "backend/backend/app/langgraph/tests/test_toolnode_parallelism.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.tests.test_rag_ref_only",
+      "path": "backend/backend/app/langgraph/tests/test_rag_ref_only.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "backend.app.langgraph.subgraphs.material.nodes.rag_select",
+      "path": "backend/backend/app/langgraph/subgraphs/material/nodes/rag_select.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents.material_agent.main",
+      "path": "backend/agents/material_agent/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "agents.normen_agent.main",
+      "path": "backend/agents/normen_agent/main.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.963dc293d186_initial_schema",
+      "path": "backend/alembic/versions/963dc293d186_initial_schema.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.70968fe4c62e_add_form_results_table",
+      "path": "backend/alembic/versions/70968fe4c62e_add_form_results_table.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    },
+    {
+      "module": "alembic.versions.8b7f4c21d3ab_add_user_profiles_table",
+      "path": "backend/alembic/versions/8b7f4c21d3ab_add_user_profiles_table.py",
+      "total_imports": 0,
+      "non_test_imports": 0
+    }
+  ]
+}

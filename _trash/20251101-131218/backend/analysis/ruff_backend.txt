@@ -1,0 +1,474 @@
+F401 [*] `langgraph.types.Send` imported but unused
+  --> backend/agents/supervisor_stack.py:23:29
+   |
+21 | from langgraph.graph import StateGraph, add_messages
+22 | from langgraph.constants import END
+23 | from langgraph.types import Send
+   |                             ^^^^
+24 | from langchain_community.tools.tavily_search import TavilySearchResults
+   |
+help: Remove unused import: `langgraph.types.Send`
+
+E402 Module level import not at top of file
+  --> backend/alembic/versions/963dc293d186_initial_schema.py:14:1
+   |
+12 | depends_on = None
+13 |
+14 | from alembic import op
+   | ^^^^^^^^^^^^^^^^^^^^^^
+15 | import sqlalchemy as sa
+   |
+
+E402 Module level import not at top of file
+  --> backend/alembic/versions/963dc293d186_initial_schema.py:15:1
+   |
+14 | from alembic import op
+15 | import sqlalchemy as sa
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+16 |
+17 | def upgrade():
+   |
+
+F401 [*] `app.utils.json.to_jsonable` imported but unused
+  --> backend/app/api/routes/chat.py:13:28
+   |
+11 | from app.api.routes.chat_utils import ensure_system_prompt
+12 | from app.services.auth.dependencies import get_current_request_user
+13 | from app.utils.json import to_jsonable
+   |                            ^^^^^^^^^^^
+14 |
+15 | router = APIRouter()
+   |
+help: Remove unused import: `app.utils.json.to_jsonable`
+
+F401 [*] `typing.List` imported but unused
+ --> backend/app/api/v1/endpoints/ai.py:7:31
+  |
+5 | import os
+6 | import re
+7 | from typing import Any, Dict, List, Optional
+  |                               ^^^^
+8 |
+9 | from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+  |
+help: Remove unused import: `typing.List`
+
+F841 Local variable `response` is assigned to but never used
+  --> backend/app/langgraph/subgraphs/debate/nodes/debate_agent.py:11:5
+   |
+ 9 |     prompt = "Debate the routing decision and update confidence."
+10 |     llm = create_llm_for_domain("material")
+11 |     response = await call_llm(llm, prompt)
+   |     ^^^^^^^^
+12 |     # Assume updates confidence
+13 |     updated_routing = state.get("routing", {}).copy()
+   |
+help: Remove assignment to unused variable `response`
+
+F401 [*] `...state.SealAIState` imported but unused
+ --> backend/app/langgraph/subgraphs/material/state.py:3:22
+  |
+1 | # MIGRATION: Phase-2 - Optional abweichendes Schema für Material
+2 |
+3 | from ...state import SealAIState  # Same for now
+  |                      ^^^^^^^^^^^
+  |
+help: Remove unused import: `...state.SealAIState`
+
+F401 [*] `typing.Dict` imported but unused
+ --> backend/app/langgraph/tools/material_calculator.py:3:20
+  |
+1 | # MIGRATION: Phase-1/Phase-2 - Reine Tool-Signaturen + Validierung, mit Cache
+2 |
+3 | from typing import Dict, Any
+  |                    ^^^^
+4 | from pydantic import BaseModel
+5 | import hashlib
+  |
+help: Remove unused import
+
+F401 [*] `typing.Any` imported but unused
+ --> backend/app/langgraph/tools/material_calculator.py:3:26
+  |
+1 | # MIGRATION: Phase-1/Phase-2 - Reine Tool-Signaturen + Validierung, mit Cache
+2 |
+3 | from typing import Dict, Any
+  |                          ^^^
+4 | from pydantic import BaseModel
+5 | import hashlib
+  |
+help: Remove unused import
+
+F401 [*] `os` imported but unused
+ --> backend/app/langgraph/utils/jinja_renderer.py:4:8
+  |
+3 | from jinja2 import Template
+4 | import os
+  |        ^^
+5 |
+6 | def render_template(template_path: str, context: dict) -> str:
+  |
+help: Remove unused import: `os`
+
+F401 [*] `fastapi.Depends` imported but unused
+  --> backend/app/services/auth/dependencies.py:12:21
+   |
+10 | from __future__ import annotations
+11 |
+12 | from fastapi import Depends, HTTPException, WebSocket, status, Header
+   |                     ^^^^^^^
+13 |
+14 | from app.core.config import settings              # <-- korrekter Pfad!
+   |
+help: Remove unused import: `fastapi.Depends`
+
+F401 [*] `app.core.config.settings` imported but unused
+  --> backend/app/services/auth/dependencies.py:14:29
+   |
+12 | from fastapi import Depends, HTTPException, WebSocket, status, Header
+13 |
+14 | from app.core.config import settings              # <-- korrekter Pfad!
+   |                             ^^^^^^^^
+15 | from app.services.auth.token import verify_access_token
+   |
+help: Remove unused import: `app.core.config.settings`
+
+F821 Undefined name `WebSocket`
+  --> backend/app/services/chat/ws_commons.py:27:30
+   |
+27 | async def send_json_safe(ws: WebSocket, payload: Dict[str, Any]) -> bool:
+   |                              ^^^^^^^^^
+28 |     try:
+29 |         # Debug logging for serialization issues
+   |
+
+F821 Undefined name `WebSocketDisconnect`
+  --> backend/app/services/chat/ws_commons.py:37:12
+   |
+35 |         await ws.send_json(jsonable_payload)
+36 |         return True
+37 |     except WebSocketDisconnect:
+   |            ^^^^^^^^^^^^^^^^^^^
+38 |         return False
+39 |     except Exception as e:
+   |
+
+F821 Undefined name `WebSocket`
+  --> backend/app/services/chat/ws_commons.py:44:28
+   |
+44 | def choose_subprotocol(ws: WebSocket) -> Optional[str]:
+   |                            ^^^^^^^^^
+45 |     raw = ws.headers.get("sec-websocket-protocol")
+46 |     if not raw:
+   |
+
+F401 [*] `typing.Tuple` imported but unused
+  --> backend/app/services/memory/memory_core.py:16:47
+   |
+14 | from __future__ import annotations
+15 |
+16 | from typing import Any, Dict, List, Optional, Tuple
+   |                                               ^^^^^
+17 |
+18 | from qdrant_client import QdrantClient, models
+   |
+help: Remove unused import: `typing.Tuple`
+
+E401 [*] Multiple imports on one line
+ --> backend/app/services/rag/rag_ingest.py:1:1
+  |
+1 | import os, sys
+  | ^^^^^^^^^^^^^^
+2 | from langchain_qdrant import QdrantVectorStore
+3 | from langchain_text_splitters import RecursiveCharacterTextSplitter
+  |
+help: Split imports
+
+F401 [*] `itertools` imported but unused
+   --> backend/app/services/rag/rag_orchestrator.py:262:12
+    |
+260 |       AGENT_MATERIAL_URL  → /v1/search endpoint returning [{text, source, score?, metadata?}]
+261 |     """
+262 |     import itertools
+    |            ^^^^^^^^^
+263 |     bases = []
+264 |     n_url = (os.getenv("AGENT_NORMEN_URL") or "").strip().rstrip("/")
+    |
+help: Remove unused import: `itertools`
+
+F401 [*] `typing.Union` imported but unused
+ --> backend/app/utils/json.py:6:37
+  |
+4 | import base64
+5 | import json
+6 | from typing import Any, Dict, List, Union
+  |                                     ^^^^^
+7 |
+8 | from fastapi.encoders import jsonable_encoder
+  |
+help: Remove unused import: `typing.Union`
+
+F841 [*] Local variable `e` is assigned to but never used
+  --> backend/app/utils/json.py:27:43
+   |
+25 |     try:
+26 |         return jsonable_encoder(obj, custom_encoder={bytes: lambda b: base64.b64encode(b).decode('ascii')})
+27 |     except (AttributeError, TypeError) as e:
+   |                                           ^
+28 |         # If it fails, try other methods
+29 |         pass
+   |
+help: Remove assignment to unused variable `e`
+
+E701 Multiple statements on one line (colon)
+  --> backend/app/ws_stream_test.py:33:13
+   |
+32 | def _empty(s: str) -> bool:
+33 |     if not s: return True
+   |             ^
+34 |     t = s.strip()
+35 |     return t in ("", "{}", "null", "[]")
+   |
+
+F401 [*] `os` imported but unused
+ --> backend/backend/app/langgraph/subgraphs/material/nodes/rag_select.py:5:8
+  |
+3 | from __future__ import annotations
+4 |
+5 | import os
+  |        ^^
+6 | from typing import Any, Dict
+  |
+help: Remove unused import: `os`
+
+F401 [*] `os` imported but unused
+ --> backend/backend/app/langgraph/tests/test_prompts_exist_and_bind.py:5:8
+  |
+3 | from __future__ import annotations
+4 |
+5 | import os
+  |        ^^
+6 | import pytest
+7 | from pathlib import Path
+  |
+help: Remove unused import: `os`
+
+F401 [*] `asyncio` imported but unused
+ --> backend/backend/app/langgraph/tests/test_toolnode_parallelism.py:5:8
+  |
+3 | from __future__ import annotations
+4 |
+5 | import asyncio
+  |        ^^^^^^^
+6 | import time
+7 | import pytest
+  |
+help: Remove unused import: `asyncio`
+
+F841 Local variable `model` is assigned to but never used
+  --> backend/backend/app/langgraph/tests/test_toolnode_parallelism.py:79:9
+   |
+78 |         # Should handle timeout gracefully
+79 |         model = SealAIStateModel.model_validate(result)
+   |         ^^^^^
+80 |         # Check for error handling in context_refs or messages
+   |
+help: Remove assignment to unused variable `model`
+
+F841 Local variable `result` is assigned to but never used
+   --> backend/backend/app/langgraph/tests/test_toolnode_parallelism.py:101:13
+    |
+ 99 |         # First few calls should attempt execution
+100 |         for i in range(3):
+101 |             result = node(sample_material_state)
+    |             ^^^^^^
+102 |
+103 |         # Circuit should open after threshold
+    |
+help: Remove assignment to unused variable `result`
+
+F841 Local variable `model` is assigned to but never used
+   --> backend/backend/app/langgraph/tests/test_toolnode_parallelism.py:136:9
+    |
+134 |         assert call_count == 3
+135 |
+136 |         model = SealAIStateModel.model_validate(result)
+    |         ^^^^^
+137 |         # Verify successful result despite retries
+    |
+help: Remove assignment to unused variable `model`
+
+F841 Local variable `state` is assigned to but never used
+  --> backend/e2e_test.py:36:5
+   |
+34 | def mock_agent_flow():
+35 |     # Simuliere Agent-Flow
+36 |     state = {"messages": [{"content": "Erkläre PTFE"}]}
+   |     ^^^^^
+37 |     # Mock-Response
+38 |     response = "Empfohlenes Material: PTFE. Begründung: Chemisch resistent."
+   |
+help: Remove assignment to unused variable `state`
+
+F401 [*] `os` imported but unused
+  --> backend/prompt_renderer.py:14:8
+   |
+12 | """
+13 |
+14 | import os
+   |        ^^
+15 | import logging
+16 | from datetime import datetime
+   |
+help: Remove unused import: `os`
+
+F401 [*] `typing.Optional` imported but unused
+  --> backend/prompt_renderer.py:18:31
+   |
+16 | from datetime import datetime
+17 | from jinja2 import Environment, FileSystemLoader, TemplateError
+18 | from typing import Dict, Any, Optional
+   |                               ^^^^^^^^
+19 |
+20 | # Setup Logging
+   |
+help: Remove unused import: `typing.Optional`
+
+F401 [*] `os` imported but unused
+ --> backend/simple_test.py:5:8
+  |
+3 | """
+4 |
+5 | import os
+  |        ^^
+6 | import sys
+7 | from pathlib import Path
+  |
+help: Remove unused import: `os`
+
+F401 [*] `pathlib.Path` imported but unused
+ --> backend/simple_test.py:7:21
+  |
+5 | import os
+6 | import sys
+7 | from pathlib import Path
+  |                     ^^^^
+8 |
+9 | # Mock für fehlende Module
+  |
+help: Remove unused import: `pathlib.Path`
+
+F401 [*] `os` imported but unused
+ --> backend/test_graph.py:4:8
+  |
+3 | import sys
+4 | import os
+  |        ^^
+5 | sys.path.append('/root/sealai/backend')
+  |
+help: Remove unused import: `os`
+
+F401 [*] `os` imported but unused
+ --> backend/test_graph_astream.py:5:8
+  |
+3 | import asyncio
+4 | import sys
+5 | import os
+  |        ^^
+6 | sys.path.append('/root/sealai/backend')
+  |
+help: Remove unused import: `os`
+
+F401 [*] `pytest` imported but unused
+ --> backend/tests/test_hybrid_flow.py:3:8
+  |
+1 | # Test für Hybrid-Flow: Fan-out, Resolver, Debate
+2 |
+3 | import pytest
+  |        ^^^^^^
+4 | from ..compile import create_main_graph
+5 | from ..state import SealAIState
+  |
+help: Remove unused import: `pytest`
+
+F841 Local variable `graph` is assigned to but never used
+  --> backend/tests/test_hybrid_flow.py:8:5
+   |
+ 7 | def test_supervisor_fan_out():
+ 8 |     graph = create_main_graph()
+   |     ^^^^^
+ 9 |     state = SealAIState(
+10 |         messages=[{"role": "user", "content": "Test"}],
+   |
+help: Remove assignment to unused variable `graph`
+
+F841 Local variable `state` is assigned to but never used
+  --> backend/tests/test_hybrid_flow.py:9:5
+   |
+ 7 | def test_supervisor_fan_out():
+ 8 |     graph = create_main_graph()
+ 9 |     state = SealAIState(
+   |     ^^^^^
+10 |         messages=[{"role": "user", "content": "Test"}],
+11 |         routing={"domains": ["material"], "confidence": 0.8}
+   |
+help: Remove assignment to unused variable `state`
+
+F841 Local variable `graph` is assigned to but never used
+  --> backend/tests/test_hybrid_flow.py:17:5
+   |
+16 | def test_resolver_fan_in_high_confidence():
+17 |     graph = create_main_graph()
+   |     ^^^^^
+18 |     state = SealAIState(
+19 |         messages=[{"role": "user", "content": "Test"}],
+   |
+help: Remove assignment to unused variable `graph`
+
+F841 Local variable `state` is assigned to but never used
+  --> backend/tests/test_hybrid_flow.py:18:5
+   |
+16 | def test_resolver_fan_in_high_confidence():
+17 |     graph = create_main_graph()
+18 |     state = SealAIState(
+   |     ^^^^^
+19 |         messages=[{"role": "user", "content": "Test"}],
+20 |         routing={"domains": ["material"], "confidence": 0.9}
+   |
+help: Remove assignment to unused variable `state`
+
+F841 Local variable `graph` is assigned to but never used
+  --> backend/tests/test_hybrid_flow.py:25:5
+   |
+24 | def test_resolver_debate_low_confidence():
+25 |     graph = create_main_graph()
+   |     ^^^^^
+26 |     state = SealAIState(
+27 |         messages=[{"role": "user", "content": "Test"}],
+   |
+help: Remove assignment to unused variable `graph`
+
+F841 Local variable `state` is assigned to but never used
+  --> backend/tests/test_hybrid_flow.py:26:5
+   |
+24 | def test_resolver_debate_low_confidence():
+25 |     graph = create_main_graph()
+26 |     state = SealAIState(
+   |     ^^^^^
+27 |         messages=[{"role": "user", "content": "Test"}],
+28 |         routing={"domains": ["material"], "confidence": 0.5}
+   |
+help: Remove assignment to unused variable `state`
+
+E702 Multiple statements on one line (semicolon)
+  --> backend/tests/test_smoke_health.py:10:50
+   |
+ 9 | def test_health_route_exists():
+10 |     app_mod = importlib.import_module("app.main"); app = getattr(app_mod, "app")
+   |                                                  ^
+11 |     paths = {r.path for r in app.router.routes}
+12 |     assert "/health" in paths or "/api/health" in paths
+   |
+
+Found 42 errors.
+[*] 24 fixable with the `--fix` option (11 hidden fixes can be enabled with the `--unsafe-fixes` option).

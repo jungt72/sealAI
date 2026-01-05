@@ -1,0 +1,192 @@
+# Runbook: LangGraph v2 (Diagnose + Node Contract)
+
+## Diagnose in 60 Sekunden
+
+### 1) Stack & Health
+
+```bash
+docker compose ps
+docker exec nginx curl -sS -i https://localhost/api/v1/langgraph/health -k
+```
+
+### 2) Fehlerbild `/parameters/patch`
+
+**Unauth (soll 401):**
+
+```bash
+docker exec nginx curl -sS -i http://backend:8000/api/v1/langgraph/parameters/patch \
+  -X POST -H "Content-Type: application/json" \
+  -d '{"chat_id":"default","parameters":{"medium":"oil"}}'
+```
+
+**Auth (soll 200; Token lokal einfügen, nicht loggen):**
+
+```bash
+docker exec nginx sh -lc 'curl -sS -i http://backend:8000/api/v1/langgraph/parameters/patch \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "X-Request-Id: debug-parameters-patch" \
+  -d "{\"chat_id\":\"default\",\"parameters\":{\"medium\":\"oil\"}}\"'
+```
+
+**Expected Error Codes (nie als generisches 500):**
+- `400` `missing_chat_id|missing_parameters|invalid_parameters|invalid_as_node`
+- `401` `Authorization header fehlt oder ungültig`
+- `503` `dependency_unavailable` (Redis/Qdrant/etc. down)
+- `500` `internal_error` (nur als fallback, ohne raw exception message)
+
+### 3) Backend Logs (Trace + Request-Id)
+
+```bash
+docker compose logs --tail=400 backend | rg -n "langgraph_v2_parameters_patch|internal_error|invalid_as_node|dependency_unavailable|Traceback" -S
+```
+
+## Parameter Sync (Form ↔ State)
+
+### How it works
+
+- UI patches parameters via `POST /api/v1/langgraph/parameters/patch` with `chat_id`.
+- UI refreshes `GET /api/v1/langgraph/state?thread_id=...` on chat load and after SSE streaming ends.
+- Backend stores parameters in the same checkpointer thread as chat/v2: `thread_id = <user_id>|<chat_id>`.
+
+### Debug (safe logs)
+
+Set backend env:
+
+```
+SEALAI_PARAM_SYNC_DEBUG=1
+```
+
+Logs include only `chat_id`, key counts, and checkpointer ids (no values).
+
+### Smoke Test (running stack)
+
+```
+AUTH_TOKEN="..." NGINX_BASE_URL="https://sealai.net" ./ops/smoke-param-sync.sh
+```
+
+Optional cookie auth:
+
+```
+AUTH_COOKIE="next-auth.session-token=..." ./ops/smoke-param-sync.sh
+```
+
+### Common Failure Modes
+
+- Wrong `chat_id` (UI route `conversationId` vs sessionStorage).
+- `401` Unauthorized (missing/expired bearer token).
+- Allowlist drift (backend rejects keys → `invalid_parameters`).
+
+## Node Contract (stable vs optional)
+
+### Stable (API-/Contract-relevant)
+
+Diese Node-Namen werden außerhalb des Graphs referenziert (Endpoints / State Updates) und gelten als **stable contract**:
+- `supervisor_logic_node` (u.a. `parameters/patch` und Default für State Updates)
+- `confirm_recommendation_node` (u.a. `confirm/go`)
+
+Quelle: `backend/app/langgraph_v2/contracts.py`
+
+### Optional / intern
+
+Alle anderen Nodes sind intern/implementierungsabhängig und können sich ändern, solange der stable contract eingehalten wird.
+
+## Prompt-Mapping (v2)
+
+### Goal -> Template
+
+- `smalltalk` -> `final_answer_smalltalk_v2.j2`
+- `design_recommendation` -> `final_answer_recommendation_v2.j2` (sonst `final_answer_discovery_v2.j2`)
+- `explanation_or_comparison` -> `final_answer_explanation_v2.j2`
+- `troubleshooting_leakage` -> `final_answer_troubleshooting_v2.j2`
+- `out_of_scope` -> `final_answer_out_of_scope_v2.j2`
+
+### Smalltalk Micro-Branch
+
+- Wenn `goal == smalltalk` und der letzte User-Text sehr kurz ist (z. B. "hallo", "hi", "moin"), wird eine kurze Micro-Antwort erzeugt.
+- In der Micro-Branch werden keine technischen Checklisten oder Parameterfragen ausgegeben.
+
+## Node-Liste schnell ausgeben
+
+### Dev Script (Repo)
+
+```bash
+cd backend
+python scripts/print_langgraph_v2_nodes.py
+```
+
+### Direkt im Container (wenn nötig)
+
+```bash
+docker exec backend sh -lc "python - <<'PY'
+import asyncio
+import os
+os.environ.setdefault('CHECKPOINTER_BACKEND','memory')
+from app.langgraph_v2.sealai_graph_v2 import get_sealai_graph_v2
+async def main():
+  g = await get_sealai_graph_v2()
+  nodes = g.get_graph().nodes
+  print('nodes_count', len(nodes))
+  for n in sorted(nodes.keys()):
+    print(n)
+asyncio.run(main())
+PY"
+```
+
+## Wenn neue Nodes eingeführt werden
+
+- Wenn ein Endpoint `as_node` nutzt: **immer** über `assert_node_exists(...)` absichern.
+- Stable contract Nodes nur ändern, wenn:
+  - Tests (`backend/tests/test_langgraph_parameters_patch.py`) angepasst sind
+  - Docs/Runbook aktualisiert sind
+
+## Tests (schnell vs. Compose)
+
+### Tests ohne OPENAI_API_KEY
+
+- Param Sync / State laufen ohne `OPENAI_API_KEY`, da kein LLM ausgefuehrt wird.
+- Betroffene Tests:
+  - `backend/app/api/tests/test_langgraph_v2_param_sync_integration.py`
+  - `backend/tests/integration/test_langgraph_v2_http.py -k patch_then_state`
+- Chat/SSE Tests benoetigen weiterhin einen echten LLM-Access-Key.
+
+### Schnell / deterministisch (pure app)
+
+```bash
+cd backend
+python3 -m pytest -q \
+  tests/test_auth_dependencies.py \
+  tests/test_security.py \
+  tests/test_sse_broadcast.py \
+  tests/test_sse_replay_backend.py \
+  tests/test_parameter_guardrails.py \
+  tests/test_parameter_lww.py \
+  tests/test_param_snapshot.py \
+  tests/test_langgraph_compile.py
+pytest -q
+pytest -q tests/integration/test_langgraph_v2_http.py
+pytest -q tests/integration/test_langgraph_v2_sse.py
+```
+
+Frontend fast gate (HOST only; do not run in container):
+
+```bash
+cd frontend
+npm -s run test:fast
+```
+
+### Compose Wiring (optional)
+
+Läuft nur, wenn der Stack erreichbar ist (Default: skip).
+
+```bash
+cd backend
+RUN_INTEGRATION=1 pytest -q tests/integration/test_compose_wiring.py
+```
+
+Alternativ über Script:
+
+```bash
+./ops/test-backend.sh
+RUN_INTEGRATION=1 ./ops/test-backend.sh
+```

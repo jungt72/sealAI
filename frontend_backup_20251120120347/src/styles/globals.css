@@ -1,0 +1,93 @@
+/* Inter – leicht, kompakt */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Basistypo: minimal kleiner für “Grok-Look” */
+html {
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+  font-size: 15px;                 /* ↓ von 16px */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "liga","calt","ss01","cv05";
+  font-variation-settings: normal;
+}
+
+body {
+  @apply bg-white text-gray-800;
+}
+
+/* Scrollbar dezent */
+.scrollbar-thin { scrollbar-width: thin; }
+.scrollbar-thumb-blue-200::-webkit-scrollbar-thumb { background-color: #bfdbfe; }
+.scrollbar-thumb-blue-200::-webkit-scrollbar { width: 8px; }
+
+.chat-scroll-container { scrollbar-gutter: stable both-edges; }
+
+/* Optional generelles Ausblenden der Scrollbar im Chatbereich */
+::-webkit-scrollbar { width: 0px !important; background: transparent !important; }
+.chat-scroll-hide { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+.chat-scroll-hide::-webkit-scrollbar { display: none !important; }
+
+/* Markdown-Reset: kompakte Abstände (falls andere Render-Pfade) */
+.markdown-body, .markdown-content { font-family: inherit; }
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body li,
+.markdown-body blockquote,
+.markdown-content p,
+.markdown-content ul,
+.markdown-content ol,
+.markdown-content li,
+.markdown-content blockquote {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.45;
+}
+
+.markdown-body ul,
+.markdown-body ol,
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.25rem !important;
+}
+
+.markdown-body li,
+.markdown-content li {
+  display: list-item !important;
+  margin: 0.18rem 0 !important;
+}
+
+/* Optional kompakter Code außerhalb von cm-Styles */
+.markdown-body code, .markdown-content code {
+  font-size: 90%;
+  padding: 0.15em 0.35em;
+  border-radius: 0.3em;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.markdown-body pre, .markdown-content pre {
+  background: #111827;
+  color: #f3f4f6;
+  border-radius: 8px;
+  padding: 0.9em;
+  margin: 0.45em 0;
+  font-size: 92%;
+  overflow-x: auto;
+}
+
+/* Kleinere, angenehm dichte Tabellen global */
+.markdown-body table, .markdown-content table {
+  border-collapse: collapse;
+  margin: 0.45em 0 !important;
+}
+.markdown-body th, .markdown-content th {
+  background: #f4f4f4;
+  font-weight: 600;
+}

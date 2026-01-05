@@ -1,0 +1,637 @@
+
+
+===== FILE: frontend/src/lib/useChatWs.ts =====
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+type UseChatWsOpts = {
+  chatId: string;
+  token?: string | null; // Keycloak Access Token
+};
+
+type WsState = {
+  connected: boolean;
+  streaming: boolean;
+  text: string;
+  lastError: string | null;
+  send: (input: string, params?: Record<string, any>) => void;
+  cancel: () => void;
+};
+
+function buildWsUrl(token?: string | null) {
+  if (typeof window === 'undefined') return '';
+  const { protocol, host } = window.location;
+  const wsProto = protocol === 'https:' ? 'wss:' : 'ws:';
+  const qp = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${wsProto}//${host}/api/v1/ai/ws${qp}`;
+}
+
+export function useChatWs({ chatId, token }: UseChatWsOpts): WsState {
+  const [connected, setConnected] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  const [text, setText] = useState('');
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const heartbeatRef = useRef<number | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const backoffRef = useRef(1000);
+  const lastThreadIdRef = useRef<string | null>(null);
+
+  const url = useMemo(() => buildWsUrl(token), [token]);
+
+  const clearHeartbeat = () => {
+    if (heartbeatRef.current) {
+      window.clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  };
+
+  const startHeartbeat = () => {
+    clearHeartbeat();
+    heartbeatRef.current = window.setInterval(() => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+      }
+    }, 10_000);
+  };
+
+  const scheduleReconnect = useCallback(() => {
+    if (reconnectTimerRef.current) return;
+    const delay = Math.min(backoffRef.current, 10_000);
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null;
+      connect();
+      backoffRef.current = Math.min(backoffRef.current * 2, 10_000);
+    }, delay) as unknown as number;
+  }, []);
+
+  const cleanup = useCallback(() => {
+    clearHeartbeat();
+    if (reconnectTimerRef.current) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    try { wsRef.current?.close(); } catch {}
+    wsRef.current = null;
+    setConnected(false);
+    setStreaming(false);
+  }, []);
+
+  const handleMessage = useCallback((ev: MessageEvent) => {
+    let payload: any;
+    try {
+      payload = JSON.parse(ev.data);
+    } catch {
+      return;
+    }
+
+    if (payload?.event === 'idle') return;
+    if (payload?.event === 'error' && payload?.code === 'idle_timeout') return;
+
+    switch (payload.event) {
+      case 'start':
+        lastThreadIdRef.current = payload.thread_id ?? null;
+        setStreaming(true);
+        setText('');
+        break;
+
+      case 'token': {
+        const delta: string = payload.delta ?? '';
+        if (delta) setText(prev => prev + delta);
+        break;
+      }
+
+      case 'final': {
+        const t: string = payload.text ?? '';
+        if (t) setText(t);
+        break;
+      }
+
+      case 'done':
+        setStreaming(false);
+        backoffRef.current = 1000;
+        break;
+
+      case 'error':
+        setLastError(payload.message || 'Unbekannter Fehler');
+        setStreaming(false);
+        break;
+
+      case 'pong':
+        break;
+
+      case 'ui_action':
+        try { console.debug('[sealai] ui_action event', payload); } catch {}
+        // neuer, konsistenter Event-Name
+        window.dispatchEvent(new CustomEvent('sealai:ui', { detail: payload }));
+        // abwärtskompatibel für ältere Listener
+        window.dispatchEvent(new CustomEvent('sealai:ui_action', { detail: payload }));
+        break;
+
+      default:
+        break;
+    }
+  }, []);
+
+  const connect = useCallback(() => {
+    if (!url) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+
+    try {
+      const ws = new WebSocket(url, 'json');
+      wsRef.current = ws;
+      setLastError(null);
+
+      ws.onopen = () => {
+        setConnected(true);
+        backoffRef.current = 1000;
+        startHeartbeat();
+      };
+
+      ws.onmessage = handleMessage;
+      ws.onerror = () => setLastError('WebSocket Fehler');
+      ws.onclose = () => {
+        setConnected(false);
+        setStreaming(false);
+        clearHeartbeat();
+        scheduleReconnect();
+      };
+    } catch (e: any) {
+      setLastError(e?.message ?? 'Verbindungsfehler');
+      scheduleReconnect();
+    }
+  }, [handleMessage, scheduleReconnect, url]);
+
+  useEffect(() => {
+    if (!token) return;
+    connect();
+    return () => cleanup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
+  const send = useCallback(
+    (input: string, params?: Record<string, any>) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        setLastError('Nicht verbunden');
+        return;
+      }
+      setStreaming(true);
+      setText('');
+
+      // Graph-Modus erforderlich, damit ask_missing läuft
+      const payload: any = { chat_id: chatId, input, mode: 'graph' };
+      if (params && typeof params === 'object') payload.params = params;
+
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch (e: any) {
+        setLastError(e?.message ?? 'Senden fehlgeschlagen');
+        setStreaming(false);
+      }
+    },
+    [chatId]
+  );
+
+  const cancel = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const threadId = lastThreadIdRef.current || `api:${chatId}`;
+    try {
+      ws.send(JSON.stringify({ type: 'cancel', chat_id: chatId, thread_id: threadId }));
+    } catch {}
+    setStreaming(false);
+  }, [chatId]);
+
+  return { connected, streaming, text, lastError, send, cancel };
+}
+
+
+===== FILE: frontend/src/lib/ws.ts =====
+// WebSocket-Client mit Token-Refresh, Reconnect, Heartbeat und Stream-Events.
+
+export type StreamStartPayload = { threadId: string; agent?: string };
+export type StreamDeltaPayload = { delta: string; done?: boolean };
+export type StreamDonePayload = { threadId?: string };
+
+export type ChatWsEvents = {
+  onOpen?: () => void;
+  onClose?: (ev: CloseEvent) => void;
+  onError?: (ev: Event) => void;
+  onMessage?: (msg: unknown) => void;
+  onStreamStart?: (p: StreamStartPayload) => void;
+  onStreamDelta?: (p: StreamDeltaPayload) => void;
+  onStreamDone?: (p: StreamDonePayload) => void;
+  onUiAction?: (ui: any) => void; // ← hinzugefügt
+};
+
+export type WSOptions = {
+  token?: string; // Fallback-Token (besser: getToken)
+  url?: string; // ws[s]://… oder Pfad (/api/v1/ai/ws)
+  protocols?: string | string[];
+  heartbeatMs?: number;
+  maxBackoffMs?: number;
+  getToken?: () => Promise<string | undefined>;
+};
+
+function wsOrigin(): { proto: "ws:" | "wss:"; host: string } {
+  const { protocol, host } = window.location;
+  return { proto: protocol === "https:" ? "wss:" : "ws:", host };
+}
+
+function withToken(urlOrPath: string, token: string | undefined): string {
+  const { proto, host } = wsOrigin();
+  const isAbs = urlOrPath.startsWith("ws://") || urlOrPath.startsWith("wss://");
+  const base = isAbs ? urlOrPath : `${proto}//${host}${urlOrPath.startsWith("/") ? "" : "/"}${urlOrPath}`;
+  if (!token) return base;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}token=${encodeURIComponent(token)}`;
+}
+
+function safeParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return s;
+  }
+}
+
+class ChatWsClient {
+  private ws?: WebSocket;
+  private hb?: number;
+  private backoff = 1000;
+  private closed = false;
+  private openPromise?: Promise<void>;
+  private started = false;
+  private lastThreadId?: string;
+  private firedNeedParams = false;
+
+  private readonly opts: Required<Pick<WSOptions, "heartbeatMs" | "maxBackoffMs">> & Omit<WSOptions, "heartbeatMs" | "maxBackoffMs">;
+  private readonly ev: ChatWsEvents;
+  private readonly subs = new Set<(msg: unknown) => void>();
+
+  constructor(options: WSOptions & ChatWsEvents) {
+    this.opts = {
+      url: options.url ?? "/api/v1/ai/ws",
+      protocols: options.protocols ?? ["json"],
+      heartbeatMs: options.heartbeatMs ?? 15000,
+      maxBackoffMs: options.maxBackoffMs ?? 30000,
+      token: options.token,
+      getToken: options.getToken,
+    };
+    this.ev = {
+      onOpen: options.onOpen,
+      onClose: options.onClose,
+      onError: options.onError,
+      onMessage: options.onMessage,
+      onStreamStart: options.onStreamStart,
+      onStreamDelta: options.onStreamDelta,
+      onStreamDone: options.onStreamDone,
+      onUiAction: options.onUiAction, // ← hinzugefügt
+    };
+  }
+
+  async connect(): Promise<void> {
+    if (this.openPromise) return this.openPromise;
+    this.closed = false;
+
+    this.openPromise = new Promise<void>(async (resolve, reject) => {
+      let token: string | undefined = undefined;
+      try {
+        token = (await this.opts.getToken?.()) ?? this.opts.token;
+      } catch {}
+
+      const url = withToken(this.opts.url!, token);
+      try {
+        this.ws = new WebSocket(url, this.opts.protocols as string[]);
+      } catch (e) {
+        reject(e);
+        return;
+      }
+
+      const ws = this.ws;
+
+      ws.onopen = () => {
+        this.backoff = 1000;
+        this.started = false;
+        this.firedNeedParams = false;
+        this.startHeartbeat();
+        this.ev.onOpen?.();
+        resolve();
+      };
+
+      ws.onmessage = (ev) => {
+        const data = typeof ev.data === "string" ? safeParse(ev.data) : ev.data;
+        this.ev.onMessage?.(data);
+        for (const cb of this.subs) cb(data);
+        this.routeStreamEvents(data);
+      };
+
+      ws.onclose = (ev) => {
+        this.stopHeartbeat();
+        this.ev.onClose?.(ev);
+        if (!this.closed) this.scheduleReconnect();
+      };
+
+      ws.onerror = (ev) => {
+        this.ev.onError?.(ev);
+      };
+    });
+
+    return this.openPromise;
+  }
+
+  subscribe(handler: (msg: unknown) => void): () => void {
+    this.subs.add(handler);
+    return () => this.subs.delete(handler);
+  }
+
+  private sendInternal(payload: unknown): void {
+    const s = JSON.stringify(payload);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(s);
+  }
+
+  send(payload: unknown): void {
+    this.sendInternal(payload);
+  }
+
+  request(input: string, chatId = "default", extra?: Record<string, unknown>): void {
+    this.firedNeedParams = false;
+    this.sendInternal({ chat_id: chatId || "default", input, ...(extra || {}) });
+  }
+
+  cancel(threadId?: string): void {
+    const tid = threadId ?? this.lastThreadId ?? "default";
+    this.sendInternal({ type: "cancel", thread_id: tid });
+  }
+
+  close(): void {
+    this.closed = true;
+    this.stopHeartbeat();
+    try {
+      this.ws?.close();
+    } catch {}
+    this.ws = undefined;
+    this.openPromise = undefined;
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.hb = window.setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      try {
+        this.ws.send(JSON.stringify({ type: "ping", ts: Date.now() }));
+      } catch {}
+    }, this.opts.heartbeatMs);
+  }
+
+  private stopHeartbeat() {
+    if (this.hb) {
+      window.clearInterval(this.hb);
+      this.hb = undefined;
+    }
+  }
+
+  private scheduleReconnect() {
+    const delay = Math.min(this.backoff, this.opts.maxBackoffMs);
+    this.backoff = Math.min(this.backoff * 2, this.opts.maxBackoffMs);
+    window.setTimeout(() => {
+      if (this.closed) return;
+      this.openPromise = undefined; // neues connect() → neuer Token
+      this.connect().catch(() => this.scheduleReconnect());
+    }, delay);
+  }
+
+  private routeStreamEvents(raw: unknown) {
+    const d = raw as any;
+
+    // Backend: {"phase":"starting", thread_id, ...}
+    if (d?.phase === "starting") {
+      this.started = true;
+      const tid = d.thread_id ?? "default";
+      this.lastThreadId = tid;
+      this.ev.onStreamStart?.({ threadId: tid, agent: d?.agent });
+    }
+
+    // Debug-Events: {"event":"dbg", "meta":{"langgraph_node":"ask_missing"}, ...}
+    if (d?.event === "dbg") {
+      const node = (d?.meta?.langgraph_node || d?.meta?.run_name || d?.name || "").toString().toLowerCase();
+      if (!this.firedNeedParams && node === "ask_missing") {
+        this.firedNeedParams = true;
+        window.dispatchEvent(new CustomEvent("sai:need-params", { detail: { node } }));
+        // echtes UI-Open-Event
+        window.dispatchEvent(new CustomEvent("sealai:ui_action", { detail: { ui_action: "open_form" } }));
+      }
+    }
+
+    // UI-Events: {"event":"ui_action", ...} oder Backward-Compat {"ui_event": {...}}: {"event":"ui_action", ...} oder Backward-Compat {"ui_event": {...}}
+      if (d?.event === "ui_action" || d?.ui_event || typeof d?.ui_action !== "undefined") {
+        const ua = typeof d?.ui_action === "string"
+          ? { ui_action: d.ui_action }
+          : (d?.ui_event && typeof d.ui_event === "object" ? d.ui_event : d);
+        this.ev.onUiAction?.(ua);
+        window.dispatchEvent(new CustomEvent("sealai:ui_action", { detail: ua }));
+      }
+
+    // Token-Stream
+    if (typeof d?.delta !== "undefined") {
+      if (
+        !this.firedNeedParams &&
+        typeof d.delta === "string" &&
+        /mir fehlen noch folgende angaben|kannst du mir diese bitte nennen|präzise.*empfehlung.*brauche.*noch kurz|pack die werte gern.*eine zeile/i.test(d.delta)
+      ) {
+        this.firedNeedParams = true;
+        window.dispatchEvent(new CustomEvent("sai:need-params", { detail: { hint: "text" } }));
+        window.dispatchEvent(new CustomEvent("sealai:ui_action", { detail: { ui_action: "open_form" } }));
+      }
+      this.ev.onStreamDelta?.({ delta: String(d.delta), done: false });
+    }
+
+    // Optional final text
+    if (d?.final?.text && !d?.delta) {
+      if (
+        !this.firedNeedParams &&
+        typeof d.final.text === "string" &&
+        /mir fehlen noch folgende angaben|kannst du mir diese bitte nennen|präzise.*empfehlung.*brauche.*noch kurz|pack die werte gern.*eine zeile/i.test(d.final.text)
+      ) {
+        this.firedNeedParams = true;
+        window.dispatchEvent(new CustomEvent("sai:need-params", { detail: { hint: "final" } }));
+        window.dispatchEvent(new CustomEvent("sealai:ui_action", { detail: { ui_action: "open_form" } }));
+      }
+      this.ev.onStreamDelta?.({ delta: String(d.final.text), done: false });
+    }
+
+    // Done
+    if (d?.event === "done" || d?.done === true) {
+      this.ev.onStreamDone?.({ threadId: d.thread_id });
+    }
+
+    // LCEL / frames
+    if (d?.message) {
+      if (!this.started) {
+        this.started = true;
+        const tid = d?.meta?.thread_id ?? "default";
+        this.lastThreadId = tid;
+        this.ev.onStreamStart?.({ threadId: tid, agent: d?.message?.name });
+      }
+      const content = d?.message?.data?.content ?? d?.message?.content;
+      if (typeof content === "string") this.ev.onStreamDelta?.({ delta: content, done: false });
+    }
+  }
+}
+
+export default ChatWsClient;
+
+
+===== FILE: frontend/src/lib/useChatSse.ts =====
+"use client";
+
+import * as React from "react";
+import { useSession } from "next-auth/react";
+
+type State = {
+  streaming: boolean;
+  text: string;
+  error: string | null;
+};
+
+export function useChatSse(endpoint: string = "/api/langgraph/chat") {
+  const { status } = useSession();
+  const [state, setState] = React.useState<State>({ streaming: false, text: "", error: null });
+  const controllerRef = React.useRef<AbortController | null>(null);
+
+  const send = React.useCallback(async (input: string, bodyExtra?: Record<string, unknown>) => {
+    if (status !== "authenticated") {
+      setState((s) => ({ ...s, error: "unauthenticated" }));
+      return;
+    }
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    controllerRef.current?.abort();
+    controllerRef.current = new AbortController();
+
+    setState({ streaming: true, text: "", error: null });
+
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({ input: trimmed, stream: true, ...(bodyExtra || {}) }),
+      signal: controllerRef.current.signal,
+    }).catch((e) => {
+      setState({ streaming: false, text: "", error: String(e?.message || "network_error") });
+      return null as any;
+    });
+
+    if (!resp || !resp.ok || !resp.body) {
+      if (resp) setState({ streaming: false, text: "", error: `http_${resp.status}` });
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const frames = buf.split("\n\n");
+        buf = frames.pop() ?? "";
+        for (const frame of frames) {
+          const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
+          if (!dataLine) continue;
+          try {
+            const payload = JSON.parse(dataLine.slice(6));
+            if (typeof payload?.delta === "string" && payload.delta.length) {
+              setState((s) => ({ ...s, text: s.text + payload.delta }));
+            } else if (payload?.final?.text) {
+              setState((s) => ({ ...s, text: payload.final.text }));
+            } else if (payload?.error) {
+              setState((s) => ({ ...s, error: String(payload.error) }));
+            }
+          } catch {
+            // ignore malformed frames
+          }
+        }
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") {
+        setState((s) => ({ ...s, error: String(e?.message || "stream_error") }));
+      }
+    } finally {
+      try { await reader.cancel(); } catch {}
+      setState((s) => ({ ...s, streaming: false }));
+    }
+  }, [status, endpoint]);
+
+  const cancel = React.useCallback(() => {
+    controllerRef.current?.abort();
+    setState((s) => ({ ...s, streaming: false }));
+  }, []);
+
+  const reset = React.useCallback(() => {
+    controllerRef.current?.abort();
+    setState({ streaming: false, text: "", error: null });
+  }, []);
+
+  return { ...state, send, cancel, reset };
+}
+
+
+===== FILE: frontend/src/app/api/ai/chat/stream/route.ts =====
+import { NextRequest } from "next/server";
+export const runtime = "edge";
+const BASE = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://backend:8000").replace(/\/$/, "");
+
+export async function POST(req: NextRequest) {
+  const body = await req.text();
+  const headers = new Headers({ "Content-Type": "application/json", Accept: "text/event-stream" });
+  const auth = req.headers.get("authorization");
+  if (auth) headers.set("authorization", auth);
+
+  const r = await fetch(`${BASE}/api/v1/langgraph/chat/stream2`, { method: "POST", headers, body });
+  return new Response(r.body, {
+    status: r.status,
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform, no-store", Connection: "keep-alive", "X-Accel-Buffering": "no" }
+  });
+}
+
+
+===== FILE: frontend/src/app/api/langgraph/chat/[conversationId]/chat_stream/route.ts =====
+// WS-only: SSE-Proxy deaktiviert.
+// Gibt 410 zurück, damit nichts mehr über SSE läuft.
+
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
+
+function gone() {
+  return new Response(
+    JSON.stringify({
+      error: "SSE removed. Please use WebSocket at /api/v1/ai/ws.",
+    }),
+    {
+      status: 410,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      },
+    }
+  );
+}
+
+export async function GET() {
+  return gone();
+}
+
+export async function POST() {
+  return gone();
+}

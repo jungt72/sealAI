@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "es2021",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -13,32 +17,51 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "incremental": true,
-
     // 🧠 Alias-Pfade
     "baseUrl": "src",
     "paths": {
-      "@/*": ["*"],
-      "@/components/*": ["components/*"],
-      "@/lib/*": ["lib/*"],
-      "@/hooks/*": ["hooks/*"],
-      "@/services/*": ["services/*"],
-      "@/styles/*": ["styles/*"],
-      "@/types/*": ["types/*"],
-      "@/utils/*": ["utils/*"]
+      "@/*": [
+        "*"
+      ],
+      "@/components/*": [
+        "components/*"
+      ],
+      "@/lib/*": [
+        "lib/*"
+      ],
+      "@/hooks/*": [
+        "hooks/*"
+      ],
+      "@/services/*": [
+        "services/*"
+      ],
+      "@/styles/*": [
+        "styles/*"
+      ],
+      "@/types/*": [
+        "types/*"
+      ],
+      "@/utils/*": [
+        "utils/*"
+      ]
     },
-
     // ✅ Next.js Plugin
-    "plugins": [{ "name": "next" }]
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-
   "include": [
     "next-env.d.ts",
     ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
     "src/**/*",
-    "src/types/**/*.d.ts"       // ← ✅ wichtig für custom types wie next-auth
+    "src/types/**/*.d.ts" // ← ✅ wichtig für custom types wie next-auth
   ],
-
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

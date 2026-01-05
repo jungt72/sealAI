@@ -1,0 +1,33 @@
+{
+  "kind": "singleType",
+  "collectionName": "community_conferences",
+  "info": {
+    "singularName": "community-conference",
+    "pluralName": "community-conferences",
+    "displayName": "Community Conference"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text"
+    },
+    "cta_text": {
+      "type": "string"
+    },
+    "cta_link": {
+      "type": "string"
+    },
+    "image": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["images"]
+    }
+  }
+}

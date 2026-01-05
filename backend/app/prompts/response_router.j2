@@ -1,0 +1,16 @@
+{# Central response template for supervisor output #}
+{%- if ask_missing_request %}
+{{ ask_missing_request.question }}
+{%- elif response_text %}
+{{ response_text }}
+{%- elif knowledge_material %}
+{{ knowledge_material }}
+{%- elif knowledge_lifetime %}
+{{ knowledge_lifetime }}
+{%- elif knowledge_generic %}
+{{ knowledge_generic }}
+{%- elif error %}
+{{ error }}
+{%- else %}
+Ok.
+{%- endif %}

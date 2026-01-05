@@ -1,51 +1,62 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import * as React from "react";
+import { useEffect, useState } from "react";
 
-/**
- * Liefert das Access Token und den Auth-Status (Client-seitig gecacht).
- */
-export function useAccessToken() {
+export type AccessTokenState = {
+  token?: string;
+  error?: "expired" | "missing";
+  status?: number;
+};
+
+type SessionShape = {
+  error?: string | null;
+};
+
+export function useAccessToken(): AccessTokenState {
   const { data, status } = useSession();
-  const [token, setToken] = React.useState<string | undefined>(undefined);
+  const [state, setState] = useState<AccessTokenState>({ error: "missing" });
 
-  React.useEffect(() => {
-    if (status === "authenticated") {
-      const t =
-        (data as any)?.accessToken ??
-        (data as any)?.user?.accessToken ??
-        (data as any)?.user?.token ??
-        (data as any)?.access_token;
-      setToken(typeof t === "string" ? t : undefined);
-    } else if (status === "unauthenticated") {
-      setToken(undefined);
+  useEffect(() => {
+    if (status !== "authenticated") {
+      setState({ error: "missing" });
+      return;
     }
+    const session = (data || {}) as SessionShape;
+    if (
+      session.error === "RefreshAccessTokenError" ||
+      session.error === "RefreshTokenExpired" ||
+      session.error === "RefreshTokenMissing"
+    ) {
+      setState({ error: "expired" });
+      return;
+    }
+    let active = true;
+    void fetchFreshAccessToken().then((fresh) => {
+      if (!active) return;
+      if (fresh.token) {
+        setState({ token: fresh.token });
+        return;
+      }
+      setState({ error: fresh.error ?? "missing", status: fresh.status });
+    });
+    return () => {
+      active = false;
+    };
   }, [status, data]);
 
-  return {
-    token,
-    loading: status === "loading",
-    authenticated: status === "authenticated",
-  };
+  return state;
 }
 
-/**
- * Holt *immer* die frischeste Session-Ansicht vom Server und extrahiert das Access-Token.
- * Nutzt NextAuth `/api/auth/session`. Keine Exceptions nach außen – bei Fehler `undefined`.
- */
-export async function fetchFreshAccessToken(): Promise<string | undefined> {
+export async function fetchFreshAccessToken(): Promise<AccessTokenState> {
   try {
-    const res = await fetch("/api/auth/session", { cache: "no-store" });
-    if (!res.ok) return undefined;
-    const json = await res.json();
-    const t =
-      json?.accessToken ??
-      json?.user?.accessToken ??
-      json?.user?.token ??
-      json?.access_token;
-    return typeof t === "string" ? t : undefined;
+    const res = await fetch("/api/auth/access-token", { cache: "no-store" });
+    if (res.status === 401) return { error: "expired", status: 401 };
+    if (!res.ok) return { error: "missing", status: res.status };
+    const json = (await res.json()) as { accessToken?: string };
+    if (!json.accessToken) return { error: "missing", status: res.status };
+    return { token: json.accessToken, status: res.status };
   } catch {
-    return undefined;
+    return { error: "missing" };
   }
 }

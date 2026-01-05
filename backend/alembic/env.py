@@ -10,9 +10,10 @@ if config.config_file_name:
     fileConfig(config.config_file_name)
 
 # DB-URL aus ENV übernehmen
-db_url = os.getenv("DATABASE_URL")
+# Bevorzugt eine Sync-URL für Migrationen, fällt zurück auf DATABASE_URL.
+db_url = os.getenv("POSTGRES_SYNC_URL") or os.getenv("DATABASE_URL")
 if not db_url:
-    raise RuntimeError("DATABASE_URL not set")
+    raise RuntimeError("POSTGRES_SYNC_URL or DATABASE_URL not set")
 config.set_main_option("sqlalchemy.url", db_url)
 
 # Models-Metadata laden

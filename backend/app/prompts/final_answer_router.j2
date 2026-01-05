@@ -1,0 +1,151 @@
+{%- set goal = intent_goal -%}
+{%- set abstract_reply = frontdoor_reply if frontdoor_reply is defined else none -%}
+{%- set query_text = original_query if original_query is defined else 'Nicht angegeben' -%}
+{%- set params = parameters if parameters is defined else {} -%}
+{%- set calc = calc_results if calc_results is defined else {} -%}
+{%- set mat_choice = material_choice if material_choice is defined else {} -%}
+{%- set prof_choice = profile_choice if profile_choice is defined else {} -%}
+{%- set vals = validation if validation is defined else {} -%}
+{%- set prods = products if products is defined else {} -%}
+{%- set comp = comparison_notes if comparison_notes is defined else {} -%}
+{%- set troubleshoot = troubleshooting if troubleshooting is defined else {} -%}
+{%- set current_date_text = current_date if current_date is defined else 'Heute' -%}
+{%- set requires_rag = (requires_rag if requires_rag is defined else false) -%}
+{%- set wm = working_memory if working_memory is defined else {} -%}
+{%- if wm is mapping -%}
+  {%- set wm_comp = wm.get('comparison_notes') or {} -%}
+{%- else -%}
+  {%- set wm_comp = wm.comparison_notes if wm and wm.comparison_notes is defined else {} -%}
+{%- endif -%}
+{%- set rag_context = (comp.get('rag_context') if comp is mapping else none) -%}
+{%- if not rag_context -%}
+  {%- set rag_context = (wm_comp.get('rag_context') if wm_comp is mapping else none) -%}
+{%- endif -%}
+{%- set rag_reference = (comp.get('rag_reference') if comp is mapping else none) -%}
+{%- if not rag_reference -%}
+  {%- set rag_reference = (wm_comp.get('rag_reference') if wm_comp is mapping else none) -%}
+{%- endif -%}
+{%- set has_rag_attempt = false -%}
+{%- if rag_context is string -%}
+  {%- set has_rag_attempt = rag_context|trim != "" -%}
+{%- elif rag_context is sequence or rag_context is mapping -%}
+  {%- set has_rag_attempt = rag_context|length > 0 -%}
+{%- else -%}
+  {%- set has_rag_attempt = rag_context is not none -%}
+{%- endif -%}
+
+{%- set has_rag_refs = false -%}
+{%- if rag_reference is string -%}
+  {%- set has_rag_refs = rag_reference|trim != "" -%}
+{%- elif rag_reference is sequence or rag_reference is mapping -%}
+  {%- set has_rag_refs = rag_reference|length > 0 -%}
+{%- else -%}
+  {%- set has_rag_refs = rag_reference is not none -%}
+{%- endif -%}
+
+## Annahmen & Randbedingungen
+
+- Kontext/Anliegen: {{ query_text }}
+{%- if abstract_reply %}
+- Interne Kurz-Einordnung: {{ abstract_reply }}
+{%- else %}
+- Interne Kurz-Einordnung: nicht vorhanden.
+{%- endif %}
+- Rahmenannahme: vorläufige Auslegung auf Basis der aktuell bekannten Angaben.
+{%- if params and params|length > 0 -%}
+- Bekannte Randbedingungen (Auszug): {{ params.keys()|list|join(', ') }}
+{%- else -%}
+- Bekannte Randbedingungen: nicht angegeben.
+{%- endif -%}
+
+## Technische Mechanismen
+- Relevante Mechanismen (rotierende Dichtsysteme): Reibung/Wärmeeintrag, Schmierfilm/Medium, Gegenlaufflächenzustand, Verformung/Setzverhalten, ggf. Druckbeaufschlagung.
+{%- if goal == "troubleshooting_leakage" -%}
+- Leckage ist häufig ein Zusammenspiel aus Montage/Einlauf, Wellenlauf, Oberflächenzustand und Medien-/Temperaturfenster.
+{%- endif -%}
+
+## Risiken & Failure-Modes
+{%- if goal == "troubleshooting_leakage" -%}
+- Mögliche Ursachen (indikativ): Montagefehler, falsches Material/Medium, falsches Einbaumaß, Wellen-/Gehäusetoleranzen, thermische Überlast, Trockenlauf.
+{%- elif goal == "design_recommendation" -%}
+- Typische Risiken: Werkstoffinkompatibilität, thermische Überlast/Überhitzung, Verschleiß an der Gegenlauffläche, unzureichende Schmierung, Einbau-/Geometriefehler.
+{%- else -%}
+- Risiken hängen stark von Medium/Temperatur/Druck und Bewegungsprofil ab.
+{%- endif -%}
+
+## Bewertung / Auslegung (vorläufig)
+{%- if goal == "design_recommendation" -%}
+{%- set material_value = mat_choice.get('material') -%}
+{%- set profile_value = prof_choice.get('profile') -%}
+- Material: {{ material_value if material_value else 'offen' }}{%- if mat_choice.get('confidence') %} ({{ mat_choice.get('confidence') }}){%- endif -%}.
+- Profil: {{ profile_value if profile_value else 'offen' }}{%- if prof_choice.get('confidence') %} ({{ prof_choice.get('confidence') }}){%- endif -%}.
+{%- if calc.get('safety_factor') is not none -%}
+- Rechenhinweis (aus State): Sicherheitsfaktor={{ "%.2f"|format(calc.get('safety_factor')) }}.
+{%- elif calc.get('notes') -%}
+- Keine belastbare Berechnung: {{ calc.get('notes')[0] }}
+{%- else -%}
+- Keine belastbare Berechnung vorhanden.
+{%- endif -%}
+{%- if prods.get('requested') and not prods.get('catalog_connected') -%}
+- Produktempfehlung: nicht möglich (kein Produktkatalog verbunden).
+{%- elif prods.get('catalog_connected') and prods.get('matches') and prods.get('matches')|length > 0 -%}
+- Produktmatches (Top 3):
+  {%- for match in prods.get('matches')[:3] -%}
+  - {{ match.manufacturer or 'Unbekannt' }} / {{ match.part_number or 'n/a' }} (Fit: {{ match.fit or 'unbekannt' }})
+  {%- endfor -%}
+{%- endif -%}
+{%- elif goal == "explanation_or_comparison" -%}
+- Vergleich (Kurzform):
+  {%- if comp.get('options') and comp.get('options')|length >= 2 -%}
+  - Option A: {{ comp.options[0].name or 'Option A' }}
+  - Option B: {{ comp.options[1].name or 'Option B' }}
+  {%- else -%}
+  - Option A: {{ comp.get('text_a', 'Beschreibung fehlt') }}
+  - Option B: {{ comp.get('text_b', 'Beschreibung fehlt') }}
+  {%- endif -%}
+{%- elif goal == "troubleshooting_leakage" -%}
+- Hypothesen (aus State):
+  {%- for hypo in troubleshoot.get('hypotheses', []) -%}
+  - {{ hypo.hypothesis if hypo is mapping else hypo }}
+  {%- endfor -%}
+  {%- if not troubleshoot.get('hypotheses') -%}
+  - Keine Hypothesen hinterlegt; ohne Randbedingungen nur grobe Einordnung möglich.
+  {%- endif -%}
+{%- else -%}
+- Keine belastbaren Angaben vorhanden.
+{%- endif -%}
+{%- if vals -%}
+- Validierung (aus State): {{ vals.get('status', 'offen') }}{%- if vals.get('issues') -%} (Hinweise: {{ vals.get('issues')|join(', ') }}){%- endif -%}.
+{%- endif -%}
+
+## Prüf- und Abnahmeempfehlung
+- Absichern: Medienverträglichkeit/Temperaturfenster, Einbau- und Gegenlaufflächen-Check, Dichtheits-/Standzeitprüfung unter repräsentativen Bedingungen.
+
+## Nächste Schritte
+{%- if goal == "smalltalk" -%}
+- Konkretes Thema wählen (z. B. Werkstoffwahl, Leckageanalyse, Einbauhinweise).
+{%- elif goal == "out_of_scope" -%}
+- Bitte auf Dichtungstechnik eingrenzen (Medium, Temperatur, Druck, Drehzahl/Bewegung, Geometrie).
+{%- else -%}
+- Daten vervollständigen und dann Empfehlung verifizieren (Material/Profil/Einbau).
+{%- endif -%}
+
+## Rückfragen (falls nötig)
+{%- if params and params|length > 0 -%}
+- Welche Randbedingung ist am unsichersten (Medium/Temperatur/Druck/Bewegung)?
+{%- else -%}
+- Medium?
+- Temperaturbereich (min/max oder Betrieb)?
+- Druck-/Δp (falls relevant) und Drehzahl/Umfangsgeschwindigkeit?
+{%- endif -%}
+
+{%- if has_rag_refs -%}
+## Quellen / Belege
+{%- if rag_reference is sequence and rag_reference is not string -%}
+{%- for ref in rag_reference -%}
+- {{ ref }}
+{%- endfor -%}
+{%- else -%}
+- {{ rag_reference }}
+{%- endif -%}
+{%- endif -%}

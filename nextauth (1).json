@@ -1,0 +1,65 @@
+{
+  "clientId": "nextauth",
+  "name": "",
+  "description": "",
+  "rootUrl": "https://sealai.net",
+  "adminUrl": "https://www.sealai.net",
+  "baseUrl": "",
+  "surrogateAuthRequired": false,
+  "enabled": true,
+  "alwaysDisplayInConsole": false,
+  "clientAuthenticatorType": "client-secret",
+  "secret": "gJFF2Ysl6bZSUFlANmhADD6avG8Yo8M0",
+  "redirectUris": [
+    "https://www.sealai.net/api/auth/callback/*",
+    "https://sealai.net/api/auth/callback/*"
+  ],
+  "webOrigins": [
+    "https://sealai.net",
+    "https://www.sealai.net"
+  ],
+  "notBefore": 0,
+  "bearerOnly": false,
+  "consentRequired": false,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": false,
+  "publicClient": false,
+  "frontchannelLogout": true,
+  "protocol": "openid-connect",
+  "attributes": {
+    "oidc.ciba.grant.enabled": "false",
+    "client.secret.creation.time": "1742896007",
+    "backchannel.logout.session.required": "true",
+    "post.logout.redirect.uris": "https://sealai.net##https://www.sealai.net",
+    "display.on.consent.screen": "false",
+    "oauth2.device.authorization.grant.enabled": "false",
+    "backchannel.logout.revoke.offline.tokens": "false",
+    "login_theme": "",
+    "frontchannel.logout.url": "",
+    "backchannel.logout.url": ""
+  },
+  "authenticationFlowBindingOverrides": {},
+  "fullScopeAllowed": true,
+  "nodeReRegistrationTimeout": -1,
+  "defaultClientScopes": [
+    "web-origins",
+    "acr",
+    "roles",
+    "profile",
+    "email"
+  ],
+  "optionalClientScopes": [
+    "address",
+    "phone",
+    "offline_access",
+    "microprofile-jwt"
+  ],
+  "access": {
+    "view": true,
+    "configure": true,
+    "manage": true
+  },
+  "authorizationServicesEnabled": false
+}

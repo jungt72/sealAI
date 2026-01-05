@@ -1,0 +1,57 @@
+frontend/src/components/Fog.tsx:5 - default
+frontend/src/components/HeroBackground.tsx:57 - default
+frontend/src/lib/logout.ts:40 - handleLogout
+frontend/src/lib/useAccessToken.ts:36 - fetchFreshAccessToken
+frontend/.next/types/app/layout.ts:54 - PageProps
+frontend/.next/types/app/layout.ts:58 - LayoutProps (used in module)
+frontend/.next/types/app/page.ts:54 - PageProps (used in module)
+frontend/.next/types/app/page.ts:58 - LayoutProps
+frontend/src/app/dashboard/ChatScreen.tsx:4 - default
+frontend/src/app/dashboard/Dashboard.tsx:5 - default
+frontend/src/components/organisms/Header.tsx:10 - default
+frontend/src/components/organisms/Sidebar.tsx:8 - default
+frontend/src/components/ui/card.tsx:5 - Card
+frontend/src/lib/types/langgraph.ts:1 - AgentContributor (used in module)
+frontend/src/lib/types/langgraph.ts:19 - DebatePayload (used in module)
+frontend/.next/types/app/dashboard/layout.ts:54 - PageProps
+frontend/.next/types/app/dashboard/layout.ts:58 - LayoutProps (used in module)
+frontend/.next/types/app/dashboard/page.ts:54 - PageProps (used in module)
+frontend/.next/types/app/dashboard/page.ts:58 - LayoutProps
+frontend/.next/types/app/register/page.ts:54 - PageProps (used in module)
+frontend/.next/types/app/register/page.ts:58 - LayoutProps
+frontend/src/app/auth/signin/signin-client.tsx:5 - default
+frontend/src/app/components/ui/card.tsx:23 - Card (used in module)
+frontend/src/app/dashboard/ccx/page.tsx:6 - default
+frontend/src/app/dashboard/ccx/page.tsx:1 - dynamic
+frontend/src/app/dashboard/ccx/page.tsx:2 - revalidate
+frontend/src/app/dashboard/components/InfoBar.tsx:7 - default
+frontend/src/app/dashboard/components/LogoutButton.tsx:3 - default
+frontend/src/app/dashboard/components/Sidebar.tsx:3 - default
+frontend/.next/types/app/auth/error/page.ts:54 - PageProps (used in module)
+frontend/.next/types/app/auth/error/page.ts:58 - LayoutProps
+frontend/.next/types/app/auth/signin/page.ts:54 - PageProps (used in module)
+frontend/.next/types/app/auth/signin/page.ts:58 - LayoutProps
+frontend/src/app/api/ccx/jobs/route.js:10 - GET
+frontend/src/app/api/ccx/jobs/route.js:4 - dynamic
+frontend/src/app/dashboard/ccx/[jobId]/page.tsx:6 - default
+frontend/src/app/dashboard/ccx/[jobId]/page.tsx:1 - dynamic
+frontend/src/app/dashboard/ccx/[jobId]/page.tsx:2 - revalidate
+frontend/src/app/dashboard/components/Sidebar/AccordionTabs.tsx:25 - default
+frontend/src/app/dashboard/components/Sidebar/Sidebar.tsx:12 - default
+frontend/src/app/dashboard/components/Sidebar/SidebarRight.tsx:22 - default
+frontend/.next/types/app/api/auth/[...nextauth]/route.ts:313 - PageProps
+frontend/.next/types/app/api/auth/[...nextauth]/route.ts:317 - LayoutProps
+frontend/.next/types/app/api/auth/custom-logout/route.ts:313 - PageProps
+frontend/.next/types/app/api/auth/custom-logout/route.ts:317 - LayoutProps
+frontend/.next/types/app/api/auth/sso-logout/route.ts:313 - PageProps
+frontend/.next/types/app/api/auth/sso-logout/route.ts:317 - LayoutProps
+frontend/.next/types/app/api/langgraph/chat/route.ts:313 - PageProps
+frontend/.next/types/app/api/langgraph/chat/route.ts:317 - LayoutProps
+frontend/.next/types/app/api/ai/chat/stream/route.ts:313 - PageProps
+frontend/.next/types/app/api/ai/chat/stream/route.ts:317 - LayoutProps
+frontend/src/app/api/ccx/jobs/[jobId]/events/route.js:3 - GET
+frontend/src/app/api/ccx/jobs/[jobId]/events/route.js:1 - dynamic
+frontend/src/app/api/ccx/jobs/[jobId]/summary/route.js:21 - GET
+frontend/src/app/api/ccx/jobs/[jobId]/summary/route.js:4 - dynamic
+frontend/.next/types/app/api/langgraph/chat/[conversationId]/chat_stream/route.ts:313 - PageProps
+frontend/.next/types/app/api/langgraph/chat/[conversationId]/chat_stream/route.ts:317 - LayoutProps

@@ -1,0 +1,57 @@
+/* src/styles/chat-layout.css */
+/* Grok-inspiriertes Theme nur für den Chat-Screen von SealAI */
+
+.chat-screen-root {
+  min-height: 100vh;
+  width: 100%;
+  /* sehr dezenter Verlauf, fast weiß */
+  background: radial-gradient(circle at top, #f7f7fb, #ffffff);
+  color: hsl(228 43% 12%);
+}
+
+/* Chat-Container: volle Breite für Scrolling, Inhalt wird in Komponenten zentriert */
+.chat-main-shell {
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Scrollbalken ausblenden */
+.chat-screen-root::-webkit-scrollbar,
+.chat-main-shell::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-screen-root,
+.chat-main-shell {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+/* Typografie-Variablen für chat-markdown.css */
+.chat-screen-root {
+  /* Etwas größer + luftigere Typo wie bei Grok */
+  --md-font-size: 16px;
+  --md-line-height: 1.7;
+  --md-tight-line: 1.5;
+
+  --md-fg: #111827;
+  --md-fg-soft: #6b7280;
+  --md-fg-strong: #0f172a;
+
+  --md-hr: #e5e7eb;
+  --md-border: #e5e7eb;
+
+  --code-bg: #0f172a;
+  --code-fg: #f9fafb;
+  --code-inline-bg: #f3f4f6;
+  --code-inline-fg: #374151;
+
+  --chat-bubble-user-bg: linear-gradient(135deg, #e76113, #fb923c);
+  --chat-bubble-user-fg: #0f172a;
+  --chat-bubble-assistant-bg: transparent;
+  --chat-bubble-assistant-fg: #111827;
+}

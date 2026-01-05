@@ -1,0 +1,121 @@
+[
+  {
+    "id": "gp_01_design_baseline",
+    "title": "RWDR Auslegung — Basisdaten vollständig",
+    "user_input": "Ich brauche eine Empfehlung für einen Radialwellendichtring: Medium Mineralöl, 80°C, 5 bar, 50 mm Welle, 1200 rpm. Was empfiehlst du und worauf muss ich achten?",
+    "seed_state": {
+      "parameters": {
+        "medium": "mineralöl",
+        "temperature_C": 80,
+        "pressure_bar": 5,
+        "shaft_diameter": 50,
+        "speed_rpm": 1200
+      }
+    },
+    "expected_sections": ["Kurz-Zusammenfassung", "Empfehlung", "Annahmen", "Risiken", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false }
+  },
+  {
+    "id": "gp_02_ask_missing",
+    "title": "Ask-missing — zu wenig Daten",
+    "user_input": "Welche Dichtung soll ich nehmen?",
+    "seed_state": { "parameters": {} },
+    "expected_sections": ["Kurz-Zusammenfassung", "Fehlende Angaben", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false, "expects_ask_missing": true }
+  },
+  {
+    "id": "gp_03_troubleshooting_leakage",
+    "title": "Troubleshooting — Leckage nach kurzer Zeit",
+    "user_input": "Unsere RWDR dichtet nicht: nach 2 Wochen Leckage, auf der Welle sieht man Riefen. Öl, 60°C, 800 rpm. Was sind die wahrscheinlichsten Ursachen und was prüfe ich zuerst?",
+    "seed_state": {
+      "parameters": { "medium": "öl", "temperature_C": 60, "speed_rpm": 800 }
+    },
+    "expected_sections": ["Kurz-Zusammenfassung", "Hypothesen", "Checks", "Risiken", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false }
+  },
+  {
+    "id": "gp_04_material_comparison",
+    "title": "Materialvergleich — NBR vs FKM vs PTFE",
+    "user_input": "Vergleiche NBR, FKM und PTFE für Mineralöl bei 120°C. Bitte mit Vor- und Nachteilen und typischen Grenzen.",
+    "seed_state": { "parameters": { "medium": "mineralöl", "temperature_C": 120 } },
+    "expected_sections": ["Kurz-Zusammenfassung", "Vergleich", "Grenzen", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": true, "requires_tools": false }
+  },
+  {
+    "id": "gp_05_high_pressure",
+    "title": "Edge Case — hoher Druck",
+    "user_input": "RWDR bei 40 bar, Öl, 90°C, 1500 rpm. Geht das überhaupt? Welche Alternativen/Designänderungen sind sinnvoll?",
+    "seed_state": { "parameters": { "medium": "öl", "pressure_bar": 40, "temperature_C": 90, "speed_rpm": 1500 } },
+    "expected_sections": ["Kurz-Zusammenfassung", "Machbarkeit", "Risiken", "Alternativen", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false }
+  },
+  {
+    "id": "gp_06_high_temp",
+    "title": "Edge Case — hohe Temperatur",
+    "user_input": "Dichtung für Heißluft/Ofenatmosphäre bei 220°C, langsame Rotation. Welche Werkstoffe sind realistisch und welche Annahmen muss ich prüfen?",
+    "seed_state": { "parameters": { "medium": "heißluft", "temperature_C": 220, "speed_rpm": 50 } },
+    "expected_sections": ["Kurz-Zusammenfassung", "Werkstoffoptionen", "Annahmen", "Risiken", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": true, "requires_tools": false }
+  },
+  {
+    "id": "gp_07_contamination_abrasive",
+    "title": "Abrasive Umgebung — Staub/Sand",
+    "user_input": "RWDR in staubiger Umgebung (Sand), gelegentliche Schlammpartikel. Öl, 70°C, 1000 rpm. Wie ändere ich Design/Montage, um Standzeit zu erhöhen?",
+    "seed_state": { "parameters": { "medium": "öl", "temperature_C": 70, "speed_rpm": 1000, "contamination": "sand/abrasiv" } },
+    "expected_sections": ["Kurz-Zusammenfassung", "Design-Hebel", "Montage", "Risiken", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false }
+  },
+  {
+    "id": "gp_08_lead_helix_direction",
+    "title": "Lead/Drall — Rotationsrichtung",
+    "user_input": "Wir haben Einlaufspuren und vermuten Drall auf der Welle. Wie hängt Rotationsrichtung/Helix/Lead mit Pumpwirkung zusammen und was sind pragmatische Gegenmaßnahmen?",
+    "seed_state": { "parameters": { "speed_rpm": 900 } },
+    "expected_sections": ["Kurz-Zusammenfassung", "Erklärung", "Gegenmaßnahmen", "Checks", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": true, "requires_tools": false }
+  },
+  {
+    "id": "gp_09_installation_safe",
+    "title": "Montagehinweise — sicher und konkret",
+    "user_input": "Gib mir eine kurze Montage-Checkliste für RWDR (Sicherheit, Reinigung, Schmierung, Einführhilfe), ohne gefährliche Anweisungen.",
+    "seed_state": { "parameters": {} },
+    "expected_sections": ["Kurz-Zusammenfassung", "Checkliste", "Risiken", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher", "Zündquelle", "Sprengstoff"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false }
+  },
+  {
+    "id": "gp_10_lifetime_framing",
+    "title": "Standzeit/Lebensdauer — framing ohne Garantien",
+    "user_input": "Welche Standzeit kann ich erwarten und wie kommuniziere ich das intern, ohne falsche Garantien? Öl, 80°C, 5 bar, 1200 rpm.",
+    "seed_state": { "parameters": { "medium": "öl", "temperature_C": 80, "pressure_bar": 5, "speed_rpm": 1200 } },
+    "expected_sections": ["Kurz-Zusammenfassung", "Einflussfaktoren", "Annahmen", "Risiken", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false }
+  },
+  {
+    "id": "gp_11_out_of_scope_redirect",
+    "title": "Out-of-scope — sanft zurückführen",
+    "user_input": "Wie backe ich einen Käsekuchen?",
+    "seed_state": { "parameters": {} },
+    "expected_sections": ["Kurz-Zusammenfassung", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false, "expects_out_of_scope": true }
+  },
+  {
+    "id": "gp_12_units_consistency",
+    "title": "Einheiten-Konsistenz — bar/°C/rpm",
+    "user_input": "Medium Wasser, 10 bar, 20–60°C, 3000 rpm, 30 mm. Bitte empfehle und nenne die wichtigsten Grenzwerte.",
+    "seed_state": { "parameters": { "medium": "wasser", "pressure_bar": 10, "temperature_min": 20, "temperature_max": 60, "speed_rpm": 3000, "shaft_diameter": 30 } },
+    "expected_sections": ["Kurz-Zusammenfassung", "Empfehlung", "Risiken", "Nächste Schritte"],
+    "must_not_contain": ["25%", "30%", "garantiert", "100% sicher"],
+    "tool_expectations": { "requires_rag": false, "requires_tools": false }
+  }
+]
+

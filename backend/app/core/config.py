@@ -2,6 +2,8 @@
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+import os
+import sys
 import structlog
 
 # Strukturiertes Logging (JSON)
@@ -16,6 +18,30 @@ structlog.configure(
     wrapper_class=structlog.stdlib.BoundLogger,
     cache_logger_on_first_use=True,
 )
+
+
+def _running_pytest() -> bool:
+    return "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules
+
+
+def _ensure_pytest_env_defaults() -> None:
+    if not _running_pytest():
+        return
+    database_url = os.getenv("DATABASE_URL") or os.getenv("database_url")
+    if not database_url:
+        user = os.getenv("POSTGRES_USER") or os.getenv("postgres_user") or "sealai"
+        password = os.getenv("POSTGRES_PASSWORD") or os.getenv("postgres_password") or "sealai"
+        host = os.getenv("POSTGRES_HOST") or os.getenv("postgres_host") or "localhost"
+        port = os.getenv("POSTGRES_PORT") or os.getenv("postgres_port") or "5432"
+        db = os.getenv("POSTGRES_DB") or os.getenv("postgres_db") or "sealai"
+        database_url = f"postgresql://{user}:{password}@{host}:{port}/{db}"
+        os.environ.setdefault("DATABASE_URL", database_url)
+        os.environ.setdefault("database_url", database_url)
+    os.environ.setdefault("POSTGRES_SYNC_URL", database_url)
+
+
+_ensure_pytest_env_defaults()
+
 
 class Settings(BaseSettings):
     # Datenbank / SQLAlchemy
@@ -32,7 +58,7 @@ class Settings(BaseSettings):
 
     # OpenAI / LLM / LangChain
     openai_api_key: str
-    openai_model: str = "gpt-4.1-mini"
+    openai_model: str = "gpt-5-mini"
 
     # Embeddings
     embedding_model: str = "BAAI/bge-base-en-v1.5"
@@ -73,6 +99,8 @@ class Settings(BaseSettings):
 
     # Feature-Flags
     ltm_enable: bool = True
+    chat_max_conversations_per_user: int = 50
+    chat_history_ttl_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",

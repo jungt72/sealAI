@@ -1,0 +1,68 @@
+* Host localhost:443 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:443...
+* Connected to localhost (::1) port 443
+* ALPN: curl offers h2,http/1.1
+} [5 bytes data]
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+} [512 bytes data]
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+{ [122 bytes data]
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+{ [41 bytes data]
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+{ [2050 bytes data]
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+{ [79 bytes data]
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+{ [52 bytes data]
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+} [1 bytes data]
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+} [52 bytes data]
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519 / id-ecPublicKey
+* ALPN: server accepted h2
+* Server certificate:
+*  subject: CN=sealai.net
+*  start date: Nov 26 11:06:15 2025 GMT
+*  expire date: Feb 24 11:06:14 2026 GMT
+*  issuer: C=US; O=Let's Encrypt; CN=E8
+*  SSL certificate verify result: unable to get local issuer certificate (20), continuing anyway.
+*   Certificate level 0: Public key type EC/prime256v1 (256/128 Bits/secBits), signed using ecdsa-with-SHA384
+*   Certificate level 1: Public key type EC/secp384r1 (384/192 Bits/secBits), signed using sha256WithRSAEncryption
+} [5 bytes data]
+* using HTTP/2
+* [HTTP/2] [1] OPENED stream for https://localhost/api/chat
+* [HTTP/2] [1] [:method: POST]
+* [HTTP/2] [1] [:scheme: https]
+* [HTTP/2] [1] [:authority: localhost]
+* [HTTP/2] [1] [:path: /api/chat]
+* [HTTP/2] [1] [user-agent: curl/8.5.0]
+* [HTTP/2] [1] [accept: text/event-stream]
+* [HTTP/2] [1] [content-type: application/json]
+* [HTTP/2] [1] [content-length: 62]
+} [5 bytes data]
+> POST /api/chat HTTP/2
+> Host: localhost
+> User-Agent: curl/8.5.0
+> Accept: text/event-stream
+> Content-Type: application/json
+> Content-Length: 62
+> 
+} [62 bytes data]
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+{ [265 bytes data]
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+{ [265 bytes data]
+* old SSL session ID is stale, removing
+{ [5 bytes data]
+< HTTP/2 401 
+< server: nginx/1.29.4
+< date: Mon, 22 Dec 2025 10:09:54 GMT
+< content-type: application/json
+< vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+< 
+{ [5 bytes data]
+* Connection #0 to host localhost left intact
+{"detail":"Missing Authorization: Bearer token","request_id":"c84002e7-617c-4a8f-a0d8-bf21f5b899c7"}

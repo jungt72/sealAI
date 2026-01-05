@@ -1,0 +1,77 @@
+{# explain_v2.jinja2 — sauber formatierte Markdown-Ausgabe, robust gegen fehlende Felder, mit Best Practices #}
+{# Optimierungen: Mehr Kontext, Fehlerbehandlung, Validierung #}
+
+{% set _main = main if (main is defined and main) else {} %}
+{% set _d    = derived if (derived is defined and derived) else {} %}
+{% set c     = _d.get('calculated', {}) %}
+{% set vorteile = _main.get('vorteile') or [] %}
+{% set einschraenkungen = _main.get('einschraenkungen') or [] %}
+{% set geeignet_fuer = _main.get('geeignet_fuer') or [] %}
+{% set altern = alternativen if (alternativen is defined and alternativen) else [] %}
+{% set tips   = hinweise if (hinweise is defined and hinweise) else [] %}
+
+{# Validierung: Prüfe, ob Daten vorhanden sind #}
+{% if not _main %}
+Fehler: Keine Hauptdaten verfügbar. Bitte überprüfe den Rendering-Kontext.
+{% else %}
+
+**Sehr gern – hier ist meine fachliche Empfehlung für Ihren Anwendungsfall:**
+
+## Empfehlung
+
+**Typ:** {{ _main.get('typ', '–') }}
+{% if _main.get('werkstoff') %}
+**Werkstoff:** {{ _main.get('werkstoff') }}
+{% endif %}
+
+{% if _main.get('begruendung') %}
+**Begründung (kurz):** {{ _main.get('begruendung') }}
+{% endif %}
+
+{% if 'umfangsgeschwindigkeit_m_s' in c %}
+**Abgeleiteter Wert:** v = {{ "%.3f"|format(c['umfangsgeschwindigkeit_m_s']) }} m/s
+{% endif %}
+
+{% if vorteile %}
+**Warum diese Wahl überzeugt**
+{% for v in vorteile %}
+- {{ v }}
+{% endfor %}
+{% endif %}
+
+{% if einschraenkungen %}
+**Worauf wir achten sollten**
+{% for e in einschraenkungen %}
+- {{ e }}
+{% endfor %}
+{% endif %}
+
+{% if geeignet_fuer %}
+**Besonders geeignet für**
+{% for g in geeignet_fuer %}
+- {{ g }}
+{% endfor %}
+{% endif %}
+
+{% if altern %}
+**Sinnvolle Alternativen**
+{% for a in altern %}
+- {{ a.get('typ','–') }}{% if a.get('werkstoff') %} ({{ a.get('werkstoff') }}){% endif %}{% if a.get('kurzbegruendung') %}: {{ a.get('kurzbegruendung') }}{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if tips %}
+**Hinweise aus der Praxis**
+{% for h in tips %}
+- {{ h }}
+{% endfor %}
+{% endif %}
+
+---
+
+*Passt das für Sie? Wenn Medium, Temperaturfenster oder Drehzahl variieren, justiere ich die Empfehlung gern – zielgerichtet, sicher und langlebig.*
+
+{% endif %}
+
+{# Best Practice: Logging für Debugging #}
+{# Im Renderer-Modul: Logge, wenn Daten fehlen #}

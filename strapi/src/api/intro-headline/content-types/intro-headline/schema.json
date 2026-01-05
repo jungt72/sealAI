@@ -1,0 +1,20 @@
+{
+    "kind": "singleType",
+    "collectionName": "intro_headlines",
+    "info": {
+        "singularName": "intro-headline",
+        "pluralName": "intro-headlines",
+        "displayName": "Intro Headline",
+        "description": "Headline text between Hero and Product Tabs"
+    },
+    "options": {
+        "draftAndPublish": true
+    },
+    "pluginOptions": {},
+    "attributes": {
+        "text": {
+            "type": "text",
+            "required": true
+        }
+    }
+}

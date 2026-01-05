@@ -1,71 +1,42 @@
-.env
+# Envs
 .env*
 !.env.example
+backend/.env
+frontend/.env
 
-# ⛔ ENV-Dateien
-.env*
-!.env.example
-
-# Ignore Python byte-code
-__pycache__/
-*.py[cod]
-
-# Ignore common build artifacts
-.venv/
-backend/.venv/
+# Node / Next
 node_modules/
 .next/
+out/
+frontend/.next/
+frontend/node_modules/
+.pnpm-store/
 
-# Ignore misc artefacts
+# Python
+__pycache__/
+*.py[cod]
+.venv*
+backend/.venv/
+.venv_audit/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Builds & Artefakte
+dist/
+build/
+*.save.*
+*.backup*
+*.bak*
+*.tmp
 *.log
-*.html
-*.txt
-*.docx
-*.sql
-*save
-
-# Ignore remaining scratch content
-backend/docs/
-backend/test/
-nginx/**/renewal*/
-nginx/combined.conf/
-*.tx_
-nextauth (1).json
-langgraph_local/
-
-# Ignore leftover scratch placeholders
-=
-CACHED
-frontend
-[internal]
-exporting/
-migrate_structure.sh
-langgraph_local/
-next/
-nginx-certbot/
-*.json
-*.js
-*.py
-transferring/
-writing/
-# === Auto-generated ignore rules ===
-# Audit & Trash
-AUDIT_*/
-CLEANUP_PLAN_*.sh
-TRASH_*/
-audits/
-ERROR
-
-# Backups & Saves
-*.bak
-*.bak.*
-*.save
 *.orig
-docker-compose.yml.bak.*
 
-# Build & Temp
-.next/
-next
+# Local scratch
+*.sql
+*.docx
+*.tx_
+backups/
 sealai-frontend@0.1.0
 
 # Simulation / Job Artefakte
@@ -74,20 +45,41 @@ JOBNAME.*
 export.fbd
 frontend/public/files/mein_job.*
 
-# Backups
-backups/
-
 # Test artefacts
 tests/e2e_consult*.sh
+coverage/
+.coverage*
 
-# Local cleanup scripts
-CLEAN_*.sh
-sealai_inventory_*.tar.gz
-.env
+# Misc
+.DS_Store
+*.pem
+sealai_inventory_*/
+code_dump.part.*
+*.tar.gz
+sidebar_chat_dump_*
+software_versions.txt
+system_info.txt
+test_llm.py
+test_langchain.py
+test_stream.py
+tests/test_consult_e2e.py
+test_input.json
+.trash/
+_audits/
+frontend_backup_*/
+
+# editor/backup files
+*.save
+*.save.*
+*.backup
+*.backup_*
+*.bak
+*.swp
+*~
+
+# dumps / exports / secrets
+code_dump_*.txt
+*.dump
+*.log
+*.env
 .env.*
-node_modules/
-frontend/.next/
-__pycache__/
-logs/
-dist/
-build/

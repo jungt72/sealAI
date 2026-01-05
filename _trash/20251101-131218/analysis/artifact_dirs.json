@@ -1,0 +1,70 @@
+[
+  {
+    "path": ".pytest_cache",
+    "size_bytes": 3987
+  },
+  {
+    "path": "backend/.pytest_cache",
+    "size_bytes": 600
+  },
+  {
+    "path": "frontend/.next",
+    "size_bytes": 170242192
+  },
+  {
+    "path": "backend/app/.pytest_cache",
+    "size_bytes": 754
+  },
+  {
+    "path": "backend/app/__pycache__",
+    "size_bytes": 133
+  },
+  {
+    "path": "backend/app/utils/__pycache__",
+    "size_bytes": 4566
+  },
+  {
+    "path": "backend/app/services/__pycache__",
+    "size_bytes": 142
+  },
+  {
+    "path": "backend/app/langgraph/__pycache__",
+    "size_bytes": 5995
+  },
+  {
+    "path": "backend/app/services/chat/__pycache__",
+    "size_bytes": 4770
+  },
+  {
+    "path": "backend/app/services/rag/__pycache__",
+    "size_bytes": 15958
+  },
+  {
+    "path": "backend/app/langgraph/utils/__pycache__",
+    "size_bytes": 4486
+  },
+  {
+    "path": "backend/app/langgraph/nodes/__pycache__",
+    "size_bytes": 5065
+  },
+  {
+    "path": "backend/app/langgraph/tests/__pycache__",
+    "size_bytes": 6622
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/debate/__pycache__",
+    "size_bytes": 842
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/__pycache__",
+    "size_bytes": 1403
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/debate/nodes/__pycache__",
+    "size_bytes": 1010
+  },
+  {
+    "path": "backend/app/langgraph/subgraphs/material/nodes/__pycache__",
+    "size_bytes": 5161
+  }
+]

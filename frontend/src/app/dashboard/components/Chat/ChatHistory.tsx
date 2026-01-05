@@ -1,40 +1,54 @@
+// frontend/src/app/dashboard/components/Chat/ChatHistory.tsx
 'use client';
 
-import MarkdownMessage from './MarkdownMessage';
+import React, { memo } from 'react';
 import type { Message } from '@/types/chat';
+import MarkdownMessage from './MarkdownMessage';
 
-/**
- * Kompaktere, grok/ChatGPT-nahe Bubble-Abstände.
- */
-export default function ChatHistory({ messages }: { messages: Message[] }) {
+type Props = {
+  messages: Message[];
+  className?: string;
+};
+
+function ChatHistoryBase({ messages, className }: Props) {
+  if (!messages || messages.length === 0) return null;
+
   return (
-    <div className="flex flex-col gap-5 w-full max-w-[720px] mx-auto pb-3 scroll-mt-[64px]">
-      {messages.map((m, i) => {
-        const isUser = m.role === 'user';
-        const isSystem = m.role === 'system';
+    <div className={className}>
+      <div className="w-full max-w-[768px] mx-auto px-4 py-4 space-y-6">
+        {messages.map((m, i) => {
+          const isUser = m.role === 'user';
+          // >>> stabile Keys: NICHT vom (sich ändernden) Inhalt ableiten!
+          const key = `m-${i}-${m.role}`;
 
-        return (
-          <div
-            key={i}
-            className={isUser ? 'flex justify-end' : 'flex justify-start'}
-          >
-            <div
-              className={[
-                'px-3 py-2 leading-[1.45] transition-all duration-150',
-                isUser
-                  ? 'max-w-[66%] bg-[#f6f8fc] rounded-2xl border border-gray-200 shadow-sm'
-                  : 'w-full',
-                isSystem ? 'opacity-80 italic' : '',
-              ].join(' ')}
-            >
-              <MarkdownMessage isUser={isUser} isTool={false}>
-                {m.content}
-              </MarkdownMessage>
+          return (
+            <div key={key} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={[
+                  'max-w-[680px]',
+                  'rounded-2xl',
+                  'px-4 py-3',
+                  'shadow-sm',
+                  isUser
+                    ? 'bg-blue-600 text-white cm-user'
+                    : 'bg-white text-gray-900 cm-assistant',
+                ].join(' ')}
+              >
+                {isUser ? (
+                  <div className="whitespace-pre-wrap break-words leading-relaxed">
+                    {m.content}
+                  </div>
+                ) : (
+                  <MarkdownMessage>{m.content || ''}</MarkdownMessage>
+                )}
+              </div>
             </div>
-          </div>
-        );
-      })}
-      <div id="chat-end" />
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+const ChatHistory = memo(ChatHistoryBase);
+export default ChatHistory;
