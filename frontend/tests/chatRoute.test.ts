@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { POST } from "../src/app/api/chat/route";
 
 vi.mock("../src/lib/langgraphApi", () => ({
-  backendLangGraphChatEndpoint: () => "http://backend.test/api/v1/langgraph/chat/v2",
+  backendLangGraphChatEndpoint: () => "http://backend.test//chat/v2",
 }));
 
 const makeRequest = (body: Record<string, unknown>) =>
