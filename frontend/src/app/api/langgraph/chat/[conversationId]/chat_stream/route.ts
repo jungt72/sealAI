@@ -26,7 +26,7 @@ export async function POST(request: Request, context: any) {
       process.env.NEXT_PUBLIC_BACKEND_URL ||
       "http://localhost:8000").replace(/\/$/, "");
 
-  const backendUrl = `${base}/api/v1/langgraph/chat/${conversationId}/chat_stream`;
+  const backendUrl = `${base}//chat/${conversationId}/chat_stream`;
 
   const backendRes = await fetch(backendUrl, {
     method: "POST",

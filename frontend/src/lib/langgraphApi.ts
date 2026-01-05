@@ -25,7 +25,7 @@ const langgraphBackendBase = (): string => stripApiSuffix(resolveBackendBase());
 export const backendBaseUrl = (): string => langgraphBackendBase();
 
 export const backendLangGraphChatEndpoint = (): string =>
-  `${langgraphBackendBase()}/api/v1/langgraph/chat/v2`;
+  `/api/chat`;
 
 export const backendLangGraphStateEndpoint = (): string =>
-  `${langgraphBackendBase()}/api/v1/langgraph/state`;
+  `/api/langgraph/state`;

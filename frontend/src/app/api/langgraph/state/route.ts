@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   const backendBase = getBackendInternalBase();
   const search = req.nextUrl.search || "";
-  const url = `${backendBase}/api/v1/langgraph/state${search}`;
+  const url = `${backendBase}//state${search}`;
 
   try {
     const res = await fetch(url, {

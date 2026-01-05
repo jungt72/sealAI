@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   const backendBase = getBackendInternalBase();
-  const url = `${backendBase}/api/v1/langgraph/confirm/go`;
+  const url = `${backendBase}//confirm/go`;
   const bodyText = await req.text();
   const contentType = req.headers.get("content-type") || "application/json";
 
