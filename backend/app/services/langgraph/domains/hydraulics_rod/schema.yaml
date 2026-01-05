@@ -1,0 +1,38 @@
+fields:
+  falltyp:
+    required: true
+    type: enum
+    enum: ["ersatz", "neu", "optimierung"]
+  stange_mm:
+    required: true
+    type: float
+    min: 4
+    max: 400
+  nut_d_mm:
+    required: true
+    type: float
+    min: 6
+    max: 500
+  nut_b_mm:
+    required: true
+    type: float
+    min: 2
+    max: 50
+  druck_bar:
+    required: true
+    type: float
+    min: 0
+    max: 500
+  geschwindigkeit_m_s:
+    required: false
+    type: float
+    min: 0
+    max: 15
+  medium:
+    required: true
+    type: str
+  temp_max_c:
+    required: true
+    type: float
+    min: -60
+    max: 200

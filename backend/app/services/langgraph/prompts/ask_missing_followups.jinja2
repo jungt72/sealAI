@@ -1,0 +1,13 @@
+{# backend/app/services/langgraph/prompts/ask_missing_followups.jinja2 #}
+{% set de = (lang or 'de')[:2].lower() == 'de' %}
+{% if de %}
+Danke dir – das Bild wird richtig gut! Zwei kurze Punkte noch, damit die Empfehlung **wirklich sitzt**:
+{% for q in followups %}- {{ q }}
+{% endfor %}
+Wenn das passt, lege ich direkt los. Oder ergänze es fix **in einer Zeile** (z. B. „Tmax 80 °C, Medium Öl, n 1500“). 🙂
+{% else %}
+Thanks — this is shaping up nicely! Two quick checks so the recommendation is **spot-on**:
+{% for q in followups %}- {{ q }}
+{% endfor %}
+If that’s correct, I’ll proceed right away. Or add it briefly **in one line** (e.g. “Tmax 80 °C, medium oil, n 1500”). 🙂
+{% endif %}

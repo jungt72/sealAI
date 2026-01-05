@@ -1,0 +1,18 @@
+version: 1
+medium_map:
+  water: ["EPDM", "FKM", "PTFE"]
+  oil: ["NBR", "FKM", "HNBR", "PTFE"]
+pv_bands:
+  - max_pv: 1.5
+    recommend: ["NBR", "EPDM"]
+  - max_pv: 3.0
+    recommend: ["HNBR", "FKM"]
+  - max_pv: 10.0
+    recommend: ["PTFE"]
+speed_bands_m_s:
+  - max_v: 5.0
+    recommend: ["NBR", "HNBR"]
+  - max_v: 15.0
+    recommend: ["FKM"]
+  - max_v: 30.0
+    recommend: ["PTFE"]

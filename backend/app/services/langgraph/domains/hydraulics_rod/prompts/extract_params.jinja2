@@ -1,0 +1,21 @@
+{# Hydraulik Stange – Param-Extraktion #}
+Antworte ausschließlich mit einem kompakten JSON in einer Zeile, ohne Markdown/Erklärung.
+
+Bekannte Parameter:
+{{ existing_params_json }}
+
+Dialog:
+{% for m in messages %}
+- {{ m.type|lower }}: {{ m.content }}
+{% endfor %}
+
+Setze nur wenn sicher:
+- falltyp: "ersatz"|"neu"|"optimierung"
+- stange_mm, nut_d_mm, nut_b_mm (Zahlen, mm)
+- druck_bar (Zahl)
+- geschwindigkeit_m_s (Zahl)
+- medium (String)
+- temp_max_c (Zahl)
+
+Beispiel:
+{"falltyp":"ersatz","stange_mm":50,"nut_d_mm":60,"nut_b_mm":7,"druck_bar":180,"geschwindigkeit_m_s":0.25,"medium":"Hydrauliköl","temp_max_c":80}
