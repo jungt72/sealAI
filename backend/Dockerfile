@@ -16,7 +16,8 @@ COPY requirements.txt ./requirements.txt
 COPY requirements-dev.txt ./requirements-dev.txt
 
 # Stabiler Resolver + Wheels bauen (für offline-Installation im Runtime-Stage)
-RUN python -m pip install --upgrade pip \
+RUN mkdir -p /opt/wheels \
+ && python -m pip install --upgrade pip \
  && python -m pip wheel --no-cache-dir --wheel-dir /opt/wheels -r requirements.txt \
  && if [ "$INSTALL_DEV" = "true" ]; then \
       python -m pip wheel --no-cache-dir --wheel-dir /opt/wheels -r requirements-dev.txt; \
