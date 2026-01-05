@@ -7,6 +7,7 @@ import {
   mergeServerParameters,
   reconcileDirtyWithServer,
 } from "../src/lib/parameterSync";
+import { normalizeIncomingParameters } from "../src/app/dashboard/components/Chat/ChatContainer";
 import type { SealParameters } from "../src/lib/types/sealParameters";
 
 type ParametersPatchInput = Partial<Record<keyof SealParameters, unknown>>;
@@ -149,5 +150,12 @@ describe("parameter sync helpers", () => {
     expect(result.values.pressure_bar).toBe(7);
     expect(result.versions.pressure_bar).toBe(3);
     expect(result.applied.has("pressure_bar")).toBe(true);
+  });
+
+  it("normalizes pressure alias to pressure_bar even when both keys are present", () => {
+    const normalized = normalizeIncomingParameters({ pressure_bar: 7, pressure: 9 });
+
+    expect(normalized.pressure_bar).toBe(9);
+    expect(Object.prototype.hasOwnProperty.call(normalized, "pressure")).toBe(false);
   });
 });

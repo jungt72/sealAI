@@ -1,13 +1,14 @@
 'use client'
 
 import { signIn } from 'next-auth/react'
+import { DEFAULT_CALLBACK_URL } from "@/lib/utils";
 import Image from 'next/image'
 
 export default function SignInButton() {
   return (
     <button
       onClick={() =>
-        signIn('keycloak', { callbackUrl: '/chat' }) // ← wichtig!
+        signIn('keycloak', { callbackUrl: DEFAULT_CALLBACK_URL }) // ← wichtig!
       }
       className="px-6 py-3 rounded bg-blue-600 text-white hover:bg-blue-700"
     >

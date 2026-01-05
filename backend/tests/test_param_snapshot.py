@@ -46,7 +46,7 @@ def test_requires_param_snapshot(monkeypatch):
     monkeypatch.setattr(endpoint, "REQUIRE_PARAM_SNAPSHOT", True)
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
     raw_request = Request({"type": "http", "headers": []})
-    user = RequestUser(user_id="u1", username="u1", sub="u1")
+    user = RequestUser(user_id="u1", username="u1", sub="u1", roles=[])
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(endpoint.langgraph_chat_v2_endpoint(req, raw_request, user))

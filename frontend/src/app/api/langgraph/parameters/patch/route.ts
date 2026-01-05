@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { resolveLanggraphBackendBase } from "@/lib/langgraphBackendServer";
+import { getBackendInternalBase } from "@/lib/backend-internal";
 
 const makeRequestId = (): string => {
   try {
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const backendBase = resolveLanggraphBackendBase();
+  const backendBase = getBackendInternalBase();
   const url = `${backendBase}/api/v1/langgraph/parameters/patch`;
   const bodyText = await req.text();
   const contentType = req.headers.get("content-type") || "application/json";

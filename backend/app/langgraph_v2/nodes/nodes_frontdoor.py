@@ -13,7 +13,7 @@ from app.langgraph_v2.state import (
     WorkingMemory,
 )
 from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.sealai_graph_v2 import log_state_debug
+from app.langgraph_v2.utils.state_debug import log_state_debug
 from app.langgraph_v2.utils.json_sanitizer import extract_json_obj
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text

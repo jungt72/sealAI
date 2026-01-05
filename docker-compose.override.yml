@@ -1,29 +1,28 @@
-version: "3.9"
-
 services:
-  postgres:
-    env_file:
-      - .env.dev
-
   keycloak:
-    env_file:
-      - .env.dev
+    # DEV: publish
+    ports: ["8080:8080"]
 
   backend:
-    env_file:
-      - backend/.env
-      - .env.dev
-    environment:
-      REDIS_URL: "redis://redis:6379/0"
-      RAG_BM25_ENABLED: "0"
-      RAG_BM25_INDEX: "sealai:bm25"
-      ENABLE_LANGGRAPH_V06: "true"
+    # DEV: publish
+    ports: ["8000:8000"]
 
   frontend:
-    # env_file bewusst geleert, damit .env.dev NICHT greift
-    env_file: []
-    environment: {}
+    # DEV: publish
+    ports: ["3000:3000"]
 
-  nginx:
-    env_file:
-      - .env.dev
+  qdrant:
+    # DEV: publish (nur wenn du wirklich von außen testen willst)
+    ports: ["6333:6333", "6334:6334"]
+
+  frontend_test:
+    profiles: ["test"]
+    build:
+      context: ./frontend
+      target: test
+    depends_on:
+      backend: { condition: service_healthy }
+    env_file: [ ./.env.dev ]
+    environment:
+      NEXT_PUBLIC_PARAM_SYNC_DEBUG: "1"
+    command: ["npm","run","test:fast"]

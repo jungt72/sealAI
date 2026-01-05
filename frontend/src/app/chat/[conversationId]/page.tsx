@@ -1,4 +1,4 @@
-import ChatScreen from "@/app/dashboard/ChatScreen";
+import { redirect } from "next/navigation";
 
 interface ConversationPageProps {
   params: {
@@ -8,9 +8,5 @@ interface ConversationPageProps {
 
 export default function ConversationPage({ params }: ConversationPageProps) {
   const { conversationId } = params;
-  return (
-    <div className="flex h-full w-full overflow-hidden bg-white">
-      <ChatScreen conversationId={conversationId} />
-    </div>
-  );
+  redirect(`/dashboard?chat_id=${encodeURIComponent(conversationId)}`);
 }

@@ -4,6 +4,7 @@ import { mockData } from './mockData';
 const STRAPI_URL = process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
 const IMAGE_BASE_URL = process.env.NEXT_PUBLIC_IMAGE_BASE_URL || STRAPI_URL;
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
+let strapiUnavailableLogged = false;
 
 export async function getNavbarData() {
     if (USE_MOCK) return mockData.global.navbar;
@@ -51,8 +52,18 @@ export async function getLandingPageData(): Promise<LandingPageData> {
         // Helper to parse response
         const parse = async (res: Response, name: string) => {
             if (!res.ok) {
-                console.error(`Failed to fetch ${name}: ${res.status} ${res.statusText}`);
                 const text = await res.text();
+                const isStrapiUnavailable =
+                    res.status === 502 ||
+                    text.includes('Strapi public API is not configured in this stack.');
+                if (isStrapiUnavailable) {
+                    if (!strapiUnavailableLogged) {
+                        console.info('Strapi unavailable; using mock data for landing content.');
+                        strapiUnavailableLogged = true;
+                    }
+                    return null;
+                }
+                console.error(`Failed to fetch ${name}: ${res.status} ${res.statusText}`);
                 console.error(`Error body for ${name}:`, text);
                 return null;
             }

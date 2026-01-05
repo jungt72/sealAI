@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { emit } from "@/lib/telemetry";
+import { isParamSyncDebug } from "@/lib/paramSyncDebug";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import type { RagSource } from "@/types/chatMeta";
 
 type UseChatSseV2Opts = {
   chatId?: string | null;
@@ -19,6 +21,7 @@ type UseChatSseV2Opts = {
     meta?: { event: string; id?: string | null },
     payload?: Record<string, unknown>,
   ) => void;
+  onRetrievalMeta?: (payload: { sources: RagSource[]; skipped?: boolean }) => void;
   onEvent?: (event: { event: string; data?: unknown; id?: string | null }) => void;
 };
 
@@ -68,6 +71,7 @@ const ENDPOINT_URL = "/api/chat";
 const LAST_EVENT_STORAGE_PREFIX = "sealai:sse:last_event_id:";
 // Preflight refresh keeps SSE from starting with near-expired tokens.
 const PREEMPTIVE_REFRESH_WINDOW_SEC = 60;
+const MAX_RAG_SOURCES = 10;
 
 function buildLastEventStorageKey(chatId: string, clientMsgId: string): string {
   return `${LAST_EVENT_STORAGE_PREFIX}${chatId}:${clientMsgId}`;
@@ -100,6 +104,41 @@ function parseSseFrame(frame: string): { event?: string; data?: any; id?: string
   }
 }
 
+const clampText = (value: unknown, limit: number): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length <= limit) return trimmed;
+  return `${trimmed.slice(0, limit)}...`;
+};
+
+function normalizeRagSources(raw: unknown): RagSource[] {
+  if (!Array.isArray(raw)) return [];
+  const sources: RagSource[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const documentIdRaw = record.document_id;
+    const documentId =
+      typeof documentIdRaw === "string"
+        ? documentIdRaw.trim()
+        : typeof documentIdRaw === "number"
+          ? String(documentIdRaw)
+          : "";
+    sources.push({
+      document_id: documentId,
+      sha256: clampText(record.sha256, 120),
+      filename: clampText(record.filename, 160),
+      page: typeof record.page === "number" ? record.page : null,
+      section: clampText(record.section, 160),
+      score: typeof record.score === "number" ? record.score : null,
+      source: clampText(record.source, 200),
+    });
+    if (sources.length >= MAX_RAG_SOURCES) break;
+  }
+  return sources;
+}
+
 export function buildChatRequestPayload(opts: {
   input: string;
   chatId: string;
@@ -129,6 +168,7 @@ export function useChatSseV2({
   onAuthExpired,
   getClientContext,
   onStateDelta,
+  onRetrievalMeta,
   onEvent,
 }: UseChatSseV2Opts): SseState {
   const retryMax = 0;
@@ -498,6 +538,18 @@ export function useChatSseV2({
               continue;
             }
             if (
+              (event === "retrieval.results" || event === "retrieval.skipped") &&
+              data &&
+              typeof data === "object"
+            ) {
+              const payload = data as Record<string, unknown>;
+              onRetrievalMeta?.({
+                sources: normalizeRagSources(payload.sources),
+                skipped: event === "retrieval.skipped",
+              });
+              continue;
+            }
+            if (
               event &&
               ["state_update", "state", "partial_state", "patch", "parameter_update"].includes(event) &&
               data &&
@@ -508,6 +560,18 @@ export function useChatSseV2({
                 payload.delta && typeof payload.delta === "object"
                   ? (payload.delta as Record<string, unknown>)
                   : payload;
+              if (isParamSyncDebug()) {
+                const rawParams =
+                  (delta as any).parameters ||
+                  ((delta as any).state && typeof (delta as any).state === "object" ? (delta as any).state.parameters : null);
+                if (rawParams && typeof rawParams === "object") {
+                  console.log("[param-sync] sse_state_payload", {
+                    event,
+                    event_id: id ?? null,
+                    keys: Object.keys(rawParams),
+                  });
+                }
+              }
               const signal = extractPendingCheckpointSignal(payload);
               const deltaSignal = payload !== delta ? extractPendingCheckpointSignal(delta) : signal;
               const mergedSignal: PendingCheckpointSignal = {
@@ -620,6 +684,7 @@ export function useChatSseV2({
       onStart,
       onToken,
       onStateDelta,
+      onRetrievalMeta,
       refreshAccessToken,
       getClientContext,
       resetRetry,

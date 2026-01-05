@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 from pydantic import ValidationError
 
 from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.sealai_graph_v2 import log_state_debug
+from app.langgraph_v2.utils.state_debug import log_state_debug
 from app.langgraph_v2.state import (
     Budget,
     CandidateItem,
@@ -330,6 +330,18 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         open_questions_summary=_open_questions_summary(questions),
     )
 
+    retrieval_meta: Dict[str, Any] | None = None
+    if (
+        goal == "explanation_or_comparison"
+        and action != ACTION_RUN_PANEL_NORMS_RAG
+        and not getattr(state, "requires_rag", False)
+    ):
+        retrieval_meta = {
+            "skipped": True,
+            "reason": "requires_rag_false",
+            "tenant_id": state.user_id,
+        }
+
     patch: Dict[str, Any] = {
         "next_action": action,
         "pending_action": pending_action,
@@ -343,6 +355,8 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         "coverage_score": coverage_score,
         "recommendation_ready": recommendation_ready,
     }
+    if retrieval_meta:
+        patch["retrieval_meta"] = retrieval_meta
     if derived:
         patch["open_questions"] = questions
     return patch

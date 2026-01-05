@@ -33,6 +33,20 @@ describe("paramStore reducer", () => {
     expect(next.byChatId["chat-1"].updatedAt.pressure_bar).toBe(123);
   });
 
+  it("normalizes pressure alias to pressure_bar", () => {
+    const next = reduceParamStore(emptyState, {
+      type: "replace",
+      payload: {
+        chatId: "chat-1",
+        parameters: { pressure: 4 } as any,
+        versions: {},
+        updatedAt: {},
+      },
+    });
+    expect(next.byChatId["chat-1"].parameters.pressure_bar).toBe(4);
+    expect((next.byChatId["chat-1"].parameters as any).pressure).toBeUndefined();
+  });
+
   it("applies patch ack with versions", () => {
     const seeded = reduceParamStore(emptyState, {
       type: "replace",

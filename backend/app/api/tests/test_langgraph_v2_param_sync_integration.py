@@ -46,7 +46,7 @@ def test_param_patch_state_chat_config_alignment(monkeypatch):
     chat_id = "chat-param-sync"
     user_id = "user-param-sync"
     request = _request()
-    user = RequestUser(user_id=user_id, username="tester", sub="sub-test")
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
 
     patch_body = ParametersPatchRequest(
         chat_id=chat_id,
@@ -57,10 +57,10 @@ def test_param_patch_state_chat_config_alignment(monkeypatch):
     state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, user=user))
     assert state_response["parameters"]["medium"] == "oil"
     assert state_response["parameters"]["pressure_bar"] == 2
-    assert state_response["config"]["configurable"]["thread_id"] == f"{user.sub}:{chat_id}"
+    assert state_response["config"]["configurable"]["thread_id"] == f"{user.user_id}:{chat_id}"
 
-    graph, config = asyncio.run(endpoint._build_graph_config(thread_id=chat_id, user_id=user.sub))
-    assert config["configurable"]["thread_id"] == f"{user.sub}:{chat_id}"
+    graph, config = asyncio.run(endpoint._build_graph_config(thread_id=chat_id, user_id=user.user_id))
+    assert config["configurable"]["thread_id"] == f"{user.user_id}:{chat_id}"
     snapshot = asyncio.run(graph.aget_state(config))
     state_values = state_endpoint._state_to_dict(snapshot.values)
     params = state_endpoint._serialize_parameters(state_values.get("parameters"))
@@ -75,7 +75,7 @@ def test_param_patch_merges_existing_parameters(monkeypatch):
     chat_id = "chat-param-merge"
     user_id = "user-param-merge"
     request = _request()
-    user = RequestUser(user_id=user_id, username="tester", sub="sub-test")
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
 
     first_patch = ParametersPatchRequest(
         chat_id=chat_id,
@@ -92,3 +92,27 @@ def test_param_patch_merges_existing_parameters(monkeypatch):
     state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, user=user))
     assert state_response["parameters"]["medium"] == "oil"
     assert state_response["parameters"]["pressure_bar"] == 10
+
+
+def test_state_falls_back_to_legacy_thread(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
+
+    chat_id = "chat-legacy-fallback"
+    request = _request()
+    user = RequestUser(user_id="user-claim", username="tester", sub="legacy-sub", roles=[])
+
+    graph, legacy_config = asyncio.run(
+        state_endpoint._build_state_config_with_checkpointer(thread_id=chat_id, user_id=user.sub, username=user.username)
+    )
+    asyncio.run(
+        graph.aupdate_state(
+            legacy_config,
+            {"parameters": {"medium": "oil"}},
+            as_node="supervisor_policy_node",
+        )
+    )
+
+    state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, user=user))
+    assert state_response["parameters"]["medium"] == "oil"
+    assert state_response["config"]["configurable"]["thread_id"] == f"{user.sub}:{chat_id}"

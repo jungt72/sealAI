@@ -10,20 +10,22 @@ vi.mock("@/lib/fetchWithAuth", () => ({
 
 type HookHandle = ReturnType<typeof useChatSseV2>;
 
-const HookHarness = forwardRef<HookHandle, { chatId?: string | null; token?: string | null }>(
-  ({ chatId, token }, ref) => {
+const HookHarness = forwardRef<
+  HookHandle,
+  { chatId?: string | null; token?: string | null; onRetrievalMeta?: (payload: any) => void }
+>(({ chatId, token, onRetrievalMeta }, ref) => {
     const state = useChatSseV2({
       chatId,
       token,
       onToken: () => undefined,
       onDone: () => undefined,
       onStart: () => undefined,
+      onRetrievalMeta,
     });
 
     useImperativeHandle(ref, () => state, [state]);
     return null;
-  },
-);
+  });
 HookHarness.displayName = "HookHarness";
 
 const createSseResponse = (frames: string[]) => {
@@ -199,5 +201,40 @@ describe("useChatSseV2 reconnect fsm", () => {
     expect(ref.current?.lastError).toBe("auth_required");
     expect(vi.getTimerCount()).toBe(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures retrieval sources from SSE events", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    const retrievalSpy = vi.fn();
+    fetchMock.mockResolvedValue(
+      createSseResponse([
+        "event: retrieval.results\n",
+        "data: {\"sources\":[{\"document_id\":\"doc-1\",\"filename\":\"specs.pdf\",\"score\":0.92}]}\n\n",
+        "event: done\n",
+        "data: {}\n\n",
+      ]),
+    );
+    const ref = React.createRef<HookHandle>();
+
+    act(() => {
+      create(
+        React.createElement(HookHarness, {
+          ref,
+          chatId: "chat-1",
+          token: "token",
+          onRetrievalMeta: retrievalSpy,
+        }),
+      );
+    });
+
+    await act(async () => {
+      ref.current?.send("Hallo");
+      await flush();
+    });
+
+    expect(retrievalSpy).toHaveBeenCalled();
+    const payload = retrievalSpy.mock.calls[0][0];
+    expect(payload.sources?.[0]?.document_id).toBe("doc-1");
+    expect(payload.sources?.[0]?.filename).toBe("specs.pdf");
   });
 });

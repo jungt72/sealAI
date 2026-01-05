@@ -87,7 +87,7 @@ def test_patch_works_with_stable_node_returns_200(monkeypatch: pytest.MonkeyPatc
     lg_endpoints = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     fake_graph = _FakeGraph()
 
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str):
+    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
         assert thread_id == "default"
         assert user_id == "alice"
         return fake_graph, {"configurable": {}, "metadata": {}}
@@ -126,7 +126,7 @@ def test_patch_missing_chat_id_returns_400(monkeypatch: pytest.MonkeyPatch) -> N
     lg_endpoints = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     fake_graph = _FakeGraph()
 
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str):
+    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
         return fake_graph, {"configurable": {}, "metadata": {}}
 
     monkeypatch.setattr(lg_endpoints, "_build_graph_config", _fake_build_graph_config)
@@ -154,7 +154,7 @@ def test_patch_rejects_unknown_as_node_returns_400(monkeypatch: pytest.MonkeyPat
     lg_endpoints = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     fake_graph = _FakeGraph()
 
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str):
+    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
         return fake_graph, {"configurable": {}, "metadata": {}}
 
     monkeypatch.setattr(lg_endpoints, "_build_graph_config", _fake_build_graph_config)
@@ -184,7 +184,7 @@ def test_patch_rejects_unknown_keys_returns_400(monkeypatch: pytest.MonkeyPatch)
     lg_endpoints = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     fake_graph = _FakeGraph()
 
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str):
+    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
         return fake_graph, {"configurable": {}, "metadata": {}}
 
     monkeypatch.setattr(lg_endpoints, "_build_graph_config", _fake_build_graph_config)

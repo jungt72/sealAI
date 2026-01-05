@@ -1,3 +1,5 @@
+import { deleteTokens, getTokens, updateTokens } from "@/lib/auth-token-store";
+
 const CLOCK_SKEW_SECONDS = 60;
 const REFRESH_TIMEOUT_MS = 10_000;
 const SESSION_MAX_AGE_SECONDS = Number(process.env.NEXTAUTH_SESSION_MAXAGE ?? "1800");
@@ -9,6 +11,7 @@ export type KeycloakToken = {
   expires_at?: number | null;
   accessTokenExpires?: number | null;
   refreshTokenExpires?: number | null;
+  jti?: string | null;
   error?: string | null;
 };
 
@@ -33,17 +36,26 @@ const buildTokenEndpoint = (issuer: string) => `${issuer}/protocol/openid-connec
 export const refreshAccessToken = async (token: KeycloakToken): Promise<KeycloakToken> => {
   const issuer = normalizeIssuer(process.env.KEYCLOAK_ISSUER);
   const clientId = process.env.KEYCLOAK_CLIENT_ID;
+  const jti = token.jti ?? null;
 
-  if (!issuer || !clientId || !token.refreshToken) {
-    console.warn("Keycloak refresh skipped: missing issuer/client or refresh token.");
+  if (!issuer || !clientId || !jti) {
+    console.warn("Keycloak refresh skipped: missing issuer/client or token id.");
     return {
       ...token,
       accessToken: null,
-      refreshToken: null,
-      idToken: null,
       expires_at: null,
-      accessTokenExpires: null,
-      refreshTokenExpires: null,
+      error: "RefreshAccessTokenError",
+    };
+  }
+
+  const stored = await getTokens(jti);
+  const refreshToken = stored?.refreshToken ?? null;
+  if (!refreshToken) {
+    console.warn("Keycloak refresh skipped: refresh token missing in store.");
+    return {
+      ...token,
+      accessToken: null,
+      expires_at: null,
       error: "RefreshAccessTokenError",
     };
   }
@@ -55,7 +67,7 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
     const params = new URLSearchParams({
       grant_type: "refresh_token",
       client_id: clientId,
-      refresh_token: token.refreshToken,
+      refresh_token: refreshToken,
     });
 
     const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET;
@@ -85,15 +97,26 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
     const refreshExpiresAt =
       Number.isFinite(refreshExpiresIn) && refreshExpiresIn > 0
         ? now + refreshExpiresIn
-        : token.refreshTokenExpires ?? now + SESSION_MAX_AGE_SECONDS;
+        : stored?.refreshTokenExpires ?? now + SESSION_MAX_AGE_SECONDS;
+
+    await updateTokens(
+      jti,
+      {
+        accessToken: data.access_token ?? stored?.accessToken ?? null,
+        refreshToken: data.refresh_token ?? refreshToken,
+        idToken: data.id_token ?? stored?.idToken ?? null,
+        expires_at: expiresAt,
+        refreshTokenExpires: refreshExpiresAt,
+      },
+      SESSION_MAX_AGE_SECONDS,
+    );
 
     return {
       ...token,
-      accessToken: data.access_token ?? token.accessToken,
-      refreshToken: data.refresh_token ?? token.refreshToken,
-      idToken: data.id_token ?? token.idToken,
+      accessToken: data.access_token ?? stored?.accessToken ?? token.accessToken ?? null,
+      refreshToken: data.refresh_token ?? refreshToken,
+      idToken: data.id_token ?? stored?.idToken ?? null,
       expires_at: expiresAt,
-      accessTokenExpires: expiresAt,
       refreshTokenExpires: refreshExpiresAt,
       error: null,
     };
@@ -101,15 +124,11 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
     console.error("Keycloak token refresh failed", {
       reason: error instanceof Error ? error.message : String(error),
     });
+    await deleteTokens(jti);
     return {
       ...token,
-      // Clear tokens on refresh failure to avoid ghost sessions.
       accessToken: null,
-      refreshToken: null,
-      idToken: null,
       expires_at: null,
-      accessTokenExpires: null,
-      refreshTokenExpires: null,
       error: "RefreshAccessTokenError",
     };
   } finally {

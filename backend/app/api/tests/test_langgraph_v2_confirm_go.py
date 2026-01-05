@@ -89,7 +89,7 @@ def test_confirm_go_approve_resumes(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
     body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert response["final_text"] == "Weiter"
@@ -105,7 +105,7 @@ def test_confirm_go_reject_returns_cancellation(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
     body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="reject")
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert "Abgebrochen" in response["final_text"]
@@ -121,7 +121,7 @@ def test_confirm_go_edit_applies_parameters(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
     body = ConfirmGoRequest(
         chat_id="chat-1",
         checkpoint_id="chk-1",
@@ -144,7 +144,7 @@ def test_confirm_go_conversation_mismatch(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
     body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(endpoint.confirm_go(body, request, user=user))
@@ -162,7 +162,7 @@ def test_confirm_go_no_pending_checkpoint(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
     body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(endpoint.confirm_go(body, request, user=user))
@@ -180,7 +180,7 @@ def test_confirm_go_double_submit(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
     body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(endpoint.confirm_go(body, request, user=user))
@@ -198,7 +198,7 @@ def test_confirm_go_wrong_user(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-2", username="tester", sub="user-2")
+    user = RequestUser(user_id="user-2", username="tester", sub="user-2", roles=[])
     body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(endpoint.confirm_go(body, request, user=user))

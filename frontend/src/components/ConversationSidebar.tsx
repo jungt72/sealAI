@@ -6,14 +6,41 @@ import { ChevronLeft, ChevronRight, LogOut, MessageSquare, Plus } from "lucide-r
 import { signIn, useSession } from "next-auth/react";
 import { fetchFreshAccessToken } from "@/lib/useAccessToken";
 
-import { cn } from "@/lib/utils";
+import { cn, toRelativeCallbackUrl } from "@/lib/utils";
 import { ChatBrandRail } from "@/app/chat/components/ChatBrandRail";
 
-type ConversationListItem = {
+export type ConversationListItem = {
   id: string;
   title: string | null;
   updated_at: string;
+  last_preview?: string | null;
 };
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+export function normalizeConversationEntry(entry: unknown): ConversationListItem | null {
+  if (!entry || typeof entry !== "object") return null;
+  const data = entry as Record<string, unknown>;
+  const threadId =
+    (isString(data.thread_id) && data.thread_id.trim()) ||
+    (isString(data.id) && data.id.trim()) ||
+    (isString(data.conversation_id) && data.conversation_id.trim());
+  if (!threadId) return null;
+  const updatedAt =
+    (isString(data.updated_at) && data.updated_at.trim()) ||
+    (isString(data.updatedAt) && data.updatedAt.trim());
+  if (!updatedAt) return null;
+  const title = isString(data.title) ? data.title : null;
+  const preview = isString(data.last_preview) ? data.last_preview : null;
+  return {
+    id: threadId,
+    title,
+    updated_at: updatedAt,
+    last_preview: preview,
+  };
+}
 
 const SESSION_EXPIRED_MESSAGE = "Sitzung abgelaufen – neu anmelden";
 const CACHE_TTL_MS = 45 * 1000;
@@ -142,8 +169,11 @@ export default function ConversationSidebar() {
       }
 
       if (Array.isArray(payload)) {
-        setConversations(payload as ConversationListItem[]);
-        cacheRef.current = { items: payload as ConversationListItem[], fetchedAt: Date.now() };
+        const normalized = payload
+          .map((entry) => normalizeConversationEntry(entry))
+          .filter((entry): entry is ConversationListItem => entry !== null);
+        setConversations(normalized);
+        cacheRef.current = { items: normalized, fetchedAt: Date.now() };
       } else {
         setConversations([]);
         cacheRef.current = { items: [], fetchedAt: Date.now() };
@@ -243,7 +273,7 @@ export default function ConversationSidebar() {
 
   const handleReauth = useCallback(async () => {
     try {
-      await signIn("keycloak", { callbackUrl: window.location.href });
+      await signIn("keycloak", { callbackUrl: toRelativeCallbackUrl(window.location.href) });
     } catch {
       router.push("/auth/signin");
     }

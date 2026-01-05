@@ -5,7 +5,7 @@ import os
 import time
 from typing import Optional, Tuple
 
-from app.services.rag.rag_orchestrator import resolve_embedding_model
+from app.services.rag.rag_orchestrator import resolve_embedding_config
 
 log = logging.getLogger("app.services.rag.qdrant_bootstrap")
 
@@ -63,7 +63,7 @@ def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> s
         log.warning("qdrant_bootstrap_skipped reason=ltm_collection_guard collection=%s", collection)
         return "skipped"
 
-    model_name, dim = expected or resolve_embedding_model()
+    model_name, dim = expected or resolve_embedding_config()
 
     try:
         from qdrant_client import QdrantClient, models

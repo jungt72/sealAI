@@ -3,10 +3,14 @@ Knowledge Nodes mit RAG-Augmentation (Best Practice Nov 2025).
 
 Jeder Node nutzt search_knowledge_base Tool für faktische Informationen.
 """
-from typing import Dict
+from typing import Any, Dict, Optional
+
+import os
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state.sealai_state import SealAIState, WorkingMemory
+from app.langgraph_v2.utils.rag import apply_rag_quality_gate, unpack_rag_payload
+from app.langgraph_v2.utils.rag_safety import wrap_rag_context
 from app.langgraph_v2.utils.rag_tool import search_knowledge_base
 from app.core.llm_client import run_llm, get_model_tier
 from app.utils.message_helpers import latest_user_text
@@ -66,10 +70,17 @@ def knowledge_material_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
         "k": 3,
         "tenant": state.user_id,
     })
+    rag_text, retrieval_meta = unpack_rag_payload(rag_context)
+    rag_text, retrieval_meta = apply_rag_quality_gate(
+        rag_text,
+        retrieval_meta,
+        min_top_score=float(os.getenv("MIN_TOP_SCORE", "0.20")),
+    )
+    rag_text = wrap_rag_context(rag_text)
     
     # Augmentierter Prompt mit RAG-Kontext
     prompt = f"""Kontext aus Wissensdatenbank:
-{rag_context}
+{rag_text}
 
 Frage des Nutzers: {user_text}
 
@@ -97,7 +108,7 @@ Beantworte die Frage basierend auf dem Kontext. Zitiere Quellen wenn möglich.""
     wm = wm.model_copy(
         update={
             "knowledge_material": reply_text,
-            "rag_context": rag_context,  # Speichere RAG-Kontext
+            "rag_context": rag_text,  # Speichere RAG-Kontext
             "response_text": reply_text,
             "response_kind": "knowledge_material",
         }
@@ -106,6 +117,7 @@ Beantworte die Frage basierend auf dem Kontext. Zitiere Quellen wenn möglich.""
     return {
         "working_memory": wm,
         "messages": list(state.get("messages") or []),
+        "retrieval_meta": retrieval_meta,
         "phase": PHASE.FINAL,
         "last_node": "knowledge_material_node",
     }
@@ -127,10 +139,17 @@ def knowledge_lifetime_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
         "k": 3,
         "tenant": state.user_id,
     })
+    rag_text, retrieval_meta = unpack_rag_payload(rag_context)
+    rag_text, retrieval_meta = apply_rag_quality_gate(
+        rag_text,
+        retrieval_meta,
+        min_top_score=float(os.getenv("MIN_TOP_SCORE", "0.20")),
+    )
+    rag_text = wrap_rag_context(rag_text)
     
     # Augmentierter Prompt
     prompt = f"""Kontext aus Wissensdatenbank:
-{rag_context}
+{rag_text}
 
 Frage: {user_text or 'Erkläre Einflussfaktoren auf Lebensdauer und Standzeit von Dichtungen.'}
 
@@ -160,7 +179,7 @@ Beantworte basierend auf dem Kontext."""
     wm = wm.model_copy(
         update={
             "knowledge_lifetime": reply_text,
-            "rag_context": rag_context,
+            "rag_context": rag_text,
             "response_text": reply_text,
             "response_kind": "knowledge_lifetime",
         }
@@ -169,6 +188,7 @@ Beantworte basierend auf dem Kontext."""
     return {
         "working_memory": wm,
         "messages": list(state.get("messages") or []),
+        "retrieval_meta": retrieval_meta,
         "phase": PHASE.FINAL,
         "last_node": "knowledge_lifetime_node",
     }
@@ -189,10 +209,17 @@ def generic_sealing_qa_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
         "k": 3,
         "tenant": state.user_id,
     })
+    rag_text, retrieval_meta = unpack_rag_payload(rag_context)
+    rag_text, retrieval_meta = apply_rag_quality_gate(
+        rag_text,
+        retrieval_meta,
+        min_top_score=float(os.getenv("MIN_TOP_SCORE", "0.20")),
+    )
+    rag_text = wrap_rag_context(rag_text)
     
     # Augmentierter Prompt
     prompt = f"""Kontext aus Wissensdatenbank:
-{rag_context}
+{rag_text}
 
 Frage: {user_text or 'Beantworte eine allgemeine Frage zur Dichtungstechnik klar und praxisnah.'}
 
@@ -221,7 +248,7 @@ Beantworte basierend auf dem Kontext."""
     wm = wm.model_copy(
         update={
             "knowledge_generic": reply_text,
-            "rag_context": rag_context,
+            "rag_context": rag_text,
             "response_text": reply_text,
             "response_kind": "knowledge_generic",
         }
@@ -230,6 +257,7 @@ Beantworte basierend auf dem Kontext."""
     return {
         "working_memory": wm,
         "messages": list(state.get("messages") or []),
+        "retrieval_meta": retrieval_meta,
         "phase": PHASE.FINAL,
         "last_node": "generic_sealing_qa_node",
     }

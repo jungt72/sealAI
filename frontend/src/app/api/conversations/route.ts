@@ -1,85 +1,24 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { NextRequest, NextResponse } from "next/server";
+import { getBackendInternalBase } from "@/lib/backend-internal";
+import { getRequestAuth } from "@/lib/server/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function stripApiSuffix(value: string): string {
-  const trimmed = value.replace(/\/+$/, "");
-  return trimmed.replace(/\/api(?:\/v1)?$/i, "");
-}
-
-function resolveBackendBase(): string {
-  // Wichtig: Server-side hat KEIN window.location – also MUSS eine Env existieren
-  const raw =
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    process.env.NEXT_PUBLIC_API_BASE ||
-    process.env.BACKEND_URL ||
-    process.env.API_BASE ||
-    process.env.INTERNAL_BACKEND_URL ||
-    "http://backend:8000"; // docker-compose service name fallback
-
-  return stripApiSuffix(raw);
-}
-
-function pickToken(session: any): string | undefined {
-  if (!session || typeof session !== "object") return undefined;
-  const direct = session.accessToken;
-  if (typeof direct === "string" && direct.length > 0) return direct;
-  return undefined;
-}
-
-export async function GET() {
-  let session: any = null;
-
-  try {
-    session = await getServerSession(authOptions);
-  } catch (e: any) {
-    // Das ist der klassische Fall "Failed to read session"
+export async function GET(req: NextRequest) {
+  const auth = await getRequestAuth(req, { useRedis: true, requireAccessToken: true, logContext: "auth/conversations" });
+  if (auth.reason) {
     return NextResponse.json(
       {
         detail: "session_expired",
-        reason: "session_read_failed",
-        error: String(e?.message || e),
+        reason: auth.reason,
+        ...(auth.debug ? { debug: auth.debug } : {}),
       },
       { status: 401 },
     );
   }
 
-  if (!session) {
-    return NextResponse.json(
-      {
-        detail: "session_expired",
-        reason: "no_session",
-      },
-      { status: 401 },
-    );
-  }
-
-  const sessionExpired = session.error === "RefreshAccessTokenError";
-  if (sessionExpired) {
-    return NextResponse.json(
-      {
-        detail: "session_expired",
-        reason: "refresh_failed",
-      },
-      { status: 401 },
-    );
-  }
-
-  const accessToken = pickToken(session);
-  if (!accessToken) {
-    return NextResponse.json(
-      {
-        detail: "session_expired",
-        reason: "no_access_token",
-      },
-      { status: 401 },
-    );
-  }
-
-  const backendBase = resolveBackendBase();
+  const backendBase = getBackendInternalBase();
   const url = `${backendBase}/api/v1/chat/conversations`;
 
   try {
@@ -87,7 +26,7 @@ export async function GET() {
       method: "GET",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${auth.accessToken}`,
       },
       cache: "no-store",
     });

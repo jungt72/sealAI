@@ -4,8 +4,11 @@ import { getToken } from "next-auth/jwt";
 
 const PUBLIC_FILE = /\.(.*)$/;
 const SESSION_COOKIES = [
-  "__Secure-authjs.session-token","authjs.session-token",
-  "__Secure-next-auth.session-token","next-auth.session-token"
+  "__Host-next-auth.session-token",
+  "__Secure-authjs.session-token",
+  "authjs.session-token",
+  "__Secure-next-auth.session-token",
+  "next-auth.session-token",
 ];
 
 const hasSessionCookie = (req: NextRequest) =>
@@ -27,26 +30,18 @@ export async function middleware(req: NextRequest) {
   const hasCookie = hasSessionCookie(req);
   let hasJwt = false;
   try {
-    hasJwt = !!(await getToken({ req }));
+    hasJwt = !!(await getToken({ req, secret: process.env.NEXTAUTH_SECRET }));
   } catch {}
 
   const envBase = (process.env.NEXTAUTH_URL ?? "").replace(/\/+$/, "");
   const base = envBase || `https://${req.headers.get("host")}`;
-  const chatId = req.nextUrl.searchParams.get("chat_id");
-  const targetPath = chatId ? `/chat/${encodeURIComponent(chatId)}` : "/chat";
-  const targetUrl = `${base}${targetPath}`;
+  const targetPath = `${pathname}${req.nextUrl.search}`;
 
-  if (hasCookie || hasJwt) {
-    const currentPathWithQuery = `${req.nextUrl.pathname}${req.nextUrl.search}`;
-    if (currentPathWithQuery !== targetPath) {
-      return NextResponse.redirect(targetUrl);
-    }
-    return NextResponse.next();
-  }
+  if (hasCookie || hasJwt) return NextResponse.next();
 
-  const redirect = new URL("/api/auth/signin", base);
+  const redirect = new URL("/auth/signin", base);
   redirect.searchParams.set("provider", "keycloak");
-  redirect.searchParams.set("callbackUrl", targetUrl);
+  redirect.searchParams.set("callbackUrl", targetPath);
   redirect.searchParams.set("prompt", "login");
   return NextResponse.redirect(redirect);
 }

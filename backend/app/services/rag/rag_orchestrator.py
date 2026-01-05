@@ -4,6 +4,7 @@ import os
 import time
 import math
 import logging
+import random
 from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger("app.services.rag.rag_orchestrator")
@@ -31,6 +32,11 @@ HYBRID_K                   = int(os.getenv("RAG_HYBRID_K", os.getenv("RAG_TOP_K"
 FINAL_K                    = int(os.getenv("RAG_FINAL_K", "6"))
 RRF_K                      = int(os.getenv("RAG_RRF_K", "60"))
 SCORE_THRESHOLD            = float(os.getenv("RAG_SCORE_THRESHOLD", "0.0"))
+QDRANT_TIMEOUT_S           = float(os.getenv("QDRANT_TIMEOUT_S", "5.0"))
+QDRANT_RETRY_ATTEMPTS      = 3
+QDRANT_RETRY_BASE_MS       = 150
+QDRANT_RETRY_JITTER_MS     = 100
+QDRANT_RETRY_STATUS        = {429, 500, 502, 503, 504}
 
 # Optional BM25 over Redis (gated)
 USE_BM25                   = _truthy(os.getenv("RAG_BM25_ENABLED", "0"))
@@ -42,6 +48,41 @@ REDIS_BM25_INDEX           = os.getenv("REDIS_BM25_INDEX") or os.getenv("RAG_BM2
 # ─────────────────────────────────────────────────────────────────────────────
 _embedder = None
 _reranker = None
+_embedding_dim: Optional[int] = None
+
+def resolve_embedding_config() -> Tuple[str, int]:
+    """Resolve embedding model name and vector dimension from the active embedder."""
+    global _embedder, _embedding_dim
+    model_name = EMB_MODEL_NAME
+    if _embedding_dim is not None:
+        return model_name, _embedding_dim
+
+    if _embedder is not None:
+        for attr in (
+            "get_sentence_embedding_dimension",
+            "embedding_dimension",
+            "dimension",
+            "dim",
+            "vector_size",
+        ):
+            value = getattr(_embedder, attr, None)
+            if callable(value):
+                try:
+                    dim_value = int(value())
+                    _embedding_dim = dim_value
+                    return model_name, dim_value
+                except Exception:
+                    continue
+            if isinstance(value, (int, float)):
+                dim_value = int(value)
+                _embedding_dim = dim_value
+                return model_name, dim_value
+
+    # Controlled fallback: embed a probe string and read vector length.
+    vector = _embed(["_dim_probe_"])[0]
+    dim_value = int(len(vector))
+    _embedding_dim = dim_value
+    return model_name, dim_value
 
 def _event(event: str, **data: Any) -> None:
     payload = {**data, "event": event, "timestamp": _iso_utc(), "level": "info"}
@@ -50,6 +91,62 @@ def _event(event: str, **data: Any) -> None:
 def _iso_utc() -> str:
     import datetime as _dt
     return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+def _truncate_str(value: Any, limit: int = 160) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    if len(trimmed) > limit:
+        return trimmed[:limit] + "..."
+    return trimmed
+
+def _coerce_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+def _build_sources(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    sources: List[Dict[str, Any]] = []
+    for hit in hits:
+        metadata = hit.get("metadata") or {}
+        doc_id = metadata.get("document_id") or metadata.get("doc_id") or metadata.get("id")
+        sha256 = metadata.get("sha256")
+        filename = (
+            metadata.get("filename")
+            or metadata.get("file_name")
+            or metadata.get("name")
+        )
+        page = metadata.get("page")
+        if page is None:
+            page = metadata.get("page_number")
+        section = (
+            metadata.get("section")
+            or metadata.get("section_title")
+            or metadata.get("chunk_title")
+        )
+        source = metadata.get("source") or hit.get("source") or metadata.get("url") or metadata.get("file")
+        score_value = hit.get("fused_score") or hit.get("vector_score")
+        try:
+            score = float(score_value) if score_value is not None else None
+        except (TypeError, ValueError):
+            score = None
+        sources.append(
+            {
+                "document_id": str(doc_id) if doc_id is not None else None,
+                "sha256": str(sha256) if sha256 is not None else None,
+                "filename": _truncate_str(filename, 160),
+                "page": _coerce_int(page),
+                "section": _truncate_str(section, 160),
+                "score": score,
+                "source": _truncate_str(source, 200),
+            }
+        )
+    return sources
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Init / warmup
@@ -118,12 +215,79 @@ def _embed(texts: List[str]) -> List[List[float]]:
 
 def _rrf_merge(candidates: List[Tuple[Dict[str, Any], float]], k: int = RRF_K) -> List[Tuple[Dict[str, Any], float]]:
     """Reciprocal Rank Fusion on already ranked hits (doc, score)."""
-    # candidates are already from a single source; RRF is trivial passthrough here.
-    # Hook left in for future BM25+Vector fusion.
     return candidates
 
-def _qdrant_search(query_vec: List[float], collection: str, top_k: int = HYBRID_K,
-                   metadata_filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+def _hit_key(hit: Dict[str, Any]) -> str:
+    metadata = hit.get("metadata") or {}
+    chunk_id = metadata.get("chunk_id") or metadata.get("point_id") or metadata.get("id")
+    if isinstance(chunk_id, str) and chunk_id.strip():
+        return chunk_id
+    doc_id = metadata.get("document_id") or metadata.get("doc_id")
+    chunk_index = metadata.get("chunk_index")
+    if doc_id is not None and chunk_index is not None:
+        return f"{doc_id}#{chunk_index}"
+    if doc_id is not None:
+        return str(doc_id)
+    text = (hit.get("text") or "")
+    return f"text:{text[:80]}"
+
+def _rrf_fuse(vector_hits: List[Dict[str, Any]], bm25_hits: List[Dict[str, Any]], k0: int = RRF_K) -> List[Dict[str, Any]]:
+    scores: Dict[str, float] = {}
+    winners: Dict[str, Dict[str, Any]] = {}
+
+    for idx, hit in enumerate(vector_hits):
+        key = _hit_key(hit)
+        scores[key] = scores.get(key, 0.0) + 1.0 / (k0 + idx + 1)
+        winners.setdefault(key, hit)
+
+    for idx, hit in enumerate(bm25_hits):
+        key = _hit_key(hit)
+        scores[key] = scores.get(key, 0.0) + 1.0 / (k0 + idx + 1)
+        winners.setdefault(key, hit)
+
+    fused: List[Dict[str, Any]] = []
+    for key, hit in winners.items():
+        hit = dict(hit)
+        hit["fused_score"] = float(scores.get(key, 0.0))
+        fused.append(hit)
+    return sorted(fused, key=lambda h: float(h.get("fused_score") or 0.0), reverse=True)
+
+def _bm25_search(
+    query: str,
+    collection: str,
+    top_k: int,
+    metadata_filters: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    try:
+        from app.services.rag.bm25_store import bm25_repo
+    except Exception as exc:
+        return [], _qdrant_error("bm25_unavailable", None, f"{type(exc).__name__}: {exc}")
+    try:
+        return bm25_repo.search(collection, query, top_k=top_k, metadata_filters=metadata_filters), None
+    except Exception as exc:
+        return [], _qdrant_error("bm25_error", None, f"{type(exc).__name__}: {exc}")
+
+def _qdrant_backoff_ms(attempt_index: int) -> int:
+    base = QDRANT_RETRY_BASE_MS * (2 ** attempt_index)
+    jitter = int(random.random() * QDRANT_RETRY_JITTER_MS)
+    return base + jitter
+
+def _qdrant_error(kind: str, status: int | None, message: str) -> Dict[str, Any]:
+    return {
+        "kind": kind,
+        "status": status,
+        "message": _truncate_str(message, 200) or "qdrant_error",
+    }
+
+def _should_retry_status(status: int) -> bool:
+    return status in QDRANT_RETRY_STATUS
+
+def _qdrant_search_with_retry(
+    query_vec: List[float],
+    collection: str,
+    top_k: int = HYBRID_K,
+    metadata_filters: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     import httpx
     url = f"{QDRANT_URL}/collections/{collection}/points/search"
     body: Dict[str, Any] = {
@@ -134,11 +298,32 @@ def _qdrant_search(query_vec: List[float], collection: str, top_k: int = HYBRID_
     }
     if metadata_filters:
         body["filter"] = {"must": [{"key": k, "match": {"value": v}} for k, v in metadata_filters.items()]}
-    try:
-        with httpx.Client(timeout=5.0) as client:
-            r = client.post(url, json=body)
-            r.raise_for_status()
-            data = r.json()
+
+    attempts = 0
+    backoffs: List[int] = []
+    last_error: Dict[str, Any] | None = None
+    started = time.perf_counter()
+
+    for attempt in range(QDRANT_RETRY_ATTEMPTS):
+        attempts += 1
+        try:
+            with httpx.Client(timeout=QDRANT_TIMEOUT_S) as client:
+                r = client.post(url, json=body)
+            status = int(getattr(r, "status_code", 0) or 0)
+            if status >= 400:
+                last_error = _qdrant_error("http_error", status, f"HTTP {status}")
+                if _should_retry_status(status) and attempt < QDRANT_RETRY_ATTEMPTS - 1:
+                    delay_ms = _qdrant_backoff_ms(attempt)
+                    backoffs.append(delay_ms)
+                    log.warning("qdrant_retry_http_error", extra={"status": status, "attempt": attempts})
+                    time.sleep(delay_ms / 1000.0)
+                    continue
+                break
+            try:
+                data = r.json()
+            except Exception as exc:
+                last_error = _qdrant_error("decode", None, f"{type(exc).__name__}: {exc}")
+                break
             res = data.get("result") or []
             out: List[Dict[str, Any]] = []
             for item in res:
@@ -151,10 +336,40 @@ def _qdrant_search(query_vec: List[float], collection: str, top_k: int = HYBRID_
                     "vector_score": float(item.get("score") or 0.0),
                     "metadata": payload,
                 })
-            return out
-    except Exception as e:
-        _event("qdrant_search_failed", reason=f"{type(e).__name__}: {e}", collection=collection)
-        return []
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            return out, {
+                "attempts": attempts,
+                "timeout_s": QDRANT_TIMEOUT_S,
+                "elapsed_ms": elapsed_ms,
+                "retry_backoff_ms": backoffs or None,
+                "error": None,
+            }
+        except httpx.TimeoutException as exc:
+            last_error = _qdrant_error("timeout", None, f"{type(exc).__name__}: {exc}")
+        except httpx.TransportError as exc:
+            last_error = _qdrant_error("network", None, f"{type(exc).__name__}: {exc}")
+        except Exception as exc:
+            last_error = _qdrant_error("unknown", None, f"{type(exc).__name__}: {exc}")
+
+        if attempt < QDRANT_RETRY_ATTEMPTS - 1:
+            delay_ms = _qdrant_backoff_ms(attempt)
+            backoffs.append(delay_ms)
+            log.warning("qdrant_retry_exception", extra={"attempt": attempts, "kind": last_error.get("kind")})
+            time.sleep(delay_ms / 1000.0)
+            continue
+        break
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    if last_error:
+        _event("qdrant_search_failed", reason=last_error.get("message", "error"), collection=collection)
+    return [], {
+        "attempts": attempts,
+        "timeout_s": QDRANT_TIMEOUT_S,
+        "elapsed_ms": elapsed_ms,
+        "retry_backoff_ms": backoffs or None,
+        "error": last_error or _qdrant_error("unknown", None, "qdrant_error"),
+    }
+
 
 def _apply_threshold(hits: List[Dict[str, Any]], thr: float) -> List[Dict[str, Any]]:
     if thr <= 0:
@@ -196,7 +411,8 @@ def _rerank_if_enabled(query: str, hits: List[Dict[str, Any]], use_rerank: bool)
 # ─────────────────────────────────────────────────────────────────────────────
 def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
                     metadata_filters: Optional[Dict[str, Any]] = None,
-                    use_rerank: bool = True) -> List[Dict[str, Any]]:
+                    use_rerank: bool = True,
+                    return_metrics: bool = False) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Vector-first retrieval from Qdrant (+ optional BM25 fusion in future).
     Returns list of {text, source, vector_score, fused_score?, metadata}.
@@ -212,11 +428,25 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     collection = _collection_for_tenant(tenant)
 
     # Vector search
-    vec_hits = _qdrant_search(vec, collection, top_k=max(HYBRID_K, k), metadata_filters=metadata_filters)
+    vector_k = max(HYBRID_K, k)
+    vec_hits, qdrant_meta = _qdrant_search_with_retry(
+        vec, collection, top_k=vector_k, metadata_filters=metadata_filters
+    )
+
+    bm25_hits: List[Dict[str, Any]] = []
+    bm25_error: Optional[Dict[str, Any]] = None
+    bm25_k = max(HYBRID_K, k)
+    if USE_BM25:
+        bm25_hits, bm25_error = _bm25_search(
+            q, collection, top_k=bm25_k, metadata_filters=metadata_filters
+        )
 
     # Placeholder: BM25 could be merged here when enabled
-    fused = _rrf_merge([(h, float(h.get("vector_score") or 0.0)) for h in vec_hits], k=RRF_K)
-    merged = [h for (h, _s) in fused]
+    merged: List[Dict[str, Any]]
+    if USE_BM25 and bm25_hits:
+        merged = _rrf_fuse(vec_hits, bm25_hits, k0=RRF_K)
+    else:
+        merged = list(vec_hits)
 
     # Optional rerank
     merged = _rerank_if_enabled(q, merged, use_rerank)
@@ -229,17 +459,67 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
         ext = _fallback_external_search(q, tenant=tenant, limit=k)
         merged = ext[:k]
 
+    reranked = any("rerank_score" in hit for hit in merged)
+    metrics: Dict[str, Any] = {
+        "k_requested": k,
+        "k_returned": len(merged),
+        "top_scores": [
+            float(hit.get("fused_score") or hit.get("vector_score") or 0.0)
+            for hit in merged
+        ][:5],
+        "threshold": SCORE_THRESHOLD if SCORE_THRESHOLD > 0 else None,
+        "fused": False,
+        "reranked": reranked,
+        "collection": collection,
+    }
+    if qdrant_meta:
+        metrics["qdrant"] = qdrant_meta
+    if USE_BM25:
+        vector_keys = {_hit_key(hit) for hit in vec_hits}
+        bm25_keys = {_hit_key(hit) for hit in bm25_hits}
+        overlap = len(vector_keys & bm25_keys) if bm25_hits else 0
+        hybrid_meta: Dict[str, Any] = {
+            "enabled": bool(bm25_hits),
+            "vector_k": vector_k,
+            "bm25_k": bm25_k,
+            "fusion": "rrf",
+            "k0": RRF_K,
+            "counts": {
+                "vector": len(vec_hits),
+                "bm25": len(bm25_hits),
+                "fused": len(merged),
+            },
+            "overlap": overlap,
+        }
+        if bm25_error:
+            hybrid_meta["degraded"] = bm25_error.get("kind")
+        metrics["hybrid"] = hybrid_meta
+    doc_ids: list[str] = []
+    for hit in merged:
+        metadata = hit.get("metadata") or {}
+        doc_id = metadata.get("document_id") or metadata.get("doc_id") or metadata.get("id")
+        if doc_id:
+            doc_ids.append(str(doc_id))
+    if doc_ids:
+        metrics["doc_ids"] = doc_ids
+    sources = _build_sources(merged)
+    if sources:
+        metrics["sources"] = sources
+
     try:
         _event("hybrid_retrieve", n=len(merged), tenant=tenant or "-", collection=collection, k=k)
     except Exception:
         pass
 
+    if return_metrics:
+        return merged, metrics
     return merged
 
 __all__ = [
     "startup_warmup",
     "init_bm25",
     "prewarm_embeddings",
+    "resolve_embedding_config",
     "hybrid_retrieve",
     "FINAL_K",
     "prewarm",

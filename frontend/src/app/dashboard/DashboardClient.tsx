@@ -3,6 +3,7 @@
 import { useSession, signIn } from 'next-auth/react';
 import { useEffect } from 'react';
 import { useSearchParams } from "next/navigation";
+import { toRelativeCallbackUrl } from "@/lib/utils";
 import ChatContainer from "./components/Chat/ChatContainer";
 
 export default function DashboardClient() {
@@ -12,8 +13,8 @@ export default function DashboardClient() {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
-      signIn('keycloak', { callbackUrl: `${base}/chat` });
+      const callbackUrl = toRelativeCallbackUrl(window.location.href);
+      signIn('keycloak', { callbackUrl });
     }
   }, [status]);
 

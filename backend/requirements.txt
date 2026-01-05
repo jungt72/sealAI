@@ -71,4 +71,4 @@ Jinja2==3.1.6
 
 # --- Optional Tools (nur aktivieren, wenn wirklich genutzt) ------------------
 # langchain-tavily==0.2.12        # Websuche-Tool
-# python-multipart==0.0.12        # File-Uploads in FastAPI (FormData)
+python-multipart==0.0.12        # File-Uploads in FastAPI (FormData)

@@ -2,19 +2,22 @@
 'use client'
 
 import { signIn } from 'next-auth/react'
+import { DEFAULT_CALLBACK_URL, toRelativeCallbackUrl } from "@/lib/utils";
 
-export default function SignInClient() {
-  const base =
-    typeof window === 'undefined'
-      ? process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-      : window.location.origin
+type SignInClientProps = { callbackUrl?: string; provider?: string };
+
+export default function SignInClient({ callbackUrl, provider }: SignInClientProps) {
+  const resolvedCallbackUrl = callbackUrl
+    ? toRelativeCallbackUrl(callbackUrl)
+    : DEFAULT_CALLBACK_URL;
+  const resolvedProvider = provider || 'keycloak'
 
   return (
     <div className="flex items-center justify-center min-h-[50vh]">
       <button
         onClick={() =>
-          signIn('keycloak', {
-            callbackUrl: `${base}/chat`,
+          signIn(resolvedProvider, {
+            callbackUrl: resolvedCallbackUrl,
           })
         }
         className="px-6 py-3 rounded bg-blue-600 text-white hover:bg-blue-700"

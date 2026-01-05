@@ -10,11 +10,12 @@ node_modules/
 out/
 frontend/.next/
 frontend/node_modules/
+.pnpm-store/
 
 # Python
 __pycache__/
 *.py[cod]
-.venv/
+.venv*
 backend/.venv/
 .venv_audit/
 .mypy_cache/
@@ -24,9 +25,11 @@ backend/.venv/
 # Builds & Artefakte
 dist/
 build/
-*.log
+*.save.*
+*.backup*
 *.bak*
-*.save
+*.tmp
+*.log
 *.orig
 
 # Local scratch
@@ -63,3 +66,4 @@ tests/test_consult_e2e.py
 test_input.json
 .trash/
 _audits/
+frontend_backup_*/

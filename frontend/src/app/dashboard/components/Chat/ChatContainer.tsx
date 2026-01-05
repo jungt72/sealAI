@@ -12,6 +12,7 @@ import { useChatSseV2 } from "@/lib/useChatSseV2";
 import { useChatThreadId } from "@/lib/useChatThreadId";
 import { fetchV2StateParameters, patchV2Parameters } from "@/lib/v2ParameterPatch";
 import { applyParametersWithChatMessage } from "@/lib/parameterApplyChat";
+import QualityMetaPanel from "@/app/dashboard/components/QualityMetaPanel";
 import {
   buildDirtyPatch,
   cleanParameterPatch,
@@ -21,9 +22,11 @@ import {
   type ParameterPatchAckPayload,
 } from "@/lib/parameterSync";
 import { useParamStore } from "@/lib/stores/paramStore";
+import { toRelativeCallbackUrl } from "@/lib/utils";
 
 import ParameterFormSidebar from "./ParameterFormSidebar";
 import type { SealParameters } from "@/lib/types/sealParameters";
+import type { ChatMeta } from "@/types/chatMeta";
 import StreamingMessage, { type StreamingMessageHandle } from "./StreamingMessage";
 import { isParamSyncDebug } from "@/lib/paramSyncDebug";
 
@@ -51,12 +54,12 @@ export const clearAllThreadStorage = (): number => {
   return keys.length;
 };
 
-const normalizeIncomingParameters = (raw: Record<string, unknown>): Partial<SealParameters> => {
+export const normalizeIncomingParameters = (raw: Record<string, unknown>): Partial<SealParameters> => {
   const normalized: Record<string, unknown> = { ...raw };
-  if ("pressure" in normalized && !("pressure_bar" in normalized)) {
-    normalized.pressure_bar = normalized.pressure;
-  }
-  if ("pressure_bar" in normalized) {
+  if ("pressure" in normalized) {
+    if (normalized.pressure !== undefined && normalized.pressure !== null) {
+      normalized.pressure_bar = normalized.pressure;
+    }
     delete normalized.pressure;
   }
   return normalized as Partial<SealParameters>;
@@ -64,10 +67,8 @@ const normalizeIncomingParameters = (raw: Record<string, unknown>): Partial<Seal
 
 const normalizeIncomingParameterMeta = (raw: Record<string, unknown>): ParameterMeta => {
   const normalized: Record<string, unknown> = { ...raw };
-  if ("pressure" in normalized && !("pressure_bar" in normalized)) {
+  if ("pressure" in normalized) {
     normalized.pressure_bar = normalized.pressure;
-  }
-  if ("pressure_bar" in normalized) {
     delete normalized.pressure;
   }
   return normalized as ParameterMeta;
@@ -211,12 +212,25 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     getSnapshot: getParamSnapshot,
   } = useParamStore(chatId);
   const streamingRef = useRef<StreamingMessageHandle | null>(null);
+  const [chatMeta, setChatMeta] = useState<ChatMeta | null>(null);
+  const clearRagSources = useCallback(() => {
+    setChatMeta((prev) => {
+      if (!prev) return null;
+      const next = { ...prev };
+      delete next.ragSources;
+      return Object.keys(next).length ? next : null;
+    });
+  }, []);
   const handleStreamToken = useCallback((chunk: string) => {
     streamingRef.current?.append(chunk);
   }, []);
-  const handleStreamStart = useCallback((isRetry: boolean) => {
-    if (!isRetry) streamingRef.current?.reset();
-  }, []);
+  const handleStreamStart = useCallback(
+    (isRetry: boolean) => {
+      if (!isRetry) streamingRef.current?.reset();
+      if (!isRetry) clearRagSources();
+    },
+    [clearRagSources],
+  );
   const handleStreamDone = useCallback((finalText: string) => {
     if (finalText && finalText.trim()) {
       setMessages((m) => [...m, { role: "assistant", content: finalText }]);
@@ -396,6 +410,14 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         applyServerParametersRef.current?.(params as SealParameters, meta?.id ?? null, metaPayload);
       }
     },
+    onRetrievalMeta: ({ sources, skipped }) => {
+      if (chatIdRef.current && chatIdRef.current !== chatId) return;
+      if (skipped || !sources.length) {
+        clearRagSources();
+        return;
+      }
+      setChatMeta((prev) => ({ ...(prev ?? {}), ragSources: sources }));
+    },
     onEvent: (evt) => {
       if (!evt?.event || !evt.data || typeof evt.data !== "object") return;
       if (chatIdRef.current && chatIdRef.current !== chatId) return;
@@ -513,6 +535,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       }
     }
     prevUrlConversationIdRef.current = urlConversationId ?? null;
+    setChatMeta(null);
   }, [cancel, paramSyncDebug, urlConversationId]);
 
   useEffect(() => {
@@ -529,6 +552,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     setConfirmEditInstructions("");
     setConfirmEditParams("");
     setConfirmActionError(null);
+    setChatMeta(null);
     paramQueueRef.current = Promise.resolve();
     cancel();
     stateAbortRef.current?.abort();
@@ -652,12 +676,17 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     [chatId, applyLocalEdit],
   );
 
-  useEffect(() => {
-    applyServerParametersRef.current = (next, eventId, meta) => {
+  const applyServerParameters = useCallback(
+    (next: SealParameters, eventId?: string | null, meta?: ParameterMeta) => {
       if (!chatId) return;
       applyRemoteDeltaFromSse(chatId, next, meta, eventId ?? null);
-    };
-  }, [chatId, applyRemoteDeltaFromSse]);
+    },
+    [chatId, applyRemoteDeltaFromSse],
+  );
+
+  useEffect(() => {
+    applyServerParametersRef.current = applyServerParameters;
+  }, [applyServerParameters]);
 
   useEffect(() => {
     const onUi = (ev: Event) => {
@@ -1066,14 +1095,15 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, [authExpired, hasThread, isAuthed, showConnectionLost, sseStatus, streaming]);
 
   const handleReauth = useCallback(() => {
-    const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
-    signIn("keycloak", { callbackUrl: `${base}/chat` });
+    const callbackUrl = toRelativeCallbackUrl(window.location.href);
+    signIn("keycloak", { callbackUrl });
   }, []);
 
   const handleSend = useCallback(async (msg: string) => {
     if (sendingDisabled) return;
     const content = msg.trim();
     if (!content) return;
+    clearRagSources();
 
     // 1) Parameter direkt im Chat setzen: "/param pressure_bar=5 temperature_C=50 ..."
     const parsed = parseParamCommand(content);
@@ -1104,7 +1134,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     send(content);
     setInputValue("");
     setConfirmActionError(null);
-  }, [sendingDisabled, send, patchAllParameters, applyLocalParameters]);
+  }, [sendingDisabled, clearRagSources, send, patchAllParameters, applyLocalParameters]);
 
   const activeCheckpoint = useMemo(() => {
     if (!confirmCheckpoint) return null;
@@ -1502,6 +1532,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
                 </div>
               </div>
             ) : null}
+
+            <QualityMetaPanel meta={chatMeta} />
 
             <ChatHistory messages={messages} />
 

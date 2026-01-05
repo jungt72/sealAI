@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { useSession } from "next-auth/react";
 import { logout } from "../../lib/logout";
 import ContextSidebar from "./components/ContextSidebar";
-import { ContextStateProvider } from "./context/ContextStateProvider";
 
 function LogoutButton() {
   const { status } = useSession();
@@ -34,20 +33,18 @@ function LogoutButton() {
 
 export default function DashboardShell({ children }: { children: ReactNode }) {
   return (
-    <ContextStateProvider>
-      <div className="flex h-full w-full flex-col bg-white min-h-0 overflow-hidden">
-        <header className="sticky top-0 z-30 flex items-center justify-end px-4 py-3 bg-white/80 backdrop-blur border-b shrink-0">
-          <LogoutButton />
-        </header>
+    <div className="flex h-full w-full flex-col bg-white min-h-0 overflow-hidden">
+      <header className="sticky top-0 z-30 flex items-center justify-end px-4 py-3 bg-white/80 backdrop-blur border-b shrink-0">
+        <LogoutButton />
+      </header>
 
-        {/* KEY: min-h-0 + overflow-hidden => der Main kann wirklich scrollen */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          <main className="flex-1 min-w-0 min-h-0 overflow-y-auto">{children}</main>
-          <div className="hidden xl:flex w-[360px] shrink-0 border-l border-slate-100 bg-white px-4 py-4 overflow-y-auto">
-            <ContextSidebar />
-          </div>
+      {/* KEY: min-h-0 + overflow-hidden => der Main kann wirklich scrollen */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto">{children}</main>
+        <div className="hidden xl:flex w-[360px] shrink-0 border-l border-slate-100 bg-white px-4 py-4 overflow-y-auto">
+          <ContextSidebar />
         </div>
       </div>
-    </ContextStateProvider>
+    </div>
   );
 }

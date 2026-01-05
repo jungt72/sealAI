@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Check, X } from "lucide-react";
 import type { SealParameters } from "@/lib/types/sealParameters";
 import type { ConfirmCheckpointPayload } from "@/lib/useChatSseV2";
@@ -98,6 +98,13 @@ const FORM_SECTIONS: FormSection[] = [
   },
 ];
 
+function coerceNumberLike(raw: string): number | "" {
+  const t = (raw ?? "").trim();
+  if (!t) return "";
+  const n = Number(t.replace(",", "."));
+  return Number.isFinite(n) ? n : "";
+}
+
 export default function ParameterFormSidebar({
   show,
   parameters,
@@ -116,8 +123,9 @@ export default function ParameterFormSidebar({
 }: ParameterFormSidebarProps) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
-  const resolvedDirtyKeys = dirtyKeys ?? new Set<keyof SealParameters>();
-  const resolvedPendingKeys = pendingKeys ?? new Set<keyof SealParameters>();
+
+  const resolvedDirtyKeys = useMemo(() => dirtyKeys ?? new Set<keyof SealParameters>(), [dirtyKeys]);
+  const resolvedPendingKeys = useMemo(() => pendingKeys ?? new Set<keyof SealParameters>(), [pendingKeys]);
   const resolvedAppliedMap = appliedMap ?? {};
   const dirtyCount = resolvedDirtyKeys.size;
   const pendingCount = resolvedPendingKeys.size;
@@ -126,15 +134,10 @@ export default function ParameterFormSidebar({
     if (!show || !paramSyncDebug) return;
     const keys = Object.keys(parameters || {});
     const pressureValue = parameters?.pressure_bar;
-    const displayPressure =
-      pressureValue !== undefined && pressureValue !== null ? String(pressureValue) : "";
     console.log("[param-sync] sidebar_render", {
       keys: keys.slice(0, 8),
       keys_count: keys.length,
-      pressure_bar: displayPressure,
-    });
-    console.log("[param-wire] sidebar_render", {
-      pressure_bar: pressureValue,
+      pressure_bar: pressureValue ?? null,
       pressure_bar_type: typeof pressureValue,
     });
   }, [parameters, paramSyncDebug, show]);
@@ -153,8 +156,13 @@ export default function ParameterFormSidebar({
     setCollapsedSections(next);
   };
 
-  const handleFieldChange = (name: keyof SealParameters, rawValue: string) => {
-    onUpdate(name, rawValue);
+  const handleFieldChange = (field: FormField, rawValue: string) => {
+    if (field.type === "number") {
+      const coerced = coerceNumberLike(rawValue);
+      onUpdate(field.name, coerced === "" ? "" : coerced);
+      return;
+    }
+    onUpdate(field.name, rawValue);
   };
 
   return (
@@ -172,6 +180,7 @@ export default function ParameterFormSidebar({
         </button>
       </div>
 
+      {/* WICHTIG: das Scrollen passiert HIER im Form-Container (flex:1, min-height:0) */}
       <form onSubmit={handleSubmit} className="sidebar-form">
         <div className="form-section bg-[#1E1E2D] rounded-lg border border-white/10 overflow-hidden">
           <div className="w-full flex items-center justify-between p-3 bg-white/5 text-left">
@@ -215,9 +224,7 @@ export default function ParameterFormSidebar({
                     Bearbeiten
                   </button>
                 </div>
-                {confirmError ? (
-                  <div className="text-xs text-red-400">Freigabe fehlgeschlagen: {confirmError}</div>
-                ) : null}
+                {confirmError ? <div className="text-xs text-red-400">Freigabe fehlgeschlagen: {confirmError}</div> : null}
               </>
             ) : (
               <div className="text-xs text-white/60">Keine Freigabe erforderlich.</div>
@@ -228,23 +235,14 @@ export default function ParameterFormSidebar({
         {FORM_SECTIONS.map((section) => {
           const isCollapsed = collapsedSections.has(section.title);
           return (
-            <div
-              className="form-section bg-[#1E1E2D] rounded-lg border border-white/10 overflow-hidden"
-              key={section.title}
-            >
+            <div className="form-section bg-[#1E1E2D] rounded-lg border border-white/10 overflow-hidden" key={section.title}>
               <button
                 type="button"
                 onClick={() => toggleSection(section.title)}
                 className="w-full flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 transition-colors text-left"
               >
-                <span className="text-sm font-semibold text-white/90 uppercase tracking-wider">
-                  {section.title}
-                </span>
-                {isCollapsed ? (
-                  <ChevronDown className="w-4 h-4 text-white/60" />
-                ) : (
-                  <ChevronUp className="w-4 h-4 text-white/60" />
-                )}
+                <span className="text-sm font-semibold text-white/90 uppercase tracking-wider">{section.title}</span>
+                {isCollapsed ? <ChevronDown className="w-4 h-4 text-white/60" /> : <ChevronUp className="w-4 h-4 text-white/60" />}
               </button>
 
               {!isCollapsed && (
@@ -252,17 +250,10 @@ export default function ParameterFormSidebar({
                   {section.fields.map((field) => {
                     const inputId = `param-${String(field.name)}`;
                     const fieldValue = parameters[field.name];
-                    const displayValue =
-                      fieldValue !== undefined && fieldValue !== null ? String(fieldValue) : "";
+                    const displayValue = fieldValue !== undefined && fieldValue !== null ? String(fieldValue) : "";
                     const isDirty = resolvedDirtyKeys.has(field.name);
                     const isPending = resolvedPendingKeys.has(field.name);
                     const isApplied = Boolean(resolvedAppliedMap[field.name]) && !isDirty && !isPending;
-                    if (paramSyncDebug && field.name === "pressure_bar") {
-                      console.log("[param-wire] input_render", {
-                        pressure_bar_value: displayValue,
-                        pressure_bar_value_type: typeof displayValue,
-                      });
-                    }
 
                     return (
                       <div className="form-group flex flex-col gap-1.5" key={inputId}>
@@ -285,11 +276,7 @@ export default function ParameterFormSidebar({
                               aria-label="Änderung noch nicht übernommen"
                             />
                           ) : isApplied ? (
-                            <Check
-                              className="h-3 w-3 text-emerald-400"
-                              title="Übernommen"
-                              aria-label="Übernommen"
-                            />
+                            <Check className="h-3 w-3 text-emerald-400" title="Übernommen" aria-label="Übernommen" />
                           ) : null}
                         </label>
 
@@ -304,11 +291,7 @@ export default function ParameterFormSidebar({
                               Bitte wählen...
                             </option>
                             {field.options.map((option) => (
-                              <option
-                                key={option.value}
-                                value={option.value}
-                                className="bg-[#1E1E2D]"
-                              >
+                              <option key={option.value} value={option.value} className="bg-[#1E1E2D]">
                                 {option.label}
                               </option>
                             ))}
@@ -316,10 +299,10 @@ export default function ParameterFormSidebar({
                         ) : (
                           <input
                             id={inputId}
-                            type="text"
+                            type={field.type === "number" ? "text" : "text"}
                             inputMode={field.type === "number" ? "decimal" : "text"}
                             value={displayValue}
-                            onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                            onChange={(e) => handleFieldChange(field, e.target.value)}
                             placeholder={field.placeholder}
                             className="h-9 w-full rounded bg-white/5 border border-white/10 px-2 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-white/20"
                           />
@@ -333,7 +316,8 @@ export default function ParameterFormSidebar({
           );
         })}
 
-        <div className="pt-2 sticky bottom-0 bg-[#14141e] pb-0 -mx-2 px-2 z-10">
+        {/* Bottom bar immer sichtbar, ohne das Scrollen des Formulars zu killen */}
+        <div className="sticky bottom-0 bg-[#14141e] pt-2 pb-2 z-10">
           <button
             type="submit"
             disabled={dirtyCount === 0 || pendingCount > 0}
@@ -344,11 +328,7 @@ export default function ParameterFormSidebar({
                 : "bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-indigo-500/25",
             ].join(" ")}
             title={
-              dirtyCount === 0
-                ? "Keine Änderungen"
-                : pendingCount > 0
-                ? "Änderungen werden übernommen"
-                : "Parameter übernehmen"
+              dirtyCount === 0 ? "Keine Änderungen" : pendingCount > 0 ? "Änderungen werden übernommen" : "Parameter übernehmen"
             }
           >
             <Check className="w-4 h-4" />
@@ -363,19 +343,19 @@ export default function ParameterFormSidebar({
           height: 100%;
           background: #14141e;
           border-left: 1px solid rgba(255, 255, 255, 0.08);
-          padding: 1.5rem;
-          overflow-y: auto;
           flex-shrink: 0;
+
+          /* KEY: flex + min-height = 0 => Scroll funktioniert in Child */
           display: flex;
           flex-direction: column;
+          min-height: 0;
         }
 
         .sidebar-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 1.5rem;
-          padding-bottom: 1rem;
+          padding: 1.25rem 1.5rem 1rem 1.5rem;
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           flex-shrink: 0;
         }
@@ -387,24 +367,30 @@ export default function ParameterFormSidebar({
           margin: 0;
         }
 
+        /* Scroll-Hotspot */
         .sidebar-form {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+
           display: flex;
           flex-direction: column;
           gap: 1rem;
-          padding-bottom: 2rem;
+
+          padding: 1rem 1.5rem 1.25rem 1.5rem;
         }
 
-        .parameter-form-sidebar::-webkit-scrollbar {
+        .sidebar-form::-webkit-scrollbar {
           width: 6px;
         }
-        .parameter-form-sidebar::-webkit-scrollbar-track {
+        .sidebar-form::-webkit-scrollbar-track {
           background: transparent;
         }
-        .parameter-form-sidebar::-webkit-scrollbar-thumb {
+        .sidebar-form::-webkit-scrollbar-thumb {
           background: rgba(255, 255, 255, 0.1);
           border-radius: 3px;
         }
-        .parameter-form-sidebar::-webkit-scrollbar-thumb:hover {
+        .sidebar-form::-webkit-scrollbar-thumb:hover {
           background: rgba(255, 255, 255, 0.2);
         }
       `}</style>

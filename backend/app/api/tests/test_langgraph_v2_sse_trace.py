@@ -26,8 +26,18 @@ os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.js
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 
+class _Snapshot:
+    def __init__(self, values=None):
+        self.values = values or {}
+        self.next = []
+        self.config = {}
+
+
 class DummyGraphTrace:
     checkpointer = object()
+
+    async def aget_state(self, _config):
+        return _Snapshot()
 
     def astream(self, _input, config=None, *, stream_mode=None, **_kwargs):
         async def gen():
@@ -35,6 +45,73 @@ class DummyGraphTrace:
             yield ("values", {"phase": "analysis", "last_node": "frontdoor_node"})
             yield ("messages", (" there", {"node": "response_node"}))
             yield ("values", {"phase": "final", "last_node": "response_node"})
+
+        return gen()
+
+
+class DummyGraphRetrievalResults:
+    checkpointer = object()
+
+    async def aget_state(self, _config):
+        return _Snapshot()
+
+    def astream(self, _input, config=None, *, stream_mode=None, **_kwargs):
+        async def gen():
+            yield ("values", {"phase": "analysis", "last_node": "rag_support_node"})
+            yield (
+                "values",
+                {
+                    "phase": "rag",
+                    "last_node": "rag_support_node",
+                    "retrieval_meta": {
+                        "k_requested": 3,
+                        "k_returned": 2,
+                        "top_scores": [0.9, 0.7],
+                        "doc_ids": ["doc-1", "doc-2"],
+                        "sources": [
+                            {
+                                "document_id": "doc-1",
+                                "sha256": "hash-1",
+                                "filename": "specs.pdf",
+                                "page": 2,
+                                "section": "Werkstoffe",
+                                "score": 0.9,
+                                "source": "upload",
+                            }
+                        ],
+                        "threshold": None,
+                        "fused": False,
+                        "reranked": True,
+                        "collection": "sealai-docs",
+                        "tenant_id": "user-1",
+                        "category": "norms",
+                    },
+                },
+            )
+
+        return gen()
+
+
+class DummyGraphRetrievalSkipped:
+    checkpointer = object()
+
+    async def aget_state(self, _config):
+        return _Snapshot()
+
+    def astream(self, _input, config=None, *, stream_mode=None, **_kwargs):
+        async def gen():
+            yield (
+                "values",
+                {
+                    "phase": "supervisor",
+                    "last_node": "supervisor_policy_node",
+                    "retrieval_meta": {
+                        "skipped": True,
+                        "reason": "requires_rag_false",
+                        "tenant_id": "user-1",
+                    },
+                },
+            )
 
         return gen()
 
@@ -78,3 +155,37 @@ def test_chat_v2_sse_trace_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
     text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-2")))
     assert "event: trace" not in text
+
+
+def test_chat_v2_sse_emits_retrieval_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+
+    ep = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
+
+    async def _dummy_graph():
+        return DummyGraphRetrievalResults()
+
+    monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
+
+    req = ep.LangGraphV2Request(input="hi", chat_id="default")
+    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-3")))
+    assert "event: retrieval.results" in text
+    assert "\"doc_ids\"" in text
+    assert "\"sources\"" in text
+    assert "\"tenant_id\"" in text
+
+
+def test_chat_v2_sse_emits_retrieval_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+
+    ep = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
+
+    async def _dummy_graph():
+        return DummyGraphRetrievalSkipped()
+
+    monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
+
+    req = ep.LangGraphV2Request(input="hi", chat_id="default")
+    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-4")))
+    assert "event: retrieval.skipped" in text
+    assert "\"reason\"" in text

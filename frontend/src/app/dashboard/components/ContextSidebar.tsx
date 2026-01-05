@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { useContextState } from "../context/ContextStateProvider";
 import type { ContextParameterKey } from "@/types/context";
+import KnowledgeDocumentsPanel from "./Knowledge/KnowledgeDocumentsPanel";
 
 const PARAM_LABELS: Record<ContextParameterKey, string> = {
   medium: "Medium",
@@ -138,6 +139,8 @@ export default function ContextSidebar() {
           </ul>
         </div>
       ) : null}
+
+      <KnowledgeDocumentsPanel />
     </aside>
   );
 }

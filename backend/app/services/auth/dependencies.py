@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException, WebSocket, status, Header
 
 from app.core.config import settings              # <-- korrekter Pfad!
 import app.services.auth.token as auth_token
+from app.langgraph_v2.contracts import error_detail
 
 
 # --------------------------------------------------------------------------- #
@@ -26,6 +27,7 @@ class RequestUser:
     user_id: str
     username: str
     sub: str
+    roles: list[str]
 
 
 def verify_access_token(token: str) -> dict:
@@ -33,21 +35,42 @@ def verify_access_token(token: str) -> dict:
 
 
 def _resolve_user_id(payload: dict) -> str:
-    claim = (os.getenv("AUTH_USER_ID_CLAIM") or "preferred_username").strip().lower()
-    if claim == "sub":
-        value = payload.get("sub")
-    elif claim in ("preferred_username", "username"):
-        value = payload.get("preferred_username")
-    else:
-        value = payload.get(claim)
-    if not value:
-        value = payload.get("sub") or payload.get("preferred_username") or payload.get("email")
-    return str(value) if value else "anonymous"
+    claim = (os.getenv("AUTH_USER_ID_CLAIM") or "sub").strip()
+    value = payload.get(claim)
+    if value is None or value == "":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_id_claim", claim=claim),
+        )
+    return str(value)
 
 
 def _resolve_username(payload: dict) -> str:
     value = payload.get("preferred_username") or payload.get("email") or payload.get("sub")
     return str(value) if value else "anonymous"
+
+
+def _extract_roles(payload: dict) -> list[str]:
+    roles: set[str] = set()
+    realm_access = payload.get("realm_access")
+    if isinstance(realm_access, dict):
+        for role in realm_access.get("roles", []) or []:
+            if role:
+                roles.add(str(role))
+    resource_access = payload.get("resource_access")
+    if isinstance(resource_access, dict):
+        for entry in resource_access.values():
+            if not isinstance(entry, dict):
+                continue
+            for role in entry.get("roles", []) or []:
+                if role:
+                    roles.add(str(role))
+    return sorted(roles)
+
+
+def canonical_user_id(user: RequestUser) -> str:
+    """Return the canonical user id for scoping (claim-based preferred)."""
+    return user.user_id or user.sub
 
 
 async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
@@ -74,7 +97,8 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     user_id = _resolve_user_id(payload)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
-    return RequestUser(user_id=user_id, username=username, sub=sub)
+    roles = _extract_roles(payload)
+    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)
 
 
 # --------------------------------------------------------------------------- #
@@ -116,4 +140,5 @@ async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
     user_id = _resolve_user_id(payload)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
-    return RequestUser(user_id=user_id, username=username, sub=sub)
+    roles = _extract_roles(payload)
+    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)

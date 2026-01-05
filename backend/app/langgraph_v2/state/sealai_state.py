@@ -350,6 +350,7 @@ class SealAIState(BaseModel):
     requires_rag: bool = False
     sources: List[Source] = Field(default_factory=list)
     knowledge_type: Optional[KnowledgeType] = None
+    retrieval_meta: Optional[Dict[str, Any]] = None
 
     # Finaler Output / Fehler
     error: Optional[str] = None

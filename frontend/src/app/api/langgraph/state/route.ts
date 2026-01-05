@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { resolveLanggraphBackendBase } from "@/lib/langgraphBackendServer";
+import { getBackendInternalBase } from "@/lib/backend-internal";
 
 const makeRequestId = (): string => {
   try {
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const backendBase = resolveLanggraphBackendBase();
+  const backendBase = getBackendInternalBase();
   const search = req.nextUrl.search || "";
   const url = `${backendBase}/api/v1/langgraph/state${search}`;
 

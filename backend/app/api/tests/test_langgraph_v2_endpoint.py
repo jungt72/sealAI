@@ -67,8 +67,18 @@ async def _collect(gen) -> List[bytes]:
     return out
 
 
+class _Snapshot:
+    def __init__(self, values: Dict[str, Any] | None = None):
+        self.values = values or {}
+        self.next: List[Any] = []
+        self.config: Dict[str, Any] = {}
+
+
 class DummyGraphTokens:
     checkpointer = object()
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot()
 
     def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
         async def gen():
@@ -82,6 +92,9 @@ class DummyGraphTokens:
 class DummyGraphNoTokens:
     checkpointer = object()
 
+    async def aget_state(self, _config: Any):
+        return _Snapshot()
+
     def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
         async def gen():
             yield ("values", {"final_text": "Final Antwort", "phase": "final", "last_node": "response_node"})
@@ -91,6 +104,9 @@ class DummyGraphNoTokens:
 
 class DummyGraphTokensWithFinalMessage:
     checkpointer = object()
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot()
 
     def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
         async def gen():
@@ -105,6 +121,9 @@ class DummyGraphTokensWithFinalMessage:
 class DummyGraphError:
     checkpointer = object()
 
+    async def aget_state(self, _config: Any):
+        return _Snapshot()
+
     def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
         async def gen():
             raise RuntimeError("dummy graph error")
@@ -115,6 +134,9 @@ class DummyGraphError:
 
 class DummyGraphConfirmCheckpoint:
     checkpointer = object()
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot()
 
     def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
         async def gen():

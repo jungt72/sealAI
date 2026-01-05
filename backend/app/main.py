@@ -1,6 +1,7 @@
 # backend/app/main.py
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -10,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
+from app.services.jobs.worker import start_job_worker
 
 log = logging.getLogger("uvicorn.error")
 
@@ -23,6 +25,7 @@ APP_VERSION = os.getenv("APP_VERSION", os.getenv("GIT_SHA", "dev"))
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "https://sealai.net")
 ENABLE_CORS = _bool_env("ENABLE_CORS", "1")
 WARMUP_ON_START = _bool_env("WARMUP_ON_START", "0")
+JOB_WORKER_ENABLED = _bool_env("JOB_WORKER_ENABLED", "1")
 
 
 @asynccontextmanager
@@ -30,8 +33,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("Starting %s v%s", APP_NAME, APP_VERSION)
     if WARMUP_ON_START:
         log.info("Warmup aktiviert, aber LangGraph wurde entfernt – überspringe Warmup.")
+    worker_task = None
+    if JOB_WORKER_ENABLED:
+        worker_task = asyncio.create_task(start_job_worker())
     app.state.warmed_up = True
     yield
+    if worker_task:
+        worker_task.cancel()
+        try:
+            await worker_task
+        except Exception:
+            pass
     log.info("Stopping %s", APP_NAME)
 
 

@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     ping,
     users,
     chat_history,  # <-- WICHTIG: Chat-History/Conversations wieder aktivieren
+    rag,
 )
 from app.api.v1.endpoints import rfq as rfq_endpoint
 
@@ -33,6 +34,7 @@ api_router.include_router(state.router, prefix="/langgraph", tags=["langgraph-v2
 api_router.include_router(auth.router)
 api_router.include_router(memory.router)
 api_router.include_router(users.router)
+api_router.include_router(rag.router)
 
 # RFQ
 api_router.include_router(rfq_endpoint.router, prefix="/rfq", tags=["rfq"])

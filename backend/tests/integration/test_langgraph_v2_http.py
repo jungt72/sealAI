@@ -147,7 +147,7 @@ def test_patch_then_state_returns_parameters(monkeypatch: pytest.MonkeyPatch) ->
         assert user_id == "test-user"
         return graph, {"configurable": {}, "metadata": {}}
 
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str):
+    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
         assert thread_id == "chat-123"
         assert user_id == "test-user"
         return graph, {"configurable": {}, "metadata": {}}
@@ -197,7 +197,7 @@ def test_parameters_patch_invalid_as_node_400(monkeypatch: pytest.MonkeyPatch) -
     ep = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     fake_graph = _FakeGraph()
 
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str):
+    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
         return fake_graph, {"configurable": {}, "metadata": {}}
 
     monkeypatch.setattr(ep, "_build_graph_config", _fake_build_graph_config)
@@ -224,7 +224,7 @@ def test_parameters_patch_dependency_down_503(monkeypatch: pytest.MonkeyPatch) -
 
     fake_graph = _FakeGraph(raise_on_get=TimeoutError("simulated timeout"))
 
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str):
+    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
         return fake_graph, {"configurable": {}, "metadata": {}}
 
     monkeypatch.setattr(ep, "_build_graph_config", _fake_build_graph_config)
@@ -257,7 +257,7 @@ def test_confirm_go_dependency_down_503(monkeypatch: pytest.MonkeyPatch) -> None
 
     fake_graph = _FakeGraph(raise_on_update=TimeoutError("simulated timeout"))
 
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str):
+    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
         return fake_graph, {"configurable": {}, "metadata": {}}
 
     monkeypatch.setattr(ep, "_build_graph_config", _fake_build_graph_config)

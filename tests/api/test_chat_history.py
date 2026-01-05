@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.v1.endpoints import chat_history
+from app.api.v1.endpoints import chat_history, langgraph_v2
 from app.core.config import settings
 from app.services.chat import conversations
+from app.services.auth.dependencies import RequestUser
 
 
 class FakePipeline:
@@ -139,6 +141,11 @@ def fake_graph(monkeypatch):
 
 
 @pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
 def client(app, patched_redis):
     return TestClient(app)
 
@@ -147,9 +154,12 @@ def auth_headers(sub: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {sub}"}
 
 
-def create_conversation(user_id: str, conversation_id: str):
+def create_conversation(owner_id: str, conversation_id: str):
     conversations.upsert_conversation(
-        user_id, conversation_id, first_user_message="Guten Tag, ich brauche Hilfe."
+        owner_id=owner_id,
+        conversation_id=conversation_id,
+        first_user_message="Guten Tag, ich brauche Hilfe.",
+        last_preview="Guten Tag, ich brauche Hilfe.",
     )
 
 
@@ -160,7 +170,8 @@ def test_happy_path_conversations_and_history(client: TestClient, patched_redis:
     list_resp = client.get("/api/v1/chat/conversations", headers=auth_headers("user-a"))
     assert list_resp.status_code == 200
     data = list_resp.json()
-    assert any(entry["id"] == conversation_id for entry in data)
+    assert any(entry["thread_id"] == conversation_id for entry in data)
+    assert any(entry.get("last_preview") for entry in data)
 
     history_resp = client.get(f"/api/v1/chat/history/{conversation_id}", headers=auth_headers("user-a"))
     assert history_resp.status_code == 200
@@ -225,3 +236,65 @@ def test_limit_removes_oldest_conversation(monkeypatch, patched_redis: FakeRedis
     entries = conversations.list_conversations("user-a")
     assert len(entries) == 1
     assert entries[0].id == "conv-new"
+
+
+def test_list_merges_legacy_owner(patched_redis: FakeRedis):
+    conversations.upsert_conversation(
+        owner_id="legacy-user",
+        conversation_id="conv-legacy",
+        first_user_message="Legacy chat",
+        last_preview="Legacy chat last preview",
+    )
+
+    entries = conversations.list_conversations("current-user", legacy_owner_id="legacy-user")
+    assert len(entries) == 1
+    assert entries[0].id == "conv-legacy"
+
+
+@pytest.mark.anyio(backend="asyncio")
+async def test_langgraph_chat_v2_upserts_metadata(monkeypatch):
+    recorded: dict[str, Any] = {}
+
+    class FakeBroadcast:
+        async def record_event(self, **_kwargs: Any) -> int:
+            return 1
+
+        async def subscribe(self, **_kwargs: Any):
+            return None
+
+        async def replay_after(self, **_kwargs: Any) -> tuple[list[Any], bool]:
+            return [], True
+
+        async def unsubscribe(self, **_kwargs: Any) -> None:
+            return None
+
+        async def broadcast(self, **_kwargs: Any) -> None:
+            return None
+
+        def parse_last_event_id(self, *args: Any, **_kwargs: Any) -> Any:
+            return None
+
+    monkeypatch.setattr(langgraph_v2, "sse_broadcast", FakeBroadcast())
+
+    async def fake_stream(req, *, user_id, request_id, last_event_id):
+        if False:
+            yield b""
+
+    monkeypatch.setattr(langgraph_v2, "_event_stream_v2", fake_stream)
+
+    def fake_upsert(owner_id: str, conversation_id: str, **kwargs: Any):
+        recorded["owner_id"] = owner_id
+        recorded["conversation_id"] = conversation_id
+        recorded["kwargs"] = kwargs
+
+    monkeypatch.setattr(conversations, "upsert_conversation", fake_upsert)
+    monkeypatch.setattr(langgraph_v2, "upsert_conversation", fake_upsert)
+
+    request_model = langgraph_v2.LangGraphV2Request(input="Test preview", chat_id="thread-preview")
+    raw_request = SimpleNamespace(headers={"X-Request-Id": "req-1"})
+    user = RequestUser(user_id="user-preview", username="user-preview", sub="user-preview", roles=[])
+    await langgraph_v2.langgraph_chat_v2_endpoint(request_model, raw_request, user)
+
+    assert recorded.get("owner_id") == "user-preview"
+    assert recorded.get("conversation_id") == "thread-preview"
+    assert recorded.get("kwargs", {}).get("last_preview") == "Test preview"

@@ -10,7 +10,6 @@ export type AccessTokenState = {
 };
 
 type SessionShape = {
-  accessToken?: string | null;
   error?: string | null;
 };
 
@@ -32,12 +31,18 @@ export function useAccessToken(): AccessTokenState {
       setState({ error: "expired" });
       return;
     }
-    const token = session.accessToken ?? undefined;
-    if (!token) {
-      setState({ error: "missing" });
-      return;
-    }
-    setState({ token });
+    let active = true;
+    void fetchFreshAccessToken().then((fresh) => {
+      if (!active) return;
+      if (fresh.token) {
+        setState({ token: fresh.token });
+        return;
+      }
+      setState({ error: fresh.error ?? "missing", status: fresh.status });
+    });
+    return () => {
+      active = false;
+    };
   }, [status, data]);
 
   return state;
@@ -45,17 +50,10 @@ export function useAccessToken(): AccessTokenState {
 
 export async function fetchFreshAccessToken(): Promise<AccessTokenState> {
   try {
-    const res = await fetch("/api/auth/session", { cache: "no-store" });
+    const res = await fetch("/api/auth/access-token", { cache: "no-store" });
     if (res.status === 401) return { error: "expired", status: 401 };
     if (!res.ok) return { error: "missing", status: res.status };
-    const json = (await res.json()) as SessionShape;
-    if (
-      json.error === "RefreshAccessTokenError" ||
-      json.error === "RefreshTokenExpired" ||
-      json.error === "RefreshTokenMissing"
-    ) {
-      return { error: "expired", status: res.status };
-    }
+    const json = (await res.json()) as { accessToken?: string };
     if (!json.accessToken) return { error: "missing", status: res.status };
     return { token: json.accessToken, status: res.status };
   } catch {

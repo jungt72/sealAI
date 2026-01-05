@@ -25,10 +25,20 @@ export type WarmupMeta = {
   [key: string]: unknown;
 };
 
+export type RagSource = {
+  document_id: string;
+  sha256?: string | null;
+  filename?: string | null;
+  page?: number | null;
+  section?: string | null;
+  score?: number | null;
+  source?: string | null;
+};
+
 export type ChatMeta = {
   quality?: QualityMeta;
   routing?: RoutingMeta;
-  ragSources?: string[];
+  ragSources?: RagSource[] | string[];
   contributors?: ContributorMeta[];
   warmup?: WarmupMeta;
   phase?: string;

@@ -3,17 +3,19 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage
 
 from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.sealai_graph_v2 import log_state_debug
+from app.langgraph_v2.utils.state_debug import log_state_debug
 from app.langgraph_v2.state import CalcResults, SealAIState, Source, WorkingMemory
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.output_sanitizer import strip_meta_preamble
+from app.langgraph_v2.utils.rag import apply_rag_quality_gate, unpack_rag_payload
+from app.langgraph_v2.utils.rag_safety import wrap_rag_context
 from app.langgraph_v2.utils.rag_tool import search_knowledge_base
 
 
@@ -342,8 +344,11 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         "k": 3,
         "tenant": state.user_id,
     })
-    rag_text = (rag_context or "").strip() if isinstance(rag_context, str) else str(rag_context)
-    notes["rag_context"] = rag_text
+    rag_text, retrieval_meta = unpack_rag_payload(rag_context)
+    min_score = float(os.getenv("MIN_TOP_SCORE", "0.20"))
+    rag_text, retrieval_meta = apply_rag_quality_gate(rag_text, retrieval_meta, min_top_score=min_score)
+    rag_text = wrap_rag_context(rag_text)
+    notes["rag_context"] = rag_text or ""
 
     # Only emit references if the tool output contains citation-like artifacts.
     rag_reference: list[str] = []
@@ -384,11 +389,12 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     if intent_goal == "explanation_or_comparison":
         wm = _update_working_memory(state, {"comparison_notes": notes})
     else:
-        wm = _update_working_memory(state, {"panel_norms_rag": notes})
+        wm = _update_working_memory(state, {"comparison_notes": notes, "panel_norms_rag": notes})
 
     return {
         "working_memory": wm,
         "sources": sources,
+        "retrieval_meta": retrieval_meta,
         # Phase: explizit RAG
         "phase": PHASE.RAG,
         "last_node": "rag_support_node",

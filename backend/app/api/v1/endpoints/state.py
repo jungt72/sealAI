@@ -16,7 +16,7 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, SealParameterUpdate, TechnicalParameters
 from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
-from app.services.auth.dependencies import RequestUser, get_current_request_user
+from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 
 logger = logging.getLogger(__name__)
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
@@ -124,6 +124,45 @@ def _resolve_update_as_node(state_values: Dict[str, Any]) -> str | None:
     return None
 
 
+def _has_state_values(snapshot: Any) -> bool:
+    values = _state_to_dict(getattr(snapshot, "values", None))
+    return bool(values)
+
+
+async def _resolve_state_snapshot(
+    *,
+    thread_id: str,
+    user: RequestUser,
+    request_id: str | None = None,
+) -> tuple[Any, Dict[str, Any], Any, bool]:
+    scoped_user_id = canonical_user_id(user)
+    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
+    graph, config = await _build_state_config_with_checkpointer(
+        thread_id=thread_id, user_id=scoped_user_id, username=user.username
+    )
+    snapshot = await graph.aget_state(config)
+    if not legacy_user_id or _has_state_values(snapshot):
+        return graph, config, snapshot, False
+
+    legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
+        thread_id=thread_id, user_id=legacy_user_id, username=user.username
+    )
+    legacy_snapshot = await legacy_graph.aget_state(legacy_config)
+    if _has_state_values(legacy_snapshot):
+        if PARAM_SYNC_DEBUG:
+            logger.warning(
+                "langgraph_v2_legacy_state_fallback",
+                extra={
+                    "request_id": request_id,
+                    "thread_id": thread_id,
+                    "user_id": scoped_user_id,
+                    "legacy_user_id": legacy_user_id,
+                },
+            )
+        return legacy_graph, legacy_config, legacy_snapshot, True
+    return graph, config, snapshot, False
+
+
 async def _build_state_config_with_checkpointer(
     thread_id: str, user_id: str, username: str | None = None
 ):
@@ -151,10 +190,11 @@ async def get_state(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     try:
         # user_id must always come from the authenticated Keycloak JWT.
-        graph, config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=user.sub, username=user.username
+        graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
+            thread_id=thread_id,
+            user=user,
+            request_id=request_id,
         )
-        snapshot = await graph.aget_state(config)
 
         state_values = _state_to_dict(snapshot.values)
         parameters = _serialize_parameters(state_values.get("parameters"))
@@ -237,12 +277,11 @@ async def update_state(
 
     try:
         # Reuse the authenticated user_id so the state update is scoped to the Keycloak user.
-        graph, config = await _build_state_config_with_checkpointer(
+        graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
-            user_id=user.sub,
-            username=user.username,
+            user=user,
+            request_id=request_id,
         )
-        snapshot = await graph.aget_state(config)
         state_values = _state_to_dict(snapshot.values)
         resolved = _resolve_update_as_node(state_values)
         as_node = pick_existing_node(graph, resolved, fallback=DEFAULT_STATE_UPDATE_NODE)

@@ -29,7 +29,8 @@ from app.langgraph_v2.utils.parameter_patch import (
     apply_parameter_patch_lww,
     sanitize_v2_parameter_patch,
 )
-from app.services.auth.dependencies import RequestUser, get_current_request_user
+from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
+from app.services.chat.conversations import upsert_conversation
 from app.services.sse_broadcast import sse_broadcast
 
 router = APIRouter()
@@ -104,17 +105,77 @@ def _chunk_text(text: str, *, max_len: int = 700) -> list[str]:
     return chunks
 
 
+def _config_user_id(config: Dict[str, Any], fallback: str) -> str:
+    metadata = config.get("metadata") if isinstance(config, dict) else {}
+    if isinstance(metadata, dict):
+        value = metadata.get("user_id")
+        if isinstance(value, str) and value:
+            return value
+    return fallback
+
+
+def _has_checkpoint_state(snapshot: Any) -> bool:
+    values = _state_values_to_dict(getattr(snapshot, "values", None))
+    return bool(values)
+
+
 async def _build_graph_config(
-    *, thread_id: str, user_id: str, username: str | None = None
+    *,
+    thread_id: str,
+    user_id: str,
+    username: str | None = None,
+    legacy_user_id: str | None = None,
+    request_id: str | None = None,
+    allow_legacy_fallback: bool = True,
 ) -> tuple[Any, Dict[str, Any]]:
     graph = await get_sealai_graph_v2()
-    config = build_v2_config(thread_id=thread_id, user_id=user_id)
-    configurable = config.setdefault("configurable", {})
-    configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
-    if username:
-        metadata = config.setdefault("metadata", {})
-        metadata["username"] = username
-        metadata["user_sub"] = user_id
+
+    def _attach_config(base_config: Dict[str, Any], *, scoped_user_id: str) -> Dict[str, Any]:
+        configurable = base_config.setdefault("configurable", {})
+        configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
+        if username:
+            metadata = base_config.setdefault("metadata", {})
+            metadata["username"] = username
+            metadata["user_sub"] = scoped_user_id
+        return base_config
+
+    config = _attach_config(build_v2_config(thread_id=thread_id, user_id=user_id), scoped_user_id=user_id)
+    if not allow_legacy_fallback or not legacy_user_id or legacy_user_id == user_id:
+        return graph, config
+
+    try:
+        snapshot = await graph.aget_state(config)
+        if _has_checkpoint_state(snapshot):
+            return graph, config
+
+        legacy_config = _attach_config(
+            build_v2_config(thread_id=thread_id, user_id=legacy_user_id),
+            scoped_user_id=legacy_user_id,
+        )
+        legacy_snapshot = await graph.aget_state(legacy_config)
+        if _has_checkpoint_state(legacy_snapshot):
+            if SSE_DEBUG or PARAM_SYNC_DEBUG or _lg_trace_enabled():
+                logger.warning(
+                    "langgraph_v2_legacy_thread_fallback",
+                    extra={
+                        "request_id": request_id,
+                        "chat_id": thread_id,
+                        "user_id": user_id,
+                        "legacy_user_id": legacy_user_id,
+                    },
+                )
+            return graph, legacy_config
+    except Exception:
+        logger.exception(
+            "langgraph_v2_legacy_fallback_failed",
+            extra={
+                "request_id": request_id,
+                "chat_id": thread_id,
+                "user_id": user_id,
+                "legacy_user_id": legacy_user_id,
+            },
+        )
+
     return graph, config
 
 
@@ -360,6 +421,7 @@ async def _event_stream_v2(
     req: LangGraphV2Request,
     *,
     user_id: str,
+    legacy_user_id: str | None = None,
     request_id: str | None = None,
     last_event_id: str | None = None,
 ) -> AsyncIterator[bytes]:
@@ -369,6 +431,15 @@ async def _event_stream_v2(
     queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
     last_slow_notice = 0.0
     try:
+        scoped_user_id = user_id
+        graph, config = await _build_graph_config(
+            thread_id=req.chat_id,
+            user_id=user_id,
+            legacy_user_id=legacy_user_id,
+            request_id=request_id,
+        )
+        scoped_user_id = _config_user_id(config, user_id)
+
         async def _enqueue_frame(frame: bytes, *, allow_slow_notice: bool = True) -> None:
             nonlocal last_slow_notice
             if queue.maxsize <= 0:
@@ -399,7 +470,7 @@ async def _event_stream_v2(
                         break
                 if queue.qsize() <= queue.maxsize - 1:
                     slow_seq = await sse_broadcast.record_event(
-                        user_id=user_id,
+                        user_id=scoped_user_id,
                         chat_id=req.chat_id,
                         event="slow_client",
                         data={"reason": "backpressure"},
@@ -413,7 +484,7 @@ async def _event_stream_v2(
 
         async def _emit_event(event_name: str, payload: Dict[str, Any]) -> None:
             seq = await sse_broadcast.record_event(
-                user_id=user_id,
+                user_id=scoped_user_id,
                 chat_id=req.chat_id,
                 event=event_name,
                 data=payload,
@@ -421,7 +492,7 @@ async def _event_stream_v2(
             frame = _format_sse(event_name, payload, event_id=str(seq))
             await _enqueue_frame(frame)
 
-        broadcast_queue = await sse_broadcast.subscribe(user_id=user_id, chat_id=req.chat_id)
+        broadcast_queue = await sse_broadcast.subscribe(user_id=scoped_user_id, chat_id=req.chat_id)
 
         async def _broadcast_forwarder() -> None:
             if broadcast_queue is None:
@@ -439,7 +510,7 @@ async def _event_stream_v2(
             except Exception:
                 logger.exception(
                     "langgraph_v2_sse_broadcast_error",
-                    extra={"chat_id": req.chat_id, "user_id": user_id},
+                    extra={"chat_id": req.chat_id, "user_id": scoped_user_id},
                 )
 
         await _enqueue_frame(f"retry: {SSE_RETRY_MS}\n\n".encode("utf-8"), allow_slow_notice=False)
@@ -447,7 +518,7 @@ async def _event_stream_v2(
         last_seq = _parse_last_event_id(last_event_id, chat_id=req.chat_id)
         if last_seq is not None:
             replay, buffer_miss = await sse_broadcast.replay_after(
-                user_id=user_id,
+                user_id=scoped_user_id,
                 chat_id=req.chat_id,
                 last_seq=last_seq,
             )
@@ -466,7 +537,6 @@ async def _event_stream_v2(
                     await _enqueue_frame(frame)
 
         broadcast_task = asyncio.create_task(_broadcast_forwarder())
-        graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id)
         snapshot = _extract_param_snapshot(req)
         snapshot_versions = _snapshot_versions(snapshot)
         if WARN_STALE_PARAM_SNAPSHOT and snapshot_versions:
@@ -488,7 +558,7 @@ async def _event_stream_v2(
                         extra={
                             "request_id": request_id,
                             "chat_id": req.chat_id,
-                            "user_id": user_id,
+                            "user_id": scoped_user_id,
                             "stale_count": stale_count,
                             "snapshot_versions_count": len(snapshot_versions),
                         },
@@ -499,7 +569,7 @@ async def _event_stream_v2(
                     extra={
                         "request_id": request_id,
                         "chat_id": req.chat_id,
-                        "user_id": user_id,
+                        "user_id": scoped_user_id,
                     },
                 )
         trace_enabled = _lg_trace_enabled()
@@ -507,7 +577,7 @@ async def _event_stream_v2(
         run_id = metadata.get("run_id") if isinstance(metadata, dict) else None
         prev_parameters: Dict[str, Any] = {}
         initial_state = SealAIState(
-            user_id=user_id,
+            user_id=scoped_user_id,
             thread_id=req.chat_id,
             messages=[HumanMessage(content=req.input)],
         )
@@ -517,6 +587,7 @@ async def _event_stream_v2(
         done_sent = False
         latest_state: SealAIState | Dict[str, Any] = initial_state
         last_trace_signature: tuple[Any, Any, Any, Any] | None = None
+        last_retrieval_signature: tuple[Any, Any] | None = None
 
         async def _emit_trace(mode: str, *, data: Any = None, meta: Any = None, state: Any = None) -> None:
             nonlocal last_trace_signature
@@ -537,13 +608,13 @@ async def _event_stream_v2(
             payload["ts"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             logger.info(
                 "langgraph_v2_trace",
-                extra={
-                    "thread_id": req.chat_id,
-                    "chat_id": req.chat_id,
-                    "user_id": user_id,
-                    "run_id": run_id,
-                    "request_id": request_id,
-                    "node": payload.get("node"),
+                    extra={
+                        "thread_id": req.chat_id,
+                        "chat_id": req.chat_id,
+                        "user_id": scoped_user_id,
+                        "run_id": run_id,
+                        "request_id": request_id,
+                        "node": payload.get("node"),
                     "event_type": payload.get("type"),
                     "phase": payload.get("phase"),
                     "supervisor_action": payload.get("action"),
@@ -553,6 +624,7 @@ async def _event_stream_v2(
 
         async def _producer() -> None:
             nonlocal emitted_any_token, latest_state, token_count, done_sent, seq, prev_parameters
+            nonlocal last_retrieval_signature
             try:
                 iterator = graph.astream(
                     initial_state,
@@ -611,6 +683,31 @@ async def _event_stream_v2(
                                 latest_state = data
                             elif isinstance(data, dict):
                                 latest_state = data
+                            retrieval_meta: Dict[str, Any] | None = None
+                            if isinstance(latest_state, SealAIState):
+                                retrieval_meta = latest_state.retrieval_meta
+                            elif isinstance(latest_state, dict):
+                                raw_meta = latest_state.get("retrieval_meta")
+                                if isinstance(raw_meta, dict):
+                                    retrieval_meta = raw_meta
+                            if isinstance(retrieval_meta, dict) and retrieval_meta:
+                                safe_meta = {
+                                    key: value
+                                    for key, value in retrieval_meta.items()
+                                    if key != "context"
+                                }
+                                event_name = (
+                                    "retrieval.skipped"
+                                    if retrieval_meta.get("skipped")
+                                    else "retrieval.results"
+                                )
+                                signature = (
+                                    event_name,
+                                    json.dumps(safe_meta, ensure_ascii=False, sort_keys=True),
+                                )
+                                if signature != last_retrieval_signature:
+                                    await _emit_event(event_name, safe_meta)
+                                    last_retrieval_signature = signature
                             payload = _build_state_update_payload(latest_state)
                             if payload:
                                 parameters = payload.get("parameters")
@@ -626,7 +723,7 @@ async def _event_stream_v2(
                                         "langgraph_v2_state_update_params",
                                         extra={
                                             "chat_id": req.chat_id,
-                                            "user_id": user_id,
+                                            "user_id": scoped_user_id,
                                             "run_id": run_id,
                                             "request_id": request_id,
                                             "last_node": payload.get("last_node"),
@@ -763,7 +860,7 @@ async def _event_stream_v2(
                         "chat_id": req.chat_id,
                         "client_msg_id": req.client_msg_id,
                         "thread_id": req.chat_id,
-                        "user_id": user_id,
+                        "user_id": scoped_user_id,
                         "supervisor_mode": os.getenv("LANGGRAPH_V2_SUPERVISOR_MODE"),
                     },
                 )
@@ -803,7 +900,7 @@ async def _event_stream_v2(
             "client_msg_id": req.client_msg_id,
         }
         seq = await sse_broadcast.record_event(
-            user_id=user_id,
+            user_id=scoped_user_id,
             chat_id=req.chat_id,
             event="done",
             data=done_payload,
@@ -818,14 +915,14 @@ async def _event_stream_v2(
                 "chat_id": req.chat_id,
                 "client_msg_id": req.client_msg_id,
                 "thread_id": req.chat_id,
-                "user_id": user_id,
+                "user_id": scoped_user_id,
                 "supervisor_mode": os.getenv("LANGGRAPH_V2_SUPERVISOR_MODE"),
             },
         )
         message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
         error_payload = {"type": "error", "message": message, "request_id": request_id}
         error_seq = await sse_broadcast.record_event(
-            user_id=user_id,
+            user_id=scoped_user_id,
             chat_id=req.chat_id,
             event="error",
             data=error_payload,
@@ -838,7 +935,7 @@ async def _event_stream_v2(
             "client_msg_id": req.client_msg_id,
         }
         done_seq = await sse_broadcast.record_event(
-            user_id=user_id,
+            user_id=scoped_user_id,
             chat_id=req.chat_id,
             event="done",
             data=done_payload,
@@ -851,7 +948,7 @@ async def _event_stream_v2(
             broadcast_task.cancel()
         if broadcast_queue is not None:
             await sse_broadcast.unsubscribe(
-                user_id=user_id,
+                user_id=scoped_user_id,
                 chat_id=req.chat_id,
                 queue=broadcast_queue,
             )
@@ -874,9 +971,11 @@ async def langgraph_chat_v2_endpoint(
             status_code=400,
             detail=error_detail("missing_param_snapshot", request_id=request_id),
         )
+    scoped_user_id = canonical_user_id(user)
+    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
-            user_id=user.sub,
+            user_id=scoped_user_id,
             chat_id=request.chat_id,
             client_msg_id=request.client_msg_id,
         )
@@ -888,6 +987,22 @@ async def langgraph_chat_v2_endpoint(
                     request_id=request_id,
                     client_msg_id=request.client_msg_id,
                 ),
+            )
+    owner_id = user.sub
+    if owner_id:
+        try:
+            upsert_conversation(
+                owner_id=owner_id,
+                conversation_id=request.chat_id,
+                first_user_message=request.input,
+                last_preview=request.input,
+                updated_at=datetime.now(timezone.utc),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist conversation metadata before streaming",
+                exc_info=exc,
+                extra={"user": owner_id, "chat_id": request.chat_id},
             )
     logger.info(
         "langgraph_v2_chat_request",
@@ -913,7 +1028,8 @@ async def langgraph_chat_v2_endpoint(
     return StreamingResponse(
         _event_stream_v2(
             request,
-            user_id=user.sub,
+            user_id=scoped_user_id,
+            legacy_user_id=legacy_user_id,
             request_id=request_id,
             last_event_id=last_event_id,
         ),
@@ -929,6 +1045,8 @@ async def confirm_go(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    scoped_user_id = canonical_user_id(user)
+    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     try:
         if not (body.chat_id or "").strip():
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
@@ -936,8 +1054,10 @@ async def confirm_go(
             raise HTTPException(status_code=400, detail=error_detail("missing_decision", request_id=request_id))
         graph, config = await _build_graph_config(
             thread_id=body.chat_id,
-            user_id=user.sub,
+            user_id=scoped_user_id,
             username=user.username,
+            legacy_user_id=legacy_user_id,
+            request_id=request_id,
         )
         snapshot = await graph.aget_state(config)
         state_values = _state_values_to_dict(snapshot.values)
@@ -964,7 +1084,7 @@ async def confirm_go(
                     status_code=403,
                     detail=error_detail("checkpoint_conversation_mismatch", request_id=request_id),
                 )
-        if required_sub and required_sub != user.sub:
+        if required_sub and required_sub != scoped_user_id:
             raise HTTPException(status_code=403, detail=error_detail("forbidden", request_id=request_id))
         checkpoint_id = state_values.get("confirm_checkpoint_id") if isinstance(state_values, dict) else None
         if body.checkpoint_id and checkpoint_id and body.checkpoint_id != checkpoint_id:
@@ -1035,6 +1155,8 @@ async def patch_parameters(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    scoped_user_id = canonical_user_id(user)
+    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     chat_id = (body.chat_id or "").strip()
     patch: Dict[str, Any] = {}
     try:
@@ -1055,8 +1177,10 @@ async def patch_parameters(
 
         graph, config = await _build_graph_config(
             thread_id=chat_id,
-            user_id=user.sub,
+            user_id=scoped_user_id,
             username=user.username,
+            legacy_user_id=legacy_user_id,
+            request_id=request_id,
         )
         assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
         snapshot = await graph.aget_state(config)
@@ -1145,7 +1269,7 @@ async def patch_parameters(
             "request_id": request_id,
         }
         await sse_broadcast.broadcast(
-            user_id=user.sub,
+            user_id=scoped_user_id,
             chat_id=chat_id,
             event="parameter_patch_ack",
             data=ack_payload,

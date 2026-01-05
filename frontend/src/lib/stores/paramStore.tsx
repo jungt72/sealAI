@@ -10,6 +10,7 @@ import {
   type ParameterMeta,
   type ParameterPatchAckPayload,
 } from "@/lib/parameterSync";
+import { isParamSyncDebug } from "@/lib/paramSyncDebug";
 
 type ParamEntry = {
   parameters: SealParameters;
@@ -71,17 +72,31 @@ const EMPTY_ENTRY: ParamEntry = {
   lastServerEventId: null,
 };
 
+const normalizeParameterPatch = (patch?: Partial<SealParameters> | null): Partial<SealParameters> => {
+  if (!patch || typeof patch !== "object") return {};
+  const normalized: Record<string, unknown> = { ...(patch as Record<string, unknown>) };
+  if (Object.prototype.hasOwnProperty.call(normalized, "pressure")) {
+    if (!Object.prototype.hasOwnProperty.call(normalized, "pressure_bar")) {
+      const value = normalized.pressure;
+      if (value !== undefined && value !== null) normalized.pressure_bar = value;
+    }
+    delete normalized.pressure;
+  }
+  return normalized as Partial<SealParameters>;
+};
+
 export function reduceParamStore(state: ParamStoreState, action: Action): ParamStoreState {
   switch (action.type) {
     case "init": {
       const { chatId, parameters, versions, updatedAt } = action.payload;
       const existing = state.byChatId[chatId];
       if (existing) return state;
+      const normalized = normalizeParameterPatch(parameters);
       return {
         byChatId: {
           ...state.byChatId,
           [chatId]: {
-            parameters: parameters ?? {},
+            parameters: normalized,
             versions: versions ?? {},
             updatedAt: updatedAt ?? {},
             dirty: new Set(),
@@ -94,11 +109,12 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
     }
     case "replace": {
       const { chatId, parameters, versions, updatedAt } = action.payload;
+      const normalized = normalizeParameterPatch(parameters);
       return {
         byChatId: {
           ...state.byChatId,
           [chatId]: {
-            parameters,
+            parameters: normalized as SealParameters,
             versions,
             updatedAt,
             dirty: new Set(),
@@ -112,12 +128,13 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
     case "optimistic": {
       const { chatId, patch } = action.payload;
       const existing = state.byChatId[chatId] ?? EMPTY_ENTRY;
+      const normalized = normalizeParameterPatch(patch);
       return {
         byChatId: {
           ...state.byChatId,
           [chatId]: {
             ...existing,
-            parameters: { ...existing.parameters, ...patch },
+            parameters: { ...existing.parameters, ...normalized },
           },
         },
       };
@@ -125,10 +142,11 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
     case "apply_local": {
       const { chatId, patch, markDirty, clearDirty } = action.payload;
       const existing = state.byChatId[chatId] ?? EMPTY_ENTRY;
+      const normalized = normalizeParameterPatch(patch);
       const nextDirty = new Set(existing.dirty);
       const nextPending = new Set(existing.pending);
       const nextApplied = { ...existing.applied };
-      const keys = Object.keys(patch) as (keyof SealParameters)[];
+      const keys = Object.keys(normalized) as (keyof SealParameters)[];
       if (markDirty) {
         for (const key of keys) {
           nextDirty.add(key);
@@ -148,7 +166,7 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
           ...state.byChatId,
           [chatId]: {
             ...existing,
-            parameters: { ...existing.parameters, ...patch },
+            parameters: { ...existing.parameters, ...normalized },
             dirty: nextDirty,
             pending: nextPending,
             applied: nextApplied,
@@ -159,8 +177,19 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
     case "apply_delta": {
       const { chatId, incoming, meta, eventId } = action.payload;
       const existing = state.byChatId[chatId] ?? EMPTY_ENTRY;
+      const normalized = normalizeParameterPatch(incoming);
+      if (isParamSyncDebug()) {
+        console.log("[param-sync] apply_delta", {
+          chat_id: chatId,
+          event_id: eventId ?? null,
+          incoming_keys: Object.keys(normalized || {}),
+          dirty_keys: Array.from(existing.dirty),
+          pending_keys: Array.from(existing.pending),
+          meta_keys: meta ? Object.keys(meta) : [],
+        });
+      }
       const currentValues = existing.parameters ?? {};
-      const nextDirty = reconcileDirtyWithServer(currentValues, incoming, existing.dirty, existing.pending);
+      const nextDirty = reconcileDirtyWithServer(currentValues, normalized, existing.dirty, existing.pending);
       const nextPending = new Set(existing.pending);
       const forceOverwriteKeys = new Set<keyof SealParameters>();
       if (meta) {
@@ -173,8 +202,8 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
           }
         }
       }
-      const merged = mergeServerParameters(currentValues, incoming, nextDirty, meta);
-      const appliedKeys = computeAppliedKeys(currentValues, incoming, existing.dirty);
+      const merged = mergeServerParameters(currentValues, normalized, nextDirty, meta);
+      const appliedKeys = computeAppliedKeys(currentValues, normalized, existing.dirty);
       const nextApplied: Partial<Record<keyof SealParameters, number>> = {
         ...existing.applied,
       };
@@ -192,6 +221,17 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
       }
       for (const key of forceOverwriteKeys) {
         delete nextApplied[key];
+      }
+      if (isParamSyncDebug()) {
+        console.log("[param-sync] apply_delta_result", {
+          chat_id: chatId,
+          event_id: eventId ?? null,
+          incoming_keys_count: Object.keys(normalized || {}).length,
+          dirty_keys: Array.from(nextDirty),
+          pending_keys: Array.from(nextPending),
+          applied_keys: Array.from(appliedKeys),
+          force_overwrite_keys: Array.from(forceOverwriteKeys),
+        });
       }
       return {
         byChatId: {
@@ -211,6 +251,7 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
       const { chatId, ack } = action.payload;
       const existing = state.byChatId[chatId] ?? EMPTY_ENTRY;
       const result = applyParameterPatchAck(existing.parameters, existing.versions, ack);
+      const normalizedValues = normalizeParameterPatch(result.values);
       const nextUpdatedAt = { ...existing.updatedAt };
       const nextDirty = new Set(existing.dirty);
       const nextPending = new Set(existing.pending);
@@ -237,7 +278,7 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
         byChatId: {
           ...state.byChatId,
           [chatId]: {
-            parameters: result.values,
+            parameters: normalizedValues as SealParameters,
             versions: result.versions,
             updatedAt: nextUpdatedAt,
             dirty: nextDirty,

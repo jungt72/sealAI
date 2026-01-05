@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { ChatMeta } from "@/types/chatMeta";
+import type { ChatMeta, RagSource } from "@/types/chatMeta";
 
 type QualityMetaPanelProps = {
   meta: ChatMeta | null | undefined;
@@ -72,12 +72,32 @@ export default function QualityMetaPanel({ meta }: QualityMetaPanelProps) {
   const qualityConfidence = formatPercent(meta?.quality?.confidence);
   const routingConfidence = formatPercent(meta?.routing?.confidence);
 
-  const ragSources = Array.isArray(meta?.ragSources)
-    ? meta.ragSources.filter(
-        (source): source is string =>
-          typeof source === "string" && source.trim().length > 0,
-      )
-    : [];
+  const ragSources = Array.isArray(meta?.ragSources) ? meta.ragSources : [];
+  const normalizedSources = ragSources
+    .map((source): RagSource | null => {
+      if (!source) return null;
+      if (typeof source === "string") {
+        const label = source.trim();
+        if (!label) return null;
+        return { document_id: label, source: label };
+      }
+      if (typeof source !== "object") return null;
+      const raw = source as RagSource;
+      const documentId =
+        typeof raw.document_id === "string" && raw.document_id.trim()
+          ? raw.document_id.trim()
+          : "";
+      return {
+        document_id: documentId,
+        sha256: typeof raw.sha256 === "string" ? raw.sha256 : null,
+        filename: typeof raw.filename === "string" ? raw.filename : null,
+        page: typeof raw.page === "number" ? raw.page : null,
+        section: typeof raw.section === "string" ? raw.section : null,
+        score: typeof raw.score === "number" ? raw.score : null,
+        source: typeof raw.source === "string" ? raw.source : null,
+      };
+    })
+    .filter((source): source is RagSource => Boolean(source));
 
   const contributors = Array.isArray(meta?.contributors)
     ? meta.contributors.filter((entry) => Boolean(entry?.agent))
@@ -119,7 +139,7 @@ export default function QualityMetaPanel({ meta }: QualityMetaPanelProps) {
     Boolean(critique.bullets.length || critique.plain) ||
     Boolean(improvedAnswer) ||
     Boolean(routingConfidence || meta.routing?.domain) ||
-    ragSources.length > 0 ||
+    normalizedSources.length > 0 ||
     contributors.length > 0 ||
     hasWarmup;
 
@@ -241,16 +261,40 @@ export default function QualityMetaPanel({ meta }: QualityMetaPanelProps) {
           </div>
         ) : null}
 
-        {ragSources.length > 0 ? (
+        {normalizedSources.length > 0 ? (
           <div className="mt-4 border-t border-gray-100 pt-4">
             <SectionHeader title="Quellen" />
-            <div className="mt-2 flex flex-wrap gap-2">
-              {ragSources.slice(0, 3).map((source, idx) => (
-                <Pill key={`source-${idx}`}>{source}</Pill>
-              ))}
-              {ragSources.length > 3 ? (
+            <div className="mt-2 space-y-2 text-xs text-gray-700">
+              {normalizedSources.slice(0, 6).map((source, idx) => {
+                const label =
+                  (source.filename && source.filename.trim()) ||
+                  (source.document_id && source.document_id.trim()) ||
+                  "Quelle";
+                const details = [
+                  source.section ? `Abschnitt: ${source.section}` : null,
+                  typeof source.page === "number" ? `Seite ${source.page}` : null,
+                  typeof source.score === "number" ? `Score ${source.score.toFixed(2)}` : null,
+                  source.source ? `Quelle: ${source.source}` : null,
+                ].filter(Boolean);
+                return (
+                  <div
+                    key={`source-${idx}`}
+                    className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2"
+                  >
+                    <div className="font-semibold text-gray-800">{label}</div>
+                    {details.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gray-500">
+                        {details.map((detail, detailIdx) => (
+                          <span key={`detail-${idx}-${detailIdx}`}>{detail}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {normalizedSources.length > 6 ? (
                 <span className="text-xs text-gray-500">
-                  +{ragSources.length - 3} weitere
+                  +{normalizedSources.length - 6} weitere
                 </span>
               ) : null}
             </div>

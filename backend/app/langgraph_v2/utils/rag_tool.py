@@ -39,32 +39,44 @@ def search_knowledge_base(
         k: Trefferanzahl (default 5)
         tenant: Optionaler Tenant (wird als Payload-Filter genutzt)
     """
-    filters = {"category": category} if category else {}
-    if tenant:
-        filters["tenant_id"] = tenant
-    if not filters:
-        filters = None
+    if not tenant:
+        raise ValueError("missing tenant_id for RAG retrieval")
+    filters = {"tenant_id": tenant}
+    if category:
+        filters["category"] = category
 
     try:
-        results = hybrid_retrieve(
+        results, metrics = hybrid_retrieve(
             query=query,
             k=k,
             metadata_filters=filters,
             use_rerank=True,
             tenant=tenant,
+            return_metrics=True,
         )
     except Exception as exc:
         logger.error("RAG retrieval failed: %s", exc)
         return f"Fehler beim Abrufen der Wissensdatenbank: {exc}"
 
+    retrieval_meta = dict(metrics or {})
+    retrieval_meta["tenant_id"] = tenant
+    if category:
+        retrieval_meta["category"] = category
+
     if not results:
-        return "Keine relevanten Informationen in der Wissensdatenbank gefunden."
+        return {
+            "context": "Keine relevanten Informationen in der Wissensdatenbank gefunden.",
+            "retrieval_meta": retrieval_meta,
+        }
 
     output = ["**Gefundene Informationen aus der Wissensdatenbank:**"]
     for hit in results:
         output.append(_format_hit(hit))
 
-    return "\n".join(output)
+    return {
+        "context": "\n".join(output),
+        "retrieval_meta": retrieval_meta,
+    }
 
 
 __all__ = ["search_knowledge_base"]

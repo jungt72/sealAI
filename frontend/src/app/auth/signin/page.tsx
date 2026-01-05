@@ -1,16 +1,7 @@
-'use client';
+import SignInClient from "./SignInClient";
 
-import { signIn } from 'next-auth/react';
+type SearchParams = { callbackUrl?: string; provider?: string };
 
-export default function SignIn() {
-  return (
-    <div className="flex items-center justify-center min-h-[50vh]">
-      <button
-        onClick={() => signIn('keycloak', { callbackUrl: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/chat` })}
-        className="px-6 py-3 rounded bg-blue-600 text-white hover:bg-blue-700"
-      >
-        Sign in with Keycloak
-      </button>
-    </div>
-  );
+export default function SignIn({ searchParams }: { searchParams?: SearchParams }) {
+  return <SignInClient callbackUrl={searchParams?.callbackUrl} provider={searchParams?.provider} />;
 }
