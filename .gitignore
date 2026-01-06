@@ -83,3 +83,8 @@ code_dump_*.txt
 *.log
 *.env
 .env.*
+
+# editor swap files
+*.swp
+*.swo
+*.swx
