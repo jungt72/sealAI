@@ -105,7 +105,7 @@
   color: var(--md-fg-strong);
 }
 
-/* Lists: top-level compact bullets, nested level as indented "–" dashes */
+/* Lists: top-level compact bullets, nested level as indented "-" dashes */
 .chat-markdown ul,
 .markdown-content ul,
 .markdown-body ul,
@@ -122,7 +122,7 @@
   margin: 0.18rem 0;
 }
 
-/* Nested UL one level deeper → dash style with extra indent */
+/* Nested UL one level deeper -> dash style with extra indent */
 .chat-markdown ul ul,
 .markdown-content ul ul,
 .markdown-body ul ul{
@@ -139,7 +139,7 @@
 .chat-markdown ul ul > li::before,
 .markdown-content ul ul > li::before,
 .markdown-body ul ul > li::before{
-  content: "–";
+  content: "-";
   position: absolute;
   left: 0;
   top: 0;
@@ -258,7 +258,7 @@
   box-shadow: none !important;
   color: #1f2937;        /* slate-800 */
   font-weight: 500;
-  /* sanfte Prägung: Licht von oben, Mini-Schatten unten */
+  /* sanfte Praegung: Licht von oben, Mini-Schatten unten */
   text-shadow:
     0 1px 0 rgba(255,255,255,0.92),
     0 -1px 0 rgba(0,0,0,0.03);

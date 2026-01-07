@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Check, X } from "lucide-react";
 import type { SealParameters } from "@/lib/types/sealParameters";
 import type { ConfirmCheckpointPayload } from "@/lib/useChatSseV2";
@@ -9,10 +9,11 @@ interface ParameterFormSidebarProps {
   show: boolean;
   parameters: SealParameters;
   currentState?: Record<string, unknown> | null;
-  dirtyKeys?: Set<keyof SealParameters>;
-  pendingKeys?: Set<keyof SealParameters>;
-  appliedMap?: Partial<Record<keyof SealParameters, number>>;
-  onUpdate: (name: keyof SealParameters, value: string | number) => void;
+  onFieldChange: (
+    name: keyof SealParameters,
+    value: string | number,
+    opts: { hasOptions: boolean; type?: FormField["type"] },
+  ) => void;
   onSubmit: () => void;
   onClose: () => void;
   activeCheckpoint?: ConfirmCheckpointPayload | null;
@@ -105,13 +106,23 @@ function coerceNumberLike(raw: string): number | "" {
   return Number.isFinite(n) ? n : "";
 }
 
+function buildFieldValues(source?: SealParameters): Record<string, string> {
+  const values: Record<string, string> = {};
+  const base = source ?? {};
+  for (const section of FORM_SECTIONS) {
+    for (const field of section.fields) {
+      const rawValue = base[field.name];
+      values[field.name] = rawValue !== undefined && rawValue !== null ? String(rawValue) : "";
+    }
+  }
+  return values;
+}
+
 export default function ParameterFormSidebar({
   show,
   parameters,
-  dirtyKeys,
-  pendingKeys,
-  appliedMap,
-  onUpdate,
+  currentState,
+  onFieldChange,
   onSubmit,
   onClose,
   activeCheckpoint,
@@ -123,12 +134,7 @@ export default function ParameterFormSidebar({
 }: ParameterFormSidebarProps) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const paramSyncDebug = process.env.NEXT_PUBLIC_PARAM_SYNC_DEBUG === "1";
-
-  const resolvedDirtyKeys = useMemo(() => dirtyKeys ?? new Set<keyof SealParameters>(), [dirtyKeys]);
-  const resolvedPendingKeys = useMemo(() => pendingKeys ?? new Set<keyof SealParameters>(), [pendingKeys]);
-  const resolvedAppliedMap = appliedMap ?? {};
-  const dirtyCount = resolvedDirtyKeys.size;
-  const pendingCount = resolvedPendingKeys.size;
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => buildFieldValues(parameters));
 
   useEffect(() => {
     if (!show || !paramSyncDebug) return;
@@ -141,6 +147,20 @@ export default function ParameterFormSidebar({
       pressure_bar_type: typeof pressureValue,
     });
   }, [parameters, paramSyncDebug, show]);
+
+  useEffect(() => {
+    const serverParameters =
+      currentState?.parameters && typeof currentState.parameters === "object"
+        ? (currentState.parameters as SealParameters)
+        : undefined;
+    if (!serverParameters) return;
+    setFieldValues(buildFieldValues(serverParameters));
+  }, [currentState?.parameters]);
+
+  useEffect(() => {
+    if (currentState?.parameters && typeof currentState.parameters === "object") return;
+    setFieldValues(buildFieldValues(parameters));
+  }, [currentState?.parameters, parameters]);
 
   if (!show) return null;
 
@@ -157,12 +177,15 @@ export default function ParameterFormSidebar({
   };
 
   const handleFieldChange = (field: FormField, rawValue: string) => {
-    if (field.type === "number") {
-      const coerced = coerceNumberLike(rawValue);
-      onUpdate(field.name, coerced === "" ? "" : coerced);
-      return;
-    }
-    onUpdate(field.name, rawValue);
+    const value = field.type === "number" ? coerceNumberLike(rawValue) : rawValue;
+    setFieldValues((prev) => ({
+      ...prev,
+      [field.name]: value === "" ? "" : String(value),
+    }));
+    onFieldChange(field.name, value, {
+      hasOptions: Boolean(field.options && field.options.length),
+      type: field.type,
+    });
   };
 
   return (
@@ -249,42 +272,23 @@ export default function ParameterFormSidebar({
                 <div className="p-3 grid grid-cols-2 gap-3 animate-in slide-in-from-top-2 duration-200">
                   {section.fields.map((field) => {
                     const inputId = `param-${String(field.name)}`;
-                    const fieldValue = parameters[field.name];
-                    const displayValue = fieldValue !== undefined && fieldValue !== null ? String(fieldValue) : "";
-                    const isDirty = resolvedDirtyKeys.has(field.name);
-                    const isPending = resolvedPendingKeys.has(field.name);
-                    const isApplied = Boolean(resolvedAppliedMap[field.name]) && !isDirty && !isPending;
+                    const displayValue = fieldValues[field.name] ?? "";
 
                     return (
                       <div className="form-group flex flex-col gap-1.5" key={inputId}>
                         <label
                           htmlFor={inputId}
-                          className="text-xs text-white/70 font-medium truncate flex items-center gap-1.5"
+                          className="text-xs text-white/70 font-medium truncate"
                           title={field.label}
                         >
                           <span className="truncate">{field.label}</span>
-                          {isPending ? (
-                            <span
-                              className="inline-block h-2 w-2 rounded-full border border-white/40 border-t-transparent animate-spin"
-                              title="Wird übernommen..."
-                              aria-label="Wird übernommen..."
-                            />
-                          ) : isDirty ? (
-                            <span
-                              className="inline-block h-2 w-2 rounded-full bg-amber-400"
-                              title="Änderung noch nicht übernommen"
-                              aria-label="Änderung noch nicht übernommen"
-                            />
-                          ) : isApplied ? (
-                            <Check className="h-3 w-3 text-emerald-400" title="Übernommen" aria-label="Übernommen" />
-                          ) : null}
                         </label>
 
                         {field.options && field.options.length ? (
                           <select
                             id={inputId}
-                            value={displayValue as string}
-                            onChange={(e) => onUpdate(field.name, e.target.value)}
+                            value={displayValue}
+                            onChange={(e) => handleFieldChange(field, e.target.value)}
                             className="h-9 w-full rounded bg-white/5 border border-white/10 px-2 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-white/20"
                           >
                             <option value="" className="bg-[#1E1E2D]">
@@ -320,16 +324,8 @@ export default function ParameterFormSidebar({
         <div className="sticky bottom-0 bg-[#14141e] pt-2 pb-2 z-10">
           <button
             type="submit"
-            disabled={dirtyCount === 0 || pendingCount > 0}
-            className={[
-              "w-full flex items-center justify-center gap-2 font-medium py-3 rounded-lg shadow-lg transition-all active:scale-[0.98]",
-              dirtyCount === 0 || pendingCount > 0
-                ? "bg-indigo-500/40 text-white/60 cursor-not-allowed shadow-none"
-                : "bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-indigo-500/25",
-            ].join(" ")}
-            title={
-              dirtyCount === 0 ? "Keine Änderungen" : pendingCount > 0 ? "Änderungen werden übernommen" : "Parameter übernehmen"
-            }
+            className="w-full flex items-center justify-center gap-2 font-medium py-3 rounded-lg shadow-lg transition-all active:scale-[0.98] bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-indigo-500/25"
+            title="Parameter übernehmen"
           >
             <Check className="w-4 h-4" />
             Parameter übernehmen

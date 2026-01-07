@@ -3,7 +3,6 @@
 import React, { ReactNode, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import '@/styles/chat-markdown.css';
 import Image from 'next/image';
 
 function CodeBlock({

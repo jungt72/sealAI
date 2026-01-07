@@ -94,6 +94,85 @@ def test_param_patch_merges_existing_parameters(monkeypatch):
     assert state_response["parameters"]["pressure_bar"] == 10
 
 
+def test_latest_write_patch_then_chat_wins(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
+
+    chat_id = "chat-param-latest-1"
+    user_id = "user-param-latest-1"
+    request = _request()
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
+
+    first_patch = ParametersPatchRequest(
+        chat_id=chat_id,
+        parameters={"pressure_bar": 5},
+    )
+    asyncio.run(endpoint.patch_parameters(first_patch, request, user=user))
+
+    graph, config = asyncio.run(endpoint._build_graph_config(thread_id=chat_id, user_id=user.user_id))
+    asyncio.run(
+        graph.aupdate_state(
+            config,
+            {"parameters": {"pressure_bar": 7}},
+            as_node=endpoint.PARAMETERS_PATCH_AS_NODE,
+        ),
+    )
+
+    state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, user=user))
+    assert state_response["parameters"]["pressure_bar"] == 7
+
+
+def test_latest_write_chat_then_patch_wins(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
+
+    chat_id = "chat-param-latest-2"
+    user_id = "user-param-latest-2"
+    request = _request()
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
+
+    graph, config = asyncio.run(endpoint._build_graph_config(thread_id=chat_id, user_id=user.user_id))
+    asyncio.run(
+        graph.aupdate_state(
+            config,
+            {"parameters": {"pressure_bar": 7}},
+            as_node=endpoint.PARAMETERS_PATCH_AS_NODE,
+        ),
+    )
+
+    aliased_patch = ParametersPatchRequest(
+        chat_id=chat_id,
+        parameters={"pressure": 5},
+    )
+    asyncio.run(endpoint.patch_parameters(aliased_patch, request, user=user))
+
+    state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, user=user))
+    assert state_response["parameters"]["pressure_bar"] == 5
+
+
+def test_pressure_alias_overwrites_existing_value(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
+
+    chat_id = "chat-param-alias-override"
+    user_id = "user-param-alias-override"
+    request = _request()
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
+
+    first_patch = ParametersPatchRequest(
+        chat_id=chat_id,
+        parameters={"pressure_bar": 3},
+    )
+    asyncio.run(endpoint.patch_parameters(first_patch, request, user=user))
+
+    alias_patch = ParametersPatchRequest(
+        chat_id=chat_id,
+        parameters={"pressure": 6},
+    )
+    asyncio.run(endpoint.patch_parameters(alias_patch, request, user=user))
+
+    state_response = asyncio.run(state_endpoint.get_state(request, thread_id=chat_id, user=user))
+    assert state_response["parameters"]["pressure_bar"] == 6
 def test_state_falls_back_to_legacy_thread(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")

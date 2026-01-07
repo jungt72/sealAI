@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: 'class',
+  darkMode: ['class'],
   content: [
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -8,26 +8,71 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        // OpenAI-Hausschrift, Fallback auf SystemSans
         sans: ['Söhne', 'Inter', 'ui-sans-serif', 'system-ui'],
       },
       colors: {
-        // Chat-Hintergrund
-        chatBg: '#FFFFFF',           // Main chat area
-        userBg: '#FFFFFF',           // User bubble
-        assistantBg: '#F7F7F8',      // Assistant bubble
-        inputBorder: '#D1D5DB',      // Input-Feld-Rand
-        inputFocus: '#10B981',       // Input-Fokusring (emerald-500)
+        chatBg: '#FFFFFF',
+        userBg: '#FFFFFF',
+        assistantBg: '#F7F7F8',
+        inputBorder: '#D1D5DB',
+        inputFocus: '#10B981',
+
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+
+        chart: {
+          '1': 'hsl(var(--chart-1))',
+          '2': 'hsl(var(--chart-2))',
+          '3': 'hsl(var(--chart-3))',
+          '4': 'hsl(var(--chart-4))',
+          '5': 'hsl(var(--chart-5))',
+        },
       },
       borderRadius: {
-        md: '6px',  // für Message-Bubbles
-        lg: '8px',  // für Input-Feld
+        md: 'calc(var(--radius) - 2px)',
+        lg: 'var(--radius)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       fontSize: {
-        base: ['16px', '24px'],            // Fließtext
-        'xl-title': ['20px', '1.75'],      // Header im Chat
-        sm: ['12px', '18px'],              // Kleintexte
+        base: ['16px', '24px'],
+        'xl-title': ['20px', '1.75'],
+        sm: ['12px', '18px'],
       },
+
+      // FIX: muss echte Funktion sein, kein String
       typography: (theme) => ({
         DEFAULT: {
           css: {
@@ -66,5 +111,8 @@ module.exports = {
       }),
     },
   },
-  plugins: [require('@tailwindcss/typography')],
+  plugins: [
+    require('@tailwindcss/typography'),
+    require('tailwindcss-animate'),
+  ],
 }

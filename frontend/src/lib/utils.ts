@@ -1,29 +1,33 @@
-// 📁 frontend/app/lib/utils.ts
-export function cn(...classes: (string | false | null | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+/**
+ * shadcn/ui helper
+ */
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
 }
 
-const LOCALHOST_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+/**
+ * Default callback URL used across auth entrypoints.
+ * Keep it relative so it works behind reverse proxies and on different origins.
+ */
 export const DEFAULT_CALLBACK_URL = "/dashboard";
 
-export function toRelativeCallbackUrl(
-  value: string,
-  baseOrigin?: string,
-  fallbackPath = DEFAULT_CALLBACK_URL,
-): string {
-  if (!value) return fallbackPath;
-  if (value.startsWith("//")) return fallbackPath;
-  if (value.startsWith("/")) return value;
+/**
+ * Normalize a callbackUrl to a safe relative URL.
+ * - Accepts absolute URLs and strips origin
+ * - Accepts relative URLs starting with "/"
+ * - Falls back to DEFAULT_CALLBACK_URL for anything else
+ */
+export function toRelativeCallbackUrl(input?: string | null): string {
+  if (!input) return DEFAULT_CALLBACK_URL;
+
   try {
-    const url = new URL(value);
-    if (LOCALHOST_HOSTS.has(url.hostname)) return fallbackPath;
-    const resolvedBase =
-      baseOrigin || (typeof window !== "undefined" ? window.location.origin : "");
-    if (!resolvedBase) return fallbackPath;
-    const base = new URL(resolvedBase);
-    if (url.origin !== base.origin) return fallbackPath;
-    return `${url.pathname}${url.search}${url.hash}`;
+    const u = new URL(input);
+    const rel = `${u.pathname}${u.search}${u.hash}`;
+    return rel.startsWith("/") ? rel : DEFAULT_CALLBACK_URL;
   } catch {
-    return fallbackPath;
+    return input.startsWith("/") ? input : DEFAULT_CALLBACK_URL;
   }
 }

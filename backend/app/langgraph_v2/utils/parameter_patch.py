@@ -8,17 +8,19 @@ from pydantic import BaseModel, Field
 from app.langgraph_v2.state import TechnicalParameters
 
 
-def _build_allowed_keys() -> set[str]:
+def _build_allowed_keys() -> tuple[set[str], Dict[str, str]]:
     keys: set[str] = set()
+    alias_map: Dict[str, str] = {}
     for name, field in TechnicalParameters.model_fields.items():
         keys.add(name)
         alias = getattr(field, "alias", None)
         if isinstance(alias, str) and alias:
             keys.add(alias)
-    return keys
+            alias_map[alias] = name
+    return keys, alias_map
 
 
-ALLOWED_V2_PARAMETER_KEYS = _build_allowed_keys()
+ALLOWED_V2_PARAMETER_KEYS, ALIAS_TO_CANONICAL = _build_allowed_keys()
 
 
 class ParametersPatchRequest(BaseModel):
@@ -43,7 +45,8 @@ def sanitize_v2_parameter_patch(patch: Mapping[str, Any]) -> Dict[str, Any]:
             continue
         if isinstance(value, str) and not value.strip():
             continue
-        sanitized[key] = value
+        canonical = ALIAS_TO_CANONICAL.get(key, key)
+        sanitized[canonical] = value
     return sanitized
 
 

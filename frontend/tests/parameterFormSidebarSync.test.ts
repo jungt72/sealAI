@@ -6,12 +6,13 @@ import { act, create } from "react-test-renderer";
 import ParameterFormSidebar from "../src/app/dashboard/components/Chat/ParameterFormSidebar";
 import type { SealParameters } from "../src/lib/types/sealParameters";
 
-const renderSidebar = (parameters: SealParameters) =>
+const renderSidebar = (parameters: SealParameters, currentState?: { parameters: SealParameters }) =>
   renderToStaticMarkup(
     React.createElement(ParameterFormSidebar, {
       show: true,
       parameters,
-      onUpdate: () => undefined,
+      currentState,
+      onFieldChange: () => undefined,
       onSubmit: () => undefined,
       onClose: () => undefined,
     }),
@@ -19,18 +20,19 @@ const renderSidebar = (parameters: SealParameters) =>
 
 describe("ParameterFormSidebar server-driven updates", () => {
   it("reflects updated pressure_bar values in the rendered input", () => {
-    const htmlInitial = renderSidebar({ pressure_bar: 10 });
+    const htmlInitial = renderSidebar({}, { parameters: { pressure_bar: 10 } as SealParameters });
     expect(htmlInitial).toContain('id="param-pressure_bar"');
     expect(htmlInitial).toContain('value="10"');
 
-    const htmlUpdated = renderSidebar({ pressure_bar: 7 });
+    const htmlUpdated = renderSidebar({}, { parameters: { pressure_bar: 7 } as SealParameters });
     expect(htmlUpdated).toContain('value="7"');
   });
 
   it("keeps hook order stable when toggling visibility", () => {
     const baseProps = {
       parameters: {} as SealParameters,
-      onUpdate: () => undefined,
+      currentState: { parameters: {} as SealParameters },
+      onFieldChange: () => undefined,
       onSubmit: () => undefined,
       onClose: () => undefined,
     };
@@ -48,7 +50,7 @@ describe("ParameterFormSidebar server-driven updates", () => {
         React.createElement(ParameterFormSidebar, {
           ...baseProps,
           show: true,
-          parameters: { pressure_bar: 10 } as SealParameters,
+          currentState: { parameters: { pressure_bar: 10 } as SealParameters },
         }),
       );
     });

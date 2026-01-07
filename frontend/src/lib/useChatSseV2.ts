@@ -355,12 +355,11 @@ export function useChatSseV2({
     }, delay);
   }, [chatId, clearRetryTimer, retryMax]);
 
-  const internalSend = useCallback(
-    async (
-      input: string,
-      metadata?: Record<string, unknown>,
-      isRetry?: boolean,
-    ) => {
+  const internalSend = async (
+    input: string,
+    metadata?: Record<string, unknown>,
+    isRetry?: boolean,
+  ) => {
       if (!endpointUrl) return;
       if (!chatId) return;
       generationRef.current += 1;
@@ -674,41 +673,24 @@ export function useChatSseV2({
         setStreaming(false);
         abortRef.current = null;
       }
-    },
-    [
-      abortStream,
-      chatId,
-      endpointUrl,
-      onAuthExpired,
-      onDone,
-      onStart,
-      onToken,
-      onStateDelta,
-      onRetrievalMeta,
-      refreshAccessToken,
-      getClientContext,
-      resetRetry,
-      scheduleRetry,
-      token,
-    ],
-  );
+    };
 
   const send = useCallback(
     (input: string, metadata?: Record<string, unknown>) => {
-      internalSend(input, metadata, false);
+      internalSendRef.current?.(input, metadata, false);
     },
-    [internalSend],
+    [],
   );
 
   useEffect(() => {
     internalSendRef.current = internalSend;
-  }, [internalSend]);
+  });
 
   const retryNow = useCallback(() => {
     if (!lastRequestRef.current) return;
     resetRetry();
-    internalSend(lastRequestRef.current.input, lastRequestRef.current.metadata, true);
-  }, [internalSend, resetRetry]);
+    internalSendRef.current?.(lastRequestRef.current.input, lastRequestRef.current.metadata, true);
+  }, [resetRetry]);
 
   return {
     connected,

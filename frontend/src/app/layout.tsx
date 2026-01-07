@@ -2,6 +2,7 @@
 import Providers from './providers'
 import type { ReactNode } from 'react'
 import '../styles/globals.css'
+import '../styles/chat-markdown.css'
 import SiteBackground from '../components/SiteBackground'
 
 export default function RootLayout({ children }: { children: ReactNode }) {

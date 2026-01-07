@@ -1,6 +1,8 @@
 // frontend/src/app/dashboard/components/Sidebar/Sidebar.tsx
 
 "use client";
+
+import Image from "next/image";
 interface SidebarProps {
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -29,7 +31,13 @@ export default function Sidebar({
       {open && (
         <>
           <div className="flex items-center space-x-2 pl-6 pt-6">
-            <img src="/logo_sai.svg" alt="SealAI Logo" className="h-8 w-auto" />
+            <Image
+              src="/logo_sai.svg"
+              alt="SealAI Logo"
+              width={128}
+              height={32}
+              className="h-8 w-auto"
+            />
             <span className="text-2xl font-semibold text-gray-700">SealAI</span>
           </div>
 

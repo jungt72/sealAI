@@ -43,6 +43,7 @@ type ReplacePayload = {
 type Action =
   | { type: "init"; payload: InitPayload }
   | { type: "replace"; payload: ReplacePayload }
+  | { type: "apply_server_params"; payload: { chatId: string; parameters: Partial<SealParameters>; eventId?: string | null } }
   | { type: "apply_patch"; payload: { chatId: string; ack: ParameterPatchAckPayload } }
   | { type: "optimistic"; payload: { chatId: string; patch: Partial<SealParameters> } }
   | {
@@ -76,9 +77,9 @@ const normalizeParameterPatch = (patch?: Partial<SealParameters> | null): Partia
   if (!patch || typeof patch !== "object") return {};
   const normalized: Record<string, unknown> = { ...(patch as Record<string, unknown>) };
   if (Object.prototype.hasOwnProperty.call(normalized, "pressure")) {
-    if (!Object.prototype.hasOwnProperty.call(normalized, "pressure_bar")) {
-      const value = normalized.pressure;
-      if (value !== undefined && value !== null) normalized.pressure_bar = value;
+    const value = normalized.pressure;
+    if (value !== undefined && value !== null) {
+      normalized.pressure_bar = value;
     }
     delete normalized.pressure;
   }
@@ -121,6 +122,42 @@ export function reduceParamStore(state: ParamStoreState, action: Action): ParamS
             pending: new Set(),
             applied: {},
             lastServerEventId: null,
+          },
+        },
+      };
+    }
+    case "apply_server_params": {
+      const { chatId, parameters, eventId } = action.payload;
+      if (!parameters || typeof parameters !== "object") return state;
+      const existing = state.byChatId[chatId] ?? EMPTY_ENTRY;
+      const normalized = normalizeParameterPatch(parameters);
+      if (!Object.keys(normalized).length) {
+        return {
+          ...state,
+          byChatId: {
+            ...state.byChatId,
+            [chatId]: {
+              ...existing,
+              lastServerEventId: eventId ?? existing.lastServerEventId ?? null,
+            },
+          },
+        };
+      }
+      const nextDirty = new Set(existing.dirty);
+      const nextPending = new Set(existing.pending);
+      for (const key of Object.keys(normalized) as (keyof SealParameters)[]) {
+        nextDirty.delete(key);
+        nextPending.delete(key);
+      }
+      return {
+        byChatId: {
+          ...state.byChatId,
+          [chatId]: {
+            ...existing,
+            parameters: { ...existing.parameters, ...normalized },
+            dirty: nextDirty,
+            pending: nextPending,
+            lastServerEventId: eventId ?? existing.lastServerEventId ?? null,
           },
         },
       };
@@ -417,6 +454,15 @@ export function useParamStore(chatId?: string | null) {
     [ctx],
   );
 
+  const applyServerParams = useCallback(
+    (chatIdValue: string, params: Partial<SealParameters>, eventId?: string | null) =>
+      ctx.dispatch({
+        type: "apply_server_params",
+        payload: { chatId: chatIdValue, parameters: params, eventId },
+      }),
+    [ctx],
+  );
+
   const markPending = useCallback(
     (chatIdValue: string, keys: Set<keyof SealParameters>) =>
       ctx.dispatch({ type: "set_pending", payload: { chatId: chatIdValue, keys } }),
@@ -453,5 +499,6 @@ export function useParamStore(chatId?: string | null) {
     markPending,
     clearPending,
     pruneApplied,
+    applyServerParams,
   };
 }

@@ -46,7 +46,7 @@ const cls = (isFilled: boolean) =>
   ].join(" ");
 
 function FormInner({
-  form, setForm, missing, patch, submitAll, clearAll, containerRef
+  form, setForm, missing, patch, submitAll, clearAll
 }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
@@ -54,7 +54,6 @@ function FormInner({
   patch: (k: keyof FormState, v: any) => void;
   submitAll: () => void;
   clearAll: () => void;
-  containerRef: React.RefObject<HTMLDivElement>;
 }) {
   return (
     <>
@@ -247,7 +246,7 @@ export default function SidebarForm({ embedded = false }: Props) {
       <div className="p-2" ref={containerRef}>
         <FormInner
           form={form} setForm={setForm} missing={missing}
-          patch={patch} submitAll={submitAll} clearAll={clearAll} containerRef={containerRef}
+          patch={patch} submitAll={submitAll} clearAll={clearAll}
         />
       </div>
     );
@@ -272,7 +271,7 @@ export default function SidebarForm({ embedded = false }: Props) {
         <div className="p-4 overflow-y-auto h-[calc(100%-56px)]" ref={containerRef}>
           <FormInner
             form={form} setForm={setForm} missing={missing}
-            patch={patch} submitAll={submitAll} clearAll={clearAll} containerRef={containerRef}
+            patch={patch} submitAll={submitAll} clearAll={clearAll}
           />
         </div>
       </div>
