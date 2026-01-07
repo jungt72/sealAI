@@ -88,3 +88,6 @@ code_dump_*.txt
 *.swp
 *.swo
 *.swx
+
+# runtime data
+/data/
