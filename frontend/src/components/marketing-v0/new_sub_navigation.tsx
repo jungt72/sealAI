@@ -58,9 +58,9 @@ export function SubNavigation() {
     }, []);
 
     return (
-        <div className="sticky top-[64px] z-30 bg-white">
+        <div className="sticky top-[64px] z-30 bg-white border-b border-gray-200">
             <div className="max-w-[1600px] mx-auto px-6">
-                <nav className="flex gap-10 overflow-x-auto no-scrollbar border-b border-gray-200 pl-[137px]" aria-label="Sekundäre Navigation">
+                <nav className="flex gap-10 overflow-x-auto no-scrollbar pl-[137px]" aria-label="Sekundäre Navigation">
                     {navItems.map((item) => (
                         <button
                             key={item.id}

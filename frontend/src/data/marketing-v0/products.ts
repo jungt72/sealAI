@@ -1,129 +1,129 @@
 import type { Product } from "@/types/marketing-v0/products";
 
 export const products: Product[] = [
-  {
-    id: "automate",
-    name: "Copilot in Power Automate",
-    image: "/images/power-automate-screenshot.jpg",
-    features: [
-      {
-        title: "Optimieren von Workflows mit KI-gestützten Low-Code-Automatisierungstools",
-        description:
-          "Optimieren Sie Geschäftsprozesse ganz einfach, und erstellen Sie automatisierte Workflows, indem Sie die Ziele in Ihren eigenen Worten beschreiben.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Identifizieren von Ineffizienzen in vorhandenen Prozessen",
-        description:
-          "Gewinnen Sie ein umfassendes Verständnis Ihrer Geschäftsprozesse, erkennen Sie Engpässe und Ineffizienzen, und erzielen Sie eine Prozessoptimierung mit KI-gestützten Prozessen und Aufgaben-Mining.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: 'Automatisieren von Aufgaben mit einem "Show-and-Tell"-Benutzererlebnis',
-        description:
-          "Erstellen Sie Flows mithilfe einer multimodalen KI-Aufzeichnung, indem Sie den Bildschirm freigeben und in Worten beschreiben, wie eine bestimmte Aufgabe ausgeführt werden soll.",
-        link: "Weitere Informationen",
-      },
-    ],
-  },
-  {
-    id: "apps",
-    name: "Copilot in Power Apps",
-    image: "/images/power-apps-screenshot.jpg",
-    features: [
-      {
-        title: "Erstellen von reaktionsschnellen Apps, indem Sie sie beschreiben",
-        description:
-          "Optimieren Sie jeden Schritt der App-Entwicklung mithilfe der Schnittstelle für natürliche Sprache in Copilot.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Einfaches Bearbeiten Ihrer Apps und Datenmodelle",
-        description:
-          "Passen Sie Apps weiter an, nachdem Sie sie erstellt haben, indem Sie Copilot einfach die erforderlichen Änderungen mitteilen.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Jedem bei der Verwendung modellgesteuerter Apps helfen",
-        description:
-          "Ermöglichen Sie es allen in Ihrem Unternehmen, effizient durch Apps zu navigieren und schnell Datenerkenntnisse zu gewinnen, indem sie mit Copilot sprechen und Fragen stellen.",
-        link: "Weitere Informationen",
-      },
-    ],
-  },
-  {
-    id: "fabric",
-    name: "Copilot in Microsoft Fabric",
-    image: "/images/fabric-screenshot.jpg",
-    features: [
-      {
-        title: "Einfaches Erstellen detaillierter Berichte",
-        description:
-          "Erstellen Sie schnell Datenberichte, indem Sie Ihre idealen Visuals und Analyseberechnungen beschreiben.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Nützliche Erkenntnisse gewinnen",
-        description:
-          "Gewinnen Sie relevante, aussagekräftige Erkenntnisse, indem Sie Copilot Fragen zu Ihren Daten stellen.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Zusammenfassen Ihrer Berichte",
-        description:
-          "Generieren Sie ganz einfach Berichtszusammenfassungen, und passen Sie sie an, um ein besseres Verständnis Ihrer Daten zu erhalten.",
-        link: "Weitere Informationen",
-      },
-    ],
-  },
-  {
-    id: "pages",
-    name: "Copilot in Power Pages",
-    image: "/images/power-pages-screenshot.jpg",
-    features: [
-      {
-        title: "Vereinfachen der Erstellung von datengestützten Websites",
-        description:
-          "Erstellen Sie Unternehmenswebsites, indem Sie den gewünschten Websitetyp beschreiben, eine empfohlene Option auswählen und diese dann mit zusätzlichen Bearbeitungen und Änderungen anpassen.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Optimieren der Endbenutzererfahrung",
-        description:
-          "Effizientes Auffinden von Datensätzen, Verbessern der Sucherfahrung und Möglichkeit für die Benutzer, die benötigten Informationen schnell zu finden – alles mithilfe natürlicher Sprache.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Integrieren von KI-gestützten Agents in Ihre Webseiten",
-        description:
-          "Erstellen Sie Agents in Microsoft Copilot Studio, und fügen Sie sie nahtlos zu Ihren Power Pages-Websites hinzu.",
-        link: "Weitere Informationen",
-      },
-    ],
-  },
-  {
-    id: "studio",
-    name: "Microsoft Copilot Studio",
-    image: "/images/copilot-studio-screenshot.jpg",
-    features: [
-      {
-        title: "Erstellen leistungsstarker, verbundener Agents",
-        description:
-          "Verarbeiten Sie mühelos komplexe Abfragen, und binden Sie Mitarbeiter und Kunden mit umfangreichen, dynamischen Interaktionen ein.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Verbinden von Agents mit Ihren Geschäftsdaten",
-        description:
-          "Verbessern Sie die Genauigkeit und Zuverlässigkeit Ihrer Agents, indem Sie ihnen ermöglichen, auf Geschäftsdaten zu verweisen und zusätzlichen Kontext zu integrieren.",
-        link: "Weitere Informationen",
-      },
-      {
-        title: "Aktivieren der Autonomie zwischen Ihren Agents",
-        description:
-          "Erstellen Sie Agents, die unabhängig in Ihren Geschäfts-Apps und Datenquellen verwendet werden können, und stellen Sie sie bereit.",
-        link: "Weitere Informationen",
-      },
-    ],
-  },
+    {
+        id: "parameters",
+        name: "Einsatzparameter erfassen",
+        image: "/images/sealai-parameters.jpg",
+        features: [
+            {
+                title: "Relevante Einsatzbedingungen strukturiert erfassen",
+                description:
+                    "SealAI führt alle entscheidungsrelevanten Parameter wie Temperatur, Druck, Medium, Drehzahl und Einbausituation in einem konsistenten technischen Zustand zusammen.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Unvollständige oder widersprüchliche Angaben erkennen",
+                description:
+                    "Fehlende, unplausible oder widersprüchliche Parameter werden transparent gemacht, bevor sie zu Fehlentscheidungen führen.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Gemeinsame Grundlage für alle Entscheidungen schaffen",
+                description:
+                    "Alle weiteren Bewertungen und Empfehlungen basieren auf demselben aktuellen Parameterzustand – nachvollziehbar und reproduzierbar.",
+                link: "Mehr erfahren",
+            },
+        ],
+    },
+    {
+        id: "evaluation",
+        name: "Technische Bewertung",
+        image: "/images/sealai-evaluation.jpg",
+        features: [
+            {
+                title: "Materialien und Bauformen technisch bewerten",
+                description:
+                    "SealAI prüft Materialien und Dichtungskonzepte anhand definierter Einsatzgrenzen, Medienverträglichkeiten und temperatur- bzw. drehzahlabhängiger Einschränkungen.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Ungeeignete Lösungen konsequent ausschließen",
+                description:
+                    "Technisch riskante oder ungeeignete Optionen werden frühzeitig ausgeschlossen – inklusive nachvollziehbarer Begründung.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Bewertungen transparent dokumentieren",
+                description:
+                    "Jede technische Bewertung ist erklärbar und kann intern oder extern nachvollzogen werden.",
+                link: "Mehr erfahren",
+            },
+        ],
+    },
+    {
+        id: "comparison",
+        name: "Lösungen vergleichen",
+        image: "/images/sealai-comparison.jpg",
+        features: [
+            {
+                title: "Geeignete Dichtungen strukturiert gegenüberstellen",
+                description:
+                    "Mehrere technisch geeignete Lösungen werden anhand relevanter Kriterien wie Einsatzgrenzen, Robustheit und Randbedingungen verglichen.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Vor- und Nachteile klar herausarbeiten",
+                description:
+                    "SealAI zeigt auf, welche Kompromisse einzelne Lösungen mit sich bringen und in welchem Einsatzfall sie sinnvoll sind.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Entscheidungen absichern statt raten",
+                description:
+                    "Der Vergleich dient nicht der Produktauswahl nach Bauchgefühl, sondern der fundierten technischen Abwägung.",
+                link: "Mehr erfahren",
+            },
+        ],
+    },
+    {
+        id: "recommendation",
+        name: "Begründete Empfehlung",
+        image: "/images/sealai-recommendation.jpg",
+        features: [
+            {
+                title: "Technisch belastbare Empfehlungen erhalten",
+                description:
+                    "Auf Basis aller Bewertungen empfiehlt SealAI geeignete Dichtungen für den konkreten Einsatzfall.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Empfehlungen nachvollziehbar begründen",
+                description:
+                    "Jede Empfehlung ist technisch erklärbar – inklusive Ausschlussgründen für Alternativen.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Grundlage für Freigaben und Dokumentation schaffen",
+                description:
+                    "Empfehlungen können direkt für interne Freigaben, Kundenabstimmungen oder QS-Dokumentationen genutzt werden.",
+                link: "Mehr erfahren",
+            },
+        ],
+    },
+    {
+        id: "neutrality",
+        name: "Neutral & herstellerunabhängig",
+        image: "/images/sealai-neutrality.jpg",
+        features: [
+            {
+                title: "Keine gekauften Empfehlungen",
+                description:
+                    "SealAI priorisiert keine Produkte aus kommerziellen Gründen. Empfehlungen basieren ausschließlich auf technischer Eignung.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Kostenlos für Anwender",
+                description:
+                    "Konstrukteure und Anwendungstechniker nutzen SealAI ohne Lizenzkosten oder Paywalls.",
+                link: "Mehr erfahren",
+            },
+            {
+                title: "Klare Trennung von Entscheidung und Vermarktung",
+                description:
+                    "Herstellerdaten fließen strukturiert ein, ohne die Entscheidungslogik zu beeinflussen.",
+                link: "Mehr erfahren",
+            },
+        ],
+    },
 ];

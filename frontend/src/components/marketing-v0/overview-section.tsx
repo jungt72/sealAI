@@ -1,46 +1,53 @@
 import Image from "next/image";
 
 export function OverviewSection() {
-  return (
-    <section
-      className="relative bg-gray-50 py-16 px-4 md:px-6 lg:px-8 overflow-hidden"
-      aria-labelledby="overview-heading"
-    >
-      <div
-        className="absolute left-0 top-0 bottom-0 w-1/3 bg-gradient-to-br from-purple-300 via-purple-400 to-pink-400 rounded-r-full opacity-40 -translate-x-1/4"
-        aria-hidden="true"
-      />
+    return (
+        <section
+            id="overview"
+            className="relative bg-gray-50 py-16 px-4 md:px-6 lg:px-8 overflow-hidden"
+            aria-labelledby="overview-heading"
+        >
 
-      <div className="max-w-7xl mx-auto relative z-10">
-        <div className="grid md:grid-cols-2 gap-12 items-center">
-          <div className="relative">
-            <div className="relative rounded-3xl overflow-hidden shadow-2xl">
-              <Image
-                src="/images/team-collaboration.png"
-                alt="Team bei der Zusammenarbeit - Menschen arbeiten gemeinsam an innovativen Lösungen"
-                width={800}
-                height={600}
-                className="w-full h-auto"
-                priority
-                quality={90}
-              />
+            <div className="max-w-[1600px] mx-auto relative z-10 px-6">
+                <div className="grid md:grid-cols-2 gap-12 items-center ml-[137px]">
+                    <div className="relative">
+                        <div className="relative rounded-3xl overflow-hidden shadow-2xl">
+                            <Image
+                                src="/images/team-collaboration.png"
+                                alt="Team bei der Zusammenarbeit - Menschen arbeiten gemeinsam an innovativen Lösungen"
+                                width={800}
+                                height={600}
+                                className="w-full h-auto"
+                                priority
+                                quality={90}
+                            />
+                        </div>
+                    </div>
+
+                    <div id="neutralitaet" className="space-y-6">
+                        <div className="text-xs font-semibold tracking-wider text-[#0071e3] uppercase">ÜBERBLICK</div>
+                        <h2 id="overview-heading" className="text-2xl md:text-3xl font-medium text-balance leading-snug text-[#1d1d1f]">
+                            Entscheidungssicherheit in der Dichtungsauslegung
+                        </h2>
+                        <div className="space-y-4 text-[17px] leading-relaxed text-[#1d1d1f]">
+                            <p>
+                                Fehlerhafte Dichtungsentscheidungen entstehen selten durch fehlendes Fachwissen –
+                                sondern durch unvollständige Einsatzparameter, verstreute Informationen und Zeitdruck im Entwicklungsprozess.
+                            </p>
+                            <p>
+                                SealAI unterstützt Konstrukteure und Anwendungstechniker dabei, alle relevanten Randbedingungen strukturiert zu erfassen, technisch zu bewerten und konsistent zusammenzuführen.
+                                Auf dieser Basis werden ungeeignete Lösungen ausgeschlossen und geeignete Dichtungen nachvollziehbar empfohlen.
+                            </p>
+                            <p>
+                                Das Ergebnis sind belastbare Entscheidungen, weniger Rückfragen und eine deutlich reduzierte Fehlerquote – bereits vor der Freigabe.
+                            </p>
+                            <p className="font-medium pt-2">
+                                SealAI ersetzt keine Verantwortung, sondern schafft Transparenz und Sicherheit in technischen Entscheidungen.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Übersicht</div>
-            <h2 id="overview-heading" className="text-4xl md:text-5xl font-semibold text-balance leading-tight">
-              Transformieren, wie Ihr Unternehmen arbeitet und Lösungen erstellt
-            </h2>
-            <p className="text-lg text-muted-foreground leading-relaxed">
-              Ermöglichen Sie allen Mitarbeitern in Ihrem Unternehmen die schnelle Entwicklung von Apps, Webseiten,
-              Workflows und Agents mit Copilot-Funktionen über Power Platform hinweg. Erstellen Sie ganz einfach Lösungen
-              mit natürlicher Sprache, und gewinnen Sie zusätzlich wertvolle Datenerkenntnisse, indem Sie einfach Fragen
-              stellen.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+        </section>
+    );
 }

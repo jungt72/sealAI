@@ -1,35 +1,103 @@
+"use client";
+
 import { Button } from "@/components/ui/Button";
 
 export function Hero() {
-  return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-[#1e1548] via-[#2d1b69] to-[#c9379d]">
-      <div className="absolute inset-0 opacity-30" aria-hidden="true">
-        <div className="absolute top-1/4 right-0 w-[800px] h-[800px] bg-gradient-to-bl from-pink-500/60 to-transparent rounded-full blur-3xl" />
-      </div>
+    return (
+        <section className="relative overflow-hidden bg-[#020410]">
+            {/* Ambient Background - Deep Trustworthy Blue */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[#0f172a] via-[#020410] to-[#020410] opacity-90" />
 
-      <div className="relative max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-24 md:py-32 lg:py-40">
-        <div className="max-w-4xl">
-          <p className="text-sm font-semibold text-cyan-400 mb-4 tracking-wide uppercase">
-            Next GenAI in Power Platform
-          </p>
+            {/* Main Light Source - Sharp Spotlight from Right */}
+            <div
+                className="absolute top-[30%] -right-[10%] w-[800px] h-[800px] rounded-full blur-[80px] opacity-80"
+                style={{
+                    background: 'radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(100, 180, 255, 0.6) 20%, rgba(30, 64, 175, 0.2) 60%, transparent 100%)',
+                    zIndex: 0
+                }}
+            />
 
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold mb-6 leading-tight text-balance text-white">
-            Innovationen mit KI und Low-Code fördern
-          </h1>
+            {/* High Contrast Smoke/Cloud Layers */}
+            <div className="absolute inset-0" aria-hidden="true" style={{ zIndex: 1 }}>
 
-          <p className="text-lg md:text-xl text-gray-200 mb-8 leading-relaxed max-w-3xl">
-            Erstellen Sie schnell KI-fähige Unternehmenslösungen, die Ihnen helfen, mit Copilot in Microsoft Power
-            Platform Workflows zu optimieren und die Produktivität zu steigern.
-          </p>
+                {/* Cloud 1 - Structured "Waben" (Base Layer) - Slower */}
+                <div
+                    className="absolute top-[-10%] -right-[5%] w-[1300px] h-[1300px] rounded-full blur-[50px] opacity-70"
+                    style={{
+                        background: 'radial-gradient(circle at 70% 30%, rgba(147, 197, 253, 0.4) 0%, rgba(59, 130, 246, 0.2) 30%, transparent 60%)',
+                        animation: 'cloudStructure 40s ease-in-out infinite',
+                    }}
+                />
 
-          <Button
-            size="lg"
-            className="bg-cyan-400 hover:bg-cyan-500 text-gray-900 font-semibold focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2"
-          >
-            So loslegen
-          </Button>
-        </div>
-      </div>
-    </section>
-  );
+                {/* Cloud 2 - Distinct Smoke Detail (Middle Layer) - Faster, sharper */}
+                <div
+                    className="absolute top-[10%] -right-[15%] w-[1000px] h-[800px] rounded-full blur-[40px] opacity-60"
+                    style={{
+                        background: 'radial-gradient(ellipse at center, rgba(255, 255, 255, 0.5) 0%, rgba(191, 219, 254, 0.3) 40%, transparent 80%)',
+                        animation: 'cloudFlow 25s ease-in-out infinite alternate',
+                    }}
+                />
+
+                {/* Cloud 3 - Bright Highlights (Top Layer) - Most defined */}
+                <div
+                    className="absolute top-[20%] -right-[10%] w-[800px] h-[600px] rounded-full blur-[30px] opacity-50"
+                    style={{
+                        background: 'radial-gradient(circle, rgba(230, 245, 255, 0.6) 0%, rgba(147, 197, 253, 0.2) 50%, transparent 80%)',
+                        animation: 'cloudHighlight 20s ease-in-out infinite alternate-reverse',
+                    }}
+                />
+            </div>
+
+            {/* Main Content Container - Matching Header Width [1600px] */}
+            <div className="relative z-10 max-w-[1600px] mx-auto px-6 md:px-6 lg:px-6 py-24 md:py-32 lg:py-40">
+                {/* Content Block - Aligned to Header Separator (137px offset for exact visual alignment) */}
+                <div className="ml-[137px] max-w-7xl">
+                    <p className="text-sm font-semibold text-blue-400 mb-4 tracking-wide uppercase">
+                        SEALING INTELLIGENCE
+                    </p>
+
+                    <h1 className="text-3xl md:text-4xl lg:text-[2.75rem] lg:leading-[1.1] font-semibold mb-6 text-white tracking-tight">
+                        Technisch fundierte Dichtungsentscheidungen.{" "}<br className="hidden lg:block" />
+                        Digital unterstützt. Nachvollziehbar begründet.
+                    </h1>
+
+                    <p className="text-lg md:text-xl text-gray-300 mb-10 leading-relaxed max-w-6xl">
+                        SealAI ist der digitale Anwendungstechniker für industrielle Dichtungsauslegung.<br className="hidden lg:block" />
+                        Die Plattform analysiert reale Einsatzparameter, schließt ungeeignete Lösungen aus und empfiehlt<br className="hidden lg:block" />
+                        technisch belastbare Dichtungen – auf Basis von Normen, Materialdaten und Anwendungspraxis.
+                    </p>
+
+                    <div className="flex flex-wrap gap-4">
+                        <Button
+                            size="lg"
+                            className="font-medium rounded-full px-8 py-3 text-[17px] transition-all duration-300 transform hover:scale-[1.02] hover:bg-white hover:text-black"
+                            style={{ backgroundColor: 'transparent', border: '1px solid white', color: 'white' }}
+                        >
+                            Auslegung starten
+                        </Button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Global CSS for animations */}
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                @keyframes cloudStructure {
+                    0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+                    50% { transform: translate(-30px, 10px) scale(1.05) rotate(2deg); }
+                    100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+                }
+
+                @keyframes cloudFlow {
+                    0% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+                    100% { transform: translate(-60px, -20px) scale(1.15); opacity: 0.8; }
+                }
+
+                @keyframes cloudHighlight {
+                    0% { transform: translate(0, 0) scale(1); filter: brightness(1); }
+                    100% { transform: translate(-40px, 30px) scale(1.1); filter: brightness(1.2); }
+                }
+            `}} />
+        </section>
+    );
 }
