@@ -4,7 +4,7 @@ export const products: Product[] = [
     {
         id: "parameters",
         name: "Einsatzparameter erfassen",
-        image: "/images/sealai-parameters.jpg",
+        image: "/images/power-apps-screenshot.jpg",
         features: [
             {
                 title: "Relevante Einsatzbedingungen strukturiert erfassen",
@@ -29,7 +29,7 @@ export const products: Product[] = [
     {
         id: "evaluation",
         name: "Technische Bewertung",
-        image: "/images/sealai-evaluation.jpg",
+        image: "/images/power-pages-screenshot.jpg",
         features: [
             {
                 title: "Materialien und Bauformen technisch bewerten",
@@ -54,7 +54,7 @@ export const products: Product[] = [
     {
         id: "comparison",
         name: "Lösungen vergleichen",
-        image: "/images/sealai-comparison.jpg",
+        image: "/images/copilot-studio-screenshot.jpg",
         features: [
             {
                 title: "Geeignete Dichtungen strukturiert gegenüberstellen",
@@ -79,7 +79,7 @@ export const products: Product[] = [
     {
         id: "recommendation",
         name: "Begründete Empfehlung",
-        image: "/images/sealai-recommendation.jpg",
+        image: "/images/power-automate-screenshot.jpg",
         features: [
             {
                 title: "Technisch belastbare Empfehlungen erhalten",
@@ -104,7 +104,7 @@ export const products: Product[] = [
     {
         id: "neutrality",
         name: "Neutral & herstellerunabhängig",
-        image: "/images/sealai-neutrality.jpg",
+        image: "/images/fabric-screenshot.jpg",
         features: [
             {
                 title: "Keine gekauften Empfehlungen",
