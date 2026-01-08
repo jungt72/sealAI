@@ -91,3 +91,6 @@ code_dump_*.txt
 
 # runtime data
 /data/
+
+# never commit accidental public under src
+frontend/src/public/
