@@ -556,11 +556,9 @@ def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
     + Die harte Begrenzung erfolgt weiterhin über den 45s-Timeout im SSE-Endpoint.
     """
     run_id = str(uuid.uuid4())
-    # Checkpointer identity must be stable per (user_id, thread_id) so that state
-    # can be recovered reliably and isolated across users.
-    checkpoint_thread_id = stable_thread_key(user_id, thread_id)
     configurable: Dict[str, Any] = {
-        "thread_id": checkpoint_thread_id,
+        "thread_id": thread_id,
+        "user_id": user_id,
         "checkpoint_ns": resolve_checkpointer_namespace_v2(),
     }
     metadata: Dict[str, Any] = {

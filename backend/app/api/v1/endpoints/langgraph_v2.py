@@ -12,7 +12,7 @@ from weakref import WeakKeyDictionary
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.messages.ai import AIMessageChunk
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
@@ -45,6 +45,7 @@ SSE_QUEUE_MAXSIZE = int(os.getenv("SEALAI_SSE_QUEUE_MAXSIZE", "200"))
 SSE_SLOW_NOTICE_SEC = float(os.getenv("SEALAI_SSE_SLOW_NOTICE_SEC", "5"))
 REQUIRE_PARAM_SNAPSHOT = os.getenv("SEALAI_REQUIRE_PARAM_SNAPSHOT") == "1"
 WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") == "1"
+_FALLBACK_ANSWER = "Es ist ein Fehler aufgetreten. Bitte versuche es erneut."
 
 
 def _lg_trace_enabled() -> bool:
@@ -68,6 +69,46 @@ def _short_user_id(user_id: str | None) -> str:
     if not user_id:
         return ""
     return f"{user_id[:8]}..." if len(user_id) > 8 else user_id
+
+
+def _extract_final_answer_from_state(state: SealAIState) -> str:
+    if state.final_text:
+        return state.final_text
+    for message in reversed(state.messages or []):
+        if isinstance(message, AIMessage):
+            content = message.content
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+                        return str(part["text"])
+            if isinstance(content, str) and content.strip():
+                return content
+    if state.recommendation and state.recommendation.summary:
+        return state.recommendation.summary
+    working_memory = state.working_memory
+    if working_memory:
+        value = working_memory.get("knowledge_generic") if hasattr(working_memory, "get") else None
+        if isinstance(value, str) and value:
+            return value
+    return _FALLBACK_ANSWER
+
+
+def _build_ask_missing_payload(state: SealAIState) -> Dict[str, Any]:
+    ask_request = state.ask_missing_request
+    missing_fields = list(state.missing_params or [])
+    scope = state.ask_missing_scope or ("technical" if (missing_fields or ask_request) else "discovery")
+    if ask_request:
+        request_payload = ask_request.model_dump()
+        message = ask_request.question
+    else:
+        request_payload = {"missing_fields": missing_fields, "question": ""}
+        message = ""
+    return {
+        "type": "ask_missing",
+        "scope": scope,
+        "message": message,
+        "request": request_payload,
+    }
 
 try:
     from redis.asyncio import Redis
