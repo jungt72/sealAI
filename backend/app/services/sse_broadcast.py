@@ -9,6 +9,8 @@ from collections import deque
 from typing import Any, Deque, Dict, Iterable, Optional, Tuple
 from weakref import WeakKeyDictionary
 
+from app.services.redis_client import make_async_redis_client
+
 try:
     from redis.asyncio import Redis
 except Exception:  # pragma: no cover - optional dependency
@@ -141,7 +143,7 @@ class RedisReplayBackend(ReplayBackend):
             client = store.get("client")
             if client is not None:
                 return client
-            client = Redis.from_url(self._redis_url, decode_responses=True)
+            client = make_async_redis_client(self._redis_url, decode_responses=True)
             store["client"] = client
             return client
 

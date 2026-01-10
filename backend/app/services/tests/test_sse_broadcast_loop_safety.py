@@ -40,14 +40,13 @@ def test_sse_manager_scoped_to_event_loop(monkeypatch) -> None:
 def test_redis_replay_backend_client_scoped_to_event_loop(monkeypatch) -> None:
     created = []
 
-    class DummyRedis:
-        @classmethod
-        def from_url(cls, *_args, **_kwargs):
-            client = object()
-            created.append(client)
-            return client
+    def fake_make_client(url: str, *, decode_responses: bool = False):
+        client = object()
+        created.append((url, decode_responses, client))
+        return client
 
-    monkeypatch.setattr(sse_module, "Redis", DummyRedis)
+    monkeypatch.setattr(sse_module, "Redis", object())
+    monkeypatch.setattr(sse_module, "make_async_redis_client", fake_make_client)
 
     backend = sse_module.RedisReplayBackend(
         redis_url="redis://example:6379/0",
@@ -72,5 +71,8 @@ def test_redis_replay_backend_client_scoped_to_event_loop(monkeypatch) -> None:
     finally:
         loop_b.close()
 
+    assert len(created) == 2
+    assert created[0][0] == "redis://example:6379/0"
+    assert created[0][1] is True
     assert client_a is client_a_second
     assert client_a is not client_b
