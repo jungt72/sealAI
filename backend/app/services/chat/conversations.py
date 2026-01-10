@@ -128,7 +128,10 @@ def _cleanup_excess_conversations(r: Redis, owner_id: str, key_set: str) -> None
         return
     try:
         # Scores are updated_at timestamps; higher is newer, so trim oldest ranks.
-        r.zremrangebyrank(key_set, 0, -(limit + 1))
+        count = r.zcard(key_set)
+        overflow = count - limit
+        if overflow > 0:
+            r.zremrangebyrank(key_set, 0, overflow - 1)
     except Exception as exc:
         logger.warning(
             "Failed to enforce conversation limit: %s",
