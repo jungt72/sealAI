@@ -7,14 +7,16 @@ Data model:
 """
 
 from dataclasses import dataclass
+from functools import lru_cache
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, TYPE_CHECKING
 
 from redis import Redis
 
-from app.core.config import settings
+if TYPE_CHECKING:
+    from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +41,14 @@ _GREETING_PREFIXES = (
 )
 
 
+@lru_cache(maxsize=1)
+def _settings() -> "Settings":
+    from app.core.config import Settings
+    return Settings()
+
+
 def _redis_client() -> Redis:
-    return Redis.from_url(settings.redis_url, decode_responses=True)
+    return Redis.from_url(_settings().redis_url, decode_responses=True)
 
 
 def _sorted_set_key(owner_id: str) -> str:
@@ -52,12 +60,12 @@ def _hash_key(owner_id: str, conversation_id: str) -> str:
 
 
 def _ttl_seconds() -> int:
-    days = settings.chat_history_ttl_days or 30
+    days = _settings().chat_history_ttl_days or 30
     return max(1, days) * 86400
 
 
 def _conversation_limit() -> int:
-    configured = settings.chat_max_conversations_per_user
+    configured = _settings().chat_max_conversations_per_user
     if not configured or configured <= 0:
         return MAX_CONVERSATIONS_PER_USER
     return min(configured, MAX_CONVERSATIONS_PER_USER)

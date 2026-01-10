@@ -2,14 +2,18 @@ from unittest.mock import MagicMock
 
 from app.services.chat import conversations
 
+
 def test_upsert_trims_conversation_zset(monkeypatch) -> None:
-    conversations.settings.chat_max_conversations_per_user = 2
+    class DummySettings:
+        chat_max_conversations_per_user = 2
+        chat_history_ttl_days = 30
 
     redis_client = MagicMock()
     pipeline = MagicMock()
     redis_client.pipeline.return_value = pipeline
     redis_client.hgetall.return_value = {}
     redis_client.zcard.return_value = 3
+    monkeypatch.setattr(conversations, "_settings", lambda: DummySettings())
     monkeypatch.setattr(conversations, "_redis_client", lambda: redis_client)
 
     conversations.upsert_conversation(
