@@ -40,6 +40,18 @@ def _parse_checkpointer_ttl() -> Optional[int]:
     return int(ttl_env) if ttl_env.isdigit() else None
 
 
+def resolve_v2_checkpointer_backend() -> str:
+    backend = (os.getenv("LANGGRAPH_V2_CHECKPOINTER") or "").strip()
+    if not backend:
+        backend = (os.getenv("CHECKPOINTER_BACKEND") or "redis").strip()
+    normalized = backend.lower()
+    if normalized in {"memory", "inmemory", "in-memory"}:
+        return "memory"
+    if normalized in {"redis"}:
+        return "redis"
+    return normalized or "redis"
+
+
 def _resolve_checkpointer_settings(namespace: str | None) -> tuple[str, str, Optional[int]]:
     resolved_namespace = resolve_checkpointer_namespace_v2(namespace)
     prefix = (os.getenv("LANGGRAPH_CHECKPOINT_PREFIX") or "lg:cp").strip() or "lg:cp"
@@ -140,8 +152,8 @@ def _build_async_redis_saver_kwargs(
 
         if ttl is not None and ttl_param:
             ttl_value: Any = ttl
-            if ttl_param == "ttl" and "checkpoint_prefix" in supported_params:
-                ttl_value = {"default_ttl": ttl / 60}
+            if ttl_param == "ttl":
+                ttl_value = {"seconds": ttl}
             kwargs[ttl_param] = ttl_value
         elif ttl is not None:
             warnings.append(("langgraph_v2_checkpointer_ttl_unsupported", {"ttl": ttl}))
@@ -154,7 +166,7 @@ def _build_async_redis_saver_kwargs(
         "key_prefix": prefix,
     }
     if ttl is not None:
-        kwargs["ttl"] = ttl
+        kwargs["ttl"] = {"seconds": ttl}
     return (), kwargs, warnings
 
 
@@ -188,21 +200,21 @@ def _construct_async_redis_saver(
             "checkpoint_prefix": effective_prefix,
             "checkpoint_blob_prefix": f"{effective_prefix}:checkpoint_blob",
             "checkpoint_write_prefix": f"{effective_prefix}:checkpoint_write",
-            "ttl": {"default_ttl": ttl / 60} if ttl is not None else None,
+            "ttl": {"seconds": ttl} if ttl is not None else None,
         },
         {
             "checkpoint_prefix": effective_prefix,
-            "ttl": {"default_ttl": ttl / 60} if ttl is not None else None,
+            "ttl": {"seconds": ttl} if ttl is not None else None,
         },
-        {"namespace": namespace, "key_prefix": effective_prefix, "ttl": ttl},
+        {"namespace": namespace, "key_prefix": effective_prefix, "ttl": {"seconds": ttl} if ttl is not None else None},
         {"namespace": namespace, "key_prefix": effective_prefix, "ttl_seconds": ttl},
-        {"namespace": namespace, "prefix": effective_prefix, "ttl": ttl},
+        {"namespace": namespace, "prefix": effective_prefix, "ttl": {"seconds": ttl} if ttl is not None else None},
         {"namespace": namespace, "prefix": effective_prefix, "ttl_seconds": ttl},
-        {"namespace": namespace, "ttl": ttl},
+        {"namespace": namespace, "ttl": {"seconds": ttl} if ttl is not None else None},
         {"namespace": namespace, "ttl_seconds": ttl},
-        {"key_prefix": effective_prefix, "ttl": ttl},
+        {"key_prefix": effective_prefix, "ttl": {"seconds": ttl} if ttl is not None else None},
         {"key_prefix": effective_prefix, "ttl_seconds": ttl},
-        {"prefix": effective_prefix, "ttl": ttl},
+        {"prefix": effective_prefix, "ttl": {"seconds": ttl} if ttl is not None else None},
         {"prefix": effective_prefix, "ttl_seconds": ttl},
         {},
     ]
@@ -309,7 +321,7 @@ async def make_v2_checkpointer_async(
     Returns:
         BaseCheckpointSaver: Ein Redis- oder Memory-basierter Checkpointer
     """
-    backend = os.getenv("CHECKPOINTER_BACKEND", "redis")
+    backend = resolve_v2_checkpointer_backend()
     resolved_namespace, prefix, ttl = _resolve_checkpointer_settings(namespace)
 
     if backend == "redis" and AsyncRedisSaver is not None:

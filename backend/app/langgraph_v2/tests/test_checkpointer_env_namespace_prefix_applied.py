@@ -44,7 +44,7 @@ def test_checkpointer_env_namespace_key_prefix_applied(monkeypatch):
     assert isinstance(saver, FakeAsyncRedisSaver)
     assert captured["namespace"] == "consult.v1"
     assert captured["key_prefix"] == "lg:cp"
-    assert captured["ttl"] == 86400
+    assert captured["ttl"] == {"seconds": 86400}
 
 
 def test_checkpointer_env_prefix_param_applied(monkeypatch):
@@ -113,7 +113,7 @@ def test_checkpointer_env_checkpoint_prefix_applied(monkeypatch):
     assert captured["checkpoint_prefix"] == "lg:cp:consult.v1"
     assert captured["checkpoint_blob_prefix"] == "lg:cp:consult.v1:checkpoint_blob"
     assert captured["checkpoint_write_prefix"] == "lg:cp:consult.v1:checkpoint_write"
-    assert captured["ttl"]["default_ttl"] == pytest.approx(1440.0)
+    assert captured["ttl"] == {"seconds": 86400}
 
 
 def test_checkpointer_env_prefix_namespace_embedded_when_unsupported(monkeypatch):
