@@ -9,6 +9,7 @@ from langchain_community.document_loaders import (
 )
 
 from app.services.rag.qdrant_naming import qdrant_collection_name
+from app.services.rag.qdrant_point_ids import build_point_ids, file_source_id
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
@@ -107,11 +108,18 @@ def ingest_file(
         prefix=QDRANT_COLLECTION_PREFIX,
         tenant_id=tenant_id,
     )
+    source_id = file_source_id(file_path)
+    ids = build_point_ids(
+        tenant_id=tenant_id or "",
+        source_id=source_id,
+        chunks=split_docs,
+    )
     print(f"[INGEST] Schreibe nach Qdrant: {collection_name}")
     _ = QdrantVectorStore.from_documents(
         split_docs, embeddings,
         url=QDRANT_URL, api_key=QDRANT_API_KEY,
         collection_name=collection_name,
+        ids=ids,
     )
     print(f"[INGEST] OK: {file_path}")
 
