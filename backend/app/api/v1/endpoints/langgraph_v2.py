@@ -31,7 +31,7 @@ from app.langgraph_v2.utils.parameter_patch import (
     sanitize_v2_parameter_patch,
 )
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
-from app.services.chat.conversations import upsert_conversation
+from app.services.chat.conversations import OwnerIds, upsert_conversation
 from app.services.redis_client import make_async_redis_client
 from app.services.sse_broadcast import sse_broadcast
 
@@ -1005,11 +1005,11 @@ async def langgraph_chat_v2_endpoint(
                     client_msg_id=request.client_msg_id,
                 ),
             )
-    owner_id = user.sub
-    if owner_id:
+    owner_ids = OwnerIds(canonical=scoped_user_id, legacy=legacy_user_id)
+    if owner_ids.canonical:
         try:
             upsert_conversation(
-                owner_id=owner_id,
+                owner_ids=owner_ids,
                 conversation_id=request.chat_id,
                 first_user_message=request.input,
                 last_preview=request.input,
@@ -1019,7 +1019,7 @@ async def langgraph_chat_v2_endpoint(
             logger.warning(
                 "Failed to persist conversation metadata before streaming",
                 exc_info=exc,
-                extra={"user": owner_id, "chat_id": request.chat_id},
+                extra={"user": owner_ids.canonical, "chat_id": request.chat_id},
             )
     logger.info(
         "langgraph_v2_chat_request",
