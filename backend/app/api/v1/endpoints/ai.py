@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from redis import Redis
 
-# Nur die Consult-Funktion nutzen; Checkpointer holen wir aus app.state
-from app.services.langgraph.graph.consult.io import invoke_consult as _invoke_consult
+if TYPE_CHECKING:
+    from app.services.auth.dependencies import RequestUser
 
 # ─────────────────────────────────────────────────────────────
 # ENV / Redis STM (Short-Term Memory)
@@ -47,6 +47,13 @@ RE_ASK_FREE      = re.compile(r"\b(woran\s+erinn?erst\s+du\s+dich|what\s+did\s+y
 
 def _normalize_num_str(s: str) -> str:
     return (s or "").replace(",", ".")
+
+def _beratung_thread_id(user_id: str, chat_id: str) -> str:
+    return f"api:{user_id}:{chat_id}"
+
+async def _get_current_user() -> "RequestUser":
+    from app.services.auth.dependencies import get_current_request_user
+    return await get_current_request_user()
 
 def _maybe_handle_memory_intent(text: str, thread_id: str) -> Optional[str]:
     t = (text or "").strip()
@@ -90,7 +97,11 @@ class ChatResponse(BaseModel):
     text: str
 
 @router.post("/beratung", response_model=ChatResponse)
-async def beratung(request: Request, payload: ChatRequest) -> ChatResponse:
+async def beratung(
+    request: Request,
+    payload: ChatRequest,
+    user: "RequestUser" = Depends(_get_current_user),
+) -> ChatResponse:
     """
     Einstieg in den Consult-Flow. Nutzt (falls vorhanden) den Checkpointer aus app.state.
     Zusätzlich: einfache STM-Merkfunktion (merke dir … / welche Zahl …?).
@@ -99,7 +110,10 @@ async def beratung(request: Request, payload: ChatRequest) -> ChatResponse:
     if not user_text:
         raise HTTPException(status_code=400, detail="input_text empty")
 
-    thread_id = f"api:{payload.chat_id}"
+    user_id = (user.sub or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    thread_id = _beratung_thread_id(user_id, payload.chat_id)
 
     # 1) Memory-Intents kurz-circuited beantworten
     mem = _maybe_handle_memory_intent(user_text, thread_id)
@@ -107,6 +121,7 @@ async def beratung(request: Request, payload: ChatRequest) -> ChatResponse:
         return ChatResponse(text=mem)
 
     # 2) Consult-Flow aufrufen (mit optionalem Checkpointer)
+    from app.services.langgraph.graph.consult.io import invoke_consult as _invoke_consult
     checkpointer = getattr(request.app.state, "swarm_checkpointer", None)
     out = _invoke_consult(user_text, thread_id=thread_id, checkpointer=checkpointer)
     return ChatResponse(text=out)
