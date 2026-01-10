@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import logging
 from typing import Optional, Any
+from urllib.parse import urlsplit, urlunsplit
 
 log = logging.getLogger("app.redis_checkpointer")
 
@@ -21,6 +22,28 @@ def _redis_url() -> str:
     """
     url = (os.getenv("REDIS_URL") or "redis://redis:6379/0").strip()
     return url or "redis://redis:6379/0"
+
+def redact_redis_url(url: str) -> str:
+    if not url:
+        return url
+    try:
+        parts = urlsplit(url)
+        if parts.username is None and parts.password is None:
+            return url
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        username = parts.username or ""
+        if parts.password is None and not username:
+            return url
+        if parts.password is None:
+            userinfo = username
+        else:
+            userinfo = f"{username}:***" if username else "***"
+        netloc = f"{userinfo}@{host}" if host else userinfo
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    except Exception:
+        return "<redacted>"
 
 
 def _namespace() -> tuple[str, Optional[int]]:
@@ -97,7 +120,12 @@ def get_redis_checkpointer(app=None) -> Optional["RedisSaver"]:
 
     try:
         saver = _try_construct_redis_saver(redis_url, ns, ttl)
-        log.info("LangGraph Checkpointer aktiv: url=%s ns/prefix=%s ttl=%s", redis_url, ns, ttl)
+        log.info(
+            "LangGraph Checkpointer aktiv: url=%s ns/prefix=%s ttl=%s",
+            redact_redis_url(redis_url),
+            ns,
+            ttl,
+        )
         return saver
     except Exception as e:
         log.warning("RedisSaver nicht nutzbar (%r). Fallback: None (In-Memory-Graph).", e)
