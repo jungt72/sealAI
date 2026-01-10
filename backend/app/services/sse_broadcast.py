@@ -7,6 +7,7 @@ import os
 import time
 from collections import deque
 from typing import Any, Deque, Dict, Iterable, Optional, Tuple
+from weakref import WeakKeyDictionary
 
 try:
     from redis.asyncio import Redis
@@ -115,7 +116,7 @@ class RedisReplayBackend(ReplayBackend):
         self._max_buffer = max_buffer
         self._ttl_sec = ttl_sec
         self._fallback = fallback
-        self._client: Redis | None = None
+        self._client_store: "WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, Any]]" = WeakKeyDictionary()
         self._failed = False
 
     @property
@@ -128,9 +129,21 @@ class RedisReplayBackend(ReplayBackend):
         if Redis is None or not self._redis_url:
             self._failed = True
             return None
-        if self._client is None:
-            self._client = Redis.from_url(self._redis_url, decode_responses=True)
-        return self._client
+        loop = asyncio.get_running_loop()
+        store = self._client_store.get(loop)
+        if store is None:
+            store = {"lock": asyncio.Lock(), "client": None}
+            self._client_store[loop] = store
+        client = store.get("client")
+        if client is not None:
+            return client
+        async with store["lock"]:
+            client = store.get("client")
+            if client is not None:
+                return client
+            client = Redis.from_url(self._redis_url, decode_responses=True)
+            store["client"] = client
+            return client
 
     def _seq_key(self, user_id: str, chat_id: str) -> str:
         return f"sse:seq:{user_id}:{chat_id}"
@@ -447,4 +460,81 @@ class SseBroadcastManager:
         return delivered
 
 
-sse_broadcast = SseBroadcastManager()
+_SSE_MANAGER_STORE: "WeakKeyDictionary[asyncio.AbstractEventLoop, SseBroadcastManager]" = WeakKeyDictionary()
+
+
+def _get_sse_manager(loop: asyncio.AbstractEventLoop) -> SseBroadcastManager:
+    manager = _SSE_MANAGER_STORE.get(loop)
+    if manager is None:
+        manager = SseBroadcastManager()
+        _SSE_MANAGER_STORE[loop] = manager
+    return manager
+
+
+def get_sse_broadcast() -> SseBroadcastManager:
+    loop = asyncio.get_running_loop()
+    return _get_sse_manager(loop)
+
+
+class _SseBroadcastProxy:
+    @property
+    def backend_name(self) -> str:
+        return get_sse_broadcast().backend_name
+
+    def parse_last_event_id(self, chat_id: str, last_event_id: str | None) -> Optional[int]:
+        return SseBroadcastManager.parse_last_event_id(chat_id, last_event_id)
+
+    async def subscribe(self, *, user_id: str, chat_id: str) -> asyncio.Queue[BroadcastEvent]:
+        return await get_sse_broadcast().subscribe(user_id=user_id, chat_id=chat_id)
+
+    async def unsubscribe(
+        self, *, user_id: str, chat_id: str, queue: asyncio.Queue[BroadcastEvent]
+    ) -> None:
+        await get_sse_broadcast().unsubscribe(user_id=user_id, chat_id=chat_id, queue=queue)
+
+    async def next_seq(self, *, user_id: str, chat_id: str) -> int:
+        return await get_sse_broadcast().next_seq(user_id=user_id, chat_id=chat_id)
+
+    async def record_event(
+        self,
+        *,
+        user_id: str,
+        chat_id: str,
+        event: str,
+        data: Dict[str, Any],
+        timestamp: Optional[float] = None,
+    ) -> int:
+        return await get_sse_broadcast().record_event(
+            user_id=user_id,
+            chat_id=chat_id,
+            event=event,
+            data=data,
+            timestamp=timestamp,
+        )
+
+    async def replay_after(
+        self, *, user_id: str, chat_id: str, last_seq: int
+    ) -> tuple[list[BroadcastRecord], bool]:
+        return await get_sse_broadcast().replay_after(
+            user_id=user_id,
+            chat_id=chat_id,
+            last_seq=last_seq,
+        )
+
+    async def broadcast(
+        self,
+        *,
+        user_id: str,
+        chat_id: str,
+        event: str,
+        data: Dict[str, Any],
+    ) -> int:
+        return await get_sse_broadcast().broadcast(
+            user_id=user_id,
+            chat_id=chat_id,
+            event=event,
+            data=data,
+        )
+
+
+sse_broadcast = _SseBroadcastProxy()

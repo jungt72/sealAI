@@ -1,6 +1,7 @@
 import asyncio
 import os
 
+from app.langgraph_v2 import sealai_graph_v2
 from app.langgraph_v2.sealai_graph_v2 import get_sealai_graph_v2
 
 
@@ -18,3 +19,38 @@ def test_sealai_graph_v2_instantiation(monkeypatch):
     # CompiledStateGraph should expose invoke/ainvoke
     assert hasattr(graph, "invoke")
     assert hasattr(graph, "ainvoke")
+
+
+def _run_in_loop(loop: asyncio.AbstractEventLoop, coro):
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        asyncio.set_event_loop(None)
+
+
+def test_sealai_graph_v2_cache_is_per_event_loop(monkeypatch):
+    created = []
+
+    async def fake_build_graph(require_async: bool = True):
+        graph = object()
+        created.append(graph)
+        return graph
+
+    monkeypatch.setattr(sealai_graph_v2, "_build_graph", fake_build_graph)
+
+    loop_a = asyncio.new_event_loop()
+    try:
+        graph_a = _run_in_loop(loop_a, sealai_graph_v2.get_sealai_graph_v2())
+        graph_a_second = _run_in_loop(loop_a, sealai_graph_v2.get_sealai_graph_v2())
+    finally:
+        loop_a.close()
+
+    loop_b = asyncio.new_event_loop()
+    try:
+        graph_b = _run_in_loop(loop_b, sealai_graph_v2.get_sealai_graph_v2())
+    finally:
+        loop_b.close()
+
+    assert graph_a is graph_a_second
+    assert graph_a is not graph_b

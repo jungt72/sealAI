@@ -8,6 +8,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, Optional
+from weakref import WeakKeyDictionary
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -387,20 +388,35 @@ def _build_trace_payload(
     return {key: value for key, value in payload.items() if value}
 
 
-_DEDUP_REDIS: Redis | None = None
+_DEDUP_STORE: "WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, Any]]" = WeakKeyDictionary()
+
+
+def _get_dedup_store(loop: asyncio.AbstractEventLoop) -> dict[str, Any]:
+    store = _DEDUP_STORE.get(loop)
+    if store is None:
+        store = {"lock": asyncio.Lock(), "client": None}
+        _DEDUP_STORE[loop] = store
+    return store
 
 
 async def _get_dedup_redis() -> Redis | None:
-    global _DEDUP_REDIS
-    if _DEDUP_REDIS is not None:
-        return _DEDUP_REDIS
     if Redis is None:
         return None
-    conn_string = os.getenv("LANGGRAPH_V2_REDIS_URL") or os.getenv("REDIS_URL")
-    if not conn_string:
-        return None
-    _DEDUP_REDIS = make_async_redis_client(conn_string, decode_responses=True)
-    return _DEDUP_REDIS
+    loop = asyncio.get_running_loop()
+    store = _get_dedup_store(loop)
+    client = store.get("client")
+    if client is not None:
+        return client
+    async with store["lock"]:
+        client = store.get("client")
+        if client is not None:
+            return client
+        conn_string = os.getenv("LANGGRAPH_V2_REDIS_URL") or os.getenv("REDIS_URL")
+        if not conn_string:
+            return None
+        client = make_async_redis_client(conn_string, decode_responses=True)
+        store["client"] = client
+        return client
 
 
 async def _claim_client_msg_id(*, user_id: str, chat_id: str, client_msg_id: str) -> bool:

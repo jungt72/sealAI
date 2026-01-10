@@ -5,6 +5,7 @@ import asyncio
 import re
 import uuid
 from typing import Any, Dict, List
+from weakref import WeakKeyDictionary
 
 import structlog
 from langchain_core.messages import BaseMessage, SystemMessage
@@ -517,8 +518,15 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 # Graph Cache & Config
 # ---------------------------------------------------------------------------
 
-_GRAPH_CACHE: CompiledStateGraph | None = None
-_GRAPH_LOCK = asyncio.Lock()
+_GRAPH_STORE: "WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, Any]]" = WeakKeyDictionary()
+
+
+def _get_graph_store(loop: asyncio.AbstractEventLoop) -> dict[str, Any]:
+    store = _GRAPH_STORE.get(loop)
+    if store is None:
+        store = {"lock": asyncio.Lock(), "graph": None}
+        _GRAPH_STORE[loop] = store
+    return store
 
 
 async def _build_graph(require_async: bool = True) -> CompiledStateGraph:
@@ -527,12 +535,16 @@ async def _build_graph(require_async: bool = True) -> CompiledStateGraph:
 
 
 async def get_sealai_graph_v2() -> CompiledStateGraph:
-    global _GRAPH_CACHE
-    if _GRAPH_CACHE is None:
-        async with _GRAPH_LOCK:
-            if _GRAPH_CACHE is None:
-                _GRAPH_CACHE = await _build_graph(require_async=True)
-    return _GRAPH_CACHE
+    loop = asyncio.get_running_loop()
+    store = _get_graph_store(loop)
+    graph = store.get("graph")
+    if graph is None:
+        async with store["lock"]:
+            graph = store.get("graph")
+            if graph is None:
+                graph = await _build_graph(require_async=True)
+                store["graph"] = graph
+    return graph
 
 
 def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
