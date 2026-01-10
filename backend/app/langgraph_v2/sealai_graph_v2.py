@@ -15,7 +15,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.constants import CHECKPOINTER_NAMESPACE_V2
+from app.langgraph_v2.constants import resolve_checkpointer_namespace_v2
 from app.langgraph_v2.utils.checkpointer import make_v2_checkpointer_async
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI
@@ -549,7 +549,7 @@ def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
     checkpoint_thread_id = stable_thread_key(user_id, thread_id)
     configurable: Dict[str, Any] = {
         "thread_id": checkpoint_thread_id,
-        "checkpoint_ns": CHECKPOINTER_NAMESPACE_V2,
+        "checkpoint_ns": resolve_checkpointer_namespace_v2(),
     }
     metadata: Dict[str, Any] = {
         "thread_id": thread_id,
