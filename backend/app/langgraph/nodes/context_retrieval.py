@@ -18,7 +18,7 @@ def context_retrieval(state: SealAIState) -> Dict[str, Any]:
     if not user_query or hybrid_retrieve is None:
         return {}
     meta = state.get("meta") or {}
-    tenant = meta.get("user_id") or slots.get("tenant_id")
+    tenant = meta.get("tenant_id") or slots.get("tenant_id")
     if not tenant:
         logger.warning("context_retrieval_missing_tenant")
         slots["rag_status"] = "empty"

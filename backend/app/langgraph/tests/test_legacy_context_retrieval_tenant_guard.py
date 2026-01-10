@@ -27,7 +27,7 @@ def test_context_retrieval_passes_tenant(monkeypatch) -> None:
 
     monkeypatch.setattr(module, "hybrid_retrieve", fake_retrieve)
 
-    state = {"slots": {"user_query": "test"}, "meta": {"user_id": "tenant-1"}}
+    state = {"slots": {"user_query": "test"}, "meta": {"tenant_id": "tenant-1"}}
     result = module.context_retrieval(state)
 
     assert captured == {"query": "test", "tenant": "tenant-1"}
