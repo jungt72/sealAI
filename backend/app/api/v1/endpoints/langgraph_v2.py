@@ -31,6 +31,7 @@ from app.langgraph_v2.utils.parameter_patch import (
 )
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.chat.conversations import upsert_conversation
+from app.services.redis_client import make_async_redis_client
 from app.services.sse_broadcast import sse_broadcast
 
 router = APIRouter()
@@ -398,7 +399,7 @@ async def _get_dedup_redis() -> Redis | None:
     conn_string = os.getenv("LANGGRAPH_V2_REDIS_URL") or os.getenv("REDIS_URL")
     if not conn_string:
         return None
-    _DEDUP_REDIS = Redis.from_url(conn_string, decode_responses=True)
+    _DEDUP_REDIS = make_async_redis_client(conn_string, decode_responses=True)
     return _DEDUP_REDIS
 
 
