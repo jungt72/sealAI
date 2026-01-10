@@ -44,8 +44,8 @@ _GREETING_PREFIXES = (
 
 @lru_cache(maxsize=1)
 def _settings() -> "Settings":
-    from app.core.config import Settings
-    return Settings()
+    from app.core.config import settings
+    return settings
 
 
 def _redis_client() -> Redis:
@@ -150,7 +150,12 @@ def _cleanup_excess_conversations(r: Redis, owner_id: str, key_set: str) -> None
         count = r.zcard(key_set)
         overflow = count - limit
         if overflow > 0:
-            r.zremrangebyrank(key_set, 0, overflow - 1)
+            if hasattr(r, "zremrangebyrank"):
+                r.zremrangebyrank(key_set, 0, overflow - 1)
+            else:
+                oldest = r.zrange(key_set, 0, overflow - 1)
+                for member in oldest:
+                    r.zrem(key_set, member)
     except Exception as exc:
         logger.warning(
             "Failed to enforce conversation limit: %s",
@@ -160,17 +165,24 @@ def _cleanup_excess_conversations(r: Redis, owner_id: str, key_set: str) -> None
 
 
 def upsert_conversation(
-    owner_ids: OwnerIds,
-    conversation_id: str,
+    owner_ids: OwnerIds | None = None,
+    conversation_id: str | None = None,
     *,
+    owner_id: str | None = None,
+    legacy_owner_id: str | None = None,
     title: str | None = None,
     first_user_message: str | None = None,
     last_preview: str | None = None,
     updated_at: datetime | None = None,
 ) -> None:
     """Create or refresh metadata for a conversation and refresh its TTL."""
-    canonical_id = owner_ids.canonical
-    legacy_id = owner_ids.legacy if owner_ids.legacy and owner_ids.legacy != canonical_id else None
+    resolved_owner_ids = owner_ids or OwnerIds(canonical=owner_id or "", legacy=legacy_owner_id)
+    canonical_id = resolved_owner_ids.canonical
+    legacy_id = (
+        resolved_owner_ids.legacy
+        if resolved_owner_ids.legacy and resolved_owner_ids.legacy != canonical_id
+        else None
+    )
     if not canonical_id or not conversation_id:
         return
     _upsert_for_owner(
@@ -306,10 +318,18 @@ def _collect_for_owner(owner_id: str, *, owner_key: str | None = None) -> List[C
     return result
 
 
-def list_conversations(owner_ids: OwnerIds) -> List[ConversationMeta]:
+def list_conversations(owner_ids: OwnerIds | str, legacy_owner_id: str | None = None) -> List[ConversationMeta]:
     """Return all known conversations for the canonical owner, optionally merging legacy IDs."""
-    canonical_id = owner_ids.canonical
-    legacy_id = owner_ids.legacy if owner_ids.legacy and owner_ids.legacy != canonical_id else None
+    if isinstance(owner_ids, str):
+        resolved_owner_ids = OwnerIds(canonical=owner_ids, legacy=legacy_owner_id)
+    else:
+        resolved_owner_ids = owner_ids
+    canonical_id = resolved_owner_ids.canonical
+    legacy_id = (
+        resolved_owner_ids.legacy
+        if resolved_owner_ids.legacy and resolved_owner_ids.legacy != canonical_id
+        else None
+    )
     if not canonical_id:
         return []
     canonical_entries = _collect_for_owner(
