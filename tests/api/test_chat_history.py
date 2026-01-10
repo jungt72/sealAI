@@ -276,14 +276,15 @@ async def test_langgraph_chat_v2_upserts_metadata(monkeypatch):
 
     monkeypatch.setattr(langgraph_v2, "sse_broadcast", FakeBroadcast())
 
-    async def fake_stream(req, *, user_id, request_id, last_event_id):
+    async def fake_stream(req, *, user_id, request_id, last_event_id, legacy_user_id=None):
         if False:
             yield b""
 
     monkeypatch.setattr(langgraph_v2, "_event_stream_v2", fake_stream)
 
-    def fake_upsert(owner_id: str, conversation_id: str, **kwargs: Any):
-        recorded["owner_id"] = owner_id
+    def fake_upsert(owner_ids=None, owner_id: str | None = None, conversation_id: str | None = None, **kwargs: Any):
+        resolved_owner_id = owner_ids.canonical if owner_ids else owner_id
+        recorded["owner_id"] = resolved_owner_id
         recorded["conversation_id"] = conversation_id
         recorded["kwargs"] = kwargs
 
