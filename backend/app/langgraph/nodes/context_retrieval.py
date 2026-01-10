@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List
 
 from langchain_core.messages import SystemMessage
 
 from app.langgraph.state import SealAIState
+
+logger = logging.getLogger(__name__)
 
 hybrid_retrieve = None
 
@@ -14,7 +17,18 @@ def context_retrieval(state: SealAIState) -> Dict[str, Any]:
     user_query = str(slots.get("user_query") or "").strip()
     if not user_query or hybrid_retrieve is None:
         return {}
-    documents = hybrid_retrieve(query=user_query)
+    meta = state.get("meta") or {}
+    tenant = meta.get("user_id") or slots.get("tenant_id")
+    if not tenant:
+        logger.warning("context_retrieval_missing_tenant")
+        slots["rag_status"] = "empty"
+        return {"slots": slots}
+    try:
+        documents = hybrid_retrieve(query=user_query, tenant=tenant)
+    except TypeError:
+        logger.warning("context_retrieval_tenant_unsupported")
+        slots["rag_status"] = "empty"
+        return {"slots": slots}
     if not documents:
         slots["rag_status"] = "empty"
         return {"slots": slots}

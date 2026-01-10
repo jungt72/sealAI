@@ -7,6 +7,8 @@ import logging
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.services.rag.qdrant_naming import qdrant_collection_name
+
 log = logging.getLogger("app.services.rag.rag_orchestrator")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -199,10 +201,11 @@ def startup_warmup() -> None:
 # Utilities
 # ─────────────────────────────────────────────────────────────────────────────
 def _collection_for_tenant(tenant: Optional[str]) -> str:
-    t = (tenant or "").strip()
-    if QDRANT_COLLECTION_PREFIX and t:
-        return f"{QDRANT_COLLECTION_PREFIX}:{t}"
-    return QDRANT_COLLECTION_DEFAULT
+    return qdrant_collection_name(
+        base=QDRANT_COLLECTION_DEFAULT,
+        prefix=QDRANT_COLLECTION_PREFIX,
+        tenant_id=tenant,
+    )
 
 def _embed(texts: List[str]) -> List[List[float]]:
     if not texts:

@@ -8,8 +8,11 @@ from langchain_community.document_loaders import (
     PDFPlumberLoader, Docx2txtLoader, TextLoader, UnstructuredFileLoader
 )
 
+from app.services.rag.qdrant_naming import qdrant_collection_name
+
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
+QDRANT_COLLECTION_PREFIX = os.getenv("QDRANT_COLLECTION_PREFIX", "").strip()
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "sealai-docs")
 EMBEDDING_MODEL = os.getenv(
     "EMB_MODEL_NAME",
@@ -99,11 +102,16 @@ def ingest_file(
         encode_kwargs={"normalize_embeddings": True},
     )
 
-    print(f"[INGEST] Schreibe nach Qdrant: {QDRANT_COLLECTION}")
+    collection_name = qdrant_collection_name(
+        base=QDRANT_COLLECTION,
+        prefix=QDRANT_COLLECTION_PREFIX,
+        tenant_id=tenant_id,
+    )
+    print(f"[INGEST] Schreibe nach Qdrant: {collection_name}")
     _ = QdrantVectorStore.from_documents(
         split_docs, embeddings,
         url=QDRANT_URL, api_key=QDRANT_API_KEY,
-        collection_name=QDRANT_COLLECTION,
+        collection_name=collection_name,
     )
     print(f"[INGEST] OK: {file_path}")
 
