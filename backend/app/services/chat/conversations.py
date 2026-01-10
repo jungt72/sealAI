@@ -336,11 +336,16 @@ def list_conversations(owner_ids: OwnerIds | str, legacy_owner_id: str | None = 
         canonical_id,
         owner_key=_canonical_owner_key(canonical_id),
     )
+    def _load_legacy_entries(legacy: str) -> List[ConversationMeta]:
+        entries = _collect_for_owner(legacy)
+        if not entries:
+            entries = _collect_for_owner(legacy, owner_key=_canonical_owner_key(legacy))
+        return entries
     if not canonical_entries:
         if not legacy_id:
             return []
         return sorted(
-            _collect_for_owner(legacy_id),
+            _load_legacy_entries(legacy_id),
             key=lambda entry: entry.updated_at,
             reverse=True,
         )
@@ -350,7 +355,7 @@ def list_conversations(owner_ids: OwnerIds | str, legacy_owner_id: str | None = 
             key=lambda entry: entry.updated_at,
             reverse=True,
         )
-    legacy_entries = _collect_for_owner(legacy_id)
+    legacy_entries = _load_legacy_entries(legacy_id)
     merged: Dict[str, ConversationMeta] = {entry.id: entry for entry in canonical_entries}
     for entry in legacy_entries:
         if entry.id not in merged:
