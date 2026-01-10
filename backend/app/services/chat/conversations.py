@@ -25,6 +25,7 @@ _PREVIEW_FIELD = "last_preview"
 _DEFAULT_CONVERSATION_TITLE = "Neue Unterhaltung"
 _TITLE_CHAR_LIMIT = 80
 _PREVIEW_CHAR_LIMIT = 160
+MAX_CONVERSATIONS_PER_USER = 500
 _GREETING_PREFIXES = (
     "hallo",
     "hi",
@@ -53,6 +54,13 @@ def _hash_key(owner_id: str, conversation_id: str) -> str:
 def _ttl_seconds() -> int:
     days = settings.chat_history_ttl_days or 30
     return max(1, days) * 86400
+
+
+def _conversation_limit() -> int:
+    configured = settings.chat_max_conversations_per_user
+    if not configured or configured <= 0:
+        return MAX_CONVERSATIONS_PER_USER
+    return min(configured, MAX_CONVERSATIONS_PER_USER)
 
 
 @dataclass
@@ -115,17 +123,12 @@ def _normalize_preview(value: str | None) -> str | None:
 
 
 def _cleanup_excess_conversations(r: Redis, owner_id: str, key_set: str) -> None:
-    limit = settings.chat_max_conversations_per_user
+    limit = _conversation_limit()
     if not limit or limit <= 0:
         return
     try:
-        count = r.zcard(key_set)
-        overflow = count - limit
-        if overflow <= 0:
-            return
-        oldest = r.zrange(key_set, 0, overflow - 1)
-        for conversation_id in oldest:
-            delete_conversation(owner_id, conversation_id, reason="limit")
+        # Scores are updated_at timestamps; higher is newer, so trim oldest ranks.
+        r.zremrangebyrank(key_set, 0, -(limit + 1))
     except Exception as exc:
         logger.warning(
             "Failed to enforce conversation limit: %s",

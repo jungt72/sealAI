@@ -7,6 +7,8 @@ from typing import Any, Dict
 
 from redis.asyncio import Redis
 
+MAX_JOBS_QUEUE_LEN = 10000
+
 
 @lru_cache(maxsize=1)
 def _queue_client() -> Redis:
@@ -18,4 +20,4 @@ async def enqueue_job(channel: str, payload: Dict[str, Any]) -> None:
     client = _queue_client()
     data = json.dumps(payload, ensure_ascii=False)
     await client.rpush(channel, data)
-
+    await client.ltrim(channel, -MAX_JOBS_QUEUE_LEN, -1)
