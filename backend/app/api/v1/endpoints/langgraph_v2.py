@@ -516,9 +516,10 @@ async def _event_stream_v2(
     broadcast_queue: asyncio.Queue[tuple[int, str, Dict[str, Any]]] | None = None
     queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
     last_slow_notice = 0.0
+    scoped_user_id = user_id
+    scoped_tenant_id = tenant_id
+    scope_id = _sse_scope_id(tenant_id, user_id)
     try:
-        scoped_user_id = user_id
-        scoped_tenant_id = tenant_id
         graph, config = await _build_graph_config(
             thread_id=req.chat_id,
             user_id=user_id,
@@ -530,6 +531,15 @@ async def _event_stream_v2(
         if scoped_tenant_id is None:
             scoped_tenant_id = config.get("metadata", {}).get("tenant_id") if isinstance(config, dict) else None
         scope_id = _sse_scope_id(scoped_tenant_id, scoped_user_id)
+        logger.info(
+            "langgraph_v2_sse_stream_start",
+            extra={
+                "request_id": request_id,
+                "tenant_id": scoped_tenant_id,
+                "user_id": scoped_user_id,
+                "chat_id": req.chat_id,
+            },
+        )
 
         async def _enqueue_frame(frame: bytes, *, allow_slow_notice: bool = True) -> None:
             nonlocal last_slow_notice
@@ -601,7 +611,12 @@ async def _event_stream_v2(
             except Exception:
                 logger.exception(
                     "langgraph_v2_sse_broadcast_error",
-                    extra={"chat_id": req.chat_id, "user_id": scoped_user_id},
+                    extra={
+                        "request_id": request_id,
+                        "tenant_id": scoped_tenant_id,
+                        "chat_id": req.chat_id,
+                        "user_id": scoped_user_id,
+                    },
                 )
 
         await _enqueue_frame(f"retry: {SSE_RETRY_MS}\n\n".encode("utf-8"), allow_slow_notice=False)
@@ -949,6 +964,7 @@ async def _event_stream_v2(
                     "langgraph_v2_sse_stream_error",
                     extra={
                         "request_id": request_id,
+                        "tenant_id": scoped_tenant_id,
                         "chat_id": req.chat_id,
                         "client_msg_id": req.client_msg_id,
                         "thread_id": req.chat_id,
@@ -1004,6 +1020,7 @@ async def _event_stream_v2(
             "langgraph_v2_sse_outer_error",
             extra={
                 "request_id": request_id,
+                "tenant_id": scoped_tenant_id,
                 "chat_id": req.chat_id,
                 "client_msg_id": req.client_msg_id,
                 "thread_id": req.chat_id,
@@ -1034,6 +1051,15 @@ async def _event_stream_v2(
         )
         yield _format_sse("done", done_payload, event_id=str(done_seq))
     finally:
+        logger.info(
+            "langgraph_v2_sse_stream_stop",
+            extra={
+                "request_id": request_id,
+                "tenant_id": scoped_tenant_id,
+                "user_id": scoped_user_id,
+                "chat_id": req.chat_id,
+            },
+        )
         if stream_task and not stream_task.done():
             stream_task.cancel()
         if broadcast_task and not broadcast_task.done():
@@ -1052,7 +1078,10 @@ async def langgraph_chat_v2_endpoint(
     raw_request: Request,
     user: RequestUser = Depends(get_current_request_user),
 ) -> StreamingResponse:
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_state = getattr(raw_request, "state", None)
+    request_id = getattr(request_state, "request_id", None) if request_state else None
+    if not request_id:
+        request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     if not request_id:
         request_id = str(uuid.uuid4())
     last_event_id = raw_request.headers.get("Last-Event-ID")
@@ -1103,6 +1132,7 @@ async def langgraph_chat_v2_endpoint(
             "request_id": request_id,
             "chat_id": request.chat_id,
             "user": user.user_id,
+            "tenant_id": scoped_tenant_id,
             "username": user.username,
             "client_msg_id": request.client_msg_id,
             "last_event_id": last_event_id,

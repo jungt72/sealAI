@@ -4,16 +4,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
 from app.services.jobs.worker import start_job_worker
 
 log = logging.getLogger("uvicorn.error")
+request_log = logging.getLogger("app.request")
 
 
 def _bool_env(name: str, default: str = "0") -> bool:
@@ -64,6 +67,39 @@ def create_app() -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):  # type: ignore[override]
+        request_id = request.headers.get("X-Request-Id") or request.headers.get("X-Request-ID")
+        if not request_id:
+            request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        start = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            request_log.exception(
+                "http_request_failed",
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                },
+            )
+            raise
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        request_log.info(
+            "http_request",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+            },
+        )
+        response.headers.setdefault("X-Request-Id", request_id)
+        return response
 
     @app.get("/")
     async def root():
