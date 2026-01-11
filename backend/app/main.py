@@ -9,10 +9,11 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
+from app.observability.metrics import observe_http_request, render_metrics
 from app.services.jobs.worker import start_job_worker
 
 log = logging.getLogger("uvicorn.error")
@@ -88,12 +89,20 @@ def create_app() -> FastAPI:
             )
             raise
         duration_ms = int((time.perf_counter() - start) * 1000)
+        route = request.scope.get("route")
+        route_path = getattr(route, "path", None) or request.url.path
+        observe_http_request(
+            method=request.method,
+            route=route_path,
+            status=response.status_code,
+            duration_ms=duration_ms,
+        )
         request_log.info(
             "http_request",
             extra={
                 "request_id": request_id,
                 "method": request.method,
-                "path": request.url.path,
+                "path": route_path,
                 "status_code": response.status_code,
                 "duration_ms": duration_ms,
             },
@@ -116,6 +125,10 @@ def create_app() -> FastAPI:
     @app.get("/readyz")
     async def ready():
         return {"ready": bool(getattr(app.state, "warmed_up", False))}
+
+    @app.get("/metrics")
+    async def metrics():
+        return Response(render_metrics(), media_type="text/plain; version=0.0.4")
 
     @app.get("/api/v1/ping")
     async def ping():

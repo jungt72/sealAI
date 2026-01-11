@@ -7,6 +7,7 @@ import logging
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.observability.metrics import inc_dependency_error, inc_rag_retrieval
 from app.services.rag.qdrant_naming import qdrant_collection_name
 
 log = logging.getLogger("app.services.rag.rag_orchestrator")
@@ -169,6 +170,7 @@ def init_bm25(redis_url: Optional[str] = None, index_name: Optional[str] = None)
         _event("redis_bm25_ready", index=idx)
         return {"client": r, "index": idx}
     except Exception as e:
+        inc_dependency_error(dependency="redis", op="bm25_ping", error_class=type(e).__name__)
         _event("redis_bm25_unavailable", reason=f"{type(e).__name__}: {e}")
         return None
 
@@ -264,10 +266,12 @@ def _bm25_search(
     try:
         from app.services.rag.bm25_store import bm25_repo
     except Exception as exc:
+        inc_dependency_error(dependency="redis", op="bm25_import", error_class=type(exc).__name__)
         return [], _qdrant_error("bm25_unavailable", None, f"{type(exc).__name__}: {exc}")
     try:
         return bm25_repo.search(collection, query, top_k=top_k, metadata_filters=metadata_filters), None
     except Exception as exc:
+        inc_dependency_error(dependency="redis", op="bm25_search", error_class=type(exc).__name__)
         return [], _qdrant_error("bm25_error", None, f"{type(exc).__name__}: {exc}")
 
 def _qdrant_backoff_ms(attempt_index: int) -> int:
@@ -364,6 +368,11 @@ def _qdrant_search_with_retry(
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     if last_error:
+        inc_dependency_error(
+            dependency="qdrant",
+            op="search",
+            error_class=str(last_error.get("kind") or "unknown"),
+        )
         _event("qdrant_search_failed", reason=last_error.get("message", "error"), collection=collection)
     return [], {
         "attempts": attempts,
@@ -422,6 +431,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     """
     q = (query or "").strip()
     if not q:
+        inc_rag_retrieval("skipped")
         return []
 
     # Embed query
@@ -513,6 +523,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
         _event("hybrid_retrieve", n=len(merged), tenant=tenant or "-", collection=collection, k=k)
     except Exception:
         pass
+    inc_rag_retrieval("results" if merged else "skipped")
 
     if return_metrics:
         return merged, metrics
