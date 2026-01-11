@@ -3,6 +3,7 @@
 # =========================
 FROM python:3.11-slim AS builder
 ARG INSTALL_DEV=false
+ARG USE_REQUIREMENTS_LOCK=0
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1 DEBIAN_FRONTEND=noninteractive
 WORKDIR /opt/build
 
@@ -13,11 +14,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Eine zentrale requirements.txt
 COPY requirements.txt ./requirements.txt
+COPY requirements-lock.txt ./requirements-lock.txt
 COPY requirements-dev.txt ./requirements-dev.txt
 
 # Stabiler Resolver + Wheels bauen (für offline-Installation im Runtime-Stage)
 RUN python -m pip install --upgrade pip \
- && python -m pip wheel --no-cache-dir --wheel-dir /opt/wheels -r requirements.txt \
+ && if [ "$USE_REQUIREMENTS_LOCK" = "1" ] && [ -f requirements-lock.txt ]; then \
+      echo "Using requirements-lock.txt for wheel build"; \
+      REQ_FILE=requirements-lock.txt; \
+    else \
+      echo "Using requirements.txt for wheel build"; \
+      REQ_FILE=requirements.txt; \
+    fi \
+ && python -m pip wheel --no-cache-dir --wheel-dir /opt/wheels -r "$REQ_FILE" \
  && if [ "$INSTALL_DEV" = "true" ]; then \
       python -m pip wheel --no-cache-dir --wheel-dir /opt/wheels -r requirements-dev.txt; \
     fi
@@ -28,6 +37,7 @@ RUN python -m pip install --upgrade pip \
 # =========================
 FROM python:3.11-slim
 ARG INSTALL_DEV=false
+ARG USE_REQUIREMENTS_LOCK=0
 ENV PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1 DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
@@ -44,9 +54,17 @@ RUN useradd -m -u 10001 -s /usr/sbin/nologin appuser
 # Python-Deps offline aus Wheels installieren
 COPY --from=builder /opt/wheels /opt/wheels
 COPY requirements.txt /tmp/requirements.txt
+COPY requirements-lock.txt /tmp/requirements-lock.txt
 COPY requirements-dev.txt /tmp/requirements-dev.txt
 RUN python -m pip install --upgrade pip \
- && python -m pip install --no-index --find-links /opt/wheels -r /tmp/requirements.txt \
+ && if [ "$USE_REQUIREMENTS_LOCK" = "1" ] && [ -f /tmp/requirements-lock.txt ]; then \
+      echo "Using requirements-lock.txt for install"; \
+      REQ_FILE=/tmp/requirements-lock.txt; \
+    else \
+      echo "Using requirements.txt for install"; \
+      REQ_FILE=/tmp/requirements.txt; \
+    fi \
+ && python -m pip install --no-index --find-links /opt/wheels -r "$REQ_FILE" \
  && if [ "$INSTALL_DEV" = "true" ]; then \
       python -m pip install --no-index --find-links /opt/wheels -r /tmp/requirements-dev.txt; \
     fi

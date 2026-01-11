@@ -6,6 +6,7 @@ This repo uses two layers:
 - `backend/requirements-lock.txt` is the deploy lock for reproducible builds.
 
 Production deployments should install from `backend/requirements-lock.txt`.
+For container builds, set `BACKEND_USE_REQUIREMENTS_LOCK=1` so the backend image uses the lock file.
 
 Update flow:
 1) Regenerate the lock from the backend container image.
