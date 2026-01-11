@@ -46,11 +46,10 @@ Gaps:
 Findings:
 - Qdrant collection naming can be tenant-aware via `QDRANT_COLLECTION_PREFIX` (`qdrant_collection_name`).
 - SSE replay has Redis backend option; default is in-memory.
+- Deterministic RAG context sanitization (limits, injection/secret scrubbing) is implemented in `backend/app/services/rag/rag_safety.py`.
 
 Gaps:
 - Tenant isolation relies on optional collection prefix; if unset, tenants share base collection.
-- No deterministic retrieval sanitization before RAG context injection (PII redaction or secret stripping).
-- No explicit prompt injection guardrails around retrieved context.
 
 ## Ops (backups, retention/TTL, resource limits)
 Findings:

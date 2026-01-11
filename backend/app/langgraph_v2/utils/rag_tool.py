@@ -1,7 +1,9 @@
 from langchain_core.tools import tool
 from app.services.rag.rag_orchestrator import hybrid_retrieve
+from app.services.rag.rag_safety import sanitize_rag_context
 from typing import Optional
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +71,30 @@ def search_knowledge_base(
             "retrieval_meta": retrieval_meta,
         }
 
+    max_sources_raw = os.getenv("RAG_MAX_SOURCES", "12")
+    try:
+        max_sources = int(max_sources_raw)
+    except (TypeError, ValueError):
+        max_sources = 12
+
+    results_for_context = results[:max_sources] if max_sources > 0 else results
+
     output = ["**Gefundene Informationen aus der Wissensdatenbank:**"]
-    for hit in results:
+    for hit in results_for_context:
         output.append(_format_hit(hit))
 
+    context_text = "\n".join(output)
+    sanitized_text, normalized_sources, safety = sanitize_rag_context(
+        context_text,
+        retrieval_meta.get("sources"),
+        max_sources=max_sources,
+    )
+    retrieval_meta["safety"] = safety
+    if normalized_sources is not None:
+        retrieval_meta["sources"] = normalized_sources
+
     return {
-        "context": "\n".join(output),
+        "context": sanitized_text,
         "retrieval_meta": retrieval_meta,
     }
 
