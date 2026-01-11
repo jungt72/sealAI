@@ -338,11 +338,12 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
     notes = dict(state.working_memory.comparison_notes if state.working_memory else {})
     user_text = latest_user_text(state.get("messages")) or ""
+    tenant_id = state.tenant_id or state.user_id
     rag_context = search_knowledge_base.invoke({
         "query": user_text or "Aktuelle technische Frage",
         "category": "norms",
         "k": 3,
-        "tenant": state.user_id,
+        "tenant": tenant_id,
     })
     rag_text, retrieval_meta = unpack_rag_payload(rag_context)
     min_score = float(os.getenv("MIN_TOP_SCORE", "0.20"))

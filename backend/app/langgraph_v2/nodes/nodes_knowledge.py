@@ -64,11 +64,12 @@ def knowledge_material_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
     model_name = get_model_tier("mini")
     
     # RAG-Retrieval VOR LLM-Call
+    tenant_id = state.tenant_id or state.user_id
     rag_context = search_knowledge_base.invoke({
         "query": user_text,
         "category": "materials",
         "k": 3,
-        "tenant": state.user_id,
+        "tenant": tenant_id,
     })
     rag_text, retrieval_meta = unpack_rag_payload(rag_context)
     rag_text, retrieval_meta = apply_rag_quality_gate(
@@ -133,11 +134,12 @@ def knowledge_lifetime_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
     model_name = get_model_tier("mini")
     
     # RAG-Retrieval
+    tenant_id = state.tenant_id or state.user_id
     rag_context = search_knowledge_base.invoke({
         "query": user_text or "Lebensdauer Dichtungen Einflussfaktoren",
         "category": "lifetime",
         "k": 3,
-        "tenant": state.user_id,
+        "tenant": tenant_id,
     })
     rag_text, retrieval_meta = unpack_rag_payload(rag_context)
     rag_text, retrieval_meta = apply_rag_quality_gate(
@@ -204,10 +206,11 @@ def generic_sealing_qa_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
     model_name = get_model_tier("mini")
     
     # RAG-Retrieval (ohne category-Filter für breitere Suche)
+    tenant_id = state.tenant_id or state.user_id
     rag_context = search_knowledge_base.invoke({
         "query": user_text or "Allgemeine Frage Dichtungstechnik",
         "k": 3,
-        "tenant": state.user_id,
+        "tenant": tenant_id,
     })
     rag_text, retrieval_meta = unpack_rag_payload(rag_context)
     rag_text, retrieval_meta = apply_rag_quality_gate(

@@ -59,6 +59,13 @@ def _resolve_checkpointer_settings(namespace: str | None) -> tuple[str, str, Opt
     return resolved_namespace, prefix, ttl
 
 
+def _ttl_config_from_seconds(ttl: Optional[int]) -> Optional[dict[str, Any]]:
+    if ttl is None:
+        return None
+    minutes = float(ttl) / 60.0
+    return {"default_ttl": minutes}
+
+
 def _async_redis_saver_supported_params() -> set[str] | None:
     try:
         signature = inspect.signature(AsyncRedisSaver.__init__)  # type: ignore[misc]
@@ -153,7 +160,7 @@ def _build_async_redis_saver_kwargs(
         if ttl is not None and ttl_param:
             ttl_value: Any = ttl
             if ttl_param == "ttl":
-                ttl_value = {"seconds": ttl}
+                ttl_value = _ttl_config_from_seconds(ttl)
             kwargs[ttl_param] = ttl_value
         elif ttl is not None:
             warnings.append(("langgraph_v2_checkpointer_ttl_unsupported", {"ttl": ttl}))
@@ -166,7 +173,7 @@ def _build_async_redis_saver_kwargs(
         "key_prefix": prefix,
     }
     if ttl is not None:
-        kwargs["ttl"] = {"seconds": ttl}
+        kwargs["ttl"] = _ttl_config_from_seconds(ttl)
     return (), kwargs, warnings
 
 
@@ -200,21 +207,29 @@ def _construct_async_redis_saver(
             "checkpoint_prefix": effective_prefix,
             "checkpoint_blob_prefix": f"{effective_prefix}:checkpoint_blob",
             "checkpoint_write_prefix": f"{effective_prefix}:checkpoint_write",
-            "ttl": {"seconds": ttl} if ttl is not None else None,
+            "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None,
         },
         {
             "checkpoint_prefix": effective_prefix,
-            "ttl": {"seconds": ttl} if ttl is not None else None,
+            "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None,
         },
-        {"namespace": namespace, "key_prefix": effective_prefix, "ttl": {"seconds": ttl} if ttl is not None else None},
+        {
+            "namespace": namespace,
+            "key_prefix": effective_prefix,
+            "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None,
+        },
         {"namespace": namespace, "key_prefix": effective_prefix, "ttl_seconds": ttl},
-        {"namespace": namespace, "prefix": effective_prefix, "ttl": {"seconds": ttl} if ttl is not None else None},
+        {
+            "namespace": namespace,
+            "prefix": effective_prefix,
+            "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None,
+        },
         {"namespace": namespace, "prefix": effective_prefix, "ttl_seconds": ttl},
-        {"namespace": namespace, "ttl": {"seconds": ttl} if ttl is not None else None},
+        {"namespace": namespace, "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None},
         {"namespace": namespace, "ttl_seconds": ttl},
-        {"key_prefix": effective_prefix, "ttl": {"seconds": ttl} if ttl is not None else None},
+        {"key_prefix": effective_prefix, "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None},
         {"key_prefix": effective_prefix, "ttl_seconds": ttl},
-        {"prefix": effective_prefix, "ttl": {"seconds": ttl} if ttl is not None else None},
+        {"prefix": effective_prefix, "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None},
         {"prefix": effective_prefix, "ttl_seconds": ttl},
         {},
     ]

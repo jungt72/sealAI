@@ -297,6 +297,7 @@ class SealAIState(BaseModel):
     # Core chat state
     messages: Annotated[List[BaseMessage], add_messages] = Field(default_factory=list)
     user_id: Optional[str] = None
+    tenant_id: Optional[str] = None
     thread_id: Optional[str] = None
     # Observability – carry run_id into state for logging/metadata
     run_id: Optional[str] = None

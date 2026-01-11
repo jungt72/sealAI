@@ -30,7 +30,12 @@ from app.langgraph_v2.utils.parameter_patch import (
     apply_parameter_patch_lww,
     sanitize_v2_parameter_patch,
 )
-from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
+from app.services.auth.dependencies import (
+    RequestUser,
+    canonical_tenant_id,
+    canonical_user_id,
+    get_current_request_user,
+)
 from app.services.chat.conversations import OwnerIds, upsert_conversation
 from app.services.redis_client import make_async_redis_client
 from app.services.sse_broadcast import sse_broadcast
@@ -69,6 +74,12 @@ def _short_user_id(user_id: str | None) -> str:
     if not user_id:
         return ""
     return f"{user_id[:8]}..." if len(user_id) > 8 else user_id
+
+
+def _sse_scope_id(tenant_id: str | None, user_id: str | None) -> str:
+    if tenant_id and user_id:
+        return f"{tenant_id}:{user_id}"
+    return tenant_id or user_id or ""
 
 
 def _extract_final_answer_from_state(state: SealAIState) -> str:
@@ -166,6 +177,7 @@ async def _build_graph_config(
     *,
     thread_id: str,
     user_id: str,
+    tenant_id: str | None = None,
     username: str | None = None,
     legacy_user_id: str | None = None,
     request_id: str | None = None,
@@ -182,7 +194,10 @@ async def _build_graph_config(
             metadata["user_sub"] = scoped_user_id
         return base_config
 
-    config = _attach_config(build_v2_config(thread_id=thread_id, user_id=user_id), scoped_user_id=user_id)
+    config = _attach_config(
+        build_v2_config(thread_id=thread_id, user_id=user_id, tenant_id=tenant_id),
+        scoped_user_id=user_id,
+    )
     if not allow_legacy_fallback or not legacy_user_id or legacy_user_id == user_id:
         return graph, config
 
@@ -192,7 +207,7 @@ async def _build_graph_config(
             return graph, config
 
         legacy_config = _attach_config(
-            build_v2_config(thread_id=thread_id, user_id=legacy_user_id),
+            build_v2_config(thread_id=thread_id, user_id=legacy_user_id, tenant_id=tenant_id),
             scoped_user_id=legacy_user_id,
         )
         legacy_snapshot = await graph.aget_state(legacy_config)
@@ -222,10 +237,22 @@ async def _build_graph_config(
     return graph, config
 
 
-async def _run_graph_to_state(req: LangGraphV2Request, *, user_id: str, username: str | None = None) -> SealAIState:
-    graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id, username=username)
+async def _run_graph_to_state(
+    req: LangGraphV2Request,
+    *,
+    user_id: str,
+    tenant_id: str | None = None,
+    username: str | None = None,
+) -> SealAIState:
+    graph, config = await _build_graph_config(
+        thread_id=req.chat_id,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        username=username,
+    )
     initial_state = SealAIState(
         user_id=user_id,
+        tenant_id=tenant_id,
         thread_id=req.chat_id,
         messages=[HumanMessage(content=req.input)],
     )
@@ -479,6 +506,7 @@ async def _event_stream_v2(
     req: LangGraphV2Request,
     *,
     user_id: str,
+    tenant_id: str | None = None,
     legacy_user_id: str | None = None,
     request_id: str | None = None,
     last_event_id: str | None = None,
@@ -490,13 +518,18 @@ async def _event_stream_v2(
     last_slow_notice = 0.0
     try:
         scoped_user_id = user_id
+        scoped_tenant_id = tenant_id
         graph, config = await _build_graph_config(
             thread_id=req.chat_id,
             user_id=user_id,
+            tenant_id=tenant_id,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
         )
         scoped_user_id = _config_user_id(config, user_id)
+        if scoped_tenant_id is None:
+            scoped_tenant_id = config.get("metadata", {}).get("tenant_id") if isinstance(config, dict) else None
+        scope_id = _sse_scope_id(scoped_tenant_id, scoped_user_id)
 
         async def _enqueue_frame(frame: bytes, *, allow_slow_notice: bool = True) -> None:
             nonlocal last_slow_notice
@@ -528,7 +561,7 @@ async def _event_stream_v2(
                         break
                 if queue.qsize() <= queue.maxsize - 1:
                     slow_seq = await sse_broadcast.record_event(
-                        user_id=scoped_user_id,
+                        user_id=scope_id,
                         chat_id=req.chat_id,
                         event="slow_client",
                         data={"reason": "backpressure"},
@@ -542,7 +575,7 @@ async def _event_stream_v2(
 
         async def _emit_event(event_name: str, payload: Dict[str, Any]) -> None:
             seq = await sse_broadcast.record_event(
-                user_id=scoped_user_id,
+                user_id=scope_id,
                 chat_id=req.chat_id,
                 event=event_name,
                 data=payload,
@@ -550,7 +583,7 @@ async def _event_stream_v2(
             frame = _format_sse(event_name, payload, event_id=str(seq))
             await _enqueue_frame(frame)
 
-        broadcast_queue = await sse_broadcast.subscribe(user_id=scoped_user_id, chat_id=req.chat_id)
+        broadcast_queue = await sse_broadcast.subscribe(user_id=scope_id, chat_id=req.chat_id)
 
         async def _broadcast_forwarder() -> None:
             if broadcast_queue is None:
@@ -576,7 +609,7 @@ async def _event_stream_v2(
         last_seq = _parse_last_event_id(last_event_id, chat_id=req.chat_id)
         if last_seq is not None:
             replay, buffer_miss = await sse_broadcast.replay_after(
-                user_id=scoped_user_id,
+                user_id=scope_id,
                 chat_id=req.chat_id,
                 last_seq=last_seq,
             )
@@ -636,6 +669,7 @@ async def _event_stream_v2(
         prev_parameters: Dict[str, Any] = {}
         initial_state = SealAIState(
             user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
             thread_id=req.chat_id,
             messages=[HumanMessage(content=req.input)],
         )
@@ -958,7 +992,7 @@ async def _event_stream_v2(
             "client_msg_id": req.client_msg_id,
         }
         seq = await sse_broadcast.record_event(
-            user_id=scoped_user_id,
+            user_id=scope_id,
             chat_id=req.chat_id,
             event="done",
             data=done_payload,
@@ -980,7 +1014,7 @@ async def _event_stream_v2(
         message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
         error_payload = {"type": "error", "message": message, "request_id": request_id}
         error_seq = await sse_broadcast.record_event(
-            user_id=scoped_user_id,
+            user_id=scope_id,
             chat_id=req.chat_id,
             event="error",
             data=error_payload,
@@ -993,7 +1027,7 @@ async def _event_stream_v2(
             "client_msg_id": req.client_msg_id,
         }
         done_seq = await sse_broadcast.record_event(
-            user_id=scoped_user_id,
+            user_id=scope_id,
             chat_id=req.chat_id,
             event="done",
             data=done_payload,
@@ -1006,7 +1040,7 @@ async def _event_stream_v2(
             broadcast_task.cancel()
         if broadcast_queue is not None:
             await sse_broadcast.unsubscribe(
-                user_id=scoped_user_id,
+                user_id=scope_id,
                 chat_id=req.chat_id,
                 queue=broadcast_queue,
             )
@@ -1030,10 +1064,11 @@ async def langgraph_chat_v2_endpoint(
             detail=error_detail("missing_param_snapshot", request_id=request_id),
         )
     scoped_user_id = canonical_user_id(user)
+    scoped_tenant_id = canonical_tenant_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
-            user_id=scoped_user_id,
+            user_id=_sse_scope_id(scoped_tenant_id, scoped_user_id),
             chat_id=request.chat_id,
             client_msg_id=request.client_msg_id,
         )
@@ -1087,6 +1122,7 @@ async def langgraph_chat_v2_endpoint(
         _event_stream_v2(
             request,
             user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
             last_event_id=last_event_id,
@@ -1104,6 +1140,7 @@ async def confirm_go(
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
+    scoped_tenant_id = canonical_tenant_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     try:
         if not (body.chat_id or "").strip():
@@ -1113,6 +1150,7 @@ async def confirm_go(
         graph, config = await _build_graph_config(
             thread_id=body.chat_id,
             user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
             username=user.username,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
@@ -1214,6 +1252,7 @@ async def patch_parameters(
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
+    scoped_tenant_id = canonical_tenant_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     chat_id = (body.chat_id or "").strip()
     patch: Dict[str, Any] = {}
@@ -1236,6 +1275,7 @@ async def patch_parameters(
         graph, config = await _build_graph_config(
             thread_id=chat_id,
             user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
             username=user.username,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
@@ -1327,7 +1367,7 @@ async def patch_parameters(
             "request_id": request_id,
         }
         await sse_broadcast.broadcast(
-            user_id=scoped_user_id,
+            user_id=_sse_scope_id(scoped_tenant_id, scoped_user_id),
             chat_id=chat_id,
             event="parameter_patch_ack",
             data=ack_payload,

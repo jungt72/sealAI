@@ -547,7 +547,19 @@ async def get_sealai_graph_v2() -> CompiledStateGraph:
     return graph
 
 
-def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
+def _tenant_checkpoint_namespace(base: str, tenant_id: str | None) -> str:
+    if not tenant_id:
+        return base
+    clean_base = base.strip()
+    clean_tenant = tenant_id.strip()
+    if not clean_tenant:
+        return clean_base
+    if clean_base.endswith(":"):
+        return f"{clean_base}{clean_tenant}"
+    return f"{clean_base}:{clean_tenant}"
+
+
+def build_v2_config(*, thread_id: str, user_id: str, tenant_id: str | None = None) -> Dict[str, Any]:
     """
     Common LangGraph config for v2 (includes run_id for observability).
 
@@ -556,14 +568,17 @@ def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
     + Die harte Begrenzung erfolgt weiterhin über den 45s-Timeout im SSE-Endpoint.
     """
     run_id = str(uuid.uuid4())
+    base_namespace = resolve_checkpointer_namespace_v2()
+    checkpoint_ns = _tenant_checkpoint_namespace(base_namespace, tenant_id)
     configurable: Dict[str, Any] = {
         "thread_id": thread_id,
         "user_id": user_id,
-        "checkpoint_ns": resolve_checkpointer_namespace_v2(),
+        "checkpoint_ns": checkpoint_ns,
     }
     metadata: Dict[str, Any] = {
         "thread_id": thread_id,
         "user_id": user_id,
+        "tenant_id": tenant_id,
         "run_id": run_id,
     }
     return {

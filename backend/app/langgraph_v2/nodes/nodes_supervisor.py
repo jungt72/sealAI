@@ -339,7 +339,7 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         retrieval_meta = {
             "skipped": True,
             "reason": "requires_rag_false",
-            "tenant_id": state.user_id,
+            "tenant_id": state.tenant_id or state.user_id,
         }
 
     patch: Dict[str, Any] = {

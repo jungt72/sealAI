@@ -272,6 +272,10 @@ def build_replay_backend() -> ReplayBackend:
     ttl = int(os.getenv("SEALAI_SSE_REPLAY_TTL_SEC", "3600"))
     memory_backend = MemoryReplayBackend(max_buffer=maxlen)
     if backend != "redis":
+        logger.info(
+            "sse_replay_backend_selected",
+            extra={"backend": backend or "memory", "maxlen": maxlen, "ttl_sec": ttl},
+        )
         return memory_backend
     redis_url = _resolve_redis_url()
     if Redis is None or not redis_url:
@@ -279,7 +283,15 @@ def build_replay_backend() -> ReplayBackend:
             "sse_replay_redis_unavailable",
             extra={"backend": backend, "redis_url_set": bool(redis_url)},
         )
+        logger.info(
+            "sse_replay_backend_selected",
+            extra={"backend": "memory", "maxlen": maxlen, "ttl_sec": ttl},
+        )
         return memory_backend
+    logger.info(
+        "sse_replay_backend_selected",
+        extra={"backend": "redis", "maxlen": maxlen, "ttl_sec": ttl},
+    )
     return RedisReplayBackend(
         redis_url=redis_url,
         max_buffer=maxlen,

@@ -10,6 +10,7 @@ Auth-Dependencies für FastAPI-/WebSocket-Endpoints.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import os
 
 from fastapi import Depends, HTTPException, WebSocket, status, Header
@@ -28,6 +29,10 @@ class RequestUser:
     username: str
     sub: str
     roles: list[str]
+    tenant_id: str | None = None
+
+
+logger = logging.getLogger(__name__)
 
 
 def verify_access_token(token: str) -> dict:
@@ -42,6 +47,14 @@ def _resolve_user_id(payload: dict) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=error_detail("missing_user_id_claim", claim=claim),
         )
+    return str(value)
+
+
+def _resolve_tenant_id(payload: dict) -> str | None:
+    claim = (os.getenv("AUTH_TENANT_ID_CLAIM") or "tenant_id").strip()
+    value = payload.get(claim)
+    if value is None or value == "":
+        return None
     return str(value)
 
 
@@ -73,6 +86,18 @@ def canonical_user_id(user: RequestUser) -> str:
     return user.user_id or user.sub
 
 
+def canonical_tenant_id(user: RequestUser) -> str:
+    """Return the canonical tenant id for scoping (claim preferred)."""
+    if user.tenant_id:
+        return user.tenant_id
+    fallback = user.user_id or user.sub
+    logger.warning(
+        "tenant_id_claim_missing_fallback",
+        extra={"user_id": user.user_id, "sub": user.sub},
+    )
+    return fallback
+
+
 async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     authorization: str | None = Header(default=None),
 ) -> RequestUser:
@@ -97,8 +122,9 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     user_id = _resolve_user_id(payload)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
+    tenant_id = _resolve_tenant_id(payload)
     roles = _extract_roles(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)
+    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles, tenant_id=tenant_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -140,5 +166,6 @@ async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
     user_id = _resolve_user_id(payload)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
+    tenant_id = _resolve_tenant_id(payload)
     roles = _extract_roles(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)
+    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles, tenant_id=tenant_id)
