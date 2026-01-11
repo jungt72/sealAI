@@ -8,6 +8,8 @@ import random
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.observability.metrics import inc_dependency_error, inc_rag_retrieval
+from app.services.qdrant_client import build_httpx_timeout, get_qdrant_client, get_qdrant_timeout_sec
+from app.services.redis_client import make_redis_client
 from app.services.rag.qdrant_naming import qdrant_collection_name
 
 log = logging.getLogger("app.services.rag.rag_orchestrator")
@@ -22,7 +24,6 @@ def _truthy(x: Optional[str]) -> bool:
     return v in {"1", "true", "yes", "on"}
 
 # RAG core
-QDRANT_URL                 = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 QDRANT_COLLECTION_PREFIX   = os.getenv("QDRANT_COLLECTION_PREFIX", "").strip()
 QDRANT_COLLECTION_DEFAULT  = os.getenv("QDRANT_COLLECTION", "sealai-docs").strip()
 
@@ -35,7 +36,7 @@ HYBRID_K                   = int(os.getenv("RAG_HYBRID_K", os.getenv("RAG_TOP_K"
 FINAL_K                    = int(os.getenv("RAG_FINAL_K", "6"))
 RRF_K                      = int(os.getenv("RAG_RRF_K", "60"))
 SCORE_THRESHOLD            = float(os.getenv("RAG_SCORE_THRESHOLD", "0.0"))
-QDRANT_TIMEOUT_S           = float(os.getenv("QDRANT_TIMEOUT_S", "5.0"))
+QDRANT_TIMEOUT_S           = get_qdrant_timeout_sec()
 QDRANT_RETRY_ATTEMPTS      = 3
 QDRANT_RETRY_BASE_MS       = 150
 QDRANT_RETRY_JITTER_MS     = 100
@@ -164,8 +165,7 @@ def init_bm25(redis_url: Optional[str] = None, index_name: Optional[str] = None)
         _event("redis_bm25_unavailable", reason="missing_url_or_index")
         return None
     try:
-        import redis
-        r = redis.Redis.from_url(url)
+        r = make_redis_client(url)
         _ = r.ping()
         _event("redis_bm25_ready", index=idx)
         return {"client": r, "index": idx}
@@ -296,51 +296,46 @@ def _qdrant_search_with_retry(
     metadata_filters: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     import httpx
-    url = f"{QDRANT_URL}/collections/{collection}/points/search"
-    body: Dict[str, Any] = {
-        "vector": query_vec,
-        "limit": top_k,
-        "with_payload": True,
-        "with_vector": False,
-    }
-    if metadata_filters:
-        body["filter"] = {"must": [{"key": k, "match": {"value": v}} for k, v in metadata_filters.items()]}
+    from qdrant_client.http import models as qmodels
+    from qdrant_client.http.exceptions import UnexpectedResponse
 
     attempts = 0
     backoffs: List[int] = []
     last_error: Dict[str, Any] | None = None
     started = time.perf_counter()
 
+    query_filter = None
+    if metadata_filters:
+        query_filter = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(key=k, match=qmodels.MatchValue(value=v))
+                for k, v in metadata_filters.items()
+            ]
+        )
+
+    client = get_qdrant_client()
+
     for attempt in range(QDRANT_RETRY_ATTEMPTS):
         attempts += 1
         try:
-            with httpx.Client(timeout=QDRANT_TIMEOUT_S) as client:
-                r = client.post(url, json=body)
-            status = int(getattr(r, "status_code", 0) or 0)
-            if status >= 400:
-                last_error = _qdrant_error("http_error", status, f"HTTP {status}")
-                if _should_retry_status(status) and attempt < QDRANT_RETRY_ATTEMPTS - 1:
-                    delay_ms = _qdrant_backoff_ms(attempt)
-                    backoffs.append(delay_ms)
-                    log.warning("qdrant_retry_http_error", extra={"status": status, "attempt": attempts})
-                    time.sleep(delay_ms / 1000.0)
-                    continue
-                break
-            try:
-                data = r.json()
-            except Exception as exc:
-                last_error = _qdrant_error("decode", None, f"{type(exc).__name__}: {exc}")
-                break
-            res = data.get("result") or []
+            res = client.search(
+                collection_name=collection,
+                query_vector=query_vec,
+                limit=top_k,
+                query_filter=query_filter,
+                with_payload=True,
+                with_vectors=False,
+                timeout=QDRANT_TIMEOUT_S,
+            )
             out: List[Dict[str, Any]] = []
-            for item in res:
-                payload = item.get("payload") or {}
+            for item in res or []:
+                payload = getattr(item, "payload", None) or {}
                 txt = payload.get("text") or payload.get("chunk") or payload.get("content") or ""
                 src = payload.get("source") or (payload.get("metadata") or {}).get("source") or payload.get("file") or ""
                 out.append({
                     "text": txt,
                     "source": src,
-                    "vector_score": float(item.get("score") or 0.0),
+                    "vector_score": float(getattr(item, "score", 0.0) or 0.0),
                     "metadata": payload,
                 })
             elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -351,6 +346,17 @@ def _qdrant_search_with_retry(
                 "retry_backoff_ms": backoffs or None,
                 "error": None,
             }
+        except UnexpectedResponse as exc:
+            status = getattr(exc, "status_code", None)
+            message = f"HTTP {status}" if status else f"{type(exc).__name__}: {exc}"
+            last_error = _qdrant_error("http_error", status, message)
+            if status and _should_retry_status(status) and attempt < QDRANT_RETRY_ATTEMPTS - 1:
+                delay_ms = _qdrant_backoff_ms(attempt)
+                backoffs.append(delay_ms)
+                log.warning("qdrant_retry_http_error", extra={"status": status, "attempt": attempts})
+                time.sleep(delay_ms / 1000.0)
+                continue
+            break
         except httpx.TimeoutException as exc:
             last_error = _qdrant_error("timeout", None, f"{type(exc).__name__}: {exc}")
         except httpx.TransportError as exc:
@@ -571,7 +577,7 @@ def _fallback_external_search(query: str, *, tenant: Optional[str] = None, limit
         payload: Dict[str, Any] = {"query": query, "k": limit}
         if tenant:
             payload["tenant"] = tenant
-        with httpx.Client(timeout=5.0) as client:
+        with httpx.Client(timeout=build_httpx_timeout(5.0)) as client:
             for base, tag in bases:
                 try:
                     r = client.post(f"{base}/v1/search", json=payload)

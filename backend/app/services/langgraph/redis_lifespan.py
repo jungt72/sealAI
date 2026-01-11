@@ -6,6 +6,8 @@ import logging
 from typing import Optional, Any
 from urllib.parse import urlsplit, urlunsplit
 
+from app.services.redis_client import make_redis_client
+
 log = logging.getLogger("app.redis_checkpointer")
 
 # RedisSaver (sync). Unterschiedliche Versionen haben verschiedene __init__-Signaturen.
@@ -80,8 +82,7 @@ def _try_construct_redis_saver(redis_url: str, ns: str, ttl: Optional[int]) -> A
 
     # 2) Ältere Pakete – Client-basiert
     try:
-        from redis import Redis as _Redis
-        client = _Redis.from_url(redis_url)
+        client = make_redis_client(redis_url)
         for kwargs in (
             {"redis": client, "namespace": ns, "ttl_seconds": ttl},
             {"redis": client, "key_prefix": ns, "ttl_seconds": ttl},

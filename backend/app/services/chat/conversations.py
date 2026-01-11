@@ -15,6 +15,7 @@ from typing import Dict, List, TYPE_CHECKING
 
 from redis import Redis
 
+from app.services.redis_client import make_redis_client
 if TYPE_CHECKING:
     from app.core.config import Settings
 
@@ -49,7 +50,7 @@ def _settings() -> "Settings":
 
 
 def _redis_client() -> Redis:
-    return Redis.from_url(_settings().redis_url, decode_responses=True)
+    return make_redis_client(_settings().redis_url, decode_responses=True)
 
 
 def _sorted_set_key(owner_id: str) -> str:

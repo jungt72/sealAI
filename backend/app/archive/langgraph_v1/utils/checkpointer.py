@@ -13,6 +13,7 @@ try:
 except Exception:  # pragma: no cover
     SyncRedis = None  # type: ignore
 
+from app.services.redis_client import make_async_redis_client, make_redis_client
 try:
     from langgraph.checkpoint.redis import RedisSaver  # type: ignore
 except Exception:  # pragma: no cover
@@ -71,7 +72,7 @@ def _try_create_redis_saver(client: Any, namespace: str) -> Optional[object]:
 def _make_sync_saver(redis_url: str, namespace: str) -> Optional[object]:
     if SyncRedis:
         try:
-            client = SyncRedis.from_url(redis_url)
+            client = make_redis_client(redis_url)
             # Probe: ältere redis-py Versionen liefern Pipeline ohne Context-Manager → dann abbrechen
             pipe = client.pipeline()
             has_cm = hasattr(pipe, "__enter__") and hasattr(pipe, "__exit__")
@@ -88,7 +89,7 @@ def _make_sync_saver(redis_url: str, namespace: str) -> Optional[object]:
 def _make_async_saver(redis_url: str, namespace: str) -> Optional[object]:
     if AsyncRedis:
         try:
-            client = AsyncRedis.from_url(redis_url)
+            client = make_async_redis_client(redis_url)
             # Probe: async pipeline braucht __aenter__/__aexit__
             pipe = client.pipeline()
             has_acm = hasattr(pipe, "__aenter__") and hasattr(pipe, "__aexit__")

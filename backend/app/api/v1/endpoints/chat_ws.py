@@ -25,6 +25,7 @@ from app.services.langgraph.graph.consult.memory_utils import (
 )
 
 from app.services.langgraph.tools import long_term_memory as ltm
+from app.services.redis_client import make_redis_client
 
 router = APIRouter()
 
@@ -63,7 +64,7 @@ def _get_rl_redis(app) -> Optional[redis.Redis]:
     if not url:
         return None
     try:
-        client = redis.Redis.from_url(url, decode_responses=True)
+        client = make_redis_client(url, decode_responses=True)
         app.state.redis_rl = client
         return client
     except Exception:

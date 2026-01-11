@@ -52,7 +52,8 @@ def _get_jwks_cached(force_refresh: bool = False) -> dict[str, Any]:
         and now - _JWKS_CACHE["ts"] < JWKS_TTL_SEC
     ):
         return _JWKS_CACHE["data"]
-    resp = httpx.get(JWKS_URL, timeout=5.0, verify=True)
+    timeout = httpx.Timeout(5.0, connect=5.0, read=5.0, write=5.0, pool=5.0)
+    resp = httpx.get(JWKS_URL, timeout=timeout, verify=True)
     resp.raise_for_status()
     _JWKS_CACHE["data"] = resp.json()
     _JWKS_CACHE["ts"] = now

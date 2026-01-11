@@ -81,7 +81,8 @@ def _get_jwks_cached() -> dict:
     if _JWKS_CACHE["data"] and (now - _JWKS_CACHE["ts"] < JWKS_TTL_SEC):
         return _JWKS_CACHE["data"]  # type: ignore[return-value]
     logger.info("Fetching JWKS from %s", JWKS_URL)
-    with httpx.Client(timeout=10.0) as client:
+    timeout = httpx.Timeout(10.0, connect=10.0, read=10.0, write=10.0, pool=10.0)
+    with httpx.Client(timeout=timeout) as client:
         r = client.get(JWKS_URL)
         r.raise_for_status()
         _JWKS_CACHE["data"] = r.json()

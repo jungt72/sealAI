@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from redis import Redis
 
+from app.services.redis_client import make_redis_client
 if TYPE_CHECKING:
     from app.services.auth.dependencies import RequestUser
 
@@ -23,7 +24,7 @@ def _stm_key(thread_id: str) -> str:
     return f"{STM_PREFIX}:{thread_id}"
 
 def _get_redis() -> Redis:
-    return Redis.from_url(REDIS_URL, decode_responses=True)
+    return make_redis_client(REDIS_URL, decode_responses=True)
 
 def _set_stm(thread_id: str, key: str, value: str) -> None:
     r = _get_redis()

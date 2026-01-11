@@ -10,6 +10,8 @@ except ImportError:
     Redis = None
     RedisSaver = None
 
+from app.services.redis_client import make_async_redis_client
+
 
 async def make_redis_checkpointer(redis_url: Optional[str], namespace: str):
     """
@@ -19,7 +21,7 @@ async def make_redis_checkpointer(redis_url: Optional[str], namespace: str):
     """
     if not redis_url or not Redis or not RedisSaver:
         return None
-    client = Redis.from_url(redis_url)
+    client = make_async_redis_client(redis_url)
     saver = RedisSaver(redis_client=client, namespace=namespace)
     await saver.setup()  # Einrichtung der Redis-Strukturen
     return saver

@@ -14,6 +14,8 @@ from typing import Any, Dict, List
 
 from redis import Redis
 
+from app.services.redis_client import make_redis_client
+
 
 STM_PREFIX = os.getenv("STM_PREFIX", "chat:stm")
 STM_MAX_MSG = int(os.getenv("STM_MAX_MSG", "50"))
@@ -24,7 +26,7 @@ _LAST_AGENT_SUFFIX = "last_agent"
 
 
 def _redis() -> Redis:
-    return Redis.from_url(REDIS_URL, decode_responses=True)
+    return make_redis_client(REDIS_URL, decode_responses=True)
 
 
 def _normalize_user_id(user_id: str | None) -> str | None:

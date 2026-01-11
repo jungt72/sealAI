@@ -8,6 +8,7 @@ try:
     import redis  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - optional dependency
     redis = None  # type: ignore[assignment]
+from app.services.redis_client import make_redis_client
 from app.utils.json import to_jsonable_dict
 
 
@@ -58,7 +59,7 @@ def get_rate_limit_client(app) -> Optional["redis.Redis"]:
     if not url:
         return None
     try:
-        client = redis.Redis.from_url(url, decode_responses=True)
+        client = make_redis_client(url, decode_responses=True)
         app.state.redis_rl = client
         return client
     except Exception:

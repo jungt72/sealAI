@@ -7,6 +7,7 @@ from typing import Optional
 
 from redis.asyncio import Redis  # im requirements vorhanden
 from app.services.chat.ws_config import get_ws_config
+from app.services.redis_client import make_async_redis_client
 
 # Token Bucket pro Key (user_id/IP)
 #   capacity = rate_limit_per_min
@@ -15,7 +16,7 @@ from app.services.chat.ws_config import get_ws_config
 
 async def _get_client() -> Redis:
     cfg = get_ws_config()
-    return Redis.from_url(cfg.redis_url, encoding="utf-8", decode_responses=True)
+    return make_async_redis_client(cfg.redis_url, encoding="utf-8", decode_responses=True)
 
 async def token_bucket_allow(key: str) -> bool:
     cfg = get_ws_config()
