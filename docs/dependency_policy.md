@@ -7,6 +7,7 @@ This repo uses two layers:
 
 Production deployments should install from `backend/requirements-lock.txt`.
 For container builds, set `BACKEND_USE_REQUIREMENTS_LOCK=1` so the backend image uses the lock file.
+Nightly CI checks latest pin resolvability; production deploys still use the lock.
 
 Update flow:
 1) Edit `backend/requirements.txt` with latest desired pins.

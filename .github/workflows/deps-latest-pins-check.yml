@@ -1,0 +1,38 @@
+name: Latest Pins Resolver Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  latest-pins:
+    name: Latest pins resolvability
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Run latest pins resolver check
+        id: latest_pins
+        run: |
+          set -euo pipefail
+          bash ops/check_backend_requirements_latest.sh > deps_latest_pins_check.log 2>&1
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.latest_pins.outcome }}" = "success" ]; then
+            echo "PASS: latest pins resolved"
+          else
+            echo "FAIL: latest pins unresolved"
+            grep -E "ResolutionImpossible|depends on|conflict" -n deps_latest_pins_check.log || true
+          fi
+
+      - name: Upload resolver log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deps_latest_pins_check_log
+          path: deps_latest_pins_check.log
