@@ -42,6 +42,22 @@ async def test_missing_user_id_claim_returns_401(monkeypatch):
         assert detail.get("claim") == "sub"
     else:
         raise AssertionError("Expected HTTPException for missing user_id claim.")
+
+
+def test_canonical_tenant_id_prefers_claim() -> None:
+    user = dependencies.RequestUser(
+        user_id="user-1",
+        username="user",
+        sub="sub-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
+    assert dependencies.canonical_tenant_id(user) == "tenant-1"
+
+
+def test_canonical_tenant_id_falls_back_to_user() -> None:
+    user = dependencies.RequestUser(user_id="user-1", username="user", sub="sub-1", roles=[])
+    assert dependencies.canonical_tenant_id(user) == "user-1"
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"

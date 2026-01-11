@@ -276,7 +276,7 @@ async def test_langgraph_chat_v2_upserts_metadata(monkeypatch):
 
     monkeypatch.setattr(langgraph_v2, "sse_broadcast", FakeBroadcast())
 
-    async def fake_stream(req, *, user_id, request_id, last_event_id, legacy_user_id=None):
+    async def fake_stream(req, *, user_id, request_id, last_event_id, tenant_id=None, legacy_user_id=None):
         if False:
             yield b""
 

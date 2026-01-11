@@ -1,3 +1,4 @@
+import logging
 import os
 
 from app.services import sse_broadcast as module
@@ -27,3 +28,10 @@ def test_build_replay_backend_redis_fallback_when_missing_url(monkeypatch):
     monkeypatch.delenv("redis_url", raising=False)
     backend = module.build_replay_backend()
     assert isinstance(backend, MemoryReplayBackend)
+
+
+def test_build_replay_backend_logs_selection(monkeypatch, caplog):
+    monkeypatch.setenv("SEALAI_SSE_REPLAY_BACKEND", "memory")
+    caplog.set_level(logging.INFO)
+    module.build_replay_backend()
+    assert "sse_replay_backend_selected" in caplog.text
