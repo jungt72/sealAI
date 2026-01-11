@@ -80,7 +80,7 @@ services:
       context: ./backend
       args:
         INSTALL_DEV: "true"
-        USE_REQUIREMENTS_LOCK: ${BACKEND_USE_REQUIREMENTS_LOCK:-0}
+        USE_REQUIREMENTS_LOCK: ${BACKEND_USE_REQUIREMENTS_LOCK:-1}
     depends_on:
       postgres: { condition: service_healthy }
       redis:    { condition: service_healthy }

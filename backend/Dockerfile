@@ -3,7 +3,7 @@
 # =========================
 FROM python:3.11-slim AS builder
 ARG INSTALL_DEV=false
-ARG USE_REQUIREMENTS_LOCK=0
+ARG USE_REQUIREMENTS_LOCK=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1 DEBIAN_FRONTEND=noninteractive
 WORKDIR /opt/build
 
@@ -19,9 +19,14 @@ COPY requirements-dev.txt ./requirements-dev.txt
 
 # Stabiler Resolver + Wheels bauen (für offline-Installation im Runtime-Stage)
 RUN python -m pip install --upgrade pip \
- && if [ "$USE_REQUIREMENTS_LOCK" = "1" ] && [ -f requirements-lock.txt ]; then \
-      echo "Using requirements-lock.txt for wheel build"; \
-      REQ_FILE=requirements-lock.txt; \
+ && if [ "$USE_REQUIREMENTS_LOCK" = "1" ]; then \
+      if [ -f requirements-lock.txt ]; then \
+        echo "Using requirements-lock.txt for wheel build"; \
+        REQ_FILE=requirements-lock.txt; \
+      else \
+        echo "Missing requirements-lock.txt. Run ops/gen_backend_requirements_lock.sh or set USE_REQUIREMENTS_LOCK=0"; \
+        exit 1; \
+      fi; \
     else \
       echo "Using requirements.txt for wheel build"; \
       REQ_FILE=requirements.txt; \
@@ -37,7 +42,7 @@ RUN python -m pip install --upgrade pip \
 # =========================
 FROM python:3.11-slim
 ARG INSTALL_DEV=false
-ARG USE_REQUIREMENTS_LOCK=0
+ARG USE_REQUIREMENTS_LOCK=1
 ENV PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1 DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
@@ -57,9 +62,14 @@ COPY requirements.txt /tmp/requirements.txt
 COPY requirements-lock.txt /tmp/requirements-lock.txt
 COPY requirements-dev.txt /tmp/requirements-dev.txt
 RUN python -m pip install --upgrade pip \
- && if [ "$USE_REQUIREMENTS_LOCK" = "1" ] && [ -f /tmp/requirements-lock.txt ]; then \
-      echo "Using requirements-lock.txt for install"; \
-      REQ_FILE=/tmp/requirements-lock.txt; \
+ && if [ "$USE_REQUIREMENTS_LOCK" = "1" ]; then \
+      if [ -f /tmp/requirements-lock.txt ]; then \
+        echo "Using requirements-lock.txt for install"; \
+        REQ_FILE=/tmp/requirements-lock.txt; \
+      else \
+        echo "Missing requirements-lock.txt. Run ops/gen_backend_requirements_lock.sh or set USE_REQUIREMENTS_LOCK=0"; \
+        exit 1; \
+      fi; \
     else \
       echo "Using requirements.txt for install"; \
       REQ_FILE=/tmp/requirements.txt; \
