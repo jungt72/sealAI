@@ -2,7 +2,10 @@ import os
 import sys
 from pathlib import Path
 import types
+import importlib.util
+import inspect
 import pytest
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 
 # Provide safe defaults so settings can initialize during test collection.
 _TEST_ENV_DEFAULTS = {
@@ -28,6 +31,29 @@ _TEST_ENV_DEFAULTS = {
 for key, value in _TEST_ENV_DEFAULTS.items():
     os.environ.setdefault(key, value)
 os.environ.setdefault("ANYIO_BACKEND", "asyncio")
+os.environ.setdefault("LANGGRAPH_USE_FAKE_LLM", "1")
+
+# Optional test deps (keep skips explicit and warning-free).
+_HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
+_HAS_ASYNCPG = importlib.util.find_spec("asyncpg") is not None
+
+
+def pytest_addoption(parser):
+    if not _HAS_PYTEST_ASYNCIO:
+        parser.addini("asyncio_mode", "asyncio mode for pytest-asyncio", default="auto")
+
+
+def pytest_collection_modifyitems(config, items):
+    if _HAS_PYTEST_ASYNCIO:
+        return
+    for item in items:
+        func = getattr(item, "function", None)
+        if func and inspect.iscoroutinefunction(func):
+            item.add_marker(
+                pytest.mark.skip(
+                    reason="pytest-asyncio not installed; install backend/requirements-dev.txt"
+                )
+            )
 
 # Ensure backend/ is on sys.path so "from app.main import app" works
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +69,8 @@ def fastapi_app():
     """
     Importiert die FastAPI-App aus backend/app/main.py
     """
+    if not _HAS_ASYNCPG:
+        pytest.skip("asyncpg not installed; install backend/requirements-lock.txt or backend/requirements-dev.txt")
     try:
         from app.main import app  # type: ignore
     except Exception as e:
@@ -83,3 +111,44 @@ def mock_run_stream(monkeypatch):
 
     monkeypatch.setattr(compile_mod, "run_langgraph_stream", _fake_run, raising=True)
     return _fake_run
+
+
+@pytest.fixture(autouse=True)
+def fake_chat_openai(monkeypatch):
+    import langchain_openai
+    from app.langgraph_v2.utils import llm_factory
+
+    class FakeChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            self.streaming = bool(kwargs.get("streaming"))
+
+        def _response_text(self, messages):
+            system = ""
+            prompt = ""
+            for msg in messages or []:
+                if isinstance(msg, SystemMessage):
+                    system = msg.content
+                elif isinstance(msg, HumanMessage):
+                    prompt = msg.content
+            return llm_factory._run_fake_llm(model="fake", prompt=prompt, system=system)
+
+        def invoke(self, messages, **_kwargs):
+            return AIMessage(content=self._response_text(messages))
+
+        async def ainvoke(self, messages, **_kwargs):
+            return AIMessage(content=self._response_text(messages))
+
+        def stream(self, messages, **_kwargs):
+            text = self._response_text(messages)
+            for part in llm_factory._fake_stream_parts(text):
+                yield AIMessageChunk(content=part)
+
+        async def astream(self, messages, **_kwargs):
+            text = self._response_text(messages)
+            for part in llm_factory._fake_stream_parts(text):
+                yield AIMessageChunk(content=part)
+
+    monkeypatch.setattr(langchain_openai, "ChatOpenAI", FakeChatOpenAI)
+    monkeypatch.setattr(llm_factory, "ChatOpenAI", FakeChatOpenAI)
+    llm_factory._get_chat_model.cache_clear()
+    llm_factory._get_streaming_chat_model.cache_clear()

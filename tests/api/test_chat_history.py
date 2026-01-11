@@ -209,7 +209,8 @@ def test_rename_sets_user_title_flag(client: TestClient, patched_redis: FakeRedi
     list_resp = client.get("/api/v1/chat/conversations", headers=auth_headers("user-a"))
     assert any(entry["title"] == new_title for entry in list_resp.json())
 
-    hash_key = conversations._hash_key("user-a", conversation_id)
+    canonical_key = conversations._canonical_owner_key("user-a")
+    hash_key = conversations._hash_key(canonical_key, conversation_id)
     stored = patched_redis.hgetall(hash_key)
     assert stored.get("is_title_user_defined") == "1"
 
