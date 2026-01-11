@@ -53,6 +53,27 @@ jobs:
             sealai-backend-ci:latest \
             pytest -q -ra
 
+  backend-pip-audit:
+    name: Backend deps audit (pip-audit)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Run pip-audit (lock file)
+        run: |
+          pip-audit -r backend/requirements-lock.txt -f json || true
+
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest

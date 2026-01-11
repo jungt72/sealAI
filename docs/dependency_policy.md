@@ -11,3 +11,8 @@ Update flow:
 1) Regenerate the lock from the backend container image.
 2) Run CI gates (tests in container + dependency sanity).
 3) Release with the new lock file committed.
+
+Triage guidance for pip-audit:
+- Confirm the vulnerable package is present in `backend/requirements-lock.txt`.
+- Check if a fixed version exists and update `backend/requirements.txt` accordingly.
+- Regenerate the lock and rerun the gates before release.

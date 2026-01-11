@@ -21,4 +21,6 @@ pytest-cov==5.0.0
 # Pre-commit Hooks
 pre-commit==3.8.0
 
+pip-audit==2.9.0
+
 pytest-anyio
