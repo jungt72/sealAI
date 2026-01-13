@@ -18,41 +18,13 @@ from app.langgraph_v2.types import (
     PhaseLiteral,
     normalize_knowledge_type,
 )
+from app.langgraph_v2.contracts import Intent, IntentGoal
 
 AskMissingScope = Literal["discovery", "technical"]
 
 
-IntentGoal = Literal[
-    "smalltalk",
-    "design_recommendation",
-    "explanation_or_comparison",
-    "troubleshooting_leakage",
-    "out_of_scope",
-]
 
 
-class Intent(BaseModel):
-    goal: IntentGoal = "design_recommendation"
-    domain: Literal["sealing_technology"] | str = "sealing_technology"
-    confidence: float = 0.0
-    high_impact_gaps: List[str] = Field(default_factory=list)
-
-    # legacy compatibility
-    key: Optional[IntentKey] = None
-    knowledge_type: Optional[KnowledgeType] = None
-    routing_hint: Optional[str] = None
-    complexity: Optional[str] = None
-    needs_sources: bool = False
-    need_sources: bool = False
-    seeded_parameters: Dict[str, Any] = Field(default_factory=dict)
-
-    model_config = ConfigDict(extra="ignore")
-
-    @field_validator("knowledge_type", mode="before")
-    @classmethod
-    def _normalize_knowledge_type(cls, value: Any) -> Any:
-        """LLM-Rohoutput (de/en) auf canonical KnowledgeType mappen."""
-        return normalize_knowledge_type(value)
 
 
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
