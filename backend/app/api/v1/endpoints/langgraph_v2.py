@@ -30,6 +30,7 @@ from app.langgraph_v2.utils.parameter_patch import (
     apply_parameter_patch_lww,
     sanitize_v2_parameter_patch,
 )
+from app.services.auth.scope import build_scope_id
 from app.services.auth.dependencies import (
     RequestUser,
     canonical_tenant_id,
@@ -37,6 +38,7 @@ from app.services.auth.dependencies import (
     get_current_request_user,
 )
 from app.services.chat.conversations import OwnerIds, upsert_conversation
+from app.services.chat.validation import normalize_chat_id
 from app.services.chat.persistence import persist_chat_transcript
 from app.services.redis_client import make_async_redis_client
 from app.services.sse_broadcast import sse_broadcast
@@ -541,7 +543,7 @@ async def _event_stream_v2(
     last_slow_notice = 0.0
     scoped_user_id = user_id
     scoped_tenant_id = tenant_id
-    scope_id = _sse_scope_id(tenant_id, user_id)
+    scope_id = build_scope_id(tenant_id=tenant_id or " , user_id=user_id)
     try:
         graph, config = await _build_graph_config(
             thread_id=req.chat_id,
@@ -553,7 +555,7 @@ async def _event_stream_v2(
         scoped_user_id = _config_user_id(config, user_id)
         if scoped_tenant_id is None:
             scoped_tenant_id = config.get("metadata", {}).get("tenant_id") if isinstance(config, dict) else None
-        scope_id = _sse_scope_id(scoped_tenant_id, scoped_user_id)
+        scope_id = build_scope_id(tenant_id=scoped_tenant_id or " , user_id=scoped_user_id)
         logger.info(
             "langgraph_v2_sse_stream_start",
             extra={
@@ -594,8 +596,7 @@ async def _event_stream_v2(
                         break
                 if queue.qsize() <= queue.maxsize - 1:
 
-                    slow_seq = await sse_broadcast.record_event(
-                        user_id=scope_id,
+                    slow_seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
                         chat_id=req.chat_id,
                         event="slow_client",
                         data={"reason": "backpressure"},
@@ -608,8 +609,7 @@ async def _event_stream_v2(
                     queue.put_nowait(slow_frame)
 
         async def _emit_event(event_name: str, payload: Dict[str, Any]) -> None:
-            seq = await sse_broadcast.record_event(
-                user_id=scope_id,
+            seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
                 chat_id=req.chat_id,
                 event=event_name,
                 data=payload,
@@ -617,7 +617,7 @@ async def _event_stream_v2(
             frame = _format_sse(event_name, payload, event_id=str(seq))
             await _enqueue_frame(frame)
 
-        broadcast_queue = await sse_broadcast.subscribe(user_id=scope_id, chat_id=req.chat_id)
+        broadcast_queue = await sse_broadcast.subscribe(tenant_id=scoped_tenant_id, chat_id=req.chat_id)
 
         async def _broadcast_forwarder() -> None:
             if broadcast_queue is None:
@@ -647,8 +647,7 @@ async def _event_stream_v2(
 
         last_seq = _parse_last_event_id(last_event_id, chat_id=req.chat_id)
         if last_seq is not None:
-            replay, buffer_miss = await sse_broadcast.replay_after(
-                user_id=scope_id,
+            replay, buffer_miss = await sse_broadcast.replay_after(tenant_id=scoped_tenant_id,
                 chat_id=req.chat_id,
                 last_seq=last_seq,
             )
@@ -1070,8 +1069,7 @@ async def _event_stream_v2(
             "request_id": request_id,
             "client_msg_id": req.client_msg_id,
         }
-        seq = await sse_broadcast.record_event(
-            user_id=scope_id,
+        seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
             chat_id=req.chat_id,
             event="done",
             data=done_payload,
@@ -1093,8 +1091,7 @@ async def _event_stream_v2(
         )
         message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
         error_payload = {"type": "error", "message": message, "request_id": request_id}
-        error_seq = await sse_broadcast.record_event(
-            user_id=scope_id,
+        error_seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
             chat_id=req.chat_id,
             event="error",
             data=error_payload,
@@ -1106,8 +1103,7 @@ async def _event_stream_v2(
             "request_id": request_id,
             "client_msg_id": req.client_msg_id,
         }
-        done_seq = await sse_broadcast.record_event(
-            user_id=scope_id,
+        done_seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
             chat_id=req.chat_id,
             event="done",
             data=done_payload,
@@ -1128,8 +1124,7 @@ async def _event_stream_v2(
         if broadcast_task and not broadcast_task.done():
             broadcast_task.cancel()
         if broadcast_queue is not None:
-            await sse_broadcast.unsubscribe(
-                user_id=scope_id,
+            await sse_broadcast.unsubscribe(tenant_id=scoped_tenant_id,
                 chat_id=req.chat_id,
                 queue=broadcast_queue,
             )
@@ -1147,6 +1142,7 @@ async def langgraph_chat_v2_endpoint(
         request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     if not request_id:
         request_id = str(uuid.uuid4())
+    request.chat_id = normalize_chat_id(request.chat_id, request_id=request_id)
     last_event_id = raw_request.headers.get("Last-Event-ID")
     snapshot = _extract_param_snapshot(request)
     version_count, updated_max = _snapshot_stats(snapshot)
@@ -1160,7 +1156,7 @@ async def langgraph_chat_v2_endpoint(
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
-            user_id=_sse_scope_id(scoped_tenant_id, scoped_user_id),
+            tenant_id=scoped_tenant_id,
             chat_id=request.chat_id,
             client_msg_id=request.client_msg_id,
         )
@@ -1460,7 +1456,7 @@ async def patch_parameters(
             "request_id": request_id,
         }
         await sse_broadcast.broadcast(
-            user_id=_sse_scope_id(scoped_tenant_id, scoped_user_id),
+            tenant_id=scoped_tenant_id,
             chat_id=chat_id,
             event="parameter_patch_ack",
             data=ack_payload,
