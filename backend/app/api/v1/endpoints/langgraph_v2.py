@@ -37,6 +37,7 @@ from app.services.auth.dependencies import (
     get_current_request_user,
 )
 from app.services.chat.conversations import OwnerIds, upsert_conversation
+from app.services.chat.persistence import persist_chat_transcript
 from app.services.redis_client import make_async_redis_client
 from app.services.sse_broadcast import sse_broadcast
 
@@ -324,6 +325,28 @@ def _flatten_message_content(message: Any) -> str:
     return str(content)
 
 
+def _truncate_text(text: str, *, max_len: int = 240) -> str:
+    text = text or ""
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3].rstrip() + "..."
+
+
+def _extract_last_messages(messages: list[Any] | None) -> tuple[str | None, str | None]:
+    if not messages:
+        return None, None
+    last_user = None
+    last_assistant = None
+    for message in reversed(messages):
+        if last_user is None and isinstance(message, HumanMessage):
+            last_user = _flatten_message_content(message)
+        if last_assistant is None and isinstance(message, AIMessage):
+            last_assistant = _flatten_message_content(message)
+        if last_user and last_assistant:
+            break
+    return (last_user or None), (last_assistant or None)
+
+
 def _extract_stream_token_text(token: Any) -> str | None:
     if token is None:
         return None
@@ -570,6 +593,7 @@ async def _event_stream_v2(
                     except asyncio.QueueEmpty:
                         break
                 if queue.qsize() <= queue.maxsize - 1:
+
                     slow_seq = await sse_broadcast.record_event(
                         user_id=scope_id,
                         chat_id=req.chat_id,
@@ -933,6 +957,45 @@ async def _event_stream_v2(
                                 },
                             )
 
+                try:
+                    if scoped_tenant_id:
+                        messages = (
+                            result_state.messages
+                            if isinstance(result_state, SealAIState)
+                            else result_state.get("messages")
+                        )
+                        last_user_message, last_assistant_message = _extract_last_messages(messages)
+                        assistant_preview = last_assistant_message or final_text
+                        metadata = {
+                            "last_user_message": _truncate_text(last_user_message or ""),
+                            "last_assistant_preview": _truncate_text(assistant_preview or ""),
+                            "phase": result_state.phase,
+                            "last_node": result_state.last_node,
+                            "token_count": token_count,
+                            "request_id": request_id,
+                        }
+                        metadata = {
+                            key: value
+                            for key, value in metadata.items()
+                            if value is not None and value != ""
+                        }
+                        await persist_chat_transcript(
+                            chat_id=req.chat_id,
+                            user_id=scoped_user_id,
+                            tenant_id=scoped_tenant_id,
+                            summary=f"Chat {req.chat_id[:8]}...",
+                            metadata=metadata,
+                        )
+                except Exception:
+                    logger.exception(
+                        "persist_chat_transcript_failed",
+                        extra={
+                            "request_id": request_id,
+                            "tenant_id": scoped_tenant_id,
+                            "chat_id": req.chat_id,
+                            "user_id": scoped_user_id,
+                        },
+                    )
                 done_payload = {
                     "type": "done",
                     "chat_id": req.chat_id,
