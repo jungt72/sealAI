@@ -94,3 +94,15 @@ code_dump_*.txt
 
 # never commit accidental public under src
 frontend/src/public/
+
+# local scratch / one-off scripts
+_scratch/
+patch_*.py
+fix_*.py
+debug_*.py
+*.diff
+build.err
+writing/
+naming/
+=0{pos++}
+[backend]
