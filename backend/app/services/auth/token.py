@@ -7,17 +7,19 @@ Logging reduziert (keine sensiblen Daten), Algorithmen strikt auf RS256.
 
 from __future__ import annotations
 
-from app.core.config import settings
 from typing import Any, Final
-import os
-import time
-import httpx
-from jose import jwt, JWTError
-from jose.exceptions import ExpiredSignatureError
-import logging
 import base64
-import re
 import json
+import logging
+import os
+import re
+import time
+
+import httpx
+from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
+
+from app.core.config import settings
 
 log = logging.getLogger("uvicorn.error")
 
@@ -25,14 +27,36 @@ REALM_ISSUER: Final[str] = settings.backend_keycloak_issuer
 JWKS_URL: Final[str] = settings.keycloak_jwks_url
 
 
+def _parse_allowed_auds_from_env() -> set[str]:
+    """
+    Optional: zusätzliche erlaubte audiences via ENV, z.B.
+      KEYCLOAK_ALLOWED_AUDS="sealai-backend,sealai-dev-cli,sealai-backend-api"
+    Whitespace wird getrimmt, leere Werte werden ignoriert.
+    """
+    raw = os.getenv("KEYCLOAK_ALLOWED_AUDS", "") or ""
+    values: set[str] = set()
+    for part in raw.split(","):
+        v = part.strip()
+        if v:
+            values.add(v)
+    return values
+
+
 def _build_allowed_auds() -> set[str]:
     candidates = {
+        # “normale” erwartete Werte aus Settings
         settings.keycloak_client_id,
         settings.keycloak_expected_azp,
+        # bekannte Clients in deinem Stack
         "nextauth",
+        "sealai-backend",       # ✅ wichtig für deinen dev-cli Token (aud enthält das)
         "sealai-backend-api",
         "sealai-cli",
     }
+
+    # optional zusätzliche Audiences via ENV
+    candidates |= _parse_allowed_auds_from_env()
+
     return {value for value in candidates if value}
 
 
@@ -52,6 +76,7 @@ def _get_jwks_cached(force_refresh: bool = False) -> dict[str, Any]:
         and now - _JWKS_CACHE["ts"] < JWKS_TTL_SEC
     ):
         return _JWKS_CACHE["data"]
+
     timeout = httpx.Timeout(5.0, connect=5.0, read=5.0, write=5.0, pool=5.0)
     resp = httpx.get(JWKS_URL, timeout=timeout, verify=True)
     resp.raise_for_status()
@@ -63,15 +88,18 @@ def _get_jwks_cached(force_refresh: bool = False) -> dict[str, Any]:
 def _get_key(kid: str) -> dict[str, Any]:
     if not kid:
         raise JWTError("missing_kid")
+
     jwks = _get_jwks_cached()
     for key in jwks.get("keys", []):
         if key.get("kid") == kid:
             return key
+
     # refresh on kid-miss
     jwks = _get_jwks_cached(force_refresh=True)
     for key in jwks.get("keys", []):
         if key.get("kid") == kid:
             return key
+
     raise JWTError(f"kid {kid!r} not found in JWKS")
 
 
@@ -132,7 +160,6 @@ def verify_access_token(token: str) -> dict[str, Any]:
                 options=decode_options,
             )
         except ExpiredSignatureError as exc:
-            # normalize to a stable error token
             raise JWTError("token_expired") from exc
         except JWTError as exc:
             message = str(exc).lower()
@@ -150,10 +177,9 @@ def verify_access_token(token: str) -> dict[str, Any]:
         )
         if not aud_ok:
             raise JWTError(
-                f"audience not allowed (aud={aud!r}, azp={claims.get('azp')!r}, client_id={claims.get('client_id')!r})"
+                f"audience not allowed (aud={aud!r}, azp={claims.get('azp')!r}, client_id={claims.get('client_id')!r}, allowed={sorted(ALLOWED_AUDS)})"
             )
 
-        # Minimal-log (kein PEM/keine Claims)
         log.debug("JWT verified (kid=%s, alg=%s, iss ok, aud ok)", kid, alg)
         return claims
 

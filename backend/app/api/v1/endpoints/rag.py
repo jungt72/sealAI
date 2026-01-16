@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.langgraph_v2.contracts import error_detail
 from app.database import get_db
 from app.models.rag_document import RagDocument
-from app.services.auth.dependencies import RequestUser, get_current_request_user
+from app.services.auth.dependencies import RequestUser, get_current_request_user, canonical_tenant_id
 from app.services.jobs.queue import enqueue_job
 
 router = APIRouter(prefix="/rag", tags=["rag"])
@@ -81,7 +81,7 @@ async def upload_rag_document(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    tenant_id = current_user.user_id
+    tenant_id = canonical_tenant_id(current_user)
     if visibility not in ALLOWED_VISIBILITY:
         raise HTTPException(status_code=400, detail=error_detail("invalid_visibility"))
 
@@ -227,7 +227,7 @@ async def get_rag_document(
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
 
-    if doc.tenant_id != current_user.user_id:
+    if doc.tenant_id != canonical_tenant_id(current_user):
         if not (doc.visibility == "public" and _is_admin(current_user)):
             raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
@@ -248,7 +248,7 @@ async def list_rag_documents(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    stmt = select(RagDocument).where(RagDocument.tenant_id == current_user.user_id)
+    stmt = select(RagDocument).where(RagDocument.tenant_id == canonical_tenant_id(current_user))
     if status:
         stmt = stmt.where(RagDocument.status == status)
     if category:

@@ -1,9 +1,13 @@
-from langchain_core.tools import tool
-from app.services.rag.rag_orchestrator import hybrid_retrieve
-from app.services.rag.rag_safety import sanitize_rag_context
-from typing import Optional
+from __future__ import annotations
+
 import logging
 import os
+from typing import Any, Optional
+
+from langchain_core.tools import tool
+
+from app.services.rag.rag_orchestrator import hybrid_retrieve
+from app.services.rag.rag_safety import sanitize_rag_context
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,7 @@ def search_knowledge_base(
     category: Optional[str] = None,
     k: int = 5,
     tenant: Optional[str] = None,
-) -> str:
+) -> dict[str, Any]:
     """
     Tool für Agentic RAG: liefert Top-k-contexts aus Qdrant, inklusive Metadata.
 
@@ -43,7 +47,8 @@ def search_knowledge_base(
     """
     if not tenant:
         raise ValueError("missing tenant_id for RAG retrieval")
-    filters = {"tenant_id": tenant}
+
+    filters: dict[str, Any] = {"tenant_id": tenant}
     if category:
         filters["category"] = category
 
@@ -58,7 +63,10 @@ def search_knowledge_base(
         )
     except Exception as exc:
         logger.error("RAG retrieval failed: %s", exc)
-        return f"Fehler beim Abrufen der Wissensdatenbank: {exc}"
+        return {
+            "context": f"Fehler beim Abrufen der Wissensdatenbank: {exc}",
+            "retrieval_meta": {"tenant_id": tenant, "category": category, "error": str(exc)},
+        }
 
     retrieval_meta = dict(metrics or {})
     retrieval_meta["tenant_id"] = tenant

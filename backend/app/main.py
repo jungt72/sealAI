@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.api import api_router
 from app.observability.metrics import observe_http_request, render_metrics
 from app.services.jobs.worker import start_job_worker
+from app.services.langgraph_ttl_enforcer import start_ttl_enforcer
 
 log = logging.getLogger("uvicorn.error")
 request_log = logging.getLogger("app.request")
@@ -32,22 +33,68 @@ WARMUP_ON_START = _bool_env("WARMUP_ON_START", "0")
 JOB_WORKER_ENABLED = _bool_env("JOB_WORKER_ENABLED", "1")
 
 
+async def _cancel_and_await(task: asyncio.Task | None, name: str) -> None:
+    """
+    Cancel a background task and await it.
+    CancelledError is normal on shutdown/restart and must NOT bubble up.
+    """
+    if task is None:
+        return
+
+    if task.done():
+        # Drain exception if any
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            log.warning("Background task %s failed before shutdown: %s", name, exc)
+        return
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        return
+    except Exception as exc:
+        log.warning("Background task %s raised during shutdown: %s", name, exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("Starting %s v%s", APP_NAME, APP_VERSION)
     if WARMUP_ON_START:
         log.info("Warmup aktiviert, aber LangGraph wurde entfernt – überspringe Warmup.")
-    worker_task = None
+
+    worker_task: asyncio.Task[None] | None = None
+    ttl_task: asyncio.Task[None] | None = None
+    ttl_stop: asyncio.Event | None = None
+
     if JOB_WORKER_ENABLED:
         worker_task = asyncio.create_task(start_job_worker())
-    app.state.warmed_up = True
-    yield
-    if worker_task:
-        worker_task.cancel()
         try:
-            await worker_task
+            worker_task.set_name("job_worker")  # py3.11
         except Exception:
             pass
+
+    # Phase 1: TTL-Enforcer gegen LangGraph Redis leak (checkpoint_write ohne TTL)
+    ttl_task, ttl_stop = start_ttl_enforcer()
+    if ttl_task is not None:
+        try:
+            ttl_task.set_name("lg_ttl_enforcer")  # py3.11
+        except Exception:
+            pass
+
+    app.state.warmed_up = True
+    yield
+
+    # Stop background tasks (order: signal -> cancel/await)
+    if ttl_stop is not None:
+        ttl_stop.set()
+
+    await _cancel_and_await(ttl_task, "lg_ttl_enforcer")
+    await _cancel_and_await(worker_task, "job_worker")
+
     log.info("Stopping %s", APP_NAME)
 
 

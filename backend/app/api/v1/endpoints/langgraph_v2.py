@@ -41,6 +41,7 @@ from app.services.chat.persistence import persist_chat_messages, persist_chat_tr
 from app.services.chat.validation import normalize_chat_id
 from app.services.redis_client import make_async_redis_client
 from app.services.sse_broadcast import sse_broadcast
+from app.langgraph_v2.utils.threading import stable_thread_key, resolve_checkpoint_thread_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -247,7 +248,7 @@ async def _run_graph_to_state(
     username: str | None = None,
 ) -> SealAIState:
     graph, config = await _build_graph_config(
-        thread_id=req.chat_id,
+        thread_id=effective_thread_id,
         user_id=user_id,
         tenant_id=tenant_id,
         username=username,
@@ -255,7 +256,7 @@ async def _run_graph_to_state(
     initial_state = SealAIState(
         user_id=user_id,
         tenant_id=tenant_id,
-        thread_id=req.chat_id,
+        thread_id=effective_thread_id,
         messages=[HumanMessage(content=req.input)],
     )
     result = await graph.ainvoke(initial_state, config=config)
@@ -533,6 +534,7 @@ async def _event_stream_v2(
     legacy_user_id: str | None = None,
     request_id: str | None = None,
     last_event_id: str | None = None,
+    checkpoint_thread_id: str | None = None,
 ) -> AsyncIterator[bytes]:
     stream_task: asyncio.Task[None] | None = None
     broadcast_task: asyncio.Task[None] | None = None
@@ -541,10 +543,15 @@ async def _event_stream_v2(
     last_slow_notice = 0.0
     scoped_user_id = user_id
     # tenant_id is provided by the authenticated route; tests may call this helper directly
-    scoped_tenant_id = validate_tenant_id(tenant_id) if tenant_id else validate_tenant_id(user_id)
+    scoped_tenant_id = validate_tenant_id(tenant_id) if tenant_id else None
+    effective_thread_id = checkpoint_thread_id or resolve_checkpoint_thread_id(
+        tenant_id=scoped_tenant_id,
+        user_id=scoped_user_id,
+        chat_id=req.chat_id,
+    )
     try:
         graph, config = await _build_graph_config(
-            thread_id=req.chat_id,
+            thread_id=effective_thread_id,
             user_id=user_id,
             tenant_id=tenant_id,
             legacy_user_id=legacy_user_id,
@@ -713,7 +720,7 @@ async def _event_stream_v2(
         initial_state = SealAIState(
             user_id=scoped_user_id,
             tenant_id=scoped_tenant_id,
-            thread_id=req.chat_id,
+            thread_id=effective_thread_id,
             messages=[HumanMessage(content=req.input)],
         )
 
@@ -1140,6 +1147,11 @@ async def langgraph_chat_v2_endpoint(
 
     scoped_user_id = canonical_user_id(user)
     scoped_tenant_id = canonical_tenant_id(user)
+    checkpoint_thread_id = stable_thread_key(
+        user_sub=scoped_user_id,
+        conversation_id=request.chat_id,
+        tenant_id=scoped_tenant_id,
+    )
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
 
     if request.client_msg_id:
@@ -1209,6 +1221,7 @@ async def langgraph_chat_v2_endpoint(
             legacy_user_id=legacy_user_id,
             request_id=request_id,
             last_event_id=last_event_id,
+            checkpoint_thread_id=checkpoint_thread_id,
         ),
         media_type="text/event-stream",
         headers=headers,
@@ -1224,6 +1237,11 @@ async def confirm_go(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
     scoped_tenant_id = canonical_tenant_id(user)
+    checkpoint_thread_id = stable_thread_key(
+        user_sub=scoped_user_id,
+        conversation_id=body.chat_id,
+        tenant_id=scoped_tenant_id,
+    )
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     try:
         if not (body.chat_id or "").strip():
@@ -1232,7 +1250,7 @@ async def confirm_go(
             raise HTTPException(status_code=400, detail=error_detail("missing_decision", request_id=request_id))
 
         graph, config = await _build_graph_config(
-            thread_id=body.chat_id,
+            thread_id=checkpoint_thread_id,
             user_id=scoped_user_id,
             tenant_id=scoped_tenant_id,
             username=user.username,
@@ -1313,8 +1331,14 @@ async def patch_parameters(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
     scoped_tenant_id = canonical_tenant_id(user)
-    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     chat_id = (body.chat_id or "").strip()
+    checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id=scoped_tenant_id,
+        user_id=scoped_user_id,
+        chat_id=chat_id,
+    )
+    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
+
     patch: Dict[str, Any] = {}
     try:
         if PARAM_SYNC_DEBUG:
@@ -1329,7 +1353,7 @@ async def patch_parameters(
             raise HTTPException(status_code=400, detail=error_detail("missing_parameters", request_id=request_id))
 
         graph, config = await _build_graph_config(
-            thread_id=chat_id,
+            thread_id=checkpoint_thread_id,
             user_id=scoped_user_id,
             tenant_id=scoped_tenant_id,
             username=user.username,

@@ -101,14 +101,25 @@ def set_parameters(
     # Get current parameters from state
     current_params = {}
     current_provenance = {}
-    if state and hasattr(state, "parameters"):
-        current_params = state.parameters.as_dict() if hasattr(state.parameters, "as_dict") else dict(state.parameters)
+    current_versions = {}
+    current_updated_at = {}
+    
+    if state:
+        current_params = getattr(state, "parameters", {})
+        if hasattr(current_params, "as_dict"):
+            current_params = current_params.as_dict()
+        else:
+            current_params = dict(current_params)
+            
         current_provenance = getattr(state, "parameter_provenance", {}) or {}
+        current_versions = getattr(state, "parameter_versions", {}) or {}
+        current_updated_at = getattr(state, "parameter_updated_at", {}) or {}
     
     # Update with new values (only non-None values)
     updates = {}
     locals_ = locals()
-    ignore_keys = ["state", "current_params", "updates", "locals_"]
+    ignore_keys = ["state", "current_params", "updates", "locals_", "current_provenance", 
+                   "current_versions", "current_updated_at"]
     
     for key, value in locals_.items():
         if key not in ignore_keys and value is not None:
@@ -117,28 +128,40 @@ def set_parameters(
             else:
                 updates[key] = value
 
-    # Merge with current parameters respecting user provenance.
-    from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
-    merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+    # Using LWW versioned patch
+    from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_lww
+    (
+        merged_params,
+        merged_provenance,
+        merged_versions,
+        merged_updated_at,
+        applied_fields,
+        rejected_fields,
+    ) = apply_parameter_patch_lww(
         current_params,
         updates,
         current_provenance,
         source="llm",
+        parameter_versions=current_versions,
+        parameter_updated_at=current_updated_at,
+        base_versions=current_versions, # LLM tool call uses "current" as base during execution
     )
     
     logger.info(
         "set_parameters_tool_called",
         updates=updates,
+        applied=applied_fields,
+        rejected=rejected_fields,
         merged_params=merged_params,
     )
     
     # Return TechnicalParameters object
     from app.langgraph_v2.state import TechnicalParameters
-    # Ensure ignore extra fields if any mismatch, but TechnicalParameters allows extra via config if set.
-    # But since we updated TechnicalParameters, it should be fine.
     return {
         "parameters": TechnicalParameters(**merged_params),
         "parameter_provenance": merged_provenance,
+        "parameter_versions": merged_versions,
+        "parameter_updated_at": merged_updated_at,
     }
 
 __all__ = ["set_parameters"]

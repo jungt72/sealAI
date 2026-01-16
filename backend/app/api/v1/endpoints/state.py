@@ -16,6 +16,7 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, SealParameterUpdate, TechnicalParameters
 from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
+from app.langgraph_v2.utils.threading import stable_thread_key, resolve_checkpoint_thread_id
 from app.services.auth.dependencies import (
     RequestUser,
     canonical_tenant_id,
@@ -139,12 +140,13 @@ async def _resolve_state_snapshot(
     thread_id: str,
     user: RequestUser,
     request_id: str | None = None,
+    checkpoint_thread_id: str | None = None,
 ) -> tuple[Any, Dict[str, Any], Any, bool]:
     scoped_user_id = canonical_user_id(user)
     scoped_tenant_id = canonical_tenant_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     graph, config = await _build_state_config_with_checkpointer(
-        thread_id=thread_id,
+        thread_id=checkpoint_thread_id or thread_id,
         user_id=scoped_user_id,
         tenant_id=scoped_tenant_id,
         username=user.username,
@@ -179,7 +181,7 @@ async def _build_state_config_with_checkpointer(
     thread_id: str, user_id: str, tenant_id: str | None = None, username: str | None = None
 ):
     """Return a v2 config that carries the graph's checkpointer to skip subgraph routing."""
-    graph = await get_sealai_graph_v2()
+    graph = await get_sealai_graph_v2(tenant_id=tenant_id)
     config = build_v2_config(thread_id=thread_id, user_id=user_id, tenant_id=tenant_id)
     configurable = config.setdefault("configurable", {})
     configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
@@ -201,11 +203,19 @@ async def get_state(
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     try:
+        scoped_user_id = canonical_user_id(user)
+        scoped_tenant_id = canonical_tenant_id(user)
+        checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id=scoped_tenant_id,
+        user_id=scoped_user_id,
+        chat_id=thread_id,
+    )
         # user_id must always come from the authenticated Keycloak JWT.
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
             user=user,
             request_id=request_id,
+            checkpoint_thread_id=checkpoint_thread_id,
         )
 
         state_values = _state_to_dict(snapshot.values)
@@ -293,6 +303,7 @@ async def update_state(
             thread_id=thread_id,
             user=user,
             request_id=request_id,
+            checkpoint_thread_id=checkpoint_thread_id,
         )
         state_values = _state_to_dict(snapshot.values)
         resolved = _resolve_update_as_node(state_values)

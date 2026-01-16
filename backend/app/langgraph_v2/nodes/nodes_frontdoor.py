@@ -1,116 +1,30 @@
 from __future__ import annotations
 
+import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
-import structlog
-
+from app.core.config import settings
+from app.langgraph_v2.constants import PHASE, PhaseLiteral
+from app.langgraph_v2.contracts import Intent, IntentGoal
 from app.langgraph_v2.state import (
-    Intent,
-    IntentGoal,
     SealAIState,
     TechnicalParameters,
     WorkingMemory,
 )
-from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.utils.state_debug import log_state_debug
-from app.langgraph_v2.utils.json_sanitizer import extract_json_obj
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text
+from app.langgraph_v2.utils.output_sanitizer import extract_json_obj
 from app.langgraph_v2.utils.parameter_extraction import extract_parameters_from_text
-from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
-from app.langgraph_v2.utils.jinja import render_template
+from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_lww
+from app.langgraph_v2.utils.state_debug import log_state_debug
 
-logger = structlog.get_logger("langgraph_v2.nodes_frontdoor")
+logger = logging.getLogger(__name__)
 
-SMALLTALK_PATTERNS = [
-    r"^(hallo|hi|hey)$",
-    r"^(servus|moin)$",
-    r"^(gruss dich|grues dich|gruezi|gruss gott|grussgott)$",
-    r"^(guten (morgen|tag|abend))$",
-    r"^(danke|dankeschoen|danke dir|thx)$",
-]
-
-# Internal note for the downstream final-answer templates (should not be a user-facing greeting).
 FRIENDLY_SMALLTALK_REPLY = (
-    "Smalltalk/Begrüßung erkannt. Bitte direkt nach Kontext fragen (Medium, Temperatur, Druck, Bewegung, Geometrie)."
+    "Hallo! Ich bin dein SealAI-Assistent. Ich helfe dir gerne bei der Auswahl der richtigen Dichtung "
+    "oder beantworte deine Fragen zu unseren Produkten. Wie kann ich dir heute behilflich sein?"
 )
-
-FRONTDOOR_PROMPT_TEMPLATE = "frontdoor_discovery_prompt.jinja2"
-
-
-GOAL_DESCRIPTIONS = {
-    "smalltalk": "Grüße, Off-Topic oder Unsicherheiten (Fallback: Immer wählen, wenn Zweifel bestehen).",
-    "design_recommendation": "Material-/Produktauswahl oder Design-Optimierung für spezifische Bedingungen.",
-    "explanation_or_comparison": "Erklärungen, Vergleiche oder Normen-Checks (z. B. FDA-Konformität).",
-    "troubleshooting_leakage": "Fehlerdiagnosen und Optimierungen bei Leckagen in Pumpen oder Systemen.",
-    "out_of_scope": "Alles außerhalb der Dichtungstechnik – leite sanft zurück.",
-}
-
-
-PARAMETER_LABELS: Dict[str, str] = {
-    "pressure_bar": "Druck (bar)",
-    "temperature_C": "Temperatur (°C)",
-    "temperature_max": "Max Temperatur (°C)",
-    "temperature_min": "Min Temperatur (°C)",
-    "shaft_diameter": "Welle Ø (mm)",
-    "housing_diameter": "Gehäuse Ø (mm)",
-    "speed_rpm": "Drehzahl (RPM)",
-    "medium": "Medium",
-}
-
-
-def _requests_parameter_summary(text: Optional[str]) -> bool:
-    if not text:
-        return False
-
-    cleaned = re.sub(r"[^\wäöüÄÖÜß\s]", " ", text).lower()
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return "parameter" in cleaned and any(
-        marker in cleaned for marker in ("welche", "kennst", "hast du", "was weißt", "erinnerst")
-    )
-
-
-def _format_parameter_summary(parameters: TechnicalParameters) -> str:
-    params_dict = parameters.as_dict()
-    if not params_dict:
-        return (
-            "Ich habe aktuell noch keine technischen Parameter gespeichert. "
-            "Teile mir bitte Druck, Temperatur oder andere Bedingungen mit."
-        )
-
-    parts: List[str] = []
-    for key, value in sorted(params_dict.items()):
-        label = PARAMETER_LABELS.get(key, key.replace("_", " ").capitalize())
-        parts.append(f"{label}: {value}")
-
-    joined = ", ".join(parts)
-    return f"Ich habe bisher folgende Parameter von dir: {joined}. Sag Bescheid, wenn du etwas anpassen möchtest."
-
-
-def _build_frontdoor_system_prompt() -> str:
-    goal_list = getattr(IntentGoal, "__args__", ())
-    goal_descriptions = {
-        goal: GOAL_DESCRIPTIONS.get(goal, "")
-        for goal in goal_list
-        if goal in GOAL_DESCRIPTIONS
-    }
-    return render_template(
-        FRONTDOOR_PROMPT_TEMPLATE,
-        goal_descriptions=goal_descriptions,
-    )
-
-
-def _looks_like_smalltalk(text: Optional[str]) -> bool:
-    if not text:
-        return False
-
-    normalized = re.sub(r"[!?.]+$", "", text).strip().lower()
-    normalized = normalized.translate(
-        str.maketrans({"ß": "ss", "ü": "u", "ä": "a", "ö": "o"})
-    )
-    normalized = re.sub(r"\s+", " ", normalized)
-    return any(re.match(pat, normalized) for pat in SMALLTALK_PATTERNS)
 
 
 def _get_working_memory(state: SealAIState, updates: Dict[str, Any]) -> WorkingMemory:
@@ -118,20 +32,74 @@ def _get_working_memory(state: SealAIState, updates: Dict[str, Any]) -> WorkingM
     return wm.model_copy(update=updates)
 
 
-def detect_sources_request(text: Optional[str]) -> bool:
-    if not text:
-        return False
-    cleaned = re.sub(r"[^\wäöüÄÖÜß\s]", " ", text).lower()
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if not cleaned:
-        return False
+def _requests_parameter_summary(text: str) -> bool:
+    cleaned = text.lower()
+    patterns = [
+        r"welche (daten|parameter|werte) (hast du|sind bekannt|liegen vor)",
+        r"fass (meine|die) (daten|parameter) zusammen",
+        r"was weißt du (über meine|bisher)",
+        r"meine (eingaben|parameter|daten)",
+    ]
+    return any(re.search(pat, cleaned) for pat in patterns)
 
-    # Handle explicit opt-outs like "ohne Quellen" / "keine Quellen".
-    # Negation wins over any positive keyword match.
+
+def _format_parameter_summary(params: TechnicalParameters) -> str:
+    lines = ["Hier ist eine Zusammenfassung der bisher erfassten technischen Parameter:"]
+    found = False
+    
+    # Simple mapping for better readability
+    labels = {
+        "pressure_bar": "Druck",
+        "temperature_C": "Temperatur",
+        "shaft_diameter": "Wellendurchmesser",
+        "speed_rpm": "Drehzahl",
+        "medium": "Medium",
+    }
+    
+    for key, label in labels.items():
+        val = getattr(params, key, None)
+        if val is not None:
+            unit = " bar" if "pressure" in key else " °C" if "temp" in key else " mm" if "diameter" in key else " RPM" if "speed" in key else ""
+            lines.append(f"- **{label}**: {val}{unit}")
+            found = True
+            
+    if not found:
+        return "Bisher wurden noch keine spezifischen technischen Parameter erfasst. Wie kann ich dir helfen?"
+        
+    return "\n".join(lines)
+
+
+def _looks_like_smalltalk(text: str) -> bool:
+    """Heuristik für Smalltalk / Begrüßung."""
+    cleaned = text.lower().strip()
+    if len(cleaned) < 2:
+        return True
+    
+    # Sehr kurze Phrasen
+    if len(cleaned.split()) <= 2:
+        smalltalk_words = {"hallo", "hi", "hey", "moin", "servus", "abend", "morgen", "tag", "ciao", "tschüss", "danke"}
+        if cleaned.rstrip("!?.") in smalltalk_words:
+            return True
+
+    # Phrasen
+    phrases = [
+        r"^wie geht[ s']+",
+        r"^wer bist du",
+        r"^was kannst du",
+        r"^hallo.*wie geht",
+        r"^schönen tag",
+    ]
+    return any(re.search(pat, cleaned) for pat in phrases)
+
+
+def detect_sources_request(text: str) -> bool:
+    """
+    Erkennt, ob der User explizit nach Quellen, Normen oder Belegen fragt.
+    """
+    cleaned = text.lower()
+    
     negation_patterns = [
-        r"\bohne\s+(?:irgend\w+\s+)?(?:quellen?|quelle|wissensdatenbank|datenbank|normen?)\b",
-        r"\bkeine\s+(?:quellen?|quelle|wissensdatenbank|datenbank|normen?)\b",
-        r"\bnicht\s+(?:mit|unter)\s+(?:quellen?|quelle|wissensdatenbank|datenbank|normen?)\b",
+        r"\bohne\s+(?:quellen|belege|studien|nachweise)\b",
         r"\bohne\s+(?:din|en|iso|astm|vdi)\b",
         r"\bkeine\s+(?:din|en|iso|astm|vdi)\b",
     ]
@@ -164,6 +132,9 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     user_text = latest_user_text(state.get("messages")) or ""
     wm_updates: Dict[str, Any] = {}
     parameters = state.parameters or TechnicalParameters()
+    merged_provenance = state.parameter_provenance
+    merged_versions = state.parameter_versions
+    merged_updated_at = state.parameter_updated_at
 
     if _requests_parameter_summary(user_text):
         reply = _format_parameter_summary(parameters)
@@ -221,11 +192,21 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         logger.warning("frontdoor_llm_failed", error=str(exc), user_text=user_text)
         intent = Intent(goal="design_recommendation", confidence=0.6, high_impact_gaps=[])
         if extracted_params:
-            merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+            (
+                merged_params,
+                merged_provenance,
+                merged_versions,
+                merged_updated_at,
+                applied_fields,
+                rejected_fields,
+            ) = apply_parameter_patch_lww(
                 parameters.as_dict(),
                 extracted_params,
                 state.parameter_provenance,
                 source="user",
+                parameter_versions=state.parameter_versions,
+                parameter_updated_at=state.parameter_updated_at,
+                base_versions=state.parameter_versions,
             )
             parameters = TechnicalParameters.model_validate(merged_params)
         wm_updates["frontdoor_reply"] = (
@@ -238,7 +219,9 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             "phase": PHASE.FRONTDOOR,
             "last_node": "frontdoor_discovery_node",
             "parameters": parameters,
-            "parameter_provenance": merged_provenance if extracted_params else state.parameter_provenance,
+            "parameter_provenance": merged_provenance,
+            "parameter_versions": merged_versions,
+            "parameter_updated_at": merged_updated_at,
         }
 
     # 3) Robust JSON-Parsing
@@ -318,11 +301,21 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
 
     # [PATCH] Extract parameters
     if extracted_params:
-        merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+        (
+            merged_params,
+            merged_provenance,
+            merged_versions,
+            merged_updated_at,
+            applied_fields,
+            rejected_fields,
+        ) = apply_parameter_patch_lww(
             parameters.as_dict(),
             extracted_params,
             state.parameter_provenance,
             source="user",
+            parameter_versions=state.parameter_versions,
+            parameter_updated_at=state.parameter_updated_at,
+            base_versions=state.parameter_versions,
         )
         parameters = TechnicalParameters.model_validate(merged_params)
     # [PATCH] End
@@ -351,9 +344,27 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         "phase": PHASE.FRONTDOOR,
         "last_node": "frontdoor_discovery_node",
         "parameters": parameters,
-        "parameter_provenance": merged_provenance if extracted_params else state.parameter_provenance,
+        "parameter_provenance": merged_provenance,
+        "parameter_versions": merged_versions,
+        "parameter_updated_at": merged_updated_at,
         "requires_rag": requires_rag,
     }
+
+def _build_frontdoor_system_prompt() -> str:
+    """Helper: builds system prompt for frontdoor LLM."""
+    return (
+        "Du bist der 'Frontdoor'-Agent für SealAI. Deine Aufgabe ist es, den Intent des Nutzers "
+        "zu erfassen und eine hilfreiche erste Antwort zu geben.\n"
+        "Antworte IMMER im JSON-Format:\n"
+        "{\n"
+        "  \"intent\": {\n"
+        "    \"goal\": \"design_recommendation\" | \"explanation_or_comparison\" | \"troubleshooting\" | \"smalltalk\" | \"out_of_scope\",\n"
+        "    \"confidence\": float,\n"
+        "    \"high_impact_gaps\": string[]\n"
+        "  },\n"
+        "  \"frontdoor_reply\": \"Deine freundliche Antwort an den Nutzer\"\n"
+        "}"
+    )
 
 
 __all__ = ["frontdoor_discovery_node", "detect_sources_request"]

@@ -20,19 +20,16 @@ import structlog
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 
-logger = structlog.get_logger("langgraph_v2.checkpointer")
-
-# Namespace für V2-Checkpoints (per Konstanten gemeinsam mit dem Graph-Builder)
 from app.langgraph_v2.constants import resolve_checkpointer_namespace_v2
+from app.services.redis_client import make_async_redis_client
+
+logger = structlog.get_logger("langgraph_v2.checkpointer")
 
 # Lazy import für Redis-Abhängigkeiten
 try:
     from langgraph.checkpoint.redis import AsyncRedisSaver
-    from redis.asyncio import ConnectionPool, Redis
 except ImportError:
     AsyncRedisSaver = None
-    ConnectionPool = None
-    Redis = None
 
 
 def _parse_checkpointer_ttl() -> Optional[int]:
@@ -60,16 +57,19 @@ def _resolve_checkpointer_settings(namespace: str | None) -> tuple[str, str, Opt
 
 
 def _ttl_config_from_seconds(ttl: Optional[int]) -> Optional[dict[str, Any]]:
+    """
+    LangGraph AsyncRedisSaver erwartet (versionsabhängig) typischerweise ein Dict in Sekunden.
+    Das alte {"default_ttl": minutes} führte bei vielen Versionen dazu, dass EXPIRE nicht gesetzt wurde (TTL=-1).
+    """
     if ttl is None:
         return None
-    minutes = float(ttl) / 60.0
-    return {"default_ttl": minutes}
+    return {"seconds": int(ttl)}
 
 
 def _async_redis_saver_supported_params() -> set[str] | None:
     try:
         signature = inspect.signature(AsyncRedisSaver.__init__)  # type: ignore[misc]
-    except Exception:  # pragma: no cover - best effort introspection
+    except Exception:  # pragma: no cover
         return None
     return {name for name in signature.parameters if name != "self"}
 
@@ -105,11 +105,13 @@ def _build_async_redis_saver_kwargs(
             if candidate in supported_params:
                 client_param = candidate
                 break
+
         ttl_param = None
         for candidate in ("ttl", "ttl_seconds"):
             if candidate in supported_params:
                 ttl_param = candidate
                 break
+
         prefix_param = None
         if "checkpoint_prefix" in supported_params:
             prefix_param = "checkpoint_prefix"
@@ -118,6 +120,7 @@ def _build_async_redis_saver_kwargs(
                 if candidate in supported_params:
                     prefix_param = candidate
                     break
+
         namespace_param = None
         for candidate in ("namespace", "checkpoint_ns"):
             if candidate in supported_params:
@@ -135,10 +138,7 @@ def _build_async_redis_saver_kwargs(
             kwargs[namespace_param] = namespace
         elif not namespace_in_prefix:
             warnings.append(
-                (
-                    "langgraph_v2_checkpointer_namespace_unsupported",
-                    {"namespace": namespace, "prefix": prefix},
-                )
+                ("langgraph_v2_checkpointer_namespace_unsupported", {"namespace": namespace, "prefix": prefix})
             )
 
         if prefix_param == "checkpoint_prefix":
@@ -150,12 +150,7 @@ def _build_async_redis_saver_kwargs(
         elif prefix_param:
             kwargs[prefix_param] = prefix
         else:
-            warnings.append(
-                (
-                    "langgraph_v2_checkpointer_prefix_unsupported",
-                    {"namespace": namespace, "prefix": prefix},
-                )
-            )
+            warnings.append(("langgraph_v2_checkpointer_prefix_unsupported", {"namespace": namespace, "prefix": prefix}))
 
         if ttl is not None and ttl_param:
             ttl_value: Any = ttl
@@ -167,11 +162,8 @@ def _build_async_redis_saver_kwargs(
 
         return args, kwargs, warnings
 
-    kwargs = {
-        "redis_client": redis_client,
-        "namespace": namespace,
-        "key_prefix": prefix,
-    }
+    # Best-effort fallback (keine Signature-Introspection möglich)
+    kwargs = {"redis_client": redis_client, "namespace": namespace, "key_prefix": prefix}
     if ttl is not None:
         kwargs["ttl"] = _ttl_config_from_seconds(ttl)
     return (), kwargs, warnings
@@ -189,6 +181,7 @@ def _construct_async_redis_saver(
     namespace_supported = _async_redis_saver_supports_namespace(supported_params)
     namespace_in_prefix = bool(namespace) and not namespace_supported
     effective_prefix = f"{prefix}:{namespace}" if namespace_in_prefix else prefix
+
     args, kwargs, warnings = _build_async_redis_saver_kwargs(
         redis_client=redis_client,
         namespace=namespace,
@@ -198,9 +191,7 @@ def _construct_async_redis_saver(
         namespace_in_prefix=namespace_in_prefix,
     )
 
-    attempts: list[tuple[tuple[Any, ...], dict[str, Any], list[tuple[str, dict[str, Any]]]]] = [
-        (args, kwargs, warnings)
-    ]
+    attempts: list[tuple[tuple[Any, ...], dict[str, Any], list[tuple[str, dict[str, Any]]]]] = [(args, kwargs, warnings)]
 
     fallback_kwargs = [
         {
@@ -209,21 +200,10 @@ def _construct_async_redis_saver(
             "checkpoint_write_prefix": f"{effective_prefix}:checkpoint_write",
             "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None,
         },
-        {
-            "checkpoint_prefix": effective_prefix,
-            "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None,
-        },
-        {
-            "namespace": namespace,
-            "key_prefix": effective_prefix,
-            "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None,
-        },
+        {"checkpoint_prefix": effective_prefix, "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None},
+        {"namespace": namespace, "key_prefix": effective_prefix, "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None},
         {"namespace": namespace, "key_prefix": effective_prefix, "ttl_seconds": ttl},
-        {
-            "namespace": namespace,
-            "prefix": effective_prefix,
-            "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None,
-        },
+        {"namespace": namespace, "prefix": effective_prefix, "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None},
         {"namespace": namespace, "prefix": effective_prefix, "ttl_seconds": ttl},
         {"namespace": namespace, "ttl": _ttl_config_from_seconds(ttl) if ttl is not None else None},
         {"namespace": namespace, "ttl_seconds": ttl},
@@ -236,22 +216,10 @@ def _construct_async_redis_saver(
 
     if supported_params is not None:
         for entry in fallback_kwargs:
-            attempts.append(
-                (
-                    args,
-                    {k: v for k, v in entry.items() if v is not None and k in supported_params},
-                    [],
-                )
-            )
+            attempts.append((args, {k: v for k, v in entry.items() if v is not None and k in supported_params}, []))
     else:
         for entry in fallback_kwargs:
-            attempts.append(
-                (
-                    (redis_client,),
-                    {k: v for k, v in entry.items() if v is not None},
-                    [],
-                )
-            )
+            attempts.append(((redis_client,), {k: v for k, v in entry.items() if v is not None}, []))
 
     last_error: Exception | None = None
     for attempt_args, attempt_kwargs, attempt_warnings in attempts:
@@ -260,15 +228,16 @@ def _construct_async_redis_saver(
         except Exception as exc:
             last_error = exc
             continue
+
         logged_events = set()
         for event, payload in attempt_warnings:
             logged_events.add(event)
             logger.warning(event, **payload)
+
         has_namespace = any(key in attempt_kwargs for key in ("namespace", "checkpoint_ns"))
-        has_prefix = any(
-            key in attempt_kwargs for key in ("checkpoint_prefix", "key_prefix", "prefix")
-        )
+        has_prefix = any(key in attempt_kwargs for key in ("checkpoint_prefix", "key_prefix", "prefix"))
         has_ttl = any(key in attempt_kwargs for key in ("ttl", "ttl_seconds"))
+
         logger.info(
             "langgraph_v2_checkpointer_init",
             namespace=namespace,
@@ -288,22 +257,14 @@ def _construct_async_redis_saver(
             and not namespace_in_prefix
             and "langgraph_v2_checkpointer_namespace_prefix_unsupported" not in logged_events
         ):
-            logger.warning(
-                "langgraph_v2_checkpointer_namespace_prefix_unsupported",
-                namespace=namespace,
-                prefix=prefix,
-            )
+            logger.warning("langgraph_v2_checkpointer_namespace_prefix_unsupported", namespace=namespace, prefix=prefix)
         elif (
             not has_namespace
             and has_prefix
             and not namespace_in_prefix
             and "langgraph_v2_checkpointer_namespace_unsupported" not in logged_events
         ):
-            logger.warning(
-                "langgraph_v2_checkpointer_namespace_unsupported",
-                namespace=namespace,
-                prefix=prefix,
-            )
+            logger.warning("langgraph_v2_checkpointer_namespace_unsupported", namespace=namespace, prefix=prefix)
         elif has_namespace and not has_prefix and "langgraph_v2_checkpointer_prefix_unsupported" not in logged_events:
             logger.warning(
                 "langgraph_v2_checkpointer_prefix_unsupported",
@@ -311,6 +272,7 @@ def _construct_async_redis_saver(
                 prefix=prefix,
                 combined_namespace=f"{prefix}:{namespace}",
             )
+
         return saver
 
     if last_error:
@@ -328,13 +290,6 @@ async def make_v2_checkpointer_async(
     Versucht zunächst, einen Redis-basierten AsyncRedisSaver zu erstellen.
     Falls Redis nicht verfügbar ist oder die Verbindung fehlschlägt,
     wird auf einen MemorySaver zurückgegriffen.
-
-    Args:
-        require_async: Ob ein asynchroner Checkpointer erforderlich ist
-        namespace: Namespace für die Checkpoints (Standard: langgraph_v2)
-
-    Returns:
-        BaseCheckpointSaver: Ein Redis- oder Memory-basierter Checkpointer
     """
     backend = resolve_v2_checkpointer_backend()
     resolved_namespace, prefix, ttl = _resolve_checkpointer_settings(namespace)
@@ -343,18 +298,10 @@ async def make_v2_checkpointer_async(
         conn_string = os.getenv("LANGGRAPH_V2_REDIS_URL") or os.getenv("REDIS_URL")
         if conn_string:
             try:
-                # Optimierte Connection Pool Konfiguration
-                pool = ConnectionPool.from_url(
-                    conn_string,
-                    max_connections=50,  # Erhöht für höhere Last
-                    socket_timeout=5,    # 5 Sekunden Timeout für Socket-Operationen
-                    socket_connect_timeout=5,  # 5 Sekunden für Verbindungsaufbau
-                    retry_on_timeout=True,     # Automatische Wiederholung bei Timeout
-                    health_check_interval=30,  # Health Check alle 30 Sekunden
-                    decode_responses=False,    # Binäre Daten für Checkpoints
-                )
+                # Best practice: central helper -> pooling/timeouts/retry/health checks
+                # decode_responses=False for checkpoint blobs (binary)
+                redis_client = make_async_redis_client(conn_string, decode_responses=False)
 
-                redis_client = Redis(connection_pool=pool)
                 saver = _construct_async_redis_saver(
                     redis_client=redis_client,
                     namespace=resolved_namespace,
@@ -365,7 +312,7 @@ async def make_v2_checkpointer_async(
                 await saver.asetup()
                 return saver
 
-            except Exception as exc:  # pragma: no cover - protected fallback
+            except Exception as exc:  # pragma: no cover
                 logger.warning(
                     "langgraph_v2_checkpointer_init_failed",
                     backend="redis",
@@ -389,6 +336,4 @@ def make_v2_checkpointer(
     require_async: bool = True,
     namespace: str | None = None,
 ) -> BaseCheckpointSaver:
-    return asyncio.run(
-        make_v2_checkpointer_async(require_async=require_async, namespace=namespace)
-    )
+    return asyncio.run(make_v2_checkpointer_async(require_async=require_async, namespace=namespace))

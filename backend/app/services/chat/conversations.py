@@ -11,11 +11,12 @@ from functools import lru_cache
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Dict, List, TYPE_CHECKING
+from typing import Dict, List, TYPE_CHECKING, Optional
 
 from redis import Redis
 
 from app.services.redis_client import make_redis_client
+
 if TYPE_CHECKING:
     from app.core.config import Settings
 
@@ -53,12 +54,12 @@ def _redis_client() -> Redis:
     return make_redis_client(_settings().redis_url, decode_responses=True)
 
 
-def _sorted_set_key(owner_id: str) -> str:
-    return f"{_CONVERSATIONS_SET_PREFIX}:{owner_id}"
+def _sorted_set_key(owner_key: str) -> str:
+    return f"{_CONVERSATIONS_SET_PREFIX}:{owner_key}"
 
 
-def _hash_key(owner_id: str, conversation_id: str) -> str:
-    return f"{_CONVERSATION_HASH_PREFIX}:{owner_id}:{conversation_id}"
+def _hash_key(owner_key: str, conversation_id: str) -> str:
+    return f"{_CONVERSATION_HASH_PREFIX}:{owner_key}:{conversation_id}"
 
 
 def _ttl_seconds() -> int:
@@ -151,12 +152,7 @@ def _cleanup_excess_conversations(r: Redis, owner_id: str, key_set: str) -> None
         count = r.zcard(key_set)
         overflow = count - limit
         if overflow > 0:
-            if hasattr(r, "zremrangebyrank"):
-                r.zremrangebyrank(key_set, 0, overflow - 1)
-            else:
-                oldest = r.zrange(key_set, 0, overflow - 1)
-                for member in oldest:
-                    r.zrem(key_set, member)
+            r.zremrangebyrank(key_set, 0, overflow - 1)
     except Exception as exc:
         logger.warning(
             "Failed to enforce conversation limit: %s",
@@ -186,6 +182,7 @@ def upsert_conversation(
     )
     if not canonical_id or not conversation_id:
         return
+
     _upsert_for_owner(
         canonical_id,
         conversation_id,
@@ -226,9 +223,11 @@ def _upsert_for_owner(
         key_hash = _hash_key(owner_key, conversation_id)
         existing = r.hgetall(key_hash)
         is_new = not bool(existing)
+
         current_title = existing.get("title")
         current_flag = existing.get(_TITLE_FLAG_FIELD, "0")
         current_preview = existing.get(_PREVIEW_FIELD)
+
         candidate_title = _normalize_title(title)
         if candidate_title:
             final_title = candidate_title
@@ -239,11 +238,13 @@ def _upsert_for_owner(
         else:
             final_title = derive_conversation_title(first_user_message)
             final_flag = "0"
+
         preview_value = (
             _normalize_preview(last_preview)
             or _normalize_preview(first_user_message)
             or _normalize_preview(current_preview)
         )
+
         mapping = {
             "id": conversation_id,
             "user_id": owner_id,
@@ -252,19 +253,19 @@ def _upsert_for_owner(
             _TITLE_FLAG_FIELD: final_flag,
             _PREVIEW_FIELD: preview_value or "",
         }
+
         pipe = r.pipeline()
         pipe.hset(key_hash, mapping=mapping)
         pipe.expire(key_hash, _ttl_seconds())
         pipe.zadd(set_key, {conversation_id: updated.timestamp()})
         pipe.execute()
+
         if is_new:
             logger.info(
                 "Created conversation metadata",
-                extra={
-                    "owner_id": owner_id,
-                    "conversation_id": conversation_id,
-                },
+                extra={"owner_id": owner_id, "conversation_id": conversation_id},
             )
+
         _cleanup_excess_conversations(r, owner_id, set_key)
     except Exception as exc:
         logger.warning(
@@ -274,15 +275,32 @@ def _upsert_for_owner(
         )
 
 
-def _collect_for_owner(owner_id: str, *, owner_key: str | None = None) -> List[ConversationMeta]:
+def _collect_for_owner(
+    owner_id: str,
+    *,
+    owner_key: str | None = None,
+    limit: int = 200,
+) -> List[ConversationMeta]:
+    """
+    Collect conversation metadata from Redis.
+
+    FIX: supports `limit` (needed by endpoints).
+    """
     result: List[ConversationMeta] = []
     if not owner_id:
         return result
+
     key_owner = owner_key or owner_id
     try:
         r = _redis_client()
         set_key = _sorted_set_key(key_owner)
-        members = r.zrevrange(set_key, 0, -1)
+
+        # Newest first, limit applied.
+        if limit and limit > 0:
+            members = r.zrevrange(set_key, 0, max(0, limit - 1))
+        else:
+            members = r.zrevrange(set_key, 0, -1)
+
         stale: List[str] = []
         for conv_id in members:
             key_hash = _hash_key(key_owner, conv_id)
@@ -290,24 +308,23 @@ def _collect_for_owner(owner_id: str, *, owner_key: str | None = None) -> List[C
             if not data:
                 stale.append(conv_id)
                 continue
+
             updated_raw = data.get("updated_at")
             try:
-                updated = (
-                    datetime.fromisoformat(updated_raw)
-                    if updated_raw
-                    else datetime.now(timezone.utc)
-                )
+                updated = datetime.fromisoformat(updated_raw) if updated_raw else datetime.now(timezone.utc)
             except ValueError:
                 updated = datetime.now(timezone.utc)
+
             result.append(
                 ConversationMeta(
                     id=data.get("id") or conv_id,
                     owner_id=owner_id,
                     title=data.get("title"),
                     updated_at=updated,
-                    last_preview=data.get(_PREVIEW_FIELD) or None,
+                    last_preview=(data.get(_PREVIEW_FIELD) or None),
                 )
             )
+
         if stale:
             r.zrem(set_key, *stale)
     except Exception as exc:
@@ -319,12 +336,18 @@ def _collect_for_owner(owner_id: str, *, owner_key: str | None = None) -> List[C
     return result
 
 
-def list_conversations(owner_ids: OwnerIds | str, legacy_owner_id: str | None = None) -> List[ConversationMeta]:
+def list_conversations(
+    owner_ids: OwnerIds | str,
+    legacy_owner_id: str | None = None,
+    *,
+    limit: int = 200,
+) -> List[ConversationMeta]:
     """Return all known conversations for the canonical owner, optionally merging legacy IDs."""
     if isinstance(owner_ids, str):
         resolved_owner_ids = OwnerIds(canonical=owner_ids, legacy=legacy_owner_id)
     else:
         resolved_owner_ids = owner_ids
+
     canonical_id = resolved_owner_ids.canonical
     legacy_id = (
         resolved_owner_ids.legacy
@@ -333,34 +356,34 @@ def list_conversations(owner_ids: OwnerIds | str, legacy_owner_id: str | None = 
     )
     if not canonical_id:
         return []
+
     canonical_entries = _collect_for_owner(
         canonical_id,
         owner_key=_canonical_owner_key(canonical_id),
+        limit=limit,
     )
+
     def _load_legacy_entries(legacy: str) -> List[ConversationMeta]:
-        entries = _collect_for_owner(legacy)
+        entries = _collect_for_owner(legacy, limit=limit)
         if not entries:
-            entries = _collect_for_owner(legacy, owner_key=_canonical_owner_key(legacy))
+            entries = _collect_for_owner(legacy, owner_key=_canonical_owner_key(legacy), limit=limit)
         return entries
+
     if not canonical_entries:
         if not legacy_id:
             return []
-        return sorted(
-            _load_legacy_entries(legacy_id),
-            key=lambda entry: entry.updated_at,
-            reverse=True,
-        )
+        return sorted(_load_legacy_entries(legacy_id), key=lambda entry: entry.updated_at, reverse=True)
+
     if not legacy_id:
-        return sorted(
-            canonical_entries,
-            key=lambda entry: entry.updated_at,
-            reverse=True,
-        )
+        return sorted(canonical_entries, key=lambda entry: entry.updated_at, reverse=True)
+
     legacy_entries = _load_legacy_entries(legacy_id)
+
     merged: Dict[str, ConversationMeta] = {entry.id: entry for entry in canonical_entries}
     for entry in legacy_entries:
         if entry.id not in merged:
             merged[entry.id] = entry
+
     return sorted(merged.values(), key=lambda entry: entry.updated_at, reverse=True)
 
 
@@ -370,6 +393,7 @@ def delete_conversation(owner_ids: OwnerIds, conversation_id: str, *, reason: st
     legacy_id = owner_ids.legacy if owner_ids.legacy and owner_ids.legacy != canonical_id else None
     if not canonical_id or not conversation_id:
         return
+
     _delete_for_owner(
         canonical_id,
         conversation_id,
@@ -396,17 +420,15 @@ def _delete_for_owner(
         r = _redis_client()
         set_key = _sorted_set_key(owner_key)
         key_hash = _hash_key(owner_key, conversation_id)
+
         pipe = r.pipeline()
         pipe.delete(key_hash)
         pipe.zrem(set_key, conversation_id)
         pipe.execute()
+
         logger.info(
             "Deleted conversation metadata",
-            extra={
-                "owner_id": owner_id,
-                "conversation_id": conversation_id,
-                "reason": reason,
-            },
+            extra={"owner_id": owner_id, "conversation_id": conversation_id, "reason": reason},
         )
     except Exception as exc:
         logger.warning(

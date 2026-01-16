@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage
 
 from app.langgraph_v2.state import AskMissingScope, SealAIState, TechnicalParameters, WorkingMemory
 from app.langgraph.io import AskMissingRequest
-from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
+from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_lww
 
 
 def resume_router_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
@@ -86,14 +86,31 @@ def confirm_resume_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, obje
         edits = state.confirm_edits or {}
         parameters_patch = edits.get("parameters") or {}
         instructions = edits.get("instructions")
-        merged_params, merged_provenance = apply_parameter_patch_with_provenance(
+        
+        # [PATCH] Use LWW
+        (
+            merged_params,
+            merged_provenance,
+            merged_versions,
+            merged_updated_at,
+            applied_fields,
+            rejected_fields,
+        ) = apply_parameter_patch_lww(
             state.parameters.as_dict() if state.parameters else {},
             parameters_patch,
             state.parameter_provenance,
             source="user",
+            parameter_versions=state.parameter_versions,
+            parameter_updated_at=state.parameter_updated_at,
+            base_versions=state.parameter_versions, # User edit sees current state
         )
+        # [PATCH] End
+
         updates["parameters"] = TechnicalParameters.model_validate(merged_params)
         updates["parameter_provenance"] = merged_provenance
+        updates["parameter_versions"] = merged_versions
+        updates["parameter_updated_at"] = merged_updated_at
+
         if isinstance(instructions, str) and instructions.strip():
             messages = list(state.messages or [])
             messages.append(HumanMessage(content=instructions.strip()))

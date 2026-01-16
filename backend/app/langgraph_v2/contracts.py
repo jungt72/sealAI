@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Mapping, Set
+from typing import Any, Iterable, Mapping, Set, List, Optional, Literal
 
 from fastapi import HTTPException
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,40 @@ STABLE_V2_NODE_CONTRACT: frozenset[str] = frozenset(
     }
 )
 
+IntentGoal = Literal[
+    "design_recommendation",
+    "explanation_or_comparison",
+    "troubleshooting",
+    "smalltalk",
+    "out_of_scope",
+    "consulting_preflight", # Added potential matches from types
+    "failure_analysis",
+    "optimization_tco",
+    "knowledge_material",
+    "knowledge_lifetime",
+    "knowledge_norms",
+    "tender_support",
+    "training_onboarding",
+    "meta_system",
+    "generic_sealing_qa",
+]
+
+class Intent(BaseModel):
+    goal: IntentGoal = "design_recommendation"
+    confidence: float = 0.0
+    high_impact_gaps: List[str] = Field(default_factory=list)
+    domain: str = "sealing_technology"
+    seeded_parameters: dict = Field(default_factory=dict)
+    
+    # Optional routing/meta fields
+    key: Optional[str] = None
+    knowledge_type: Optional[str] = None
+    routing_hint: Optional[str] = None
+    complexity: Optional[str] = None
+    needs_sources: Optional[bool] = None
+    
+    # Extra fields allowed
+    model_config = {"extra": "allow"}
 
 def error_detail(code: str, *, request_id: str | None = None, message: str | None = None, **extra: Any) -> dict:
     detail: dict[str, Any] = {"code": code}
@@ -133,4 +168,6 @@ __all__ = [
     "get_compiled_graph_node_names",
     "is_dependency_unavailable_error",
     "pick_existing_node",
+    "Intent",
+    "IntentGoal",
 ]

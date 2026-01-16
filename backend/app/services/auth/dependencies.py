@@ -1,10 +1,15 @@
-# ???? backend/app/services/auth/dependencies.py
+# » backend/app/services/auth/dependencies.py
 """
-Auth-Dependencies f??r FastAPI-/WebSocket-Endpoints.
+Auth-Dependencies für FastAPI-/WebSocket-Endpoints.
 
-* pr??ft Bearer-Token (Keycloak / OIDC)
-* liefert den User-Namen f??r Endpoints (HTTP & WS)
-* WS: akzeptiert neben "Authorization: Bearer <token>" auch ?token= / ?access_token=
+- prüft Bearer-Token (Keycloak / OIDC)
+- liefert User/Scopes für Endpoints (HTTP & WS)
+- WS: akzeptiert neben "Authorization: Bearer <token>" auch ?token= / ?access_token=
+
+Wichtige Ziele:
+- tenant_id sauber aus Claims/Groups auflösen
+- tenant_id strikt validieren (Fail closed), optionaler Fallback nur per ENV
+- helper für konsistente Scope-ID (tenant:user)
 """
 
 from __future__ import annotations
@@ -14,18 +19,21 @@ import logging
 import os
 import re
 
-from fastapi import Depends, HTTPException, WebSocket, status, Header
+from fastapi import Header, HTTPException, WebSocket, status
 
-from app.core.config import settings              # <-- korrekter Pfad!
-import app.services.auth.token as auth_token
 from app.langgraph_v2.contracts import error_detail
+from app.services.auth.scope import build_scope_id
+import app.services.auth.token as auth_token
+
+logger = logging.getLogger(__name__)
 
 # STRICT TENANT VALIDATION Regex
-# Allow standard alphanumeric, dashes, underscores. Min 3 chars to prevent "a"/"id" etc abuse.
+# Allow standard alphanumeric, dashes, underscores. Min 3 chars to prevent "a"/"id" abuse.
 TENANT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{3,64}$")
 
+
 # --------------------------------------------------------------------------- #
-# 1) HTTP-Dependency ??? f??r normale FastAPI-Routes
+# 1) HTTP-Dependency – für normale FastAPI-Routes
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class RequestUser:
@@ -34,9 +42,6 @@ class RequestUser:
     sub: str
     roles: list[str]
     tenant_id: str | None = None
-
-
-logger = logging.getLogger(__name__)
 
 
 def verify_access_token(token: str) -> dict:
@@ -54,12 +59,79 @@ def _resolve_user_id(payload: dict) -> str:
     return str(value)
 
 
-def _resolve_tenant_id(payload: dict) -> str | None:
-    claim = (os.getenv("AUTH_TENANT_ID_CLAIM") or "tenant_id").strip()
-    value = payload.get(claim)
-    if value is None or value == "":
+def resolve_tenant_id_from_claims(payload: dict) -> str | None:
+    """
+    Resolve tenant_id from direct claims ('tenant_id', 'tenantID')
+    OR from 'groups' claim (e.g. '/tenant-1' -> 'tenant-1').
+
+    Strategy:
+    1) Direct claim wins.
+    2) 'groups' list is checked:
+       - Strip leading '/' and whitespace.
+       - If starts with 'tenant-': result is the whole string (e.g. 'tenant-1')
+       - If starts with 'tenant:': result is split (e.g. 'tenant:1' -> '1')
+    3) If multiple tenant groups are found -> FAIL CLOSED (return None).
+    """
+    # 1) Direct claim
+    direct = payload.get("tenant_id") or payload.get("tenantID")
+    if direct and isinstance(direct, str) and direct.strip():
+        return direct.strip()
+
+    # 2) Groups claim
+    groups = payload.get("groups")
+    if not groups:
         return None
-    return str(value)
+
+    if isinstance(groups, str):
+        groups = [groups]
+    if not isinstance(groups, list):
+        return None
+
+    candidates: list[str] = []
+    for g in groups:
+        if not isinstance(g, str):
+            continue
+        clean = g.strip().lstrip("/")
+        if not clean:
+            continue
+
+        if clean.startswith("tenant-"):
+            candidates.append(clean)
+        elif clean.startswith("tenant:"):
+            parts = clean.split(":", 1)
+            if len(parts) == 2 and parts[1].strip():
+                candidates.append(parts[1].strip())
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    if len(candidates) > 1:
+        # Fail closed on ambiguity
+        logger.warning(
+            "ambiguous_tenant_groups",
+            extra={"candidates": candidates, "sub": payload.get("sub")},
+        )
+        return None
+
+    return None
+
+
+def _resolve_tenant_id(payload: dict) -> str | None:
+    # Prefer helper (claims + groups)
+    found = resolve_tenant_id_from_claims(payload)
+    if found:
+        return found
+
+    # Fallback to configured claim check (legacy/env override)
+    claim = (os.getenv("AUTH_TENANT_ID_CLAIM") or "tenant_id").strip()
+
+    # resolve_tenant_id_from_claims already checked 'tenant_id' and 'tenantID'.
+    if claim not in ("tenant_id", "tenantID"):
+        value = payload.get(claim)
+        if value and isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return None
 
 
 def _resolve_username(payload: dict) -> str:
@@ -69,11 +141,13 @@ def _resolve_username(payload: dict) -> str:
 
 def _extract_roles(payload: dict) -> list[str]:
     roles: set[str] = set()
+
     realm_access = payload.get("realm_access")
     if isinstance(realm_access, dict):
         for role in realm_access.get("roles", []) or []:
             if role:
                 roles.add(str(role))
+
     resource_access = payload.get("resource_access")
     if isinstance(resource_access, dict):
         for entry in resource_access.values():
@@ -82,12 +156,14 @@ def _extract_roles(payload: dict) -> list[str]:
             for role in entry.get("roles", []) or []:
                 if role:
                     roles.add(str(role))
+
     return sorted(roles)
 
 
 def canonical_user_id(user: RequestUser) -> str:
-    """Return the canonical user id for scoping (claim-based preferred)."""
+    """Canonical user id for scoping (claim-based preferred)."""
     return user.user_id or user.sub
+
 
 def validate_tenant_id(tenant_id: str) -> str:
     """
@@ -96,22 +172,24 @@ def validate_tenant_id(tenant_id: str) -> str:
     """
     cleaned = tenant_id.strip()
     if not TENANT_ID_PATTERN.match(cleaned):
-        logger.warning("invalid_tenant_id_format", extra={"clean": cleaned[:10]})
+        logger.warning("invalid_tenant_id_format", extra={"clean": cleaned[:16]})
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=error_detail("invalid_tenant", message="Tenant ID format invalid."),
         )
     return cleaned
 
+
 def canonical_tenant_id(user: RequestUser) -> str:
     """
-    Return the canonical tenant id for scoping (claim preferred).
-    STRICT MODE: If tenant_id is missing, raise 403 unless ALLOW_TENANT_FALLBACK=1.
+    Canonical tenant id for scoping.
+
+    STRICT MODE:
+      - If tenant_id is missing, raise 403 unless ALLOW_TENANT_FALLBACK=1.
     """
     if user.tenant_id:
         return validate_tenant_id(user.tenant_id)
 
-    # Fallback Logic (Migration only)
     allow_fallback = os.getenv("ALLOW_TENANT_FALLBACK") == "1"
     if allow_fallback:
         fallback = user.user_id or user.sub
@@ -119,15 +197,8 @@ def canonical_tenant_id(user: RequestUser) -> str:
             "tenant_id_claim_missing_fallback_active",
             extra={"user_id": user.user_id, "sub": user.sub},
         )
-        # Fallback might be raw user ID which might not strictly match tenant structure,
-        # but we validate it anyway as a defense measure for now.
-        try:
-             return validate_tenant_id(fallback)
-        except HTTPException:
-             # If fallback is allowed, failing here is strict defense.
-             raise
-             
-    # Strict Mode Failure
+        return validate_tenant_id(fallback)
+
     logger.error(
         "tenant_id_claim_missing_strict",
         extra={"user_id": user.user_id, "sub": user.sub},
@@ -138,17 +209,27 @@ def canonical_tenant_id(user: RequestUser) -> str:
     )
 
 
+def canonical_scope_id(user: RequestUser) -> str:
+    """
+    Stable scope-id for multi-tenant isolation: "{tenant}:{user}".
+    Use this for Redis keys, SSE channels, etc.
+    """
+    tenant = canonical_tenant_id(user)
+    uid = canonical_user_id(user)
+    return build_scope_id(tenant_id=tenant, user_id=uid)
+
+
 async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     authorization: str | None = Header(default=None),
 ) -> RequestUser:
     """
-    Liefert ein RequestUser-Objekt aus dem g??ltigen JWT,
-    sonst ??? 401 UNAUTHORIZED.
+    Liefert ein RequestUser-Objekt aus dem gültigen JWT,
+    sonst -> 401 UNAUTHORIZED.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header fehlt oder ung??ltig",
+            detail="Authorization header fehlt oder ungültig",
         )
 
     token = authorization.removeprefix("Bearer ").strip()
@@ -159,32 +240,39 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
+
     user_id = _resolve_user_id(payload)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
     tenant_id = _resolve_tenant_id(payload)
     roles = _extract_roles(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles, tenant_id=tenant_id)
+
+    return RequestUser(
+        user_id=user_id,
+        username=username,
+        sub=sub,
+        roles=roles,
+        tenant_id=tenant_id,
+    )
 
 
 # --------------------------------------------------------------------------- #
-# 2) WebSocket-Dependency ??? f??r Chat-Streaming
-#    (unterst??tzt Header *oder* Query-Parameter ?token=/ ?access_token=)
+# 2) WebSocket-Dependency – für Chat-Streaming
+#    (unterstützt Header oder Query-Parameter ?token= / ?access_token=)
 # --------------------------------------------------------------------------- #
 async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
     """
-    Pr??ft beim WS-Handshake das Access Token.
-    Bevorzugt `Authorization: Bearer <token>`, f??llt aber auf Query-Parameter
-    `?token=` oder `?access_token=` zur??ck (praktisch, da Browser-WS keine
+    Prüft beim WS-Handshake das Access Token.
+    Bevorzugt `Authorization: Bearer <token>`, fällt aber auf Query-Parameter
+    `?token=` oder `?access_token=` zurück (praktisch, da Browser-WS keine
     Custom-Header setzen kann).
     """
-    # 1) Versuche Authorization-Header
     auth_header = websocket.headers.get("Authorization", "")
     token: str | None = None
+
     if auth_header.startswith("Bearer "):
         token = auth_header.removeprefix("Bearer ").strip()
 
-    # 2) Fallback: Query-Parameter (z. B. ws://.../ws?token=xxx)
     if not token:
         qp = websocket.query_params
         token = qp.get("token") or qp.get("access_token")
@@ -203,9 +291,17 @@ async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
+
     user_id = _resolve_user_id(payload)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
     tenant_id = _resolve_tenant_id(payload)
     roles = _extract_roles(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles, tenant_id=tenant_id)
+
+    return RequestUser(
+        user_id=user_id,
+        username=username,
+        sub=sub,
+        roles=roles,
+        tenant_id=tenant_id,
+    )

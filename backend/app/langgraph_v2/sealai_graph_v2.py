@@ -21,7 +21,6 @@ from app.langgraph_v2.utils.checkpointer import make_v2_checkpointer_async
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI
 from app.langgraph_v2.utils.messages import latest_user_text
-from app.langgraph_v2.utils.threading import stable_thread_key
 from app.langgraph_v2.utils.state_debug import log_state_debug
 
 logger = structlog.get_logger("langgraph_v2.graph")
@@ -45,6 +44,7 @@ from app.langgraph_v2.nodes.nodes_resume import (
     confirm_resume_node,
     resume_router_node,
 )
+from app.langgraph_v2.nodes.nodes_critic import technical_critic_node, critic_router
 from app.langgraph_v2.nodes.nodes_flows import (
     build_final_answer_context,
     map_final_answer_to_state,
@@ -401,6 +401,8 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_node("confirm_recommendation_node", confirm_recommendation_node)
     builder.add_node("final_answer_node", _build_final_answer_chain())
     builder.add_node("response_node", response_node)
+    builder.add_node("technical_critic_node", technical_critic_node)
+    builder.add_conditional_edges("technical_critic_node", critic_router, {"approve": "final_answer_node", "refine": "supervisor_policy_node"})
 
     # Entrypoint
     builder.add_edge(START, "resume_router_node")
@@ -492,7 +494,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
         },
     )
 
-    builder.add_edge("product_explainer_node", "final_answer_node")
+    builder.add_edge("product_explainer_node", "technical_critic_node")
 
     # Comparison flow
     builder.add_edge("material_comparison_node", "supervisor_policy_node")
@@ -524,26 +526,44 @@ _GRAPH_STORE: "WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, Any]]" = W
 def _get_graph_store(loop: asyncio.AbstractEventLoop) -> dict[str, Any]:
     store = _GRAPH_STORE.get(loop)
     if store is None:
-        store = {"lock": asyncio.Lock(), "graph": None}
+        # Cache graphs per tenant to ensure strict tenant isolation at the checkpointer layer.
+        store = {"lock": asyncio.Lock(), "graphs": {}}
         _GRAPH_STORE[loop] = store
     return store
 
 
-async def _build_graph(require_async: bool = True) -> CompiledStateGraph:
-    checkpointer = await make_v2_checkpointer_async(require_async=require_async)
+async def _build_graph(*, require_async: bool = True, tenant_id: str | None = None) -> CompiledStateGraph:
+    base_namespace = resolve_checkpointer_namespace_v2()
+    checkpoint_ns = _tenant_checkpoint_namespace(base_namespace, tenant_id)
+
+    # Best effort: newer make_v2_checkpointer_async supports explicit namespace scoping.
+    # Keep backwards compatibility if signature does not accept it.
+    try:
+        checkpointer = await make_v2_checkpointer_async(require_async=require_async, namespace=checkpoint_ns)
+    except TypeError:
+        checkpointer = await make_v2_checkpointer_async(require_async=require_async)
+
     return create_sealai_graph_v2(checkpointer=checkpointer, require_async=require_async)
 
 
-async def get_sealai_graph_v2() -> CompiledStateGraph:
+async def get_sealai_graph_v2(*, tenant_id: str | None = None) -> CompiledStateGraph:
     loop = asyncio.get_running_loop()
     store = _get_graph_store(loop)
-    graph = store.get("graph")
-    if graph is None:
-        async with store["lock"]:
-            graph = store.get("graph")
-            if graph is None:
-                graph = await _build_graph(require_async=True)
-                store["graph"] = graph
+    graphs = store.get("graphs")
+    if not isinstance(graphs, dict):
+        graphs = {}
+        store["graphs"] = graphs
+
+    tenant_key = (tenant_id or "").strip() or "__none__"
+    graph = graphs.get(tenant_key)
+    if graph is not None:
+        return graph
+
+    async with store["lock"]:
+        graph = graphs.get(tenant_key)
+        if graph is None:
+            graph = await _build_graph(require_async=True, tenant_id=(tenant_id or None))
+            graphs[tenant_key] = graph
     return graph
 
 
@@ -573,12 +593,12 @@ def build_v2_config(*, thread_id: str, user_id: str, tenant_id: str | None = Non
     configurable: Dict[str, Any] = {
         "thread_id": thread_id,
         "user_id": user_id,
-        "checkpoint_ns": checkpoint_ns,
     }
     metadata: Dict[str, Any] = {
         "thread_id": thread_id,
         "user_id": user_id,
         "tenant_id": tenant_id,
+        "checkpoint_ns": checkpoint_ns,
         "run_id": run_id,
     }
     return {
