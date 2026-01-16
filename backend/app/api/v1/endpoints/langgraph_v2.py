@@ -17,12 +17,11 @@ from langchain_core.messages.ai import AIMessageChunk
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
-from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from langgraph.errors import InvalidUpdateError
 
+from app.langgraph_v2.contracts import assert_node_exists, error_detail, is_dependency_unavailable_error
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, TechnicalParameters
-from app.langgraph_v2.contracts import assert_node_exists, error_detail, is_dependency_unavailable_error
 from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
 from app.langgraph_v2.utils.parameter_patch import (
@@ -30,21 +29,22 @@ from app.langgraph_v2.utils.parameter_patch import (
     apply_parameter_patch_lww,
     sanitize_v2_parameter_patch,
 )
-from app.services.auth.scope import build_scope_id
 from app.services.auth.dependencies import (
     RequestUser,
     canonical_tenant_id,
+    validate_tenant_id,
     canonical_user_id,
     get_current_request_user,
 )
 from app.services.chat.conversations import OwnerIds, upsert_conversation
+from app.services.chat.persistence import persist_chat_messages, persist_chat_transcript
 from app.services.chat.validation import normalize_chat_id
-from app.services.chat.persistence import persist_chat_transcript
 from app.services.redis_client import make_async_redis_client
 from app.services.sse_broadcast import sse_broadcast
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
 SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 DEDUP_TTL_SEC = int(os.getenv("LANGGRAPH_V2_DEDUP_TTL_SEC", "900"))
@@ -77,12 +77,6 @@ def _short_user_id(user_id: str | None) -> str:
     if not user_id:
         return ""
     return f"{user_id[:8]}..." if len(user_id) > 8 else user_id
-
-
-def _sse_scope_id(tenant_id: str | None, user_id: str | None) -> str:
-    if tenant_id and user_id:
-        return f"{tenant_id}:{user_id}"
-    return tenant_id or user_id or ""
 
 
 def _extract_final_answer_from_state(state: SealAIState) -> str:
@@ -124,6 +118,7 @@ def _build_ask_missing_payload(state: SealAIState) -> Dict[str, Any]:
         "request": request_payload,
     }
 
+
 try:
     from redis.asyncio import Redis
 except Exception:  # pragma: no cover - optional dependency
@@ -145,9 +140,9 @@ class LangGraphV2Request(BaseModel):
 
 def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> bytes:
     prefix = f"id: {event_id}\n" if event_id else ""
-    return (
-        prefix + f"event: {event}\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-    ).encode("utf-8")
+    return (prefix + f"event: {event}\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n").encode(
+        "utf-8"
+    )
 
 
 def _chunk_text(text: str, *, max_len: int = 700) -> list[str]:
@@ -186,11 +181,15 @@ async def _build_graph_config(
     request_id: str | None = None,
     allow_legacy_fallback: bool = True,
 ) -> tuple[Any, Dict[str, Any]]:
-    graph = await get_sealai_graph_v2()
+    try:
+        graph = await get_sealai_graph_v2(tenant_id=tenant_id)
+    except TypeError as e:
+        if "unexpected keyword argument 'tenant_id'" in str(e):
+            graph = await get_sealai_graph_v2()
+        else:
+            raise
 
     def _attach_config(base_config: Dict[str, Any], *, scoped_user_id: str) -> Dict[str, Any]:
-        configurable = base_config.setdefault("configurable", {})
-        configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
         if username:
             metadata = base_config.setdefault("metadata", {})
             metadata["username"] = username
@@ -462,22 +461,11 @@ def _extract_trace_action(*, data: Any = None, state: Any = None) -> str | None:
     return None
 
 
-def _build_trace_payload(
-    *,
-    mode: str,
-    data: Any,
-    meta: Any,
-    state: Any,
-) -> Dict[str, str]:
+def _build_trace_payload(*, mode: str, data: Any, meta: Any, state: Any) -> Dict[str, str]:
     node_name = _extract_trace_node(meta=meta, data=data, state=state)
     phase = _extract_trace_phase(data=data, state=state)
     action = _extract_trace_action(data=data, state=state)
-    payload = {
-        "node": node_name,
-        "type": mode,
-        "phase": phase,
-        "action": action,
-    }
+    payload = {"node": node_name, "type": mode, "phase": phase, "action": action}
     return {key: value for key, value in payload.items() if value}
 
 
@@ -512,13 +500,23 @@ async def _get_dedup_redis() -> Redis | None:
         return client
 
 
-async def _claim_client_msg_id(*, user_id: str, chat_id: str, client_msg_id: str) -> bool:
+async def _claim_client_msg_id(
+    *,
+    user_id: str,
+    chat_id: str,
+    client_msg_id: str,
+    tenant_id: str | None = None,
+) -> bool:
     if not client_msg_id:
         return True
     client = await _get_dedup_redis()
     if client is None:
         return True
-    key = f"langgraph_v2:dedup:{user_id}:{chat_id}:{client_msg_id}"
+    key = (
+        f"langgraph_v2:dedup:{tenant_id}:{user_id}:{chat_id}:{client_msg_id}"
+        if tenant_id
+        else f"langgraph_v2:dedup:{user_id}:{chat_id}:{client_msg_id}"
+    )
     try:
         claimed = await client.set(key, "1", nx=True, ex=DEDUP_TTL_SEC)
         return bool(claimed)
@@ -542,8 +540,8 @@ async def _event_stream_v2(
     queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
     last_slow_notice = 0.0
     scoped_user_id = user_id
-    scoped_tenant_id = tenant_id
-    scope_id = build_scope_id(tenant_id=tenant_id or " , user_id=user_id)
+    # tenant_id is provided by the authenticated route; tests may call this helper directly
+    scoped_tenant_id = validate_tenant_id(tenant_id) if tenant_id else validate_tenant_id(user_id)
     try:
         graph, config = await _build_graph_config(
             thread_id=req.chat_id,
@@ -554,8 +552,8 @@ async def _event_stream_v2(
         )
         scoped_user_id = _config_user_id(config, user_id)
         if scoped_tenant_id is None:
-            scoped_tenant_id = config.get("metadata", {}).get("tenant_id") if isinstance(config, dict) else None
-        scope_id = build_scope_id(tenant_id=scoped_tenant_id or " , user_id=scoped_user_id)
+            # SECURITY: never trust tenant_id from client-provided config metadata
+            pass
         logger.info(
             "langgraph_v2_sse_stream_start",
             extra={
@@ -595,8 +593,9 @@ async def _event_stream_v2(
                     except asyncio.QueueEmpty:
                         break
                 if queue.qsize() <= queue.maxsize - 1:
-
-                    slow_seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
+                    slow_seq = await sse_broadcast.record_event(
+                        user_id=scoped_user_id,
+                        tenant_id=scoped_tenant_id,
                         chat_id=req.chat_id,
                         event="slow_client",
                         data={"reason": "backpressure"},
@@ -609,7 +608,9 @@ async def _event_stream_v2(
                     queue.put_nowait(slow_frame)
 
         async def _emit_event(event_name: str, payload: Dict[str, Any]) -> None:
-            seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
+            seq = await sse_broadcast.record_event(
+                user_id=scoped_user_id,
+                tenant_id=scoped_tenant_id,
                 chat_id=req.chat_id,
                 event=event_name,
                 data=payload,
@@ -617,7 +618,11 @@ async def _event_stream_v2(
             frame = _format_sse(event_name, payload, event_id=str(seq))
             await _enqueue_frame(frame)
 
-        broadcast_queue = await sse_broadcast.subscribe(tenant_id=scoped_tenant_id, chat_id=req.chat_id)
+        broadcast_queue = await sse_broadcast.subscribe(
+            user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
+            chat_id=req.chat_id,
+        )
 
         async def _broadcast_forwarder() -> None:
             if broadcast_queue is None:
@@ -647,15 +652,14 @@ async def _event_stream_v2(
 
         last_seq = _parse_last_event_id(last_event_id, chat_id=req.chat_id)
         if last_seq is not None:
-            replay, buffer_miss = await sse_broadcast.replay_after(tenant_id=scoped_tenant_id,
+            replay, buffer_miss = await sse_broadcast.replay_after(
+                user_id=scoped_user_id,
+                tenant_id=scoped_tenant_id,
                 chat_id=req.chat_id,
                 last_seq=last_seq,
             )
             if buffer_miss:
-                await _emit_event(
-                    "resync_required",
-                    {"reason": "buffer_miss"},
-                )
+                await _emit_event("resync_required", {"reason": "buffer_miss"})
             else:
                 for item in replay:
                     frame = _format_sse(
@@ -666,15 +670,14 @@ async def _event_stream_v2(
                     await _enqueue_frame(frame)
 
         broadcast_task = asyncio.create_task(_broadcast_forwarder())
+
         snapshot = _extract_param_snapshot(req)
         snapshot_versions = _snapshot_versions(snapshot)
         if WARN_STALE_PARAM_SNAPSHOT and snapshot_versions:
             try:
                 server_snapshot = await graph.aget_state(config)
                 state_values = _state_values_to_dict(server_snapshot.values)
-                server_versions = (
-                    state_values.get("parameter_versions") if isinstance(state_values, dict) else {}
-                )
+                server_versions = state_values.get("parameter_versions") if isinstance(state_values, dict) else {}
                 stale_count = 0
                 if isinstance(server_versions, dict):
                     for key, snap_value in snapshot_versions.items():
@@ -701,9 +704,11 @@ async def _event_stream_v2(
                         "user_id": scoped_user_id,
                     },
                 )
+
         trace_enabled = _lg_trace_enabled()
         metadata = config.get("metadata") if isinstance(config, dict) else {}
         run_id = metadata.get("run_id") if isinstance(metadata, dict) else None
+
         prev_parameters: Dict[str, Any] = {}
         initial_state = SealAIState(
             user_id=scoped_user_id,
@@ -726,25 +731,21 @@ async def _event_stream_v2(
             payload = _build_trace_payload(mode=mode, data=data, meta=meta, state=state)
             if not payload:
                 return
-            signature = (
-                payload.get("node"),
-                payload.get("type"),
-                payload.get("phase"),
-                payload.get("action"),
-            )
+            signature = (payload.get("node"), payload.get("type"), payload.get("phase"), payload.get("action"))
             if signature == last_trace_signature:
                 return
             last_trace_signature = signature
             payload["ts"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
             logger.info(
                 "langgraph_v2_trace",
-                    extra={
-                        "thread_id": req.chat_id,
-                        "chat_id": req.chat_id,
-                        "user_id": scoped_user_id,
-                        "run_id": run_id,
-                        "request_id": request_id,
-                        "node": payload.get("node"),
+                extra={
+                    "thread_id": req.chat_id,
+                    "chat_id": req.chat_id,
+                    "user_id": scoped_user_id,
+                    "run_id": run_id,
+                    "request_id": request_id,
+                    "node": payload.get("node"),
                     "event_type": payload.get("type"),
                     "phase": payload.get("phase"),
                     "supervisor_action": payload.get("action"),
@@ -752,9 +753,52 @@ async def _event_stream_v2(
             )
             await _emit_event("trace", payload)
 
+        async def _persist_final_turn(
+            *,
+            result_state: SealAIState,
+            final_text: str,
+        ) -> None:
+            """
+            Minimal persistence that works even if tenant_id is missing.
+            - Persist message(s): last user + last assistant preview/final
+            - Persist transcript metadata (summary + previews)
+            """
+            messages_obj = result_state.messages or []
+            last_user_message, last_assistant_message = _extract_last_messages(messages_obj)
+            assistant_preview = last_assistant_message or final_text or ""
+
+            meta_payload = {
+                "last_user_message": _truncate_text(last_user_message or ""),
+                "last_assistant_preview": _truncate_text(assistant_preview or ""),
+                "phase": result_state.phase,
+                "last_node": result_state.last_node,
+                "token_count": token_count,
+                "request_id": request_id,
+            }
+            meta_payload = {k: v for k, v in meta_payload.items() if v is not None and v != ""}
+
+            await persist_chat_messages(
+                chat_id=req.chat_id,
+                user_id=scoped_user_id,
+                tenant_id=scoped_tenant_id,
+                messages=[
+                    ("user", last_user_message or ""),
+                    ("assistant", assistant_preview or ""),
+                ],
+                request_id=request_id,
+                client_msg_id=req.client_msg_id,
+            )
+
+            await persist_chat_transcript(
+                chat_id=req.chat_id,
+                user_id=scoped_user_id,
+                tenant_id=scoped_tenant_id,
+                summary=f"Chat {req.chat_id[:8]}...",
+                metadata=meta_payload,
+            )
+
         async def _producer() -> None:
-            nonlocal emitted_any_token, latest_state, token_count, done_sent, seq, prev_parameters
-            nonlocal last_retrieval_signature
+            nonlocal emitted_any_token, latest_state, token_count, done_sent, prev_parameters, last_retrieval_signature
             try:
                 iterator = graph.astream(
                     initial_state,
@@ -771,15 +815,10 @@ async def _event_stream_v2(
                     except StopAsyncIteration:
                         break
 
-                    if (
-                        isinstance(item, tuple)
-                        and len(item) == 2
-                        and isinstance(item[0], str)
-                    ):
+                    if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str):
                         mode, data = item
+
                         if mode == "messages":
-                            token: Any
-                            meta: Any
                             if isinstance(data, tuple) and len(data) == 2:
                                 token, meta = data
                             else:
@@ -789,10 +828,7 @@ async def _event_stream_v2(
                             if text:
                                 emitted_any_token = True
                                 token_count += 1
-                                await _emit_event(
-                                    "token",
-                                    {"type": "token", "text": text},
-                                )
+                                await _emit_event("token", {"type": "token", "text": text})
                                 if SSE_DEBUG:
                                     logger.info(
                                         "langgraph_v2_sse_event",
@@ -813,6 +849,7 @@ async def _event_stream_v2(
                                 latest_state = data
                             elif isinstance(data, dict):
                                 latest_state = data
+
                             retrieval_meta: Dict[str, Any] | None = None
                             if isinstance(latest_state, SealAIState):
                                 retrieval_meta = latest_state.retrieval_meta
@@ -820,34 +857,25 @@ async def _event_stream_v2(
                                 raw_meta = latest_state.get("retrieval_meta")
                                 if isinstance(raw_meta, dict):
                                     retrieval_meta = raw_meta
+
                             if isinstance(retrieval_meta, dict) and retrieval_meta:
-                                safe_meta = {
-                                    key: value
-                                    for key, value in retrieval_meta.items()
-                                    if key != "context"
-                                }
-                                event_name = (
-                                    "retrieval.skipped"
-                                    if retrieval_meta.get("skipped")
-                                    else "retrieval.results"
-                                )
-                                signature = (
-                                    event_name,
-                                    json.dumps(safe_meta, ensure_ascii=False, sort_keys=True),
-                                )
+                                safe_meta = {k: v for k, v in retrieval_meta.items() if k != "context"}
+                                event_name = "retrieval.skipped" if retrieval_meta.get("skipped") else "retrieval.results"
+                                signature = (event_name, json.dumps(safe_meta, ensure_ascii=False, sort_keys=True))
                                 if signature != last_retrieval_signature:
                                     await _emit_event(event_name, safe_meta)
                                     last_retrieval_signature = signature
+
                             payload = _build_state_update_payload(latest_state)
                             if payload:
                                 parameters = payload.get("parameters")
                                 current_params = parameters if isinstance(parameters, dict) else {}
                                 delta_keys = [
-                                    key
-                                    for key, value in current_params.items()
-                                    if key not in prev_parameters or prev_parameters.get(key) != value
+                                    k
+                                    for k, v in current_params.items()
+                                    if k not in prev_parameters or prev_parameters.get(k) != v
                                 ]
-                                removed_keys = [key for key in prev_parameters.keys() if key not in current_params]
+                                removed_keys = [k for k in prev_parameters.keys() if k not in current_params]
                                 if delta_keys or removed_keys:
                                     logger.info(
                                         "langgraph_v2_state_update_params",
@@ -865,6 +893,7 @@ async def _event_stream_v2(
                                         },
                                     )
                                 prev_parameters = dict(current_params)
+
                                 provenance: Dict[str, Any] = {}
                                 if isinstance(latest_state, SealAIState):
                                     provenance = latest_state.parameter_provenance or {}
@@ -872,17 +901,16 @@ async def _event_stream_v2(
                                     prov_value = latest_state.get("parameter_provenance")
                                     if isinstance(prov_value, dict):
                                         provenance = prov_value
+
                                 parameter_meta: Dict[str, Dict[str, Any]] = {}
                                 if delta_keys and provenance:
-                                    for key in delta_keys:
-                                        if provenance.get(key) != "user":
+                                    for k in delta_keys:
+                                        if provenance.get(k) != "user":
                                             continue
-                                        parameter_meta[key] = {
-                                            "source": "user",
-                                            "force_overwrite": True,
-                                        }
+                                        parameter_meta[k] = {"source": "user", "force_overwrite": True}
                                 if parameter_meta:
                                     payload["parameter_meta"] = parameter_meta
+
                                 if PARAM_SYNC_DEBUG and delta_keys:
                                     logger.info(
                                         "langgraph_v2_state_update_meta",
@@ -890,11 +918,13 @@ async def _event_stream_v2(
                                             "chat_id": req.chat_id,
                                             "last_node": payload.get("last_node"),
                                             "delta_keys": delta_keys,
-                                            "provenance_by_key": {key: provenance.get(key) for key in delta_keys},
+                                            "provenance_by_key": {k: provenance.get(k) for k in delta_keys},
                                             "parameter_meta_attached": bool(parameter_meta),
                                         },
                                     )
+
                                 await _emit_event("state_update", payload)
+
                             await _emit_trace("values", data=data, meta=None, state=latest_state)
                             continue
 
@@ -906,9 +936,7 @@ async def _event_stream_v2(
 
                 # Finalize from last known state
                 result_state = (
-                    latest_state
-                    if isinstance(latest_state, SealAIState)
-                    else SealAIState.model_validate(latest_state or {})
+                    latest_state if isinstance(latest_state, SealAIState) else SealAIState.model_validate(latest_state or {})
                 )
 
                 if _should_emit_confirm_checkpoint(result_state):
@@ -935,13 +963,10 @@ async def _event_stream_v2(
                             },
                         )
 
-                final_text = (result_state.final_text or "")
-                if (not emitted_any_token) and final_text.strip():
-                    for chunk in _chunk_text(final_text.strip()):
-                        await _emit_event(
-                            "token",
-                            {"type": "token", "text": chunk},
-                        )
+                final_text = (result_state.final_text or "").strip()
+                if (not emitted_any_token) and final_text:
+                    for chunk in _chunk_text(final_text):
+                        await _emit_event("token", {"type": "token", "text": chunk})
                         token_count += 1
                         if SSE_DEBUG:
                             logger.info(
@@ -956,35 +981,9 @@ async def _event_stream_v2(
                                 },
                             )
 
+                # Persistence (best-effort): do not drop history just because tenant_id is missing.
                 try:
-                    if scoped_tenant_id:
-                        messages = (
-                            result_state.messages
-                            if isinstance(result_state, SealAIState)
-                            else result_state.get("messages")
-                        )
-                        last_user_message, last_assistant_message = _extract_last_messages(messages)
-                        assistant_preview = last_assistant_message or final_text
-                        metadata = {
-                            "last_user_message": _truncate_text(last_user_message or ""),
-                            "last_assistant_preview": _truncate_text(assistant_preview or ""),
-                            "phase": result_state.phase,
-                            "last_node": result_state.last_node,
-                            "token_count": token_count,
-                            "request_id": request_id,
-                        }
-                        metadata = {
-                            key: value
-                            for key, value in metadata.items()
-                            if value is not None and value != ""
-                        }
-                        await persist_chat_transcript(
-                            chat_id=req.chat_id,
-                            user_id=scoped_user_id,
-                            tenant_id=scoped_tenant_id,
-                            summary=f"Chat {req.chat_id[:8]}...",
-                            metadata=metadata,
-                        )
+                    await _persist_final_turn(result_state=result_state, final_text=final_text)
                 except Exception:
                     logger.exception(
                         "persist_chat_transcript_failed",
@@ -995,6 +994,7 @@ async def _event_stream_v2(
                             "user_id": scoped_user_id,
                         },
                     )
+
                 done_payload = {
                     "type": "done",
                     "chat_id": req.chat_id,
@@ -1007,6 +1007,7 @@ async def _event_stream_v2(
                 }
                 await _emit_event("done", done_payload)
                 done_sent = True
+
                 if SSE_DEBUG:
                     logger.info(
                         "langgraph_v2_sse_event",
@@ -1019,6 +1020,7 @@ async def _event_stream_v2(
                             "chat_id": req.chat_id,
                         },
                     )
+
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # pragma: no cover
@@ -1034,23 +1036,11 @@ async def _event_stream_v2(
                         "supervisor_mode": os.getenv("LANGGRAPH_V2_SUPERVISOR_MODE"),
                     },
                 )
-                message = (
-                    "dependency_unavailable"
-                    if is_dependency_unavailable_error(exc)
-                    else "internal_error"
-                )
-                await _emit_event(
-                    "error",
-                    {"type": "error", "message": message, "request_id": request_id},
-                )
+                message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
+                await _emit_event("error", {"type": "error", "message": message, "request_id": request_id})
                 await _emit_event(
                     "done",
-                    {
-                        "type": "done",
-                        "chat_id": req.chat_id,
-                        "request_id": request_id,
-                        "client_msg_id": req.client_msg_id,
-                    },
+                    {"type": "done", "chat_id": req.chat_id, "request_id": request_id, "client_msg_id": req.client_msg_id},
                 )
             finally:
                 await queue.put(None)
@@ -1062,20 +1052,19 @@ async def _event_stream_v2(
             if item is None:
                 break
             yield item
+
     except asyncio.CancelledError:
-        done_payload = {
-            "type": "done",
-            "chat_id": req.chat_id,
-            "request_id": request_id,
-            "client_msg_id": req.client_msg_id,
-        }
-        seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
+        done_payload = {"type": "done", "chat_id": req.chat_id, "request_id": request_id, "client_msg_id": req.client_msg_id}
+        done_seq = await sse_broadcast.record_event(
+            user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
             chat_id=req.chat_id,
             event="done",
             data=done_payload,
         )
-        yield _format_sse("done", done_payload, event_id=str(seq))
+        yield _format_sse("done", done_payload, event_id=str(done_seq))
         return
+
     except Exception as exc:  # pragma: no cover
         logger.exception(
             "langgraph_v2_sse_outer_error",
@@ -1091,40 +1080,38 @@ async def _event_stream_v2(
         )
         message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
         error_payload = {"type": "error", "message": message, "request_id": request_id}
-        error_seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
+        error_seq = await sse_broadcast.record_event(
+            user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
             chat_id=req.chat_id,
             event="error",
             data=error_payload,
         )
         yield _format_sse("error", error_payload, event_id=str(error_seq))
-        done_payload = {
-            "type": "done",
-            "chat_id": req.chat_id,
-            "request_id": request_id,
-            "client_msg_id": req.client_msg_id,
-        }
-        done_seq = await sse_broadcast.record_event(tenant_id=scoped_tenant_id,
+
+        done_payload = {"type": "done", "chat_id": req.chat_id, "request_id": request_id, "client_msg_id": req.client_msg_id}
+        done_seq = await sse_broadcast.record_event(
+            user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
             chat_id=req.chat_id,
             event="done",
             data=done_payload,
         )
         yield _format_sse("done", done_payload, event_id=str(done_seq))
+
     finally:
         logger.info(
             "langgraph_v2_sse_stream_stop",
-            extra={
-                "request_id": request_id,
-                "tenant_id": scoped_tenant_id,
-                "user_id": scoped_user_id,
-                "chat_id": req.chat_id,
-            },
+            extra={"request_id": request_id, "tenant_id": scoped_tenant_id, "user_id": scoped_user_id, "chat_id": req.chat_id},
         )
         if stream_task and not stream_task.done():
             stream_task.cancel()
         if broadcast_task and not broadcast_task.done():
             broadcast_task.cancel()
         if broadcast_queue is not None:
-            await sse_broadcast.unsubscribe(tenant_id=scoped_tenant_id,
+            await sse_broadcast.unsubscribe(
+                user_id=scoped_user_id,
+                tenant_id=scoped_tenant_id,
                 chat_id=req.chat_id,
                 queue=broadcast_queue,
             )
@@ -1142,23 +1129,25 @@ async def langgraph_chat_v2_endpoint(
         request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     if not request_id:
         request_id = str(uuid.uuid4())
+
     request.chat_id = normalize_chat_id(request.chat_id, request_id=request_id)
     last_event_id = raw_request.headers.get("Last-Event-ID")
+
     snapshot = _extract_param_snapshot(request)
     version_count, updated_max = _snapshot_stats(snapshot)
     if REQUIRE_PARAM_SNAPSHOT and not snapshot:
-        raise HTTPException(
-            status_code=400,
-            detail=error_detail("missing_param_snapshot", request_id=request_id),
-        )
+        raise HTTPException(status_code=400, detail=error_detail("missing_param_snapshot", request_id=request_id))
+
     scoped_user_id = canonical_user_id(user)
     scoped_tenant_id = canonical_tenant_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
+
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
             tenant_id=scoped_tenant_id,
             chat_id=request.chat_id,
             client_msg_id=request.client_msg_id,
+            user_id=scoped_user_id,
         )
         if not claimed:
             raise HTTPException(
@@ -1167,8 +1156,10 @@ async def langgraph_chat_v2_endpoint(
                     "duplicate_client_msg_id",
                     request_id=request_id,
                     client_msg_id=request.client_msg_id,
+                    user_id=scoped_user_id,
                 ),
             )
+
     owner_ids = OwnerIds(canonical=scoped_user_id, legacy=legacy_user_id)
     if owner_ids.canonical:
         try:
@@ -1185,6 +1176,7 @@ async def langgraph_chat_v2_endpoint(
                 exc_info=exc,
                 extra={"user": owner_ids.canonical, "chat_id": request.chat_id},
             )
+
     logger.info(
         "langgraph_v2_chat_request",
         extra={
@@ -1200,6 +1192,7 @@ async def langgraph_chat_v2_endpoint(
             "param_snapshot_updated_at_max": updated_max,
         },
     )
+
     headers = {
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
@@ -1207,6 +1200,7 @@ async def langgraph_chat_v2_endpoint(
     }
     if request_id:
         headers["X-Request-Id"] = request_id
+
     return StreamingResponse(
         _event_stream_v2(
             request,
@@ -1236,6 +1230,7 @@ async def confirm_go(
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
         if not body.decision:
             raise HTTPException(status_code=400, detail=error_detail("missing_decision", request_id=request_id))
+
         graph, config = await _build_graph_config(
             thread_id=body.chat_id,
             user_id=scoped_user_id,
@@ -1244,6 +1239,7 @@ async def confirm_go(
             legacy_user_id=legacy_user_id,
             request_id=request_id,
         )
+
         snapshot = await graph.aget_state(config)
         state_values = _state_values_to_dict(snapshot.values)
         confirm_payload = state_values.get("confirm_checkpoint") if isinstance(state_values, dict) else {}
@@ -1251,17 +1247,14 @@ async def confirm_go(
         required_sub = ""
         if isinstance(confirm_payload, dict):
             required_sub = str(confirm_payload.get("required_user_sub") or "")
+
         pending_action = state_values.get("pending_action") if isinstance(state_values, dict) else None
+
         if confirm_status == "resolved":
-            raise HTTPException(
-                status_code=409,
-                detail=error_detail("checkpoint_already_resolved", request_id=request_id),
-            )
+            raise HTTPException(status_code=409, detail=error_detail("checkpoint_already_resolved", request_id=request_id))
         if not pending_action and not confirm_payload:
-            raise HTTPException(
-                status_code=409,
-                detail=error_detail("no_pending_checkpoint", request_id=request_id),
-            )
+            raise HTTPException(status_code=409, detail=error_detail("no_pending_checkpoint", request_id=request_id))
+
         if isinstance(confirm_payload, dict):
             conversation_id = str(confirm_payload.get("conversation_id") or "")
             if conversation_id != body.chat_id:
@@ -1269,8 +1262,10 @@ async def confirm_go(
                     status_code=403,
                     detail=error_detail("checkpoint_conversation_mismatch", request_id=request_id),
                 )
+
         if required_sub and required_sub != scoped_user_id:
             raise HTTPException(status_code=403, detail=error_detail("forbidden", request_id=request_id))
+
         checkpoint_id = state_values.get("confirm_checkpoint_id") if isinstance(state_values, dict) else None
         if body.checkpoint_id and checkpoint_id and body.checkpoint_id != checkpoint_id:
             raise HTTPException(status_code=409, detail=error_detail("checkpoint_mismatch", request_id=request_id))
@@ -1279,24 +1274,12 @@ async def confirm_go(
         edit_parameters = {}
         if edits_payload.get("parameters"):
             edit_parameters = sanitize_v2_parameter_patch(edits_payload.get("parameters") or {})
-        edits = {
-            "parameters": edit_parameters,
-            "instructions": (edits_payload.get("instructions") or "").strip() or None,
-        }
+        edits = {"parameters": edit_parameters, "instructions": (edits_payload.get("instructions") or "").strip() or None}
 
-        assert_node_exists(
-            graph,
-            "confirm_checkpoint_node",
-            request_id=request_id,
-            status_code=500,
-            code="server_misconfigured",
-        )
+        assert_node_exists(graph, "confirm_checkpoint_node", request_id=request_id, status_code=500, code="server_misconfigured")
         await graph.aupdate_state(
             config,
-            {
-                "confirm_decision": body.decision,
-                "confirm_edits": edits,
-            },
+            {"confirm_decision": body.decision, "confirm_edits": edits},
             as_node="confirm_checkpoint_node",
         )
 
@@ -1313,24 +1296,12 @@ async def confirm_go(
     except HTTPException:
         raise
     except InvalidUpdateError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc)),
-        ) from exc
+        raise HTTPException(status_code=400, detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc))) from exc
     except Exception as exc:
         if is_dependency_unavailable_error(exc):
-            raise HTTPException(
-                status_code=503,
-                detail=error_detail("dependency_unavailable", request_id=request_id),
-            ) from exc
-        logger.exception(
-            "langgraph_v2_confirm_go_error",
-            extra={"request_id": request_id, "chat_id": body.chat_id, "user": user.user_id},
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=error_detail("internal_error", request_id=request_id),
-        ) from exc
+            raise HTTPException(status_code=503, detail=error_detail("dependency_unavailable", request_id=request_id)) from exc
+        logger.exception("langgraph_v2_confirm_go_error", extra={"request_id": request_id, "chat_id": body.chat_id, "user": user.user_id})
+        raise HTTPException(status_code=500, detail=error_detail("internal_error", request_id=request_id)) from exc
 
 
 @router.post("/parameters/patch")
@@ -1349,11 +1320,7 @@ async def patch_parameters(
         if PARAM_SYNC_DEBUG:
             logger.info(
                 "langgraph_v2_parameters_patch_payload",
-                extra={
-                    "request_id": request_id,
-                    "chat_id": chat_id,
-                    "parameters": body.parameters,
-                },
+                extra={"request_id": request_id, "chat_id": chat_id, "parameters": body.parameters},
             )
         if not chat_id:
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
@@ -1370,6 +1337,7 @@ async def patch_parameters(
             request_id=request_id,
         )
         assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
+
         snapshot = await graph.aget_state(config)
         state_values = _state_values_to_dict(snapshot.values)
         existing_params = state_values.get("parameters") if isinstance(state_values, dict) else {}
@@ -1380,6 +1348,7 @@ async def patch_parameters(
             existing_provenance = state_values.get("parameter_provenance") or {}
             existing_versions = state_values.get("parameter_versions") or {}
             existing_updated_at = state_values.get("parameter_updated_at") or {}
+
         (
             merged,
             merged_provenance,
@@ -1400,12 +1369,8 @@ async def patch_parameters(
         if PARAM_SYNC_DEBUG:
             patch_keys = sorted(patch.keys())
             types = {key: type(patch.get(key)).__name__ for key in patch_keys}
-            before = {}
-            after = {}
-            if isinstance(existing_params, dict):
-                before = {key: existing_params.get(key) for key in patch_keys}
-            if isinstance(merged, dict):
-                after = {key: merged.get(key) for key in patch_keys}
+            before = {key: existing_params.get(key) for key in patch_keys} if isinstance(existing_params, dict) else {}
+            after = {key: merged.get(key) for key in patch_keys} if isinstance(merged, dict) else {}
             configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
             logger.info(
                 "langgraph_v2_parameters_patch_debug",
@@ -1431,11 +1396,9 @@ async def patch_parameters(
                 "parameter_versions": merged_versions,
                 "parameter_updated_at": merged_updated_at,
             },
-            # LangGraph requires `as_node` to be an existing node in the compiled graph.
-            # Parameter patches are UI-driven and should not advance the graph; we attach
-            # the update to a stable, always-present node.
             as_node=PARAMETERS_PATCH_AS_NODE,
         )
+
         response_fields = sorted(patch.keys())
         response_payload = {
             "ok": True,
@@ -1445,6 +1408,7 @@ async def patch_parameters(
             "versions": {field: merged_versions.get(field, 0) for field in response_fields},
             "updated_at": {field: merged_updated_at.get(field) for field in response_fields},
         }
+
         ack_payload = {
             "chat_id": body.chat_id,
             "patch": patch,
@@ -1455,13 +1419,16 @@ async def patch_parameters(
             "source": "patch_endpoint",
             "request_id": request_id,
         }
+
         await sse_broadcast.broadcast(
+            user_id=scoped_user_id,
             tenant_id=scoped_tenant_id,
             chat_id=chat_id,
             event="parameter_patch_ack",
             data=ack_payload,
         )
         return response_payload
+
     except HTTPException:
         raise
     except ValueError as exc:
@@ -1476,44 +1443,23 @@ async def patch_parameters(
                     "patch_keys": sorted(patch.keys()) if isinstance(patch, dict) else [],
                 },
             )
-        raise HTTPException(
-            status_code=400,
-            detail=error_detail("invalid_parameters", request_id=request_id, message=str(exc)),
-        ) from exc
+        raise HTTPException(status_code=400, detail=error_detail("invalid_parameters", request_id=request_id, message=str(exc))) from exc
     except InvalidUpdateError as exc:
         if PARAM_SYNC_DEBUG:
             logger.warning(
                 "langgraph_v2_parameters_patch_invalid_update",
                 exc_info=exc,
-                extra={
-                    "request_id": request_id,
-                    "chat_id": chat_id,
-                    "patch_keys": sorted(patch.keys()) if isinstance(patch, dict) else [],
-                },
+                extra={"request_id": request_id, "chat_id": chat_id, "patch_keys": sorted(patch.keys()) if isinstance(patch, dict) else []},
             )
-        raise HTTPException(
-            status_code=400,
-            detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc)),
-        ) from exc
+        raise HTTPException(status_code=400, detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc))) from exc
     except Exception as exc:
         if is_dependency_unavailable_error(exc):
-            raise HTTPException(
-                status_code=503,
-                detail=error_detail("dependency_unavailable", request_id=request_id),
-            ) from exc
+            raise HTTPException(status_code=503, detail=error_detail("dependency_unavailable", request_id=request_id)) from exc
         logger.exception(
             "langgraph_v2_parameters_patch_error",
-            extra={
-                "request_id": request_id,
-                "chat_id": chat_id,
-                "user": user.user_id,
-                "patch_keys": sorted(patch.keys()),
-            },
+            extra={"request_id": request_id, "chat_id": chat_id, "user": user.user_id, "patch_keys": sorted(patch.keys())},
         )
-        raise HTTPException(
-            status_code=500,
-            detail=error_detail("internal_error", request_id=request_id),
-        ) from exc
+        raise HTTPException(status_code=500, detail=error_detail("internal_error", request_id=request_id)) from exc
 
 
 __all__ = ["LangGraphV2Request"]

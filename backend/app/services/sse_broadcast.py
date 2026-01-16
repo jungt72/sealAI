@@ -1,32 +1,46 @@
 from __future__ import annotations
 
+from weakref import WeakKeyDictionary
 import asyncio
 import json
 import logging
 import os
 import time
-from collections import deque
-from typing import Any, Deque, Dict, Iterable, Optional, Tuple
-from weakref import WeakKeyDictionary
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Set, Tuple, Union
 
-from app.services.redis_client import make_async_redis_client
-
-try:
-    from redis.asyncio import Redis
-except Exception:  # pragma: no cover - optional dependency
-    Redis = None
+from redis.asyncio import Redis, from_url
 
 logger = logging.getLogger(__name__)
 
-BroadcastKey = Tuple[str, str]
+# (seq, event, data)
 BroadcastEvent = Tuple[int, str, Dict[str, Any]]
-BroadcastRecord = Dict[str, Any]
+
+# (user_id, chat_id, event, data, timestamp, seq)
+class BroadcastRecord(Protocol):
+    user_id: str
+    chat_id: str
+    event: str
+    data: Dict[str, Any]
+    timestamp: float
+    seq: int
+    tenant_id: Optional[str]
+
+# Key: (tenant_id, user_id, chat_id)
+BroadcastKey = Tuple[Optional[str], str, str]
 
 
-class ReplayBackend:
-    async def next_seq(self, *, user_id: str, chat_id: str) -> int:
-        raise NotImplementedError
+class ReplayBackend(ABC):
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        pass
 
+    @abstractmethod
+    async def next_seq(self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None) -> int:
+        pass
+
+    @abstractmethod
     async def record_event(
         self,
         *,
@@ -34,37 +48,34 @@ class ReplayBackend:
         chat_id: str,
         event: str,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> int:
-        raise NotImplementedError
+        pass
 
+    @abstractmethod
     async def replay_after(
-        self, *, user_id: str, chat_id: str, last_seq: int
-    ) -> tuple[list[BroadcastRecord], bool]:
-        raise NotImplementedError
-
-    @property
-    def name(self) -> str:
-        raise NotImplementedError
+        self, *, user_id: str, chat_id: str, last_seq: int, tenant_id: Optional[str] = None
+    ) -> Tuple[List[BroadcastRecord], bool]:
+        """Returns (records, buffer_miss)."""
+        pass
 
 
 class MemoryReplayBackend(ReplayBackend):
-    def __init__(self, *, max_buffer: int = 500) -> None:
-        self._buffers: Dict[BroadcastKey, Deque[BroadcastRecord]] = {}
-        self._seq: Dict[BroadcastKey, int] = {}
-        self._lock = asyncio.Lock()
+    def __init__(self, max_buffer: int = 500) -> None:
+        self._buffer: Dict[BroadcastKey, List[BroadcastRecord]] = {}
+        self._seq_counters: Dict[BroadcastKey, int] = {}
         self._max_buffer = max_buffer
+        self._lock = asyncio.Lock()
 
     @property
     def name(self) -> str:
         return "memory"
 
-    async def next_seq(self, *, user_id: str, chat_id: str) -> int:
-        key = (user_id, chat_id)
+    async def next_seq(self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None) -> int:
+        key = (tenant_id, user_id, chat_id)
         async with self._lock:
-            current = self._seq.get(key, 0) + 1
-            self._seq[key] = current
-        return current
+            return self._seq_counters.get(key, 0) + 1
 
     async def record_event(
         self,
@@ -73,111 +84,89 @@ class MemoryReplayBackend(ReplayBackend):
         chat_id: str,
         event: str,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> int:
-        seq_value = await self.next_seq(user_id=user_id, chat_id=chat_id)
-        record = {
-            "seq": seq_value,
-            "event": event,
-            "data": data,
-            "ts": float(timestamp if timestamp is not None else time.time()),
-        }
-        key = (user_id, chat_id)
+        key = (tenant_id, user_id, chat_id)
         async with self._lock:
-            buffer = self._buffers.get(key)
-            if buffer is None:
-                buffer = deque(maxlen=self._max_buffer)
-                self._buffers[key] = buffer
-            buffer.append(record)
-        return seq_value
+            seq = self._seq_counters.get(key, 0) + 1
+            self._seq_counters[key] = seq
+            
+            record = type("Record", (), {
+                "user_id": user_id,
+                "chat_id": chat_id,
+                "event": event,
+                "data": data,
+                "timestamp": timestamp or time.time(),
+                "seq": seq,
+                "tenant_id": tenant_id
+            })()
+            
+            buf = self._buffer.setdefault(key, [])
+            buf.append(record)
+            if len(buf) > self._max_buffer:
+                buf.pop(0)
+            return seq
 
     async def replay_after(
-        self, *, user_id: str, chat_id: str, last_seq: int
-    ) -> tuple[list[BroadcastRecord], bool]:
-        key = (user_id, chat_id)
+        self, *, user_id: str, chat_id: str, last_seq: int, tenant_id: Optional[str] = None
+    ) -> Tuple[List[BroadcastRecord], bool]:
+        key = (tenant_id, user_id, chat_id)
         async with self._lock:
-            buffer = list(self._buffers.get(key, deque()))
-        if not buffer:
-            return [], True
-        oldest_seq = buffer[0].get("seq", 0)
-        if last_seq < oldest_seq:
-            return [], True
-        return [item for item in buffer if item.get("seq", 0) > last_seq], False
+            buf = self._buffer.get(key, [])
+            if not buf:
+                return [], False
+            
+            # Simple check if last_seq is too old
+            if buf[0].seq > last_seq + 1:
+                return buf, True
+                
+            return [r for r in buf if r.seq > last_seq], False
 
 
 class RedisReplayBackend(ReplayBackend):
     def __init__(
         self,
-        *,
         redis_url: str,
         max_buffer: int = 500,
         ttl_sec: int = 3600,
-        fallback: ReplayBackend,
+        fallback: Optional[ReplayBackend] = None,
     ) -> None:
         self._redis_url = redis_url
         self._max_buffer = max_buffer
         self._ttl_sec = ttl_sec
         self._fallback = fallback
-        self._client_store: "WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, Any]]" = WeakKeyDictionary()
-        self._failed = False
+        self._client: Optional[Redis] = None
 
     @property
     def name(self) -> str:
         return "redis"
 
-    async def _get_client(self) -> Redis | None:
-        if self._failed:
-            return None
-        if Redis is None or not self._redis_url:
-            self._failed = True
-            return None
-        loop = asyncio.get_running_loop()
-        store = self._client_store.get(loop)
-        if store is None:
-            store = {"lock": asyncio.Lock(), "client": None}
-            self._client_store[loop] = store
-        client = store.get("client")
-        if client is not None:
-            return client
-        async with store["lock"]:
-            client = store.get("client")
-            if client is not None:
-                return client
-            client = make_async_redis_client(self._redis_url, decode_responses=True)
-            store["client"] = client
-            return client
+    async def _get_client(self) -> Redis:
+        if self._client is None:
+            self._client = from_url(self._redis_url)
+        return self._client
 
-    def _seq_key(self, user_id: str, chat_id: str) -> str:
+    def _get_redis_key(self, user_id: str, chat_id: str, tenant_id: Optional[str]) -> str:
+        if tenant_id:
+            return f"sse:replay:{tenant_id}:{user_id}:{chat_id}"
+        return f"sse:replay:{user_id}:{chat_id}"
+
+    def _get_seq_key(self, user_id: str, chat_id: str, tenant_id: Optional[str]) -> str:
+        if tenant_id:
+            return f"sse:seq:{tenant_id}:{user_id}:{chat_id}"
         return f"sse:seq:{user_id}:{chat_id}"
 
-    def _buf_key(self, user_id: str, chat_id: str) -> str:
-        return f"sse:buf:{user_id}:{chat_id}"
-
-    async def _fallback_warn(self, msg: str, *, user_id: str, chat_id: str, exc: Exception | None) -> None:
-        if not self._failed:
-            logger.warning(
-                msg,
-                extra={
-                    "chat_id": chat_id,
-                    "user_id": user_id,
-                    "error": str(exc) if exc else None,
-                },
-            )
-        self._failed = True
-
-    async def next_seq(self, *, user_id: str, chat_id: str) -> int:
-        client = await self._get_client()
-        if client is None:
-            return await self._fallback.next_seq(user_id=user_id, chat_id=chat_id)
+    async def next_seq(self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None) -> int:
         try:
-            seq_key = self._seq_key(user_id, chat_id)
-            value = await client.incr(seq_key)
-            if self._ttl_sec > 0:
-                await client.expire(seq_key, self._ttl_sec)
-            return int(value)
-        except Exception as exc:
-            await self._fallback_warn("sse_replay_redis_seq_failed", user_id=user_id, chat_id=chat_id, exc=exc)
-            return await self._fallback.next_seq(user_id=user_id, chat_id=chat_id)
+            client = await self._get_client()
+            seq_key = self._get_seq_key(user_id, chat_id, tenant_id)
+            val = await client.get(seq_key)
+            return int(val or 0) + 1
+        except Exception:
+            if self._fallback:
+                return await self._fallback.next_seq(user_id=user_id, chat_id=chat_id, tenant_id=tenant_id)
+            raise
 
     async def record_event(
         self,
@@ -186,112 +175,108 @@ class RedisReplayBackend(ReplayBackend):
         chat_id: str,
         event: str,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> int:
-        client = await self._get_client()
-        if client is None:
-            return await self._fallback.record_event(
-                user_id=user_id,
-                chat_id=chat_id,
-                event=event,
-                data=data,
-                timestamp=timestamp,
-            )
-        seq_value = await self.next_seq(user_id=user_id, chat_id=chat_id)
-        record = {
-            "seq": seq_value,
-            "event": event,
-            "data": data,
-            "ts": float(timestamp if timestamp is not None else time.time()),
-        }
         try:
-            payload = json.dumps(record, ensure_ascii=False)
-            buf_key = self._buf_key(user_id, chat_id)
-            pipe = client.pipeline()
-            pipe.lpush(buf_key, payload)
-            pipe.ltrim(buf_key, 0, max(self._max_buffer - 1, 0))
-            if self._ttl_sec > 0:
-                pipe.expire(buf_key, self._ttl_sec)
-            await pipe.execute()
-            return seq_value
-        except Exception as exc:
-            await self._fallback_warn("sse_replay_redis_record_failed", user_id=user_id, chat_id=chat_id, exc=exc)
-            return await self._fallback.record_event(
-                user_id=user_id,
-                chat_id=chat_id,
-                event=event,
-                data=data,
-                timestamp=timestamp,
-            )
+            client = await self._get_client()
+            list_key = self._get_redis_key(user_id, chat_id, tenant_id)
+            seq_key = self._get_seq_key(user_id, chat_id, tenant_id)
+            
+            # Using INCR for stable monotonic sequence
+            # We use a pipeline to ensure sequence and RPUSH are close together
+            ts = timestamp or time.time()
+            async with client.pipeline(transaction=True) as pipe:
+                pipe.incr(seq_key)
+                pipe.expire(seq_key, self._ttl_sec)
+                results = await pipe.execute()
+                
+            seq = int(results[0])
+            
+            payload = json.dumps({
+                "u": user_id,
+                "c": chat_id,
+                "e": event,
+                "d": data,
+                "t": ts,
+                "ten": tenant_id,
+                "s": seq  # Stable sequence embedded in payload
+            })
+            
+            async with client.pipeline(transaction=True) as pipe:
+                pipe.rpush(list_key, payload)
+                pipe.ltrim(list_key, -self._max_buffer, -1)
+                pipe.expire(list_key, self._ttl_sec)
+                await pipe.execute()
+                
+            return seq
+        except Exception:
+            if self._fallback:
+                return await self._fallback.record_event(
+                    user_id=user_id, chat_id=chat_id, event=event, data=data, tenant_id=tenant_id, timestamp=timestamp
+                )
+            raise
 
     async def replay_after(
-        self, *, user_id: str, chat_id: str, last_seq: int
-    ) -> tuple[list[BroadcastRecord], bool]:
-        client = await self._get_client()
-        if client is None:
-            return await self._fallback.replay_after(user_id=user_id, chat_id=chat_id, last_seq=last_seq)
+        self, *, user_id: str, chat_id: str, last_seq: int, tenant_id: Optional[str] = None
+    ) -> Tuple[List[BroadcastRecord], bool]:
         try:
-            buf_key = self._buf_key(user_id, chat_id)
-            raw_items = await client.lrange(buf_key, 0, max(self._max_buffer - 1, 0))
-            events: list[BroadcastRecord] = []
-            for raw in raw_items:
+            client = await self._get_client()
+            list_key = self._get_redis_key(user_id, chat_id, tenant_id)
+            
+            raw_records = await client.lrange(list_key, 0, -1)
+            records: List[BroadcastRecord] = []
+            
+            if not raw_records:
+                return [], False
+
+            buffer_miss = False
+            parsed_records = []
+            for raw in raw_records:
                 try:
-                    item = json.loads(raw)
-                except Exception:
+                    data = json.loads(raw)
+                    parsed_records.append(data)
+                except (json.JSONDecodeError, TypeError):
                     continue
-                if not isinstance(item, dict):
-                    continue
-                if "seq" not in item or "event" not in item:
-                    continue
-                events.append(item)
-            if not events:
-                return [], True
-            min_seq = min(int(item.get("seq", 0)) for item in events)
-            if last_seq < min_seq:
-                return [], True
-            filtered = [item for item in events if int(item.get("seq", 0)) > last_seq]
-            filtered.sort(key=lambda item: int(item.get("seq", 0)))
-            return filtered, False
-        except Exception as exc:
-            await self._fallback_warn("sse_replay_redis_read_failed", user_id=user_id, chat_id=chat_id, exc=exc)
-            return await self._fallback.replay_after(user_id=user_id, chat_id=chat_id, last_seq=last_seq)
-
-
-def _resolve_redis_url() -> str:
-    return (
-        os.getenv("LANGGRAPH_V2_REDIS_URL")
-        or os.getenv("REDIS_URL")
-        or os.getenv("redis_url")
-        or ""
-    )
+            
+            if not parsed_records:
+                return [], False
+                
+            # Check if last_seq is before our earliest record
+            first_seq = parsed_records[0].get("s", 0)
+            if last_seq > 0 and last_seq < first_seq - 1:
+                buffer_miss = True
+            
+            for data in parsed_records:
+                s = data.get("s", 0)
+                if s > last_seq:
+                    rec = type("Record", (), {
+                        "user_id": data.get("u"),
+                        "chat_id": data.get("c"),
+                        "event": data.get("e"),
+                        "data": data.get("d"),
+                        "timestamp": data.get("t"),
+                        "seq": s,
+                        "tenant_id": data.get("ten")
+                    })()
+                    records.append(rec)
+            
+            return records, buffer_miss
+        except Exception:
+            if self._fallback:
+                return await self._fallback.replay_after(
+                    user_id=user_id, chat_id=chat_id, last_seq=last_seq, tenant_id=tenant_id
+                )
+            raise
 
 
 def build_replay_backend() -> ReplayBackend:
-    backend = os.getenv("SEALAI_SSE_REPLAY_BACKEND", "memory").strip().lower()
-    maxlen = int(os.getenv("SEALAI_SSE_REPLAY_MAXLEN", "500"))
-    ttl = int(os.getenv("SEALAI_SSE_REPLAY_TTL_SEC", "3600"))
+    redis_url = os.getenv("REDIS_URL")
+    maxlen = int(os.getenv("SSE_REPLAY_MAX", "500"))
+    ttl = int(os.getenv("SSE_REPLAY_TTL", "3600"))
     memory_backend = MemoryReplayBackend(max_buffer=maxlen)
-    if backend != "redis":
-        logger.info(
-            "sse_replay_backend_selected",
-            extra={"backend": backend or "memory", "maxlen": maxlen, "ttl_sec": ttl},
-        )
+    if not redis_url:
         return memory_backend
-    redis_url = _resolve_redis_url()
-    if Redis is None or not redis_url:
-        logger.warning(
-            "sse_replay_redis_unavailable",
-            extra={"backend": backend, "redis_url_set": bool(redis_url)},
-        )
-        logger.info(
-            "sse_replay_backend_selected",
-            extra={"backend": "memory", "maxlen": maxlen, "ttl_sec": ttl},
-        )
-        return memory_backend
-    logger.info(
-        "sse_replay_backend_selected",
-        extra={"backend": "redis", "maxlen": maxlen, "ttl_sec": ttl},
-    )
     return RedisReplayBackend(
         redis_url=redis_url,
         max_buffer=maxlen,
@@ -301,6 +286,19 @@ def build_replay_backend() -> ReplayBackend:
 
 
 class SseBroadcastManager:
+    @staticmethod
+    def parse_last_event_id(chat_id: str, last_event_id: str | None) -> Optional[int]:
+        if not last_event_id:
+            return None
+        raw = last_event_id.strip()
+        if raw.isdigit():
+            return int(raw)
+        if raw.startswith(chat_id + ":"):
+            suffix = raw.split(":", 1)[1]
+            if suffix.isdigit():
+                return int(suffix)
+        return None
+
     def __init__(
         self,
         *,
@@ -308,7 +306,7 @@ class SseBroadcastManager:
         queue_maxsize: int = 200,
         slow_notice_interval: float = 5.0,
     ) -> None:
-        self._subscribers: Dict[BroadcastKey, set[asyncio.Queue[BroadcastEvent]]] = {}
+        self._subscribers: Dict[BroadcastKey, Set[asyncio.Queue[BroadcastEvent]]] = {}
         self._slow_notice: Dict[asyncio.Queue[BroadcastEvent], float] = {}
         self._lock = asyncio.Lock()
         self._queue_maxsize = queue_maxsize
@@ -319,34 +317,17 @@ class SseBroadcastManager:
     def backend_name(self) -> str:
         return self._replay_backend.name
 
-    @staticmethod
-    def parse_last_event_id(chat_id: str, last_event_id: str | None) -> Optional[int]:
-        if not last_event_id:
-            return None
-        raw = last_event_id.strip()
-        if raw.isdigit():
-            return int(raw)
-        if ":" in raw:
-            suffix = raw.rpartition(":")[2]
-            if suffix.isdigit():
-                return int(suffix)
-        if raw.startswith(chat_id + ":"):
-            suffix = raw.split(":", 1)[1]
-            if suffix.isdigit():
-                return int(suffix)
-        return None
-
-    async def subscribe(self, *, user_id: str, chat_id: str) -> asyncio.Queue[BroadcastEvent]:
+    async def subscribe(self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None) -> asyncio.Queue[BroadcastEvent]:
         queue: asyncio.Queue[BroadcastEvent] = asyncio.Queue(maxsize=self._queue_maxsize)
-        key = (user_id, chat_id)
+        key = (tenant_id, user_id, chat_id)
         async with self._lock:
             self._subscribers.setdefault(key, set()).add(queue)
         return queue
 
     async def unsubscribe(
-        self, *, user_id: str, chat_id: str, queue: asyncio.Queue[BroadcastEvent]
+        self, *, user_id: str, chat_id: str, queue: asyncio.Queue[BroadcastEvent], tenant_id: Optional[str] = None
     ) -> None:
-        key = (user_id, chat_id)
+        key = (tenant_id, user_id, chat_id)
         async with self._lock:
             subscribers = self._subscribers.get(key)
             if subscribers:
@@ -355,8 +336,8 @@ class SseBroadcastManager:
                     self._subscribers.pop(key, None)
             self._slow_notice.pop(queue, None)
 
-    async def next_seq(self, *, user_id: str, chat_id: str) -> int:
-        return await self._replay_backend.next_seq(user_id=user_id, chat_id=chat_id)
+    async def next_seq(self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None) -> int:
+        return await self._replay_backend.next_seq(user_id=user_id, chat_id=chat_id, tenant_id=tenant_id)
 
     async def record_event(
         self,
@@ -365,6 +346,7 @@ class SseBroadcastManager:
         chat_id: str,
         event: str,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> int:
         return await self._replay_backend.record_event(
@@ -372,16 +354,18 @@ class SseBroadcastManager:
             chat_id=chat_id,
             event=event,
             data=data,
+            tenant_id=tenant_id,
             timestamp=timestamp,
         )
 
     async def replay_after(
-        self, *, user_id: str, chat_id: str, last_seq: int
-    ) -> tuple[list[BroadcastRecord], bool]:
+        self, *, user_id: str, chat_id: str, last_seq: int, tenant_id: Optional[str] = None
+    ) -> Tuple[List[BroadcastRecord], bool]:
         return await self._replay_backend.replay_after(
             user_id=user_id,
             chat_id=chat_id,
             last_seq=last_seq,
+            tenant_id=tenant_id,
         )
 
     async def _enqueue(
@@ -393,6 +377,7 @@ class SseBroadcastManager:
         seq: int,
         event: str,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
     ) -> None:
         if queue.maxsize <= 0:
             queue.put_nowait((seq, event, data))
@@ -427,6 +412,7 @@ class SseBroadcastManager:
                     chat_id=chat_id,
                     event="slow_client",
                     data={"reason": "backpressure"},
+                    tenant_id=tenant_id,
                 )
                 queue.put_nowait((slow_seq, "slow_client", {"reason": "backpressure"}))
 
@@ -437,14 +423,16 @@ class SseBroadcastManager:
         chat_id: str,
         event: str,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
     ) -> int:
         seq_value = await self.record_event(
             user_id=user_id,
             chat_id=chat_id,
             event=event,
             data=data,
+            tenant_id=tenant_id,
         )
-        key = (user_id, chat_id)
+        key = (tenant_id, user_id, chat_id)
         async with self._lock:
             subscribers: Iterable[asyncio.Queue[BroadcastEvent]] = list(
                 self._subscribers.get(key, set())
@@ -459,6 +447,7 @@ class SseBroadcastManager:
                     seq=seq_value,
                     event=event,
                     data=data,
+                    tenant_id=tenant_id,
                 )
                 delivered += 1
             except Exception as exc:
@@ -467,6 +456,7 @@ class SseBroadcastManager:
                     extra={
                         "chat_id": chat_id,
                         "user_id": user_id,
+                        "tenant_id": tenant_id,
                         "event": event,
                         "error": str(exc),
                     },
@@ -498,16 +488,16 @@ class _SseBroadcastProxy:
     def parse_last_event_id(self, chat_id: str, last_event_id: str | None) -> Optional[int]:
         return SseBroadcastManager.parse_last_event_id(chat_id, last_event_id)
 
-    async def subscribe(self, *, user_id: str, chat_id: str) -> asyncio.Queue[BroadcastEvent]:
-        return await get_sse_broadcast().subscribe(user_id=user_id, chat_id=chat_id)
+    async def subscribe(self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None) -> asyncio.Queue[BroadcastEvent]:
+        return await get_sse_broadcast().subscribe(user_id=user_id, chat_id=chat_id, tenant_id=tenant_id)
 
     async def unsubscribe(
-        self, *, user_id: str, chat_id: str, queue: asyncio.Queue[BroadcastEvent]
+        self, *, user_id: str, chat_id: str, queue: asyncio.Queue[BroadcastEvent], tenant_id: Optional[str] = None
     ) -> None:
-        await get_sse_broadcast().unsubscribe(user_id=user_id, chat_id=chat_id, queue=queue)
+        await get_sse_broadcast().unsubscribe(user_id=user_id, chat_id=chat_id, queue=queue, tenant_id=tenant_id)
 
-    async def next_seq(self, *, user_id: str, chat_id: str) -> int:
-        return await get_sse_broadcast().next_seq(user_id=user_id, chat_id=chat_id)
+    async def next_seq(self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None) -> int:
+        return await get_sse_broadcast().next_seq(user_id=user_id, chat_id=chat_id, tenant_id=tenant_id)
 
     async def record_event(
         self,
@@ -516,6 +506,7 @@ class _SseBroadcastProxy:
         chat_id: str,
         event: str,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> int:
         return await get_sse_broadcast().record_event(
@@ -523,16 +514,18 @@ class _SseBroadcastProxy:
             chat_id=chat_id,
             event=event,
             data=data,
+            tenant_id=tenant_id,
             timestamp=timestamp,
         )
 
     async def replay_after(
-        self, *, user_id: str, chat_id: str, last_seq: int
-    ) -> tuple[list[BroadcastRecord], bool]:
+        self, *, user_id: str, chat_id: str, last_seq: int, tenant_id: Optional[str] = None
+    ) -> Tuple[List[BroadcastRecord], bool]:
         return await get_sse_broadcast().replay_after(
             user_id=user_id,
             chat_id=chat_id,
             last_seq=last_seq,
+            tenant_id=tenant_id,
         )
 
     async def broadcast(
@@ -542,12 +535,14 @@ class _SseBroadcastProxy:
         chat_id: str,
         event: str,
         data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
     ) -> int:
         return await get_sse_broadcast().broadcast(
             user_id=user_id,
             chat_id=chat_id,
             event=event,
             data=data,
+            tenant_id=tenant_id,
         )
 
 
