@@ -3,6 +3,7 @@ Integration coverage for LangGraph v2 parameter patch -> state -> chat config.
 """
 
 from __future__ import annotations
+from app.langgraph_v2.utils.threading import stable_thread_key
 
 import asyncio
 import os
@@ -43,10 +44,10 @@ def test_param_patch_state_chat_config_alignment(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
 
-    chat_id = "chat-param-sync"
+    chat_id = "f936a655-1fc5-415c-9721-9b7b5d9d4c9e"
     user_id = "user-param-sync"
     request = _request()
-    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
 
     async def _run():
         patch_body = ParametersPatchRequest(
@@ -58,14 +59,14 @@ def test_param_patch_state_chat_config_alignment(monkeypatch):
         state_response = await state_endpoint.get_state(request, thread_id=chat_id, user=user)
         assert state_response["parameters"]["medium"] == "oil"
         assert state_response["parameters"]["pressure_bar"] == 2
-        assert state_response["config"]["configurable"]["thread_id"] == chat_id
+        assert state_response["config"]["configurable"]["thread_id"] == stable_thread_key(user_sub=user.user_id, conversation_id=chat_id, tenant_id=user.tenant_id)
 
         graph, config = await endpoint._build_graph_config(
-            thread_id=chat_id,
+            thread_id=stable_thread_key(user_sub=user.user_id, conversation_id=chat_id, tenant_id=user.tenant_id),
             user_id=user.user_id,
-            tenant_id=user.user_id,
+            tenant_id=user.tenant_id,
         )
-        assert config["configurable"]["thread_id"] == chat_id
+        assert config["configurable"]["thread_id"] == stable_thread_key(user_sub=user.user_id, conversation_id=chat_id, tenant_id=user.tenant_id)
         snapshot = await graph.aget_state(config)
         state_values = state_endpoint._state_to_dict(snapshot.values)
         params = state_endpoint._serialize_parameters(state_values.get("parameters"))
@@ -82,7 +83,7 @@ def test_param_patch_merges_existing_parameters(monkeypatch):
     chat_id = "chat-param-merge"
     user_id = "user-param-merge"
     request = _request()
-    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
 
     async def _run():
         first_patch = ParametersPatchRequest(
@@ -111,7 +112,7 @@ def test_latest_write_patch_then_chat_wins(monkeypatch):
     chat_id = "chat-param-latest-1"
     user_id = "user-param-latest-1"
     request = _request()
-    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
 
     async def _run():
         first_patch = ParametersPatchRequest(
@@ -121,9 +122,9 @@ def test_latest_write_patch_then_chat_wins(monkeypatch):
         await endpoint.patch_parameters(first_patch, request, user=user)
 
         graph, config = await endpoint._build_graph_config(
-            thread_id=chat_id,
+            thread_id=stable_thread_key(user_sub=user.user_id, conversation_id=chat_id, tenant_id=user.tenant_id),
             user_id=user.user_id,
-            tenant_id=user.user_id,
+            tenant_id=user.tenant_id,
         )
         await graph.aupdate_state(
             config,
@@ -144,13 +145,13 @@ def test_latest_write_chat_then_patch_wins(monkeypatch):
     chat_id = "chat-param-latest-2"
     user_id = "user-param-latest-2"
     request = _request()
-    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
 
     async def _run():
         graph, config = await endpoint._build_graph_config(
-            thread_id=chat_id,
+            thread_id=stable_thread_key(user_sub=user.user_id, conversation_id=chat_id, tenant_id=user.tenant_id),
             user_id=user.user_id,
-            tenant_id=user.user_id,
+            tenant_id=user.tenant_id,
         )
         await graph.aupdate_state(
             config,
@@ -177,7 +178,7 @@ def test_pressure_alias_overwrites_existing_value(monkeypatch):
     chat_id = "chat-param-alias-override"
     user_id = "user-param-alias-override"
     request = _request()
-    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[])
+    user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
 
     async def _run():
         first_patch = ParametersPatchRequest(
@@ -202,13 +203,13 @@ def test_state_falls_back_to_legacy_thread(monkeypatch):
 
     chat_id = "chat-legacy-fallback"
     request = _request()
-    user = RequestUser(user_id="user-claim", username="tester", sub="legacy-sub", roles=[])
+    user = RequestUser(user_id="user-claim", username="tester", sub="legacy-sub", roles=[], tenant_id="tenant-1")
 
     async def _run():
         graph, legacy_config = await state_endpoint._build_state_config_with_checkpointer(
-            thread_id=chat_id,
+            thread_id=stable_thread_key(user_sub=user.user_id, conversation_id=chat_id, tenant_id=user.tenant_id),
             user_id=user.sub,
-            tenant_id=user.user_id,
+            tenant_id=user.tenant_id,
             username=user.username,
         )
         await graph.aupdate_state(
@@ -219,6 +220,6 @@ def test_state_falls_back_to_legacy_thread(monkeypatch):
 
         state_response = await state_endpoint.get_state(request, thread_id=chat_id, user=user)
         assert state_response["parameters"]["medium"] == "oil"
-        assert state_response["config"]["configurable"]["thread_id"] == chat_id
+        assert state_response["config"]["configurable"]["thread_id"] == stable_thread_key(user_sub=user.user_id, conversation_id=chat_id, tenant_id=user.tenant_id)
 
     asyncio.run(_run())

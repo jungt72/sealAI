@@ -13,14 +13,16 @@ mypy==1.11.2
 
 # Test-Framework
 pytest~=8.4.2
-pytest-asyncio==1.3.0             # für async-Tests (optional)
+pytest-asyncio==1.3.0             # async def Tests (pytest 8.x kompatibel)
 
 # Coverage-Messung (optional)
 pytest-cov==5.0.0
 
+# Async / AnyIO Tests (optional; nur wenn ihr es wirklich nutzt)
+pytest-anyio==0.0.0
+
 # Pre-commit Hooks
 pre-commit==3.8.0
 
+# Security
 pip-audit==2.9.0
-
-pytest-anyio

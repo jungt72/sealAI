@@ -57,6 +57,7 @@ httpx-sse==0.4.3   # (nur aktivieren, wenn explizit benötigt)
 SQLAlchemy==2.0.45
 alembic==1.18.0
 asyncpg==0.31.0   # Dialekt: postgresql+asyncpg://
+psycopg2-binary==2.9.10
 
 # --- Auth & Security ---------------------------------------------------------
 python-keycloak==7.0.2
@@ -72,4 +73,4 @@ Jinja2==3.1.6
 # --- Optional Tools (nur aktivieren, wenn wirklich genutzt) ------------------
 # langchain-tavily==0.2.12        # Websuche-Tool
 python-multipart==0.0.21        # File-Uploads in FastAPI (FormData)
-pytest-asyncio==1.3.0
+# pytest-asyncio==1.3.0
