@@ -364,6 +364,27 @@ async def _resume_router_async(state: SealAIState) -> str:
     return _resume_router(state)
 
 
+def _knowledge_target_router(state: SealAIState) -> str:
+    intent = state.intent
+    key = str(getattr(intent, "key", "") or "") if intent else ""
+    if key == "knowledge_material" or getattr(intent, "knowledge_type", None) == "material":
+        return "knowledge_material_node"
+    if key == "knowledge_lifetime" or getattr(intent, "knowledge_type", None) == "lifetime":
+        return "knowledge_lifetime_node"
+    return "generic_sealing_qa_node"
+
+
+async def _knowledge_target_router_async(state: SealAIState) -> str:
+    return _knowledge_target_router(state)
+
+
+def knowledge_entry_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    return {
+        "phase": getattr(state, "phase", None) or "knowledge",
+        "last_node": "knowledge_entry_node",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Graph-Definition
 # ---------------------------------------------------------------------------
@@ -372,6 +393,26 @@ async def _resume_router_async(state: SealAIState) -> str:
 def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: bool = True) -> CompiledStateGraph:
     builder = StateGraph(SealAIState)
     logger.debug("create_sealai_graph_v2_start")
+
+    try:
+        from app.langgraph_v2.nodes.nodes_knowledge import (
+            generic_sealing_qa_node,
+            knowledge_lifetime_node,
+            knowledge_material_node,
+        )
+    except Exception:  # pragma: no cover - optional path when knowledge nodes are unavailable
+        def _knowledge_unavailable(node_name: str):
+            def _node(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+                return {
+                    "error": "knowledge_nodes_unavailable",
+                    "last_node": node_name,
+                    "phase": "error",
+                }
+            return _node
+
+        generic_sealing_qa_node = _knowledge_unavailable("generic_sealing_qa_node")
+        knowledge_lifetime_node = _knowledge_unavailable("knowledge_lifetime_node")
+        knowledge_material_node = _knowledge_unavailable("knowledge_material_node")
 
     # Node registration
     builder.add_node("resume_router_node", resume_router_node)
@@ -391,6 +432,10 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_node("product_explainer_node", product_explainer_node)
     builder.add_node("material_comparison_node", material_comparison_node)
     builder.add_node("rag_support_node", rag_support_node)
+    builder.add_node("knowledge_entry_node", knowledge_entry_node)
+    builder.add_node("knowledge_material_node", knowledge_material_node)
+    builder.add_node("knowledge_lifetime_node", knowledge_lifetime_node)
+    builder.add_node("generic_sealing_qa_node", generic_sealing_qa_node)
     builder.add_node("leakage_troubleshooting_node", leakage_troubleshooting_node)
     builder.add_node("troubleshooting_pattern_node", troubleshooting_pattern_node)
     builder.add_node("troubleshooting_explainer_node", troubleshooting_explainer_node)
@@ -424,6 +469,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
             "RUN_PANEL_CALC": "panel_calculator_node",
             "RUN_PANEL_MATERIAL": "panel_material_node",
             "RUN_PANEL_NORMS_RAG": "rag_support_node",
+            "RUN_KNOWLEDGE": "knowledge_entry_node",
             "RUN_COMPARISON": "material_comparison_node",
             "RUN_TROUBLESHOOTING": "leakage_troubleshooting_node",
             "RUN_CONFIRM": "confirm_recommendation_node",
@@ -436,6 +482,19 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_edge("panel_material_node", "aggregator_node")
     builder.add_edge("rag_support_node", "aggregator_node")
     builder.add_edge("aggregator_node", "supervisor_policy_node")
+    builder.add_conditional_edges(
+        "knowledge_entry_node",
+        _knowledge_target_router_async,
+        {
+            "knowledge_material_node": "knowledge_material_node",
+            "knowledge_lifetime_node": "knowledge_lifetime_node",
+            "generic_sealing_qa_node": "generic_sealing_qa_node",
+            "__else__": "generic_sealing_qa_node",
+        },
+    )
+    builder.add_edge("knowledge_material_node", "response_node")
+    builder.add_edge("knowledge_lifetime_node", "response_node")
+    builder.add_edge("generic_sealing_qa_node", "response_node")
 
     builder.add_conditional_edges(
         "confirm_resume_node",
@@ -445,6 +504,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
             "RUN_PANEL_CALC": "panel_calculator_node",
             "RUN_PANEL_MATERIAL": "panel_material_node",
             "RUN_PANEL_NORMS_RAG": "rag_support_node",
+            "RUN_KNOWLEDGE": "knowledge_entry_node",
             "RUN_COMPARISON": "material_comparison_node",
             "RUN_TROUBLESHOOTING": "leakage_troubleshooting_node",
             "RUN_CONFIRM": "confirm_recommendation_node",

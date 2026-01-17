@@ -10,7 +10,7 @@ from langchain_community.document_loaders import (
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
-QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "sealai-docs")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "sealai_knowledge")
 EMBEDDING_MODEL = os.getenv(
     "EMB_MODEL_NAME",
     os.getenv("EMBEDDINGS_MODEL", "intfloat/multilingual-e5-base"),

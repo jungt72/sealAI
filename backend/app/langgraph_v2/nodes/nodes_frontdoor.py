@@ -142,13 +142,38 @@ def detect_sources_request(text: Optional[str]) -> bool:
         r"\bmit quellen\b",
         r"\bquelle\b",
         r"\bquellen\b",
+        r"\bbeleg\b",
+        r"\bbelege\b",
         r"\bwissensdatenbank\b",
         r"\bwissens database\b",
         r"\bnorm\b",
         r"\bnormen\b",
-        r"\b(din|en|iso|astm|vdi)\b",
+        r"\brichtlinie\b",
+        r"\bstandard\b",
+        r"\bstandards\b",
+        r"\bsource\b",
+        r"\bsources\b",
+        r"\b(din|iso|astm|vdi)\b",
+        r"\b(?:din|iso|en|vdi)\s?\d{2,}\b",
     ]
     return any(re.search(pat, cleaned) for pat in patterns)
+
+
+def _derive_knowledge_type_from_intent(raw_intent: Dict[str, Any]) -> Optional[str]:
+    if raw_intent.get("knowledge_type") is not None:
+        return raw_intent.get("knowledge_type")
+    key = str(raw_intent.get("key") or "")
+    mapping = {
+        "knowledge_material": "material",
+        "knowledge_lifetime": "lifetime",
+        "knowledge_norms": "norms",
+        "generic_sealing_qa": None,
+    }
+    return mapping.get(key)
+
+
+def _compute_requires_rag(goal: str, wants_sources: bool) -> bool:
+    return bool(goal == "explanation_or_comparison" and wants_sources)
 
 
 def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
@@ -299,12 +324,15 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         high_impact_gaps = [str(raw_gaps)]
     high_impact_gaps = [item.strip() for item in high_impact_gaps if item and str(item).strip()]
 
+    derived_knowledge_type = _derive_knowledge_type_from_intent(raw_intent)
     intent_payload: Dict[str, Any] = {
         "goal": goal,
         "confidence": confidence,
         "high_impact_gaps": high_impact_gaps,
         "domain": raw_intent.get("domain") or "sealing_technology",
     }
+    if derived_knowledge_type is not None:
+        intent_payload["knowledge_type"] = derived_knowledge_type
     # optionale Felder durchreichen, falls vorhanden
     for key in ("key", "knowledge_type", "routing_hint", "complexity", "needs_sources", "need_sources"):
         if raw_intent.get(key) is not None:
@@ -340,7 +368,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     wants_sources = detect_sources_request(user_text) or bool(
         raw_intent.get("needs_sources") or raw_intent.get("need_sources")
     )
-    requires_rag = bool(goal == "explanation_or_comparison" and wants_sources)
+    requires_rag = _compute_requires_rag(goal, wants_sources)
     # Never enable optional RAG for smalltalk/out_of_scope.
     if goal in ("smalltalk", "out_of_scope"):
         requires_rag = False
@@ -353,7 +381,14 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         "parameters": parameters,
         "parameter_provenance": merged_provenance if extracted_params else state.parameter_provenance,
         "requires_rag": requires_rag,
+        "needs_sources": wants_sources,
+        "knowledge_type": derived_knowledge_type if derived_knowledge_type is not None else getattr(intent, "knowledge_type", None),
     }
 
 
-__all__ = ["frontdoor_discovery_node", "detect_sources_request"]
+__all__ = [
+    "frontdoor_discovery_node",
+    "detect_sources_request",
+    "_compute_requires_rag",
+    "_derive_knowledge_type_from_intent",
+]

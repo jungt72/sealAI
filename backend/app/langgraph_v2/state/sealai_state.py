@@ -297,6 +297,7 @@ class SealAIState(BaseModel):
     # Core chat state
     messages: Annotated[List[BaseMessage], add_messages] = Field(default_factory=list)
     user_id: Optional[str] = None
+    tenant_id: Optional[str] = None
     thread_id: Optional[str] = None
     # Observability – carry run_id into state for logging/metadata
     run_id: Optional[str] = None
@@ -345,12 +346,17 @@ class SealAIState(BaseModel):
     recommendation: Optional[Recommendation] = None
 
     # Wissens-/Quellenbezug
+    needs_sources: bool = False
     need_sources: bool = False
     # Optional RAG for comparison/explanation flows.
     requires_rag: bool = False
     sources: List[Source] = Field(default_factory=list)
     knowledge_type: Optional[KnowledgeType] = None
     retrieval_meta: Optional[Dict[str, Any]] = None
+    retrieval_retry_count: int = 0
+    sources_status: Optional[Literal["ok", "missing"]] = None
+    clarify_round_count: int = 0
+    clarify_missing_facts: List[str] = Field(default_factory=list)
 
     # Finaler Output / Fehler
     error: Optional[str] = None

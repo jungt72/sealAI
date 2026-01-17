@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.utils.state_debug import log_state_debug
+import re
 from app.langgraph_v2.state import CalcResults, SealAIState, Source, WorkingMemory
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
@@ -338,16 +339,41 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
     notes = dict(state.working_memory.comparison_notes if state.working_memory else {})
     user_text = latest_user_text(state.get("messages")) or ""
-    rag_context = search_knowledge_base.invoke({
-        "query": user_text or "Aktuelle technische Frage",
-        "category": "norms",
-        "k": 3,
-        "tenant": state.user_id,
-    })
+    query_text = user_text or "Aktuelle technische Frage"
+    rag_context = search_knowledge_base.invoke(
+        {
+            "query": query_text,
+            "category": "norms",
+            "k": 3,
+            "tenant": state.tenant_id,
+        }
+    )
     rag_text, retrieval_meta = unpack_rag_payload(rag_context)
+
     min_score = float(os.getenv("MIN_TOP_SCORE", "0.20"))
     rag_text, retrieval_meta = apply_rag_quality_gate(rag_text, retrieval_meta, min_top_score=min_score)
+
+    retry_threshold = float(os.getenv("RETRIEVAL_RETRY_MIN_TOP_SCORE", "0.20"))
+    retry_count = int(getattr(state, "retrieval_retry_count", 0) or 0)
+    should_retry = _should_retry_retrieval(retrieval_meta, retry_count, retry_threshold)
+    rewrite_query = None
+    if should_retry:
+        rewrite_query = _rewrite_query(query_text)
+        retry_context = search_knowledge_base.invoke(
+            {
+                "query": rewrite_query,
+                "category": "norms",
+                "k": 3,
+                "tenant": state.tenant_id,
+            }
+        )
+        rag_text, retrieval_meta = unpack_rag_payload(retry_context)
+        rag_text, retrieval_meta = apply_rag_quality_gate(rag_text, retrieval_meta, min_top_score=min_score)
+        retry_count += 1
     rag_text = wrap_rag_context(rag_text)
+    if isinstance(retrieval_meta, dict):
+        retrieval_meta["retry_used"] = bool(should_retry)
+        retrieval_meta["retry_count"] = int(retry_count or 0)
     notes["rag_context"] = rag_text or ""
 
     # Only emit references if the tool output contains citation-like artifacts.
@@ -386,6 +412,10 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             sources.append(Source(snippet=None, source=src, metadata={"panel": "rag_support"}))
             seen_sources.add(src)
 
+    sources_status = "missing"
+    if sources and not (isinstance(retrieval_meta, dict) and retrieval_meta.get("skipped") is True):
+        sources_status = "ok"
+
     if intent_goal == "explanation_or_comparison":
         wm = _update_working_memory(state, {"comparison_notes": notes})
     else:
@@ -395,10 +425,121 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         "working_memory": wm,
         "sources": sources,
         "retrieval_meta": retrieval_meta,
+        "retrieval_retry_count": retry_count,
+        "sources_status": sources_status,
         # Phase: explizit RAG
         "phase": PHASE.RAG,
         "last_node": "rag_support_node",
     }
+
+
+def _should_retry_retrieval(
+    meta: Optional[Dict[str, Any]],
+    retry_count: int,
+    threshold: float,
+) -> bool:
+    if retry_count >= 1:
+        return False
+    if not isinstance(meta, dict):
+        return False
+    if meta.get("skipped") is True:
+        return True
+    top_score = _extract_top_score(meta)
+    if top_score is not None:
+        return float(top_score) < float(threshold)
+    return False
+
+
+def _extract_top_score(meta: Optional[Dict[str, Any]]) -> Optional[float]:
+    if not isinstance(meta, dict):
+        return None
+    top_scores = meta.get("top_scores")
+    if isinstance(top_scores, list) and top_scores:
+        try:
+            return float(top_scores[0])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _rewrite_query(text: str) -> str:
+    cleaned = (text or "").strip().lower()
+    cleaned = (
+        cleaned.replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
+    )
+    cleaned = re.sub(r"[^\w\s\-/]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return "normen material abmessungen"
+    stopwords = {
+        "bitte",
+        "kannst",
+        "du",
+        "mir",
+        "mal",
+        "kurz",
+        "erklaren",
+        "erklare",
+        "ich",
+        "wir",
+        "brauche",
+        "braucht",
+        "suche",
+        "frage",
+        "zu",
+        "zum",
+        "zur",
+        "und",
+        "oder",
+        "aber",
+        "ein",
+        "eine",
+        "einer",
+        "eines",
+        "den",
+        "die",
+        "das",
+        "ist",
+        "sind",
+        "wie",
+        "was",
+        "warum",
+        "wieso",
+        "welche",
+        "welcher",
+        "welches",
+        "mit",
+        "ohne",
+        "für",
+        "bei",
+        "von",
+        "im",
+        "in",
+        "am",
+        "auf",
+        "an",
+        "beim",
+        "danke",
+        "hallo",
+        "hi",
+        "hey",
+        "bitte",
+    }
+    keep_tokens: list[str] = []
+    for token in cleaned.split():
+        if token in stopwords:
+            continue
+        if len(token) <= 2 and not any(ch.isdigit() for ch in token):
+            continue
+        keep_tokens.append(token)
+
+    keywords = ["normen", "standards", "material", "abmessungen"]
+    merged = " ".join(keep_tokens[:12] + keywords)
+    merged = re.sub(r"\s+", " ", merged).strip()
+    return merged or "normen material abmessungen"
 
 
 def leakage_troubleshooting_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:

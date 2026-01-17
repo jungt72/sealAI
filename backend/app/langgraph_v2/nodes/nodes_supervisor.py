@@ -55,6 +55,7 @@ ACTION_ASK_USER = "ASK_USER"
 ACTION_RUN_PANEL_CALC = "RUN_PANEL_CALC"
 ACTION_RUN_PANEL_MATERIAL = "RUN_PANEL_MATERIAL"
 ACTION_RUN_PANEL_NORMS_RAG = "RUN_PANEL_NORMS_RAG"
+ACTION_RUN_KNOWLEDGE = "RUN_KNOWLEDGE"
 ACTION_RUN_COMPARISON = "RUN_COMPARISON"
 ACTION_RUN_TROUBLESHOOTING = "RUN_TROUBLESHOOTING"
 ACTION_CONFIRM_RECOMMENDATION = "RUN_CONFIRM"
@@ -68,6 +69,7 @@ _ACTION_COSTS: Dict[str, int] = {
     ACTION_RUN_PANEL_CALC: 1,
     ACTION_RUN_PANEL_MATERIAL: 2,
     ACTION_RUN_PANEL_NORMS_RAG: 3,
+    ACTION_RUN_KNOWLEDGE: 1,
     ACTION_RUN_COMPARISON: 1,
     ACTION_RUN_TROUBLESHOOTING: 2,
     ACTION_CONFIRM_RECOMMENDATION: 1,
@@ -236,12 +238,39 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
     action = ACTION_FINALIZE
     goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
 
+    needs_sources = _needs_sources(state)
+    is_knowledge = _is_knowledge_intent(state)
+    is_norms = _is_norms_knowledge(state)
+
     if goal in ("smalltalk", "out_of_scope"):
         reason = "non_technical_goal"
         action = ACTION_FINALIZE
     elif goal == "troubleshooting_leakage":
         reason = "troubleshooting_flow"
         action = ACTION_RUN_TROUBLESHOOTING
+    elif goal == "design_recommendation" and is_knowledge:
+        missing_calc = state.calc_results is None or not bool(getattr(state, "calc_results_ok", False))
+        material_choice = state.material_choice or {}
+        missing_material = not bool(material_choice.get("material"))
+        if missing_calc:
+            reason = "missing_calc_facts"
+            action = ACTION_RUN_PANEL_CALC
+        elif missing_material:
+            reason = "missing_material_decision"
+            action = ACTION_RUN_PANEL_MATERIAL
+        elif is_norms:
+            reason = "rag_norms"
+            action = ACTION_RUN_PANEL_NORMS_RAG
+        else:
+            reason = "knowledge_flow"
+            action = ACTION_RUN_KNOWLEDGE
+    elif is_knowledge:
+        if is_norms:
+            reason = "rag_norms"
+            action = ACTION_RUN_PANEL_NORMS_RAG
+        else:
+            reason = "knowledge_flow"
+            action = ACTION_RUN_KNOWLEDGE
     elif goal == "explanation_or_comparison":
         comparison_notes = getattr(state.working_memory, "comparison_notes", {}) if state.working_memory else {}
         has_comparison = bool(comparison_notes.get("comparison_text"))
@@ -249,12 +278,15 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         if not has_comparison:
             reason = "comparison_missing"
             action = ACTION_RUN_COMPARISON
-        elif bool(getattr(state, "requires_rag", False)) and not has_rag:
-            reason = "comparison_needs_rag"
+        elif needs_sources and not has_rag:
+            reason = "rag_sources_required"
             action = ACTION_RUN_PANEL_NORMS_RAG
         else:
             reason = "comparison_ready"
             action = ACTION_FINALIZE
+    elif needs_sources:
+        reason = "rag_sources_required"
+        action = ACTION_RUN_PANEL_NORMS_RAG
     elif recommendation_ready and not state.recommendation_go:
         reason = "await_recommendation_go"
         action = ACTION_CONFIRM_RECOMMENDATION
@@ -274,23 +306,14 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         missing_calc = state.calc_results is None or not bool(getattr(state, "calc_results_ok", False))
         material_choice = state.material_choice or {}
         missing_material = not bool(material_choice.get("material"))
-        intent_needs_sources = bool(getattr(state.intent, "needs_sources", False)) if state.intent else False
-        intent_need_sources = bool(getattr(state.intent, "need_sources", False)) if state.intent else False
-        needs_rag = bool(
-            getattr(state, "requires_rag", False)
-            or intent_needs_sources
-            or intent_need_sources
-            or getattr(state, "need_sources", False)
-        )
-
         if missing_calc:
             reason = "missing_calc_facts"
             action = ACTION_RUN_PANEL_CALC
         elif missing_material:
             reason = "missing_material_decision"
             action = ACTION_RUN_PANEL_MATERIAL
-        elif contradictions or needs_rag:
-            reason = "resolve_contradictions" if contradictions else "needs_rag"
+        elif contradictions or needs_sources:
+            reason = "resolve_contradictions" if contradictions else "rag_sources_required"
             action = ACTION_RUN_PANEL_NORMS_RAG
         else:
             reason = "no_action_required"
@@ -344,6 +367,7 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
 
     patch: Dict[str, Any] = {
         "next_action": action,
+        "next_action_reason": reason,
         "pending_action": pending_action,
         "decision_log": [*(state.decision_log or []), decision_entry],
         "round_index": new_round,
@@ -360,6 +384,46 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
     if derived:
         patch["open_questions"] = questions
     return patch
+
+
+def _is_knowledge_intent(state: SealAIState) -> bool:
+    intent = state.intent
+    if intent:
+        key = str(getattr(intent, "key", "") or "")
+        if key in {
+            "knowledge_material",
+            "knowledge_lifetime",
+            "knowledge_norms",
+            "generic_sealing_qa",
+        }:
+            return True
+        if getattr(intent, "knowledge_type", None) in {"material", "lifetime", "norms"}:
+            return True
+    if getattr(state, "knowledge_type", None) in {"material", "lifetime", "norms"}:
+        return True
+    return False
+
+
+def _is_norms_knowledge(state: SealAIState) -> bool:
+    intent = state.intent
+    if intent:
+        key = str(getattr(intent, "key", "") or "")
+        if key == "knowledge_norms":
+            return True
+        if getattr(intent, "knowledge_type", None) == "norms":
+            return True
+    return getattr(state, "knowledge_type", None) == "norms"
+
+
+def _needs_sources(state: SealAIState) -> bool:
+    intent = state.intent
+    return bool(
+        getattr(state, "needs_sources", False)
+        or getattr(state, "need_sources", False)
+        or getattr(state, "requires_rag", False)
+        or (bool(getattr(intent, "needs_sources", False)) if intent else False)
+        or (bool(getattr(intent, "need_sources", False)) if intent else False)
+    )
 
 
 def _merge_fact(existing: FactItem | None, update: FactItem) -> FactItem:

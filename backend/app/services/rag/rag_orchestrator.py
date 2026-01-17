@@ -20,8 +20,7 @@ def _truthy(x: Optional[str]) -> bool:
 
 # RAG core
 QDRANT_URL                 = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
-QDRANT_COLLECTION_PREFIX   = os.getenv("QDRANT_COLLECTION_PREFIX", "").strip()
-QDRANT_COLLECTION_DEFAULT  = os.getenv("QDRANT_COLLECTION", "sealai-docs").strip()
+QDRANT_COLLECTION_DEFAULT  = os.getenv("QDRANT_COLLECTION", "sealai_knowledge").strip()
 
 # Embeddings / Rerank
 EMB_MODEL_NAME             = os.getenv("EMB_MODEL_NAME", os.getenv("EMBEDDINGS_MODEL", "intfloat/multilingual-e5-base"))
@@ -198,10 +197,7 @@ def startup_warmup() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Utilities
 # ─────────────────────────────────────────────────────────────────────────────
-def _collection_for_tenant(tenant: Optional[str]) -> str:
-    t = (tenant or "").strip()
-    if QDRANT_COLLECTION_PREFIX and t:
-        return f"{QDRANT_COLLECTION_PREFIX}:{t}"
+def _collection_name() -> str:
     return QDRANT_COLLECTION_DEFAULT
 
 def _embed(texts: List[str]) -> List[List[float]]:
@@ -424,8 +420,8 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     # Embed query
     vec = _embed([q])[0]
 
-    # Pick collection by tenant
-    collection = _collection_for_tenant(tenant)
+    # Single-collection setup (tenant scoped via payload filter)
+    collection = _collection_name()
 
     # Vector search
     vector_k = max(HYBRID_K, k)

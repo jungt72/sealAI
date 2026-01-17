@@ -30,6 +30,7 @@ from app.langgraph_v2.utils.parameter_patch import (
     sanitize_v2_parameter_patch,
 )
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
+from app.langgraph_v2.utils.threading import reset_current_tenant_id, set_current_tenant_id
 from app.services.chat.conversations import upsert_conversation
 from app.services.sse_broadcast import sse_broadcast
 
@@ -123,6 +124,7 @@ async def _build_graph_config(
     *,
     thread_id: str,
     user_id: str,
+    tenant_id: str,
     username: str | None = None,
     legacy_user_id: str | None = None,
     request_id: str | None = None,
@@ -139,11 +141,16 @@ async def _build_graph_config(
             metadata["user_sub"] = scoped_user_id
         return base_config
 
-    config = _attach_config(build_v2_config(thread_id=thread_id, user_id=user_id), scoped_user_id=user_id)
+    tenant_token = set_current_tenant_id(tenant_id)
+    try:
+        config = _attach_config(build_v2_config(thread_id=thread_id, user_id=user_id), scoped_user_id=user_id)
+    finally:
+        reset_current_tenant_id(tenant_token)
     if not allow_legacy_fallback or not legacy_user_id or legacy_user_id == user_id:
         return graph, config
 
     try:
+        tenant_token = set_current_tenant_id(tenant_id)
         snapshot = await graph.aget_state(config)
         if _has_checkpoint_state(snapshot):
             return graph, config
@@ -175,14 +182,28 @@ async def _build_graph_config(
                 "legacy_user_id": legacy_user_id,
             },
         )
+    finally:
+        reset_current_tenant_id(tenant_token)
 
     return graph, config
 
 
-async def _run_graph_to_state(req: LangGraphV2Request, *, user_id: str, username: str | None = None) -> SealAIState:
-    graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id, username=username)
+async def _run_graph_to_state(
+    req: LangGraphV2Request,
+    *,
+    user_id: str,
+    tenant_id: str,
+    username: str | None = None,
+) -> SealAIState:
+    graph, config = await _build_graph_config(
+        thread_id=req.chat_id,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        username=username,
+    )
     initial_state = SealAIState(
         user_id=user_id,
+        tenant_id=tenant_id,
         thread_id=req.chat_id,
         messages=[HumanMessage(content=req.input)],
     )
@@ -282,6 +303,45 @@ def _parse_last_event_id(last_event_id: str | None, *, chat_id: str) -> int | No
 def _get_dict_value(payload: Any, key: str) -> Any:
     if isinstance(payload, dict):
         return payload.get(key)
+    return None
+
+
+def _get_state_value(state: Any, key: str) -> Any:
+    if isinstance(state, SealAIState):
+        return getattr(state, key, None)
+    if isinstance(state, dict):
+        return state.get(key)
+    return None
+
+
+def _build_supervisor_decision_payload(
+    state: Any,
+    *,
+    chat_id: str,
+    request_id: str | None,
+) -> Dict[str, Any] | None:
+    action = _get_state_value(state, "next_action")
+    reason = _get_state_value(state, "next_action_reason")
+    if not action or not reason:
+        return None
+    payload = {
+        "action": action,
+        "reason": reason,
+        "chat_id": chat_id,
+    }
+    if request_id:
+        payload["request_id"] = request_id
+    return payload
+
+
+def _knowledge_target_from_state(state: Any) -> str | None:
+    last_node = _get_state_value(state, "last_node")
+    if last_node == "knowledge_material_node":
+        return "material"
+    if last_node == "knowledge_lifetime_node":
+        return "lifetime"
+    if last_node == "generic_sealing_qa_node":
+        return "generic"
     return None
 
 
@@ -421,6 +481,7 @@ async def _event_stream_v2(
     req: LangGraphV2Request,
     *,
     user_id: str,
+    tenant_id: str,
     legacy_user_id: str | None = None,
     request_id: str | None = None,
     last_event_id: str | None = None,
@@ -435,6 +496,7 @@ async def _event_stream_v2(
         graph, config = await _build_graph_config(
             thread_id=req.chat_id,
             user_id=user_id,
+            tenant_id=tenant_id,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
         )
@@ -578,6 +640,7 @@ async def _event_stream_v2(
         prev_parameters: Dict[str, Any] = {}
         initial_state = SealAIState(
             user_id=scoped_user_id,
+            tenant_id=tenant_id,
             thread_id=req.chat_id,
             messages=[HumanMessage(content=req.input)],
         )
@@ -588,6 +651,9 @@ async def _event_stream_v2(
         latest_state: SealAIState | Dict[str, Any] = initial_state
         last_trace_signature: tuple[Any, Any, Any, Any] | None = None
         last_retrieval_signature: tuple[Any, Any] | None = None
+        last_decision_signature: tuple[Any, Any] | None = None
+        pending_knowledge_decision = False
+        last_knowledge_signature: tuple[Any, Any] | None = None
 
         async def _emit_trace(mode: str, *, data: Any = None, meta: Any = None, state: Any = None) -> None:
             nonlocal last_trace_signature
@@ -710,6 +776,30 @@ async def _event_stream_v2(
                                     last_retrieval_signature = signature
                             payload = _build_state_update_payload(latest_state)
                             if payload:
+                                decision_payload = _build_supervisor_decision_payload(
+                                    latest_state,
+                                    chat_id=req.chat_id,
+                                    request_id=request_id,
+                                )
+                                if decision_payload:
+                                    signature = (
+                                        decision_payload.get("action"),
+                                        decision_payload.get("reason"),
+                                    )
+                                    if signature != last_decision_signature:
+                                        await _emit_event("decision.supervisor", decision_payload)
+                                        last_decision_signature = signature
+                                        pending_knowledge_decision = decision_payload.get("action") == "RUN_KNOWLEDGE"
+                                target = _knowledge_target_from_state(latest_state)
+                                if pending_knowledge_decision and target:
+                                    signature = (req.chat_id, target)
+                                    if signature != last_knowledge_signature:
+                                        await _emit_event(
+                                            "decision.knowledge_target",
+                                            {"target": target, "chat_id": req.chat_id},
+                                        )
+                                        last_knowledge_signature = signature
+                                    pending_knowledge_decision = False
                                 parameters = payload.get("parameters")
                                 current_params = parameters if isinstance(parameters, dict) else {}
                                 delta_keys = [
@@ -972,6 +1062,7 @@ async def langgraph_chat_v2_endpoint(
             detail=error_detail("missing_param_snapshot", request_id=request_id),
         )
     scoped_user_id = canonical_user_id(user)
+    tenant_id = user.tenant_id
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
@@ -1029,6 +1120,7 @@ async def langgraph_chat_v2_endpoint(
         _event_stream_v2(
             request,
             user_id=scoped_user_id,
+            tenant_id=tenant_id,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
             last_event_id=last_event_id,
@@ -1046,6 +1138,7 @@ async def confirm_go(
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
+    tenant_id = user.tenant_id
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     try:
         if not (body.chat_id or "").strip():
@@ -1055,6 +1148,7 @@ async def confirm_go(
         graph, config = await _build_graph_config(
             thread_id=body.chat_id,
             user_id=scoped_user_id,
+            tenant_id=tenant_id,
             username=user.username,
             legacy_user_id=legacy_user_id,
             request_id=request_id,

@@ -16,6 +16,7 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, SealParameterUpdate, TechnicalParameters
 from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
+from app.langgraph_v2.utils.threading import reset_current_tenant_id, set_current_tenant_id
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 
 logger = logging.getLogger(__name__)
@@ -136,16 +137,23 @@ async def _resolve_state_snapshot(
     request_id: str | None = None,
 ) -> tuple[Any, Dict[str, Any], Any, bool]:
     scoped_user_id = canonical_user_id(user)
+    tenant_id = user.tenant_id
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     graph, config = await _build_state_config_with_checkpointer(
-        thread_id=thread_id, user_id=scoped_user_id, username=user.username
+        thread_id=thread_id,
+        user_id=scoped_user_id,
+        tenant_id=tenant_id,
+        username=user.username,
     )
     snapshot = await graph.aget_state(config)
     if not legacy_user_id or _has_state_values(snapshot):
         return graph, config, snapshot, False
 
     legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
-        thread_id=thread_id, user_id=legacy_user_id, username=user.username
+        thread_id=thread_id,
+        user_id=legacy_user_id,
+        tenant_id=tenant_id,
+        username=user.username,
     )
     legacy_snapshot = await legacy_graph.aget_state(legacy_config)
     if _has_state_values(legacy_snapshot):
@@ -164,11 +172,18 @@ async def _resolve_state_snapshot(
 
 
 async def _build_state_config_with_checkpointer(
-    thread_id: str, user_id: str, username: str | None = None
+    thread_id: str,
+    user_id: str,
+    tenant_id: str,
+    username: str | None = None,
 ):
     """Return a v2 config that carries the graph's checkpointer to skip subgraph routing."""
     graph = await get_sealai_graph_v2()
-    config = build_v2_config(thread_id=thread_id, user_id=user_id)
+    tenant_token = set_current_tenant_id(tenant_id)
+    try:
+        config = build_v2_config(thread_id=thread_id, user_id=user_id)
+    finally:
+        reset_current_tenant_id(tenant_token)
     configurable = config.setdefault("configurable", {})
     configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
     if username:

@@ -11,7 +11,7 @@ log = logging.getLogger("app.services.rag.qdrant_bootstrap")
 
 
 def _collection_name() -> str:
-    return (os.getenv("QDRANT_COLLECTION") or "sealai-docs").strip()
+    return (os.getenv("QDRANT_COLLECTION") or "sealai_knowledge").strip()
 
 
 def _qdrant_client_kwargs() -> dict:

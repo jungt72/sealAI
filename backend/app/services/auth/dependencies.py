@@ -25,6 +25,7 @@ from app.langgraph_v2.contracts import error_detail
 @dataclass(frozen=True)
 class RequestUser:
     user_id: str
+    tenant_id: str
     username: str
     sub: str
     roles: list[str]
@@ -41,6 +42,17 @@ def _resolve_user_id(payload: dict) -> str:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=error_detail("missing_user_id_claim", claim=claim),
+        )
+    return str(value)
+
+
+def _resolve_tenant_id(payload: dict) -> str:
+    claim = (os.getenv("AUTH_TENANT_ID_CLAIM") or "tenant_id").strip()
+    value = payload.get(claim)
+    if value is None or value == "":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_tenant_id_claim", claim=claim),
         )
     return str(value)
 
@@ -95,10 +107,11 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
             detail=str(exc),
         ) from exc
     user_id = _resolve_user_id(payload)
+    tenant_id = _resolve_tenant_id(payload)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
     roles = _extract_roles(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)
+    return RequestUser(user_id=user_id, tenant_id=tenant_id, username=username, sub=sub, roles=roles)
 
 
 # --------------------------------------------------------------------------- #
@@ -138,7 +151,8 @@ async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
             detail=str(exc),
         ) from exc
     user_id = _resolve_user_id(payload)
+    tenant_id = _resolve_tenant_id(payload)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
     roles = _extract_roles(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)
+    return RequestUser(user_id=user_id, tenant_id=tenant_id, username=username, sub=sub, roles=roles)
