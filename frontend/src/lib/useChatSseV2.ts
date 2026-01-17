@@ -368,7 +368,8 @@ export function useChatSseV2({
       const exp = tokenExpiresAtRef.current;
       if (exp && now >= exp) {
         console.warn("SSE start requested with expired token.");
-      }      const activeToken = tokenRef.current ?? token;
+      }
+      const activeToken = tokenRef.current ?? token;
       if (!activeToken) {
         setLastError("Nicht angemeldet (Token fehlt).");
         setStatus('offline');
