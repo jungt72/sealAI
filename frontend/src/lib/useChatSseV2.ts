@@ -70,7 +70,6 @@ type SseState = {
 const ENDPOINT_URL = "/api/chat";
 const LAST_EVENT_STORAGE_PREFIX = "sealai:sse:last_event_id:";
 // Preflight refresh keeps SSE from starting with near-expired tokens.
-const PREEMPTIVE_REFRESH_WINDOW_SEC = 60;
 const MAX_RAG_SOURCES = 10;
 
 function buildLastEventStorageKey(chatId: string, clientMsgId: string): string {
@@ -369,21 +368,7 @@ export function useChatSseV2({
       const exp = tokenExpiresAtRef.current;
       if (exp && now >= exp) {
         console.warn("SSE start requested with expired token.");
-      }
-      if (exp && now >= exp - PREEMPTIVE_REFRESH_WINDOW_SEC) {
-        if (refreshAccessToken) {
-          const refreshed = await refreshAccessToken();
-          if (refreshed) {
-            tokenRef.current = refreshed;
-          } else {
-            setLastError("Sitzung abgelaufen (Token-Refresh fehlgeschlagen).");
-            setStatus('offline');
-            onAuthExpired?.();
-            return;
-          }
-        }
-      }
-      const activeToken = tokenRef.current ?? token;
+      }      const activeToken = tokenRef.current ?? token;
       if (!activeToken) {
         setLastError("Nicht angemeldet (Token fehlt).");
         setStatus('offline');
