@@ -77,22 +77,7 @@ def _looks_like_smalltalk(text: str) -> bool:
     
     # Sehr kurze Phrasen
     if len(cleaned.split()) <= 2:
-        smalltalk_words = {
-            "hallo",
-            "hi",
-            "hey",
-            "moin",
-            "servus",
-            "abend",
-            "morgen",
-            "tag",
-            "ciao",
-            "tschüss",
-            "danke",
-            "grüß dich",
-            "gruess dich",
-            "gruss dich",
-        }
+        smalltalk_words = {"hallo", "hi", "hey", "moin", "servus", "abend", "morgen", "tag", "ciao", "tschüss", "danke"}
         if cleaned.rstrip("!?.") in smalltalk_words:
             return True
 
@@ -204,10 +189,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         )
     except Exception as exc:
         # 2b) Fallback: defensiver Default-Intent
-        logger.warning(
-            "frontdoor_llm_failed",
-            extra={"error": str(exc), "user_text": user_text},
-        )
+        logger.warning("frontdoor_llm_failed", error=str(exc), user_text=user_text)
         intent = Intent(goal="design_recommendation", confidence=0.6, high_impact_gaps=[])
         if extracted_params:
             (

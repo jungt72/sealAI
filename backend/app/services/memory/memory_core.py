@@ -60,21 +60,18 @@ def ensure_ltm_collection(client: QdrantClient) -> None:
 # Export / Delete
 # ---------------------------------------------------------------------------
 
-def _build_user_filter(user: str, chat_id: Optional[str] = None, tenant_id: Optional[str] = None) -> models.Filter:
+def _build_user_filter(user: str, chat_id: Optional[str] = None) -> models.Filter:
     must: List[models.FieldCondition] = [
         models.FieldCondition(key="user", match=models.MatchValue(value=user))
     ]
     if chat_id:
         must.append(models.FieldCondition(key="chat_id", match=models.MatchValue(value=chat_id)))
-    if tenant_id:
-        must.append(models.FieldCondition(key="tenant_id", match=models.MatchValue(value=tenant_id)))
     return models.Filter(must=must)
 
 
 def ltm_export_all(
     user: str,
     chat_id: Optional[str] = None,
-    tenant_id: Optional[str] = None,
     limit: int = 10000,
 ) -> List[Dict[str, Any]]:
     """
@@ -87,7 +84,7 @@ def ltm_export_all(
     client = _get_qdrant_client()
     ensure_ltm_collection(client)
 
-    flt = _build_user_filter(user, chat_id, tenant_id)
+    flt = _build_user_filter(user, chat_id)
     out: List[Dict[str, Any]] = []
 
     next_page = None
@@ -121,7 +118,6 @@ def ltm_export_all(
 def ltm_delete_all(
     user: str,
     chat_id: Optional[str] = None,
-    tenant_id: Optional[str] = None,
 ) -> int:
     """
     Löscht alle LTM-Items für User (optional gefiltert nach chat_id).
@@ -133,7 +129,7 @@ def ltm_delete_all(
     client = _get_qdrant_client()
     ensure_ltm_collection(client)
 
-    flt = _build_user_filter(user, chat_id, tenant_id)
+    flt = _build_user_filter(user, chat_id)
     coll = _ltm_collection_name()
 
     # Vorab zählen (für Response)

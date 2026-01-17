@@ -92,7 +92,7 @@ def anyio_backend() -> str:
 async def test_rag_upload_too_large(tmp_path: Path) -> None:
     rag_endpoint.UPLOAD_ROOT = str(tmp_path)
     rag_endpoint.RAG_UPLOAD_MAX_BYTES = 4
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
     file_obj = DummyUploadFile("doc.txt", b"hello", "text/plain")
     try:
         await rag_endpoint.upload_rag_document(
@@ -110,7 +110,7 @@ async def test_rag_upload_too_large(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_rag_upload_invalid_ext(tmp_path: Path) -> None:
     rag_endpoint.UPLOAD_ROOT = str(tmp_path)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
     file_obj = DummyUploadFile("doc.exe", b"hello", "application/pdf")
     try:
         await rag_endpoint.upload_rag_document(
@@ -128,7 +128,7 @@ async def test_rag_upload_invalid_ext(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_rag_upload_invalid_content_type(tmp_path: Path) -> None:
     rag_endpoint.UPLOAD_ROOT = str(tmp_path)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
     file_obj = DummyUploadFile("doc.txt", b"hello", "application/octet-stream")
     try:
         await rag_endpoint.upload_rag_document(

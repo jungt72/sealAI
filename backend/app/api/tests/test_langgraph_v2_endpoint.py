@@ -13,7 +13,6 @@ import asyncio
 import json
 import os
 import sys
-import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -38,8 +37,6 @@ os.environ.setdefault("keycloak_expected_azp", "test-client")
 from langchain_core.messages import AIMessage
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
-
-CHAT_ID = str(uuid.uuid4())
 
 
 def _parse_sse_frames(frames: List[bytes]) -> List[Tuple[str, Dict[str, Any], str | None]]:
@@ -151,7 +148,7 @@ class DummyGraphConfirmCheckpoint:
                     "pending_action": "RUN_PANEL_NORMS_RAG",
                     "awaiting_user_confirmation": True,
                     "user_id": "user-1",
-                    "thread_id": CHAT_ID,
+                    "thread_id": "chat-1",
                 },
             )
 
@@ -164,7 +161,7 @@ def test_event_stream_v2_streams_tokens_and_done(monkeypatch):
 
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
-    req = endpoint.LangGraphV2Request(input="Hi", chat_id=str(uuid.uuid4()))
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
     chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
@@ -182,7 +179,7 @@ def test_event_stream_v2_includes_event_ids(monkeypatch):
 
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
-    req = endpoint.LangGraphV2Request(input="Hi", chat_id=str(uuid.uuid4()), client_msg_id="msg-1")
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test", client_msg_id="msg-1")
     chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
@@ -200,7 +197,7 @@ def test_event_stream_v2_fallback_chunks_final_text(monkeypatch):
 
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
-    req = endpoint.LangGraphV2Request(input="Hi", chat_id=str(uuid.uuid4()))
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
     chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
@@ -215,7 +212,7 @@ def test_event_stream_v2_emits_error_then_done(monkeypatch):
 
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
-    req = endpoint.LangGraphV2Request(input="Hi", chat_id=str(uuid.uuid4()))
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
     chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
@@ -229,7 +226,7 @@ def test_event_stream_v2_ignores_full_message_after_chunks(monkeypatch):
 
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
-    req = endpoint.LangGraphV2Request(input="Hi", chat_id=str(uuid.uuid4()))
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
     chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
@@ -243,7 +240,7 @@ def test_event_stream_v2_emits_checkpoint_required(monkeypatch):
 
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
-    req = endpoint.LangGraphV2Request(input="Hi", chat_id=str(uuid.uuid4()))
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
     chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
@@ -271,14 +268,14 @@ def test_claim_client_msg_id_deduplicates(monkeypatch):
     first = asyncio.run(
         endpoint._claim_client_msg_id(
             user_id="user-1",
-            chat_id=CHAT_ID,
+            chat_id="chat-1",
             client_msg_id="msg-1",
         )
     )
     second = asyncio.run(
         endpoint._claim_client_msg_id(
             user_id="user-1",
-            chat_id=CHAT_ID,
+            chat_id="chat-1",
             client_msg_id="msg-1",
         )
     )

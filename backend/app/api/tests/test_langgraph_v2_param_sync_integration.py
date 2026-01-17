@@ -8,7 +8,6 @@ from app.langgraph_v2.utils.threading import stable_thread_key
 import asyncio
 import os
 import sys
-import uuid
 from pathlib import Path
 
 # Ensure backend is on path (tests run from repo root in some setups).
@@ -81,7 +80,7 @@ def test_param_patch_merges_existing_parameters(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
 
-    chat_id = str(uuid.uuid4())
+    chat_id = "chat-param-merge"
     user_id = "user-param-merge"
     request = _request()
     user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
@@ -110,7 +109,7 @@ def test_latest_write_patch_then_chat_wins(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
 
-    chat_id = str(uuid.uuid4())
+    chat_id = "chat-param-latest-1"
     user_id = "user-param-latest-1"
     request = _request()
     user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
@@ -143,7 +142,7 @@ def test_latest_write_chat_then_patch_wins(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
 
-    chat_id = str(uuid.uuid4())
+    chat_id = "chat-param-latest-2"
     user_id = "user-param-latest-2"
     request = _request()
     user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
@@ -176,7 +175,7 @@ def test_pressure_alias_overwrites_existing_value(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
 
-    chat_id = str(uuid.uuid4())
+    chat_id = "chat-param-alias-override"
     user_id = "user-param-alias-override"
     request = _request()
     user = RequestUser(user_id=user_id, username="tester", sub="sub-test", roles=[], tenant_id="tenant-1")
@@ -202,7 +201,7 @@ def test_state_falls_back_to_legacy_thread(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
 
-    chat_id = str(uuid.uuid4())
+    chat_id = "chat-legacy-fallback"
     request = _request()
     user = RequestUser(user_id="user-claim", username="tester", sub="legacy-sub", roles=[], tenant_id="tenant-1")
 

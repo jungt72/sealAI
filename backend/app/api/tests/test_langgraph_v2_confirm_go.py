@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import uuid
 from pathlib import Path
 
 import pytest
@@ -71,9 +70,9 @@ class DummyGraph:
         return {"final_text": "", "phase": "final", "last_node": "final_answer_node"}
 
 
-def _make_state(chat_id: str):
+def _make_state():
     return {
-        "confirm_checkpoint": {"required_user_sub": "user-1", "conversation_id": chat_id},
+        "confirm_checkpoint": {"required_user_sub": "user-1", "conversation_id": "chat-1"},
         "confirm_checkpoint_id": "chk-1",
         "pending_action": "RUN_PANEL_NORMS_RAG",
         "awaiting_user_confirmation": True,
@@ -81,8 +80,7 @@ def _make_state(chat_id: str):
 
 
 def test_confirm_go_approve_resumes(monkeypatch):
-    chat_id = str(uuid.uuid4())
-    state = _make_state(chat_id)
+    state = _make_state()
     dummy = DummyGraph(state)
 
     async def _dummy_graph():
@@ -91,15 +89,14 @@ def test_confirm_go_approve_resumes(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], tenant_id="tenant-1")
-    body = ConfirmGoRequest(chat_id=chat_id, checkpoint_id="chk-1", decision="approve")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
+    body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert response["final_text"] == "Weiter"
 
 
 def test_confirm_go_reject_returns_cancellation(monkeypatch):
-    chat_id = str(uuid.uuid4())
-    state = _make_state(chat_id)
+    state = _make_state()
     dummy = DummyGraph(state)
 
     async def _dummy_graph():
@@ -108,15 +105,14 @@ def test_confirm_go_reject_returns_cancellation(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], tenant_id="tenant-1")
-    body = ConfirmGoRequest(chat_id=chat_id, checkpoint_id="chk-1", decision="reject")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
+    body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="reject")
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert "Abgebrochen" in response["final_text"]
 
 
 def test_confirm_go_edit_applies_parameters(monkeypatch):
-    chat_id = str(uuid.uuid4())
-    state = _make_state(chat_id)
+    state = _make_state()
     dummy = DummyGraph(state)
 
     async def _dummy_graph():
@@ -125,9 +121,9 @@ def test_confirm_go_edit_applies_parameters(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
     body = ConfirmGoRequest(
-        chat_id=chat_id,
+        chat_id="chat-1",
         checkpoint_id="chk-1",
         decision="edit",
         edits={"parameters": {"pressure_bar": 7}, "instructions": "Bitte korrigieren"},
@@ -138,9 +134,8 @@ def test_confirm_go_edit_applies_parameters(monkeypatch):
 
 
 def test_confirm_go_conversation_mismatch(monkeypatch):
-    chat_id = str(uuid.uuid4())
-    state = _make_state(chat_id)
-    state["confirm_checkpoint"]["conversation_id"] = str(uuid.uuid4())
+    state = _make_state()
+    state["confirm_checkpoint"]["conversation_id"] = "chat-2"
     dummy = DummyGraph(state)
 
     async def _dummy_graph():
@@ -149,8 +144,8 @@ def test_confirm_go_conversation_mismatch(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], tenant_id="tenant-1")
-    body = ConfirmGoRequest(chat_id=chat_id, checkpoint_id="chk-1", decision="approve")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
+    body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert getattr(excinfo.value, "status_code", None) == 403
@@ -158,7 +153,6 @@ def test_confirm_go_conversation_mismatch(monkeypatch):
 
 
 def test_confirm_go_no_pending_checkpoint(monkeypatch):
-    chat_id = str(uuid.uuid4())
     state = {}
     dummy = DummyGraph(state)
 
@@ -168,8 +162,8 @@ def test_confirm_go_no_pending_checkpoint(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], tenant_id="tenant-1")
-    body = ConfirmGoRequest(chat_id=chat_id, checkpoint_id="chk-1", decision="approve")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
+    body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert getattr(excinfo.value, "status_code", None) == 409
@@ -177,7 +171,6 @@ def test_confirm_go_no_pending_checkpoint(monkeypatch):
 
 
 def test_confirm_go_double_submit(monkeypatch):
-    chat_id = str(uuid.uuid4())
     state = {"confirm_status": "resolved"}
     dummy = DummyGraph(state)
 
@@ -187,8 +180,8 @@ def test_confirm_go_double_submit(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], tenant_id="tenant-1")
-    body = ConfirmGoRequest(chat_id=chat_id, checkpoint_id="chk-1", decision="approve")
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
+    body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert getattr(excinfo.value, "status_code", None) == 409
@@ -196,8 +189,7 @@ def test_confirm_go_double_submit(monkeypatch):
 
 
 def test_confirm_go_wrong_user(monkeypatch):
-    chat_id = str(uuid.uuid4())
-    state = _make_state(chat_id)
+    state = _make_state()
     dummy = DummyGraph(state)
 
     async def _dummy_graph():
@@ -206,8 +198,8 @@ def test_confirm_go_wrong_user(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     request = _request()
-    user = RequestUser(user_id="user-2", username="tester", sub="user-2", roles=[], tenant_id="tenant-2")
-    body = ConfirmGoRequest(chat_id=chat_id, checkpoint_id="chk-1", decision="approve")
+    user = RequestUser(user_id="user-2", username="tester", sub="user-2", roles=[])
+    body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert getattr(excinfo.value, "status_code", None) == 403

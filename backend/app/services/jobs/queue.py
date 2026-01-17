@@ -60,15 +60,8 @@ def _queue_client() -> Redis:
     return client
 
 
-def _queue_client_cache_clear() -> None:
-    _QUEUE_STORE.clear()
-
-
-_queue_client.cache_clear = _queue_client_cache_clear  # type: ignore[attr-defined]
-
-
 async def enqueue_job(channel: str, payload: Dict[str, Any]) -> None:
-    client = _queue_client()
+    client = await _get_queue_client()
     data = json.dumps(payload, ensure_ascii=False)
     await client.rpush(channel, data)
     await client.ltrim(channel, -MAX_JOBS_QUEUE_LEN, -1)

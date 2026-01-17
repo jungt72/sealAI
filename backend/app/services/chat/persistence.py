@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import logging
 from typing import Any, Sequence
 
@@ -70,19 +69,9 @@ async def persist_chat_transcript(
         if existing:
             existing.user_id = user_id
             existing.summary = safe_summary
-            existing_meta = getattr(existing, "metadata", None)
-            if not isinstance(existing_meta, dict):
-                existing_meta = getattr(existing, "metadata_json", None)
-            if not isinstance(existing_meta, dict):
-                existing_meta = {}
-            merged_meta = {**existing_meta, **safe_meta}
-            if hasattr(existing, "metadata"):
-                setattr(existing, "metadata", merged_meta)
             # IMPORTANT: Column is named "metadata" in DB, but mapped as metadata_json in the model.
-            existing.metadata_json = merged_meta
-            added = session.add(existing)
-            if inspect.isawaitable(added):
-                await added
+            existing.metadata_json = safe_meta
+            session.add(existing)
         else:
             transcript = ChatTranscript(
                 chat_id=chat_id,
@@ -92,9 +81,7 @@ async def persist_chat_transcript(
                 # IMPORTANT: Column is named "metadata" in DB, but mapped as metadata_json in the model.
                 metadata_json=safe_meta,
             )
-            added = session.add(transcript)
-            if inspect.isawaitable(added):
-                await added
+            session.add(transcript)
 
         await session.commit()
 

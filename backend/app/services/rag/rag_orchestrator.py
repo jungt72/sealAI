@@ -440,23 +440,16 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
         inc_rag_retrieval("skipped")
         return []
 
-    clean_tenant = (tenant or "").strip()
-    if not clean_tenant:
-        raise ValueError("Tenant ID is required")
-
-    filters: Dict[str, Any] = dict(metadata_filters or {})
-    filters["tenant_id"] = clean_tenant
-
     # Embed query
     vec = _embed([q])[0]
 
     # Pick collection by tenant
-    collection = _collection_for_tenant(clean_tenant)
+    collection = _collection_for_tenant(tenant)
 
     # Vector search
     vector_k = max(HYBRID_K, k)
     vec_hits, qdrant_meta = _qdrant_search_with_retry(
-        vec, collection, top_k=vector_k, metadata_filters=filters
+        vec, collection, top_k=vector_k, metadata_filters=metadata_filters
     )
 
     bm25_hits: List[Dict[str, Any]] = []
@@ -464,7 +457,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     bm25_k = max(HYBRID_K, k)
     if USE_BM25:
         bm25_hits, bm25_error = _bm25_search(
-            q, collection, top_k=bm25_k, metadata_filters=filters
+            q, collection, top_k=bm25_k, metadata_filters=metadata_filters
         )
 
     # Placeholder: BM25 could be merged here when enabled
@@ -482,7 +475,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
 
     # Externer Fallback (Microservice), wenn keine Treffer
     if not merged:
-        ext = _fallback_external_search(q, tenant=clean_tenant, limit=k)
+        ext = _fallback_external_search(q, tenant=tenant, limit=k)
         merged = ext[:k]
 
     reranked = any("rerank_score" in hit for hit in merged)
@@ -533,7 +526,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
         metrics["sources"] = sources
 
     try:
-        _event("hybrid_retrieve", n=len(merged), tenant=clean_tenant or "-", collection=collection, k=k)
+        _event("hybrid_retrieve", n=len(merged), tenant=tenant or "-", collection=collection, k=k)
     except Exception:
         pass
     inc_rag_retrieval("results" if merged else "skipped")

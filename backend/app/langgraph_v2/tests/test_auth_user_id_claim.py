@@ -56,8 +56,8 @@ def test_canonical_tenant_id_prefers_claim() -> None:
 
 
 def test_canonical_tenant_id_falls_back_to_user() -> None:
-    user = dependencies.RequestUser(user_id="user-1", username="user", sub="sub-1", roles=[], tenant_id="tenant-1")
-    assert dependencies.canonical_tenant_id(user) == "tenant-1"
+    user = dependencies.RequestUser(user_id="user-1", username="user", sub="sub-1", roles=[])
+    assert dependencies.canonical_tenant_id(user) == "user-1"
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
