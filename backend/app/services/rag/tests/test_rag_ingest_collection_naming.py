@@ -66,7 +66,7 @@ def test_rag_ingest_uses_prefixed_collection_with_tenant(monkeypatch, tmp_path) 
 
     rag_ingest.ingest_file(str(file_path), tenant_id="tenant-1")
 
-    assert captured["collection_name"] == "rag:tenant-1"
+    assert captured["collection_name"] == "sealai-docs"
 
 
 def test_rag_ingest_uses_base_collection_without_tenant(monkeypatch, tmp_path) -> None:

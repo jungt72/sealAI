@@ -29,8 +29,14 @@ class BroadcastRecord(Protocol):
     tenant_id: Optional[str]
 
 
-# Key: (tenant_id, user_id, chat_id)
-BroadcastKey = Tuple[Optional[str], str, str]
+# Key: (scoped_user_id, chat_id)
+BroadcastKey = Tuple[str, str]
+
+
+def _scoped_user_id(user_id: str, tenant_id: Optional[str]) -> str:
+    if tenant_id:
+        return f"{tenant_id}:{user_id}"
+    return user_id
 
 
 class ReplayBackend(ABC):
@@ -142,8 +148,8 @@ class RedisReplayBackend(ReplayBackend):
         self._redis_url = redis_url
         self._max_buffer = max_buffer
         self._ttl_sec = ttl_sec
-        self._fallback = fallback
-        self._client: Optional[Redis] = None
+        self._fallback = fallback or MemoryReplayBackend(max_buffer=max_buffer)
+        self._client_store: "WeakKeyDictionary[asyncio.AbstractEventLoop, Redis]" = WeakKeyDictionary()
 
     @property
     def name(self) -> str:
@@ -152,13 +158,15 @@ class RedisReplayBackend(ReplayBackend):
     async def _get_client(self) -> Redis:
         # Best practice: central helper -> pooling/timeouts/health checks
         # decode_responses=True makes redis return str; our payload is JSON strings
-        if self._client is None:
-            self._client = make_async_redis_client(
+        loop = asyncio.get_running_loop()
+        client = self._client_store.get(loop)
+        if client is None:
+            client = make_async_redis_client(
                 self._redis_url,
                 decode_responses=True,
-                encoding="utf-8",
             )
-        return self._client
+            self._client_store[loop] = client
+        return client
 
     def _get_redis_key(self, user_id: str, chat_id: str, tenant_id: Optional[str]) -> str:
         if tenant_id:
@@ -299,8 +307,8 @@ class RedisReplayBackend(ReplayBackend):
             raise
 
 
-def build_replay_backend() -> ReplayBackend:
-    redis_url = os.getenv("REDIS_URL")
+def build_replay_backend(redis_url: Optional[str] = None) -> ReplayBackend:
+    redis_url = redis_url or os.getenv("REDIS_URL")
     maxlen = int(os.getenv("SSE_REPLAY_MAX", "500"))
     ttl = int(os.getenv("SSE_REPLAY_TTL", "3600"))
     memory_backend = MemoryReplayBackend(max_buffer=maxlen)
@@ -330,6 +338,7 @@ class SseBroadcastManager:
 
     def __init__(
         self,
+        redis_url: Optional[str] = None,
         *,
         replay_backend: Optional[ReplayBackend] = None,
         queue_maxsize: int = 200,
@@ -340,17 +349,28 @@ class SseBroadcastManager:
         self._lock = asyncio.Lock()
         self._queue_maxsize = queue_maxsize
         self._slow_notice_interval = slow_notice_interval
-        self._replay_backend = replay_backend or build_replay_backend()
+        self._replay_backend = replay_backend or build_replay_backend(redis_url)
 
     @property
     def backend_name(self) -> str:
         return self._replay_backend.name
 
+    def _get_redis_key(self, chat_id: str, tenant_id: Optional[str] = None) -> str:
+        if tenant_id:
+            return f"sse:events:{tenant_id}:{chat_id}"
+        return f"sse:events:{chat_id}"
+
+    def _get_redis_channel(self, chat_id: str, tenant_id: Optional[str] = None) -> str:
+        if tenant_id:
+            return f"sse:channel:{tenant_id}:{chat_id}"
+        return f"sse:channel:{chat_id}"
+
     async def subscribe(
         self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None
     ) -> asyncio.Queue[BroadcastEvent]:
         queue: asyncio.Queue[BroadcastEvent] = asyncio.Queue(maxsize=self._queue_maxsize)
-        key = (tenant_id, user_id, chat_id)
+        scoped_user_id = _scoped_user_id(user_id, tenant_id)
+        key = (scoped_user_id, chat_id)
         async with self._lock:
             self._subscribers.setdefault(key, set()).add(queue)
         return queue
@@ -363,7 +383,8 @@ class SseBroadcastManager:
         queue: asyncio.Queue[BroadcastEvent],
         tenant_id: Optional[str] = None,
     ) -> None:
-        key = (tenant_id, user_id, chat_id)
+        scoped_user_id = _scoped_user_id(user_id, tenant_id)
+        key = (scoped_user_id, chat_id)
         async with self._lock:
             subscribers = self._subscribers.get(key)
             if subscribers:
@@ -373,7 +394,8 @@ class SseBroadcastManager:
             self._slow_notice.pop(queue, None)
 
     async def next_seq(self, *, user_id: str, chat_id: str, tenant_id: Optional[str] = None) -> int:
-        return await self._replay_backend.next_seq(user_id=user_id, chat_id=chat_id, tenant_id=tenant_id)
+        scoped_user_id = _scoped_user_id(user_id, tenant_id)
+        return await self._replay_backend.next_seq(user_id=scoped_user_id, chat_id=chat_id)
 
     async def record_event(
         self,
@@ -385,8 +407,17 @@ class SseBroadcastManager:
         tenant_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> int:
+        scoped_user_id = _scoped_user_id(user_id, tenant_id)
+        if tenant_id:
+            return await self._replay_backend.record_event(
+                user_id=scoped_user_id,
+                chat_id=chat_id,
+                event=event,
+                data=data,
+                timestamp=timestamp,
+            )
         return await self._replay_backend.record_event(
-            user_id=user_id,
+            user_id=scoped_user_id,
             chat_id=chat_id,
             event=event,
             data=data,
@@ -397,8 +428,15 @@ class SseBroadcastManager:
     async def replay_after(
         self, *, user_id: str, chat_id: str, last_seq: int, tenant_id: Optional[str] = None
     ) -> Tuple[List[BroadcastRecord], bool]:
+        scoped_user_id = _scoped_user_id(user_id, tenant_id)
+        if tenant_id:
+            return await self._replay_backend.replay_after(
+                user_id=scoped_user_id,
+                chat_id=chat_id,
+                last_seq=last_seq,
+            )
         return await self._replay_backend.replay_after(
-            user_id=user_id,
+            user_id=scoped_user_id,
             chat_id=chat_id,
             last_seq=last_seq,
             tenant_id=tenant_id,
@@ -468,7 +506,8 @@ class SseBroadcastManager:
             data=data,
             tenant_id=tenant_id,
         )
-        key = (tenant_id, user_id, chat_id)
+        scoped_user_id = _scoped_user_id(user_id, tenant_id)
+        key = (scoped_user_id, chat_id)
         async with self._lock:
             subscribers: Iterable[asyncio.Queue[BroadcastEvent]] = list(self._subscribers.get(key, set()))
         delivered = 0

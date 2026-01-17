@@ -45,6 +45,7 @@ ARG INSTALL_DEV=false
 ARG USE_REQUIREMENTS_LOCK=1
 ENV PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1 DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Nur was wirklich gebraucht wird:
 # - libgomp1: OpenMP für onnxruntime (CPU)
@@ -80,6 +81,7 @@ RUN python -m pip install --upgrade pip \
     fi
 
 # App-Code
+COPY pytest.ini ./pytest.ini
 COPY app ./app
 COPY agents ./agents
 COPY alembic.ini ./alembic.ini

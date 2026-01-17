@@ -157,7 +157,7 @@ async def test_rag_upload_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
     monkeypatch.setattr(rag_endpoint, "enqueue_job", fake_enqueue)
 
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     payload = await rag_endpoint.upload_rag_document(
         file=file_obj,
@@ -193,7 +193,7 @@ async def test_rag_upload_dedup_same_tenant(monkeypatch: pytest.MonkeyPatch, tmp
 
     monkeypatch.setattr(rag_endpoint, "enqueue_job", fake_enqueue)
 
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     first = await rag_endpoint.upload_rag_document(
         file=file_obj,
@@ -233,8 +233,8 @@ async def test_rag_upload_same_sha_different_tenant(
 
     monkeypatch.setattr(rag_endpoint, "enqueue_job", fake_enqueue)
 
-    user_a = RequestUser(user_id="tenant-a", username="user", sub="tenant-a", roles=[])
-    user_b = RequestUser(user_id="tenant-b", username="user", sub="tenant-b", roles=[])
+    user_a = RequestUser(user_id="tenant-a", username="user", sub="tenant-a", roles=[], tenant_id="tenant-a")
+    user_b = RequestUser(user_id="tenant-b", username="user", sub="tenant-b", roles=[], tenant_id="tenant-b")
 
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     first = await rag_endpoint.upload_rag_document(
@@ -297,7 +297,7 @@ async def test_rag_upload_retry_failed(monkeypatch: pytest.MonkeyPatch, tmp_path
     )
     dummy_session.add(failed_doc)
 
-    user = RequestUser(user_id=tenant_id, username="user", sub=tenant_id, roles=[])
+    user = RequestUser(user_id=tenant_id, username="user", sub=tenant_id, roles=[], tenant_id=tenant_id)
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     payload = await rag_endpoint.upload_rag_document(
         file=file_obj,

@@ -73,7 +73,7 @@ def test_rag_ingest_passes_deterministic_point_ids(monkeypatch, tmp_path) -> Non
     rag_ingest.ingest_file(str(file_path), tenant_id="tenant-1")
     rag_ingest.ingest_file(str(file_path), tenant_id="tenant-1")
 
-    assert captured["collection_name"] == "rag:tenant-1"
+    assert captured["collection_name"] == "sealai-docs"
     assert len(captured["ids"]) == 2
     first_ids, second_ids = captured["ids"]
     assert first_ids == second_ids

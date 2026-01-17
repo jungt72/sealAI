@@ -23,6 +23,16 @@ from langgraph.checkpoint.memory import MemorySaver
 from app.langgraph_v2.constants import resolve_checkpointer_namespace_v2
 from app.services.redis_client import make_async_redis_client
 
+# Re-exported symbols for tests/monkeypatching.
+try:  # pragma: no cover - import surface only
+    from redis.asyncio import ConnectionPool, Redis  # type: ignore
+except Exception:  # pragma: no cover
+    try:
+        from redis import ConnectionPool, Redis  # type: ignore
+    except Exception:  # pragma: no cover
+        ConnectionPool = None  # type: ignore
+        Redis = None  # type: ignore
+
 logger = structlog.get_logger("langgraph_v2.checkpointer")
 
 # Lazy import für Redis-Abhängigkeiten
@@ -58,12 +68,11 @@ def _resolve_checkpointer_settings(namespace: str | None) -> tuple[str, str, Opt
 
 def _ttl_config_from_seconds(ttl: Optional[int]) -> Optional[dict[str, Any]]:
     """
-    LangGraph AsyncRedisSaver erwartet (versionsabhängig) typischerweise ein Dict in Sekunden.
-    Das alte {"default_ttl": minutes} führte bei vielen Versionen dazu, dass EXPIRE nicht gesetzt wurde (TTL=-1).
+    AsyncRedisSaver TTL payload varies by version. Use legacy minutes dict for ttl=... variants.
     """
     if ttl is None:
         return None
-    return {"seconds": int(ttl)}
+    return {"default_ttl": float(ttl) / 60.0}
 
 
 def _async_redis_saver_supported_params() -> set[str] | None:

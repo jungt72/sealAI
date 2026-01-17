@@ -38,6 +38,7 @@ def test_checkpointer_env_namespace_key_prefix_applied(monkeypatch):
     monkeypatch.setattr(checkpointer_module, "AsyncRedisSaver", FakeAsyncRedisSaver)
     monkeypatch.setattr(checkpointer_module, "ConnectionPool", _DummyPool)
     monkeypatch.setattr(checkpointer_module, "Redis", _DummyRedis)
+    monkeypatch.setattr(checkpointer_module, "make_async_redis_client", lambda *a, **kw: _DummyRedis(None))
 
     saver = asyncio.run(checkpointer_module.make_v2_checkpointer_async(require_async=True))
 
@@ -68,6 +69,7 @@ def test_checkpointer_env_prefix_param_applied(monkeypatch):
     monkeypatch.setattr(checkpointer_module, "AsyncRedisSaver", FakeAsyncRedisSaver)
     monkeypatch.setattr(checkpointer_module, "ConnectionPool", _DummyPool)
     monkeypatch.setattr(checkpointer_module, "Redis", _DummyRedis)
+    monkeypatch.setattr(checkpointer_module, "make_async_redis_client", lambda *a, **kw: _DummyRedis(None))
 
     saver = asyncio.run(checkpointer_module.make_v2_checkpointer_async(require_async=True))
 
@@ -106,6 +108,7 @@ def test_checkpointer_env_checkpoint_prefix_applied(monkeypatch):
     monkeypatch.setattr(checkpointer_module, "AsyncRedisSaver", FakeAsyncRedisSaver)
     monkeypatch.setattr(checkpointer_module, "ConnectionPool", _DummyPool)
     monkeypatch.setattr(checkpointer_module, "Redis", _DummyRedis)
+    monkeypatch.setattr(checkpointer_module, "make_async_redis_client", lambda *a, **kw: _DummyRedis(None))
 
     saver = asyncio.run(checkpointer_module.make_v2_checkpointer_async(require_async=True))
 
@@ -139,6 +142,7 @@ def test_checkpointer_env_prefix_namespace_embedded_when_unsupported(monkeypatch
     monkeypatch.setattr(checkpointer_module, "AsyncRedisSaver", FakeAsyncRedisSaver)
     monkeypatch.setattr(checkpointer_module, "ConnectionPool", _DummyPool)
     monkeypatch.setattr(checkpointer_module, "Redis", _DummyRedis)
+    monkeypatch.setattr(checkpointer_module, "make_async_redis_client", lambda *a, **kw: _DummyRedis(None))
 
     saver = asyncio.run(checkpointer_module.make_v2_checkpointer_async(require_async=True))
 

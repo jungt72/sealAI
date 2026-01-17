@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import Any, Dict
 
@@ -56,7 +57,7 @@ async def persist_chat_result(
                     existing.metadata_json = metadata
                     existing.user_id = user_id
                 else:
-                    session.add(
+                    added = session.add(
                         ChatTranscript(
                             chat_id=chat_id,
                             tenant_id=tenant_id,
@@ -66,6 +67,8 @@ async def persist_chat_result(
                             metadata_json=metadata,
                         )
                     )
+                    if inspect.isawaitable(added):
+                        await added
                 await session.commit()
         except Exception as exc:
             logger.error("Persisting chat transcript failed: %s", exc)

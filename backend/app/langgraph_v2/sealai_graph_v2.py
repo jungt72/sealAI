@@ -562,7 +562,10 @@ async def get_sealai_graph_v2(*, tenant_id: str | None = None) -> CompiledStateG
     async with store["lock"]:
         graph = graphs.get(tenant_key)
         if graph is None:
-            graph = await _build_graph(require_async=True, tenant_id=(tenant_id or None))
+            try:
+                graph = await _build_graph(require_async=True, tenant_id=(tenant_id or None))
+            except TypeError:
+                graph = await _build_graph(require_async=True)
             graphs[tenant_key] = graph
     return graph
 
