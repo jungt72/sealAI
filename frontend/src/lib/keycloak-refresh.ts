@@ -15,6 +15,10 @@ export type KeycloakToken = {
   error?: string | null;
 };
 
+// Deduplicate concurrent refresh attempts per session/token id (jti).
+// Keycloak refresh tokens are often one-time-use; parallel refreshes can cause "refresh token already used".
+const refreshInFlightByJti = new Map<string, Promise<KeycloakToken>>();
+
 const normalizeIssuer = (issuer?: string): string => {
   return (issuer ?? "").replace(/\/+$/, "");
 };
@@ -48,90 +52,121 @@ export const refreshAccessToken = async (token: KeycloakToken): Promise<Keycloak
     };
   }
 
-  const stored = await getTokens(jti);
-  const refreshToken = stored?.refreshToken ?? null;
-  if (!refreshToken) {
-    console.warn("Keycloak refresh skipped: refresh token missing in store.");
-    return {
-      ...token,
-      accessToken: null,
-      expires_at: null,
-      error: "RefreshAccessTokenError",
-    };
-  }
+  const inFlight = refreshInFlightByJti.get(jti);
+  if (inFlight) return inFlight;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
+  const task = (async (): Promise<KeycloakToken> => {
+    const stored = await getTokens(jti);
+    const refreshToken = stored?.refreshToken ?? null;
 
-  try {
-    const params = new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: clientId,
-      refresh_token: refreshToken,
-    });
-
-    const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET;
-    if (clientSecret) {
-      params.append("client_secret", clientSecret);
+    if (!refreshToken) {
+      console.warn("Keycloak refresh skipped: refresh token missing in store.");
+      return {
+        ...token,
+        accessToken: null,
+        expires_at: null,
+        error: "RefreshAccessTokenError",
+      };
     }
 
-    const res = await fetch(buildTokenEndpoint(issuer), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params.toString(),
-      signal: controller.signal,
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
 
-    if (!res.ok) {
-      throw new Error(`Keycloak token refresh failed (${res.status})`);
-    }
+    try {
+      const params = new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: clientId,
+        refresh_token: refreshToken,
+      });
 
-    const data = await res.json();
-    const now = Math.floor(Date.now() / 1000);
-    const expiresIn = Number(data.expires_in);
-    const expiresAt =
-      Number.isFinite(expiresIn) && expiresIn > 0 ? now + expiresIn : token.expires_at ?? null;
-    const refreshExpiresIn = Number(data.refresh_expires_in ?? data.refresh_token_expires_in);
-    const refreshExpiresAt =
-      Number.isFinite(refreshExpiresIn) && refreshExpiresIn > 0
-        ? now + refreshExpiresIn
-        : stored?.refreshTokenExpires ?? now + SESSION_MAX_AGE_SECONDS;
+      const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET;
+      if (clientSecret) {
+        params.append("client_secret", clientSecret);
+      }
 
-    await updateTokens(
-      jti,
-      {
-        accessToken: data.access_token ?? stored?.accessToken ?? null,
+      const res = await fetch(buildTokenEndpoint(issuer), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Keycloak token refresh failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      const now = Math.floor(Date.now() / 1000);
+
+      const expiresIn = Number(data.expires_in);
+      const expiresAt =
+        Number.isFinite(expiresIn) && expiresIn > 0 ? now + expiresIn : token.expires_at ?? null;
+
+      const refreshExpiresIn = Number(data.refresh_expires_in ?? data.refresh_token_expires_in);
+      const refreshExpiresAt =
+        Number.isFinite(refreshExpiresIn) && refreshExpiresIn > 0
+          ? now + refreshExpiresIn
+          : stored?.refreshTokenExpires ?? now + SESSION_MAX_AGE_SECONDS;
+
+      await updateTokens(
+        jti,
+        {
+          accessToken: data.access_token ?? stored?.accessToken ?? null,
+          refreshToken: data.refresh_token ?? refreshToken,
+          idToken: data.id_token ?? stored?.idToken ?? null,
+          expires_at: expiresAt,
+          refreshTokenExpires: refreshExpiresAt,
+        },
+        SESSION_MAX_AGE_SECONDS,
+      );
+
+      return {
+        ...token,
+        accessToken: data.access_token ?? stored?.accessToken ?? token.accessToken ?? null,
         refreshToken: data.refresh_token ?? refreshToken,
         idToken: data.id_token ?? stored?.idToken ?? null,
         expires_at: expiresAt,
         refreshTokenExpires: refreshExpiresAt,
-      },
-      SESSION_MAX_AGE_SECONDS,
-    );
+        error: null,
+      };
+    } catch (error) {
+      console.error("Keycloak token refresh failed", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
 
-    return {
-      ...token,
-      accessToken: data.access_token ?? stored?.accessToken ?? token.accessToken ?? null,
-      refreshToken: data.refresh_token ?? refreshToken,
-      idToken: data.id_token ?? stored?.idToken ?? null,
-      expires_at: expiresAt,
-      refreshTokenExpires: refreshExpiresAt,
-      error: null,
-    };
-  } catch (error) {
-    console.error("Keycloak token refresh failed", {
-      reason: error instanceof Error ? error.message : String(error),
-    });
-    await deleteTokens(jti);
-    return {
-      ...token,
-      accessToken: null,
-      expires_at: null,
-      error: "RefreshAccessTokenError",
-    };
+      // Avoid nuking tokens when this is a refresh-token reuse race:
+      // another concurrent refresh may have already rotated tokens successfully.
+      const latest = await getTokens(jti);
+      if (latest?.accessToken && !isTokenExpired(latest.expires_at ?? null)) {
+        return {
+          ...token,
+          accessToken: latest.accessToken,
+          refreshToken: latest.refreshToken ?? token.refreshToken ?? null,
+          idToken: latest.idToken ?? token.idToken ?? null,
+          expires_at: latest.expires_at ?? token.expires_at ?? null,
+          refreshTokenExpires: latest.refreshTokenExpires ?? token.refreshTokenExpires ?? null,
+          error: null,
+        };
+      }
+
+      await deleteTokens(jti);
+      return {
+        ...token,
+        accessToken: null,
+        expires_at: null,
+        error: "RefreshAccessTokenError",
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+
+  refreshInFlightByJti.set(jti, task);
+  try {
+    return await task;
   } finally {
-    clearTimeout(timeout);
+    refreshInFlightByJti.delete(jti);
   }
 };
