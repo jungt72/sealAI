@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 from langchain_core.messages import BaseMessage
 
-from app.langgraph.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
+from app.langgraph_v2.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import AskMissingScope, CalcResults, SealAIState, TechnicalParameters, WorkingMemory
 from app.langgraph_v2.utils.messages import latest_user_text

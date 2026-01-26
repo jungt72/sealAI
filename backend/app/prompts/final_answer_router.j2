@@ -149,3 +149,8 @@
 - {{ rag_reference }}
 {%- endif -%}
 {%- endif -%}
+
+{%- if rag_context %}
+## Relevante Auszüge (Wissensbasis)
+{{ rag_context | trim }}
+{%- endif %}

@@ -83,7 +83,7 @@ async def make_v2_checkpointer_async(
                 return saver
 
             except Exception as exc:  # pragma: no cover - protected fallback
-                logger.warning(
+                logger.error(
                     "langgraph_v2_checkpointer_init_failed",
                     backend="redis",
                     error=str(exc),

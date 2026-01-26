@@ -510,7 +510,8 @@
         "acr",
         "profile",
         "roles",
-        "email"
+        "email",
+        "tenant"
       ],
       "optionalClientScopes": [
         "address",
@@ -860,6 +861,34 @@
             "access.token.claim": "true",
             "claim.name": "email_verified",
             "jsonType.label": "boolean"
+          }
+        }
+      ]
+    },
+    {
+      "id": "b8e9f41a-7c26-4b40-8f5a-2c0e9a2a1e3f",
+      "name": "tenant",
+      "description": "SealAI tenant scope",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "id": "0f0a2b70-3fb8-4b4c-9f4a-7f3f6c0d7a9c",
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false"
           }
         }
       ]

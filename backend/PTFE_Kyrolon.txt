@@ -1,0 +1,20 @@
+
+# Kyrolon: Hochleistungs-PTFE-Compounds
+
+## Übersicht
+Kyrolon ist der Handelsname für eine Familie von **spezialisierten PTFE-Compounds** (Polytetrafluorethylen), die für extreme industrielle Anwendungen optimiert wurden. Im Gegensatz zu reinem PTFE wird Kyrolon durch spezielle Füllstoffe (wie Kohlefaser, Graphit, Bronze oder Glasfaser) verstärkt, um die mechanischen Eigenschaften, die Verschleißfestigkeit und die Wärmeleitfähigkeit drastisch zu verbessern.
+
+## Haupteigenschaften
+- **Verschleißfestigkeit**: Kyrolon bietet bis zu 1000-fach höhere Verschleißfestigkeit als reines PTFE.
+- **Druckbeständigkeit**: Signifikant reduzierter Kaltfluss (Creep) unter Last.
+- **Reibungskoeffizient**: Behält die exzellenten Gleiteigenschaften von Teflon bei (µ < 0.1).
+- **Temperaturbereich**: -200°C bis +260°C.
+
+## Typische Anwendungen
+1.  **Hydraulikdichtungen**: Führungsbänder und Abstreifer in Hochzylindern.
+2.  **Kompressoren**: Kolbenringe für trockenlaufende Kompressoren (oilless).
+3.  **Chemieindustrie**: Wellendichtringe für aggressive Medien.
+
+## Kyrolon-Typen
+- **Kyrolon 2020**: Kohlefaser-gefüllt, für Wasseranwendungen.
+- **Kyrolon 4000**: Bronze-gefüllt, für hohe Wärmeleitfähigkeit und Druckfestigkeit.

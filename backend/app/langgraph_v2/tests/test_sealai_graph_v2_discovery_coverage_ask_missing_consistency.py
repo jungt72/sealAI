@@ -22,7 +22,7 @@ def test_discovery_low_coverage_triggers_ask_missing(monkeypatch):
     )
     graph = asyncio.run(get_sealai_graph_v2())
     initial_state = {"messages": [HumanMessage(content="Pumpe leckt, brauche Hilfe")]}
-    config = build_v2_config(thread_id="t1", user_id="u1")
+    config = build_v2_config(thread_id="t1", user_id="u1", tenant_id="tenant-1")
     result = graph.invoke(initial_state, config=config)
     state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result)
 

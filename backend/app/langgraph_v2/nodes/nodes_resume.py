@@ -8,7 +8,7 @@ from typing import Dict, List
 from langchain_core.messages import HumanMessage
 
 from app.langgraph_v2.state import AskMissingScope, SealAIState, TechnicalParameters, WorkingMemory
-from app.langgraph.io import AskMissingRequest
+from app.langgraph_v2.io import AskMissingRequest
 from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
 
 
@@ -68,6 +68,19 @@ def confirm_resume_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, obje
     """
     decision = (state.confirm_decision or "").strip().lower()
     pending_action = state.pending_action or "FINALIZE"
+
+    # Normalize legacy/resume actions to canonical supervisor actions
+    pa = (pending_action or "").strip()
+    pa_up = pa.upper()
+
+    if pa.lower() == "knowledge":
+        pending_action = "RUN_KNOWLEDGE"
+    elif pa.lower() == "calc":
+        pending_action = "RUN_PANEL_CALC"
+    elif pa.lower() in ("design", "material"):
+        pending_action = "RUN_PANEL_MATERIAL"
+    elif pa.lower() == "product":
+        pending_action = "PRODUCT"
     resolved_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     updates: Dict[str, object] = {
         "awaiting_user_confirmation": False,

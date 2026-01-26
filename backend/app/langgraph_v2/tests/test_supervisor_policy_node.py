@@ -61,13 +61,13 @@ def test_supervisor_policy_calc_then_material() -> None:
     assert patch_material["next_action"] == ACTION_RUN_PANEL_MATERIAL
 
 
-def test_supervisor_policy_comparison_runs_comparison_first() -> None:
+def test_supervisor_policy_comparison_requires_confirm_when_rag_requested() -> None:
     state = SealAIState(
         intent=Intent(goal="explanation_or_comparison"),
         requires_rag=True,
     )
     patch = supervisor_policy_node(state)
-    assert patch["next_action"] == ACTION_RUN_COMPARISON
+    assert patch["next_action"] == ACTION_REQUIRE_CONFIRM
 
 
 def test_supervisor_policy_comparison_runs_rag_after_comparison() -> None:
@@ -90,3 +90,18 @@ def test_supervisor_policy_comparison_finalizes_without_rag() -> None:
     )
     patch = supervisor_policy_node(state)
     assert patch["next_action"] == ACTION_FINALIZE
+
+
+def test_supervisor_policy_retrieval_meta_uses_tenant_id() -> None:
+    wm = WorkingMemory(comparison_notes={"comparison_text": "A vs B", "rag_context": "ctx"})
+    state = SealAIState(
+        intent=Intent(goal="explanation_or_comparison"),
+        requires_rag=False,
+        working_memory=wm,
+        tenant_id="tenant-1",
+        user_id="user-123",
+    )
+    patch = supervisor_policy_node(state)
+    retrieval_meta = patch.get("retrieval_meta") or {}
+    assert retrieval_meta.get("tenant_id") == "tenant-1"
+    assert retrieval_meta.get("tenant_id") != "user-123"

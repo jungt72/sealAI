@@ -83,7 +83,7 @@ class DummyGraphRetrievalResults:
                         "fused": False,
                         "reranked": True,
                         "collection": "sealai-docs",
-                        "tenant_id": "user-1",
+                        "tenant_id": "tenant-1",
                         "category": "norms",
                     },
                 },
@@ -108,7 +108,7 @@ class DummyGraphRetrievalSkipped:
                     "retrieval_meta": {
                         "skipped": True,
                         "reason": "requires_rag_false",
-                        "tenant_id": "user-1",
+                        "tenant_id": "tenant-1",
                     },
                 },
             )
@@ -121,6 +121,11 @@ async def _collect(gen) -> str:
     async for chunk in gen:
         text += chunk.decode("utf-8")
     return text
+
+
+def _checkpoint_thread_id(tenant_id: str, user_id: str, chat_id: str) -> str:
+    # Must match your stable scoping {tenant}:{user}:{chat_id}
+    return f"{tenant_id}:{user_id}:{chat_id}"
 
 
 def test_chat_v2_sse_trace_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -136,7 +141,18 @@ def test_chat_v2_sse_trace_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
-    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-1")))
+    text = asyncio.run(
+        _collect(
+            ep._event_stream_v2(
+                req,
+                user_id="user-1",
+                tenant_id="tenant-1",
+                request_id="trace-1",
+                can_read_private=False,
+                checkpoint_thread_id=_checkpoint_thread_id("tenant-1", "user-1", "default"),
+            )
+        )
+    )
     assert "event: trace" in text
 
 
@@ -153,7 +169,18 @@ def test_chat_v2_sse_trace_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
-    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-2")))
+    text = asyncio.run(
+        _collect(
+            ep._event_stream_v2(
+                req,
+                user_id="user-1",
+                tenant_id="tenant-1",
+                request_id="trace-2",
+                can_read_private=False,
+                checkpoint_thread_id=_checkpoint_thread_id("tenant-1", "user-1", "default"),
+            )
+        )
+    )
     assert "event: trace" not in text
 
 
@@ -168,7 +195,18 @@ def test_chat_v2_sse_emits_retrieval_results(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
-    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-3")))
+    text = asyncio.run(
+        _collect(
+            ep._event_stream_v2(
+                req,
+                user_id="user-1",
+                tenant_id="tenant-1",
+                request_id="trace-3",
+                can_read_private=False,
+                checkpoint_thread_id=_checkpoint_thread_id("tenant-1", "user-1", "default"),
+            )
+        )
+    )
     assert "event: retrieval.results" in text
     assert "\"doc_ids\"" in text
     assert "\"sources\"" in text
@@ -186,6 +224,17 @@ def test_chat_v2_sse_emits_retrieval_skipped(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
-    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-4")))
+    text = asyncio.run(
+        _collect(
+            ep._event_stream_v2(
+                req,
+                user_id="user-1",
+                tenant_id="tenant-1",
+                request_id="trace-4",
+                can_read_private=False,
+                checkpoint_thread_id=_checkpoint_thread_id("tenant-1", "user-1", "default"),
+            )
+        )
+    )
     assert "event: retrieval.skipped" in text
     assert "\"reason\"" in text

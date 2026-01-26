@@ -86,7 +86,16 @@ def _run(coro):
 
 def _auth(monkeypatch: pytest.MonkeyPatch, *, user: str = "test-user") -> None:
     deps = importlib.import_module("app.services.auth.dependencies")
-    monkeypatch.setattr(deps, "verify_access_token", lambda _t: {"preferred_username": user})
+    monkeypatch.setattr(
+        deps,
+        "verify_access_token",
+        lambda _t: {
+            "preferred_username": user,
+            "sub": user,
+            "tenant_id": "default",
+            "realm_access": {"roles": []},
+        },
+    )
 
 
 def test_health_200_no_auth_required() -> None:

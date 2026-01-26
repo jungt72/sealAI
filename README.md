@@ -13,6 +13,12 @@ See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, li
 ## Test Commands
 - `pytest backend/app/langgraph/tests/`
 - Specific: `pytest backend/app/langgraph/tests/test_state.py`
+- In-container: `python -m pytest -q /app/backend/app/api/v1/tests/test_rag_tenant_scoping.py`
+
+## Tests
+- `./scripts/test.sh unit`
+- `./scripts/test.sh api`
+- `./scripts/test.sh all`
 
 ## Migration Notes
 - Phase-1: State slimmed, ToolNode introduced, Redis checkpointer.

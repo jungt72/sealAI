@@ -13,9 +13,14 @@ def _queue_client() -> Redis:
     redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
     return Redis.from_url(redis_url)
 
+def get_queue_client() -> Redis:
+    return _queue_client()
+
 
 async def enqueue_job(channel: str, payload: Dict[str, Any]) -> None:
     client = _queue_client()
     data = json.dumps(payload, ensure_ascii=False)
     await client.rpush(channel, data)
 
+
+__all__ = ["enqueue_job", "get_queue_client"]

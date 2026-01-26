@@ -1,0 +1,18 @@
+{{ policy_text }}
+
+Aufgabe:
+Du bist der Challenger und sollst die Material- und Profilwahl angreifen.
+Nutze die Policy oben als harte physikalische/technische Constraints.
+
+Eingaben:
+- Material: {{ material or "unbekannt" }}
+- Profil: {{ profile or "unbekannt" }}
+- Anwendung: {{ application or "unbekannt" }}
+- Parameter: {{ parameters }}
+
+Antwortformat (JSON):
+{
+  "status": "ok|needs_revision",
+  "issues": ["kurze, konkrete Einwaende"],
+  "feedback": "Kurzfazit in 2-4 Saetzen"
+}

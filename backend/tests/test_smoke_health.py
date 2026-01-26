@@ -1,5 +1,7 @@
 import importlib
 import os
+import sys
+import types
 
 _ENV_DEFAULTS = {
     "POSTGRES_USER": "sealai",
@@ -26,6 +28,30 @@ _ENV_DEFAULTS = {
 def _ensure_env():
     for key, value in _ENV_DEFAULTS.items():
         os.environ.setdefault(key, value)
+    if "asyncpg" not in sys.modules:
+        asyncpg_stub = types.ModuleType("asyncpg")
+
+        async def _stub_connect(*_args, **_kwargs):
+            raise RuntimeError("asyncpg stub")
+
+        asyncpg_stub.connect = _stub_connect
+        asyncpg_stub.create_pool = _stub_connect
+        sys.modules["asyncpg"] = asyncpg_stub
+    if "multipart" not in sys.modules:
+        multipart_stub = types.ModuleType("multipart")
+        multipart_module = types.ModuleType("multipart.multipart")
+
+        def _parse_options_header(_value):
+            return {}
+
+        multipart_module.parse_options_header = _parse_options_header
+        multipart_stub.__version__ = "0.0.13"
+        sys.modules["multipart"] = multipart_stub
+        sys.modules["multipart.multipart"] = multipart_module
+    if "python_multipart" not in sys.modules:
+        python_multipart = types.ModuleType("python_multipart")
+        python_multipart.__version__ = "0.0.13"
+        sys.modules["python_multipart"] = python_multipart
 
 
 def test_fastapi_app_imports():

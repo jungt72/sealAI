@@ -214,6 +214,7 @@ def _coerce_candidates(items: List[CandidateItem | Dict[str, Any]] | None) -> Li
 
 def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("supervisor_policy_node", state)
+    user_text = latest_user_text(state.get("messages")) or ""
     _maybe_set_recommendation_go(state)
     missing = _infer_missing_params(state, _REQUIRED_PARAMS_FOR_READY)
     coverage_score = _compute_coverage(_REQUIRED_PARAMS_FOR_READY, missing)
@@ -242,6 +243,16 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
     is_knowledge = _is_knowledge_intent(state)
     is_norms = _is_norms_knowledge(state)
 
+
+    # --- text heuristics used across branches (material questions vs calc questions)
+    _t = (user_text or "").lower()
+    _is_material_q = any(k in _t for k in (
+        "ptfe","fkm","nbr","epdm","medienbeständ","medienbestaend","temperatur",
+        "einsatzgrenz","einsatzgrenze","chemisch","beständig","bestaendig","dichtung","werkstoff","material"
+    ))
+    _looks_like_calc = any(k in _t for k in (
+        "rechn","berechn","umfang","drehzahl","rpm","geschwindigkeit","sicherheitsfaktor","druck","bar"
+    ))
     if goal in ("smalltalk", "out_of_scope"):
         reason = "non_technical_goal"
         action = ACTION_FINALIZE
@@ -254,7 +265,20 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         missing_material = not bool(material_choice.get("material"))
         if missing_calc:
             reason = "missing_calc_facts"
+
             action = ACTION_RUN_PANEL_CALC
+        # If the user asks material limits (e.g. PTFE), do NOT route to calc.
+        _t = (user_text or "").lower()
+        _is_material_q = any(k in _t for k in (
+            "ptfe","fkm","nbr","epdm","medienbeständ","medienbestaend","temperatur",
+            "einsatzgrenz","einsatzgrenze","chemisch","beständig","bestaendig","dichtung","werkstoff","material"
+        ))
+        _looks_like_calc = any(k in _t for k in (
+            "rechn","berechn","umfang","drehzahl","rpm","geschwindigkeit","sicherheitsfaktor","druck","bar"
+        ))
+        if _is_material_q and not _looks_like_calc:
+            action = ACTION_RUN_KNOWLEDGE
+            reason = "material_question_not_calc"
         elif missing_material:
             reason = "missing_material_decision"
             action = ACTION_RUN_PANEL_MATERIAL
@@ -301,6 +325,24 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         action = ACTION_FINALIZE
     elif high_open and not awaiting:
         reason = "missing_high_priority_inputs"
+
+        # Heuristic: route common material/knowledge questions to knowledge instead of ASK_USER
+        try:
+            _txt = (user_text or "").strip().lower()
+        except Exception:
+            _txt = ""
+        if _txt:
+            _kw = (
+                "ptfe", "fkm", "nbr", "epdm", "werkstoff", "material",
+                "medienbeständ", "temperatur", "einsatzgrenz", "chemisch",
+                "säure", "saeure", "laugen", "lösung", "loesung", "dichtung"
+            )
+            if any(k in _txt for k in _kw):
+                action = ACTION_RUN_KNOWLEDGE
+                reason = "heuristic_material_knowledge"
+                # keep costs/confirm logic below unchanged
+        
+
         action = ACTION_ASK_USER
     else:
         missing_calc = state.calc_results is None or not bool(getattr(state, "calc_results_ok", False))
@@ -309,6 +351,9 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         if missing_calc:
             reason = "missing_calc_facts"
             action = ACTION_RUN_PANEL_CALC
+            if _is_material_q and not _looks_like_calc:
+                reason = "material_question_not_calc"
+                action = ACTION_RUN_KNOWLEDGE
         elif missing_material:
             reason = "missing_material_decision"
             action = ACTION_RUN_PANEL_MATERIAL
@@ -365,6 +410,34 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
             "tenant_id": state.user_id,
         }
 
+
+    # Final guard: material questions should not be forced into calc
+
+    if action == ACTION_RUN_PANEL_CALC:
+
+        _t = (user_text or "").lower()
+
+        _is_material_q = any(k in _t for k in (
+
+            "ptfe","fkm","nbr","epdm","medienbeständ","medienbestaend","temperatur",
+
+            "einsatzgrenz","einsatzgrenze","chemisch","beständig","bestaendig","dichtung","werkstoff","material"
+
+        ))
+
+        _looks_like_calc = any(k in _t for k in (
+
+            "rechn","berechn","umfang","drehzahl","rpm","geschwindigkeit","sicherheitsfaktor","druck","bar"
+
+        ))
+
+        if _is_material_q and not _looks_like_calc:
+
+            action = ACTION_RUN_KNOWLEDGE
+
+            reason = "material_question_not_calc"
+
+
     patch: Dict[str, Any] = {
         "next_action": action,
         "next_action_reason": reason,
@@ -419,10 +492,10 @@ def _needs_sources(state: SealAIState) -> bool:
     intent = state.intent
     return bool(
         getattr(state, "needs_sources", False)
-        or getattr(state, "need_sources", False)
+        or getattr(state, "needs_sources", False)
         or getattr(state, "requires_rag", False)
         or (bool(getattr(intent, "needs_sources", False)) if intent else False)
-        or (bool(getattr(intent, "need_sources", False)) if intent else False)
+        or (bool(getattr(intent, "needs_sources", False)) if intent else False)
     )
 
 

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "require_standard_reference_for_radial_profile",
+      "when": {
+        "profile_keywords": ["radial", "rwdr", "radialwellendichtring"]
+      },
+      "require": {
+        "standards_any": ["DIN 3760", "ISO 6194"]
+      }
+    },
+    {
+      "id": "require_core_params_for_material",
+      "when": {
+        "material_present": true
+      },
+      "require": {
+        "parameters": ["pressure_bar", "temperature_C", "medium"]
+      }
+    },
+    {
+      "id": "require_application_for_profile",
+      "when": {
+        "profile_present": true
+      },
+      "require": {
+        "application_fields": ["application_category", "use_case_raw", "application_type"]
+      }
+    }
+  ]
+}

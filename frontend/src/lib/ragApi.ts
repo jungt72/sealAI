@@ -10,8 +10,10 @@ export type RagDocumentItem = {
   tags?: string[] | null;
   visibility?: string | null;
   status?: string | null;
+  attempt_count?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
+  failed_at?: string | null;
   ingest_stats?: Record<string, unknown> | null;
   error?: string | null;
 };
@@ -77,4 +79,22 @@ export async function getRagDocument(
     throw new Error(`rag_document_failed:${res.status}`);
   }
   return (await res.json()) as RagDocumentItem;
+}
+
+export async function deleteRagDocument(token: string, documentId: string): Promise<void> {
+  const res = await fetchWithAuth(`/api/rag/documents/${documentId}`, token, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`rag_delete_failed:${res.status}`);
+  }
+}
+
+export async function retryRagDocument(
+  token: string,
+  documentId: string,
+): Promise<{ document_id: string; status: string }> {
+  const res = await fetchWithAuth(`/api/rag/documents/${documentId}/retry`, token, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`rag_retry_failed:${res.status}`);
+  }
+  return (await res.json()) as { document_id: string; status: string };
 }

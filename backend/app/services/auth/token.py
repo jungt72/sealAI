@@ -31,6 +31,7 @@ def _build_allowed_auds() -> set[str]:
         settings.keycloak_expected_azp,
         "nextauth",
         "sealai-backend-api",
+        "sealai-backend",
         "sealai-cli",
     }
     return {value for value in candidates if value}

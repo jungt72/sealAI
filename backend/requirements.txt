@@ -1,74 +1,118 @@
 ###############################################################################
-# SEALAI – BACKEND REQUIREMENTS (Python 3.11+)
-# Fokus: FastAPI, LangGraph (+Redis Checkpoint), Qdrant, WebSocket-Streaming
-# Hinweis: Modell per ENV setzen (z. B. LLM_MODEL=gpt-4.1-mini)
-# Stand: Pinned auf aktuell INSTALLIERTE Versionen (reproduzierbare Builds)
+# SEALAI - BACKEND REQUIREMENTS (Python 3.11+)
+#
+# Architektur:
+# - Async FastAPI Runtime (asyncpg)
+# - LangGraph v2 (Redis Checkpoint, Supervisor)
+# - RAG via Qdrant (Single-Collection, tenant-scoped)
+# - Alembic mit *sync* DB-Driver (psycopg2) für Migrationen
+#
+# Prinzipien:
+# - Reproduzierbare Builds (strict pinning)
+# - Keine impliziten / ungenutzten Abhängigkeiten
+# - Async im Runtime, Sync nur für Alembic
 ###############################################################################
 
-# --- Web-Framework / Runtime -------------------------------------------------
-fastapi~=0.126.0
+# =============================================================================
+# Web Framework / Runtime
+# =============================================================================
+fastapi==0.126.0
 starlette==0.50.0
-uvicorn[standard]~=0.39.0
+uvicorn[standard]==0.39.0
 websockets==15.0.1
+
 httpx==0.28.1
-anyio==4.11.0
 httpcore==1.0.9
+anyio==4.11.0
+
 orjson==3.10.18
 python-dotenv==1.1.1
 PyYAML==6.0.3
+
 pydantic==2.12.5
 pydantic-core==2.41.5
 pydantic-settings==2.11.0
 typing-extensions==4.15.0
 tenacity==9.1.2
 
-# --- OpenAI / LLM ------------------------------------------------------------
+# =============================================================================
+# OpenAI / Tokenization
+# =============================================================================
 openai==2.14.0
 tiktoken==0.12.0
 
-# --- LangChain / LangGraph ---------------------------------------------------
+# =============================================================================
+# LangChain / LangGraph (v2)
+# =============================================================================
 langchain==1.2.0
 langchain-core==1.2.4
 langchain-community==0.4.1
 langchain-openai==1.1.6
-langchain-qdrant==1.1.0
 langchain-text-splitters==1.1.0
+langchain-qdrant==1.1.0
 langsmith==0.5.0
 
-# LangGraph + Redis-Checkpoint
+# LangGraph v2 Core
 langgraph==1.0.5
 langgraph-checkpoint==3.0.1
 langgraph-checkpoint-redis==0.3.1
 langgraph-supervisor==0.0.31
-# Optional Add-ons NUR falls importiert:
-# langgraph-prebuilt==1.0.1
-# langgraph-sdk==0.2.9
 
-# --- Vector DB & Embeddings --------------------------------------------------
+# Optional – nur aktivieren, wenn explizit importiert
+# langgraph-prebuilt==1.0.5
+# langgraph-sdk==0.3.2
+
+# =============================================================================
+# Vector DB / Retrieval
+# =============================================================================
 qdrant-client==1.16.2
 redis==7.1.0
-# Lokale Embeddings – nur behalten, wenn wirklich genutzt:
+
+# Lokale Embeddings (RAG Ingest & Query)
 fastembed==0.7.4
 onnxruntime==1.23.2
-# WebSocket ist Standard. SSE wird NICHT genutzt:
-# httpx-sse==0.4.3   # (nur aktivieren, wenn explizit benötigt)
 
-# --- Datenbanken -------------------------------------------------------------
+# =============================================================================
+# Datenbanken
+# =============================================================================
 SQLAlchemy==2.0.44
 alembic==1.17.0
-asyncpg==0.29.0   # Dialekt: postgresql+asyncpg://
 
-# --- Auth & Security ---------------------------------------------------------
+# Async Runtime DB Driver (App)
+asyncpg==0.29.0     # postgresql+asyncpg://
+
+# Sync DB Driver (Alembic / Migrations ONLY)
+psycopg2-binary==2.9.9   # postgresql+psycopg2://
+
+# =============================================================================
+# Auth / Security
+# =============================================================================
 python-keycloak==5.8.1
 python-jose[cryptography]==3.5.0
 cryptography==46.0.3
 
-# --- Logging / Utilities -----------------------------------------------------
+# =============================================================================
+# Logging / Observability
+# =============================================================================
 structlog==24.2.0
 
-# --- Prompt-Templating -------------------------------------------------------
+# =============================================================================
+# Prompting / Templates
+# =============================================================================
 Jinja2==3.1.6
 
-# --- Optional Tools (nur aktivieren, wenn wirklich genutzt) ------------------
-# langchain-tavily==0.2.12        # Websuche-Tool
-python-multipart==0.0.12        # File-Uploads in FastAPI (FormData)
+# =============================================================================
+# File Parsing / RAG Ingestion
+# =============================================================================
+python-multipart==0.0.12   # FastAPI Uploads
+docx2txt==0.8
+python-docx==1.1.2
+
+###############################################################################
+# Hinweise:
+# - Alembic nutzt POSTGRES_SYNC_URL (psycopg2)
+# - Runtime nutzt DATABASE_URL (asyncpg)
+# - Keine SSE libs nötig (WS-only Architektur)
+# - Optionales Zeug bewusst auskommentiert
+###############################################################################
+

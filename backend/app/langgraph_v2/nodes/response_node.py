@@ -8,7 +8,7 @@ from typing import Dict, Any, Iterable, List, Tuple
 from langchain_core.messages import AIMessage
 
 from app.langgraph_v2.state import Intent, SealAIState, Source, TechnicalParameters, WorkingMemory
-from app.langgraph_v2.utils.jinja import render_template
+from app.langgraph_v2.utils.jinja_renderer import render_template
 
 
 def _looks_like_url(value: str) -> bool:

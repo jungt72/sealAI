@@ -16,4 +16,4 @@ def test_frontdoor_requires_rag_when_sources_and_comparison():
 
 
 def test_frontdoor_no_rag_for_design_with_sources_flag():
-    assert nodes_frontdoor._compute_requires_rag("design_recommendation", True) is False
+    assert nodes_frontdoor._compute_requires_rag("design_recommendation", True) is True

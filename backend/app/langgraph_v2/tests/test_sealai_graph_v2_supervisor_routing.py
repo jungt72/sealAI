@@ -3,7 +3,7 @@ import app.langgraph_v2.sealai_graph_v2  # noqa: F401
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.langgraph_v2.nodes.nodes_supervisor import supervisor_policy_node
-from app.langgraph_v2.sealai_graph_v2 import create_sealai_graph_v2
+from app.langgraph_v2.sealai_graph_v2 import create_sealai_graph_v2, _frontdoor_router
 from app.langgraph_v2.state import Intent, SealAIState, TechnicalParameters
 
 
@@ -13,8 +13,12 @@ def test_graph_entry_routes_to_supervisor_policy_node() -> None:
     entry_edges = [
         edge for edge in compiled.edges if edge.source == "frontdoor_discovery_node"
     ]
-    assert len(entry_edges) == 1
-    assert entry_edges[0].target == "supervisor_policy_node"
+    # assert len(entry_edges) == 1
+    # assert entry_edges[0].target == "supervisor_policy_node"
+    
+    targets = {e.target for e in entry_edges}
+    assert "discovery_intake_node" in targets
+    assert "policy_firewall_node" in targets
 
 
 def test_supervisor_policy_node_sets_coverage_from_missing_params() -> None:
@@ -34,3 +38,15 @@ def test_supervisor_policy_node_sets_coverage_from_missing_params() -> None:
     assert patch["coverage_gaps"] == ["speed_rpm"]
     assert patch["coverage_score"] == 0.8
     assert patch["recommendation_ready"] is True
+
+
+def test_frontdoor_router_ignores_next_action_finalize_for_sources() -> None:
+    graph = create_sealai_graph_v2(checkpointer=MemorySaver())
+    assert graph is not None
+
+    state = SealAIState(
+        intent=Intent(goal="design_recommendation", needs_sources=True),
+        next_action="FINALIZE",
+    )
+
+    assert _frontdoor_router(state) == "discovery"

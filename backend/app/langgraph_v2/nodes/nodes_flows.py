@@ -1,23 +1,26 @@
 # backend/app/langgraph_v2/nodes/nodes_flows.py
 from __future__ import annotations
 
+import logging
 import math
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage
 
 from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.utils.state_debug import log_state_debug
-import re
 from app.langgraph_v2.state import CalcResults, SealAIState, Source, WorkingMemory
-from app.langgraph_v2.utils.jinja import render_template
+from app.langgraph_v2.utils.jinja_renderer import render_template
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.output_sanitizer import strip_meta_preamble
 from app.langgraph_v2.utils.rag import apply_rag_quality_gate, unpack_rag_payload
 from app.langgraph_v2.utils.rag_safety import wrap_rag_context
 from app.langgraph_v2.utils.rag_tool import search_knowledge_base
+from app.langgraph_v2.utils.state_debug import log_state_debug
+
+logger = logging.getLogger(__name__)
 
 
 def _update_working_memory(state: SealAIState, updates: Dict[str, Any]) -> WorkingMemory:
@@ -46,14 +49,8 @@ def _extend_dict(base: Dict[str, Any] | None, extras: Dict[str, Any]) -> Dict[st
 
 def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("discovery_schema_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
-    required = [
-        "medium",
-        "pressure_bar",
-        "temperature_C",
-        "shaft_diameter",
-        "speed_rpm",
-    ]
+    user_text = latest_user_text(state.messages or []) or ""
+    required = ["medium", "pressure_bar", "temperature_C", "shaft_diameter", "speed_rpm"]
     missing = [key for key in required if not getattr(state.parameters, key, None)]
     schema_notes = {
         "missing": missing,
@@ -69,7 +66,6 @@ def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
         "missing_params": missing,
         "working_memory": wm,
         "flags": flags,
-        # Phase: Parameter-Vorbereitung
         "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "discovery_schema_node",
     }
@@ -87,7 +83,6 @@ def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         "flags": flags,
         "working_memory": wm,
         "analysis_complete": True,
-        # Noch immer Parameter-Phase
         "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "parameter_check_node",
     }
@@ -131,14 +126,68 @@ def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
             notes=notes,
         )
         calculations = {"surface_speed_m_per_min": surface_speed_m_per_min}
+
     existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
     design_notes = _extend_dict(existing_design, {"calculations": calculations})
     wm = _update_working_memory(state, {"design_notes": design_notes})
+
+    
+    # Derived guard (was previously an undefined variable after refactor)
+
+    
+    _calc_candidate = (
+
+    
+        getattr(state, "calc_results", None)
+
+    
+        or getattr(state, "calc_result", None)
+
+    
+        or getattr(state, "calculation", None)
+
+    
+        or (getattr(state, "working_memory", None) and getattr(state.working_memory, "calc_result", None))
+
+    
+    )
+
+    
+    if isinstance(_calc_candidate, str):
+
+    
+        calc_results_ok = bool(_calc_candidate.strip())
+
+    
+    elif isinstance(_calc_candidate, dict):
+
+    
+        calc_results_ok = bool(_calc_candidate)
+
+    
+    else:
+
+    
+        calc_results_ok = _calc_candidate is not None
+
+    
+    
+
+    
+    
+    
+    if calc_results_ok:
+        msg_content = f"Calculation Result: {calc.notes[0] if calc.notes else 'Success'}."
+        if getattr(calc, 'safety_factor', None):
+            msg_content += f" Safety Factor: {calc.safety_factor:.2f}."
+    else:
+        msg_content = f"Calculation Skipped: {calc.notes[0]}"
+    logger.info("calculator_node: %s", msg_content)
+
     return {
         "calc_results": calc,
-        "calc_results_ok": True,
+        "calc_results_ok": calc_results_ok,
         "working_memory": wm,
-        # Phase: Berechnung
         "phase": PHASE.CALCULATION,
         "last_node": "calculator_node",
     }
@@ -149,6 +198,7 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
     temp = _safe_float(state.parameters.temperature_C)
     medium_raw = (state.parameters.medium or "").strip()
     medium = medium_raw.lower()
+
     candidates: List[Dict[str, Any]] = []
     needs_input: List[str] = []
     if not medium_raw:
@@ -158,24 +208,34 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
 
     if not needs_input:
         if temp >= 180 or "hot" in medium:
-            candidates.append({"name": "FKM", "rationale": "Hohe Temperatur-/Medienbeständigkeit (heuristisch, bitte validieren)."})
+            candidates.append(
+                {"name": "FKM", "rationale": "Hohe Temperatur-/Medienbeständigkeit (heuristisch, bitte validieren)."}
+            )
             candidates.append({"name": "PTFE", "rationale": "Hohe chemische Beständigkeit (heuristisch, bitte validieren)."})
         else:
             candidates.append({"name": "NBR", "rationale": "Robuster Standardwerkstoff (heuristisch, bitte validieren)."})
             candidates.append({"name": "FKM", "rationale": "Gute chemische Beständigkeit (heuristisch, bitte validieren)."})
+
     summary = f"Materialkandidaten: {', '.join(c['name'] for c in candidates)}"
     existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
     design_notes = _extend_dict(existing_design, {"material_selection": summary})
     wm = _update_working_memory(state, {"material_candidates": candidates, "design_notes": design_notes})
+
     state_material: Dict[str, Any] = {"confidence": "heuristic"}
     if candidates:
         state_material.update({"material": candidates[0]["name"], "details": candidates[0]["rationale"]})
     if needs_input:
         state_material["needs_input"] = needs_input
+
+    if candidates:
+        msg_content = f"Candidates found: {', '.join(c['name'] for c in candidates)}."
+    else:
+        msg_content = "No material candidates found."
+    logger.info("material_agent_node: %s", msg_content)
+
     return {
         "material_choice": state_material,
         "working_memory": wm,
-        # Phase: technischer Consulting-Schritt
         "phase": PHASE.CONSULTING,
         "last_node": "material_agent_node",
     }
@@ -196,7 +256,6 @@ def profile_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
     return {
         "profile_choice": profile,
         "working_memory": wm,
-        # Phase: weiterhin Consulting
         "phase": PHASE.CONSULTING,
         "last_node": "profile_agent_node",
     }
@@ -205,7 +264,7 @@ def profile_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
 def validation_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("validation_agent_node", state)
     issues: List[str] = []
-    if not state.flags.get("parameters_complete_for_profile"):
+    if not (state.flags or {}).get("parameters_complete_for_profile"):
         issues.append("Einige Profilparameter fehlen noch.")
     status = "warning" if issues else "ok"
     validation = {"status": status, "issues": issues}
@@ -215,7 +274,6 @@ def validation_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     return {
         "validation": validation,
         "working_memory": wm,
-        # Phase: Validierung
         "phase": PHASE.VALIDATION,
         "last_node": "validation_agent_node",
     }
@@ -226,8 +284,8 @@ def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     validation = state.validation or {}
     issues = validation.get("issues") or []
     critical = dict(state.critical or {})
-    iteration = int(critical.get("iteration_count") or 0)
-    iteration += 1
+    iteration = int(critical.get("iteration_count") or 0) + 1
+
     target = "final"
     next_step = "final_answer_node"
     if issues:
@@ -236,6 +294,7 @@ def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         next_step = "discovery_schema_node"
     else:
         critical_status = "ok"
+
     critical.update(
         {
             "status": critical_status,
@@ -250,7 +309,6 @@ def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     return {
         "critical": critical,
         "working_memory": wm,
-        # Phase: ich ordne Critical Review unter Validierung ein
         "phase": PHASE.VALIDATION,
         "last_node": "critical_review_node",
     }
@@ -258,8 +316,9 @@ def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
 
 def product_match_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("product_match_node", state)
-    want_products = bool(state.plan.get("want_product_recommendation"))
+    want_products = bool((state.plan or {}).get("want_product_recommendation"))
     catalog_connected = bool(str(os.getenv("PRODUCT_CATALOG_URL", "")).strip())
+
     matches: List[Dict[str, Any]] = []
     products = {
         "requested": want_products,
@@ -271,10 +330,18 @@ def product_match_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
     existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
     design_notes = _extend_dict(existing_design, {"product_match": matches})
     wm = _update_working_memory(state, {"design_notes": design_notes})
+
+    if matches:
+        msg_content = f"Found {len(matches)} product matches from catalog."
+    elif catalog_connected:
+        msg_content = "Catalog connected but no products matched criteria."
+    else:
+        msg_content = "Product catalog disconnected (demo mode)."
+    logger.info("product_match_node: %s", msg_content)
+
     return {
         "products": products,
         "working_memory": wm,
-        # Phase: Consulting (Produkt-Mapping)
         "phase": PHASE.CONSULTING,
         "last_node": "product_match_node",
     }
@@ -294,7 +361,6 @@ def product_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
         "working_memory": wm,
-        # Phase: immer noch Consulting
         "phase": PHASE.CONSULTING,
         "last_node": "product_explainer_node",
     }
@@ -302,8 +368,8 @@ def product_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
 
 def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("material_comparison_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
-    
+    user_text = latest_user_text(state.messages or []) or ""
+
     full_text = render_template("material_comparison.j2", {"user_text": user_text})
     parts = full_text.split("---", 1)
     if len(parts) == 2:
@@ -321,13 +387,14 @@ def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         max_tokens=320,
         metadata={"node": "material_comparison_node"},
     )
+
     existing_notes = getattr(state.working_memory, "comparison_notes", None) if state.working_memory else {}
     notes = _extend_dict(existing_notes, {"comparison_text": response.strip()})
     wm = _update_working_memory(state, {"comparison_notes": notes})
+
     force_rag = str(os.getenv("RAG_FORCE_COMPARISON", "")).strip().lower() in {"1", "true", "yes", "on"}
     return {
         "working_memory": wm,
-        # Phase: Wissens-/Vergleichs-Flow
         "phase": PHASE.KNOWLEDGE,
         "last_node": "material_comparison_node",
         "requires_rag": bool(getattr(state, "requires_rag", False) or force_rag),
@@ -336,16 +403,21 @@ def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
 
 def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("rag_support_node", state)
+
     intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
-    notes = dict(state.working_memory.comparison_notes if state.working_memory else {})
-    user_text = latest_user_text(state.get("messages")) or ""
-    query_text = user_text or "Aktuelle technische Frage"
+    notes = dict(getattr(state.working_memory, "comparison_notes", None) or {}) if state.working_memory else {}
+
+    user_text = latest_user_text(state.messages or []) or ""
+    query_text = user_text.strip() or "Aktuelle technische Frage"
+
+    can_read_private = bool(getattr(state, "can_read_private", False) or getattr(state, "is_privileged", False))
     rag_context = search_knowledge_base.invoke(
         {
             "query": query_text,
             "category": "norms",
             "k": 3,
             "tenant": state.tenant_id,
+            "can_read_private": can_read_private,
         }
     )
     rag_text, retrieval_meta = unpack_rag_payload(rag_context)
@@ -356,7 +428,7 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     retry_threshold = float(os.getenv("RETRIEVAL_RETRY_MIN_TOP_SCORE", "0.20"))
     retry_count = int(getattr(state, "retrieval_retry_count", 0) or 0)
     should_retry = _should_retry_retrieval(retrieval_meta, retry_count, retry_threshold)
-    rewrite_query = None
+
     if should_retry:
         rewrite_query = _rewrite_query(query_text)
         retry_context = search_knowledge_base.invoke(
@@ -365,35 +437,38 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
                 "category": "norms",
                 "k": 3,
                 "tenant": state.tenant_id,
+                "can_read_private": can_read_private,
             }
         )
         rag_text, retrieval_meta = unpack_rag_payload(retry_context)
         rag_text, retrieval_meta = apply_rag_quality_gate(rag_text, retrieval_meta, min_top_score=min_score)
         retry_count += 1
+
     rag_text = wrap_rag_context(rag_text)
+
     if isinstance(retrieval_meta, dict):
         retrieval_meta["retry_used"] = bool(should_retry)
         retrieval_meta["retry_count"] = int(retry_count or 0)
+
     notes["rag_context"] = rag_text or ""
 
-    # Only emit references if the tool output contains citation-like artifacts.
     rag_reference: list[str] = []
-    for line in rag_text.splitlines():
+    for line in (rag_text or "").splitlines():
         line = line.strip()
         if line.lower().startswith("quelle:"):
             src = line.split(":", 1)[1].strip()
             if src:
                 rag_reference.append(src)
 
-    has_error = rag_text.lower().startswith("fehler beim abrufen") or "rag retrieval failed" in rag_text.lower()
-    has_no_hits = "keine relevanten informationen" in rag_text.lower()
+    rag_lower = (rag_text or "").lower()
+    has_error = rag_lower.startswith("fehler beim abrufen") or ("rag retrieval failed" in rag_lower)
+    has_no_hits_text = "keine relevanten informationen" in rag_lower
 
-    if has_error or has_no_hits or not rag_reference:
+    if has_error or has_no_hits_text or not rag_reference:
         notes["rag_reference"] = None
-        if has_error or has_no_hits:
+        if has_error or has_no_hits_text:
             notes["rag_note"] = "Quellen derzeit nicht verfügbar."
     else:
-        # Keep it compact; de-duplicate while preserving order.
         deduped: list[str] = []
         seen: set[str] = set()
         for src in rag_reference:
@@ -412,9 +487,16 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             sources.append(Source(snippet=None, source=src, metadata={"panel": "rag_support"}))
             seen_sources.add(src)
 
-    sources_status = "missing"
-    if sources and not (isinstance(retrieval_meta, dict) and retrieval_meta.get("skipped") is True):
+    meta_skipped = bool(isinstance(retrieval_meta, dict) and retrieval_meta.get("skipped") is True)
+
+    # IMPORTANT: SealAIState.sources_status only allows "ok" or "missing".
+    # "missing" covers: no hits, skipped retrieval, or retrieval errors.
+    if meta_skipped or has_error:
+        sources_status = "missing"
+    elif sources:
         sources_status = "ok"
+    else:
+        sources_status = "missing"
 
     if intent_goal == "explanation_or_comparison":
         wm = _update_working_memory(state, {"comparison_notes": notes})
@@ -427,9 +509,10 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         "retrieval_meta": retrieval_meta,
         "retrieval_retry_count": retry_count,
         "sources_status": sources_status,
-        # Phase: explizit RAG
         "phase": PHASE.RAG,
         "last_node": "rag_support_node",
+        "needs_sources": False,
+        "requires_rag": False,
     }
 
 
@@ -464,16 +547,12 @@ def _extract_top_score(meta: Optional[Dict[str, Any]]) -> Optional[float]:
 
 def _rewrite_query(text: str) -> str:
     cleaned = (text or "").strip().lower()
-    cleaned = (
-        cleaned.replace("ä", "ae")
-        .replace("ö", "oe")
-        .replace("ü", "ue")
-        .replace("ß", "ss")
-    )
+    cleaned = cleaned.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
     cleaned = re.sub(r"[^\w\s\-/]", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if not cleaned:
         return "normen material abmessungen"
+
     stopwords = {
         "bitte",
         "kannst",
@@ -526,8 +605,8 @@ def _rewrite_query(text: str) -> str:
         "hallo",
         "hi",
         "hey",
-        "bitte",
     }
+
     keep_tokens: list[str] = []
     for token in cleaned.split():
         if token in stopwords:
@@ -544,8 +623,8 @@ def _rewrite_query(text: str) -> str:
 
 def leakage_troubleshooting_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("leakage_troubleshooting_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
-    
+    user_text = latest_user_text(state.messages or []) or ""
+
     full_text = render_template("leakage_troubleshooting.j2", {"user_text": user_text})
     parts = full_text.split("---", 1)
     if len(parts) == 2:
@@ -571,13 +650,14 @@ def leakage_troubleshooting_node(state: SealAIState, *_args: Any, **_kwargs: Any
     existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
     merged_notes = _extend_dict(existing_notes, troubleshooting)
     wm = _update_working_memory(state, {"troubleshooting_notes": merged_notes})
+
     updated = dict(state.troubleshooting or {})
     updated.update(troubleshooting)
     updated["done"] = False
+
     return {
         "troubleshooting": updated,
         "working_memory": wm,
-        # Phase: Consulting-Flow für Troubleshooting
         "phase": PHASE.CONSULTING,
         "last_node": "leakage_troubleshooting_node",
     }
@@ -585,7 +665,7 @@ def leakage_troubleshooting_node(state: SealAIState, *_args: Any, **_kwargs: Any
 
 def troubleshooting_pattern_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("troubleshooting_pattern_node", state)
-    text = latest_user_text(state.get("messages")) or ""
+    text = latest_user_text(state.messages or []) or ""
     patterns = [
         ("undercompression", ["leck", "druck", "unter"]),
         ("overcompression", ["zu stark", "deformiert"]),
@@ -596,16 +676,18 @@ def troubleshooting_pattern_node(state: SealAIState, *_args: Any, **_kwargs: Any
         if any(marker in text.lower() for marker in markers):
             pattern = name
             break
+
     updated = dict(state.troubleshooting or {})
     updated["pattern_match"] = pattern
     updated.setdefault("hypotheses", []).append(pattern)
+
     existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
     notes = _extend_dict(existing_notes, {"pattern": pattern})
     wm = _update_working_memory(state, {"troubleshooting_notes": notes})
+
     return {
         "troubleshooting": updated,
         "working_memory": wm,
-        # Phase: weiterhin Troubleshooting-Consulting
         "phase": PHASE.CONSULTING,
         "last_node": "troubleshooting_pattern_node",
     }
@@ -614,8 +696,8 @@ def troubleshooting_pattern_node(state: SealAIState, *_args: Any, **_kwargs: Any
 def troubleshooting_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("troubleshooting_explainer_node", state)
     pattern = (state.troubleshooting or {}).get("pattern_match") or "assembly_error"
-    symptoms = ", ".join(state.troubleshooting.get('symptoms', []))
-    
+    symptoms = ", ".join((state.troubleshooting or {}).get("symptoms", []) or [])
+
     full_text = render_template("troubleshooting_explainer.j2", {"pattern": pattern, "symptoms": symptoms})
     parts = full_text.split("---", 1)
     if len(parts) == 2:
@@ -633,16 +715,18 @@ def troubleshooting_explainer_node(state: SealAIState, *_args: Any, **_kwargs: A
         max_tokens=320,
         metadata={"node": "troubleshooting_explainer_node"},
     )
+
     updated = dict(state.troubleshooting or {})
     updated["explanation_text"] = response.strip()
     updated["done"] = True
+
     existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
     notes = _extend_dict(existing_notes, {"explanation": response.strip()})
     wm = _update_working_memory(state, {"troubleshooting_notes": notes})
+
     return {
         "troubleshooting": updated,
         "working_memory": wm,
-        # Phase: weiterhin Consulting
         "phase": PHASE.CONSULTING,
         "last_node": "troubleshooting_explainer_node",
     }
@@ -653,6 +737,11 @@ def build_final_answer_context(state: SealAIState) -> Dict[str, Any]:
     intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
     parameters = state.parameters.as_dict()
     calc_results = state.calc_results.model_dump(exclude_none=True) if state.calc_results else {}
+
+    comparison_notes = getattr(wm, "comparison_notes", {}) or {}
+    panel_rag_notes = getattr(wm, "panel_norms_rag", {}) or {}
+    raw_rag_context = comparison_notes.get("rag_context") or panel_rag_notes.get("rag_context")
+    rag_context = raw_rag_context.strip() if isinstance(raw_rag_context, str) else raw_rag_context
 
     return {
         "intent_goal": intent_goal,
@@ -669,6 +758,7 @@ def build_final_answer_context(state: SealAIState) -> Dict[str, Any]:
         "troubleshooting": state.troubleshooting or {},
         "response_text": getattr(wm, "response_text", None),
         "phase": state.phase or "final",
+        "rag_context": rag_context,
     }
 
 
@@ -683,13 +773,12 @@ def map_final_answer_to_state(state: SealAIState, final_text: str) -> Dict[str, 
     if clean_text:
         messages.append(AIMessage(content=[{"type": "text", "text": clean_text}]))
 
-    patch: Dict[str, Any] = {
+    return {
         "messages": messages,
         "final_text": clean_text,
         "phase": state.phase or "final",
         "last_node": "final_answer_node",
     }
-    return patch
 
 
 __all__ = [

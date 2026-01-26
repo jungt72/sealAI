@@ -16,8 +16,12 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, SealParameterUpdate, TechnicalParameters
 from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
-from app.langgraph_v2.utils.threading import reset_current_tenant_id, set_current_tenant_id
-from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
+from app.langgraph_v2.utils.threading import reset_current_tenant_id, set_current_tenant_id, resolve_checkpoint_thread_id, resolve_checkpoint_thread_id
+from app.services.auth.dependencies import (
+    RequestUser,
+    canonical_user_id,
+    get_current_request_user_strict_tenant,
+)
 
 logger = logging.getLogger(__name__)
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
@@ -130,11 +134,30 @@ def _has_state_values(snapshot: Any) -> bool:
     return bool(values)
 
 
+
+def _resolve_owner_ids(user: RequestUser) -> tuple[str, str | None]:
+    """
+    Resolve the owner_id (Keycloak sub) and legacy_owner_id (custom user_id claim).
+    """
+    owner_id = user.sub
+    legacy_owner_id = user.user_id if user.user_id != user.sub else None
+    return owner_id, legacy_owner_id
+
+
+def _resolve_owner_ids(user: RequestUser) -> tuple[str, str | None]:
+    """
+    Resolve the owner_id (Keycloak sub) and legacy_owner_id (custom user_id claim).
+    """
+    owner_id = user.sub
+    legacy_owner_id = user.user_id if user.user_id != user.sub else None
+    return owner_id, legacy_owner_id
+
 async def _resolve_state_snapshot(
     *,
     thread_id: str,
     user: RequestUser,
     request_id: str | None = None,
+    checkpoint_thread_id: str | None = None,
 ) -> tuple[Any, Dict[str, Any], Any, bool]:
     scoped_user_id = canonical_user_id(user)
     tenant_id = user.tenant_id
@@ -144,6 +167,7 @@ async def _resolve_state_snapshot(
         user_id=scoped_user_id,
         tenant_id=tenant_id,
         username=user.username,
+        checkpoint_thread_id=checkpoint_thread_id,
     )
     snapshot = await graph.aget_state(config)
     if not legacy_user_id or _has_state_values(snapshot):
@@ -154,6 +178,7 @@ async def _resolve_state_snapshot(
         user_id=legacy_user_id,
         tenant_id=tenant_id,
         username=user.username,
+        checkpoint_thread_id=None,
     )
     legacy_snapshot = await legacy_graph.aget_state(legacy_config)
     if _has_state_values(legacy_snapshot):
@@ -176,15 +201,18 @@ async def _build_state_config_with_checkpointer(
     user_id: str,
     tenant_id: str,
     username: str | None = None,
+    checkpoint_thread_id: str | None = None,
 ):
     """Return a v2 config that carries the graph's checkpointer to skip subgraph routing."""
     graph = await get_sealai_graph_v2()
     tenant_token = set_current_tenant_id(tenant_id)
     try:
-        config = build_v2_config(thread_id=thread_id, user_id=user_id)
+        config = build_v2_config(thread_id=thread_id, user_id=user_id, tenant_id=tenant_id)
     finally:
         reset_current_tenant_id(tenant_token)
     configurable = config.setdefault("configurable", {})
+    if checkpoint_thread_id:
+        configurable["thread_id"] = checkpoint_thread_id
     configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
     if username:
         metadata = config.setdefault("metadata", {})
@@ -196,7 +224,7 @@ async def _build_state_config_with_checkpointer(
 async def get_state(
     raw_request: Request,
     thread_id: str = Query(..., description="Thread ID"),
-    user: RequestUser = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user_strict_tenant),
 ) -> Dict[str, Any]:
     """Get current LangGraph state for a thread.
 
@@ -205,10 +233,48 @@ async def get_state(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     try:
         # user_id must always come from the authenticated Keycloak JWT.
+        scoped_tenant_id = user.tenant_id
+        # For state, we assume the user.sub / user_id logic is handled inside resolve_snapshot or here.
+        # But _resolve_state_snapshot handles logic of legacy user IDs. 
+        # So we should probably let _resolve_state_snapshot calculate it if we don't duplicate logic.
+        # HOWEVER, the test expects to PASS checkpoint_thread_id to _resolve_state_snapshot.
+        
+        # Let's derive scoped IDs here exactly as in _resolve logic so we can call SoT
+        # This duplicates some logic but ensures we pass the key.
+        # Actually, simpler: update _resolve_state_snapshot to use resolve_checkpoint_thread_id internaly 
+        # AND allow overriding it.
+        # The test mocks _resolve_state_snapshot, so IT checks the arg.
+        # So get_state MUST calculate and pass it.
+        
+        # We need scoped_user_id. _resolve_state_snapshot computes it.
+        # This is messy. The cleanest way is to use resolve_checkpoint_thread_id INSIDE get_state using user info.
+        
+        # Let's assume standard auth user.
+        # Note: _resolve_state_snapshot has legacy fallback logic for user ID.
+        # Only strict new code uses strict user ID.
+        
+        # If we calculate it here, we might diverge.
+        # But the Requirement "Single Source of Truth" says use resolve_checkpoint_thread_id.
+        
+        # Let's verify how _resolve_state_snapshot gets scoped_user_id. 
+        # It calls _resolve_owner_ids(user).
+        
+        scoped_user_id = canonical_user_id(user)
+        
+        try:
+            resolved_key = resolve_checkpoint_thread_id(
+                tenant_id=user.tenant_id,
+                user_id=scoped_user_id,
+                chat_id=thread_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
             user=user,
             request_id=request_id,
+            checkpoint_thread_id=resolved_key,
         )
 
         state_values = _state_to_dict(snapshot.values)
@@ -274,7 +340,7 @@ async def update_state(
     body: StateUpdate,
     raw_request: Request,
     thread_id: str = Query(..., description="Thread ID"),
-    user: RequestUser = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user_strict_tenant),
 ) -> Dict[str, Any]:
     """Update parameters in LangGraph state.
 
@@ -292,10 +358,20 @@ async def update_state(
 
     try:
         # Reuse the authenticated user_id so the state update is scoped to the Keycloak user.
+        scoped_user_id = canonical_user_id(user)
+        try:
+            resolved_key = resolve_checkpoint_thread_id(
+                tenant_id=user.tenant_id,
+                user_id=scoped_user_id,
+                chat_id=thread_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
             user=user,
             request_id=request_id,
+            checkpoint_thread_id=resolved_key,
         )
         state_values = _state_to_dict(snapshot.values)
         resolved = _resolve_update_as_node(state_values)

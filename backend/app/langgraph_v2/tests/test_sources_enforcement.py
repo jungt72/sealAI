@@ -20,8 +20,7 @@ def test_normalize_sources_dedup_and_cap(monkeypatch):
 def test_sources_enforced_when_needed_and_missing():
     state = SealAIState(
         needs_sources=True,
-        sources=[Source(source="https://example.com/a", metadata={"url": "https://example.com/a", "title": "A"})],
-        sources_status="missing",
+        sources=[],
     )
     patch = response_node(state)
     assert _sources_fallback_text() in patch["final_text"]
@@ -33,7 +32,6 @@ def test_sources_included_when_ok():
     state = SealAIState(
         needs_sources=True,
         sources=[src],
-        sources_status="ok",
     )
     patch = response_node(state)
     assert _sources_fallback_text() not in patch["final_text"]

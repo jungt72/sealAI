@@ -14,10 +14,19 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.messages.ai import AIMessageChunk
 
 from app.api.v1.dependencies.auth import guard_websocket  # ⬅️ Token & Origin prüfen
+from app.langgraph_v2.utils.threading import (
+    reset_current_tenant_id,
+    set_current_tenant_id,
+    stable_thread_key,
+)
 from app.services.langgraph.llm_factory import get_llm as make_llm
 from app.services.langgraph.redis_lifespan import get_redis_checkpointer
 from app.services.langgraph.prompt_registry import get_agent_prompt
 from langchain_core.language_models.chat_models import BaseChatModel
+from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
+from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
+from app.langgraph_v2.state import SealAIState, TechnicalParameters
+from app.services.auth.dependencies import canonical_user_id, get_current_ws_user_strict_tenant
 
 from app.services.langgraph.graph.consult.memory_utils import (
     read_history as stm_read_history,
@@ -53,6 +62,55 @@ def _truthy(v: Optional[str]) -> bool:
     if v is None: return False
     v = str(v).strip().strip('\'"').lower()
     return v in ("1","true","yes","on")
+
+def _build_ws_thread_key(*, tenant_id: str, user_id: str, chat_id: str) -> str:
+    if not tenant_id:
+        raise ValueError("missing tenant_id for ws thread key")
+    token = set_current_tenant_id(tenant_id)
+    try:
+        return stable_thread_key(user_id, chat_id)
+    finally:
+        reset_current_tenant_id(token)
+
+
+def _is_admin_user(roles: Optional[List[str]]) -> bool:
+    role_set = set(roles or [])
+    return bool(role_set.intersection({"admin"}))
+
+
+def _build_ws_initial_state(
+    *,
+    tenant_id: str,
+    user_id: str,
+    chat_id: str,
+    user_input: str,
+    history: List[Any],
+    system_prompt: str,
+    params_patch: Optional[Dict[str, Any]],
+    is_privileged: bool,
+) -> SealAIState:
+    messages = [SystemMessage(content=system_prompt)] + history + [HumanMessage(content=user_input)]
+    parameters = TechnicalParameters.model_validate(params_patch or {})
+    return SealAIState(
+        messages=messages,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        thread_id=chat_id,
+        is_privileged=is_privileged,
+        can_read_private=is_privileged,
+        parameters=parameters,
+    )
+
+
+async def _build_ws_v2_config(*, tenant_id: str, user_id: str, chat_id: str, graph) -> Dict[str, Any]:
+    token = set_current_tenant_id(tenant_id)
+    try:
+        config = build_v2_config(thread_id=chat_id, user_id=user_id, tenant_id=tenant_id)
+    finally:
+        reset_current_tenant_id(token)
+    configurable = config.setdefault("configurable", {})
+    configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
+    return config
 
 def _get_rl_redis(app) -> Optional[redis.Redis]:
     # singleton redis client für Rate-Limit
@@ -373,7 +431,18 @@ async def _stream_llm_direct(ws: WebSocket, llm, *, user_input: str, thread_id: 
         await _send_json_safe(ws, {"event": "final", "text": final_text, "thread_id": thread_id})
     await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
 
-async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: str, params_patch: Optional[Dict]=None):
+async def _stream_supervised(
+    ws: WebSocket,
+    *,
+    app,
+    user_input: str,
+    thread_id: str,
+    params_patch: Optional[Dict]=None,
+    tenant_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    chat_id: Optional[str] = None,
+    is_privileged: bool = False,
+):
     def cancelled() -> bool:
         flags = getattr(ws.app.state, "ws_cancel_flags", {})
         return bool(flags.get(thread_id))
@@ -382,23 +451,31 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
         return
 
     try:
-        _ensure_graph(app)
+        graph = await get_sealai_graph_v2()
     except Exception as e:
         if EMIT_FINAL_TEXT and not cancelled():
             await _send_json_safe(ws, {"event": "final", "text": "", "thread_id": thread_id, "error": f"graph_build_failed: {e!r}"})
         await _send_json_safe(ws, {"event": "done", "thread_id": thread_id})
         return
 
-    g_async = getattr(app.state, "graph_async", None)
-    g_sync  = getattr(app.state, "graph_sync", None)
-
     history = stm_read_history(thread_id, limit=80)
-    sys_msg = SystemMessage(content=get_agent_prompt("supervisor"))
-    initial: Dict[str, Any] = {"messages": [sys_msg] + history + [HumanMessage(content=user_input)], "chat_id": thread_id, "input": user_input}
-    if isinstance(params_patch, dict) and params_patch:
-        initial["params"] = params_patch
-
-    cfg = {"configurable": {"thread_id": thread_id, "checkpoint_ns": getattr(app.state, "checkpoint_ns", None)}}
+    sys_prompt = get_agent_prompt("supervisor")
+    initial = _build_ws_initial_state(
+        tenant_id=tenant_id or "",
+        user_id=user_id or "",
+        chat_id=chat_id or thread_id,
+        user_input=user_input,
+        history=history,
+        system_prompt=sys_prompt,
+        params_patch=params_patch if isinstance(params_patch, dict) else None,
+        is_privileged=is_privileged,
+    )
+    cfg = await _build_ws_v2_config(
+        tenant_id=tenant_id or "",
+        user_id=user_id or "",
+        chat_id=chat_id or thread_id,
+        graph=graph,
+    )
 
     loop = asyncio.get_event_loop()
     buf: List[str] = []; last_flush = [loop.time()]; streamed_any = False
@@ -434,10 +511,10 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
         "on_llm_new_token",
     }
 
-    if g_async is not None and not cancelled():
+    if not cancelled():
         for ver in ("v2", "v1"):
             try:
-                async for ev in g_async.astream_events(initial, config=cfg, version=ver):
+                async for ev in graph.astream_events(initial, config=cfg, version=ver):
                     if cancelled(): return
 
                     if DEBUG_EVENTS:
@@ -495,11 +572,7 @@ async def _stream_supervised(ws: WebSocket, *, app, user_input: str, thread_id: 
         assistant_text = final_tail
     elif not streamed_any:
         try:
-            if g_sync is not None:
-                def _run_sync(): return g_sync.invoke(initial, config=cfg)
-                result = await asyncio.get_event_loop().run_in_executor(None, _run_sync)
-            else:
-                result = await g_async.ainvoke(initial, config=cfg)  # type: ignore
+            result = await graph.ainvoke(initial, config=cfg)
             final_text = _last_ai_text_from_result_like(result) or ""
             assistant_text = final_text
             if final_text and not cancelled():
@@ -530,6 +603,7 @@ async def ws_chat(ws: WebSocket):
     # ⛔ Erst authentifizieren/origin prüfen, dann accept()
     try:
         _ = await guard_websocket(ws)
+        current_user = await get_current_ws_user_strict_tenant(ws)
     except Exception:
         return
 
@@ -566,19 +640,30 @@ async def ws_chat(ws: WebSocket):
             if typ == "ping":
                 await _send_json_safe(ws, {"event": "pong", "ts": data.get("ts")}); continue
             if typ == "cancel":
-                tid = (data.get("thread_id") or f"api:{(data.get('chat_id') or 'default').strip()}").strip()
-                app.state.ws_cancel_flags[tid] = True
-                await _send_json_safe(ws, {"event": "done", "thread_id": tid}); continue
+                chat_id = (data.get("chat_id") or "default").strip()
+                scoped_user_id = canonical_user_id(current_user)
+                tenant_id = current_user.tenant_id
+                thread_id = _build_ws_thread_key(
+                    tenant_id=tenant_id,
+                    user_id=scoped_user_id,
+                    chat_id=chat_id,
+                )
+                app.state.ws_cancel_flags[thread_id] = True
+                await _send_json_safe(ws, {"event": "done", "thread_id": thread_id}); continue
 
-            chat_id    = (data.get("chat_id") or "").strip() or "default"
-            thread_id  = f"api:{chat_id}"
-            payload    = ws.scope.get("user") or {}
-            user_id    = str(payload.get("sub") or payload.get("email") or chat_id)
+            chat_id = (data.get("chat_id") or "").strip() or "default"
+            scoped_user_id = canonical_user_id(current_user)
+            tenant_id = current_user.tenant_id
+            thread_id = _build_ws_thread_key(
+                tenant_id=tenant_id,
+                user_id=scoped_user_id,
+                chat_id=chat_id,
+            )
 
             # 2) Rate-Limit (pro User/Thread), 30 req/min Default
             rl = _get_rl_redis(app)
             if rl and WS_RATE_LIMIT_PER_MIN > 0:
-                key = f"ws:ratelimit:{user_id}:{chat_id}"
+                key = f"ws:ratelimit:{scoped_user_id}:{chat_id}"
                 try:
                     cur = rl.incr(key)
                     if cur == 1:
@@ -652,7 +737,17 @@ async def ws_chat(ws: WebSocket):
             await _send_json_safe(ws, {"phase": "starting", "thread_id": thread_id, "route_guess": route, "reason": reason})
 
             if route == "supervisor":
-                await _stream_supervised(ws, app=app, user_input=(user_input or "📝 form patch"), thread_id=thread_id, params_patch=params_patch)
+                await _stream_supervised(
+                    ws,
+                    app=app,
+                    user_input=(user_input or "📝 form patch"),
+                    thread_id=thread_id,
+                    params_patch=params_patch,
+                    tenant_id=tenant_id,
+                    user_id=scoped_user_id,
+                    chat_id=chat_id,
+                    is_privileged=_is_admin_user(current_user.roles),
+                )
             else:
                 await _stream_llm_direct(ws, app.state.llm, user_input=(user_input or ""), thread_id=thread_id)
 

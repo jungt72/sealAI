@@ -23,5 +23,9 @@ def test_search_knowledge_base_applies_tenant_filter(monkeypatch) -> None:
             "tenant": "tenant-1",
         }
     )
-    assert captured.get("metadata_filters") == {"tenant_id": "tenant-1", "category": "norms"}
+    assert captured.get("metadata_filters") == {
+        "metadata.tenant_id": "tenant-1",
+        "category": "norms",
+        "metadata.visibility": "public",
+    }
     assert captured.get("tenant") == "tenant-1"

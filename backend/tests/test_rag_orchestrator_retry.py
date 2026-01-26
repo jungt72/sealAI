@@ -23,7 +23,7 @@ def _install_fake_httpx(monkeypatch: pytest.MonkeyPatch, outcomes):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def post(self, _url, json=None):
+        def post(self, _url, json=None, headers=None):
             outcome = outcomes.pop(0)
             if isinstance(outcome, Exception):
                 raise outcome
@@ -109,3 +109,43 @@ def test_qdrant_retry_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
     error = qdrant_meta.get("error") or {}
     assert error.get("kind") == "http_error"
     assert error.get("status") == 503
+
+
+def test_qdrant_maps_page_content_to_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.rag import rag_orchestrator as ro
+
+    outcomes = [
+        _FakeResponse(
+            200,
+            {
+                "result": [
+                    {
+                        "payload": {
+                            "page_content": "Spec content",
+                            "metadata": {
+                                "tenant_id": "tenant-1",
+                                "document_id": "doc-1",
+                            },
+                        },
+                        "score": 0.9,
+                    },
+                ]
+            },
+        ),
+    ]
+    _install_fake_httpx(monkeypatch, outcomes)
+    monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
+    monkeypatch.setattr(ro, "_fallback_external_search", lambda *_args, **_kwargs: [])
+
+    hits, _meta = ro.hybrid_retrieve(
+        query="test",
+        tenant="tenant-1",
+        k=1,
+        use_rerank=False,
+        return_metrics=True,
+    )
+
+    assert hits
+    assert hits[0]["text"] == "Spec content"
+    assert hits[0]["metadata"]["document_id"] == "doc-1"
+    assert "page_content" not in hits[0]["metadata"]

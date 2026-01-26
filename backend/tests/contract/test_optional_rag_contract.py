@@ -81,7 +81,7 @@ def test_comparison_flow_skips_rag_support_node_when_user_says_ohne_quellen(monk
     monkeypatch.setattr(graph_mod, "_build_final_answer_chain", lambda: _final_stub)
 
     graph = graph_mod.create_sealai_graph_v2(MemorySaver(), require_async=False)
-    config = graph_mod.build_v2_config(thread_id="t1", user_id="u1")
+    config = graph_mod.build_v2_config(thread_id="t1", user_id="u1", tenant_id="tenant-1")
 
     initial_state = {
         "messages": [HumanMessage(content="Vergleich FKM vs NBR bitte ohne Quellen")],
@@ -128,7 +128,7 @@ def test_comparison_flow_includes_rag_support_node_when_user_says_mit_quellen(mo
     monkeypatch.setattr(graph_mod, "_build_final_answer_chain", lambda: _final_stub)
 
     graph = graph_mod.create_sealai_graph_v2(MemorySaver(), require_async=False)
-    config = graph_mod.build_v2_config(thread_id="t1", user_id="u1")
+    config = graph_mod.build_v2_config(thread_id="t1", user_id="u1", tenant_id="tenant-1")
 
     initial_state = {
         "messages": [HumanMessage(content="Vergleich FKM vs NBR bitte mit Quellen")],

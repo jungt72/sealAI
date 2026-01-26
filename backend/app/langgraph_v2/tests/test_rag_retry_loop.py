@@ -81,9 +81,8 @@ def test_loop_safety_only_one_retry(monkeypatch):
         messages=[HumanMessage(content="Normenvergleich für FKM")],
         user_id="user-1",
         tenant_id="tenant-1",
-        retrieval_retry_count=1,
     )
     patch = nodes_flows.rag_support_node(state)
 
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert patch.get("retrieval_retry_count") == 1

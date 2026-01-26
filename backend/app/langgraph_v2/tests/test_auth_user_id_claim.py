@@ -42,6 +42,29 @@ async def test_missing_user_id_claim_returns_401(monkeypatch):
         assert detail.get("claim") == "sub"
     else:
         raise AssertionError("Expected HTTPException for missing user_id claim.")
+
+
+@pytest.mark.anyio
+async def test_strict_tenant_rejects_sub_as_tenant(monkeypatch):
+    monkeypatch.setenv("AUTH_TENANT_ID_CLAIM", "tenant_id")
+
+    def fake_verify(_token: str) -> dict:
+        return {
+            "sub": "user-1",
+            "tenant_id": "user-1",
+            "preferred_username": "user1",
+        }
+
+    monkeypatch.setattr(dependencies, "verify_access_token", fake_verify)
+
+    try:
+        await dependencies.get_current_request_user_strict_tenant(authorization="Bearer test-token")
+    except HTTPException as exc:
+        assert exc.status_code == 401
+        detail = exc.detail or {}
+        assert detail.get("code") == "tenant_id_invalid"
+    else:
+        raise AssertionError("Expected HTTPException for invalid tenant claim.")
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"

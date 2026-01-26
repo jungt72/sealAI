@@ -29,8 +29,12 @@ from app.langgraph_v2.utils.parameter_patch import (
     apply_parameter_patch_lww,
     sanitize_v2_parameter_patch,
 )
-from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
-from app.langgraph_v2.utils.threading import reset_current_tenant_id, set_current_tenant_id
+from app.services.auth.dependencies import (
+    RequestUser,
+    canonical_user_id,
+    get_current_request_user_strict_tenant,
+)
+from app.langgraph_v2.utils.threading import reset_current_tenant_id, set_current_tenant_id, resolve_checkpoint_thread_id
 from app.services.chat.conversations import upsert_conversation
 from app.services.sse_broadcast import sse_broadcast
 
@@ -67,6 +71,10 @@ def _short_user_id(user_id: str | None) -> str:
     if not user_id:
         return ""
     return f"{user_id[:8]}..." if len(user_id) > 8 else user_id
+
+def _is_admin_user(user: RequestUser) -> bool:
+    roles = set(user.roles or [])
+    return bool(roles.intersection({"admin"}))
 
 try:
     from redis.asyncio import Redis
@@ -143,7 +151,10 @@ async def _build_graph_config(
 
     tenant_token = set_current_tenant_id(tenant_id)
     try:
-        config = _attach_config(build_v2_config(thread_id=thread_id, user_id=user_id), scoped_user_id=user_id)
+        config = _attach_config(
+            build_v2_config(thread_id=thread_id, user_id=user_id, tenant_id=tenant_id),
+            scoped_user_id=user_id,
+        )
     finally:
         reset_current_tenant_id(tenant_token)
     if not allow_legacy_fallback or not legacy_user_id or legacy_user_id == user_id:
@@ -156,7 +167,7 @@ async def _build_graph_config(
             return graph, config
 
         legacy_config = _attach_config(
-            build_v2_config(thread_id=thread_id, user_id=legacy_user_id),
+            build_v2_config(thread_id=thread_id, user_id=legacy_user_id, tenant_id=tenant_id),
             scoped_user_id=legacy_user_id,
         )
         legacy_snapshot = await graph.aget_state(legacy_config)
@@ -194,9 +205,10 @@ async def _run_graph_to_state(
     user_id: str,
     tenant_id: str,
     username: str | None = None,
+    can_read_private: bool = False,
 ) -> SealAIState:
     graph, config = await _build_graph_config(
-        thread_id=req.chat_id,
+        thread_id=checkpoint_thread_id,
         user_id=user_id,
         tenant_id=tenant_id,
         username=username,
@@ -204,7 +216,9 @@ async def _run_graph_to_state(
     initial_state = SealAIState(
         user_id=user_id,
         tenant_id=tenant_id,
-        thread_id=req.chat_id,
+        is_privileged=can_read_private,
+        can_read_private=can_read_private,
+        thread_id=checkpoint_thread_id,
         messages=[HumanMessage(content=req.input)],
     )
     result = await graph.ainvoke(initial_state, config=config)
@@ -246,6 +260,7 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "parameters": parameters if isinstance(parameters, dict) else {},
         "pending_action": values.get("pending_action"),
         "confirm_checkpoint_id": values.get("confirm_checkpoint_id"),
+        "pending_checkpoint_id": values.get("pending_checkpoint_id"),
     }
     return {key: value for key, value in payload.items() if value is not None}
 
@@ -482,9 +497,11 @@ async def _event_stream_v2(
     *,
     user_id: str,
     tenant_id: str,
+    can_read_private: bool,
     legacy_user_id: str | None = None,
     request_id: str | None = None,
     last_event_id: str | None = None,
+    checkpoint_thread_id: str,
 ) -> AsyncIterator[bytes]:
     stream_task: asyncio.Task[None] | None = None
     broadcast_task: asyncio.Task[None] | None = None
@@ -533,7 +550,7 @@ async def _event_stream_v2(
                 if queue.qsize() <= queue.maxsize - 1:
                     slow_seq = await sse_broadcast.record_event(
                         user_id=scoped_user_id,
-                        chat_id=req.chat_id,
+                        chat_id=checkpoint_thread_id,
                         event="slow_client",
                         data={"reason": "backpressure"},
                     )
@@ -547,14 +564,17 @@ async def _event_stream_v2(
         async def _emit_event(event_name: str, payload: Dict[str, Any]) -> None:
             seq = await sse_broadcast.record_event(
                 user_id=scoped_user_id,
-                chat_id=req.chat_id,
+                chat_id=checkpoint_thread_id,
                 event=event_name,
                 data=payload,
             )
             frame = _format_sse(event_name, payload, event_id=str(seq))
             await _enqueue_frame(frame)
 
-        broadcast_queue = await sse_broadcast.subscribe(user_id=scoped_user_id, chat_id=req.chat_id)
+        broadcast_queue = await sse_broadcast.subscribe(
+            user_id=scoped_user_id,
+            chat_id=checkpoint_thread_id,
+        )
 
         async def _broadcast_forwarder() -> None:
             if broadcast_queue is None:
@@ -577,11 +597,11 @@ async def _event_stream_v2(
 
         await _enqueue_frame(f"retry: {SSE_RETRY_MS}\n\n".encode("utf-8"), allow_slow_notice=False)
 
-        last_seq = _parse_last_event_id(last_event_id, chat_id=req.chat_id)
+        last_seq = _parse_last_event_id(last_event_id, chat_id=checkpoint_thread_id)
         if last_seq is not None:
             replay, buffer_miss = await sse_broadcast.replay_after(
                 user_id=scoped_user_id,
-                chat_id=req.chat_id,
+                chat_id=checkpoint_thread_id,
                 last_seq=last_seq,
             )
             if buffer_miss:
@@ -641,7 +661,9 @@ async def _event_stream_v2(
         initial_state = SealAIState(
             user_id=scoped_user_id,
             tenant_id=tenant_id,
-            thread_id=req.chat_id,
+            is_privileged=can_read_private,
+            can_read_private=can_read_private,
+            thread_id=checkpoint_thread_id,
             messages=[HumanMessage(content=req.input)],
         )
 
@@ -690,7 +712,8 @@ async def _event_stream_v2(
 
         async def _producer() -> None:
             nonlocal emitted_any_token, latest_state, token_count, done_sent, seq, prev_parameters
-            nonlocal last_retrieval_signature
+            nonlocal last_retrieval_signature, last_decision_signature
+            nonlocal pending_knowledge_decision, last_knowledge_signature
             try:
                 iterator = graph.astream(
                     initial_state,
@@ -698,14 +721,33 @@ async def _event_stream_v2(
                     stream_mode=["messages", "values"],
                 ).__aiter__()
 
+                # [PATCH] Robust Heartbeat Loop using asyncio.wait (non-destructive)
+                # Ensure we have a task for the next item
+                next_item_task = asyncio.create_task(iterator.__anext__())
+                
                 while True:
-                    try:
-                        item = await asyncio.wait_for(iterator.__anext__(), timeout=15.0)
-                    except asyncio.TimeoutError:
+                    # Wait for item OR heartbeat interval (15s)
+                    done, _ = await asyncio.wait(
+                        [next_item_task], 
+                        timeout=15.0, 
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+
+                    if next_item_task in done:
+                        # The item is ready!
+                        try:
+                            item = next_item_task.result()
+                            # Prepare the task for the NEXT iteration immediately
+                            next_item_task = asyncio.create_task(iterator.__anext__())
+                        except StopAsyncIteration:
+                            break
+                        except Exception as exc:
+                            # Re-raise to be handled by outer logs
+                            raise exc
+                    else:
+                        # Timeout hit: Task is still running. Send heartbeat.
                         await _enqueue_frame(b": keepalive\n\n", allow_slow_notice=False)
                         continue
-                    except StopAsyncIteration:
-                        break
 
                     if (
                         isinstance(item, tuple)
@@ -871,16 +913,44 @@ async def _event_stream_v2(
                     else SealAIState.model_validate(latest_state or {})
                 )
 
+                checkpoint_required_payload: Dict[str, Any] | None = None
+                awaiting_confirmation = bool(_get_state_value(result_state, "awaiting_user_confirmation"))
                 if _should_emit_confirm_checkpoint(result_state):
-                    payload = (
-                        result_state.confirm_checkpoint
-                        if isinstance(result_state.confirm_checkpoint, dict) and result_state.confirm_checkpoint
-                        else build_confirm_checkpoint_payload(
+                    existing_payload = _get_state_value(result_state, "confirm_checkpoint")
+                    if isinstance(existing_payload, dict) and existing_payload:
+                        payload = existing_payload
+                    else:
+                        payload = build_confirm_checkpoint_payload(
                             result_state,
-                            action=result_state.pending_action or result_state.next_action or "FINALIZE",
-                            checkpoint_id=result_state.confirm_checkpoint_id,
+                            action=_get_state_value(result_state, "pending_action")
+                            or _get_state_value(result_state, "next_action")
+                            or "FINALIZE",
+                            checkpoint_id=_get_state_value(result_state, "confirm_checkpoint_id"),
                         )
-                    )
+                    checkpoint_required_payload = payload
+                    updates: Dict[str, Any] = {}
+                    if not _get_state_value(result_state, "awaiting_user_confirmation"):
+                        updates["awaiting_user_confirmation"] = True
+                    if not _get_state_value(result_state, "pending_checkpoint_id"):
+                        updates["pending_checkpoint_id"] = payload.get("checkpoint_id")
+                    if not _get_state_value(result_state, "confirm_checkpoint_id"):
+                        updates["confirm_checkpoint_id"] = payload.get("checkpoint_id")
+                    if not _get_state_value(result_state, "confirm_checkpoint"):
+                        updates["confirm_checkpoint"] = payload
+                    if not _get_state_value(result_state, "confirm_status"):
+                        updates["confirm_status"] = "pending"
+                    if not _get_state_value(result_state, "pending_action"):
+                        updates["pending_action"] = payload.get("action")
+                    if updates:
+                        assert_node_exists(
+                            graph,
+                            "confirm_checkpoint_node",
+                            request_id=request_id,
+                            status_code=500,
+                            code="server_misconfigured",
+                        )
+                        await graph.aupdate_state(config, updates, as_node="confirm_checkpoint_node")
+                        awaiting_confirmation = True
                     await _emit_event("checkpoint_required", payload)
                     if SSE_DEBUG:
                         logger.info(
@@ -916,6 +986,11 @@ async def _event_stream_v2(
                                 },
                             )
 
+                checkpoint_id = (
+                    _get_state_value(result_state, "confirm_checkpoint_id")
+                    or _get_state_value(result_state, "pending_checkpoint_id")
+                    or (checkpoint_required_payload or {}).get("checkpoint_id")
+                )
                 done_payload = {
                     "type": "done",
                     "chat_id": req.chat_id,
@@ -923,8 +998,8 @@ async def _event_stream_v2(
                     "client_msg_id": req.client_msg_id,
                     "phase": result_state.phase,
                     "last_node": result_state.last_node,
-                    "awaiting_confirmation": bool(result_state.awaiting_user_confirmation),
-                    "checkpoint_id": result_state.confirm_checkpoint_id,
+                    "awaiting_confirmation": awaiting_confirmation,
+                    "checkpoint_id": checkpoint_id,
                 }
                 await _emit_event("done", done_payload)
                 done_sent = True
@@ -991,7 +1066,7 @@ async def _event_stream_v2(
         }
         seq = await sse_broadcast.record_event(
             user_id=scoped_user_id,
-            chat_id=req.chat_id,
+            chat_id=checkpoint_thread_id,
             event="done",
             data=done_payload,
         )
@@ -1013,7 +1088,7 @@ async def _event_stream_v2(
         error_payload = {"type": "error", "message": message, "request_id": request_id}
         error_seq = await sse_broadcast.record_event(
             user_id=scoped_user_id,
-            chat_id=req.chat_id,
+            chat_id=checkpoint_thread_id,
             event="error",
             data=error_payload,
         )
@@ -1026,7 +1101,7 @@ async def _event_stream_v2(
         }
         done_seq = await sse_broadcast.record_event(
             user_id=scoped_user_id,
-            chat_id=req.chat_id,
+            chat_id=checkpoint_thread_id,
             event="done",
             data=done_payload,
         )
@@ -1039,7 +1114,7 @@ async def _event_stream_v2(
         if broadcast_queue is not None:
             await sse_broadcast.unsubscribe(
                 user_id=scoped_user_id,
-                chat_id=req.chat_id,
+                chat_id=checkpoint_thread_id,
                 queue=broadcast_queue,
             )
 
@@ -1048,7 +1123,7 @@ async def _event_stream_v2(
 async def langgraph_chat_v2_endpoint(
     request: LangGraphV2Request,
     raw_request: Request,
-    user: RequestUser = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user_strict_tenant),
 ) -> StreamingResponse:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     if not request_id:
@@ -1063,11 +1138,20 @@ async def langgraph_chat_v2_endpoint(
         )
     scoped_user_id = canonical_user_id(user)
     tenant_id = user.tenant_id
+    can_read_private = _is_admin_user(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
+    try:
+        checkpoint_thread_id = resolve_checkpoint_thread_id(
+            tenant_id=tenant_id,
+            user_id=scoped_user_id,
+            chat_id=request.chat_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
             user_id=scoped_user_id,
-            chat_id=request.chat_id,
+            chat_id=checkpoint_thread_id,
             client_msg_id=request.client_msg_id,
         )
         if not claimed:
@@ -1083,6 +1167,7 @@ async def langgraph_chat_v2_endpoint(
     if owner_id:
         try:
             upsert_conversation(
+                tenant_id=tenant_id,
                 owner_id=owner_id,
                 conversation_id=request.chat_id,
                 first_user_message=request.input,
@@ -1116,14 +1201,17 @@ async def langgraph_chat_v2_endpoint(
     }
     if request_id:
         headers["X-Request-Id"] = request_id
+    
     return StreamingResponse(
         _event_stream_v2(
             request,
             user_id=scoped_user_id,
             tenant_id=tenant_id,
+            can_read_private=can_read_private,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
             last_event_id=last_event_id,
+            checkpoint_thread_id=checkpoint_thread_id,
         ),
         media_type="text/event-stream",
         headers=headers,
@@ -1134,7 +1222,7 @@ async def langgraph_chat_v2_endpoint(
 async def confirm_go(
     body: ConfirmGoRequest,
     raw_request: Request,
-    user: RequestUser = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user_strict_tenant),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
@@ -1145,8 +1233,16 @@ async def confirm_go(
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
         if not body.decision:
             raise HTTPException(status_code=400, detail=error_detail("missing_decision", request_id=request_id))
+        try:
+            checkpoint_thread_id = resolve_checkpoint_thread_id(
+                tenant_id=tenant_id,
+                user_id=scoped_user_id,
+                chat_id=body.chat_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         graph, config = await _build_graph_config(
-            thread_id=body.chat_id,
+            thread_id=checkpoint_thread_id,
             user_id=scoped_user_id,
             tenant_id=tenant_id,
             username=user.username,
@@ -1161,26 +1257,32 @@ async def confirm_go(
         if isinstance(confirm_payload, dict):
             required_sub = str(confirm_payload.get("required_user_sub") or "")
         pending_action = state_values.get("pending_action") if isinstance(state_values, dict) else None
+        pending_checkpoint_id = state_values.get("pending_checkpoint_id") if isinstance(state_values, dict) else None
+        awaiting_confirmation = (
+            bool(state_values.get("awaiting_user_confirmation")) if isinstance(state_values, dict) else False
+        )
         if confirm_status == "resolved":
             raise HTTPException(
                 status_code=409,
                 detail=error_detail("checkpoint_already_resolved", request_id=request_id),
             )
-        if not pending_action and not confirm_payload:
+        if not pending_action and not confirm_payload and not pending_checkpoint_id and not awaiting_confirmation:
             raise HTTPException(
                 status_code=409,
                 detail=error_detail("no_pending_checkpoint", request_id=request_id),
             )
         if isinstance(confirm_payload, dict):
             conversation_id = str(confirm_payload.get("conversation_id") or "")
-            if conversation_id != body.chat_id:
+            if conversation_id != checkpoint_thread_id:
                 raise HTTPException(
                     status_code=403,
                     detail=error_detail("checkpoint_conversation_mismatch", request_id=request_id),
                 )
         if required_sub and required_sub != scoped_user_id:
             raise HTTPException(status_code=403, detail=error_detail("forbidden", request_id=request_id))
-        checkpoint_id = state_values.get("confirm_checkpoint_id") if isinstance(state_values, dict) else None
+        checkpoint_id = (
+            state_values.get("confirm_checkpoint_id") if isinstance(state_values, dict) else None
+        ) or pending_checkpoint_id
         if body.checkpoint_id and checkpoint_id and body.checkpoint_id != checkpoint_id:
             raise HTTPException(status_code=409, detail=error_detail("checkpoint_mismatch", request_id=request_id))
 
@@ -1246,7 +1348,7 @@ async def confirm_go(
 async def patch_parameters(
     body: ParametersPatchRequest,
     raw_request: Request,
-    user: RequestUser = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user_strict_tenant),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
@@ -1265,6 +1367,14 @@ async def patch_parameters(
             )
         if not chat_id:
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
+        try:
+            checkpoint_thread_id = resolve_checkpoint_thread_id(
+                tenant_id=user.tenant_id,
+                user_id=scoped_user_id,
+                chat_id=chat_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         patch = sanitize_v2_parameter_patch(body.parameters)
         if not patch:
             raise HTTPException(status_code=400, detail=error_detail("missing_parameters", request_id=request_id))
@@ -1272,6 +1382,7 @@ async def patch_parameters(
         graph, config = await _build_graph_config(
             thread_id=chat_id,
             user_id=scoped_user_id,
+            tenant_id=user.tenant_id,
             username=user.username,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
@@ -1364,7 +1475,7 @@ async def patch_parameters(
         }
         await sse_broadcast.broadcast(
             user_id=scoped_user_id,
-            chat_id=chat_id,
+            chat_id=checkpoint_thread_id,
             event="parameter_patch_ack",
             data=ack_payload,
         )

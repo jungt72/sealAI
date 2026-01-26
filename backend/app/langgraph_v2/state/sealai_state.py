@@ -11,7 +11,7 @@ from langgraph.graph import add_messages
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing_extensions import Literal
 
-from app.langgraph.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
+from app.langgraph_v2.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
 from app.langgraph_v2.types import (
     IntentKey,
     KnowledgeType,
@@ -19,41 +19,45 @@ from app.langgraph_v2.types import (
     normalize_knowledge_type,
 )
 
-AskMissingScope = Literal["discovery", "technical"]
-
-
 IntentGoal = Literal[
     "smalltalk",
     "design_recommendation",
     "explanation_or_comparison",
     "troubleshooting_leakage",
     "out_of_scope",
+    "unknown",
 ]
 
 
 class Intent(BaseModel):
-    goal: IntentGoal = "design_recommendation"
-    domain: Literal["sealing_technology"] | str = "sealing_technology"
+    goal: IntentGoal = "unknown"
+    domain: str = "general"
+    complexity: Literal["low", "medium", "high"] = "low"
+    needs_sources: bool = False
+
+    # NOTE: wird in nodes_frontdoor.py gesetzt/erwartet
     confidence: float = 0.0
+
+    # High-level routing key (IntentKey Literal)
+    key: Optional[IntentKey] = None
+
     high_impact_gaps: List[str] = Field(default_factory=list)
 
-    # legacy compatibility
-    key: Optional[IntentKey] = None
+    # Typed knowledge type (normalized)
     knowledge_type: Optional[KnowledgeType] = None
-    routing_hint: Optional[str] = None
-    complexity: Optional[str] = None
-    needs_sources: bool = False
-    need_sources: bool = False
-    seeded_parameters: Dict[str, Any] = Field(default_factory=dict)
 
-    model_config = ConfigDict(extra="ignore")
+    # NOTE: nodes_frontdoor.py setzt das immer (auch wenn leer)
+    seeded_parameters: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("knowledge_type", mode="before")
     @classmethod
-    def _normalize_knowledge_type(cls, value: Any) -> Any:
-        """LLM-Rohoutput (de/en) auf canonical KnowledgeType mappen."""
+    def _normalize_intent_knowledge_type(cls, value: Any) -> Any:
         return normalize_knowledge_type(value)
 
+    model_config = ConfigDict(extra="forbid")
+
+
+AskMissingScope = Literal["discovery", "technical"]
 
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
 
@@ -274,6 +278,9 @@ class WorkingMemory(BaseModel):
     knowledge_generic: Optional[str] = None
     response_text: Optional[str] = None
     response_kind: Optional[str] = None
+    challenger_feedback: Optional[str] = None
+    policy_notes: Dict[str, Any] = Field(default_factory=dict)
+    curator_notes: Dict[str, Any] = Field(default_factory=dict)
 
     frontdoor_reply: Optional[str] = None
     design_notes: Dict[str, Any] = Field(default_factory=dict)
@@ -293,11 +300,23 @@ class WorkingMemory(BaseModel):
         return self.model_dump(exclude_none=True)
 
 
+class TaskItem(BaseModel):
+    description: str
+    status: Literal["planned", "in_progress", "done", "failed"] = "planned"
+    assigned_to: Optional[str] = None
+    result: Optional[str] = None
+    created_at: float = Field(default_factory=lambda: 0.0)  # timestamp
+
+
 class SealAIState(BaseModel):
     # Core chat state
     messages: Annotated[List[BaseMessage], add_messages] = Field(default_factory=list)
+    task_list: List[TaskItem] = Field(default_factory=list)  # [NEW] Planner tasks
+    internal_monologue: List[str] = Field(default_factory=list)  # [NEW] Supervisor thoughts
     user_id: Optional[str] = None
     tenant_id: Optional[str] = None
+    is_privileged: bool = False  # [NEW] Privileged user flag
+    can_read_private: bool = False  # [NEW] Admin-only KB read flag
     thread_id: Optional[str] = None
     # Observability – carry run_id into state for logging/metadata
     run_id: Optional[str] = None
@@ -328,6 +347,8 @@ class SealAIState(BaseModel):
     parameter_provenance: Dict[str, str] = Field(default_factory=dict)
     parameter_versions: Dict[str, int] = Field(default_factory=dict)
     parameter_updated_at: Dict[str, float] = Field(default_factory=dict)
+    golden_parameters: Dict[str, Any] = Field(default_factory=dict)
+    golden_parameter_sources: Dict[str, str] = Field(default_factory=dict)
     missing_params: List[str] = Field(default_factory=list)
     coverage_analysis: Optional[CoverageAnalysis] = None
     ask_missing_request: Optional[AskMissingRequest] = None
@@ -347,16 +368,12 @@ class SealAIState(BaseModel):
 
     # Wissens-/Quellenbezug
     needs_sources: bool = False
-    need_sources: bool = False
+    sources_status: Optional[Literal["ok", "missing"]] = None
     # Optional RAG for comparison/explanation flows.
     requires_rag: bool = False
     sources: List[Source] = Field(default_factory=list)
     knowledge_type: Optional[KnowledgeType] = None
     retrieval_meta: Optional[Dict[str, Any]] = None
-    retrieval_retry_count: int = 0
-    sources_status: Optional[Literal["ok", "missing"]] = None
-    clarify_round_count: int = 0
-    clarify_missing_facts: List[str] = Field(default_factory=list)
 
     # Finaler Output / Fehler
     error: Optional[str] = None
@@ -388,35 +405,24 @@ class SealAIState(BaseModel):
     profile_choice: Dict[str, Any] = Field(default_factory=dict)
 
     # Validierung & Critical Review
-    validation: Dict[str, Any] = Field(
-        default_factory=lambda: {"status": None, "issues": []}
-    )
+    validation: Dict[str, Any] = Field(default_factory=lambda: {"status": None, "issues": []})
     critical: Dict[str, Any] = Field(
-        default_factory=lambda: {
-            "status": None,
-            "target": None,
-            "next_step": None,
-            "iteration_count": 0,
-        }
+        default_factory=lambda: {"status": None, "target": None, "next_step": None, "iteration_count": 0}
     )
+    challenger_feedback: Optional[str] = None
+    challenger_issues: List[str] = Field(default_factory=list)
+    challenger_status: Optional[str] = None
+    policy_report: Dict[str, Any] = Field(default_factory=dict)
+    policy_status: Optional[str] = None
 
     # Produktempfehlungen
     products: Dict[str, Any] = Field(
-        default_factory=lambda: {
-            "manufacturer": None,
-            "matches": [],
-            "match_quality": None,
-        }
+        default_factory=lambda: {"manufacturer": None, "matches": [], "match_quality": None}
     )
 
     # Troubleshooting/Hypothesen
     troubleshooting: Dict[str, Any] = Field(
-        default_factory=lambda: {
-            "symptoms": [],
-            "hypotheses": [],
-            "pattern_match": None,
-            "done": False,
-        }
+        default_factory=lambda: {"symptoms": [], "hypotheses": [], "pattern_match": None, "done": False}
     )
 
     # MAI-DxO supervisor state (feature-flagged)
@@ -430,9 +436,7 @@ class SealAIState(BaseModel):
     next_action: Optional[str] = None
 
     # UI-State für Reasoning Status
-    ui_state: Dict[str, Any] = Field(
-        default_factory=lambda: {"current_step": None, "current_label": None}
-    )
+    ui_state: Dict[str, Any] = Field(default_factory=lambda: {"current_step": None, "current_label": None})
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
@@ -459,6 +463,7 @@ __all__ = [
     "DecisionEntry",
     "Budget",
     "SealAIState",
+    "TaskItem",
     "AskMissingScope",
     "TechnicalParameters",
     "SealParameterUpdate",

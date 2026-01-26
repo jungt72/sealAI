@@ -11,7 +11,7 @@ def test_frontdoor_intent_parsing_handles_code_fences(monkeypatch):
         nodes_frontdoor,
         "run_llm",
         lambda **_kwargs: "```json\n"
-        + '{"intent": {"goal": "design_recommendation", "confidence": 0.9}, "frontdoor_reply": "OK"}'
+        + '{"intent": {"goal": "design_recommendation"}, "frontdoor_reply": "OK"}'
         + "\n```",
     )
     state = SealAIState(messages=[HumanMessage(content="Bitte Dichtung empfehlen")])
@@ -19,7 +19,7 @@ def test_frontdoor_intent_parsing_handles_code_fences(monkeypatch):
     intent = result["intent"]
     assert isinstance(intent, Intent)
     assert intent.goal == "design_recommendation"
-    assert intent.confidence == 0.9
+    # assert intent.confidence == 0.9 # Field removed from Intent model
     assert (result["working_memory"].frontdoor_reply or "").strip() == "OK"
 
 
@@ -41,7 +41,7 @@ def test_frontdoor_intent_parsing_missing_fields_defaults(monkeypatch):
     result = nodes_frontdoor.frontdoor_discovery_node(state)
     intent = result["intent"]
     assert intent.goal == "design_recommendation"
-    assert intent.confidence == 0.0
+    # assert intent.confidence == 0.0 # Field removed
 
 
 def test_frontdoor_smalltalk_greetings_bypass_llm(monkeypatch):
@@ -59,7 +59,7 @@ def test_frontdoor_smalltalk_greetings_bypass_llm(monkeypatch):
         result = nodes_frontdoor.frontdoor_discovery_node(state)
         intent = result["intent"]
         assert intent.goal == "smalltalk"
-        assert intent.confidence == 1.0
+        # assert intent.confidence == 1.0 # Field removed
 
     assert called is False
 

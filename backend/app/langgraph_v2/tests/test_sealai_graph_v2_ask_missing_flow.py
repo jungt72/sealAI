@@ -32,7 +32,7 @@ def test_sealai_graph_v2_ask_missing_flow(monkeypatch):
 
     graph = asyncio.run(get_sealai_graph_v2())
     initial_state = {"messages": [HumanMessage(content="Mein Getriebe leckt, brauche Dichtungsempfehlung")]}
-    config = build_v2_config(thread_id="test-thread", user_id="test-user")
+    config = build_v2_config(thread_id="test-thread", user_id="test-user", tenant_id="tenant-1")
 
     result = graph.invoke(initial_state, config=config)
     state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result)

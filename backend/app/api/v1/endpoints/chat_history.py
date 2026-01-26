@@ -122,8 +122,13 @@ def _resolve_owner_ids(current_user: RequestUser) -> Tuple[str, str | None]:
     return owner_id, legacy_owner_id
 
 
-def _find_conversation(owner_id: str, conversation_id: str, legacy_owner_id: str | None) -> ConversationMeta | None:
-    for entry in list_conversations(owner_id, legacy_owner_id=legacy_owner_id):
+def _find_conversation(
+    tenant_id: str,
+    owner_id: str,
+    conversation_id: str,
+    legacy_owner_id: str | None,
+) -> ConversationMeta | None:
+    for entry in list_conversations(tenant_id, owner_id, legacy_owner_id=legacy_owner_id):
         if entry.id == conversation_id:
             return entry
     return None
@@ -135,9 +140,10 @@ async def get_conversations(
 ) -> List[ConversationResponse]:
     """Return the user's conversations ordered by `updated_at` (Keycloak-scoped)."""
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
+    tenant_id = current_user.tenant_id
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    entries = list_conversations(owner_id, legacy_owner_id=legacy_owner_id)
+    entries = list_conversations(tenant_id, owner_id, legacy_owner_id=legacy_owner_id)
     return [_conversation_to_dict(entry) for entry in entries]
 
 
@@ -149,20 +155,22 @@ async def rename_conversation(
 ) -> ConversationResponse:
     """Update the title for a single conversation belonging to the authenticated user."""
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
+    tenant_id = current_user.tenant_id
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    entry = _find_conversation(tenant_id, owner_id, conversation_id, legacy_owner_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     upsert_conversation(
+        tenant_id=tenant_id,
         owner_id=owner_id,
         conversation_id=conversation_id,
         title=payload.title,
         updated_at=datetime.now(timezone.utc),
     )
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    entry = _find_conversation(tenant_id, owner_id, conversation_id, legacy_owner_id)
     if not entry:
         raise HTTPException(status_code=500, detail="Failed to update conversation")
     return _conversation_to_dict(entry)
@@ -175,14 +183,15 @@ async def delete_conversation_endpoint(
 ) -> Dict[str, bool]:
     """Delete both the metadata hash and LangGraph state for the user's conversation."""
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
+    tenant_id = current_user.tenant_id
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    entry = _find_conversation(tenant_id, owner_id, conversation_id, legacy_owner_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    delete_conversation(owner_id, conversation_id, reason="user_delete")
+    delete_conversation(tenant_id, owner_id, conversation_id, reason="user_delete")
 
     # Optional: LangGraph state/thread löschen (best effort)
     try:
@@ -214,10 +223,11 @@ async def get_conversation_history(
 ) -> Dict[str, Any]:
     """Return the LangGraph message history for the authenticated user's conversation."""
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
+    tenant_id = current_user.tenant_id
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    entry = _find_conversation(tenant_id, owner_id, conversation_id, legacy_owner_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
 

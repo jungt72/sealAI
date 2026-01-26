@@ -41,3 +41,19 @@ def test_final_answer_router_shows_sources_only_when_refs_present() -> None:
         },
     )
     assert "## Quellen / Belege" in text
+
+
+def test_final_answer_router_includes_rag_context_block() -> None:
+    text = render_template(
+        "final_answer_router.j2",
+        {
+            "intent_goal": "explanation_or_comparison",
+            "comparison_notes": {
+                "rag_reference": ["Quelle: DIN XYZ"],
+                "rag_context": "Kontext aus der Wissensdatenbank: DIP 123",
+            },
+            "requires_rag": True,
+        },
+    )
+    assert "## Relevante Auszüge (Wissensbasis)" in text
+    assert "Kontext aus der Wissensdatenbank: DIP 123" in text

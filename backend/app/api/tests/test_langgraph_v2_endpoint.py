@@ -67,6 +67,23 @@ async def _collect(gen) -> List[bytes]:
     return out
 
 
+def _checkpoint_thread_id(tenant_id: str, user_id: str, chat_id: str) -> str:
+    # Must match v2 stable thread key: {tenant}:{user}:{chat_id}
+    return f"{tenant_id}:{user_id}:{chat_id}"
+
+
+def _stream(req: endpoint.LangGraphV2Request, *, user_id: str, tenant_id: str, request_id: str):
+    # Centralized helper so all tests use the updated signature consistently.
+    return endpoint._event_stream_v2(
+        req,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        request_id=request_id,
+        can_read_private=False,
+        checkpoint_thread_id=_checkpoint_thread_id(tenant_id, user_id, req.chat_id),
+    )
+
+
 class _Snapshot:
     def __init__(self, values: Dict[str, Any] | None = None):
         self.values = values or {}
@@ -138,6 +155,11 @@ class DummyGraphConfirmCheckpoint:
     async def aget_state(self, _config: Any):
         return _Snapshot()
 
+    async def aupdate_state(self, _config: Any, _updates: Any, *, as_node: str | None = None):
+        # Endpoint persists a confirm checkpoint via graph.aupdate_state(..., as_node="confirm_checkpoint_node")
+        # For this contract test we only need the call to succeed.
+        return None
+
     def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
         async def gen():
             yield (
@@ -155,6 +177,27 @@ class DummyGraphConfirmCheckpoint:
         return gen()
 
 
+class DummyGraphStateUpdateNoDecision:
+    checkpointer = object()
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot()
+
+    def astream(self, _input: Any, config: Any = None, *, stream_mode: Any = None, **_kwargs: Any):
+        async def gen():
+            yield (
+                "values",
+                {
+                    "phase": "knowledge",
+                    "last_node": "knowledge_material_node",
+                    "parameters": {},
+                    "final_text": "Antwort",
+                },
+            )
+
+        return gen()
+
+
 def test_event_stream_v2_streams_tokens_and_done(monkeypatch):
     async def _dummy_graph():
         return DummyGraphTokens()
@@ -162,7 +205,7 @@ def test_event_stream_v2_streams_tokens_and_done(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_stream(req, user_id="user-test", tenant_id="tenant-1", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -180,7 +223,7 @@ def test_event_stream_v2_includes_event_ids(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test", client_msg_id="msg-1")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_stream(req, user_id="user-test", tenant_id="tenant-1", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     token_ids = [event_id for evt, _, event_id in events if evt == "token"]
@@ -198,7 +241,7 @@ def test_event_stream_v2_fallback_chunks_final_text(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_stream(req, user_id="user-test", tenant_id="tenant-1", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -213,7 +256,7 @@ def test_event_stream_v2_emits_error_then_done(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_stream(req, user_id="user-test", tenant_id="tenant-1", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     assert [evt for evt, _, _ in events].count("error") == 1
@@ -227,7 +270,7 @@ def test_event_stream_v2_ignores_full_message_after_chunks(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_stream(req, user_id="user-test", tenant_id="tenant-1", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -235,16 +278,45 @@ def test_event_stream_v2_ignores_full_message_after_chunks(monkeypatch):
 
 
 def test_event_stream_v2_emits_checkpoint_required(monkeypatch):
+    """
+    This test asserts the SSE contract event emission when the graph reports
+    awaiting_user_confirmation + pending_action.
+
+    The endpoint also enforces a "known node" contract via assert_node_exists.
+    Our DummyGraph does not expose node metadata, so we monkeypatch the guardrail
+    to focus this test purely on SSE event behavior.
+
+    The endpoint also persists a confirm checkpoint via graph.aupdate_state(...).
+    Our DummyGraph implements a no-op aupdate_state so the flow can proceed.
+    """
+
+    # Disable node-existence guardrail for this dummy graph
+    monkeypatch.setattr(endpoint, "assert_node_exists", lambda *args, **kwargs: None)
+
     async def _dummy_graph():
         return DummyGraphConfirmCheckpoint()
 
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_stream(req, user_id="user-test", tenant_id="tenant-1", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     assert any(evt == "checkpoint_required" for evt, _, _ in events)
+
+
+def test_event_stream_v2_no_internal_error_without_decision(monkeypatch):
+    async def _dummy_graph():
+        return DummyGraphStateUpdateNoDecision()
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
+    chunks = asyncio.run(_collect(_stream(req, user_id="user-test", tenant_id="tenant-1", request_id="req-1")))
+    events = _parse_sse_frames(chunks)
+
+    assert all(evt != "error" for evt, _, _ in events)
+    assert any(evt == "done" for evt, _, _ in events)
 
 
 def test_claim_client_msg_id_deduplicates(monkeypatch):

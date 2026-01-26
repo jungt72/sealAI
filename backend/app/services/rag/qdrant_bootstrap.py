@@ -46,6 +46,31 @@ def _extract_vector_size(info: object) -> Optional[int]:
     return None
 
 
+def _ensure_payload_indexes(client, *, collection: str) -> None:
+    try:
+        from qdrant_client import models
+        from qdrant_client.http.exceptions import UnexpectedResponse
+    except Exception as exc:
+        raise RuntimeError(f"qdrant_client_unavailable: {type(exc).__name__}: {exc}") from exc
+
+    fields = ("metadata.tenant_id", "metadata.document_id", "metadata.visibility")
+    for field in fields:
+        try:
+            client.create_payload_index(
+                collection_name=collection,
+                field_name=field,
+                field_schema=models.PayloadSchemaType.KEYWORD,
+            )
+            log.info("qdrant_payload_index_ok collection=%s field=%s", collection, field)
+        except UnexpectedResponse as exc:
+            if getattr(exc, "status_code", None) == 409:
+                log.info("qdrant_payload_index_exists collection=%s field=%s", collection, field)
+                continue
+            raise
+        except Exception as exc:
+            raise RuntimeError(f"qdrant_payload_index_failed field={field}: {type(exc).__name__}: {exc}") from exc
+
+
 def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> str:
     """
     Ensure the main RAG collection exists with the configured embedding dim.
@@ -88,6 +113,7 @@ def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> s
                     log.critical(msg)
                     raise RuntimeError(msg)
                 log.info("qdrant_collection_ok collection=%s model=%s dim=%s", collection, model_name, dim)
+                _ensure_payload_indexes(client, collection=collection)
                 return "ok"
             except UnexpectedResponse as exc:
                 last_exc = exc
@@ -99,6 +125,7 @@ def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> s
                         hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100),
                         optimizers_config=models.OptimizersConfigDiff(indexing_threshold=10000),
                     )
+                    _ensure_payload_indexes(client, collection=collection)
                     return "created"
                 raise
             except RuntimeError:

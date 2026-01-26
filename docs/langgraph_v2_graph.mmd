@@ -1,0 +1,26 @@
+flowchart TD
+  __start__ --> resume_router_node
+  autonomous_supervisor_node --> supervisor_policy_node
+  calc_worker --> supervisor_policy_node
+  design_worker --> supervisor_policy_node
+  frontdoor_discovery_node -- "supervisor" --> autonomous_supervisor_node
+  frontdoor_discovery_node -- "finalize" --> final_answer_node
+  generic_sealing_qa_node --> final_answer_node
+  knowledge_entry_node -- "__else__" --> generic_sealing_qa_node
+  knowledge_entry_node --> knowledge_lifetime_node
+  knowledge_entry_node --> knowledge_material_node
+  knowledge_lifetime_node --> final_answer_node
+  knowledge_material_node --> final_answer_node
+  product_explainer_node --> final_answer_node
+  product_worker --> product_explainer_node
+  resume_router_node -- "resume" --> autonomous_supervisor_node
+  resume_router_node -- "reject" --> final_answer_node
+  resume_router_node -- "frontdoor" --> frontdoor_discovery_node
+  supervisor_policy_node -- "calc" --> calc_worker
+  supervisor_policy_node -- "awaiting" --> confirm_checkpoint_node
+  supervisor_policy_node -- "design" --> design_worker
+  supervisor_policy_node -- "FINALIZE" --> final_answer_node
+  supervisor_policy_node -- "knowledge" --> knowledge_entry_node
+  supervisor_policy_node -- "product" --> product_worker
+  confirm_checkpoint_node --> __end__
+  final_answer_node --> __end__

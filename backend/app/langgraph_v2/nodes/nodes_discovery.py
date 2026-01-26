@@ -5,23 +5,19 @@ from __future__ import annotations
 
 import re
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from app.langgraph_v2.tools.parameter_tools import set_parameters
-from app.langgraph_v2.utils.llm_factory import get_model_tier
-
 from typing import Dict, List, Optional
 
 import structlog
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage  # nur für Typing, keine direkte Nutzung
+from langchain_openai import ChatOpenAI
 
-from langchain_core.messages import BaseMessage  # nur für Typing, keine direkte Nutzung
-
-from app.langgraph.io import AskMissingRequest
-from app.langgraph_v2.constants import MODEL_NANO
+from app.langgraph_v2.io import AskMissingRequest
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState, TechnicalParameters, WorkingMemory
-from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
+from app.langgraph_v2.tools.parameter_tools import set_parameters
+from app.langgraph_v2.utils.jinja_renderer import render_template
 from app.langgraph_v2.utils.json_sanitizer import extract_json_obj
+from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.parameter_extraction import extract_parameters_from_text
 from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
@@ -46,6 +42,58 @@ def _extract_number(text: str, key: str) -> Optional[float]:
         return None
 
 
+def _has_pressure(params: Dict[str, object]) -> bool:
+    for key in ("pressure_bar", "pressure", "pressure_max", "pressure_min", "p_max", "p_min"):
+        if params.get(key) not in (None, ""):
+            return True
+    return False
+
+
+def _has_temperature(params: Dict[str, object]) -> bool:
+    for key in (
+        "temperature_C",
+        "temperature_max",
+        "temperature_min",
+        "temp_max",
+        "temp_min",
+        "T_medium_max",
+        "T_medium_min",
+    ):
+        if params.get(key) not in (None, ""):
+            return True
+    return False
+
+
+def _has_medium(params: Dict[str, object]) -> bool:
+    for key in ("medium", "medium_type"):
+        value = params.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+    return False
+
+
+def _has_application(state: SealAIState, params: Dict[str, object]) -> bool:
+    if isinstance(getattr(state, "application_category", None), str) and state.application_category.strip():
+        return True
+    if isinstance(getattr(state, "use_case_raw", None), str) and state.use_case_raw.strip():
+        return True
+    value = params.get("application_type")
+    return isinstance(value, str) and value.strip() != ""
+
+
+def _strict_missing_fields(state: SealAIState, params: Dict[str, object]) -> List[str]:
+    missing: List[str] = []
+    if not _has_pressure(params):
+        missing.append("pressure_bar")
+    if not _has_temperature(params):
+        missing.append("temperature_C")
+    if not _has_medium(params):
+        missing.append("medium")
+    if not _has_application(state, params):
+        missing.append("application_type")
+    return missing
+
+
 def frontdoor_discovery_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
     """Einstieg: Discovery / Smalltalk, aber OHNE sichtbare Chat-Nachricht.
 
@@ -55,36 +103,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args, **_kwargs) -> Dict[str,
     - Schreibt NUR ins WorkingMemory + ui_state, NICHT in `messages`
     """
     user_text = latest_user_text(state.get("messages"))
-    prompt = (
-        "Du bist ein präziser Discovery-Agent für SealAI. "
-        "Verstehe, worum es dem Nutzer geht, erkenne drei technische Stichworte "
-        "und gib eine kurze, freundliche Zusammenfassung (max. zwei Sätze). "
-        "Die Antwort wird NUR intern verwendet, nicht direkt angezeigt."
-    )
-    model = get_model_tier("nano")
 
-    try:
-        greeting = run_llm(
-            model=model,
-            prompt=user_text,
-            system=prompt,
-            temperature=0.3,
-            max_tokens=220,
-            metadata={
-                "run_id": state.run_id,
-                "thread_id": state.thread_id,
-                "user_id": state.user_id,
-                "node": "frontdoor_discovery_node",
-            },
-        )
-    except Exception:
-        # Fallback: nur interner Text, wird nicht direkt angezeigt
-        greeting = (
-            "Interne Kurz-Zusammenfassung des Nutzeranliegens. "
-            "Dieser Text ist nur für die interne Discovery gedacht."
-        )
-
-    
     # --- Parameter Extraction via Tool (Standardized) ---
     # Wir nutzen ein Tool-fähiges Modell (z.B. mini/fast), um Parameter sauber zu extrahieren.
     # Das ist robuster als Regex für Felder wie "Wellendurchmesser".
@@ -99,8 +118,9 @@ def frontdoor_discovery_node(state: SealAIState, *_args, **_kwargs) -> Dict[str,
         
         extract_sys = (
             "Du bist ein Experte für Dichtungstechnik. "
-            "Extrahiere alle technischen Parameter (Druck, Temperatur, Durchmesser, Drehzahl, Medium) aus der Eingabe. "
-            "Nutze dazu das Tool 'set_parameters'. Wenn keine neuen Werte genannt werden, rufe das Tool nicht auf."
+            "Extrahiere alle technischen Parameter (Druck, Temperatur, Medium, Anwendung/Applikation, Durchmesser, Drehzahl) "
+            "aus der Eingabe. Nutze dazu das Tool 'set_parameters'. "
+            "Wenn keine neuen Werte genannt werden, rufe das Tool nicht auf."
         )
         
         # Invoke model
@@ -140,6 +160,69 @@ def frontdoor_discovery_node(state: SealAIState, *_args, **_kwargs) -> Dict[str,
     logger.info("frontdoor_after_merge", merged_parameters=merged_params)
 
 
+    # Strict intake: if any core parameters are missing, route to ask-missing flow (no LLM guess).
+    missing_core = _strict_missing_fields(state, merged_params)
+    if missing_core:
+        coverage = max(0.0, min(1.0, (4 - len(missing_core)) / 4))
+        labels = {
+            "pressure_bar": "Druck (bar)",
+            "temperature_C": "Temperatur (°C)",
+            "medium": "Medium",
+            "application_type": "Anwendung/Applikation",
+        }
+        missing_text = ", ".join(labels.get(key, key) for key in missing_core)
+        question = (
+            "Damit ich belastbar auslegen kann, fehlen noch diese Basisangaben: "
+            f"{missing_text}. Bitte gib die Werte kurz an."
+        )
+        ask_missing_request = AskMissingRequest(missing_fields=missing_core, question=question)
+        return {
+            "parameters": TechnicalParameters.model_validate(merged_params),
+            "parameter_provenance": merged_provenance,
+            "missing_params": missing_core,
+            "discovery_missing": missing_core,
+            "discovery_coverage": coverage,
+            "ask_missing_request": ask_missing_request,
+            "ask_missing_scope": "technical",
+            "awaiting_user_input": True,
+            "phase": PHASE.ENTRY,
+            "last_node": "frontdoor_discovery_node",
+            **_ui_state_payload(
+                state,
+                "discovery",
+                "Es fehlen Basisparameter (Druck, Temperatur, Medium, Anwendung).",
+            ),
+        }
+
+    prompt = (
+        "Du bist ein präziser Discovery-Agent für SealAI. "
+        "Verstehe, worum es dem Nutzer geht, erkenne drei technische Stichworte "
+        "und gib eine kurze, freundliche Zusammenfassung (max. zwei Sätze). "
+        "Die Antwort wird NUR intern verwendet, nicht direkt angezeigt."
+    )
+    model = get_model_tier("nano")
+
+    try:
+        greeting = run_llm(
+            model=model,
+            prompt=user_text,
+            system=prompt,
+            temperature=0.3,
+            max_tokens=220,
+            metadata={
+                "run_id": state.run_id,
+                "thread_id": state.thread_id,
+                "user_id": state.user_id,
+                "node": "frontdoor_discovery_node",
+            },
+        )
+    except Exception:
+        # Fallback: nur interner Text, wird nicht direkt angezeigt
+        greeting = (
+            "Interne Kurz-Zusammenfassung des Nutzeranliegens. "
+            "Dieser Text ist nur für die interne Discovery gedacht."
+        )
+
     # WorkingMemory um interne Discovery-Infos erweitern (bleibt „unsichtbar“ für den User)
     wm = state.working_memory or WorkingMemory()
     try:
@@ -157,6 +240,9 @@ def frontdoor_discovery_node(state: SealAIState, *_args, **_kwargs) -> Dict[str,
         "working_memory": wm,
         "parameters": TechnicalParameters.model_validate(merged_params),
         "parameter_provenance": merged_provenance,
+        "missing_params": [],
+        "discovery_missing": [],
+        "discovery_coverage": 1.0,
         "phase": PHASE.ENTRY,
         "last_node": "frontdoor_discovery_node",
         **_ui_state_payload(
@@ -243,6 +329,42 @@ def confirm_gate_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object
     summary = (state.get("discovery_summary") or "").strip()
     coverage = state.get("discovery_coverage") or 0.0
     missing = state.get("discovery_missing") or []
+
+    params_dict = state.parameters.as_dict() if state.parameters else {}
+    missing_core = list(state.missing_params or []) or _strict_missing_fields(state, params_dict)
+    if missing_core:
+        labels = {
+            "pressure_bar": "Druck (bar)",
+            "temperature_C": "Temperatur (°C)",
+            "medium": "Medium",
+            "application_type": "Anwendung/Applikation",
+        }
+        missing_text = ", ".join(labels.get(key, key) for key in missing_core)
+        question = (
+            "Bitte ergänze die fehlenden Basisparameter: "
+            f"{missing_text}. Danach kann ich belastbar weiterrechnen."
+        )
+        ask_missing_request = AskMissingRequest(missing_fields=missing_core, question=question)
+        wm = state.working_memory or WorkingMemory()
+        try:
+            wm = wm.model_copy(update={"response_text": question, "response_kind": "ask_missing"})
+        except Exception:
+            pass
+        return {
+            "ask_missing_request": ask_missing_request,
+            "ask_missing_scope": "technical",
+            "awaiting_user_input": True,
+            "missing_params": missing_core,
+            "discovery_missing": missing_core,
+            "phase": PHASE.INTENT,
+            "last_node": "confirm_gate_node",
+            "working_memory": wm,
+            **_ui_state_payload(
+                state,
+                "discovery",
+                "Es fehlen Basisparameter. Bitte ergänzen.",
+            ),
+        }
 
     try:
         coverage = float(coverage)
