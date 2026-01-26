@@ -4,9 +4,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, TYPE_CHECKING
-
-from langgraph.prebuilt import InjectedState
+from typing import Optional, TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.langgraph_v2.state import SealAIState
@@ -21,7 +19,7 @@ def set_parameters(
     shaft_diameter: Optional[float] = None,
     speed_rpm: Optional[float] = None,
     medium: Optional[str] = None,
-    
+
     # Shaft
     nominal_diameter: Optional[float] = None,
     tolerance: Optional[float] = None,
@@ -40,7 +38,7 @@ def set_parameters(
     housing_surface: Optional[str] = None,
     housing_material: Optional[str] = None,
     axial_plate_axial: Optional[float] = None,
-    
+
     # Operating Conditions
     pressure_min: Optional[float] = None,
     pressure_max: Optional[float] = None,
@@ -56,14 +54,14 @@ def set_parameters(
     application_type: Optional[str] = None,
     food_grade: Optional[str] = None,
 
-    # Injected
-    state: "InjectedState[SealAIState]" = None,
+    # Injected (state will be injected by the graph runtime; keep it hidden from the LLM schema by convention)
+    state: Optional["SealAIState"] = None,
 ) -> dict:
     """Set technical parameters for seal recommendation.
-    
+
     Use this tool when the user provides or updates ANY technical parameters.
     Even single values (e.g. "diameter is 50") should be updated via this tool.
-    
+
     Args:
         pressure_bar: Operating pressure in bar
         temperature_C: Operating temperature in Celsius
@@ -99,46 +97,61 @@ def set_parameters(
         state: Injected current graph state
     """
     # Get current parameters from state
-    current_params = {}
-    current_provenance = {}
-    if state and hasattr(state, "parameters"):
-        current_params = state.parameters.as_dict() if hasattr(state.parameters, "as_dict") else dict(state.parameters)
-        current_provenance = getattr(state, "parameter_provenance", {}) or {}
-    
-    # Update with new values (only non-None values)
-    updates = {}
-    locals_ = locals()
-    ignore_keys = ["state", "current_params", "updates", "locals_"]
-    
-    for key, value in locals_.items():
-        if key not in ignore_keys and value is not None:
-            if key == "medium" and isinstance(value, str):
-                updates[key] = value.lower()
-            else:
-                updates[key] = value
+    current_params: dict[str, Any] = {}
+    current_provenance: dict[str, Any] = {}
 
-    # Merge with current parameters respecting user provenance.
+    if state is not None and hasattr(state, "parameters"):
+        params_obj = getattr(state, "parameters", None)
+        if params_obj is not None:
+            if hasattr(params_obj, "as_dict"):
+                current_params = params_obj.as_dict()
+            else:
+                current_params = dict(params_obj)
+
+        current_provenance = getattr(state, "parameter_provenance", {}) or {}
+
+    # Update with new values (only non-None values)
+    updates: dict[str, Any] = {}
+    locals_ = locals()
+    ignore_keys = {
+        "state",
+        "current_params",
+        "current_provenance",
+        "updates",
+        "locals_",
+        "ignore_keys",
+        "params_obj",
+    }
+
+    for key, value in locals_.items():
+        if key in ignore_keys:
+            continue
+        if value is None:
+            continue
+        if key == "medium" and isinstance(value, str):
+            updates[key] = value.lower()
+        else:
+            updates[key] = value
+
+    # Merge with current parameters respecting provenance.
     from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
+
     merged_params, merged_provenance = apply_parameter_patch_with_provenance(
         current_params,
         updates,
         current_provenance,
         source="llm",
     )
-    
-    logger.info(
-        "set_parameters_tool_called",
-        updates=updates,
-        merged_params=merged_params,
-    )
-    
+
+    logger.info("set_parameters_tool_called", extra={"updates": updates, "merged_params": merged_params})
+
     # Return TechnicalParameters object
     from app.langgraph_v2.state import TechnicalParameters
-    # Ensure ignore extra fields if any mismatch, but TechnicalParameters allows extra via config if set.
-    # But since we updated TechnicalParameters, it should be fine.
+
     return {
         "parameters": TechnicalParameters(**merged_params),
         "parameter_provenance": merged_provenance,
     }
+
 
 __all__ = ["set_parameters"]
