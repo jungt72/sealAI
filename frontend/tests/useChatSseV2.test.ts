@@ -237,4 +237,74 @@ describe("useChatSseV2 reconnect fsm", () => {
     expect(payload.sources?.[0]?.document_id).toBe("doc-1");
     expect(payload.sources?.[0]?.filename).toBe("specs.pdf");
   });
+
+  it("captures retrieval sources from metrics payloads", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    const retrievalSpy = vi.fn();
+    fetchMock.mockResolvedValue(
+      createSseResponse([
+        "event: retrieval.results\n",
+        "data: {\"metrics\":{\"sources\":[{\"document_id\":\"doc-2\",\"filename\":\"manual.pdf\",\"score\":0.81}]}}\n\n",
+        "event: done\n",
+        "data: {}\n\n",
+      ]),
+    );
+    const ref = React.createRef<HookHandle>();
+
+    act(() => {
+      create(
+        React.createElement(HookHarness, {
+          ref,
+          chatId: "chat-1",
+          token: "token",
+          onRetrievalMeta: retrievalSpy,
+        }),
+      );
+    });
+
+    await act(async () => {
+      ref.current?.send("Hallo");
+      await flush();
+    });
+
+    expect(retrievalSpy).toHaveBeenCalled();
+    const payload = retrievalSpy.mock.calls[0][0];
+    expect(payload.sources?.[0]?.document_id).toBe("doc-2");
+    expect(payload.sources?.[0]?.filename).toBe("manual.pdf");
+  });
+
+  it("falls back to metrics sources when payload sources are empty", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    const retrievalSpy = vi.fn();
+    fetchMock.mockResolvedValue(
+      createSseResponse([
+        "event: retrieval.results\n",
+        "data: {\"sources\":[],\"metrics\":{\"sources\":[{\"document_id\":\"doc-3\",\"filename\":\"guide.pdf\",\"score\":0.73}]}}\n\n",
+        "event: done\n",
+        "data: {}\n\n",
+      ]),
+    );
+    const ref = React.createRef<HookHandle>();
+
+    act(() => {
+      create(
+        React.createElement(HookHarness, {
+          ref,
+          chatId: "chat-1",
+          token: "token",
+          onRetrievalMeta: retrievalSpy,
+        }),
+      );
+    });
+
+    await act(async () => {
+      ref.current?.send("Hallo");
+      await flush();
+    });
+
+    expect(retrievalSpy).toHaveBeenCalled();
+    const payload = retrievalSpy.mock.calls[0][0];
+    expect(payload.sources?.[0]?.document_id).toBe("doc-3");
+    expect(payload.sources?.[0]?.filename).toBe("guide.pdf");
+  });
 });

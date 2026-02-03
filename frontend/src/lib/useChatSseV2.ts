@@ -111,6 +111,33 @@ const clampText = (value: unknown, limit: number): string | null => {
   return `${trimmed.slice(0, limit)}...`;
 };
 
+function sanitizeSourceValue(
+  source: unknown,
+  metadata: Record<string, unknown> | null,
+): string | null {
+  const asString = typeof source === "string" ? source.trim() : "";
+  if (asString) {
+    const normalized = asString.replace(/\\/g, "/");
+    const parts = normalized.split("/").filter(Boolean);
+    if (parts.length) {
+      const candidate = parts[parts.length - 1];
+      const docId = typeof metadata?.document_id === "string" ? metadata.document_id.trim() : "";
+      if (docId && candidate) {
+        return clampText(`${candidate} (${docId})`, 200);
+      }
+      return clampText(candidate, 200);
+    }
+  }
+  const filename = typeof metadata?.filename === "string" ? metadata.filename.trim() : "";
+  const documentId = typeof metadata?.document_id === "string" ? metadata.document_id.trim() : "";
+  if (filename && documentId) {
+    return clampText(`${filename} (${documentId})`, 200);
+  }
+  if (filename) return clampText(filename, 200);
+  if (documentId) return clampText(documentId, 200);
+  return null;
+}
+
 function normalizeRagSources(raw: unknown): RagSource[] {
   if (!Array.isArray(raw)) return [];
   const sources: RagSource[] = [];
@@ -131,12 +158,14 @@ function normalizeRagSources(raw: unknown): RagSource[] {
       page: typeof record.page === "number" ? record.page : null,
       section: clampText(record.section, 160),
       score: typeof record.score === "number" ? record.score : null,
-      source: clampText(record.source, 200),
+      source: sanitizeSourceValue(record.source, record as Record<string, unknown>),
     });
     if (sources.length >= MAX_RAG_SOURCES) break;
   }
   return sources;
 }
+
+export { normalizeRagSources };
 
 export function buildChatRequestPayload(opts: {
   input: string;
@@ -246,12 +275,12 @@ export function useChatSseV2({
       payload && typeof payload.preview === "object"
         ? (payload.preview as ConfirmCheckpointPayload["preview"])
         : {
-            text: undefined,
-            summary: undefined,
-            parameters: undefined,
-            coverage_score: undefined,
-            coverage_gaps: undefined,
-          };
+          text: undefined,
+          summary: undefined,
+          parameters: undefined,
+          coverage_score: undefined,
+          coverage_gaps: undefined,
+        };
     return {
       checkpoint_id: checkpointId,
       required_user_sub: String(payload?.required_user_sub || ""),
@@ -529,8 +558,19 @@ export function useChatSseV2({
               typeof data === "object"
             ) {
               const payload = data as Record<string, unknown>;
+              const payloadSources = payload.sources;
+              const metricsSources =
+                payload.metrics && typeof payload.metrics === "object"
+                  ? (payload.metrics as Record<string, unknown>).sources
+                  : undefined;
+              const rawSources =
+                Array.isArray(payloadSources) && payloadSources.length > 0
+                  ? payloadSources
+                  : Array.isArray(metricsSources) && metricsSources.length > 0
+                    ? metricsSources
+                    : [];
               onRetrievalMeta?.({
-                sources: normalizeRagSources(payload.sources),
+                sources: normalizeRagSources(rawSources),
                 skipped: event === "retrieval.skipped",
               });
               continue;
@@ -676,6 +716,7 @@ export function useChatSseV2({
       resetRetry,
       scheduleRetry,
       token,
+      buildCheckpointFromSignal,
     ],
   );
 
