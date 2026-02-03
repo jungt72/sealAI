@@ -21,8 +21,9 @@ export async function GET(req: NextRequest) {
   }
 
   const backendBase = getBackendInternalBase();
+  const base = backendBase.replace(/\/+$/, "");
   const search = req.nextUrl.search || "";
-  const url = `${backendBase}//state${search}`;
+  const url = `${base}/api/v1/langgraph/state${search}`;
 
   try {
     const res = await fetch(url, {

@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
   }
 
   const backendBase = getBackendInternalBase();
-  const url = `${backendBase}//parameters/patch`;
+  const base = backendBase.replace(/\/+$/, "");
+  const url = `${base}/api/v1/langgraph/parameters/patch`;
   const bodyText = await req.text();
   const contentType = req.headers.get("content-type") || "application/json";
 
