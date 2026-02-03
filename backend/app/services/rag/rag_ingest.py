@@ -27,7 +27,16 @@ from qdrant_client import QdrantClient, models
 
 from langchain_community.document_loaders import Docx2txtLoader
 
-from app.services.rag.rag_schema import ChunkMetadata, EngineeringProps, Domain, SourceType
+try:
+    from langchain_qdrant import QdrantVectorStore
+except ImportError:
+    QdrantVectorStore = None
+
+
+def get_embedder() -> Any:
+    raise NotImplementedError("Use IngestPipeline instead of the legacy helper.")
+
+from app.services.rag.rag_schema import ChunkMetadata, EngineeringProps, Domain, MaterialFamily, SourceType
 
 # -----------------------------------------------------------------------------
 # Config (ENV-driven)
@@ -53,11 +62,25 @@ MAX_CHUNK_CHARS = int(os.getenv("RAG_MAX_CHUNK_CHARS", "6000"))
 
 # Sparse vectors only if the target collection supports it.
 ENABLE_SPARSE = os.getenv("RAG_SPARSE_ENABLED", "0").strip().lower() not in ("0", "false", "no")
+RAG_SHARED_TENANT_ENABLED = os.getenv("RAG_SHARED_TENANT_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+RAG_SHARED_TENANT_ID = (os.getenv("RAG_SHARED_TENANT_ID") or "").strip()
 
 
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
+
+def _ensure_tenant_allowed(tenant_id: str) -> None:
+    if not tenant_id or not str(tenant_id).strip():
+        raise ValueError("tenant_id required for ingest")
+    if tenant_id == "sealai":
+        shared_allowed = bool(RAG_SHARED_TENANT_ENABLED and RAG_SHARED_TENANT_ID == "sealai")
+        if not shared_allowed:
+            raise ValueError(
+                "tenant_id 'sealai' is reserved; set RAG_SHARED_TENANT_ENABLED=1 and "
+                "RAG_SHARED_TENANT_ID=sealai to allow shared ingestion"
+            )
+
 
 def _coerce_visibility(v: str | None) -> str:
     v = (v or "public").strip().lower()
@@ -74,6 +97,46 @@ def _safe_read_text_file(path: str) -> str:
     except Exception as e:
         print(f"[WARN] Could not read text file {path}: {e}")
         return ""
+
+
+def _load_pdf_pages(file_path: str) -> List[tuple[int, str]]:
+    try:
+        from pypdf import PdfReader  # type: ignore
+    except Exception as exc:
+        raise RuntimeError(f"pypdf_unavailable: {type(exc).__name__}: {exc}") from exc
+
+    try:
+        with open(file_path, "rb") as f:
+            reader = PdfReader(f)
+            if reader.is_encrypted:
+                try:
+                    decrypted = reader.decrypt("")  # type: ignore[call-arg]
+                except Exception:
+                    decrypted = 0
+                if not decrypted:
+                    raise ValueError(f"encrypted_pdf_not_supported: {file_path}")
+
+            pages: List[tuple[int, str]] = []
+            has_text = False
+            for idx, page in enumerate(reader.pages):
+                try:
+                    page_text = page.extract_text() or ""
+                except Exception as exc:
+                    print(f"[WARN] Could not extract PDF page {idx + 1} from {file_path}: {exc}")
+                    page_text = ""
+                if page_text.strip():
+                    has_text = True
+                pages.append((idx + 1, page_text))
+
+            if not has_text:
+                print(f"[WARN] No text extracted from PDF {file_path}")
+                return []
+            return pages
+    except ValueError:
+        raise
+    except Exception as exc:
+        print(f"[WARN] Could not load PDF {file_path}: {exc}")
+        return []
 
 
 def _load_text(file_path: str) -> str:
@@ -94,6 +157,24 @@ def _load_text(file_path: str) -> str:
         return ""
 
 
+def _load_pages(file_path: str) -> List[tuple[Optional[int], str]]:
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".pdf":
+        return _load_pdf_pages(file_path)
+    return [(None, _load_text(file_path))]
+
+
+def _chunk_pages(pages: List[tuple[Optional[int], str]]) -> List[tuple[str, Optional[int]]]:
+    chunks: List[tuple[str, Optional[int]]] = []
+    for page_number, text in pages:
+        if not text.strip():
+            continue
+        for chunk in _semantic_paragraph_chunks(text):
+            if chunk:
+                chunks.append((chunk, page_number))
+    return chunks
+
+
 def _semantic_paragraph_chunks(text: str) -> List[str]:
     paras = [p.strip() for p in text.split("\n\n") if p.strip()]
     if not paras:
@@ -111,12 +192,25 @@ def _semantic_paragraph_chunks(text: str) -> List[str]:
     return chunks
 
 
+DOMAIN_MAPPING = {
+    "Norm": "standard",
+    "Product": "product",
+    "Standard": "standard",
+    "Technical": "material",
+    "Datasheet": "material",
+}
+
 def _parse_domain(domain_str: str | None) -> Domain:
     if not domain_str:
         return Domain.MATERIAL
     s = str(domain_str).strip()
     if not s:
         return Domain.MATERIAL
+
+    # Apply mapping
+    mapped = DOMAIN_MAPPING.get(s)
+    if mapped:
+        s = mapped
 
     # Enum name
     try:
@@ -135,6 +229,47 @@ def _parse_domain(domain_str: str | None) -> Domain:
 
 def _hash_path(path: str) -> str:
     return hashlib.md5(path.encode("utf-8")).hexdigest()[:12]
+
+
+def _parse_facets_from_tags(tags: Iterable[str] | None) -> dict[str, object]:
+    facets = {
+        "entity": None,
+        "aspects": [],
+        "language": None,
+        "source_version": None,
+        "effective_date": None,
+    }
+    seen_aspects: set[str] = set()
+    for raw in tags or []:
+        if not raw or ":" not in raw:
+            continue
+        key, value = raw.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if not value:
+            continue
+        if key in {"entity", "material"}:
+            facets["entity"] = value
+        elif key in {"aspect", "aspects"}:
+            normalized = value.lower()
+            if normalized not in seen_aspects:
+                seen_aspects.add(normalized)
+                facets["aspects"].append(value)
+        elif key in {"lang", "language"}:
+            facets["language"] = value
+        elif key in {"version", "source_version"}:
+            facets["source_version"] = value
+        elif key in {"effective", "effective_date"}:
+            facets["effective_date"] = value
+    return facets
+
+
+def _guess_entity_from_filename(filename: str) -> Optional[str]:
+    name = os.path.splitext(filename or "")[0].upper()
+    for member in MaterialFamily:
+        if member.value.upper() in name:
+            return member.value
+    return None
 
 
 @dataclass
@@ -180,6 +315,7 @@ class IngestPipeline:
         document_id: str | None = None,
         visibility: str = "public",
         source_type: SourceType = SourceType.MANUAL,
+        tags: list[str] | None = None,
     ) -> IngestStats:
         if args:
             if len(args) > 1:
@@ -189,32 +325,43 @@ class IngestPipeline:
             file_path = args[0]
         if not file_path:
             raise TypeError("process_document() missing required argument: file_path")
+        _ensure_tenant_allowed(tenant_id)
         started = time.perf_counter()
         self._load_embedders()
 
         visibility = _coerce_visibility(visibility)
         filename = os.path.basename(file_path)
         doc_id = document_id or _hash_path(file_path)
+        facets = _parse_facets_from_tags(tags)
+        entity = facets.get("entity") or _guess_entity_from_filename(filename)
+        aspects = facets.get("aspects") or []
+        language = facets.get("language")
+        source_version = facets.get("source_version")
+        effective_date = facets.get("effective_date")
 
-        text = _load_text(file_path)
-        if not text.strip():
+        pages = _load_pages(file_path)
+        if not pages or not any(text.strip() for _, text in pages):
             print(f"[SKIP] Empty: {filename}")
             return IngestStats(chunks=0, elapsed_ms=int((time.perf_counter() - started) * 1000))
 
-        raw_chunks = _semantic_paragraph_chunks(text)
+        raw_chunks = _chunk_pages(pages)
         if not raw_chunks:
             print(f"[SKIP] No chunks: {filename}")
             return IngestStats(chunks=0, elapsed_ms=int((time.perf_counter() - started) * 1000))
 
-        dense_vecs = list(self._dense_embedder.embed(raw_chunks))  # type: ignore[union-attr]
+        dense_vecs = list(self._dense_embedder.embed([c[0] for c in raw_chunks]))  # type: ignore[union-attr]
 
         sparse_vecs = None
         if ENABLE_SPARSE:
-            sparse_vecs = list(self._sparse_embedder.embed(raw_chunks))  # type: ignore[union-attr]
+            sparse_vecs = list(self._sparse_embedder.embed([c[0] for c in raw_chunks]))  # type: ignore[union-attr]
 
         points: List[models.PointStruct] = []
-        for idx, chunk_text in enumerate(raw_chunks):
+        seen_hashes: set[str] = set()
+        for idx, (chunk_text, page_number) in enumerate(raw_chunks):
             chunk_hash = ChunkMetadata.compute_hash(chunk_text)
+            if chunk_hash in seen_hashes:
+                continue
+            seen_hashes.add(chunk_hash)
             chunk_id = ChunkMetadata.generate_chunk_id(tenant_id, doc_id, idx)
 
             meta = ChunkMetadata(
@@ -226,6 +373,12 @@ class IngestPipeline:
                 source_uri=file_path,
                 source_type=source_type,
                 domain=domain,
+                chunk_index=idx,
+                entity=entity,
+                aspect=aspects,
+                language=language,
+                source_version=source_version,
+                effective_date=effective_date,
                 title=filename,
                 text=chunk_text,
                 created_at=time.time(),
@@ -296,25 +449,29 @@ def ingest_file(
     visibility: str = "public",
     sha256: str | None = None,
     source: str | None = None,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """
     Backward-compatible entrypoint for the async job worker.
     """
+    _ensure_tenant_allowed(tenant_id)
     domain = _parse_domain(category)
+    canonical_doc_id = document_id or sha256 or _hash_path(file_path)
     pipe = IngestPipeline()
     stats = pipe.process_document(
         file_path=file_path,
         tenant_id=tenant_id,
         domain=domain,
-        document_id=document_id,
+        document_id=canonical_doc_id,
         visibility=visibility,
         source_type=SourceType.MANUAL,
+        tags=tags,
     )
     return {
         "ok": True,
         "file_path": file_path,
         "tenant_id": tenant_id,
-        "document_id": document_id,
+        "document_id": canonical_doc_id,
         "category": category,
         "domain": getattr(domain, "value", str(domain)),
         "visibility": _coerce_visibility(visibility),
@@ -340,7 +497,7 @@ def _iter_files(path: str) -> Iterable[str]:
     if os.path.isdir(path):
         for root, _, files in os.walk(path):
             for f in files:
-                if f.lower().endswith((".docx", ".txt", ".md", ".log", ".csv")):
+                if f.lower().endswith((".docx", ".pdf", ".txt", ".md", ".log", ".csv")):
                     yield os.path.join(root, f)
     else:
         yield path
