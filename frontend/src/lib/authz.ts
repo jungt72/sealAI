@@ -45,5 +45,5 @@ export const getRolesFromAccessToken = (token?: string): TokenRoles => {
 
 export const hasKnowledgeAccess = (token?: string): boolean => {
   const { roleSet } = getRolesFromAccessToken(token);
-  return roleSet.has("admin");
+  return roleSet.has("admin") || roleSet.has("editor");
 };
