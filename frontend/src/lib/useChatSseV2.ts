@@ -111,56 +111,97 @@ const clampText = (value: unknown, limit: number): string | null => {
   return `${trimmed.slice(0, limit)}...`;
 };
 
+const coerceText = (value: unknown): string => {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+};
+
+const normalizeSourceLabel = (value: unknown): string => {
+  const asString = coerceText(value);
+  if (!asString) return "";
+  const normalized = asString.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : asString;
+};
+
 function sanitizeSourceValue(
   source: unknown,
   metadata: Record<string, unknown> | null,
-): string | null {
-  const asString = typeof source === "string" ? source.trim() : "";
-  if (asString) {
-    const normalized = asString.replace(/\\/g, "/");
-    const parts = normalized.split("/").filter(Boolean);
-    if (parts.length) {
-      const candidate = parts[parts.length - 1];
-      const docId = typeof metadata?.document_id === "string" ? metadata.document_id.trim() : "";
-      if (docId && candidate) {
-        return clampText(`${candidate} (${docId})`, 200);
-      }
-      return clampText(candidate, 200);
-    }
-  }
-  const filename = typeof metadata?.filename === "string" ? metadata.filename.trim() : "";
-  const documentId = typeof metadata?.document_id === "string" ? metadata.document_id.trim() : "";
-  if (filename && documentId) {
-    return clampText(`${filename} (${documentId})`, 200);
-  }
-  if (filename) return clampText(filename, 200);
-  if (documentId) return clampText(documentId, 200);
-  return null;
+): string {
+  const filename = coerceText(metadata?.filename);
+  const section = coerceText(metadata?.section);
+  const normalizedSource = normalizeSourceLabel(source);
+  const documentId = coerceText(metadata?.document_id ?? metadata?.doc_id);
+  const candidate =
+    filename || section || normalizedSource || documentId || "Unbekannte Quelle";
+  return clampText(candidate, 200) ?? "Unbekannte Quelle";
 }
 
 function normalizeRagSources(raw: unknown): RagSource[] {
   if (!Array.isArray(raw)) return [];
   const sources: RagSource[] = [];
   for (const item of raw) {
+    if (typeof item === "string") {
+      const displayName = sanitizeSourceValue(item, null);
+      sources.push({
+        document_id: "",
+        sha256: null,
+        filename: clampText(displayName, 160),
+        page: null,
+        section: null,
+        score: null,
+        source: displayName,
+      });
+      if (sources.length >= MAX_RAG_SOURCES) break;
+      continue;
+    }
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
-    const documentIdRaw = record.document_id;
+    const metadata =
+      record.metadata && typeof record.metadata === "object"
+        ? (record.metadata as Record<string, unknown>)
+        : null;
+    const documentIdRaw = record.document_id ?? record.doc_id ?? metadata?.document_id ?? metadata?.doc_id;
     const documentId =
       typeof documentIdRaw === "string"
         ? documentIdRaw.trim()
         : typeof documentIdRaw === "number"
           ? String(documentIdRaw)
           : "";
+    const sourceValue = record.source ?? record.url ?? metadata?.source ?? metadata?.url;
+    const displayName = sanitizeSourceValue(sourceValue, metadata ? { ...metadata, ...record } : record);
+    const filename =
+      clampText(record.filename, 160) ??
+      clampText(metadata?.filename ?? metadata?.file_name, 160) ??
+      clampText(displayName, 160);
     sources.push({
       document_id: documentId,
       sha256: clampText(record.sha256, 120),
-      filename: clampText(record.filename, 160),
-      page: typeof record.page === "number" ? record.page : null,
-      section: clampText(record.section, 160),
-      score: typeof record.score === "number" ? record.score : null,
-      source: sanitizeSourceValue(record.source, record as Record<string, unknown>),
+      filename,
+      page: typeof record.page === "number" ? record.page : typeof metadata?.page === "number" ? metadata.page : null,
+      section: clampText(record.section ?? metadata?.section, 160),
+      score:
+        typeof record.score === "number"
+          ? record.score
+          : typeof metadata?.score === "number"
+            ? metadata.score
+            : null,
+      source: displayName,
     });
     if (sources.length >= MAX_RAG_SOURCES) break;
+  }
+  if (!sources.length && raw.length > 0) {
+    const displayName = "Unbekannte Quelle";
+    sources.push({
+      document_id: "",
+      sha256: null,
+      filename: displayName,
+      page: null,
+      section: null,
+      score: null,
+      source: displayName,
+    });
   }
   return sources;
 }
@@ -563,12 +604,24 @@ export function useChatSseV2({
                 payload.metrics && typeof payload.metrics === "object"
                   ? (payload.metrics as Record<string, unknown>).sources
                   : undefined;
+              const nestedPayloadSources =
+                payloadSources && typeof payloadSources === "object" && !Array.isArray(payloadSources)
+                  ? (payloadSources as Record<string, unknown>).sources
+                  : undefined;
+              const nestedMetricsSources =
+                metricsSources && typeof metricsSources === "object" && !Array.isArray(metricsSources)
+                  ? (metricsSources as Record<string, unknown>).sources
+                  : undefined;
               const rawSources =
                 Array.isArray(payloadSources) && payloadSources.length > 0
                   ? payloadSources
-                  : Array.isArray(metricsSources) && metricsSources.length > 0
-                    ? metricsSources
-                    : [];
+                  : Array.isArray(nestedPayloadSources) && nestedPayloadSources.length > 0
+                    ? nestedPayloadSources
+                    : Array.isArray(metricsSources) && metricsSources.length > 0
+                      ? metricsSources
+                      : Array.isArray(nestedMetricsSources) && nestedMetricsSources.length > 0
+                        ? nestedMetricsSources
+                        : [];
               onRetrievalMeta?.({
                 sources: normalizeRagSources(rawSources),
                 skipped: event === "retrieval.skipped",

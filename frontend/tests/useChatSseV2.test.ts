@@ -304,7 +304,43 @@ describe("useChatSseV2 reconnect fsm", () => {
 
     expect(retrievalSpy).toHaveBeenCalled();
     const payload = retrievalSpy.mock.calls[0][0];
+    expect(payload.sources).toHaveLength(1);
     expect(payload.sources?.[0]?.document_id).toBe("doc-3");
     expect(payload.sources?.[0]?.filename).toBe("guide.pdf");
+  });
+
+  it("accepts nested sources payloads", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    const retrievalSpy = vi.fn();
+    fetchMock.mockResolvedValue(
+      createSseResponse([
+        "event: retrieval.results\n",
+        "data: {\"sources\":{\"sources\":[{\"metadata\":{\"document_id\":\"doc-4\",\"filename\":\"ptfe.docx\"}}]}}\n\n",
+        "event: done\n",
+        "data: {}\n\n",
+      ]),
+    );
+    const ref = React.createRef<HookHandle>();
+
+    act(() => {
+      create(
+        React.createElement(HookHarness, {
+          ref,
+          chatId: "chat-1",
+          token: "token",
+          onRetrievalMeta: retrievalSpy,
+        }),
+      );
+    });
+
+    await act(async () => {
+      ref.current?.send("Hallo");
+      await flush();
+    });
+
+    expect(retrievalSpy).toHaveBeenCalled();
+    const payload = retrievalSpy.mock.calls[0][0];
+    expect(payload.sources?.[0]?.document_id).toBe("doc-4");
+    expect(payload.sources?.[0]?.filename).toBe("ptfe.docx");
   });
 });
