@@ -380,6 +380,7 @@ class IngestPipeline:
                 source_version=source_version,
                 effective_date=effective_date,
                 title=filename,
+                page_number=page_number,
                 text=chunk_text,
                 created_at=time.time(),
                 visibility=visibility,
