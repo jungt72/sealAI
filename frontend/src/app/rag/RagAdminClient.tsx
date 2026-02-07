@@ -1,335 +1,489 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { RagDocumentItem } from "@/lib/ragApi";
-import { deleteRagDocument, listRagDocuments, retryRagDocument, uploadRagDocument } from "@/lib/ragApi";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-type RagAdminClientProps = {
+import {
+  getRagDocument,
+  listRagDocuments,
+  uploadRagDocument,
+  type RagDocumentItem,
+} from "@/lib/ragApi";
+
+type Props = {
   token: string;
 };
 
 type TabKey = "documents" | "upload";
 
-const formatDate = (value?: string | null): string => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+const fmtBytes = (n?: number | null) => {
+  if (!n || n <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  const digits = i === 0 ? 0 : i === 1 ? 1 : 2;
+  return `${v.toFixed(digits)} ${units[i]}`;
 };
 
-const formatSize = (value?: number | null): string => {
-  if (typeof value !== "number") return "—";
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+const fmtDate = (s?: string | null) => {
+  if (!s) return "—";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toLocaleString();
 };
 
-export default function RagAdminClient({ token }: RagAdminClientProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>("documents");
+export default function RagAdminClient({ token }: Props) {
+  const [tab, setTab] = useState<TabKey>("documents");
+
+  // list
   const [items, setItems] = useState<RagDocumentItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
-  const [uploadBusy, setUploadBusy] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadCategory, setUploadCategory] = useState("");
-  const [uploadTags, setUploadTags] = useState("");
-  const [uploadVisibility, setUploadVisibility] = useState<"private" | "public">("public");
+  const [err, setErr] = useState<string | null>(null);
 
-  const hasActiveJobs = useMemo(
-    () => items.some((doc) => ["queued", "processing"].includes(String(doc.status ?? ""))),
-    [items],
+  // filters
+  const [limit, setLimit] = useState<number>(50);
+  const [status, setStatus] = useState<string>("");
+  const [category, setCategory] = useState<string>("");
+  const [visibility, setVisibility] = useState<string>("");
+
+  // details
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsErr, setDetailsErr] = useState<string | null>(null);
+  const [details, setDetails] = useState<RagDocumentItem | null>(null);
+
+  // upload
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadCategory, setUploadCategory] = useState<string>("");
+  const [uploadTags, setUploadTags] = useState<string>("");
+  const [uploadVisibility, setUploadVisibility] = useState<"private" | "public">(
+    "private",
+  );
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+
+  const queryParams = useMemo(
+    () => ({
+      limit,
+      status: status || undefined,
+      category: category || undefined,
+      visibility: visibility || undefined,
+    }),
+    [limit, status, category, visibility],
   );
 
-  const loadDocuments = useCallback(async () => {
+  const refresh = useCallback(async () => {
+    setErr(null);
     setLoading(true);
-    setError(null);
     try {
-      const response = await listRagDocuments(token, { limit: 50 });
-      const nextItems = Array.isArray(response?.items) ? response.items : [];
-      setItems(nextItems);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Laden fehlgeschlagen.");
+      const res = await listRagDocuments(token, queryParams);
+      setItems(res.items || []);
+    } catch (e: any) {
+      setErr(e?.message || "rag_list_failed");
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, queryParams]);
+
+  const loadDetails = useCallback(
+    async (documentId: string) => {
+      setDetailsErr(null);
+      setDetailsLoading(true);
+      setDetails(null);
+      try {
+        const doc = await getRagDocument(token, documentId);
+        setDetails(doc);
+      } catch (e: any) {
+        setDetailsErr(e?.message || "rag_document_failed");
+      } finally {
+        setDetailsLoading(false);
+      }
+    },
+    [token],
+  );
 
   useEffect(() => {
-    loadDocuments();
-  }, [loadDocuments]);
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    if (!hasActiveJobs) return;
-    const id = window.setInterval(() => {
-      loadDocuments();
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [hasActiveJobs, loadDocuments]);
+    if (!selectedId) return;
+    loadDetails(selectedId);
+  }, [selectedId, loadDetails]);
 
-  const markBusy = (docId: string, value: boolean) => {
-    setBusyIds((prev) => ({ ...prev, [docId]: value }));
-  };
-
-  const handleRetry = async (doc: RagDocumentItem) => {
-    const docId = doc?.document_id;
-    if (!docId) return;
-    markBusy(docId, true);
-    setError(null);
-    try {
-      await retryRagDocument(token, docId);
-      await loadDocuments();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Retry fehlgeschlagen.");
-    } finally {
-      markBusy(docId, false);
-    }
-  };
-
-  const handleDelete = async (doc: RagDocumentItem) => {
-    const docId = doc?.document_id;
-    if (!docId) return;
-    const confirmed = window.confirm("Dokument wirklich löschen?");
-    if (!confirmed) return;
-    markBusy(docId, true);
-    setError(null);
-    try {
-      await deleteRagDocument(token, docId);
-      await loadDocuments();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Löschen fehlgeschlagen.");
-    } finally {
-      markBusy(docId, false);
-    }
-  };
-
-  const resetUpload = () => {
-    setUploadFile(null);
-    setUploadCategory("");
-    setUploadTags("");
-    setUploadVisibility("public");
-    setUploadError(null);
-  };
-
-  const handleUpload = async () => {
+  const onUpload = useCallback(async () => {
     if (!uploadFile) {
-      setUploadError("Bitte eine Datei auswählen.");
+      setUploadMsg("Bitte Datei wählen.");
       return;
     }
-    setUploadBusy(true);
-    setUploadError(null);
+    setUploadMsg(null);
+    setUploading(true);
     try {
-      await uploadRagDocument(token, {
+      const res = await uploadRagDocument(token, {
         file: uploadFile,
-        category: uploadCategory.trim() || undefined,
-        tags: uploadTags.trim() || undefined,
+        category: uploadCategory || undefined,
+        tags: uploadTags || undefined,
         visibility: uploadVisibility,
       });
-      resetUpload();
-      setActiveTab("documents");
-      await loadDocuments();
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload fehlgeschlagen.");
+      setUploadMsg(`Upload OK: ${res.document_id} (${res.status})`);
+      setUploadFile(null);
+      // nach Upload: zurück zu Documents + Refresh
+      setTab("documents");
+      await refresh();
+    } catch (e: any) {
+      setUploadMsg(e?.message || "rag_upload_failed");
     } finally {
-      setUploadBusy(false);
+      setUploading(false);
     }
-  };
+  }, [
+    token,
+    uploadFile,
+    uploadCategory,
+    uploadTags,
+    uploadVisibility,
+    refresh,
+  ]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">RAG Admin</div>
-          <h1 className="text-2xl font-semibold text-slate-900">Knowledge Documents</h1>
+          <h1 className="text-xl font-semibold">RAG Admin</h1>
+          <p className="text-sm text-zinc-400">
+            Hidden Admin-only Dashboard (Documents / Upload)
+          </p>
         </div>
+
         <div className="flex items-center gap-2">
           <button
-            type="button"
-            onClick={() => setActiveTab("documents")}
-            className={`rounded-full px-4 py-1 text-xs font-semibold ${
-              activeTab === "documents" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+            className={`px-3 py-1.5 rounded-md text-sm border ${
+              tab === "documents"
+                ? "border-zinc-200/40 bg-zinc-200/10"
+                : "border-zinc-200/20 hover:bg-zinc-200/5"
             }`}
+            onClick={() => setTab("documents")}
+            type="button"
           >
             Documents
           </button>
           <button
-            type="button"
-            onClick={() => setActiveTab("upload")}
-            className={`rounded-full px-4 py-1 text-xs font-semibold ${
-              activeTab === "upload" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+            className={`px-3 py-1.5 rounded-md text-sm border ${
+              tab === "upload"
+                ? "border-zinc-200/40 bg-zinc-200/10"
+                : "border-zinc-200/20 hover:bg-zinc-200/5"
             }`}
+            onClick={() => setTab("upload")}
+            type="button"
           >
             Upload
           </button>
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
-      ) : null}
+      {tab === "documents" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <label className="block text-xs text-zinc-400">Limit</label>
+              <input
+                className="px-2 py-1 rounded-md bg-black/20 border border-zinc-200/20 text-sm w-24"
+                type="number"
+                min={1}
+                max={500}
+                value={limit}
+                onChange={(e) => setLimit(Number(e.target.value) || 50)}
+              />
+            </div>
 
-      {activeTab === "documents" ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-slate-700">Documents</div>
+            <div className="space-y-1">
+              <label className="block text-xs text-zinc-400">Status</label>
+              <input
+                className="px-2 py-1 rounded-md bg-black/20 border border-zinc-200/20 text-sm w-40"
+                placeholder="e.g. ready/failed/..."
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs text-zinc-400">Category</label>
+              <input
+                className="px-2 py-1 rounded-md bg-black/20 border border-zinc-200/20 text-sm w-40"
+                placeholder="e.g. norms"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs text-zinc-400">Visibility</label>
+              <input
+                className="px-2 py-1 rounded-md bg-black/20 border border-zinc-200/20 text-sm w-40"
+                placeholder="public/private"
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value)}
+              />
+            </div>
+
             <button
+              className="px-3 py-2 rounded-md text-sm border border-zinc-200/20 hover:bg-zinc-200/5"
+              onClick={() => refresh()}
+              disabled={loading}
               type="button"
-              onClick={() => loadDocuments()}
-              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
             >
-              Refresh
+              {loading ? "Refreshing…" : "Refresh"}
             </button>
+
+            {err && (
+              <div className="text-sm text-red-300">
+                {err}
+              </div>
+            )}
           </div>
 
-          <div className="mt-3">
-            {loading ? <div className="text-xs text-slate-500">Lade Dokumente …</div> : null}
-            {!loading && items.length === 0 ? (
-              <div className="text-xs text-slate-500">Keine Dokumente gefunden.</div>
-            ) : null}
-            {items.length > 0 ? (
-              <div className="overflow-hidden rounded-xl border border-slate-200">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Datei</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Größe</th>
-                      <th className="px-3 py-2">Updated</th>
-                      <th className="px-3 py-2 text-right">Aktion</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((doc, index) => {
-                      const docId = doc.document_id || `doc-${index}`;
-                      const busy = doc.document_id ? busyIds[doc.document_id] : false;
-                      const label = doc.filename || doc.document_id || "Unbekannt";
-                      return (
-                        <tr key={docId} className="border-t border-slate-200">
-                          <td className="px-3 py-2">
-                            <div className="font-semibold text-slate-900">{label}</div>
-                            <div className="text-[11px] text-slate-500">
-                              {doc.category || "—"} · {doc.visibility || "—"}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2">{doc.status || "—"}</td>
-                          <td className="px-3 py-2">{formatSize(doc.size_bytes)}</td>
-                          <td className="px-3 py-2">{formatDate(doc.updated_at || doc.created_at)}</td>
-                          <td className="px-3 py-2 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleRetry(doc)}
-                                disabled={busy || !doc.document_id}
-                                className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Retry
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(doc)}
-                                disabled={busy || !doc.document_id}
-                                className="rounded-full bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Delete
-                              </button>
-                            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2">
+              <div className="border border-zinc-200/15 rounded-lg overflow-hidden">
+                <div className="px-3 py-2 text-xs text-zinc-400 border-b border-zinc-200/10">
+                  {items.length} items
+                </div>
+
+                <div className="overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-xs text-zinc-400">
+                      <tr className="border-b border-zinc-200/10">
+                        <th className="text-left px-3 py-2">Filename</th>
+                        <th className="text-left px-3 py-2">Status</th>
+                        <th className="text-left px-3 py-2">Visibility</th>
+                        <th className="text-left px-3 py-2">Size</th>
+                        <th className="text-left px-3 py-2">Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((it) => {
+                        const isSel = selectedId === it.document_id;
+                        return (
+                          <tr
+                            key={it.document_id}
+                            className={`border-b border-zinc-200/5 hover:bg-zinc-200/5 cursor-pointer ${
+                              isSel ? "bg-zinc-200/10" : ""
+                            }`}
+                            onClick={() => setSelectedId(it.document_id)}
+                          >
+                            <td className="px-3 py-2">
+                              <div className="font-medium">
+                                {it.filename || it.document_id}
+                              </div>
+                              <div className="text-xs text-zinc-500">
+                                {it.document_id}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2">{it.status || "—"}</td>
+                            <td className="px-3 py-2">
+                              {it.visibility || "—"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {fmtBytes(it.size_bytes)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {fmtDate(it.updated_at)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {items.length === 0 && !loading && (
+                        <tr>
+                          <td
+                            className="px-3 py-6 text-zinc-500 text-center"
+                            colSpan={5}
+                          >
+                            No documents found.
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
 
-      {activeTab === "upload" ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold text-slate-700">Upload</div>
-            <button
-              type="button"
-              onClick={resetUpload}
-              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-            >
-              Reset
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-3 text-sm text-slate-700">
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold text-slate-500">Datei</span>
-              <input
-                type="file"
-                onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
-              <div className="text-xs text-slate-500">{uploadFile?.name || "Keine Datei gewählt."}</div>
-            </label>
-
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold text-slate-500">Kategorie</span>
-              <input
-                value={uploadCategory}
-                onChange={(event) => setUploadCategory(event.target.value)}
-                placeholder="z.B. norms, materials"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
-            </label>
-
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold text-slate-500">Tags (comma)</span>
-              <input
-                value={uploadTags}
-                onChange={(event) => setUploadTags(event.target.value)}
-                placeholder="iso, din, nitril"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
-            </label>
-
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold text-slate-500">Sichtbarkeit</span>
-              <select
-                value={uploadVisibility}
-                onChange={(event) => setUploadVisibility(event.target.value as "private" | "public")}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="private">privat</option>
-                <option value="public">öffentlich</option>
-              </select>
-            </label>
-          </div>
-
-          {uploadError ? (
-            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-              {uploadError}
+              <p className="text-xs text-zinc-500 mt-2">
+                Hinweis: Delete/Retry sind nicht verfügbar, da in{" "}
+                <code className="text-zinc-300">ragApi.ts</code> keine Exporte
+                dafür existieren.
+              </p>
             </div>
-          ) : null}
 
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={uploadBusy}
-              className="rounded-full bg-emerald-600 px-4 py-1 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {uploadBusy ? "Upload…" : "Upload"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("documents")}
-              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-            >
-              Zurück
-            </button>
+            <div className="lg:col-span-1">
+              <div className="border border-zinc-200/15 rounded-lg p-3 space-y-2">
+                <div className="text-sm font-semibold">Details</div>
+
+                {!selectedId && (
+                  <div className="text-sm text-zinc-500">
+                    Wähle ein Dokument aus der Liste.
+                  </div>
+                )}
+
+                {selectedId && (
+                  <>
+                    {detailsLoading && (
+                      <div className="text-sm text-zinc-500">
+                        Loading…
+                      </div>
+                    )}
+                    {detailsErr && (
+                      <div className="text-sm text-red-300">
+                        {detailsErr}
+                      </div>
+                    )}
+
+                    {details && (
+                      <div className="text-sm space-y-2">
+                        <div>
+                          <div className="text-xs text-zinc-400">ID</div>
+                          <div className="break-all">{details.document_id}</div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs text-zinc-400">Filename</div>
+                          <div>{details.filename || "—"}</div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <div className="text-xs text-zinc-400">Status</div>
+                            <div>{details.status || "—"}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-400">Visibility</div>
+                            <div>{details.visibility || "—"}</div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <div className="text-xs text-zinc-400">Category</div>
+                            <div>{details.category || "—"}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-400">Size</div>
+                            <div>{fmtBytes(details.size_bytes)}</div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs text-zinc-400">Created</div>
+                          <div>{fmtDate(details.created_at)}</div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs text-zinc-400">Updated</div>
+                          <div>{fmtDate(details.updated_at)}</div>
+                        </div>
+
+                        {details.error && (
+                          <div>
+                            <div className="text-xs text-zinc-400">Error</div>
+                            <div className="text-red-300 whitespace-pre-wrap">
+                              {details.error}
+                            </div>
+                          </div>
+                        )}
+
+                        {details.ingest_stats && (
+                          <div>
+                            <div className="text-xs text-zinc-400">Ingest stats</div>
+                            <pre className="text-xs bg-black/20 border border-zinc-200/10 rounded-md p-2 overflow-auto">
+                              {JSON.stringify(details.ingest_stats, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+
+                        <button
+                          className="px-3 py-2 rounded-md text-sm border border-zinc-200/20 hover:bg-zinc-200/5"
+                          onClick={() => loadDetails(details.document_id)}
+                          type="button"
+                        >
+                          Reload details
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-        </section>
-      ) : null}
+        </div>
+      )}
+
+      {tab === "upload" && (
+        <div className="border border-zinc-200/15 rounded-lg p-4 space-y-4 max-w-2xl">
+          <div className="text-sm font-semibold">Upload</div>
+
+          <div className="space-y-2">
+            <label className="block text-xs text-zinc-400">File</label>
+            <input
+              className="block w-full text-sm"
+              type="file"
+              onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="block text-xs text-zinc-400">Category (optional)</label>
+              <input
+                className="px-2 py-1 rounded-md bg-black/20 border border-zinc-200/20 text-sm w-full"
+                value={uploadCategory}
+                onChange={(e) => setUploadCategory(e.target.value)}
+                placeholder="e.g. norms"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs text-zinc-400">Tags (optional)</label>
+              <input
+                className="px-2 py-1 rounded-md bg-black/20 border border-zinc-200/20 text-sm w-full"
+                value={uploadTags}
+                onChange={(e) => setUploadTags(e.target.value)}
+                placeholder="comma,separated,tags"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs text-zinc-400">Visibility</label>
+              <select
+                className="px-2 py-1 rounded-md bg-black/20 border border-zinc-200/20 text-sm w-full"
+                value={uploadVisibility}
+                onChange={(e) =>
+                  setUploadVisibility(e.target.value as "private" | "public")
+                }
+              >
+                <option value="private">private</option>
+                <option value="public">public</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              className="px-3 py-2 rounded-md text-sm border border-zinc-200/20 hover:bg-zinc-200/5 disabled:opacity-60"
+              onClick={() => onUpload()}
+              disabled={uploading}
+              type="button"
+            >
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
+            {uploadMsg && (
+              <div className="text-sm text-zinc-300">{uploadMsg}</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
