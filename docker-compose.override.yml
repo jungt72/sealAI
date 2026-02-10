@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
-      - ./.env.dev
+      - ./.env
     environment:
       REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
 
