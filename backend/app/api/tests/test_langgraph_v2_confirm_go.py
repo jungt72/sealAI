@@ -474,3 +474,192 @@ def test_tenant_user_isolation_state_patch_confirm_with_same_chat_id(monkeypatch
     # - backend/app/api/v1/endpoints/langgraph_v2.py:1339-1349 (/confirm/go uses resolved key)
 
 
+def test_parameters_patch_lww_disjoint_fields_same_base_versions(monkeypatch):
+    chat_id = "chat-lww-disjoint"
+    user = RequestUser(user_id="user-1", tenant_id="tenant-1", username="tester", sub="user-1", roles=[])
+    expected_thread_id = resolve_checkpoint_thread_id(tenant_id=user.tenant_id, user_id=user.user_id, chat_id=chat_id)
+    captured = {"build": [], "acks": []}
+
+    class _StateSnapshot:
+        def __init__(self, values):
+            self.values = values
+            self.config = {}
+
+    class _PatchGraph:
+        def __init__(self):
+            self.checkpointer = object()
+            self.store = {
+                expected_thread_id: {
+                    "parameters": {},
+                    "parameter_versions": {"pressure_bar": 0, "temperature_C": 0},
+                    "parameter_updated_at": {},
+                    "parameter_provenance": {},
+                }
+            }
+
+        async def aget_state(self, config):
+            thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+            return _StateSnapshot(dict(self.store.get(thread_id, {})))
+
+        async def aupdate_state(self, config, updates, as_node=None):
+            thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+            current = dict(self.store.get(thread_id, {}))
+            current.update(dict(updates or {}))
+            self.store[thread_id] = current
+
+    graph = _PatchGraph()
+
+    async def _fake_build_graph_config(*, thread_id, **_kwargs):
+        captured["build"].append(thread_id)
+        return graph, {"configurable": {"thread_id": thread_id}}
+
+    async def _capture_broadcast(**kwargs):
+        captured["acks"].append(kwargs)
+        return None
+
+    monkeypatch.setattr(endpoint, "_build_graph_config", _fake_build_graph_config)
+    monkeypatch.setattr(endpoint, "assert_node_exists", lambda *args, **kwargs: None)
+    monkeypatch.setattr(endpoint.sse_broadcast, "broadcast", _capture_broadcast)
+
+    async def _run():
+        request = _request()
+        base_versions = {"pressure_bar": 0, "temperature_C": 0}
+        patch_a = endpoint.ParametersPatchRequest(
+            chat_id=chat_id,
+            parameters={"pressure_bar": 7},
+            base_versions=base_versions,
+        )
+        patch_b = endpoint.ParametersPatchRequest(
+            chat_id=chat_id,
+            parameters={"temperature_C": 50},
+            base_versions=base_versions,
+        )
+        response_a = await endpoint.patch_parameters(patch_a, request, user=user)
+        response_b = await endpoint.patch_parameters(patch_b, request, user=user)
+        return response_a, response_b
+
+    response_a, response_b = asyncio.run(_run())
+
+    assert captured["build"] == [expected_thread_id, expected_thread_id]
+    assert response_a["ok"] is True
+    assert response_b["ok"] is True
+    assert response_a["rejected_fields"] == []
+    assert response_b["rejected_fields"] == []
+    assert response_a["applied_fields"] == ["pressure_bar"]
+    assert response_b["applied_fields"] == ["temperature_C"]
+
+    final_state = graph.store[expected_thread_id]
+    assert final_state["parameters"]["pressure_bar"] == 7
+    assert final_state["parameters"]["temperature_C"] == 50
+    assert final_state["parameter_versions"]["pressure_bar"] == 1
+    assert final_state["parameter_versions"]["temperature_C"] == 1
+    assert "pressure_bar" in final_state["parameter_updated_at"]
+    assert "temperature_C" in final_state["parameter_updated_at"]
+
+    assert len(captured["acks"]) == 2
+    assert captured["acks"][0]["event"] == "parameter_patch_ack"
+    assert captured["acks"][1]["event"] == "parameter_patch_ack"
+    assert captured["acks"][0]["data"]["rejected_fields"] == []
+    assert captured["acks"][1]["data"]["rejected_fields"] == []
+
+    # Evidence:
+    # - backend/app/api/v1/endpoints/langgraph_v2.py:1514-1522 (LWW call with base_versions)
+    # - backend/app/api/v1/endpoints/langgraph_v2.py:1564-1571 (response includes rejected_fields/versions/updated_at)
+    # - backend/app/langgraph_v2/utils/parameter_patch.py:331-335 (base_v < current_v => stale rejection)
+    # - backend/app/langgraph_v2/utils/parameter_patch.py:352-358 (accepted fields bump versions and updated_at)
+
+
+def test_parameters_patch_lww_conflict_same_field_same_base_versions(monkeypatch):
+    chat_id = "chat-lww-conflict"
+    user = RequestUser(user_id="user-1", tenant_id="tenant-1", username="tester", sub="user-1", roles=[])
+    expected_thread_id = resolve_checkpoint_thread_id(tenant_id=user.tenant_id, user_id=user.user_id, chat_id=chat_id)
+    captured = {"build": [], "acks": []}
+
+    class _StateSnapshot:
+        def __init__(self, values):
+            self.values = values
+            self.config = {}
+
+    class _PatchGraph:
+        def __init__(self):
+            self.checkpointer = object()
+            self.store = {
+                expected_thread_id: {
+                    "parameters": {"pressure_bar": 0},
+                    "parameter_versions": {"pressure_bar": 0},
+                    "parameter_updated_at": {},
+                    "parameter_provenance": {"pressure_bar": "user"},
+                }
+            }
+
+        async def aget_state(self, config):
+            thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+            return _StateSnapshot(dict(self.store.get(thread_id, {})))
+
+        async def aupdate_state(self, config, updates, as_node=None):
+            thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+            current = dict(self.store.get(thread_id, {}))
+            current.update(dict(updates or {}))
+            self.store[thread_id] = current
+
+    graph = _PatchGraph()
+
+    async def _fake_build_graph_config(*, thread_id, **_kwargs):
+        captured["build"].append(thread_id)
+        return graph, {"configurable": {"thread_id": thread_id}}
+
+    async def _capture_broadcast(**kwargs):
+        captured["acks"].append(kwargs)
+        return None
+
+    monkeypatch.setattr(endpoint, "_build_graph_config", _fake_build_graph_config)
+    monkeypatch.setattr(endpoint, "assert_node_exists", lambda *args, **kwargs: None)
+    monkeypatch.setattr(endpoint.sse_broadcast, "broadcast", _capture_broadcast)
+
+    async def _run():
+        request = _request()
+        patch_a = endpoint.ParametersPatchRequest(
+            chat_id=chat_id,
+            parameters={"pressure_bar": 7},
+            base_versions={"pressure_bar": 0},
+        )
+        patch_b = endpoint.ParametersPatchRequest(
+            chat_id=chat_id,
+            parameters={"pressure_bar": 9},
+            base_versions={"pressure_bar": 0},
+        )
+        response_a = await endpoint.patch_parameters(patch_a, request, user=user)
+        response_b = await endpoint.patch_parameters(patch_b, request, user=user)
+        return response_a, response_b
+
+    response_a, response_b = asyncio.run(_run())
+
+    assert captured["build"] == [expected_thread_id, expected_thread_id]
+    assert response_a["ok"] is True
+    assert response_b["ok"] is True
+    assert response_a["applied_fields"] == ["pressure_bar"]
+    assert response_a["rejected_fields"] == []
+    assert response_b["applied_fields"] == []
+    assert response_b["rejected_fields"] == [{"field": "pressure_bar", "reason": "stale"}]
+    # Frontend resync signal for conflict is rejected_fields in response/ack.
+    assert response_b["versions"]["pressure_bar"] == 1
+
+    final_state = graph.store[expected_thread_id]
+    assert final_state["parameters"]["pressure_bar"] == 7
+    assert final_state["parameter_versions"]["pressure_bar"] == 1
+    first_ts = response_a["updated_at"]["pressure_bar"]
+    second_ts = response_b["updated_at"]["pressure_bar"]
+    assert isinstance(first_ts, float)
+    assert second_ts == first_ts
+
+    assert len(captured["acks"]) == 2
+    assert captured["acks"][0]["event"] == "parameter_patch_ack"
+    assert captured["acks"][1]["event"] == "parameter_patch_ack"
+    assert captured["acks"][0]["data"]["rejected_fields"] == []
+    assert captured["acks"][1]["data"]["rejected_fields"] == [{"field": "pressure_bar", "reason": "stale"}]
+
+    # Evidence:
+    # - backend/app/api/v1/endpoints/langgraph_v2.py:1477-1491 (resolved checkpoint_thread_id -> _build_graph_config)
+    # - backend/app/api/v1/endpoints/langgraph_v2.py:1564-1587 (response + parameter_patch_ack carry rejected_fields)
+    # - backend/app/langgraph_v2/utils/parameter_patch.py:331-335 (stale rejection rule)
+    # - backend/app/langgraph_v2/utils/parameter_patch.py:352-358 (only applied fields mutate versions/updated_at)
