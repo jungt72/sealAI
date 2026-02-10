@@ -28,6 +28,7 @@ os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.js
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
+from app.api.v1.endpoints import state as state_endpoint  # noqa: E402
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest  # noqa: E402
 from app.langgraph_v2.utils.threading import resolve_checkpoint_thread_id  # noqa: E402
 from app.services.auth.dependencies import RequestUser  # noqa: E402
@@ -293,3 +294,183 @@ def test_confirm_go_resume_after_sse_checkpoint(monkeypatch):
     )
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert response["last_node"] == "rag_support_node"
+def test_resolved_thread_key_consistent_across_state_patch_and_confirm_go(monkeypatch):
+    expected_thread_id = resolve_checkpoint_thread_id(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        chat_id="chat-1",
+    )
+    captured: dict[str, str | None] = {
+        "state": None,
+        "patch": None,
+        "confirm": None,
+    }
+
+    class _StateSnapshot:
+        def __init__(self, thread_id: str):
+            self.values = {"parameters": {}}
+            self.next = []
+            self.config = {"configurable": {"thread_id": thread_id}}
+
+    async def _fake_resolve_state_snapshot(*, thread_id, user, request_id=None, checkpoint_thread_id=None):
+        captured["state"] = checkpoint_thread_id
+        return object(), {"configurable": {"thread_id": checkpoint_thread_id}}, _StateSnapshot(checkpoint_thread_id), False
+
+    dummy = DummyGraph(_make_state())
+
+    async def _fake_build_graph_config(*, thread_id, **_kwargs):
+        if captured["patch"] is None:
+            captured["patch"] = thread_id
+        else:
+            captured["confirm"] = thread_id
+        return dummy, {"configurable": {"thread_id": thread_id}}
+
+    async def _noop_broadcast(**_kwargs):
+        return None
+
+    monkeypatch.setattr(state_endpoint, "_resolve_state_snapshot", _fake_resolve_state_snapshot)
+    monkeypatch.setattr(endpoint, "_build_graph_config", _fake_build_graph_config)
+    monkeypatch.setattr(endpoint, "assert_node_exists", lambda *args, **kwargs: None)
+    monkeypatch.setattr(endpoint.sse_broadcast, "broadcast", _noop_broadcast)
+
+    async def _run():
+        request = _request()
+        user = RequestUser(user_id="user-1", tenant_id="tenant-1", username="tester", sub="user-1", roles=[])
+
+        await state_endpoint.get_state(request, thread_id="chat-1", user=user)
+
+        patch_body = endpoint.ParametersPatchRequest(chat_id="chat-1", parameters={"pressure_bar": 7})
+        await endpoint.patch_parameters(patch_body, request, user=user)
+
+        confirm_body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
+        await endpoint.confirm_go(confirm_body, request, user=user)
+
+    asyncio.run(_run())
+
+    assert captured["state"] == expected_thread_id
+    assert captured["patch"] == expected_thread_id
+    assert captured["confirm"] == expected_thread_id
+
+
+def test_tenant_user_isolation_state_patch_confirm_with_same_chat_id(monkeypatch):
+    chat_id = "same"
+    key_a = resolve_checkpoint_thread_id(tenant_id="tenant-1", user_id="user-1", chat_id=chat_id)
+    key_b = resolve_checkpoint_thread_id(tenant_id="tenant-1", user_id="user-2", chat_id=chat_id)
+    key_c = resolve_checkpoint_thread_id(tenant_id="tenant-2", user_id="user-1", chat_id=chat_id)
+    assert len({key_a, key_b, key_c}) == 3
+
+    class _StateSnapshot:
+        def __init__(self, values, thread_id: str):
+            self.values = values
+            self.next = []
+            self.config = {"configurable": {"thread_id": thread_id}}
+
+    class _TenantScopedGraph:
+        def __init__(self, store):
+            self.store = store
+            self.checkpointer = object()
+
+        def get_graph(self):
+            return type(
+                "G",
+                (),
+                {"nodes": {"confirm_checkpoint_node": None, "confirm_recommendation_node": None, "supervisor_policy_node": None}},
+            )()
+
+        async def aget_state(self, config):
+            thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+            return _StateSnapshot(self.store.get(thread_id, {}).copy(), thread_id)
+
+        async def aupdate_state(self, config, updates, as_node=None):
+            thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+            current = dict(self.store.get(thread_id, {}))
+            current.update(dict(updates or {}))
+            self.store[thread_id] = current
+
+        async def ainvoke(self, _input, config=None):
+            thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+            state = self.store.get(thread_id, {})
+            decision = state.get("confirm_decision")
+            if decision == "approve":
+                return {"final_text": "Weiter", "phase": "final", "last_node": "final_answer_node"}
+            return {"final_text": "", "phase": "final", "last_node": "final_answer_node"}
+
+    store = {
+        key_a: {
+            "parameters": {},
+            "confirm_checkpoint": {"required_user_sub": "user-1", "conversation_id": key_a},
+            "confirm_checkpoint_id": "chk-a",
+            "pending_action": "RUN_PANEL_NORMS_RAG",
+            "awaiting_user_confirmation": True,
+        },
+        key_b: {"parameters": {}},
+        key_c: {"parameters": {}},
+    }
+    graph = _TenantScopedGraph(store)
+    captured = {"state": [], "build": []}
+
+    async def _fake_resolve_state_snapshot(*, thread_id, user, request_id=None, checkpoint_thread_id=None):
+        captured["state"].append(checkpoint_thread_id)
+        config = {"configurable": {"thread_id": checkpoint_thread_id}}
+        return graph, config, _StateSnapshot(store.get(checkpoint_thread_id, {}).copy(), checkpoint_thread_id), False
+
+    async def _fake_build_graph_config(*, thread_id, **_kwargs):
+        captured["build"].append(thread_id)
+        return graph, {"configurable": {"thread_id": thread_id}}
+
+    async def _noop_broadcast(**_kwargs):
+        return None
+
+    monkeypatch.setattr(state_endpoint, "_resolve_state_snapshot", _fake_resolve_state_snapshot)
+    monkeypatch.setattr(endpoint, "_build_graph_config", _fake_build_graph_config)
+    monkeypatch.setattr(endpoint, "assert_node_exists", lambda *args, **kwargs: None)
+    monkeypatch.setattr(endpoint.sse_broadcast, "broadcast", _noop_broadcast)
+
+    async def _run():
+        request = _request()
+        user_a = RequestUser(user_id="user-1", tenant_id="tenant-1", username="a", sub="user-1", roles=[])
+        user_b = RequestUser(user_id="user-2", tenant_id="tenant-1", username="b", sub="user-2", roles=[])
+        user_c = RequestUser(user_id="user-1", tenant_id="tenant-2", username="c", sub="user-1", roles=[])
+
+        # State resolves per caller scope.
+        await state_endpoint.get_state(request, thread_id=chat_id, user=user_a)
+        await state_endpoint.get_state(request, thread_id=chat_id, user=user_b)
+        await state_endpoint.get_state(request, thread_id=chat_id, user=user_c)
+
+        # Patch A must not bleed into B/C for same chat_id.
+        patch_a = endpoint.ParametersPatchRequest(chat_id=chat_id, parameters={"pressure_bar": 7})
+        await endpoint.patch_parameters(patch_a, request, user=user_a)
+        assert store[key_a].get("parameters", {}).get("pressure_bar") == 7
+        assert store[key_b].get("parameters", {}).get("pressure_bar") is None
+        assert store[key_c].get("parameters", {}).get("pressure_bar") is None
+
+        patch_b = endpoint.ParametersPatchRequest(chat_id=chat_id, parameters={"temperature_C": 50})
+        await endpoint.patch_parameters(patch_b, request, user=user_b)
+        assert store[key_b].get("parameters", {}).get("temperature_C") == 50
+        assert store[key_a].get("parameters", {}).get("temperature_C") is None
+
+        # Confirm/go with foreign checkpoint id from A as B/C must not access A state.
+        body_b = ConfirmGoRequest(chat_id=chat_id, checkpoint_id="chk-a", decision="approve")
+        with pytest.raises(HTTPException) as exc_b:
+            await endpoint.confirm_go(body_b, request, user=user_b)
+        assert getattr(exc_b.value, "status_code", None) == 409
+        assert exc_b.value.detail["code"] == "no_pending_checkpoint"
+
+        body_c = ConfirmGoRequest(chat_id=chat_id, checkpoint_id="chk-a", decision="approve")
+        with pytest.raises(HTTPException) as exc_c:
+            await endpoint.confirm_go(body_c, request, user=user_c)
+        assert getattr(exc_c.value, "status_code", None) == 409
+        assert exc_c.value.detail["code"] == "no_pending_checkpoint"
+
+    asyncio.run(_run())
+
+    assert captured["state"] == [key_a, key_b, key_c]
+    # build captures patch(A), patch(B), confirm(B), confirm(C) resolved keys
+    assert captured["build"] == [key_a, key_b, key_b, key_c]
+
+    # Evidence:
+    # - backend/app/api/v1/endpoints/state.py:265-277, 363-375 (resolved checkpoint key passed to resolver)
+    # - backend/app/api/v1/endpoints/langgraph_v2.py:1477-1491 (/parameters/patch uses resolved key)
+    # - backend/app/api/v1/endpoints/langgraph_v2.py:1339-1349 (/confirm/go uses resolved key)
+
+
