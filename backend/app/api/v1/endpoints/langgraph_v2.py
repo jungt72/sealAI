@@ -1036,7 +1036,12 @@ async def _event_stream_v2(
                 )
                 await _emit_event(
                     "error",
-                    {"type": "error", "message": message, "request_id": request_id},
+                    {
+                        "type": "error",
+                        "message": message,
+                        "request_id": request_id,
+                        "chat_id": req.chat_id or checkpoint_thread_id,
+                    },
                 )
                 await _emit_event(
                     "done",
