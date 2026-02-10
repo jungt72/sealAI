@@ -1385,7 +1385,7 @@ async def patch_parameters(
             raise HTTPException(status_code=400, detail=error_detail("missing_parameters", request_id=request_id))
 
         graph, config = await _build_graph_config(
-            thread_id=chat_id,
+            thread_id=checkpoint_thread_id,
             user_id=scoped_user_id,
             tenant_id=user.tenant_id,
             username=user.username,
