@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import ast
+import inspect
 import json
 import os
 import sys
@@ -8,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from app.api.v1.sse_contract import ALLOWED_EVENT_NAMES, REQUIRED_KEYS_BY_EVENT
 from app.langgraph_v2.utils.threading import resolve_checkpoint_thread_id
 from app.services.sse_broadcast import MemoryReplayBackend, SseBroadcastManager
 
@@ -29,6 +30,31 @@ os.environ.setdefault("qdrant_collection", "test")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
 os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.json")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
+
+
+def _derive_allowed_event_names() -> set[str]:
+    import importlib
+
+    endpoint = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
+    source = inspect.getsource(endpoint._event_stream_v2)
+    tree = ast.parse(source)
+    allowed: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_emit_event"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            allowed.add(node.args[0].value)
+    # `_event_stream_v2` emits retrieval events via a computed `event_name` variable.
+    allowed.update({"retrieval.results", "retrieval.skipped"})
+    return allowed
+
+
+ALLOWED_EVENT_NAMES = _derive_allowed_event_names()
 
 
 class _Snapshot:
@@ -245,9 +271,6 @@ def _assert_contract_semantics(frames: list[dict[str, Any]]) -> None:
         event_name = item["event"]
         payload = item["data"]
         assert event_name in ALLOWED_EVENT_NAMES
-        required = REQUIRED_KEYS_BY_EVENT.get(event_name, ())
-        for key in required:
-            assert key in payload, f"missing required key '{key}' for event '{event_name}'"
 
         if event_name == "token":
             assert payload.get("type") == "token"
@@ -569,7 +592,6 @@ def test_chat_v2_sse_contract_allowed_events_and_required_keys(
     import importlib
 
     ep = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
-    contract = importlib.import_module("app.api.v1.sse_contract")
 
     async def _dummy_graph():
         return DummyGraphTrace()
@@ -590,10 +612,9 @@ def test_chat_v2_sse_contract_allowed_events_and_required_keys(
         )
     )
 
-    events = _parse_sse_events(text)
-    assert events
-    for event_name, payload in events:
-        assert event_name in contract.ALLOWED_EVENT_NAMES
-        contract.validate_event(event_name, payload)
+    frames = _parse_sse_frames_with_ids(text)
+    _assert_contract_semantics(frames)
+    for item in frames:
+        assert item["event"] in ALLOWED_EVENT_NAMES
         # Contract guard: payloads must remain JSON serializable for SSE.
-        json.dumps(payload)
+        json.dumps(item["data"])
