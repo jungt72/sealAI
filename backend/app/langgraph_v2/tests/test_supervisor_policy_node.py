@@ -4,10 +4,9 @@ from app.langgraph_v2.nodes.nodes_supervisor import (
     ACTION_ASK_USER,
     ACTION_FINALIZE,
     ACTION_RUN_COMPARISON,
+    ACTION_RUN_PANEL_NORMS_RAG,
     ACTION_RUN_PANEL_CALC,
     ACTION_RUN_PANEL_MATERIAL,
-    ACTION_RUN_PANEL_NORMS_RAG,
-    ACTION_REQUIRE_CONFIRM,
     supervisor_policy_node,
 )
 from app.langgraph_v2.state import Budget, CalcResults, CandidateItem, Intent, SealAIState, WorkingMemory
@@ -38,7 +37,7 @@ def test_supervisor_policy_contradictions_run_norms_panel() -> None:
         confidence=0.3,
     )
     patch = supervisor_policy_node(state)
-    assert patch["next_action"] == ACTION_REQUIRE_CONFIRM
+    assert patch["next_action"] == ACTION_RUN_PANEL_NORMS_RAG
 
 
 def test_supervisor_policy_high_confidence_finalizes() -> None:
@@ -67,7 +66,7 @@ def test_supervisor_policy_comparison_requires_confirm_when_rag_requested() -> N
         requires_rag=True,
     )
     patch = supervisor_policy_node(state)
-    assert patch["next_action"] == ACTION_REQUIRE_CONFIRM
+    assert patch["next_action"] == ACTION_RUN_PANEL_NORMS_RAG
 
 
 def test_supervisor_policy_comparison_runs_rag_after_comparison() -> None:
@@ -78,7 +77,7 @@ def test_supervisor_policy_comparison_runs_rag_after_comparison() -> None:
         working_memory=wm,
     )
     patch = supervisor_policy_node(state)
-    assert patch["next_action"] == ACTION_REQUIRE_CONFIRM
+    assert patch["next_action"] == ACTION_RUN_PANEL_NORMS_RAG
 
 
 def test_supervisor_policy_comparison_finalizes_without_rag() -> None:
@@ -105,3 +104,15 @@ def test_supervisor_policy_retrieval_meta_uses_tenant_id() -> None:
     retrieval_meta = patch.get("retrieval_meta") or {}
     assert retrieval_meta.get("tenant_id") == "tenant-1"
     assert retrieval_meta.get("tenant_id") != "user-123"
+    assert retrieval_meta.get("retrieval_attempted") is False
+
+
+def test_supervisor_policy_info_query_with_sources_request_does_not_emit_requires_rag_false_skip() -> None:
+    state = SealAIState(
+        intent=Intent(goal="explanation_or_comparison"),
+        requires_rag=True,
+        needs_sources=True,
+    )
+    patch = supervisor_policy_node(state)
+    retrieval_meta = patch.get("retrieval_meta") or {}
+    assert retrieval_meta.get("reason") != "requires_rag_false"

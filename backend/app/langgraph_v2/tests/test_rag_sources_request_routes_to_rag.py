@@ -5,7 +5,11 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.langgraph_v2.nodes.nodes_flows import rag_support_node
-from app.langgraph_v2.nodes.nodes_supervisor import ACTION_RUN_PANEL_NORMS_RAG, supervisor_policy_node
+from app.langgraph_v2.nodes.nodes_supervisor import (
+    ACTION_RUN_KNOWLEDGE,
+    ACTION_RUN_PANEL_NORMS_RAG,
+    supervisor_policy_node,
+)
 from app.langgraph_v2.sealai_graph_v2 import (
     build_v2_config,
     create_sealai_graph_v2,
@@ -157,7 +161,6 @@ async def test_sources_and_rag_request_runs_rag_and_emits_retrieval_event(monkey
         if name == "state_update" and payload.get("last_node") == "supervisor_policy_node"
     ]
     assert supervisor_updates
-    assert supervisor_updates[0].get("pending_action") == ACTION_RUN_PANEL_NORMS_RAG
 
     last_nodes = [payload.get("last_node") for name, payload in events if name == "state_update"]
     assert "rag_support_node" in last_nodes
@@ -168,3 +171,70 @@ async def test_sources_and_rag_request_runs_rag_and_emits_retrieval_event(monkey
         (i, name) for i, (name, _payload) in enumerate(events) if name in {"retrieval.results", "retrieval.skipped"}
     ]
     assert retrieval_events
+
+
+@pytest.mark.anyio
+async def test_material_knowledge_query_does_not_emit_checkpoint_required(monkeypatch) -> None:
+    class _FakeGraph:
+        checkpointer = object()
+
+        async def astream(self, initial_state, *, config=None, stream_mode=None):
+            state = (
+                initial_state
+                if isinstance(initial_state, SealAIState)
+                else SealAIState.model_validate(initial_state)
+            )
+            state = state.model_copy(
+                update={
+                    "intent": Intent(goal="explanation_or_comparison"),
+                    "requires_rag": True,
+                    "needs_sources": True,
+                    "phase": "supervisor",
+                    "last_node": "supervisor_policy_node",
+                },
+                deep=True,
+            )
+
+            first_patch = supervisor_policy_node(state)
+            assert first_patch.get("next_action") == ACTION_RUN_KNOWLEDGE
+            assert first_patch.get("pending_action") is None
+            state = state.model_copy(update=first_patch, deep=True)
+            yield ("values", state)
+
+            state = state.model_copy(
+                update={
+                    "phase": "final_answer",
+                    "last_node": "final_answer_node",
+                    "final_text": "PTFE hat typischerweise eine hohe chemische Beständigkeit.",
+                },
+                deep=True,
+            )
+            yield ("values", state)
+
+    graph = _FakeGraph()
+    config = build_v2_config(thread_id="chat-knowledge", user_id="user-1", tenant_id="tenant-1")
+
+    async def _fake_build_graph_config(**_kwargs):
+        return graph, config
+
+    monkeypatch.setattr(endpoint, "_build_graph_config", _fake_build_graph_config)
+
+    req = endpoint.LangGraphV2Request(
+        input="Bitte gib mir Infos zu Kyrolon.",
+        chat_id="chat-knowledge",
+    )
+
+    events: list[tuple[str, dict]] = []
+    async for frame in endpoint._event_stream_v2(
+        req,
+        user_id="user-1",
+        tenant_id="tenant-1",
+        can_read_private=False,
+        checkpoint_thread_id="tenant-1:user-1:chat-knowledge",
+    ):
+        event_name, payload = _parse_sse_frame(frame)
+        if event_name:
+            events.append((event_name, payload))
+
+    checkpoint_events = [payload for name, payload in events if name == "checkpoint_required"]
+    assert checkpoint_events == []

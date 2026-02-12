@@ -1,4 +1,4 @@
-from app.langgraph_v2.nodes.nodes_supervisor import supervisor_policy_node, ACTION_RUN_PANEL_NORMS_RAG, ACTION_RUN_PANEL_CALC, ACTION_REQUIRE_CONFIRM, ACTION_RUN_PANEL_MATERIAL
+from app.langgraph_v2.nodes.nodes_supervisor import supervisor_policy_node, ACTION_RUN_PANEL_NORMS_RAG, ACTION_RUN_PANEL_CALC, ACTION_RUN_PANEL_MATERIAL
 from app.langgraph_v2.state import SealAIState, Intent, WorkingMemory
 from app.langgraph_v2.phase import PHASE
 import pytest
@@ -17,7 +17,7 @@ def test_priority_rag_over_calc():
     
     patch = supervisor_policy_node(state)
     
-    assert patch["next_action"] in {ACTION_REQUIRE_CONFIRM, ACTION_RUN_PANEL_MATERIAL}
+    assert patch["next_action"] in {ACTION_RUN_PANEL_NORMS_RAG, ACTION_RUN_PANEL_MATERIAL}
 
 def test_priority_calc_when_no_rag():
     """
@@ -48,6 +48,6 @@ def test_priority_needs_sources_flag():
     )
     
     patch = supervisor_policy_node(state)
-    assert patch["next_action"] == ACTION_REQUIRE_CONFIRM
-    assert patch["pending_action"] == ACTION_RUN_PANEL_NORMS_RAG
+    assert patch["next_action"] == ACTION_RUN_PANEL_NORMS_RAG
+    assert patch["pending_action"] is None
     assert patch["next_action_reason"] == "rag_sources_required"
