@@ -67,14 +67,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if JOB_WORKER_ENABLED:
         worker_task = asyncio.create_task(start_job_worker())
     app.state.warmed_up = True
-    yield
-    if worker_task:
-        worker_task.cancel()
-        try:
-            await worker_task
-        except Exception:
-            pass
-    log.info("Stopping %s", APP_NAME)
+    try:
+        yield
+    finally:
+        if worker_task:
+            worker_task.cancel()
+            try:
+                await worker_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                log.exception("Job worker failed while shutting down")
+        log.info("Stopping %s", APP_NAME)
 
 
 def create_app() -> FastAPI:
