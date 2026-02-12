@@ -1,35 +1,55 @@
 import pytest
 
+from app.langgraph_v2.nodes.nodes_supervisor import ACTION_REQUIRE_CONFIRM
+from app.langgraph_v2.tests.graph_contract_spec import MANDATORY_EDGES, edge_tuples
+
+
 @pytest.mark.anyio
 async def test_hitl_wiring_present():
     from app.langgraph_v2.sealai_graph_v2 import get_sealai_graph_v2
 
     cg = await get_sealai_graph_v2()
-    edges = list(cg.get_graph().edges)
+    raw_edges = list(cg.get_graph().edges)
+    edges = edge_tuples(raw_edges)
 
-    assert any(e.source == "__start__" and e.target == "policy_preflight_node" for e in edges)
-    assert any(e.source == "policy_preflight_node" and e.target == "resume_router_node" for e in edges)
-    assert any(e.source == "autonomous_supervisor_node" and e.target == "supervisor_policy_node" for e in edges)
+    assert ("__start__", "policy_preflight_node") in edges
+    assert ("policy_preflight_node", "resume_router_node") in edges
+    assert ("assumption_lock_node", "supervisor_policy_node") in edges
+    assert ("design_worker", "assumption_lock_node") in edges
+    assert ("calc_worker", "assumption_lock_node") in edges
+    assert MANDATORY_EDGES.issuperset(
+        {
+            ("__start__", "policy_preflight_node"),
+            ("policy_preflight_node", "resume_router_node"),
+            ("assumption_lock_node", "supervisor_policy_node"),
+            ("design_worker", "assumption_lock_node"),
+            ("calc_worker", "assumption_lock_node"),
+        }
+    )
 
     # confirm checkpoint exists and ends
-    assert any(e.source == "supervisor_policy_node" and e.target == "confirm_checkpoint_node" for e in edges)
+    assert ("supervisor_policy_node", "confirm_checkpoint_node") in edges
+    assert any(
+        e.source == "supervisor_policy_node"
+        and e.target == "confirm_checkpoint_node"
+        and str(e.data) == ACTION_REQUIRE_CONFIRM
+        for e in raw_edges
+    )
 
     # policy finalize variants are accepted and now route through challenger -> policy gate
     assert any(
         e.source == "supervisor_policy_node"
         and e.target == "challenger_feedback_node"
         and str(e.data).lower() == "finalize"
-        for e in edges
+        for e in raw_edges
     ) or any(
         e.source == "supervisor_policy_node"
         and e.target == "challenger_feedback_node"
         and str(e.data).upper() == "FINALIZE"
-        for e in edges
+        for e in raw_edges
     )
-    assert any(e.source == "confirm_checkpoint_node" and e.target == "__end__" for e in edges)
+    assert ("confirm_checkpoint_node", "__end__") in edges
 
-    # spokes return to policy (not to supervisor)
-    assert any(e.source == "design_worker" and e.target == "supervisor_policy_node" for e in edges)
-    assert any(e.source == "calc_worker" and e.target == "supervisor_policy_node" for e in edges)
-    assert not any(e.source == "design_worker" and e.target == "autonomous_supervisor_node" for e in edges)
-    assert not any(e.source == "calc_worker" and e.target == "autonomous_supervisor_node" for e in edges)
+    # spokes return via assumption lock before policy
+    assert not (("design_worker", "autonomous_supervisor_node") in edges)
+    assert not (("calc_worker", "autonomous_supervisor_node") in edges)

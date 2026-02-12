@@ -3,16 +3,15 @@ from langgraph.checkpoint.memory import MemorySaver
 from app.langgraph_v2.sealai_graph_v2 import create_sealai_graph_v2
 from app.langgraph_v2.nodes.nodes_supervisor import supervisor_policy_node
 from app.langgraph_v2.state import Intent, SealAIState
+from app.langgraph_v2.tests.graph_contract_spec import MANDATORY_EDGES, edge_tuples
 
 
 def test_knowledge_nodes_are_wired():
     graph = create_sealai_graph_v2(checkpointer=MemorySaver())
     compiled = graph.get_graph()
-    edges = list(compiled.edges)
-    assert any(
-        edge.source == "supervisor_policy_node" and edge.target == "knowledge_entry_node"
-        for edge in edges
-    )
+    edges = edge_tuples(compiled.edges)
+    assert ("supervisor_policy_node", "knowledge_entry_node") in edges
+    assert ("supervisor_policy_node", "knowledge_entry_node") in MANDATORY_EDGES
 
 
 def test_supervisor_routes_knowledge_intent():

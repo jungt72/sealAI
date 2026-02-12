@@ -2,35 +2,32 @@ from __future__ import annotations
 
 """Offline smoke tests for the current LangGraph v2 contract."""
 
-from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
 
 from app.api.v1.endpoints.langgraph_v2 import _build_state_update_payload
-from app.langgraph_v2.nodes.nodes_discovery import confirm_gate_node
 from app.langgraph_v2.nodes.nodes_supervisor import ACTION_ASK_USER, ACTION_RUN_KNOWLEDGE, supervisor_policy_node
-from app.langgraph_v2.sealai_graph_v2 import _frontdoor_router, knowledge_entry_node
-from app.langgraph_v2.state import Intent, SealAIState
+from app.langgraph_v2.sealai_graph_v2 import create_sealai_graph_v2
+from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.tests.graph_contract_spec import (
+    ALLOWED_SUPERVISOR_INBOUND,
+    FORBIDDEN_EDGES,
+    MANDATORY_EDGES,
+    MANDATORY_NODES,
+    edge_tuples,
+)
 
 
-def test_graph_contract_smoke_frontdoor_smalltalk_routes_to_finalize() -> None:
-    state = SealAIState(intent=Intent(goal="smalltalk"))
-    assert _frontdoor_router(state) == "finalize"
+def test_graph_contract_smoke_compiled_graph_matches_contract_spec() -> None:
+    compiled = create_sealai_graph_v2(checkpointer=MemorySaver()).get_graph()
+    nodes = set(compiled.nodes)
+    edges = edge_tuples(compiled.edges)
 
+    assert MANDATORY_NODES.issubset(nodes)
+    assert MANDATORY_EDGES.issubset(edges)
+    assert edges.isdisjoint(FORBIDDEN_EDGES)
 
-def test_graph_contract_smoke_knowledge_entry_sets_last_node() -> None:
-    state = SealAIState(intent=Intent(goal="explanation_or_comparison"))
-    patch = knowledge_entry_node(state)
-    patched = state.model_copy(update=patch, deep=True)
-    assert patched.last_node == "knowledge_entry_node"
-
-
-def test_graph_contract_smoke_confirm_gate_design_triggers_ask_missing() -> None:
-    state = SealAIState(
-        intent=Intent(goal="design_recommendation", confidence=0.9),
-        messages=[HumanMessage(content="Bitte lege eine Dichtung aus")],
-    )
-    patch = confirm_gate_node(state)
-    assert patch.get("awaiting_user_input") is True
-    assert patch.get("ask_missing_request") is not None
+    inbound_supervisor = {src for src, dst in edges if dst == "supervisor_policy_node"}
+    assert inbound_supervisor == ALLOWED_SUPERVISOR_INBOUND
 
 
 def test_graph_contract_smoke_state_update_payload_contract() -> None:
