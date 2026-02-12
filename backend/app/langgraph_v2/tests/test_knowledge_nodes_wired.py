@@ -10,7 +10,7 @@ def test_knowledge_nodes_are_wired():
     compiled = graph.get_graph()
     edges = list(compiled.edges)
     assert any(
-        edge.source == "autonomous_supervisor_node" and edge.target == "knowledge_entry_node"
+        edge.source == "supervisor_policy_node" and edge.target == "knowledge_entry_node"
         for edge in edges
     )
 

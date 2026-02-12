@@ -1,13 +1,10 @@
 import pytest
 from langchain_core.messages import HumanMessage
+from app.langgraph_v2.nodes.nodes_resume import confirm_resume_node
 from app.langgraph_v2.state.sealai_state import SealAIState
 
 @pytest.mark.anyio
 async def test_hitl_resume_clears_confirmation_and_resolves():
-    from app.langgraph_v2.sealai_graph_v2 import get_sealai_graph_v2
-
-    cg = await get_sealai_graph_v2()
-
     s = SealAIState(
         tenant_id="t",
         user_id="u",
@@ -18,10 +15,7 @@ async def test_hitl_resume_clears_confirmation_and_resolves():
         pending_action="knowledge",
         next_action=None,
     )
-    config = {"configurable": {"thread_id": "thr", "checkpoint_ns": "sealai:v2:test"}}
-
-    out = await cg.ainvoke(s, config=config)
-    d = out.model_dump() if hasattr(out, "model_dump") else dict(out)
+    d = confirm_resume_node(s)
 
     assert d.get("awaiting_user_confirmation") is False
     assert d.get("confirm_decision") is None

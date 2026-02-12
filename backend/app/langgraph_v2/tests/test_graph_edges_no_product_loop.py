@@ -14,6 +14,6 @@ async def test_no_product_explainer_loop_to_supervisor():
     ), "product_explainer_node must not loop back to autonomous_supervisor_node"
 
     assert any(
-        e.source == "product_explainer_node" and e.target == "final_answer_node"
+        e.source == "product_explainer_node" and e.target == "policy_firewall_node"
         for e in edges
-    ), "product_explainer_node should go to final_answer_node"
+    ), "product_explainer_node should go to policy_firewall_node before finalization"

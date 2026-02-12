@@ -352,8 +352,23 @@ class SealAIState(BaseModel):
     missing_params: List[str] = Field(default_factory=list)
     coverage_analysis: Optional[CoverageAnalysis] = None
     guardrail_coverage: Dict[str, Any] = Field(default_factory=dict)
+    guardrail_rag_coverage: Dict[str, Any] = Field(default_factory=dict)
     guardrail_escalation_reason: Optional[str] = None
+    guardrail_escalation_level: Literal["none", "ask_user", "human_required", "refuse"] = "none"
     guardrail_questions: List[str] = Field(default_factory=list)
+    assumption_list: List[Dict[str, Any]] = Field(default_factory=list)
+    assumptions_confirmed: bool = False
+    pending_assumptions: List[str] = Field(default_factory=list)
+    assumption_lock_hash: Optional[str] = None
+    assumption_lock_hash_confirmed: Optional[str] = None
+    risk_heatmap: Dict[str, str] = Field(default_factory=dict)
+    rfq_ready: bool = False
+    conversation_track: Literal["knowledge", "diagnostic", "design"] = "design"
+    failure_mode_active: bool = False
+    failure_evidence_missing: bool = False
+    failure_evidence: Dict[str, Any] = Field(default_factory=dict)
+    clarify_round_count: int = 0
+    clarify_missing_facts: List[str] = Field(default_factory=list)
     ask_missing_request: Optional[AskMissingRequest] = None
     ask_missing_scope: Optional[AskMissingScope] = None
     awaiting_user_input: bool = False

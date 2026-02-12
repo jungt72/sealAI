@@ -29,7 +29,7 @@ from app.langgraph_v2.state import CalcResults, Intent, SealAIState, WorkingMemo
                 calc_results=None,
                 calc_results_ok=False,
             ),
-            ACTION_RUN_PANEL_CALC,
+            ACTION_RUN_PANEL_MATERIAL,
         ),
         (
             SealAIState(

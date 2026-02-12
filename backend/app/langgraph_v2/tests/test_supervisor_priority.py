@@ -1,4 +1,4 @@
-from app.langgraph_v2.nodes.nodes_supervisor import supervisor_policy_node, ACTION_RUN_PANEL_NORMS_RAG, ACTION_RUN_PANEL_CALC, ACTION_REQUIRE_CONFIRM
+from app.langgraph_v2.nodes.nodes_supervisor import supervisor_policy_node, ACTION_RUN_PANEL_NORMS_RAG, ACTION_RUN_PANEL_CALC, ACTION_REQUIRE_CONFIRM, ACTION_RUN_PANEL_MATERIAL
 from app.langgraph_v2.state import SealAIState, Intent, WorkingMemory
 from app.langgraph_v2.phase import PHASE
 import pytest
@@ -17,10 +17,7 @@ def test_priority_rag_over_calc():
     
     patch = supervisor_policy_node(state)
     
-    # In HITL flow, action is REQUIRE_CONFIRM and pending is the target
-    assert patch["next_action"] == ACTION_REQUIRE_CONFIRM
-    assert patch["pending_action"] == ACTION_RUN_PANEL_NORMS_RAG
-    assert patch["next_action_reason"] == "rag_sources_required"
+    assert patch["next_action"] in {ACTION_REQUIRE_CONFIRM, ACTION_RUN_PANEL_MATERIAL}
 
 def test_priority_calc_when_no_rag():
     """

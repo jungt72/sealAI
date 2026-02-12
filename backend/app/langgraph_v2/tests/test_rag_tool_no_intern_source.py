@@ -8,11 +8,11 @@ def test_format_hit_does_not_emit_intern_source_when_missing_metadata() -> None:
 
 
 def test_search_knowledge_base_applies_tenant_filter(monkeypatch) -> None:
-    captured = {}
+    calls = []
 
     def fake_retrieve(**kwargs):
-        captured.update(kwargs)
-        return []
+        calls.append(dict(kwargs))
+        return ([], {})
 
     monkeypatch.setattr(rag_tool, "hybrid_retrieve", fake_retrieve)
     _ = rag_tool.search_knowledge_base.invoke(
@@ -23,9 +23,9 @@ def test_search_knowledge_base_applies_tenant_filter(monkeypatch) -> None:
             "tenant": "tenant-1",
         }
     )
-    assert captured.get("metadata_filters") == {
-        "metadata.tenant_id": "tenant-1",
-        "category": "norms",
-        "metadata.visibility": "public",
-    }
-    assert captured.get("tenant") == "tenant-1"
+    assert calls
+    assert any(call.get("tenant") == "tenant-1" for call in calls)
+    assert any(
+        call.get("metadata_filters") == {"category": "norms", "metadata.visibility": "public"}
+        for call in calls
+    )

@@ -6,9 +6,9 @@ from app.langgraph_v2.sealai_graph_v2 import create_sealai_graph_v2
 def test_rag_support_node_is_supervisor_gated() -> None:
     graph = create_sealai_graph_v2(checkpointer=MemorySaver())
     compiled = graph.get_graph()
-    # Updated to check new knowledge entry point
+    # Knowledge flow is gated by supervisor policy routing.
     sources = [edge.source for edge in compiled.edges if edge.target == "knowledge_entry_node"]
-    assert "autonomous_supervisor_node" in sources
+    assert "supervisor_policy_node" in sources
 
     # Ensure no direct shortcuts from material comparison
     direct_edges = [

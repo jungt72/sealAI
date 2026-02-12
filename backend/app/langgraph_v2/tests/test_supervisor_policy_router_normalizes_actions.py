@@ -7,4 +7,4 @@ def test_router_maps_run_panel_calc_to_calc():
 
 def test_router_maps_run_panel_norms_rag_to_knowledge():
     s = SealAIState(tenant_id="t", user_id="u", thread_id="thr", messages=[], next_action="RUN_PANEL_NORMS_RAG")
-    assert _supervisor_policy_router(s) == "knowledge"
+    assert _supervisor_policy_router(s) == "RUN_PANEL_NORMS_RAG"
