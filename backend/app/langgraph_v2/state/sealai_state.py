@@ -351,6 +351,9 @@ class SealAIState(BaseModel):
     golden_parameter_sources: Dict[str, str] = Field(default_factory=dict)
     missing_params: List[str] = Field(default_factory=list)
     coverage_analysis: Optional[CoverageAnalysis] = None
+    guardrail_coverage: Dict[str, Any] = Field(default_factory=dict)
+    guardrail_escalation_reason: Optional[str] = None
+    guardrail_questions: List[str] = Field(default_factory=list)
     ask_missing_request: Optional[AskMissingRequest] = None
     ask_missing_scope: Optional[AskMissingScope] = None
     awaiting_user_input: bool = False

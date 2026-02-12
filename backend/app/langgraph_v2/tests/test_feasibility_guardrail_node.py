@@ -53,3 +53,60 @@ def test_guardrail_sets_critical_when_pv_near_limit() -> None:
     assert patch.get("ask_missing_request") is not None
     assert patch.get("flags", {}).get("risk_level") == "critical"
     assert any("PV" in hint for hint in (patch["recommendation"].risk_hints or []))
+
+
+def test_guardrail_sets_unknown_coverage_for_steam_without_peak_duration_and_routes_to_ask_missing() -> None:
+    state = SealAIState(
+        messages=[HumanMessage(content="Dampf bei 135 C im Prozess, bitte auslegen.")],
+        parameters=TechnicalParameters(medium="steam", temperature_C=135.0),
+    )
+
+    patch = feasibility_guardrail_node(state)
+    patched = state.model_copy(update=patch, deep=True)
+
+    steam = patch.get("guardrail_coverage", {}).get("steam_cip_sip", {})
+    assert steam.get("coverage") == "unknown"
+    assert steam.get("status") == "human_required"
+    assert patch.get("guardrail_escalation_reason")
+    assert patch.get("awaiting_user_input") is True
+    assert feasibility_guardrail_router(patched) == "ask_missing"
+
+
+def test_guardrail_sets_unknown_coverage_for_gas_dp_without_depress_time_and_routes_to_ask_missing() -> None:
+    state = SealAIState(
+        messages=[HumanMessage(content="Prozessgas mit Delta P 150 bar, bitte weiter.")],
+        parameters=TechnicalParameters(medium="gas"),
+    )
+
+    patch = feasibility_guardrail_node(state)
+    patched = state.model_copy(update=patch, deep=True)
+
+    gas = patch.get("guardrail_coverage", {}).get("gas_decompression", {})
+    assert gas.get("coverage") == "unknown"
+    assert gas.get("status") == "human_required"
+    assert patch.get("guardrail_escalation_reason")
+    assert patch.get("awaiting_user_input") is True
+    assert feasibility_guardrail_router(patched) == "ask_missing"
+
+
+def test_guardrail_questions_capped_to_three() -> None:
+    state = SealAIState(
+        messages=[
+            HumanMessage(
+                content=(
+                    "API 682, Wasserstoff, H2S, Dampf 130 C, Gas Delta P 200 bar, "
+                    "Medium ist nur oil/water."
+                )
+            )
+        ],
+        parameters=TechnicalParameters(medium="steam"),
+    )
+
+    patch = feasibility_guardrail_node(state)
+    questions = patch.get("guardrail_questions") or []
+    request = patch.get("ask_missing_request")
+
+    assert isinstance(questions, list)
+    assert 1 <= len(questions) <= 3
+    assert request is not None
+    assert len(getattr(request, "questions", []) or []) <= 3

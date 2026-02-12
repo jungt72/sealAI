@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.langgraph_v2.io import AskMissingRequest
 from app.langgraph_v2.phase import PHASE
@@ -23,6 +23,11 @@ _RATE_RE = re.compile(
 )
 _DURATION_RE = re.compile(
     r"(?:peak\s*duration|spitzendauer|max(?:imal)?dauer|sekunden|minuten|stunden|\bms\b|\bs\b|\bmin\b|\bh\b)",
+    re.IGNORECASE,
+)
+_GENERIC_MEDIA_RE = re.compile(r"\b(oil|oel|öl|water|wasser|steam|dampf)\b", re.IGNORECASE)
+_CHEMICAL_HINT_RE = re.compile(
+    r"(?:additiv|zusatz|naoh|koh|acid|säure|clean(?:er|ing)?|detergent|cip|sip|particle|abrasive|solid)",
     re.IGNORECASE,
 )
 
@@ -138,25 +143,255 @@ def _compute_pv_ratio(state: SealAIState) -> Optional[Tuple[float, float, float]
     return (pv / limit), pv, limit
 
 
-def _build_blocking_patch(
+def _build_recommendation_with_hints(state: SealAIState, coverage: Dict[str, Dict[str, Any]]) -> Recommendation:
+    recommendation = state.recommendation or Recommendation()
+    hints = list(recommendation.risk_hints or [])
+
+    api682 = coverage.get("api682") or {}
+    if str(api682.get("status") or "").lower() == "human_required":
+        hints.append("HUMAN_REQUIRED: API 682 context detected.")
+
+    hydrogen = coverage.get("hydrogen") or {}
+    if str(hydrogen.get("status") or "").lower() == "human_required":
+        hints.append("HUMAN_REQUIRED: Hydrogen service requires specialist validation.")
+
+    h2s = coverage.get("h2s_sour") or {}
+    if str(h2s.get("status") or "").lower() == "human_required":
+        hints.append("HUMAN_REQUIRED: H2S/sour gas service detected.")
+
+    gas = coverage.get("gas_decompression") or {}
+    if str(gas.get("status") or "").lower() == "human_required":
+        hints.append("HUMAN_REQUIRED: Gas service with high ΔP and unknown depressurization data.")
+
+    steam = coverage.get("steam_cip_sip") or {}
+    if str(steam.get("status") or "").lower() == "human_required":
+        hints.append("HUMAN_REQUIRED: Steam service above 120C with missing peak-duration or chemistry context.")
+
+    mixed = coverage.get("mixed_units") or {}
+    if str(mixed.get("status") or "").lower() == "ask_user":
+        hints.append("Mixed units detected; clarification required before feasibility assessment.")
+
+    pv_limit = coverage.get("pv_limit") or {}
+    if str(pv_limit.get("status") or "").lower() == "critical":
+        pv = pv_limit.get("value")
+        limit = pv_limit.get("limit")
+        ratio = pv_limit.get("ratio")
+        if isinstance(pv, (int, float)) and isinstance(limit, (int, float)) and isinstance(ratio, (int, float)):
+            hints.append(f"Critical PV margin: PV={pv:.2f}, limit={limit:.2f}, ratio={ratio:.2f}.")
+        else:
+            hints.append("Critical PV margin detected.")
+
+    deduped: List[str] = []
+    for hint in hints:
+        if hint and hint not in deduped:
+            deduped.append(hint)
+    return recommendation.model_copy(update={"risk_hints": deduped})
+
+
+def _build_guardrail_coverage(state: SealAIState, *, text: str, medium: str) -> Dict[str, Dict[str, Any]]:
+    lowered = (text or "").lower()
+    coverage: Dict[str, Dict[str, Any]] = {
+        "api682": {"status": "ok", "coverage": "not_applicable", "reason": "API 682 not referenced."},
+        "hydrogen": {"status": "ok", "coverage": "not_applicable", "reason": "No hydrogen marker detected."},
+        "h2s_sour": {"status": "ok", "coverage": "not_applicable", "reason": "No H2S/sour-gas marker detected."},
+        "steam_cip_sip": {"status": "ok", "coverage": "not_applicable", "reason": "Steam context not detected."},
+        "gas_decompression": {"status": "ok", "coverage": "not_applicable", "reason": "Gas decompression context not detected."},
+        "pv_limit": {"status": "ok", "coverage": "not_applicable", "reason": "PV check not computable from current parameters."},
+        "mixed_units": {"status": "ok", "coverage": "not_applicable", "reason": "No mixed units detected."},
+    }
+
+    mixed_units = _has_mixed_units(text)
+    if mixed_units:
+        coverage["mixed_units"] = {"status": "ask_user", "coverage": "unknown", "reason": mixed_units}
+
+    if re.search(r"\bapi\s*682\b", lowered):
+        coverage["api682"] = {
+            "status": "human_required",
+            "coverage": "confirmed",
+            "reason": "API 682 mention requires specialist review.",
+        }
+
+    if re.search(r"\b(h2|hydrogen|wasserstoff)\b", lowered):
+        coverage["hydrogen"] = {
+            "status": "human_required",
+            "coverage": "confirmed",
+            "reason": "Hydrogen service detected.",
+        }
+
+    if re.search(r"\b(h2s|sour gas|sauergas)\b", lowered):
+        coverage["h2s_sour"] = {
+            "status": "human_required",
+            "coverage": "confirmed",
+            "reason": "H2S/sour gas service detected.",
+        }
+
+    is_gas = _is_gas_context(text, medium)
+    delta_p = _extract_delta_p_bar(text)
+    has_rate = bool(_RATE_RE.search(text or ""))
+    has_duration = bool(_DURATION_RE.search(text or ""))
+    if is_gas:
+        if delta_p is None:
+            coverage["gas_decompression"] = {
+                "status": "ask_user",
+                "coverage": "unknown",
+                "reason": "Gas service detected but ΔP is missing.",
+            }
+        elif delta_p > 100.0 and not (has_rate or has_duration):
+            coverage["gas_decompression"] = {
+                "status": "human_required",
+                "coverage": "unknown",
+                "reason": "Gas service with ΔP > 100 bar lacks depressurization rate/time.",
+                "delta_p_bar": delta_p,
+            }
+        else:
+            coverage["gas_decompression"] = {
+                "status": "ok",
+                "coverage": "confirmed",
+                "reason": "Gas decompression inputs are sufficient for deterministic screening.",
+                "delta_p_bar": delta_p,
+                "depressurization_rate_known": has_rate,
+                "depressurization_time_known": has_duration,
+            }
+
+    is_steam = _is_steam_context(text, medium)
+    peak_temp_c = _extract_peak_temp_c(text, _safe_float(getattr(state.parameters, "temperature_C", None)))
+    medium_additives = str(getattr(state.parameters, "medium_additives", "") or "").strip()
+    has_chemical_context = bool(medium_additives) or bool(_CHEMICAL_HINT_RE.search(text or ""))
+    generic_media = bool(_GENERIC_MEDIA_RE.search(f"{text or ''} {medium or ''}"))
+    if is_steam:
+        if peak_temp_c is None:
+            coverage["steam_cip_sip"] = {
+                "status": "ask_user",
+                "coverage": "unknown",
+                "reason": "Steam context detected but peak temperature is missing.",
+            }
+        elif peak_temp_c > 120.0 and not has_duration:
+            coverage["steam_cip_sip"] = {
+                "status": "human_required",
+                "coverage": "unknown",
+                "reason": "Steam >120C detected but peak duration is missing.",
+                "peak_temp_c": peak_temp_c,
+            }
+        elif peak_temp_c > 120.0 and not has_chemical_context:
+            coverage["steam_cip_sip"] = {
+                "status": "ask_user",
+                "coverage": "unknown",
+                "reason": "Steam >120C requires CIP/SIP chemistry details.",
+                "peak_temp_c": peak_temp_c,
+            }
+        elif generic_media and not has_chemical_context:
+            coverage["steam_cip_sip"] = {
+                "status": "ask_user",
+                "coverage": "conditional",
+                "reason": "Only generic steam/media terms detected; additives/cleaning context is needed.",
+                "peak_temp_c": peak_temp_c,
+            }
+        else:
+            coverage["steam_cip_sip"] = {
+                "status": "ok",
+                "coverage": "confirmed",
+                "reason": "Steam context has enough deterministic inputs for screening.",
+                "peak_temp_c": peak_temp_c,
+            }
+
+    pv_eval = _compute_pv_ratio(state)
+    if pv_eval is not None:
+        ratio, pv, limit = pv_eval
+        status = "critical" if ratio > 0.8 else "ok"
+        coverage["pv_limit"] = {
+            "status": status,
+            "coverage": "confirmed",
+            "reason": "PV ratio computed from pressure, speed, and diameter.",
+            "value": pv,
+            "limit": limit,
+            "ratio": ratio,
+        }
+
+    return coverage
+
+
+def _build_guardrail_questions(
+    coverage: Dict[str, Dict[str, Any]],
+    *,
+    text: str,
+    medium: str,
+) -> List[str]:
+    questions: List[str] = []
+
+    gas = coverage.get("gas_decompression") or {}
+    if str(gas.get("coverage") or "").lower() in {"unknown", "conditional"}:
+        questions.append("Bitte nenne für die Gas-Entspannung ΔP sowie Entspannungszeit oder Blowdown-Rate (z. B. bar/s).")
+
+    steam = coverage.get("steam_cip_sip") or {}
+    if str(steam.get("coverage") or "").lower() in {"unknown", "conditional"}:
+        questions.append("Bitte nenne Spitzentemperatur, Spitzendauer sowie CIP/SIP-Chemikalien oder Reinigungsmedien.")
+
+    if _GENERIC_MEDIA_RE.search(f"{text or ''} {medium or ''}") and not _CHEMICAL_HINT_RE.search(text or ""):
+        questions.append("Bei Medium wie Öl/Wasser: Welche Additive, Reinigungsstoffe und Partikel/Abrasivanteile sind vorhanden?")
+
+    hydrogen = coverage.get("hydrogen") or {}
+    h2s = coverage.get("h2s_sour") or {}
+    if (
+        str(hydrogen.get("status") or "").lower() in {"human_required", "ask_user"}
+        or str(h2s.get("status") or "").lower() in {"human_required", "ask_user"}
+    ):
+        questions.append("Bitte bestätige H2/H2S-Anteil inkl. Konzentration bzw. Partialdruck und den Service-Typ.")
+
+    api682 = coverage.get("api682") or {}
+    if str(api682.get("status") or "").lower() in {"human_required", "ask_user"}:
+        questions.append("Bitte bestätige API-682 Kategorie, Arrangement und Flush-Plan.")
+
+    deduped: List[str] = []
+    for item in questions:
+        if item not in deduped:
+            deduped.append(item)
+    return deduped[:3]
+
+
+def _select_guardrail_escalation(coverage: Dict[str, Dict[str, Any]]) -> Optional[str]:
+    critical_keys = {"api682", "hydrogen", "h2s_sour", "steam_cip_sip", "gas_decompression"}
+    for key, data in coverage.items():
+        status = str((data or {}).get("status") or "").lower()
+        cov = str((data or {}).get("coverage") or "").lower()
+        if status in {"refuse", "human_required"}:
+            return f"{key}:{status}"
+        if key == "pv_limit" and status == "critical":
+            return "pv_limit:critical"
+        if key in critical_keys and cov in {"unknown", "conditional"}:
+            return f"{key}:{cov}"
+    return None
+
+
+def _build_guardrail_escalation_patch(
     state: SealAIState,
     *,
-    reason: str,
-    question: str,
-    append_hint: str,
-    critical: bool = False,
+    guardrail_coverage: Dict[str, Dict[str, Any]],
+    escalation_reason: str,
+    guardrail_questions: List[str],
 ) -> Dict[str, Any]:
-    recommendation = _append_risk_hint(state, append_hint)
+    recommendation = _build_recommendation_with_hints(state, guardrail_coverage)
     flags = dict(state.flags or {})
-    if critical:
+    if any(
+        str((guardrail_coverage.get(key) or {}).get("status") or "").lower() in {"critical", "human_required", "refuse"}
+        for key in ("api682", "hydrogen", "h2s_sour", "steam_cip_sip", "gas_decompression", "pv_limit")
+    ):
         flags["risk_level"] = "critical"
+    primary_question = (
+        "Zur sicheren Freigabe brauche ich noch folgende Angaben: " + " ".join(guardrail_questions)
+        if guardrail_questions
+        else "Für diesen Fall ist ein Human-Review bzw. eine sicherheitsrelevante Klärung erforderlich."
+    )
     request = AskMissingRequest(
-        missing_fields=["human_review"],
-        question=question,
-        reason=reason,
+        missing_fields=["human_review", "guardrail"],
+        question=primary_question,
+        reason=escalation_reason,
+        questions=guardrail_questions,
     )
     return {
         "recommendation": recommendation,
+        "guardrail_coverage": guardrail_coverage,
+        "guardrail_escalation_reason": escalation_reason,
+        "guardrail_questions": guardrail_questions,
         "ask_missing_request": request,
         "ask_missing_scope": "technical",
         "awaiting_user_input": True,
@@ -169,88 +404,34 @@ def _build_blocking_patch(
 def feasibility_guardrail_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     text = latest_user_text(list(state.messages or [])) or ""
     medium = str(getattr(state.parameters, "medium", "") or "")
-    lowered = text.lower()
-
-    mixed_units = _has_mixed_units(text)
-    if mixed_units:
-        return _build_blocking_patch(
+    guardrail_coverage = _build_guardrail_coverage(state, text=text, medium=medium)
+    escalation_reason = _select_guardrail_escalation(guardrail_coverage)
+    guardrail_questions = _build_guardrail_questions(guardrail_coverage, text=text, medium=medium)
+    if escalation_reason:
+        return _build_guardrail_escalation_patch(
             state,
-            reason="mixed_units",
-            question=mixed_units,
-            append_hint="Mixed units detected; clarification required before feasibility assessment.",
+            guardrail_coverage=guardrail_coverage,
+            escalation_reason=escalation_reason,
+            guardrail_questions=guardrail_questions,
         )
 
-    if re.search(r"\bapi\s*682\b", lowered):
-        return _build_blocking_patch(
-            state,
-            reason="human_required_api_682",
-            question="API 682 wurde erkannt. Bitte bestätige, ob ein Human-Review für die Auslegung durchgeführt werden soll.",
-            append_hint="HUMAN_REQUIRED: API 682 context detected.",
-            critical=True,
-        )
-
-    if re.search(r"\b(h2|hydrogen|wasserstoff)\b", lowered):
-        return _build_blocking_patch(
-            state,
-            reason="human_required_hydrogen",
-            question="Wasserstoff/H2 wurde erkannt. Bitte Human-Review freigeben, bevor ich weiterrechne.",
-            append_hint="HUMAN_REQUIRED: Hydrogen service requires specialist validation.",
-            critical=True,
-        )
-
-    if re.search(r"\b(h2s|sour gas|sauergas)\b", lowered):
-        return _build_blocking_patch(
-            state,
-            reason="human_required_h2s",
-            question="H2S/Sour-Gas wurde erkannt. Bitte Human-Review freigeben, bevor ich fortfahre.",
-            append_hint="HUMAN_REQUIRED: H2S/sour gas service detected.",
-            critical=True,
-        )
-
-    delta_p = _extract_delta_p_bar(text)
-    if _is_gas_context(text, medium) and delta_p is not None and delta_p > 100.0 and not _RATE_RE.search(text):
-        return _build_blocking_patch(
-            state,
-            reason="human_required_gas_high_delta_p_rate_unknown",
-            question="Gas-Anwendung mit ΔP > 100 bar erkannt, aber Entspannungsrate fehlt. Bitte Rate (z. B. bar/s) angeben und Human-Review bestätigen.",
-            append_hint="HUMAN_REQUIRED: Gas service with high ΔP and unknown depressurization rate.",
-            critical=True,
-        )
-
-    peak_temp_c = _extract_peak_temp_c(text, _safe_float(getattr(state.parameters, "temperature_C", None)))
-    if _is_steam_context(text, medium) and peak_temp_c is not None and peak_temp_c > 120.0 and not _DURATION_RE.search(text):
-        return _build_blocking_patch(
-            state,
-            reason="human_required_steam_duration_unknown",
-            question="Dampf >120°C erkannt, aber Spitzendauer fehlt. Bitte Dauer angeben und Human-Review bestätigen.",
-            append_hint="HUMAN_REQUIRED: Steam service above 120C with unknown peak duration.",
-            critical=True,
-        )
-
-    pv_eval = _compute_pv_ratio(state)
-    if pv_eval is not None:
-        ratio, pv, limit = pv_eval
-        if ratio > 0.8:
-            return _build_blocking_patch(
-                state,
-                reason="pv_margin_critical",
-                question=(
-                    f"PV-Niveau kritisch ({pv:.2f} bei Limit {limit:.2f}, >80%). "
-                    "Bitte bestätige, dass ich trotz geringer Sicherheitsmarge fortfahren soll."
-                ),
-                append_hint=f"Critical PV margin: PV={pv:.2f}, limit={limit:.2f}, ratio={ratio:.2f}.",
-                critical=True,
-            )
-
-    recommendation = state.recommendation or Recommendation()
+    recommendation = _build_recommendation_with_hints(state, guardrail_coverage)
     return {
         "recommendation": recommendation,
+        "guardrail_coverage": guardrail_coverage,
+        "guardrail_escalation_reason": None,
+        "guardrail_questions": [],
+        "awaiting_user_input": False,
+        "ask_missing_request": None,
+        "ask_missing_scope": None,
         "phase": PHASE.VALIDATION,
         "last_node": "feasibility_guardrail_node",
     }
 
 
 def feasibility_guardrail_router(state: SealAIState) -> str:
+    if getattr(state, "guardrail_escalation_reason", None):
+        return "ask_missing"
     if getattr(state, "awaiting_user_input", False) or getattr(state, "ask_missing_request", None):
         return "ask_missing"
     return "supervisor"
