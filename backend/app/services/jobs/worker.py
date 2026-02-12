@@ -143,8 +143,14 @@ async def start_job_worker() -> None:
     redis = get_queue_client()
     while True:
         processed = await consume_redis_job_once(redis)
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            return
         if not processed:
-            await asyncio.sleep(BRPOP_TIMEOUT_SEC)
+            try:
+                await asyncio.sleep(BRPOP_TIMEOUT_SEC)
+            except asyncio.CancelledError:
+                return
 
 
 async def _promote_scheduled(redis) -> None:
@@ -219,8 +225,11 @@ async def consume_redis_job_once(
     use_thread: bool = True,
     session_factory: Callable[[], AsyncSession] = AsyncSessionLocal,
 ) -> bool:
-    await _promote_scheduled(redis)
-    item = await redis.brpop(JOB_QUEUE, timeout=BRPOP_TIMEOUT_SEC)
+    try:
+        await _promote_scheduled(redis)
+        item = await redis.brpop(JOB_QUEUE, timeout=BRPOP_TIMEOUT_SEC)
+    except asyncio.CancelledError:
+        return False
     if not item:
         return False
     _queue, raw = item
