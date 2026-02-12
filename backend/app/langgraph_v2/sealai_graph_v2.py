@@ -66,9 +66,13 @@ from app.langgraph_v2.nodes.nodes_policy import (  # noqa: E402
 )
 from app.langgraph_v2.nodes.nodes_resume import resume_router_node, await_user_input_node, confirm_resume_node, confirm_reject_node
 from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node
-from app.langgraph_v2.nodes.nodes_supervisor import supervisor_policy_node
+from app.langgraph_v2.nodes.nodes_supervisor import ACTION_REQUIRE_CONFIRM, supervisor_policy_node
 
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node  # noqa: E402
+from app.langgraph_v2.nodes.nodes_guardrail import (  # noqa: E402
+    feasibility_guardrail_node,
+    feasibility_guardrail_router_async,
+)
 
 from app.langgraph_v2.nodes.response_node import response_node  # noqa: E402
 
@@ -420,6 +424,8 @@ def _supervisor_policy_router(state: SealAIState) -> str:
         return "product"
 
     # KNOWLEDGE / RAG-ish legacy names
+    if a_up == "RUN_PANEL_NORMS_RAG":
+        return "RUN_PANEL_NORMS_RAG"
     if a_up in ("RUN_KNOWLEDGE",):
         return "knowledge"
     if a_up.startswith("RUN_PANEL_"):
@@ -552,6 +558,7 @@ def create_sealai_graph_v2(
     # 2. Entrypoint & Frontdoor
     builder.add_node("policy_preflight_node", policy_preflight_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
+    builder.add_node("feasibility_guardrail_node", feasibility_guardrail_node)
     builder.add_node("discovery_intake_node", discovery_intake_node)
     builder.add_node("discovery_summarize_node", discovery_summarize_node)
     builder.add_node("confirm_gate_node", confirm_gate_node)
@@ -585,7 +592,7 @@ def create_sealai_graph_v2(
     builder.add_node("cluster_material_node", material_agent_node)
     builder.add_node("cluster_profile_node", profile_agent_node)
     builder.add_node("cluster_validation_node", validation_agent_node)
-    builder.add_node("cluster_normen_node", rag_support_node)
+    builder.add_node("rag_support_node", rag_support_node)
 
     # 4. Utility / Finalize
     builder.add_node("final_answer_node", _build_final_answer_chain())
@@ -628,8 +635,16 @@ def create_sealai_graph_v2(
         _frontdoor_router,
         {
             "finalize": "policy_firewall_node",
-            "discovery": "discovery_intake_node",
+            "discovery": "feasibility_guardrail_node",
         }
+    )
+    builder.add_conditional_edges(
+        "feasibility_guardrail_node",
+        feasibility_guardrail_router_async,
+        {
+            "ask_missing": "ask_missing_node",
+            "supervisor": "supervisor_policy_node",
+        },
     )
 
     # Discovery -> Ambiguity Check
@@ -670,8 +685,9 @@ def create_sealai_graph_v2(
         _confirm_checkpoint_router_async,
         {
             "awaiting": "confirm_checkpoint_node",
+            ACTION_REQUIRE_CONFIRM: "confirm_checkpoint_node",
             "knowledge": "knowledge_entry_node",
-            "RUN_PANEL_NORMS_RAG": "knowledge_entry_node",
+            "RUN_PANEL_NORMS_RAG": "rag_support_node",
             "RUN_KNOWLEDGE": "knowledge_entry_node",
             "RUN_COMPARISON": "material_comparison_node",
             "design": "design_worker",
@@ -703,13 +719,13 @@ def create_sealai_graph_v2(
     builder.add_edge("knowledge_lifetime_node", "policy_firewall_node")
     builder.add_edge("generic_sealing_qa_node", "policy_firewall_node")
 
-    builder.add_edge("material_comparison_node", "policy_firewall_node")
+    builder.add_edge("material_comparison_node", "supervisor_policy_node")
 
     # Specialist Cluster (Discovery -> Specialists -> Challenger)
     builder.add_edge("cluster_material_node", "cluster_profile_node")
     builder.add_edge("cluster_profile_node", "cluster_validation_node")
-    builder.add_edge("cluster_validation_node", "cluster_normen_node")
-    builder.add_edge("cluster_normen_node", "challenger_feedback_node")
+    builder.add_edge("cluster_validation_node", "rag_support_node")
+    builder.add_edge("rag_support_node", "challenger_feedback_node")
     builder.add_edge("challenger_feedback_node", "policy_firewall_node")
 
     # Design Flow
