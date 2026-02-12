@@ -17,7 +17,7 @@ def test_graph_entry_routes_to_supervisor_policy_node() -> None:
     # assert entry_edges[0].target == "supervisor_policy_node"
     
     targets = {e.target for e in entry_edges}
-    assert "discovery_intake_node" in targets
+    assert "feasibility_guardrail_node" in targets
     assert "policy_firewall_node" in targets
 
 
