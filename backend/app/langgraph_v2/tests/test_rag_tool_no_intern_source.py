@@ -26,6 +26,6 @@ def test_search_knowledge_base_applies_tenant_filter(monkeypatch) -> None:
     assert calls
     assert any(call.get("tenant") == "tenant-1" for call in calls)
     assert any(
-        call.get("metadata_filters") == {"category": "norms", "metadata.visibility": "public"}
+        call.get("metadata_filters") == {"metadata.domain": "norms", "metadata.visibility": "public"}
         for call in calls
     )

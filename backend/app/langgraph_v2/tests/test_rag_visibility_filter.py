@@ -19,7 +19,7 @@ def test_rag_filters_non_admin_public_only(monkeypatch) -> None:
         }
     )
     assert captured.get("metadata_filters") == {
-        "category": "norms",
+        "metadata.domain": "norms",
         "metadata.visibility": "public",
     }
 
@@ -42,5 +42,5 @@ def test_rag_filters_admin_public_and_private(monkeypatch) -> None:
         }
     )
     assert captured.get("metadata_filters") == {
-        "category": "norms",
+        "metadata.domain": "norms",
     }

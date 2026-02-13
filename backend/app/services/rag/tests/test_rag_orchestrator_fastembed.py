@@ -130,3 +130,59 @@ def test_sentence_transformers_provider_missing_dependency(monkeypatch):
         ro.get_embedder()
 
     assert "sentence-transformers" in str(excinfo.value)
+
+
+def test_qdrant_search_falls_back_to_named_dense_vector_when_env_blank(monkeypatch):
+    ro = _import_orchestrator()
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"result": []}
+
+    class _FakeClient:
+        def __init__(self, timeout):
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def post(self, url, json=None, headers=None):
+            captured["url"] = url
+            captured["json"] = json
+            captured["headers"] = headers
+            return _FakeResponse()
+
+    fake_httpx = types.ModuleType("httpx")
+    fake_httpx.Client = _FakeClient
+    fake_httpx.TimeoutException = RuntimeError
+    fake_httpx.TransportError = RuntimeError
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    monkeypatch.setattr(ro, "QDRANT_VECTOR_NAME", "", raising=False)
+
+    hits, meta = ro._qdrant_search_with_retry([0.1, 0.2, 0.3], "sealai_knowledge_v3", top_k=1)
+    assert hits == []
+    assert meta["error"] is None
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    assert payload["vector"] == {"name": "dense", "vector": [0.1, 0.2, 0.3]}
+
+
+def test_hybrid_retrieve_raises_on_embedding_dim_mismatch(monkeypatch):
+    ro = _import_orchestrator()
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "768")
+    monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0, 0.0, 0.0]], raising=False)
+    monkeypatch.setattr(
+        ro,
+        "_qdrant_search_with_retry",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("qdrant should not be called")),
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="rag_query_embedding_dim_mismatch"):
+        ro.hybrid_retrieve(query="kyrolon", tenant="tenant-1", k=3)

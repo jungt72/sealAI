@@ -27,6 +27,7 @@ def test_retry_not_triggered_when_good_score(monkeypatch):
 
     assert len(calls) == 1
     assert patch.get("retrieval_retry_count") == 0
+    assert (patch.get("retrieval_meta") or {}).get("retrieval_attempted") is True
 
 
 def test_retry_triggered_on_skipped(monkeypatch):
@@ -60,6 +61,7 @@ def test_retry_triggered_on_skipped(monkeypatch):
     assert patch.get("retrieval_retry_count") == 1
     meta = patch.get("retrieval_meta") or {}
     assert meta.get("retry_used") is True
+    assert meta.get("retrieval_attempted") is True
     assert "rewrite_query" not in meta
 
 
@@ -86,3 +88,29 @@ def test_loop_safety_only_one_retry(monkeypatch):
 
     assert len(calls) == 2
     assert patch.get("retrieval_retry_count") == 1
+
+
+def test_rag_support_uses_retrieval_sources_for_references(monkeypatch):
+    class FakeSearchTool:
+        def invoke(self, _payload):
+            return {
+                "context": "Gefundene Informationen",
+                "retrieval_meta": {
+                    "k_returned": 1,
+                    "top_scores": [0.7],
+                    "sources": [{"filename": "PTFE.docx", "document_id": "doc-1"}],
+                },
+            }
+
+    monkeypatch.setattr(nodes_flows, "search_knowledge_base", FakeSearchTool())
+
+    state = SealAIState(
+        messages=[HumanMessage(content="Kyrolon aus Wissensbasis mit Quellen")],
+        user_id="user-1",
+        tenant_id="tenant-1",
+    )
+    patch = nodes_flows.rag_support_node(state)
+
+    notes = patch.get("working_memory").comparison_notes or {}
+    assert notes.get("rag_reference") == ["PTFE.docx"]
+    assert (patch.get("retrieval_meta") or {}).get("hits_count") == 1

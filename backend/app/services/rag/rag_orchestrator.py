@@ -22,6 +22,12 @@ def _truthy(x: Optional[str]) -> bool:
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_COLLECTION_DEFAULT = os.getenv("QDRANT_COLLECTION", "sealai_knowledge").strip()
+_qdrant_vector_name_env = os.getenv("QDRANT_VECTOR_NAME")
+QDRANT_VECTOR_NAME = (
+    (_qdrant_vector_name_env.strip() or "dense")
+    if _qdrant_vector_name_env is not None
+    else "dense"
+)
 
 # Shared knowledge (read-only fallback)
 # NOTE: default OFF to keep fail-closed behavior unless explicitly enabled via env.
@@ -372,8 +378,12 @@ def _qdrant_search_with_retry(
     import httpx
 
     url = f"{QDRANT_URL}/collections/{collection}/points/search"
+    vector: Any = query_vec
+    vector_name = QDRANT_VECTOR_NAME or "dense"
+    if vector_name:
+        vector = {"name": vector_name, "vector": query_vec}
     body: Dict[str, Any] = {
-        "vector": query_vec,
+        "vector": vector,
         "limit": top_k,
         "with_payload": True,
         "with_vector": False,
@@ -644,6 +654,12 @@ def hybrid_retrieve(
     )
 
     vec = _embed([q])[0]
+    expected_dim = int(os.getenv("RAG_EMBEDDING_DIM", "768") or "768")
+    actual_dim = len(vec)
+    if actual_dim != expected_dim:
+        raise ValueError(
+            f"rag_query_embedding_dim_mismatch expected={expected_dim} actual={actual_dim}"
+        )
 
     vector_k = max(HYBRID_K, k)
     vec_hits, qdrant_meta = _qdrant_search_with_retry(

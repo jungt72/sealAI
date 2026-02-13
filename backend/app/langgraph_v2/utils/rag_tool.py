@@ -10,6 +10,20 @@ from app.services.rag.rag_orchestrator import hybrid_retrieve
 logger = logging.getLogger(__name__)
 
 
+def _category_to_domain(category: str | None) -> str | None:
+    value = str(category or "").strip().lower()
+    if not value:
+        return None
+    mapping = {
+        "materials": "material",
+        "material": "material",
+        "norms": "norms",
+        "lifetime": "lifetime",
+        "troubleshooting": "troubleshooting",
+    }
+    return mapping.get(value, value)
+
+
 def _extract_hit_text(hit: dict) -> str:
     if not isinstance(hit, dict):
         return ""
@@ -111,8 +125,9 @@ def search_knowledge_base(
     #   payload.metadata.tenant_id
     #   payload.metadata.visibility  (NOT top-level visibility)
     filters: Dict[str, Any] = {}
-    if category:
-        filters["category"] = category
+    domain = _category_to_domain(category)
+    if domain:
+        filters["metadata.domain"] = domain
 
     # IMPORTANT: filter on metadata.visibility (your payload stores it there)
     if not effective_can_read_private:
@@ -134,7 +149,15 @@ def search_knowledge_base(
         results, metrics = out  # type: ignore[misc]
     except Exception as exc:
         logger.exception("RAG retrieval failed (primary): %s", exc)
-        return {"context": f"Fehler beim Abrufen der Wissensdatenbank: {exc}", "retrieval_meta": {"tenant_id": effective_tenant}}
+        return {
+            "context": f"Fehler beim Abrufen der Wissensdatenbank: {exc}",
+            "retrieval_meta": {
+                "tenant_id": effective_tenant,
+                "retrieval_attempted": True,
+                "retrieval_error": str(exc),
+                "error": str(exc),
+            },
+        }
 
     # Backward-compat fallback:
     # If older points still have top-level "visibility" (rare in your case), try again.
@@ -165,6 +188,8 @@ def search_knowledge_base(
     retrieval_meta["tenant_id"] = effective_tenant
     if category:
         retrieval_meta["category"] = category
+    if domain:
+        retrieval_meta["domain"] = domain
     retrieval_meta["is_privileged"] = bool(effective_can_read_private)
 
     if not results:

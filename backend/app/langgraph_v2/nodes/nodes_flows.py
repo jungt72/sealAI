@@ -409,18 +409,26 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
 
     user_text = latest_user_text(state.messages or []) or ""
     query_text = user_text.strip() or "Aktuelle technische Frage"
+    knowledge_type = getattr(state, "knowledge_type", None)
+    category: str | None = None
+    if knowledge_type in {"material", "lifetime", "norms"}:
+        category = str(knowledge_type)
+    elif intent_goal == "troubleshooting_leakage":
+        category = "troubleshooting"
 
     can_read_private = bool(getattr(state, "can_read_private", False) or getattr(state, "is_privileged", False))
-    rag_context = search_knowledge_base.invoke(
-        {
-            "query": query_text,
-            "category": "norms",
-            "k": 3,
-            "tenant": state.tenant_id,
-            "can_read_private": can_read_private,
-        }
-    )
+    query_payload: Dict[str, Any] = {
+        "query": query_text,
+        "k": 3,
+        "tenant": state.tenant_id,
+        "can_read_private": can_read_private,
+    }
+    if category:
+        query_payload["category"] = category
+    rag_context = search_knowledge_base.invoke(query_payload)
     rag_text, retrieval_meta = unpack_rag_payload(rag_context)
+    if not isinstance(retrieval_meta, dict):
+        retrieval_meta = {}
 
     min_score = float(os.getenv("MIN_TOP_SCORE", "0.20"))
     rag_text, retrieval_meta = apply_rag_quality_gate(rag_text, retrieval_meta, min_top_score=min_score)
@@ -431,28 +439,40 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
 
     if should_retry:
         rewrite_query = _rewrite_query(query_text)
-        retry_context = search_knowledge_base.invoke(
-            {
-                "query": rewrite_query,
-                "category": "norms",
-                "k": 3,
-                "tenant": state.tenant_id,
-                "can_read_private": can_read_private,
-            }
-        )
+        retry_payload = dict(query_payload)
+        retry_payload["query"] = rewrite_query
+        retry_context = search_knowledge_base.invoke(retry_payload)
         rag_text, retrieval_meta = unpack_rag_payload(retry_context)
+        if not isinstance(retrieval_meta, dict):
+            retrieval_meta = {}
         rag_text, retrieval_meta = apply_rag_quality_gate(rag_text, retrieval_meta, min_top_score=min_score)
         retry_count += 1
 
     rag_text = wrap_rag_context(rag_text)
 
-    if isinstance(retrieval_meta, dict):
-        retrieval_meta["retry_used"] = bool(should_retry)
-        retrieval_meta["retry_count"] = int(retry_count or 0)
+    retrieval_meta["retrieval_attempted"] = True
+    retrieval_meta["retry_used"] = bool(should_retry)
+    retrieval_meta["retry_count"] = int(retry_count or 0)
+    retrieval_meta["hits_count"] = int(retrieval_meta.get("k_returned") or 0)
+    retrieval_error = retrieval_meta.get("retrieval_error") or retrieval_meta.get("error")
+    if retrieval_error:
+        retrieval_meta["retrieval_error"] = str(retrieval_error)
 
     notes["rag_context"] = rag_text or ""
 
     rag_reference: list[str] = []
+    raw_sources = retrieval_meta.get("sources")
+    if isinstance(raw_sources, list):
+        for source_meta in raw_sources:
+            if not isinstance(source_meta, dict):
+                continue
+            source_label = (
+                source_meta.get("filename")
+                or source_meta.get("source")
+                or source_meta.get("document_id")
+            )
+            if source_label:
+                rag_reference.append(str(source_label))
     for line in (rag_text or "").splitlines():
         line = line.strip()
         if line.lower().startswith("quelle:"):
@@ -468,6 +488,8 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         notes["rag_reference"] = None
         if has_error or has_no_hits_text:
             notes["rag_note"] = "Quellen derzeit nicht verfügbar."
+        if retrieval_error:
+            notes["retrieval_error"] = str(retrieval_error)
     else:
         deduped: list[str] = []
         seen: set[str] = set()
@@ -740,7 +762,12 @@ def build_final_answer_context(state: SealAIState) -> Dict[str, Any]:
 
     comparison_notes = getattr(wm, "comparison_notes", {}) or {}
     panel_rag_notes = getattr(wm, "panel_norms_rag", {}) or {}
-    raw_rag_context = comparison_notes.get("rag_context") or panel_rag_notes.get("rag_context")
+    wm_rag_context = getattr(wm, "rag_context", None)
+    raw_rag_context = (
+        comparison_notes.get("rag_context")
+        or panel_rag_notes.get("rag_context")
+        or wm_rag_context
+    )
     rag_context = raw_rag_context.strip() if isinstance(raw_rag_context, str) else raw_rag_context
 
     return {
