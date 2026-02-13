@@ -16,7 +16,7 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, SealParameterUpdate, TechnicalParameters
 from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
-from app.langgraph_v2.utils.threading import reset_current_tenant_id, set_current_tenant_id, resolve_checkpoint_thread_id, resolve_checkpoint_thread_id
+from app.langgraph_v2.utils.threading import reset_current_tenant_id, set_current_tenant_id, resolve_checkpoint_thread_id
 from app.services.auth.dependencies import (
     RequestUser,
     canonical_user_id,
@@ -134,6 +134,46 @@ def _has_state_values(snapshot: Any) -> bool:
     return bool(values)
 
 
+def _config_with_checkpoint_ns(config: Dict[str, Any], checkpoint_ns: str) -> Dict[str, Any]:
+    copied = dict(config or {})
+    configurable = dict(copied.get("configurable") or {})
+    configurable["checkpoint_ns"] = checkpoint_ns
+    copied["configurable"] = configurable
+    return copied
+
+
+async def _aget_state_with_checkpoint_ns_fallback(
+    graph: Any,
+    config: Dict[str, Any],
+    *,
+    request_id: str | None = None,
+    thread_id: str | None = None,
+    user_id: str | None = None,
+) -> tuple[Any, Dict[str, Any]]:
+    snapshot = await graph.aget_state(config)
+    if _has_state_values(snapshot):
+        return snapshot, config
+    configurable = config.get("configurable") if isinstance(config, dict) else {}
+    checkpoint_ns = configurable.get("checkpoint_ns") if isinstance(configurable, dict) else None
+    if not checkpoint_ns:
+        return snapshot, config
+    fallback_config = _config_with_checkpoint_ns(config, "")
+    fallback_snapshot = await graph.aget_state(fallback_config)
+    if _has_state_values(fallback_snapshot):
+        logger.warning(
+            "state_get_checkpoint_ns_fallback",
+            extra={
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "user_id": user_id,
+                "configured_ns": checkpoint_ns,
+                "fallback_ns": "",
+            },
+        )
+        return fallback_snapshot, fallback_config
+    return snapshot, config
+
+
 
 def _resolve_owner_ids(user: RequestUser) -> tuple[str, str | None]:
     """
@@ -161,7 +201,6 @@ async def _resolve_state_snapshot(
 ) -> tuple[Any, Dict[str, Any], Any, bool]:
     scoped_user_id = canonical_user_id(user)
     tenant_id = user.tenant_id
-    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     graph, config = await _build_state_config_with_checkpointer(
         thread_id=thread_id,
         user_id=scoped_user_id,
@@ -169,31 +208,14 @@ async def _resolve_state_snapshot(
         username=user.username,
         checkpoint_thread_id=checkpoint_thread_id,
     )
-    snapshot = await graph.aget_state(config)
-    if not legacy_user_id or _has_state_values(snapshot):
-        return graph, config, snapshot, False
-
-    legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
+    snapshot, effective_config = await _aget_state_with_checkpoint_ns_fallback(
+        graph,
+        config,
+        request_id=request_id,
         thread_id=thread_id,
-        user_id=legacy_user_id,
-        tenant_id=tenant_id,
-        username=user.username,
-        checkpoint_thread_id=None,
+        user_id=scoped_user_id,
     )
-    legacy_snapshot = await legacy_graph.aget_state(legacy_config)
-    if _has_state_values(legacy_snapshot):
-        if PARAM_SYNC_DEBUG:
-            logger.warning(
-                "langgraph_v2_legacy_state_fallback",
-                extra={
-                    "request_id": request_id,
-                    "thread_id": thread_id,
-                    "user_id": scoped_user_id,
-                    "legacy_user_id": legacy_user_id,
-                },
-            )
-        return legacy_graph, legacy_config, legacy_snapshot, True
-    return graph, config, snapshot, False
+    return graph, effective_config, snapshot, False
 
 
 async def _build_state_config_with_checkpointer(
@@ -205,14 +227,18 @@ async def _build_state_config_with_checkpointer(
 ):
     """Return a v2 config that carries the graph's checkpointer to skip subgraph routing."""
     graph = await get_sealai_graph_v2()
+    effective_thread_id = checkpoint_thread_id or thread_id
     tenant_token = set_current_tenant_id(tenant_id)
     try:
-        config = build_v2_config(thread_id=thread_id, user_id=user_id, tenant_id=tenant_id)
+        config = build_v2_config(thread_id=effective_thread_id, user_id=user_id, tenant_id=tenant_id)
     finally:
         reset_current_tenant_id(tenant_token)
     configurable = config.setdefault("configurable", {})
     if checkpoint_thread_id:
         configurable["thread_id"] = checkpoint_thread_id
+        # Keep external chat_id visible for clients while querying by scoped checkpoint key.
+        metadata = config.setdefault("metadata", {})
+        metadata["thread_id"] = thread_id
     configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
     if username:
         metadata = config.setdefault("metadata", {})
@@ -232,35 +258,8 @@ async def get_state(
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     try:
-        # user_id must always come from the authenticated Keycloak JWT.
-        scoped_tenant_id = user.tenant_id
-        # For state, we assume the user.sub / user_id logic is handled inside resolve_snapshot or here.
-        # But _resolve_state_snapshot handles logic of legacy user IDs. 
-        # So we should probably let _resolve_state_snapshot calculate it if we don't duplicate logic.
-        # HOWEVER, the test expects to PASS checkpoint_thread_id to _resolve_state_snapshot.
-        
-        # Let's derive scoped IDs here exactly as in _resolve logic so we can call SoT
-        # This duplicates some logic but ensures we pass the key.
-        # Actually, simpler: update _resolve_state_snapshot to use resolve_checkpoint_thread_id internaly 
-        # AND allow overriding it.
-        # The test mocks _resolve_state_snapshot, so IT checks the arg.
-        # So get_state MUST calculate and pass it.
-        
-        # We need scoped_user_id. _resolve_state_snapshot computes it.
-        # This is messy. The cleanest way is to use resolve_checkpoint_thread_id INSIDE get_state using user info.
-        
-        # Let's assume standard auth user.
-        # Note: _resolve_state_snapshot has legacy fallback logic for user ID.
-        # Only strict new code uses strict user ID.
-        
-        # If we calculate it here, we might diverge.
-        # But the Requirement "Single Source of Truth" says use resolve_checkpoint_thread_id.
-        
-        # Let's verify how _resolve_state_snapshot gets scoped_user_id. 
-        # It calls _resolve_owner_ids(user).
-        
         scoped_user_id = canonical_user_id(user)
-        
+
         try:
             resolved_key = resolve_checkpoint_thread_id(
                 tenant_id=user.tenant_id,
@@ -269,13 +268,18 @@ async def get_state(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        
+
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
             user=user,
             request_id=request_id,
             checkpoint_thread_id=resolved_key,
         )
+        if not _has_state_values(snapshot):
+            raise HTTPException(
+                status_code=404,
+                detail=error_detail("state_not_found", request_id=request_id),
+            )
 
         state_values = _state_to_dict(snapshot.values)
         parameters = _serialize_parameters(state_values.get("parameters"))
@@ -315,6 +319,8 @@ async def get_state(
             "next": snapshot.next,
             "config": _sanitize_config_for_client(snapshot.config),
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         if is_dependency_unavailable_error(exc):
             raise HTTPException(
@@ -407,6 +413,8 @@ async def update_state(
         )
 
         return {"ok": True, "parameters": sanitized_parameters}
+    except HTTPException:
+        raise
     except Exception as exc:
         if is_dependency_unavailable_error(exc):
             raise HTTPException(

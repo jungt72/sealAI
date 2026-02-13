@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -45,10 +46,30 @@ async def _collect(aiter):
     return chunks
 
 
+def _parse_sse_events(raw_chunks: list[bytes]) -> list[tuple[str, dict]]:
+    text = b"".join(raw_chunks).decode("utf-8")
+    events: list[tuple[str, dict]] = []
+    for block in text.split("\n\n"):
+        if not block.strip():
+            continue
+        event_name = ""
+        payload: dict | None = None
+        for line in block.splitlines():
+            if line.startswith("event: "):
+                event_name = line[len("event: ") :]
+            if line.startswith("data: "):
+                parsed = json.loads(line[len("data: ") :])
+                if isinstance(parsed, dict):
+                    payload = parsed
+        if event_name and payload is not None:
+            events.append((event_name, payload))
+    return events
+
+
 class _Snapshot:
-    def __init__(self, values):
+    def __init__(self, values, config=None):
         self.values = values
-        self.config = {}
+        self.config = config or {}
 
 
 class DummyGraph:
@@ -112,6 +133,40 @@ class DummyGraphCheckpointFlow:
 
     async def ainvoke(self, _input, config=None):
         return {"final_text": "Weiter", "phase": "final", "last_node": "rag_support_node"}
+
+
+class DummyGraphDoneCheckpointId:
+    def __init__(self, thread_id: str):
+        self.thread_id = thread_id
+        self.checkpointer = object()
+
+    def get_graph(self):
+        return type("G", (), {"nodes": {"confirm_checkpoint_node": None, "confirm_recommendation_node": None}})()
+
+    async def aget_state(self, config):
+        checkpoint_ns = (config or {}).get("configurable", {}).get("checkpoint_ns", "")
+        if checkpoint_ns == "":
+            return _Snapshot(
+                {"phase": "validation", "last_node": "final_answer_node"},
+                {"configurable": {"checkpoint_id": "chk-latest"}},
+            )
+        return _Snapshot({}, {"configurable": {}})
+
+    async def aupdate_state(self, _config, updates, as_node=None):
+        return None
+
+    def astream(self, _input, config=None, *, stream_mode=None, **_kwargs):
+        async def gen():
+            yield (
+                "values",
+                {
+                    "phase": "validation",
+                    "last_node": "final_answer_node",
+                    "awaiting_user_confirmation": False,
+                },
+            )
+
+        return gen()
 
 
 def _make_state():
@@ -294,6 +349,200 @@ def test_confirm_go_resume_after_sse_checkpoint(monkeypatch):
     )
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert response["last_node"] == "rag_support_node"
+
+
+def test_sse_done_emits_checkpoint_id_when_confirmation_pending(monkeypatch):
+    checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        chat_id="chat-1",
+    )
+    dummy = DummyGraphCheckpointFlow(thread_id=checkpoint_thread_id)
+
+    async def _dummy_graph():
+        return dummy
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-1")
+    raw = asyncio.run(
+        _collect(
+            endpoint._event_stream_v2(
+                req,
+                user_id="user-1",
+                tenant_id="tenant-1",
+                can_read_private=False,
+                request_id="req-sse-confirm",
+                checkpoint_thread_id=checkpoint_thread_id,
+            )
+        )
+    )
+    done_events = [payload for name, payload in _parse_sse_events(raw) if name == "done"]
+    assert done_events
+    done = done_events[-1]
+    assert done.get("awaiting_confirmation") is True
+    assert isinstance(done.get("checkpoint_id"), str) and done["checkpoint_id"] != ""
+
+
+def test_event_stream_builds_config_with_resolved_checkpoint_thread_id(monkeypatch):
+    checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        chat_id="chat-1",
+    )
+    dummy = DummyGraphCheckpointFlow(thread_id=checkpoint_thread_id)
+    captured: dict[str, str | None] = {"thread_id": None, "checkpoint_thread_id": None}
+
+    async def _fake_build_graph_config(*, thread_id, checkpoint_thread_id=None, **_kwargs):
+        captured["thread_id"] = thread_id
+        captured["checkpoint_thread_id"] = checkpoint_thread_id
+        return dummy, {"configurable": {"thread_id": checkpoint_thread_id or thread_id}, "metadata": {"user_id": "user-1"}}
+
+    monkeypatch.setattr(endpoint, "_build_graph_config", _fake_build_graph_config)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-1")
+    asyncio.run(
+        _collect(
+            endpoint._event_stream_v2(
+                req,
+                user_id="user-1",
+                tenant_id="tenant-1",
+                can_read_private=False,
+                request_id="req-thread-key",
+                checkpoint_thread_id=checkpoint_thread_id,
+            )
+        )
+    )
+
+    assert captured["thread_id"] == "chat-1"
+    assert captured["checkpoint_thread_id"] == checkpoint_thread_id
+
+
+def test_sse_done_uses_latest_checkpoint_id_from_state_snapshot(monkeypatch):
+    checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        chat_id="chat-1",
+    )
+    dummy = DummyGraphDoneCheckpointId(thread_id=checkpoint_thread_id)
+
+    async def _dummy_graph():
+        return dummy
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-1")
+    raw = asyncio.run(
+        _collect(
+            endpoint._event_stream_v2(
+                req,
+                user_id="user-1",
+                tenant_id="tenant-1",
+                can_read_private=False,
+                request_id="req-sse-latest-checkpoint",
+                checkpoint_thread_id=checkpoint_thread_id,
+            )
+        )
+    )
+    done_events = [payload for name, payload in _parse_sse_events(raw) if name == "done"]
+    assert done_events
+    assert done_events[-1].get("checkpoint_id") == "chk-latest"
+
+
+def test_build_graph_config_preserves_external_thread_id_in_metadata(monkeypatch):
+    checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        chat_id="chat-1",
+    )
+    dummy = DummyGraph({})
+
+    async def _dummy_graph():
+        return dummy
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    async def _run():
+        _graph, config = await endpoint._build_graph_config(
+            thread_id="chat-1",
+            checkpoint_thread_id=checkpoint_thread_id,
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
+        return config
+
+    config = asyncio.run(_run())
+    assert config["configurable"]["thread_id"] == checkpoint_thread_id
+    assert config["metadata"]["thread_id"] == "chat-1"
+
+
+def test_state_endpoint_returns_non_empty_ask_missing_state(monkeypatch):
+    class _StateSnapshot:
+        def __init__(self):
+            self.values = {
+                "awaiting_user_input": True,
+                "awaiting_user_confirmation": False,
+                "missing_params": ["pressure_bar"],
+                "parameters": {"medium": "oil"},
+                "phase": "discovery",
+                "last_node": "ask_missing_node",
+            }
+            self.next = []
+            self.config = {
+                "configurable": {"thread_id": "tenant-1:user-1:chat-1", "checkpoint_ns": "sealai:v2:"},
+                "metadata": {"thread_id": "chat-1", "user_id": "user-1"},
+            }
+
+    async def _fake_resolve_state_snapshot(*, thread_id, user, request_id=None, checkpoint_thread_id=None):
+        return object(), {"configurable": {"thread_id": checkpoint_thread_id}}, _StateSnapshot(), False
+
+    monkeypatch.setattr(state_endpoint, "_resolve_state_snapshot", _fake_resolve_state_snapshot)
+
+    request = _request()
+    user = RequestUser(user_id="user-1", tenant_id="tenant-1", username="tester", sub="user-1", roles=[])
+    response = asyncio.run(state_endpoint.get_state(request, thread_id="chat-1", user=user))
+
+    assert response["state"] != {}
+    assert response["state"]["awaiting_user_input"] is True
+    assert response["state"]["missing_params"] == ["pressure_bar"]
+
+
+def test_state_endpoint_exposes_pending_confirmation_checkpoint(monkeypatch):
+    checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        chat_id="chat-1",
+    )
+
+    class _StateSnapshot:
+        def __init__(self):
+            self.values = {
+                "awaiting_user_confirmation": True,
+                "pending_action": "RUN_PANEL_NORMS_RAG",
+                "confirm_checkpoint_id": "chk-1",
+                "confirm_checkpoint": {
+                    "checkpoint_id": "chk-1",
+                    "required_user_sub": "user-1",
+                    "conversation_id": checkpoint_thread_id,
+                    "action": "RUN_PANEL_NORMS_RAG",
+                },
+            }
+            self.next = []
+            self.config = {"configurable": {"thread_id": checkpoint_thread_id, "checkpoint_ns": "sealai:v2:"}}
+
+    async def _fake_resolve_state_snapshot(*, thread_id, user, request_id=None, checkpoint_thread_id=None):
+        return object(), {"configurable": {"thread_id": checkpoint_thread_id}}, _StateSnapshot(), False
+
+    monkeypatch.setattr(state_endpoint, "_resolve_state_snapshot", _fake_resolve_state_snapshot)
+
+    request = _request()
+    user = RequestUser(user_id="user-1", tenant_id="tenant-1", username="tester", sub="user-1", roles=[])
+    response = asyncio.run(state_endpoint.get_state(request, thread_id="chat-1", user=user))
+
+    assert response["state"]["awaiting_user_confirmation"] is True
+    assert response["state"]["confirm_checkpoint_id"] == "chk-1"
+
+
 def test_resolved_thread_key_consistent_across_state_patch_and_confirm_go(monkeypatch):
     expected_thread_id = resolve_checkpoint_thread_id(
         tenant_id="tenant-1",

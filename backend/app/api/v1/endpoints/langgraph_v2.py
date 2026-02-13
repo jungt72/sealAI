@@ -102,6 +102,38 @@ def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = N
     ).encode("utf-8")
 
 
+def _client_accepts_sse(raw_request: Request) -> bool:
+    accept = raw_request.headers.get("accept", "")
+    return "text/event-stream" in accept.lower()
+
+
+async def _duplicate_client_msg_id_sse_stream(
+    *,
+    request_id: str | None,
+    chat_id: str,
+    client_msg_id: str,
+) -> AsyncIterator[bytes]:
+    yield _format_sse(
+        "error",
+        {
+            "type": "error",
+            "code": "duplicate_client_msg_id",
+            "request_id": request_id,
+            "client_msg_id": client_msg_id,
+            "chat_id": chat_id,
+        },
+    )
+    yield _format_sse(
+        "done",
+        {
+            "type": "done",
+            "request_id": request_id,
+            "client_msg_id": client_msg_id,
+            "chat_id": chat_id,
+        },
+    )
+
+
 def _chunk_text(text: str, *, max_len: int = 700) -> list[str]:
     if not text:
         return []
@@ -128,9 +160,61 @@ def _has_checkpoint_state(snapshot: Any) -> bool:
     return bool(values)
 
 
+def _config_with_checkpoint_ns(config: Dict[str, Any], checkpoint_ns: str) -> Dict[str, Any]:
+    copied = dict(config or {})
+    configurable = dict(copied.get("configurable") or {})
+    configurable["checkpoint_ns"] = checkpoint_ns
+    copied["configurable"] = configurable
+    return copied
+
+
+def _checkpoint_id_from_snapshot(snapshot: Any) -> str | None:
+    snapshot_config = getattr(snapshot, "config", None)
+    if not isinstance(snapshot_config, dict):
+        return None
+    configurable = snapshot_config.get("configurable")
+    if not isinstance(configurable, dict):
+        return None
+    checkpoint_id = configurable.get("checkpoint_id")
+    return checkpoint_id if isinstance(checkpoint_id, str) and checkpoint_id else None
+
+
+async def _aget_state_with_checkpoint_ns_fallback(
+    graph: Any,
+    config: Dict[str, Any],
+    *,
+    request_id: str | None = None,
+    chat_id: str | None = None,
+    user_id: str | None = None,
+) -> tuple[Any, Dict[str, Any]]:
+    snapshot = await graph.aget_state(config)
+    if _has_checkpoint_state(snapshot):
+        return snapshot, config
+    configurable = config.get("configurable") if isinstance(config, dict) else {}
+    checkpoint_ns = configurable.get("checkpoint_ns") if isinstance(configurable, dict) else None
+    if not checkpoint_ns:
+        return snapshot, config
+    fallback_config = _config_with_checkpoint_ns(config, "")
+    fallback_snapshot = await graph.aget_state(fallback_config)
+    if _has_checkpoint_state(fallback_snapshot):
+        logger.warning(
+            "langgraph_v2_checkpoint_ns_fallback",
+            extra={
+                "request_id": request_id,
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "configured_ns": checkpoint_ns,
+                "fallback_ns": "",
+            },
+        )
+        return fallback_snapshot, fallback_config
+    return snapshot, config
+
+
 async def _build_graph_config(
     *,
     thread_id: str,
+    checkpoint_thread_id: str | None = None,
     user_id: str,
     tenant_id: str,
     username: str | None = None,
@@ -142,7 +226,12 @@ async def _build_graph_config(
 
     def _attach_config(base_config: Dict[str, Any], *, scoped_user_id: str) -> Dict[str, Any]:
         configurable = base_config.setdefault("configurable", {})
+        if checkpoint_thread_id:
+            configurable["thread_id"] = checkpoint_thread_id
         configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
+        if checkpoint_thread_id:
+            metadata = base_config.setdefault("metadata", {})
+            metadata["thread_id"] = thread_id
         if username:
             metadata = base_config.setdefault("metadata", {})
             metadata["username"] = username
@@ -162,7 +251,13 @@ async def _build_graph_config(
 
     try:
         tenant_token = set_current_tenant_id(tenant_id)
-        snapshot = await graph.aget_state(config)
+        snapshot, _ = await _aget_state_with_checkpoint_ns_fallback(
+            graph,
+            config,
+            request_id=request_id,
+            chat_id=thread_id,
+            user_id=user_id,
+        )
         if _has_checkpoint_state(snapshot):
             return graph, config
 
@@ -170,7 +265,13 @@ async def _build_graph_config(
             build_v2_config(thread_id=thread_id, user_id=legacy_user_id, tenant_id=tenant_id),
             scoped_user_id=legacy_user_id,
         )
-        legacy_snapshot = await graph.aget_state(legacy_config)
+        legacy_snapshot, _ = await _aget_state_with_checkpoint_ns_fallback(
+            graph,
+            legacy_config,
+            request_id=request_id,
+            chat_id=thread_id,
+            user_id=legacy_user_id,
+        )
         if _has_checkpoint_state(legacy_snapshot):
             if SSE_DEBUG or PARAM_SYNC_DEBUG or _lg_trace_enabled():
                 logger.warning(
@@ -207,8 +308,14 @@ async def _run_graph_to_state(
     username: str | None = None,
     can_read_private: bool = False,
 ) -> SealAIState:
+    checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        chat_id=req.chat_id,
+    )
     graph, config = await _build_graph_config(
-        thread_id=checkpoint_thread_id,
+        thread_id=req.chat_id,
+        checkpoint_thread_id=checkpoint_thread_id,
         user_id=user_id,
         tenant_id=tenant_id,
         username=username,
@@ -512,6 +619,7 @@ async def _event_stream_v2(
         scoped_user_id = user_id
         graph, config = await _build_graph_config(
             thread_id=req.chat_id,
+            checkpoint_thread_id=checkpoint_thread_id,
             user_id=user_id,
             tenant_id=tenant_id,
             legacy_user_id=legacy_user_id,
@@ -991,6 +1099,25 @@ async def _event_stream_v2(
                     or _get_state_value(result_state, "pending_checkpoint_id")
                     or (checkpoint_required_payload or {}).get("checkpoint_id")
                 )
+                if not checkpoint_id:
+                    try:
+                        latest_snapshot, _ = await _aget_state_with_checkpoint_ns_fallback(
+                            graph,
+                            config,
+                            request_id=request_id,
+                            chat_id=req.chat_id,
+                            user_id=scoped_user_id,
+                        )
+                        checkpoint_id = _checkpoint_id_from_snapshot(latest_snapshot)
+                    except Exception:
+                        logger.exception(
+                            "langgraph_v2_checkpoint_id_resolve_failed",
+                            extra={
+                                "request_id": request_id,
+                                "chat_id": req.chat_id,
+                                "user_id": scoped_user_id,
+                            },
+                        )
                 done_payload = {
                     "type": "done",
                     "chat_id": req.chat_id,
@@ -1160,6 +1287,24 @@ async def langgraph_chat_v2_endpoint(
             client_msg_id=request.client_msg_id,
         )
         if not claimed:
+            if _client_accepts_sse(raw_request):
+                headers = {
+                    "Cache-Control": "no-cache, no-transform",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                }
+                if request_id:
+                    headers["X-Request-Id"] = request_id
+                return StreamingResponse(
+                    _duplicate_client_msg_id_sse_stream(
+                        request_id=request_id,
+                        chat_id=request.chat_id,
+                        client_msg_id=request.client_msg_id,
+                    ),
+                    media_type="text/event-stream",
+                    headers=headers,
+                    status_code=200,
+                )
             raise HTTPException(
                 status_code=409,
                 detail=error_detail(
@@ -1248,6 +1393,7 @@ async def confirm_go(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         graph, config = await _build_graph_config(
             thread_id=checkpoint_thread_id,
+            checkpoint_thread_id=checkpoint_thread_id,
             user_id=scoped_user_id,
             tenant_id=tenant_id,
             username=user.username,
@@ -1385,7 +1531,8 @@ async def patch_parameters(
             raise HTTPException(status_code=400, detail=error_detail("missing_parameters", request_id=request_id))
 
         graph, config = await _build_graph_config(
-            thread_id=chat_id,
+            thread_id=checkpoint_thread_id,
+            checkpoint_thread_id=checkpoint_thread_id,
             user_id=scoped_user_id,
             tenant_id=user.tenant_id,
             username=user.username,
