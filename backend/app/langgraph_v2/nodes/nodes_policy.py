@@ -79,17 +79,20 @@ def policy_firewall_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, Any
         if status == "skipped" and not missing_fields:
             missing_fields.extend(["material", "profile"])
         missing_fields = [field for field in dict.fromkeys(missing_fields) if field]
-        question = (
-            "Vor der finalen Empfehlung fehlen noch ISO/DIN-relevante Angaben: "
-            f"{', '.join(missing_fields)}. Bitte ergänze diese Punkte."
-        )
-        patch.update(
-            {
-                "ask_missing_request": AskMissingRequest(missing_fields=missing_fields, question=question),
-                "ask_missing_scope": "technical",
-                "awaiting_user_input": True,
-            }
-        )
+        intent_goal = getattr(getattr(state, "intent", None), "goal", None)
+        is_smalltalk_like = intent_goal in {"smalltalk", "out_of_scope"}
+        if missing_fields and not is_smalltalk_like:
+            question = (
+                "Vor der finalen Empfehlung fehlen noch ISO/DIN-relevante Angaben: "
+                f"{', '.join(missing_fields)}. Bitte ergänze diese Punkte."
+            )
+            patch.update(
+                {
+                    "ask_missing_request": AskMissingRequest(missing_fields=missing_fields, question=question),
+                    "ask_missing_scope": "technical",
+                    "awaiting_user_input": True,
+                }
+            )
 
     patch.update(
         {

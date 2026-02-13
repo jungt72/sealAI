@@ -16,6 +16,13 @@ from app.langgraph_v2.utils.rag_tool import search_knowledge_base
 
 logger = logging.getLogger(__name__)
 
+_MATERIAL_RANGE_HINTS: Dict[str, str] = {
+    "fkm": "Typischer Richtbereich fuer FKM liegt je nach Compound oft bei ca. -20 bis +200 C.",
+    "nbr": "Typischer Richtbereich fuer NBR liegt je nach Compound oft bei ca. -30 bis +100 C.",
+    "epdm": "Typischer Richtbereich fuer EPDM liegt je nach Compound oft bei ca. -40 bis +150 C.",
+    "ptfe": "Typischer Richtbereich fuer PTFE liegt je nach Compound oft bei ca. -200 bis +260 C.",
+}
+
 
 def _process_knowledge_sources(retrieval_meta: Dict[str, Any] | None, existing_sources: List[Source] = None) -> Tuple[bool, str, List[Source]]:
     """
@@ -48,6 +55,40 @@ def _process_knowledge_sources(retrieval_meta: Dict[str, Any] | None, existing_s
     
     status = "ok" if sources else "missing"
     return bool(sources), status, sources
+
+
+def _missing_knowledge_scoping_context(state: SealAIState) -> str | None:
+    params = getattr(state, "parameters", None)
+    medium = str(getattr(params, "medium", "") or getattr(params, "medium_type", "") or "").strip()
+    if not medium:
+        return "Welches Medium liegt an (z. B. Oel, Wasser, Dampf oder Chemikalie)?"
+    motion = str(getattr(state, "motion_type", "") or "").strip().lower()
+    if motion not in {"rotary", "linear", "static"}:
+        return "Ist die Anwendung statisch, rotierend oder linear bewegt?"
+    return None
+
+
+def _material_range_hint(user_text: str) -> str:
+    lowered = str(user_text or "").lower()
+    for key, hint in _MATERIAL_RANGE_HINTS.items():
+        if key in lowered:
+            return hint
+    return "Richtwerte sind immer medium-, temperaturprofil- und belastungsabhaengig."
+
+
+def _shape_senior_knowledge_reply(*, raw_reply: str, state: SealAIState, user_text: str) -> str:
+    scoping_question = _missing_knowledge_scoping_context(state)
+    parts: List[str] = []
+    if scoping_question:
+        parts.append(f"Kurz zur Einordnung: {scoping_question}")
+    parts.append(_material_range_hint(user_text))
+    parts.append("Annahme: Ohne komplette Betriebsdaten sind das Richtwerte und keine finale Freigabe.")
+    sanitized_raw = str(raw_reply or "").strip()
+    if scoping_question and sanitized_raw:
+        sanitized_raw = sanitized_raw.replace("?", ".")
+    if sanitized_raw:
+        parts.append(sanitized_raw)
+    return "\n\n".join(part for part in parts if part).strip()
 
 
 def knowledge_router_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
@@ -128,7 +169,7 @@ def knowledge_material_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
         prompt = f"""Kontext: {rag_text}\n\nFrage: {user_text}\n"""
         sys_msg = "Du bist ein Fachberater für Dichtungswerkstoffe."
 
-    reply_text = run_llm(
+    raw_reply_text = run_llm(
         model=model_name,
         prompt=prompt,
         system=sys_msg,
@@ -142,6 +183,7 @@ def knowledge_material_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
         },
     )
 
+    reply_text = _shape_senior_knowledge_reply(raw_reply=raw_reply_text, state=state, user_text=user_text or "")
     wm = state.working_memory or WorkingMemory()
     wm = wm.model_copy(
         update={
@@ -158,6 +200,7 @@ def knowledge_material_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
         "retrieval_meta": retrieval_meta,
         "phase": PHASE.FINAL,
         "last_node": "knowledge_material_node",
+        "conversation_track": "knowledge",
         "needs_sources": needs_src,
         "sources_status": src_status,
         "sources": sources,
@@ -201,7 +244,7 @@ Frage: {user_text or 'Erkläre Einflussfaktoren auf Lebensdauer und Standzeit vo
 
 Beantworte basierend auf dem Kontext."""
     
-    reply_text = run_llm(
+    raw_reply_text = run_llm(
         model=model_name,
         prompt=prompt,
         system=(
@@ -221,6 +264,7 @@ Beantworte basierend auf dem Kontext."""
         },
     )
 
+    reply_text = _shape_senior_knowledge_reply(raw_reply=raw_reply_text, state=state, user_text=user_text or "")
     wm = state.working_memory or WorkingMemory()
     wm = wm.model_copy(
         update={
@@ -237,6 +281,7 @@ Beantworte basierend auf dem Kontext."""
         "retrieval_meta": retrieval_meta,
         "phase": PHASE.FINAL,
         "last_node": "knowledge_lifetime_node",
+        "conversation_track": "knowledge",
         "needs_sources": needs_src,
         "sources_status": src_status,
         "sources": sources,
@@ -279,7 +324,7 @@ Frage: {user_text or 'Beantworte eine allgemeine Frage zur Dichtungstechnik klar
 
 Beantworte basierend auf dem Kontext."""
     
-    reply_text = run_llm(
+    raw_reply_text = run_llm(
         model=model_name,
         prompt=prompt,
         system=(
@@ -298,6 +343,7 @@ Beantworte basierend auf dem Kontext."""
         },
     )
 
+    reply_text = _shape_senior_knowledge_reply(raw_reply=raw_reply_text, state=state, user_text=user_text or "")
     wm = state.working_memory or WorkingMemory()
     wm = wm.model_copy(
         update={
@@ -316,6 +362,7 @@ Beantworte basierend auf dem Kontext."""
         "retrieval_meta": retrieval_meta,
         "phase": PHASE.FINAL,
         "last_node": "generic_sealing_qa_node",
+        "conversation_track": "knowledge",
         "needs_sources": needs_src,
         "sources_status": src_status,
         "sources": sources,

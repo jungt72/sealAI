@@ -1,0 +1,17 @@
+Analysiere die User-Nachricht, um zu bestimmen, was der Nutzer möchte (Intent) und welche technischen Parameter bereits genannt wurden.
+
+Kontext: session_id={{ session_id }}
+Sprache: {{ language }}
+
+Extrahierte Informationen müssen als reines JSON zurückgegeben werden.
+
+Struktur (JSON):
+{
+  "intent": "design_recommendation" | "troubleshooting_leakage" | "explanation_or_comparison" | "smalltalk" | "out_of_scope",
+  "confidence": float (0.0 - 1.0),
+  "parameters": { ... },
+  "missing_info": [ ... ]
+}
+
+User Nachricht:
+{{ user_message }}

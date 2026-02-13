@@ -1,0 +1,29 @@
+[
+  {
+    "id": "scenario_water_pump_simple",
+    "input": "I need a seal for a water pump, 10 bar, 50C.",
+    "expected": {
+      "phase_transition": "technical_analysis",
+      "escalation": false
+    }
+  },
+  {
+    "id": "scenario_hydrogen_critical",
+    "input": "I have a hydrogen compressor at 150 bar.",
+    "expected": {
+      "phase_transition": "expert_escalation_preparation",
+      "escalation": true,
+      "severity": 4,
+      "prompt_intent": "empathic_escalation"
+    }
+  },
+  {
+    "id": "scenario_missing_params",
+    "input": "I need a seal.",
+    "expected": {
+      "phase_transition": "collaborative_extraction",
+      "escalation": false,
+      "prompt_intent": "extraction_request"
+    }
+  }
+]
