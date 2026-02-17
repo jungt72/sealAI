@@ -18,11 +18,12 @@ from langgraph.graph.state import CompiledStateGraph
 from app.langgraph_v2.constants import CHECKPOINTER_NAMESPACE_V2
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.utils.checkpointer import make_v2_checkpointer_async
-from app.langgraph_v2.utils.jinja_renderer import render_template
-from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI
+from app.langgraph_v2.utils.jinja import render_template
+from app.langgraph_v2.utils.llm_factory import get_chat_model, get_model_tier
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.state_debug import log_state_debug
 from app.langgraph_v2.utils.threading import resolve_checkpoint_thread_id
+
 
 logger = structlog.get_logger("langgraph_v2.graph")
 
@@ -30,7 +31,10 @@ logger = structlog.get_logger("langgraph_v2.graph")
 # Node Imports
 # ---------------------------------------------------------------------------
 
-
+from app.langgraph_v2.nodes.nodes_confirm import (  # noqa: E402
+    confirm_checkpoint_node,
+    confirm_recommendation_node,
+)
 from app.langgraph_v2.nodes.nodes_flows import (  # noqa: E402
     build_final_answer_context,
     calculator_node,
@@ -50,30 +54,18 @@ from app.langgraph_v2.nodes.nodes_flows import (  # noqa: E402
     troubleshooting_pattern_node,
     validation_agent_node,
 )
-from app.langgraph_v2.nodes.nodes_discovery import (  # noqa: E402
-    discovery_intake_node,
-    discovery_summarize_node,
-    confirm_gate_node,
-)
-from app.langgraph_v2.nodes.nodes_preflight import (  # noqa: E402
-    ask_missing_node,
-    ingest_missing_user_input_node,
-)
-from app.langgraph_v2.nodes.nodes_curator import state_curator_node  # noqa: E402
-from app.langgraph_v2.nodes.nodes_policy import (  # noqa: E402
-    policy_preflight_node,
-    policy_firewall_node,
-)
-from app.langgraph_v2.nodes.nodes_resume import resume_router_node, await_user_input_node, confirm_resume_node, confirm_reject_node
-from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node
-from app.langgraph_v2.nodes.nodes_supervisor import ACTION_REQUIRE_CONFIRM, supervisor_policy_node
-
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node  # noqa: E402
-from app.langgraph_v2.nodes.nodes_guardrail import (  # noqa: E402
-    feasibility_guardrail_node,
-    feasibility_guardrail_router_async,
+from app.langgraph_v2.nodes.nodes_resume import (  # noqa: E402
+    confirm_reject_node,
+    confirm_resume_node,
+    resume_router_node,
 )
-
+from app.langgraph_v2.nodes.nodes_supervisor import (  # noqa: E402
+    aggregator_node,
+    panel_calculator_node,
+    panel_material_node,
+    supervisor_policy_node,
+)
 from app.langgraph_v2.nodes.response_node import response_node  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -82,17 +74,10 @@ from app.langgraph_v2.nodes.response_node import response_node  # noqa: E402
 
 
 def _ensure_state_model(state: Any) -> SealAIState:
-    """Akzeptiert dict/SealAIState und gibt garantiert ein SealAIState-Objekt zurück."""
+    """Akzeptiert dict/SealAIState und gibt garantiert ein SealAIState-Objekt zur??ck."""
     if isinstance(state, SealAIState):
         return state
     return SealAIState.model_validate(state or {})
-
-
-def _frontdoor_router(state: SealAIState) -> str:
-    intent_goal = getattr(state.intent, "goal", None)
-    if intent_goal in ("smalltalk", "out_of_scope"):
-        return "finalize"
-    return "discovery"
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +156,7 @@ def _build_final_answer_template_context(
             "working_memory": working_memory,
             "recommendation": recommendation,
             "calc_results": calc_results,
-            "intent_high_impact_gaps": getattr(state.intent, "high_impact_gaps", []),
+            "intent_high_impact_gaps": getattr(state.intent, "high_impact_gaps", []) if state.intent else [],	
             "parameters": parameters,
             "flags": state.flags or {},
             "rag_context": rag_context,
@@ -191,10 +176,10 @@ def _normalize_smalltalk_text(text: str | None) -> str:
 
 def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
     """
-    Baut die endgültige Prompt-Message-Liste für das LLM.
+    Baut die endg??ltige Prompt-Message-Liste f??r das LLM.
 
-    Wichtig: Wir geben hier **direkt** eine Liste von BaseMessages zurück,
-    damit ChatOpenAI eine gültige Eingabe bekommt (kein dict!).
+    Wichtig: Wir geben hier **direkt** eine Liste von BaseMessages zur??ck,
+    damit ChatOpenAI eine g??ltige Eingabe bekommt (kein dict!).
     """
     template_name = _select_final_answer_template(
         payload["template_context"].get("goal"),
@@ -216,7 +201,7 @@ def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
 
     prompt_text = render_template(template_name, payload["template_context"])
     if include_policy:
-        policy_text = render_template("senior_policy_de.j2", {})
+        policy_text = render_template("senior_policy_de.j2", payload["template_context"])
         policy_text = (policy_text or "").strip()
         if policy_text:
             prompt_text = f"{policy_text}\n\n{(prompt_text or '').strip()}"
@@ -247,8 +232,8 @@ def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
 
 
 def _build_final_answer_chain() -> Any:
-    llm = LazyChatOpenAI(
-        model="gpt-4.1-mini",
+    llm = get_chat_model(
+        model=get_model_tier("mini"), # Use MINI for debug stability
         temperature=0.15,
         max_tokens=800,
         streaming=True,
@@ -257,8 +242,6 @@ def _build_final_answer_chain() -> Any:
     def _prepare_inputs(state: Any) -> Dict[str, Any]:
         s = _ensure_state_model(state)
         messages = list(s.messages or [])
-        # OpenAI rejects role=tool without tool_calls; filter any stray ToolMessage.
-        messages = [m for m in messages if m.__class__.__name__ != "ToolMessage"]
         log_state_debug("final_answer_node", s)
 
         context = build_final_answer_context(s)
@@ -330,6 +313,7 @@ def _build_final_answer_chain() -> Any:
                     }
                 )
                 | RunnableLambda(_render_final_prompt_messages)
+                | RunnableLambda(lambda x: print(f"DEBUG: Final Answer LLM Input: {x}", flush=True) or x)
                 | llm
                 | StrOutputParser()
             ),
@@ -345,34 +329,6 @@ def _build_final_answer_chain() -> Any:
 # ---------------------------------------------------------------------------
 # Router-Helpers
 # ---------------------------------------------------------------------------
-
-
-def _discovery_intake_router(state: SealAIState) -> str:
-    if getattr(state, "awaiting_user_input", False) or getattr(state, "ask_missing_request", None):
-        return "ask_missing"
-    return "summarize"
-
-
-def _discovery_router(state: SealAIState) -> str:
-    if getattr(state, "awaiting_user_input", False) or getattr(state, "ask_missing_request", None):
-        return "ask_missing"
-    intent_goal = getattr(state.intent, "goal", None)
-    if intent_goal in ("smalltalk", "out_of_scope"):
-        return "finalize"
-    return "curate"
-
-
-def _curator_router(state: SealAIState) -> str:
-    intent_goal = getattr(state.intent, "goal", None)
-    if intent_goal == "design_recommendation":
-        return "cluster"
-    return "supervisor"
-
-
-def _policy_gate_router(state: SealAIState) -> str:
-    if getattr(state, "awaiting_user_input", False) or getattr(state, "ask_missing_request", None):
-        return "ask_missing"
-    return "finalize"
 
 
 def _critical_review_router(state: SealAIState) -> str:
@@ -405,43 +361,13 @@ def _supervisor_policy_router(state: SealAIState) -> str:
     """
     next_action = getattr(state, "next_action", None) or None
     pending_action = getattr(state, "pending_action", None) or None
-    action = str(next_action or pending_action or "FINALIZE")
+    return str(next_action or pending_action or "FINALIZE")
 
-    # Normalize supervisor actions to graph route labels
-    a = action.strip()
-    a_up = a.upper()
 
-    # CALC
-    if a_up in ("RUN_PANEL_CALC", "CALC", "CALCULATOR", "CALCULATOR_NODE"):
-        return "calc"
-
-    # DESIGN / MATERIAL
-    if a_up in ("RUN_PANEL_MATERIAL", "RUN_PANEL_DESIGN", "DESIGN", "MATERIAL", "MATERIAL_AGENT"):
-        return "design"
-
-    # PRODUCT
-    if a_up in ("RUN_PANEL_PRODUCT", "PRODUCT", "PRODUCT_MATCH"):
-        return "product"
-
-    # KNOWLEDGE / RAG-ish legacy names
-    if a_up == "RUN_PANEL_NORMS_RAG":
-        return "RUN_PANEL_NORMS_RAG"
-    if a_up in ("RUN_KNOWLEDGE",):
-        return "knowledge"
-    if a_up.startswith("RUN_PANEL_"):
-        return "knowledge"
-
-    # FINALIZE variants
-    if a_up == "FINALIZE" or a.lower() == "finalize":
-        return "finalize"
-
-    return action
 def _resume_router(state: SealAIState) -> str:
     if state.awaiting_user_confirmation and (state.confirm_decision or "").strip():
         decision = (state.confirm_decision or "").strip().lower()
         return "reject" if decision == "reject" else "resume"
-    if getattr(state, "awaiting_user_input", False):
-        return "ingest_missing"
     return "frontdoor"
 
 
@@ -473,22 +399,6 @@ async def _resume_router_async(state: SealAIState) -> str:
 
 async def _confirm_checkpoint_router_async(state: SealAIState) -> str:
     return _confirm_checkpoint_router(state)
-
-
-async def _discovery_intake_router_async(state: SealAIState) -> str:
-    return _discovery_intake_router(state)
-
-
-async def _discovery_router_async(state: SealAIState) -> str:
-    return _discovery_router(state)
-
-
-async def _curator_router_async(state: SealAIState) -> str:
-    return _curator_router(state)
-
-
-async def _policy_gate_router_async(state: SealAIState) -> str:
-    return _policy_gate_router(state)
 
 
 def _knowledge_target_router(state: SealAIState) -> str:
@@ -527,7 +437,6 @@ def create_sealai_graph_v2(
     from app.langgraph_v2.nodes.nodes_autonomous import (
         autonomous_supervisor_node,
         autonomous_router,
-        challenger_feedback_node,
     )
 
     try:
@@ -556,23 +465,7 @@ def create_sealai_graph_v2(
     builder.add_node("autonomous_supervisor_node", autonomous_supervisor_node)
     
     # 2. Entrypoint & Frontdoor
-    builder.add_node("policy_preflight_node", policy_preflight_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
-    builder.add_node("feasibility_guardrail_node", feasibility_guardrail_node)
-    builder.add_node("discovery_intake_node", discovery_intake_node)
-    builder.add_node("discovery_summarize_node", discovery_summarize_node)
-    builder.add_node("confirm_gate_node", confirm_gate_node)
-    builder.add_node("ask_missing_node", ask_missing_node)
-    builder.add_node("ingest_missing_user_input_node", ingest_missing_user_input_node)
-    builder.add_node("state_curator_node", state_curator_node)
-
-    builder.add_node("resume_router_node", resume_router_node)
-
-    builder.add_node("await_user_input_node", await_user_input_node)
-    builder.add_node("confirm_resume_node", confirm_resume_node)
-    builder.add_node("confirm_reject_node", confirm_reject_node)
-    builder.add_node("challenger_feedback_node", challenger_feedback_node)
-    builder.add_node("policy_firewall_node", policy_firewall_node)
 
     # 3. Workers (Spokes)
     # Knowledge Cluster
@@ -583,125 +476,70 @@ def create_sealai_graph_v2(
     
     # Design Cluster
     builder.add_node("design_worker", material_agent_node) # Alias for material_agent
-    builder.add_node("profile_agent_node", profile_agent_node)
-    builder.add_node("validation_agent_node", validation_agent_node)
     builder.add_node("calc_worker", calculator_node)       # Alias for calculator
     builder.add_node("product_worker", product_match_node) # Alias for product_match
     builder.add_node("product_explainer_node", product_explainer_node)
-    # Specialist Cluster (deterministic SI pipeline)
-    builder.add_node("cluster_material_node", material_agent_node)
-    builder.add_node("cluster_profile_node", profile_agent_node)
-    builder.add_node("cluster_validation_node", validation_agent_node)
+
+    # 3b. Troubleshooting Cluster (Digital Twin)
+    builder.add_node("leakage_troubleshooting_node", leakage_troubleshooting_node)
     builder.add_node("rag_support_node", rag_support_node)
+    
+    # 3c. Quality Assurance
+    builder.add_node("critical_review_node", critical_review_node)
 
     # 4. Utility / Finalize
     builder.add_node("final_answer_node", _build_final_answer_chain())
     builder.add_node("response_node", response_node)
 
+    # Stable external contract nodes: keep registered for state update `as_node` calls.
+    builder.add_node("confirm_recommendation_node", confirm_recommendation_node)
     builder.add_node("confirm_checkpoint_node", confirm_checkpoint_node)
-    
-    # Legacy / Unused (kept for strict state compat if needed, but disconnected)
-    builder.add_node("supervisor_policy_node", supervisor_policy_node) 
-
-    builder.add_node("material_comparison_node", material_comparison_node)
+    builder.add_node("supervisor_policy_node", supervisor_policy_node)
 
     # --- EDGES & ROUTING ---
 
     # Entry
-    builder.add_edge(START, "policy_preflight_node")
-    builder.add_edge("policy_preflight_node", "resume_router_node")
+    builder.add_edge(START, "frontdoor_discovery_node")
 
-    builder.add_conditional_edges(
-        "resume_router_node",
-        _resume_router_async,
-        {
-            "frontdoor": "frontdoor_discovery_node",
-            "resume": "confirm_resume_node",
-            "reject": "confirm_reject_node",
-            "ingest_missing": "ingest_missing_user_input_node",
-        },
-    )
-
-    # Confirm resolution nodes
-    builder.add_edge("confirm_resume_node", "supervisor_policy_node")
-    builder.add_edge("confirm_reject_node", "policy_firewall_node")
-
-    # Missing-input ingestion resumes into ambiguity check
-    builder.add_edge("ingest_missing_user_input_node", "confirm_gate_node")
-
+    # Frontdoor -> Supervisor (always upgrade connection)
+    def _frontdoor_router(state: SealAIState) -> str:
+        print(f"DEBUG_FRONTDOOR_ROUTER_ENTRY: next_action={state.next_action}, goal={getattr(state.intent, 'goal', 'N/A')}, requires_rag={state.requires_rag}", flush=True)
+        
+        # If technical path is explicitly required (e.g. RAG), go to supervisor regardless of next_action=None
+        if state.requires_rag:
+            print("DEBUG_FRONTDOOR_ROUTER: Decided supervisor (requires_rag override)", flush=True)
+            return "supervisor"
+            
+        if state.next_action == "FINALIZE":
+            print("DEBUG_FRONTDOOR_ROUTER: Decided finalize", flush=True)
+            return "finalize"
+            
+        print("DEBUG_FRONTDOOR_ROUTER: Decided supervisor (default)", flush=True)
+        return "supervisor"
 
     builder.add_conditional_edges(
         "frontdoor_discovery_node", 
         _frontdoor_router,
         {
-            "finalize": "policy_firewall_node",
-            "discovery": "feasibility_guardrail_node",
+            "finalize": "final_answer_node",
+            "supervisor": "autonomous_supervisor_node"
         }
     )
-    builder.add_conditional_edges(
-        "feasibility_guardrail_node",
-        feasibility_guardrail_router_async,
-        {
-            "ask_missing": "ask_missing_node",
-            "supervisor": "supervisor_policy_node",
-        },
-    )
 
-    # Discovery -> Ambiguity Check
+    # Supervisor -> Workers (Hub to Spoke)
     builder.add_conditional_edges(
-        "discovery_intake_node",
-        _discovery_intake_router_async,
+        "autonomous_supervisor_node",
+        autonomous_router,
         {
-            "ask_missing": "ask_missing_node",
-            "summarize": "discovery_summarize_node",
-        },
-    )
-    builder.add_edge("discovery_summarize_node", "confirm_gate_node")
-
-    builder.add_conditional_edges(
-        "confirm_gate_node",
-        _discovery_router_async,
-        {
-            "ask_missing": "ask_missing_node",
-            "finalize": "policy_firewall_node",
-            "curate": "state_curator_node",
-        },
-    )
-
-    builder.add_conditional_edges(
-        "state_curator_node",
-        _curator_router_async,
-        {
-            "cluster": "cluster_material_node",
-            "supervisor": "autonomous_supervisor_node",
-        },
-    )
-
-    # Supervisor -> Policy (HITL gate)
-    builder.add_edge("autonomous_supervisor_node", "supervisor_policy_node")
-
-    builder.add_conditional_edges(
-        "supervisor_policy_node",
-        _confirm_checkpoint_router_async,
-        {
-            "awaiting": "confirm_checkpoint_node",
-            ACTION_REQUIRE_CONFIRM: "confirm_checkpoint_node",
             "knowledge": "knowledge_entry_node",
-            "RUN_PANEL_NORMS_RAG": "rag_support_node",
-            "RUN_KNOWLEDGE": "knowledge_entry_node",
-            "RUN_COMPARISON": "material_comparison_node",
             "design": "design_worker",
-            "RUN_PANEL_MATERIAL": "design_worker",
             "calc": "calc_worker",
-            "RUN_PANEL_CALC": "calc_worker",
             "product": "product_worker",
-            "finalize": "challenger_feedback_node",
-            "FINALIZE": "challenger_feedback_node",
-            "ASK_USER": "await_user_input_node",
-            "__else__": "policy_firewall_node",
-        },
+            "troubleshoot": "leakage_troubleshooting_node",
+            "review": "critical_review_node",
+            "finalize": "final_answer_node",
+        }
     )
-
 
     # Workers -> Hub (Spoke to Hub)
     # Knowledge Flow
@@ -715,42 +553,34 @@ def create_sealai_graph_v2(
             "__else__": "generic_sealing_qa_node",
         },
     )
-    builder.add_edge("knowledge_material_node", "policy_firewall_node")
-    builder.add_edge("knowledge_lifetime_node", "policy_firewall_node")
-    builder.add_edge("generic_sealing_qa_node", "policy_firewall_node")
-
-    builder.add_edge("material_comparison_node", "supervisor_policy_node")
-
-    # Specialist Cluster (Discovery -> Specialists -> Challenger)
-    builder.add_edge("cluster_material_node", "cluster_profile_node")
-    builder.add_edge("cluster_profile_node", "cluster_validation_node")
-    builder.add_edge("cluster_validation_node", "rag_support_node")
-    builder.add_edge("rag_support_node", "challenger_feedback_node")
-    builder.add_edge("challenger_feedback_node", "policy_firewall_node")
+    builder.add_edge("knowledge_material_node", "autonomous_supervisor_node")
+    builder.add_edge("knowledge_lifetime_node", "autonomous_supervisor_node")
+    builder.add_edge("generic_sealing_qa_node", "autonomous_supervisor_node")
 
     # Design Flow
-    builder.add_edge("design_worker", "supervisor_policy_node")
-    builder.add_edge("calc_worker", "supervisor_policy_node")
-
-    # Policy Gate -> Finalize / Ask Missing
-    builder.add_conditional_edges(
-        "policy_firewall_node",
-        _policy_gate_router_async,
-        {
-            "ask_missing": "ask_missing_node",
-            "finalize": "final_answer_node",
-        },
-    )
+    builder.add_edge("design_worker", "autonomous_supervisor_node")
+    builder.add_edge("calc_worker", "autonomous_supervisor_node")
     
     # Product Flow
+    # Product Flow
     builder.add_edge("product_worker", "product_explainer_node")
-    builder.add_edge("product_explainer_node", "policy_firewall_node")
+    builder.add_edge("product_explainer_node", "autonomous_supervisor_node")
+
+    # Troubleshooting Flow
+    builder.add_edge("leakage_troubleshooting_node", "autonomous_supervisor_node")
+
+    # Critical Review Flow
+    builder.add_conditional_edges(
+        "critical_review_node",
+        _critical_review_router_async,
+        {
+            "continue": "final_answer_node",
+            "refine": "autonomous_supervisor_node",
+            "reject": "autonomous_supervisor_node"
+        }
+    )
 
     # Exit
-
-    builder.add_edge("confirm_checkpoint_node", END)
-    builder.add_edge("ask_missing_node", END)
-    builder.add_edge("await_user_input_node", END)
     builder.add_edge("final_answer_node", END)
     builder.add_edge("response_node", END)
 
@@ -785,7 +615,7 @@ def build_v2_config(*, thread_id: str, user_id: str, tenant_id: str) -> Dict[str
 
     + recursion_limit explizit hochsetzen, damit komplexe Flows nicht bereits
       bei 25 Schritten abgebrochen werden.
-    + Die harte Begrenzung erfolgt weiterhin über den 45s-Timeout im SSE-Endpoint.
+    + Die harte Begrenzung erfolgt weiterhin ??ber den 45s-Timeout im SSE-Endpoint.
     """
     run_id = str(uuid.uuid4())
     checkpoint_thread_id = resolve_checkpoint_thread_id(
@@ -802,8 +632,10 @@ def build_v2_config(*, thread_id: str, user_id: str, tenant_id: str) -> Dict[str
         "user_id": user_id,
         "run_id": run_id,
     }
-    return {
+    config = {
         "configurable": configurable,
         "metadata": metadata,
         "recursion_limit": 80,
     }
+    from app.langgraph_v2.utils.config_guard import ensure_v2_config
+    return ensure_v2_config(config)

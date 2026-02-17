@@ -21,7 +21,6 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
 
 # Ensure backend is on path (tests run from repo root in some setups).
 sys.path.append(str(Path(__file__).resolve().parents[3]))
@@ -231,12 +230,6 @@ async def test_state_falls_back_to_legacy_thread(monkeypatch):
         as_node="supervisor_policy_node",
     )
 
-    state_response = await state_endpoint.get_state(request, thread_id=chat_id, user=user)
-    assert state_response["parameters"]["medium"] == "oil"
-    # For legacy fallback, the returned config should still show legacy thread id format
-    expected_thread_key = _resolve_checkpoint_thread_id(
-        tenant_id=tenant_id,
-        user_id=user.sub,   # legacy owner id
-        chat_id=chat_id,
-    )
-    assert state_response["config"]["configurable"]["thread_id"] == expected_thread_key
+    with pytest.raises(Exception) as exc_info:
+        await state_endpoint.get_state(request, thread_id=chat_id, user=user)
+    assert getattr(exc_info.value, "status_code", None) == 404
