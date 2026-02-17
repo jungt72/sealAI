@@ -1,8 +1,12 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { fetchV2StateParameters, patchV2ParametersAndFetchState } from "../src/lib/v2ParameterPatch";
+import {
+  fetchV2StateParameters,
+  patchV2ParametersAndFetchState,
+} from "../src/lib/v2ParameterPatch";
 
 describe("v2 parameter patch helpers", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -48,7 +52,7 @@ describe("v2 parameter patch helpers", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     const [patchUrl, patchInit] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(patchUrl).toBe("/api/langgraph/parameters/patch");
+    expect(patchUrl).toBe("/api/v1/langgraph/parameters/patch");
     expect(patchInit.method).toBe("POST");
     expect(toHeaderObject(patchInit.headers)).toMatchObject({
       "content-type": "application/json",
@@ -93,5 +97,149 @@ describe("v2 parameter patch helpers", () => {
     expect(toHeaderObject(stateInit.headers)).toMatchObject({
       authorization: "Bearer token-xyz",
     });
+  });
+
+  it("does not retry when state endpoint returns 404 state_not_found", async () => {
+    const stateMissingResponse = {
+      ok: false,
+      status: 404,
+      headers: new Headers(),
+      json: () => Promise.resolve({ detail: { code: "state_not_found", message: "missing checkpoint" } }),
+      text: () => Promise.resolve(""),
+    } as unknown as Response;
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(stateMissingResponse);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const promise = fetchV2StateParameters({
+      chatId: "chat-missing",
+      token: "token-xyz",
+    });
+
+    await expect(promise).rejects.toMatchObject({
+      status: 404,
+      code: "state_not_found",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries 429 with Retry-After delay instead of tight-looping", async () => {
+    vi.useFakeTimers();
+    const rateLimitedResponse = {
+      ok: false,
+      status: 429,
+      headers: new Headers({ "Retry-After": "2" }),
+      json: () => Promise.resolve({ detail: { message: "rate limited" } }),
+      text: () => Promise.resolve(""),
+    } as unknown as Response;
+    const okResponse = {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: () => Promise.resolve({ parameters: { medium: "oil" } }),
+      text: () => Promise.resolve(""),
+    } as unknown as Response;
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(rateLimitedResponse).mockResolvedValueOnce(okResponse);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fetchV2StateParameters({
+      chatId: "chat-429",
+      token: "token-xyz",
+    });
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toEqual({ medium: "oil" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry on 401 session_expired and surfaces auth code", async () => {
+    vi.useFakeTimers();
+    const expiredResponse = {
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      json: () => Promise.resolve({ detail: "session_expired" }),
+      text: () => Promise.resolve(""),
+    } as unknown as Response;
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(expiredResponse);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fetchV2StateParameters({
+      chatId: "chat-expired",
+      token: "token-expired",
+    });
+
+    await expect(pending).rejects.toMatchObject({
+      status: 401,
+      code: "session_expired",
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call state endpoint when token is missing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      fetchV2StateParameters({
+        chatId: "chat-no-token",
+        token: "",
+      }),
+    ).rejects.toMatchObject({
+      status: 401,
+      code: "missing_token",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(0);
+  });
+
+  it("enforces a minimum polling interval between consecutive state fetches", async () => {
+    vi.useFakeTimers();
+    const responseA = {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: () => Promise.resolve({ parameters: { medium: "oil" } }),
+      text: () => Promise.resolve(""),
+    } as unknown as Response;
+    const responseB = {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: () => Promise.resolve({ parameters: { medium: "water" } }),
+      text: () => Promise.resolve(""),
+    } as unknown as Response;
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(responseA).mockResolvedValueOnce(responseB);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = fetchV2StateParameters({
+      chatId: "chat-min-interval",
+      token: "token-1",
+    });
+    await expect(first).resolves.toEqual({ medium: "oil" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const second = fetchV2StateParameters({
+      chatId: "chat-min-interval",
+      token: "token-1",
+    });
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(second).resolves.toEqual({ medium: "water" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

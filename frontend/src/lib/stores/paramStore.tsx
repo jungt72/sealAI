@@ -374,18 +374,18 @@ export function useParamStore(chatId?: string | null) {
 
   const initChat = useCallback(
     (payload: InitPayload) => ctx.dispatch({ type: "init", payload }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   const replaceFromServer = useCallback(
     (payload: ReplacePayload) => ctx.dispatch({ type: "replace", payload }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   const setLocalOptimistic = useCallback(
     (chatIdValue: string, patch: Partial<SealParameters>) =>
       ctx.dispatch({ type: "optimistic", payload: { chatId: chatIdValue, patch } }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   const applyLocalEdit = useCallback(
@@ -394,7 +394,7 @@ export function useParamStore(chatId?: string | null) {
         type: "apply_local",
         payload: { chatId: chatIdValue, patch, markDirty: opts?.markDirty, clearDirty: opts?.clearDirty },
       }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   const applyRemoteDeltaFromSse = useCallback(
@@ -408,31 +408,31 @@ export function useParamStore(chatId?: string | null) {
         type: "apply_delta",
         payload: { chatId: chatIdValue, incoming, meta, eventId },
       }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   const applyPatchAck = useCallback(
     (chatIdValue: string, ack: ParameterPatchAckPayload) =>
       ctx.dispatch({ type: "apply_patch", payload: { chatId: chatIdValue, ack } }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   const markPending = useCallback(
     (chatIdValue: string, keys: Set<keyof SealParameters>) =>
       ctx.dispatch({ type: "set_pending", payload: { chatId: chatIdValue, keys } }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   const clearPending = useCallback(
     (chatIdValue: string, keys: Set<keyof SealParameters>) =>
       ctx.dispatch({ type: "clear_pending", payload: { chatId: chatIdValue, keys } }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   const pruneApplied = useCallback(
     (chatIdValue: string, ttlMs: number) =>
       ctx.dispatch({ type: "prune_applied", payload: { chatId: chatIdValue, ttlMs } }),
-    [ctx],
+    [ctx.dispatch],
   );
 
   return {

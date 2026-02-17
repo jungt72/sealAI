@@ -52,6 +52,23 @@ describe("api/langgraph routes", () => {
     expect(headers.get("Authorization")).toBe("Bearer token-123");
   });
 
+  it("passes backend 401 for state through unchanged", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: { code: "session_expired" } }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = makeGetRequest("http://localhost/api/langgraph/state?thread_id=smoke");
+    const resp = await getState(req);
+    const body = await resp.json();
+
+    expect(resp.status).toBe(401);
+    expect(body).toEqual({ detail: { code: "session_expired" } });
+  });
+
   it("forwards parameters patch to /api/v1/langgraph/parameters/patch", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {

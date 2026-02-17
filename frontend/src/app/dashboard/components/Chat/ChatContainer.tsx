@@ -10,7 +10,13 @@ import ChatInput from "./ChatInput";
 import type { Message } from "@/types/chat";
 import { useChatSseV2 } from "@/lib/useChatSseV2";
 import { useChatThreadId } from "@/lib/useChatThreadId";
-import { fetchV2StateParameters, patchV2Parameters } from "@/lib/v2ParameterPatch";
+import {
+  fetchV2State,
+  fetchV2StateParameters,
+  isSessionExpiredStateError,
+  LanggraphStateFetchError,
+  patchV2Parameters,
+} from "@/lib/v2ParameterPatch";
 import { applyParametersWithChatMessage } from "@/lib/parameterApplyChat";
 import QualityMetaPanel from "@/app/dashboard/components/QualityMetaPanel";
 import {
@@ -40,6 +46,7 @@ type LanggraphState = Record<string, unknown> & {
 };
 
 const THREAD_STORAGE_PREFIX = "sealai:thread:";
+const THREAD_STORAGE_CURRENT = `${THREAD_STORAGE_PREFIX}current`;
 
 export const clearAllThreadStorage = (): number => {
   if (typeof window === "undefined") return 0;
@@ -52,6 +59,31 @@ export const clearAllThreadStorage = (): number => {
     sessionStorage.removeItem(key);
   }
   return keys.length;
+};
+
+const createThreadId = (): string => {
+  const random =
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `thread-${random}`;
+};
+
+export const recoverFromStateNotFound = (
+  preferredChatId?: string | null,
+): { nextChatId: string | null; removed: number } => {
+  if (typeof window === "undefined") return { nextChatId: null, removed: 0 };
+  const storageKey = sessionStorage.getItem(THREAD_STORAGE_CURRENT);
+  const removed = clearAllThreadStorage();
+  if ((preferredChatId ?? "").trim()) {
+    return { nextChatId: null, removed };
+  }
+  const nextChatId = createThreadId();
+  if (storageKey) {
+    sessionStorage.setItem(THREAD_STORAGE_CURRENT, storageKey);
+    sessionStorage.setItem(storageKey, nextChatId);
+  }
+  return { nextChatId, removed };
 };
 
 export const normalizeIncomingParameters = (raw: Record<string, unknown>): Partial<SealParameters> => {
@@ -192,7 +224,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, [pathname]);
   const preferredChatId = (urlConversationId ?? chatIdProp ?? "").trim() || null;
   const storedChatId = useChatThreadId(preferredChatId);
-  const chatId = preferredChatId ?? storedChatId;
+  const [chatIdOverride, setChatIdOverride] = useState<string | null>(null);
+  const chatId = preferredChatId ?? chatIdOverride ?? storedChatId;
   const { token, error: tokenError } = useAccessToken();
   const {
     parameters,
@@ -273,6 +306,14 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
   useEffect(() => {
     if (!authExpired) return;
+    stateAbortRef.current?.abort();
+    stateAbortRef.current = null;
+    currentStateAbortRef.current?.abort();
+    currentStateAbortRef.current = null;
+    if (patchDebounceRef.current) {
+      clearTimeout(patchDebounceRef.current);
+      patchDebounceRef.current = null;
+    }
     window.dispatchEvent(
       new CustomEvent("sealai:conversations:invalidate", {
         detail: { reason: "auth_expired" },
@@ -296,21 +337,16 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const resyncStateFromServer = (reason: string) => {
     const expectedChatId = chatId;
     const expectedToken = token;
-    if (!expectedChatId || !expectedToken) return;
+    if (!expectedChatId || !expectedToken || authExpired) return;
+    if (missingThreadIdsRef.current.has(expectedChatId)) return;
     currentStateAbortRef.current?.abort();
     const controller = new AbortController();
     currentStateAbortRef.current = controller;
-    fetchWithAuth(`/api/langgraph/state?thread_id=${encodeURIComponent(expectedChatId)}`, expectedToken, {
-      method: "GET",
-      cache: "no-store",
+    fetchV2State({
+      chatId: expectedChatId,
+      token: expectedToken,
       signal: controller.signal,
     })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        return res.json().catch(() => null);
-      })
       .then((body) => {
         if (!body || controller.signal.aborted) return;
         if (chatIdRef.current !== expectedChatId) return;
@@ -335,6 +371,18 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         });
       })
       .catch((err) => {
+        if (isSessionExpiredStateError(err)) {
+          setAuthExpired(true);
+          return;
+        }
+        if (
+          err instanceof LanggraphStateFetchError &&
+          err.status === 404 &&
+          err.code === "state_not_found"
+        ) {
+          handleStateNotFound(expectedChatId);
+          return;
+        }
         console.warn("[param-sync] resync_failed", { reason, err });
       })
       .finally(() => {
@@ -493,6 +541,24 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   const autoPatchOnChange = process.env.NEXT_PUBLIC_AUTO_PATCH_PARAMS === "1";
   const paramSyncDebug = isParamSyncDebug();
   const lastParamMetaRef = useRef<{ eventId: string | null; meta: ParameterMeta } | null>(null);
+  const missingThreadIdsRef = useRef<Set<string>>(new Set());
+
+  const handleStateNotFound = useCallback((missingChatId: string) => {
+    missingThreadIdsRef.current.add(missingChatId);
+    const { nextChatId } = recoverFromStateNotFound(preferredChatId);
+    setCurrentState(null);
+    setMessages([]);
+    setHasStarted(false);
+    replaceParamFromServer({
+      chatId: missingChatId,
+      parameters: {} as SealParameters,
+      versions: {},
+      updatedAt: {},
+    });
+    if (nextChatId) {
+      setChatIdOverride(nextChatId);
+    }
+  }, [preferredChatId, replaceParamFromServer]);
 
   useEffect(() => {
     paramsRef.current = parameters ?? {};
@@ -541,6 +607,9 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   useEffect(() => {
     paramSyncTokenRef.current += 1;
     chatIdRef.current = chatId;
+    if (chatId) {
+      missingThreadIdsRef.current.delete(chatId);
+    }
     setMessages([]);
     setHasStarted(false);
     setShowParamDrawer(false);
@@ -621,22 +690,18 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, [chatId, parameters, paramSyncDebug]);
 
   const refreshCurrentState = useCallback(async () => {
-    if (!chatId || !token) return;
+    if (!chatId || !token || authExpired) return;
+    if (missingThreadIdsRef.current.has(chatId)) return;
     const expectedChatId = chatId;
     currentStateAbortRef.current?.abort();
     const controller = new AbortController();
     currentStateAbortRef.current = controller;
     try {
-      const res = await fetchWithAuth(`/api/langgraph/state?thread_id=${encodeURIComponent(chatId)}`, token, {
-        method: "GET",
-        cache: "no-store",
+      const body = await fetchV2State({
+        chatId,
+        token,
         signal: controller.signal,
       });
-      if (!res.ok) {
-        const msg = await res.text().catch(() => "");
-        throw new Error(msg || `HTTP ${res.status}`);
-      }
-      const body = await res.json().catch(() => null);
       const normalized = normalizeStatePayload(body);
       if (!normalized) return;
       if (controller.signal.aborted) return;
@@ -658,12 +723,26 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
           updatedAt,
         });
       }
+    } catch (err) {
+      if (isSessionExpiredStateError(err)) {
+        setAuthExpired(true);
+        return;
+      }
+      if (
+        err instanceof LanggraphStateFetchError &&
+        err.status === 404 &&
+        err.code === "state_not_found"
+      ) {
+        handleStateNotFound(expectedChatId);
+        return;
+      }
+      throw err;
     } finally {
       if (currentStateAbortRef.current === controller) {
         currentStateAbortRef.current = null;
       }
     }
-  }, [chatId, token]);
+  }, [authExpired, chatId, handleStateNotFound, replaceParamFromServer, token]);
 
   // ===== Öffnen per UI-Event (wie früher) =====
   const applyLocalParameters = useCallback(
@@ -732,6 +811,8 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }): Promise<SealParameters | null> => {
     const { expectedChatId, token, patchedKeysCount, tokenId, expectedEventId } = opts;
     if (shouldAbortParamTask(tokenId, expectedChatId)) return;
+    if (authExpired) return;
+    if (missingThreadIdsRef.current.has(expectedChatId)) return;
     stateAbortRef.current?.abort();
     const controller = new AbortController();
     stateAbortRef.current = controller;
@@ -763,15 +844,29 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         });
       }
       return next as SealParameters;
+    } catch (err) {
+      if (isSessionExpiredStateError(err)) {
+        setAuthExpired(true);
+        return null;
+      }
+      if (
+        err instanceof LanggraphStateFetchError &&
+        err.status === 404 &&
+        err.code === "state_not_found"
+      ) {
+        handleStateNotFound(expectedChatId);
+        return null;
+      }
+      throw err;
     } finally {
       if (stateAbortRef.current === controller) {
         stateAbortRef.current = null;
       }
     }
-  }, [applyServerParameters, paramSyncDebug, shouldAbortParamTask]);
+  }, [applyServerParameters, authExpired, handleStateNotFound, paramSyncDebug, shouldAbortParamTask]);
 
   const refreshParameters = useCallback(async (opts?: { expectedEventId?: string | null }) => {
-    if (!chatId || !token) return;
+    if (!chatId || !token || authExpired) return;
     return enqueueParamTask(async (tokenId) => {
       await runRefresh({
         expectedChatId: chatId,
@@ -781,7 +876,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
         expectedEventId: opts?.expectedEventId ?? null,
       });
     });
-  }, [chatId, token, enqueueParamTask, runRefresh]);
+  }, [authExpired, chatId, token, enqueueParamTask, runRefresh]);
 
   // ===== Backend Patch (übernimmt "Parameter übernehmen") =====
   const patchAllParameters = useCallback(async (patch: Partial<SealParameters>) => {
@@ -965,20 +1060,20 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
   }, [applied, chatId, pruneApplied]);
 
   useEffect(() => {
-    if (!chatId || !token) return;
-    refreshParameters({ expectedEventId: lastEventId ?? null }).catch((err) => {
+    if (!chatId || !token || authExpired) return;
+    refreshParameters({ expectedEventId: lastSseEventIdRef.current ?? null }).catch((err) => {
       if (err?.name === "AbortError") return;
       console.warn("[param-sync] initial_state_fetch_failed", err);
     });
-  }, [chatId, token, lastEventId, refreshParameters]);
+  }, [authExpired, chatId, token, refreshParameters]);
 
   useEffect(() => {
-    if (!chatId || !token) return;
+    if (!chatId || !token || authExpired) return;
     refreshCurrentState().catch((err) => {
       if (err?.name === "AbortError") return;
       console.warn("[state] initial_fetch_failed", err);
     });
-  }, [chatId, token, refreshCurrentState]);
+  }, [authExpired, chatId, token, refreshCurrentState]);
 
   useEffect(() => {
     const wasStreaming = prevStreamForStateRef.current;
@@ -1056,7 +1151,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
 
   const firstName = (session?.user?.name || "").split(" ")[0] || "";
   const hasThread = Boolean(chatId);
-  const sendingDisabled = !isAuthed || authExpired || !hasThread;
+  const sendingDisabled = !isAuthed || authExpired || !hasThread || !token;
   const isInitial = messages.length === 0 && !hasStarted;
   const [showReconnectLost, setShowReconnectLost] = useState(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1087,12 +1182,13 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
     if (authExpired) return "Bitte neu anmelden";
     if (!isAuthed) return "Bitte anmelden";
     if (!hasThread) return "Initialisiere Sitzung…";
+    if (!token) return "Authentifiziere…";
     if (showConnectionLost) return "Verbindung verloren";
     if (streaming) return "Streaming…";
     if (sseStatus === "connecting") return "Verbinde…";
     if (sseStatus === "reconnecting") return "Verbinde…";
     return "Bereit";
-  }, [authExpired, hasThread, isAuthed, showConnectionLost, sseStatus, streaming]);
+  }, [authExpired, hasThread, isAuthed, showConnectionLost, sseStatus, streaming, token]);
 
   const handleReauth = useCallback(() => {
     const callbackUrl = toRelativeCallbackUrl(window.location.href);
@@ -1178,7 +1274,7 @@ export default function ChatContainer({ chatId: chatIdProp }: ChatContainerProps
       setConfirmActionBusy(true);
       setConfirmActionError(null);
       try {
-        const res = await fetchWithAuth("/api/langgraph/confirm/go", token, {
+        const res = await fetchWithAuth("/api/v1/langgraph/confirm/go", token, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

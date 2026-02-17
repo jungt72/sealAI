@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getBackendInternalBase } from "@/lib/backend-internal";
 
 const makeRequestId = (): string => {
@@ -13,11 +13,12 @@ export async function GET(req: NextRequest) {
   const request_id = makeRequestId();
   const authHeader = req.headers.get("authorization") ?? "";
   const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  
   if (!bearerToken) {
-    return new Response(JSON.stringify({ detail: "session_expired", request_id }), {
-      status: 401,
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    });
+    return NextResponse.json(
+        { detail: "session_expired", request_id },
+        { status: 401 }
+    );
   }
 
   const backendBase = getBackendInternalBase();
@@ -34,8 +35,19 @@ export async function GET(req: NextRequest) {
       cache: "no-store",
     });
 
-    const text = await res.text();
-    return new Response(text, {
+    if (!res.ok) {
+        const errorData = await res.text();
+        return new Response(errorData, {
+            status: res.status,
+            headers: { 
+                "Content-Type": res.headers.get("content-type") || "application/json",
+                "Cache-Control": "no-store" 
+            },
+        });
+    }
+
+    const data = await res.text();
+    return new Response(data, {
       status: res.status,
       headers: {
         "Content-Type": res.headers.get("content-type") || "application/json",
@@ -43,9 +55,9 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: any) {
-    return new Response(
-      JSON.stringify({ detail: `Backend unreachable: ${String(err?.message || err)}`, request_id }),
-      { status: 502, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+    return NextResponse.json(
+      { detail: `Backend unreachable: ${String(err?.message || err)}`, code: "backend_fetch_failed", request_id },
+      { status: 502 }
     );
   }
 }
