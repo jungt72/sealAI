@@ -13,6 +13,7 @@ Weitere Felder erlaubt – werden unverändert mit exportiert.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from qdrant_client import QdrantClient, models
@@ -60,16 +61,47 @@ def ensure_ltm_collection(client: QdrantClient) -> None:
 # Export / Delete
 # ---------------------------------------------------------------------------
 
-def _build_user_filter(user: str, chat_id: Optional[str] = None) -> models.Filter:
+def _legacy_memory_migration_mode_enabled() -> bool:
+    return os.getenv("LTM_ALLOW_LEGACY_WITHOUT_TENANT", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _build_user_filter(tenant_id: str, user: str, chat_id: Optional[str] = None) -> models.Filter:
     must: List[models.FieldCondition] = [
         models.FieldCondition(key="user", match=models.MatchValue(value=user))
     ]
+    tenant_match = models.FieldCondition(key="tenant_id", match=models.MatchValue(value=tenant_id))
+    must_not: List[models.Condition] = []
+    if _legacy_memory_migration_mode_enabled():
+        # Migration-only mode: allow legacy records with missing tenant_id.
+        tenant_filter = models.Filter(
+            should=[
+                tenant_match,
+                models.IsEmptyCondition(is_empty=models.PayloadField(key="tenant_id")),
+                models.IsNullCondition(is_null=models.PayloadField(key="tenant_id")),
+            ]
+        )
+        must.append(tenant_filter)
+    else:
+        # Fail-closed default: explicit tenant match only.
+        must.append(tenant_match)
+        must_not.extend(
+            [
+                models.IsEmptyCondition(is_empty=models.PayloadField(key="tenant_id")),
+                models.IsNullCondition(is_null=models.PayloadField(key="tenant_id")),
+            ]
+        )
     if chat_id:
         must.append(models.FieldCondition(key="chat_id", match=models.MatchValue(value=chat_id)))
-    return models.Filter(must=must)
+    return models.Filter(must=must, must_not=must_not or None)
 
 
 def ltm_export_all(
+    tenant_id: str,
     user: str,
     chat_id: Optional[str] = None,
     limit: int = 10000,
@@ -84,7 +116,7 @@ def ltm_export_all(
     client = _get_qdrant_client()
     ensure_ltm_collection(client)
 
-    flt = _build_user_filter(user, chat_id)
+    flt = _build_user_filter(tenant_id, user, chat_id)
     out: List[Dict[str, Any]] = []
 
     next_page = None
@@ -116,6 +148,7 @@ def ltm_export_all(
 
 
 def ltm_delete_all(
+    tenant_id: str,
     user: str,
     chat_id: Optional[str] = None,
 ) -> int:
@@ -129,7 +162,7 @@ def ltm_delete_all(
     client = _get_qdrant_client()
     ensure_ltm_collection(client)
 
-    flt = _build_user_filter(user, chat_id)
+    flt = _build_user_filter(tenant_id, user, chat_id)
     coll = _ltm_collection_name()
 
     # Vorab zählen (für Response)

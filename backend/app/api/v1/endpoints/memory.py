@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from qdrant_client import QdrantClient, models as qmodels
 
 from app.core.config import settings
-from app.services.auth.dependencies import RequestUser, get_current_request_user
+from app.services.auth.dependencies import RequestUser, get_current_request_user_strict_tenant
 from app.services.memory.memory_core import (
     ltm_export_all,
     ltm_delete_all,
@@ -34,7 +34,7 @@ def _ltm_collection() -> str:
 @router.post("", summary="Lege einen LTM-Eintrag in Qdrant an")
 async def create_memory_item(
     payload: Dict[str, Any],
-    user: RequestUser = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user_strict_tenant),
 ) -> JSONResponse:
     """
     Erwartet JSON:
@@ -57,6 +57,7 @@ async def create_memory_item(
     point_id = uuid.uuid4().hex
     q_payload: Dict[str, Any] = {
         "user": user.user_id,  # WICHTIG: Schlüssel = 'user' (wird für Filter verwendet!)
+        "tenant_id": user.tenant_id,
         "chat_id": chat_id,
         "kind": kind,
         "text": text,
@@ -102,13 +103,18 @@ async def create_memory_item(
 async def export_memory(
     chat_id: Optional[str] = Query(default=None, description="Optional: nur Einträge dieses Chats exportieren"),
     limit: int = Query(default=10000, ge=1, le=20000),
-    user: RequestUser = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user_strict_tenant),
 ) -> JSONResponse:
     if not settings.ltm_enable:
         return JSONResponse({"items": [], "count": 0, "ltm_enabled": False}, status_code=200)
 
     try:
-        items: List[Dict[str, Any]] = ltm_export_all(user=user.user_id, chat_id=chat_id, limit=limit)
+        items: List[Dict[str, Any]] = ltm_export_all(
+            tenant_id=user.tenant_id,
+            user=user.user_id,
+            chat_id=chat_id,
+            limit=limit,
+        )
         logger.info(f"[LTM] export_memory user={user.user_id} chat_id={chat_id} count={len(items)}")
         return JSONResponse(
             {"items": items, "count": len(items), "ltm_enabled": True, "success": True},
@@ -125,13 +131,13 @@ async def export_memory(
 @router.delete("", summary="Lösche Long-Term-Memory des aktuellen Nutzers (optional pro Chat)")
 async def delete_memory(
     chat_id: Optional[str] = Query(default=None, description="Optional: nur Einträge dieses Chats löschen"),
-    user: RequestUser = Depends(get_current_request_user),
+    user: RequestUser = Depends(get_current_request_user_strict_tenant),
 ) -> JSONResponse:
     if not settings.ltm_enable:
         return JSONResponse({"deleted": 0, "ltm_enabled": False}, status_code=200)
 
     try:
-        deleted = ltm_delete_all(user=user.user_id, chat_id=chat_id)
+        deleted = ltm_delete_all(tenant_id=user.tenant_id, user=user.user_id, chat_id=chat_id)
         logger.info(f"[LTM] delete_memory user={user.user_id} chat_id={chat_id} deleted={deleted}")
         return JSONResponse(
             {"deleted": deleted, "ltm_enabled": True, "success": True},

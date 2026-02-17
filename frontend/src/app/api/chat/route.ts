@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     console.info("[api/chat] param_apply", { request_id, chat_id, keys });
   }
 
-  const url = `${getBackendInternalBase()}/api/chat`;
+  const url = `${getBackendInternalBase()}/api/v1/langgraph/chat/v2`;
   const lastEventId = req.headers.get("last-event-id") ?? "";
 
   let backendResp: Response;

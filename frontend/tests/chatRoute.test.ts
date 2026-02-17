@@ -3,16 +3,23 @@ import { NextRequest } from "next/server";
 
 import { POST } from "../src/app/api/chat/route";
 
-vi.mock("../src/lib/langgraphApi", () => ({
-  backendLangGraphChatEndpoint: () => "http://backend.test//chat/v2",
-}));
-
 const makeRequest = (body: Record<string, unknown>) =>
   new NextRequest("http://localhost/api/chat", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: "Bearer token-123",
+    },
+    body: JSON.stringify(body),
+  });
+
+const makeRequestWithLastEventId = (body: Record<string, unknown>, lastEventId: string) =>
+  new NextRequest("http://localhost/api/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer token-123",
+      "Last-Event-ID": lastEventId,
     },
     body: JSON.stringify(body),
   });
@@ -46,7 +53,8 @@ describe("api/chat route", () => {
 
     expect(resp.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://backend:8000/api/v1/langgraph/chat/v2");
     expect(init.body).toBe(
       JSON.stringify({
         input: "hallo",
@@ -55,6 +63,32 @@ describe("api/chat route", () => {
         client_context,
       }),
     );
+  });
+
+  it("forwards Last-Event-ID header to backend", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("event: message\ndata: ok\n\n", {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = makeRequestWithLastEventId(
+      {
+        input: "resume",
+        chat_id: "chat-789",
+      },
+      "evt-123",
+    );
+
+    const resp = await POST(req);
+
+    expect(resp.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = (init.headers ?? {}) as Record<string, string>;
+    expect(headers["Last-Event-ID"]).toBe("evt-123");
   });
 
   it("rejects unknown keys", async () => {
