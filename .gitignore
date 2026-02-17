@@ -83,3 +83,6 @@ code_dump_*.txt
 *.log
 *.env
 .env.*
+
+# local secrets
+secrets/
