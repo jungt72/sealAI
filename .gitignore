@@ -86,3 +86,6 @@ code_dump_*.txt
 
 # local secrets
 secrets/
+
+# local snapshots
+ops/_snapshots/
