@@ -1,0 +1,11 @@
+prompts:
+  discovery/analysis:
+    default: "1.0.0"
+  extraction/request:
+    default: "1.0.0"
+  greeting/reply:
+    default: "1.0.0"
+  greeting/system:
+    default: "1.0.0"
+  safety/empathic_concern:
+    default: "1.0.0"

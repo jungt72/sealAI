@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     langgraph_v2,  # LangGraph v2 HTTP/SSE-Endpunkte
     state,
     memory,
+    mcp,
     ping,
     users,
     chat_history,  # <-- WICHTIG: Chat-History/Conversations wieder aktivieren
@@ -33,6 +34,7 @@ api_router.include_router(state.router, prefix="/langgraph", tags=["langgraph-v2
 # Weitere Subsysteme
 api_router.include_router(auth.router)
 api_router.include_router(memory.router)
+api_router.include_router(mcp.router)
 api_router.include_router(users.router)
 api_router.include_router(rag.router)
 
