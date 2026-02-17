@@ -421,6 +421,8 @@ class SealAIState(BaseModel):
     # Material & Profilwahl
     material_choice: Dict[str, Any] = Field(default_factory=dict)
     profile_choice: Dict[str, Any] = Field(default_factory=dict)
+    parallel_profile_result: Dict[str, Any] = Field(default_factory=dict)
+    parallel_validation_result: Dict[str, Any] = Field(default_factory=dict)
 
     # Validierung & Critical Review
     validation: Dict[str, Any] = Field(default_factory=lambda: {"status": None, "issues": []})

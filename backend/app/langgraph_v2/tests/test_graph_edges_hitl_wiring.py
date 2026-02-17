@@ -14,16 +14,12 @@ async def test_hitl_wiring_present():
 
     assert ("__start__", "policy_preflight_node") in edges
     assert ("policy_preflight_node", "resume_router_node") in edges
-    assert ("assumption_lock_node", "supervisor_policy_node") in edges
-    assert ("design_worker", "assumption_lock_node") in edges
-    assert ("calc_worker", "assumption_lock_node") in edges
+    assert ("design_worker", "supervisor_policy_node") in edges
+    assert ("calc_worker", "supervisor_policy_node") in edges
     assert MANDATORY_EDGES.issuperset(
         {
             ("__start__", "policy_preflight_node"),
             ("policy_preflight_node", "resume_router_node"),
-            ("assumption_lock_node", "supervisor_policy_node"),
-            ("design_worker", "assumption_lock_node"),
-            ("calc_worker", "assumption_lock_node"),
         }
     )
 
@@ -50,6 +46,6 @@ async def test_hitl_wiring_present():
     )
     assert ("confirm_checkpoint_node", "__end__") in edges
 
-    # spokes return via assumption lock before policy
+    # spokes return directly to policy gate
     assert not (("design_worker", "autonomous_supervisor_node") in edges)
     assert not (("calc_worker", "autonomous_supervisor_node") in edges)

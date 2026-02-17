@@ -24,6 +24,7 @@ from app.langgraph_v2.state import SealAIState, TechnicalParameters
 from app.langgraph_v2.contracts import assert_node_exists, error_detail, is_dependency_unavailable_error
 from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
+from app.langgraph_v2.utils.confirm_go import apply_confirm_decision
 from app.langgraph_v2.utils.parameter_patch import (
     ParametersPatchRequest,
     apply_parameter_patch_lww,
@@ -1453,16 +1454,13 @@ async def confirm_go(
             status_code=500,
             code="server_misconfigured",
         )
-        await graph.aupdate_state(
-            config,
-            {
-                "confirm_decision": body.decision,
-                "confirm_edits": edits,
-            },
+        result = await apply_confirm_decision(
+            graph=graph,
+            config=config,
+            decision=body.decision,
+            edits=edits,
             as_node="confirm_checkpoint_node",
         )
-
-        result = await graph.ainvoke({}, config=config)
         state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result or {})
         return {
             "ok": True,

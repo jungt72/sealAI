@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, StrictBool, model_validator
 
@@ -24,4 +24,23 @@ class ConfirmGoRequest(BaseModel):
         return self
 
 
-__all__ = ["ConfirmGoEdits", "ConfirmGoRequest"]
+async def apply_confirm_decision(
+    *,
+    graph: Any,
+    config: Dict[str, Any],
+    decision: Literal["approve", "reject", "edit"],
+    edits: Dict[str, Any],
+    as_node: str = "confirm_checkpoint_node",
+    extra_updates: Optional[Dict[str, Any]] = None,
+) -> Any:
+    updates: Dict[str, Any] = {
+        "confirm_decision": decision,
+        "confirm_edits": edits,
+    }
+    if extra_updates:
+        updates.update(extra_updates)
+    await graph.aupdate_state(config, updates, as_node=as_node)
+    return await graph.ainvoke({}, config=config)
+
+
+__all__ = ["ConfirmGoEdits", "ConfirmGoRequest", "apply_confirm_decision"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import uuid
 from typing import Any, Dict, List
@@ -14,6 +15,7 @@ from langchain_core.runnables import RunnableLambda, RunnableParallel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Send
 
 from app.langgraph_v2.constants import CHECKPOINTER_NAMESPACE_V2
 from app.langgraph_v2.state import SealAIState
@@ -512,6 +514,201 @@ def knowledge_entry_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     }
 
 
+def _parallel_fanout_enabled() -> bool:
+    return os.getenv("LANGGRAPH_V2_PARALLEL_FANOUT", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _cluster_specialist_router(_state: SealAIState) -> str:
+    return "parallel" if _parallel_fanout_enabled() else "sequential"
+
+
+async def _cluster_specialist_router_async(state: SealAIState) -> str:
+    return _cluster_specialist_router(state)
+
+
+def supervisor_fanout_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    return {
+        "phase": getattr(state, "phase", None) or "consulting",
+        "last_node": "supervisor_fanout_node",
+    }
+
+
+def _supervisor_fanout_dispatch(state: SealAIState) -> str | List[Send]:
+    if not _parallel_fanout_enabled():
+        return "sequential"
+
+    working_memory = (
+        state.working_memory.model_dump(exclude_none=True)
+        if getattr(state, "working_memory", None) is not None
+        else {}
+    )
+    return [
+        Send(
+            "parallel_profile_worker",
+            {
+                "working_memory": working_memory,
+            },
+        ),
+        Send(
+            "parallel_validation_worker",
+            {
+                "flags": dict(state.flags or {}),
+                "working_memory": working_memory,
+            },
+        ),
+    ]
+
+
+async def _supervisor_fanout_dispatch_async(state: SealAIState) -> str | List[Send]:
+    return _supervisor_fanout_dispatch(state)
+
+
+def parallel_profile_worker_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    s = _ensure_state_model(state)
+    try:
+        patch = profile_agent_node(s)
+        profile_choice = patch.get("profile_choice")
+        if isinstance(profile_choice, dict):
+            return {
+                "parallel_profile_result": {
+                    "worker": "cluster_profile_node",
+                    "profile_choice": profile_choice,
+                }
+            }
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.exception("parallel_profile_worker_failed", error=str(exc))
+        return {
+            "parallel_profile_result": {
+                "worker": "cluster_profile_node",
+                "profile_choice": {
+                    "status": "error",
+                    "error": str(exc),
+                },
+            }
+        }
+    return {
+        "parallel_profile_result": {
+            "worker": "cluster_profile_node",
+            "profile_choice": {
+                "status": "error",
+                "error": "empty_profile_result",
+            },
+        }
+    }
+
+
+def parallel_validation_worker_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    s = _ensure_state_model(state)
+    try:
+        patch = validation_agent_node(s)
+        validation = patch.get("validation")
+        if isinstance(validation, dict):
+            return {
+                "parallel_validation_result": {
+                    "worker": "cluster_validation_node",
+                    "validation": validation,
+                }
+            }
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.exception("parallel_validation_worker_failed", error=str(exc))
+        return {
+            "parallel_validation_result": {
+                "worker": "cluster_validation_node",
+                "validation": {
+                    "status": "error",
+                    "issues": [str(exc)],
+                },
+            }
+        }
+    return {
+        "parallel_validation_result": {
+            "worker": "cluster_validation_node",
+            "validation": {
+                "status": "error",
+                "issues": ["empty_validation_result"],
+            },
+        }
+    }
+
+
+def _merge_parallel_worker_outputs(worker_outputs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    priority = {"cluster_profile_node": 0, "cluster_validation_node": 1}
+    ordered = sorted(
+        worker_outputs,
+        key=lambda item: (priority.get(str(item.get("worker") or ""), 99), str(item.get("worker") or "")),
+    )
+
+    profile_choice: Dict[str, Any] = {}
+    validation: Dict[str, Any] = {"status": None, "issues": []}
+    design_notes: Dict[str, Any] = {}
+    errors: List[str] = []
+
+    for item in ordered:
+        worker = str(item.get("worker") or "")
+        if worker == "cluster_profile_node":
+            candidate = item.get("profile_choice")
+            if isinstance(candidate, dict):
+                profile_choice = dict(candidate)
+                if candidate:
+                    design_notes["profile"] = dict(candidate)
+                raw_error = candidate.get("error")
+                if raw_error:
+                    errors.append(f"{worker}:{raw_error}")
+        elif worker == "cluster_validation_node":
+            candidate = item.get("validation")
+            if isinstance(candidate, dict):
+                validation = {
+                    "status": candidate.get("status"),
+                    "issues": list(candidate.get("issues") or []),
+                }
+                design_notes["validation"] = dict(validation)
+                if str(validation.get("status") or "").lower() == "error":
+                    if validation["issues"]:
+                        errors.extend(f"{worker}:{issue}" for issue in validation["issues"])
+                    else:
+                        errors.append(f"{worker}:validation_error")
+
+    deduped_errors = sorted({err for err in errors if err})
+    return {
+        "profile_choice": profile_choice,
+        "validation": validation,
+        "design_notes": design_notes,
+        "errors": deduped_errors,
+    }
+
+
+def parallel_reducer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    s = _ensure_state_model(state)
+    worker_outputs: List[Dict[str, Any]] = []
+    if isinstance(s.parallel_profile_result, dict) and s.parallel_profile_result:
+        worker_outputs.append(dict(s.parallel_profile_result))
+    if isinstance(s.parallel_validation_result, dict) and s.parallel_validation_result:
+        worker_outputs.append(dict(s.parallel_validation_result))
+
+    merged = _merge_parallel_worker_outputs(worker_outputs)
+
+    current_design_notes = dict(getattr(s.working_memory, "design_notes", {}) or {})
+    current_design_notes.update(merged["design_notes"])
+    working_memory = s.working_memory.model_copy(update={"design_notes": current_design_notes})
+
+    challenger_issues = sorted({*(s.challenger_issues or []), *merged["errors"]})
+    return {
+        "profile_choice": merged["profile_choice"],
+        "validation": merged["validation"],
+        "working_memory": working_memory,
+        "parallel_profile_result": dict(s.parallel_profile_result or {}),
+        "parallel_validation_result": dict(s.parallel_validation_result or {}),
+        "challenger_issues": challenger_issues,
+        "phase": "validation",
+        "last_node": "parallel_reducer_node",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Graph-Definition
 # ---------------------------------------------------------------------------
@@ -592,6 +789,10 @@ def create_sealai_graph_v2(
     builder.add_node("cluster_material_node", material_agent_node)
     builder.add_node("cluster_profile_node", profile_agent_node)
     builder.add_node("cluster_validation_node", validation_agent_node)
+    builder.add_node("supervisor_fanout_node", supervisor_fanout_node)
+    builder.add_node("parallel_profile_worker", parallel_profile_worker_node)
+    builder.add_node("parallel_validation_worker", parallel_validation_worker_node)
+    builder.add_node("parallel_reducer_node", parallel_reducer_node)
     builder.add_node("rag_support_node", rag_support_node)
 
     # 4. Utility / Finalize
@@ -722,9 +923,25 @@ def create_sealai_graph_v2(
     builder.add_edge("material_comparison_node", "supervisor_policy_node")
 
     # Specialist Cluster (Discovery -> Specialists -> Challenger)
-    builder.add_edge("cluster_material_node", "cluster_profile_node")
+    builder.add_conditional_edges(
+        "cluster_material_node",
+        _cluster_specialist_router_async,
+        {
+            "parallel": "supervisor_fanout_node",
+            "sequential": "cluster_profile_node",
+        },
+    )
+    builder.add_conditional_edges(
+        "supervisor_fanout_node",
+        _supervisor_fanout_dispatch_async,
+        {
+            "sequential": "cluster_profile_node",
+        },
+    )
     builder.add_edge("cluster_profile_node", "cluster_validation_node")
     builder.add_edge("cluster_validation_node", "rag_support_node")
+    builder.add_edge(["parallel_profile_worker", "parallel_validation_worker"], "parallel_reducer_node")
+    builder.add_edge("parallel_reducer_node", "rag_support_node")
     builder.add_edge("rag_support_node", "challenger_feedback_node")
     builder.add_edge("challenger_feedback_node", "policy_firewall_node")
 

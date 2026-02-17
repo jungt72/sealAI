@@ -6,15 +6,20 @@ import os
 import time
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
+from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
+from app.langgraph_v2.utils.confirm_go import apply_confirm_decision
+from app.langgraph_v2.utils.threading import resolve_checkpoint_thread_id
 from app.models.rag_document import RagDocument
 from app.services.jobs.queue import get_queue_client
 
 IngestFunc = Callable[..., Any]
+logger = logging.getLogger(__name__)
 
 JOB_QUEUE = os.getenv("RAG_JOB_QUEUE", "rag_ingest")
 SCHEDULED_QUEUE = f"{JOB_QUEUE}:scheduled"
@@ -23,6 +28,9 @@ BRPOP_TIMEOUT_SEC = float(os.getenv("JOB_WORKER_BRPOP_TIMEOUT_SEC", "1.0"))
 MAX_ATTEMPTS = int(os.getenv("JOB_WORKER_MAX_ATTEMPTS", "3"))
 BACKOFF_BASE_SEC = float(os.getenv("JOB_WORKER_BACKOFF_BASE_SEC", "5"))
 BACKOFF_MAX_SEC = float(os.getenv("JOB_WORKER_BACKOFF_MAX_SEC", "300"))
+ENABLE_HITL_TIMEOUT_JOB = os.getenv("ENABLE_HITL_TIMEOUT_JOB", "0").strip().lower() in {"1", "true", "yes", "on"}
+HITL_TIMEOUT_SCAN_INTERVAL_SEC = float(os.getenv("HITL_TIMEOUT_SCAN_INTERVAL_SEC", "300"))
+HITL_TIMEOUT_HOURS = float(os.getenv("HITL_TIMEOUT_HOURS", "4"))
 
 REQUIRED_KEYS = {
     "tenant_id",
@@ -141,7 +149,15 @@ async def process_once(
 
 async def start_job_worker() -> None:
     redis = get_queue_client()
+    next_timeout_scan = 0.0
     while True:
+        if ENABLE_HITL_TIMEOUT_JOB and time.monotonic() >= next_timeout_scan:
+            try:
+                await process_hitl_timeouts_once(redis)
+            except Exception:
+                logger.exception("hitl_timeout_scan_failed")
+            finally:
+                next_timeout_scan = time.monotonic() + max(HITL_TIMEOUT_SCAN_INTERVAL_SEC, 1.0)
         processed = await consume_redis_job_once(redis)
         task = asyncio.current_task()
         if task is not None and task.cancelling():
@@ -151,6 +167,112 @@ async def start_job_worker() -> None:
                 await asyncio.sleep(BRPOP_TIMEOUT_SEC)
             except asyncio.CancelledError:
                 return
+
+
+def _to_text(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
+
+
+def _parse_iso_utc(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _extract_tenant_owner_from_key(key: str) -> tuple[str, str] | None:
+    # chat:conversations:{tenant_id}:{owner_id}
+    parts = key.split(":")
+    if len(parts) < 4 or parts[0] != "chat" or parts[1] != "conversations":
+        return None
+    tenant_id = parts[2]
+    owner_id = ":".join(parts[3:])
+    if not tenant_id or not owner_id:
+        return None
+    return tenant_id, owner_id
+
+
+async def _iter_conversation_index_keys(redis) -> list[str]:
+    if hasattr(redis, "scan_iter"):
+        out: list[str] = []
+        async for item in redis.scan_iter(match="chat:conversations:*:*"):
+            out.append(_to_text(item))
+        return out
+    if hasattr(redis, "keys"):
+        keys = await redis.keys("chat:conversations:*:*")
+        return [_to_text(item) for item in (keys or [])]
+    if hasattr(redis, "zsets"):
+        return [str(k) for k in getattr(redis, "zsets", {}).keys() if str(k).startswith("chat:conversations:")]
+    return []
+
+
+async def process_hitl_timeouts_once(redis, *, now_ts: float | None = None) -> int:
+    now_ts = now_ts if now_ts is not None else time.time()
+    threshold_ts = float(now_ts) - float(HITL_TIMEOUT_HOURS) * 3600.0
+    graph = await get_sealai_graph_v2()
+    rejected = 0
+
+    for index_key in await _iter_conversation_index_keys(redis):
+        tenant_owner = _extract_tenant_owner_from_key(index_key)
+        if not tenant_owner:
+            continue
+        tenant_id, owner_id = tenant_owner
+
+        conversation_ids = await redis.zrevrange(index_key, 0, -1)
+        for conversation_raw in conversation_ids or []:
+            chat_id = _to_text(conversation_raw)
+            if not chat_id:
+                continue
+            try:
+                checkpoint_thread_id = resolve_checkpoint_thread_id(
+                    tenant_id=tenant_id,
+                    user_id=owner_id,
+                    chat_id=chat_id,
+                )
+            except ValueError:
+                continue
+
+            config = build_v2_config(thread_id=chat_id, user_id=owner_id, tenant_id=tenant_id)
+            config.setdefault("configurable", {})["thread_id"] = checkpoint_thread_id
+            snapshot = await graph.aget_state(config)
+            values = snapshot.values if isinstance(getattr(snapshot, "values", None), dict) else {}
+
+            if not bool(values.get("awaiting_user_confirmation")):
+                continue
+            if str(values.get("confirm_status") or "").lower() == "resolved":
+                continue
+            confirm_payload = values.get("confirm_checkpoint") if isinstance(values.get("confirm_checkpoint"), dict) else {}
+            required_sub = str(confirm_payload.get("required_user_sub") or "")
+            if required_sub and required_sub != owner_id:
+                continue
+
+            created_at = _parse_iso_utc(confirm_payload.get("created_at"))
+            if created_at is None or created_at.timestamp() > threshold_ts:
+                continue
+
+            policy_report = dict(values.get("policy_report") or {})
+            policy_report["hitl_timeout"] = {
+                "reason": "timeout",
+                "at": datetime.fromtimestamp(float(now_ts), tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+            }
+            await apply_confirm_decision(
+                graph=graph,
+                config=config,
+                decision="reject",
+                edits={"parameters": {}, "instructions": "Auto-reject due to timeout.", "reason": "timeout"},
+                as_node="confirm_checkpoint_node",
+                extra_updates={"policy_report": policy_report},
+            )
+            rejected += 1
+
+    return rejected
 
 
 async def _promote_scheduled(redis) -> None:
