@@ -84,3 +84,6 @@ code_dump_*.txt
 *.env
 .env.*
 secrets/
+
+# local ops snapshots
+ops/_snapshots/
