@@ -50,6 +50,55 @@ _embedder = None
 _reranker = None
 _embedding_dim: Optional[int] = None
 
+def _supported_fastembed_models() -> set[str]:
+    try:
+        from fastembed import TextEmbedding  # type: ignore
+    except Exception:
+        return set()
+    models: set[str] = set()
+    for item in TextEmbedding.list_supported_models() or []:
+        if isinstance(item, str):
+            models.add(item)
+        elif isinstance(item, dict):
+            name = item.get("model") or item.get("model_name") or item.get("name")
+            if name:
+                models.add(str(name))
+        else:
+            name = getattr(item, "model", None) or getattr(item, "model_name", None) or getattr(item, "name", None)
+            if name:
+                models.add(str(name))
+    return models
+
+def resolve_embedding_model() -> Tuple[str, int]:
+    fallback = "jinaai/jina-embeddings-v2-base-de"
+    requested = (
+        os.getenv("RAG_EMBEDDING_MODEL")
+        or os.getenv("EMB_MODEL_NAME")
+        or os.getenv("EMBEDDINGS_MODEL")
+        or EMB_MODEL_NAME
+    )
+    supported = _supported_fastembed_models()
+    model_name = requested
+    if supported and requested not in supported and fallback in supported:
+        model_name = fallback
+
+    raw_dim = os.getenv("RAG_EMBEDDING_DIM")
+    if raw_dim:
+        try:
+            return model_name, int(raw_dim)
+        except ValueError:
+            pass
+
+    known_dims = {
+        "jinaai/jina-embeddings-v2-base-de": 768,
+        "intfloat/multilingual-e5-base": 768,
+    }
+    if model_name in known_dims:
+        return model_name, known_dims[model_name]
+
+    _, resolved_dim = resolve_embedding_config()
+    return model_name, resolved_dim
+
 def resolve_embedding_config() -> Tuple[str, int]:
     """Resolve embedding model name and vector dimension from the active embedder."""
     global _embedder, _embedding_dim
@@ -199,9 +248,6 @@ def startup_warmup() -> None:
 # Utilities
 # ─────────────────────────────────────────────────────────────────────────────
 def _collection_for_tenant(tenant: Optional[str]) -> str:
-    t = (tenant or "").strip()
-    if QDRANT_COLLECTION_PREFIX and t:
-        return f"{QDRANT_COLLECTION_PREFIX}:{t}"
     return QDRANT_COLLECTION_DEFAULT
 
 def _embed(texts: List[str]) -> List[List[float]]:
@@ -376,7 +422,11 @@ def _apply_threshold(hits: List[Dict[str, Any]], thr: float) -> List[Dict[str, A
         return hits
     out = []
     for h in hits:
-        s = float(h.get("fused_score") or h.get("vector_score") or 0.0)
+        s = max(
+            float(h.get("fused_score") or 0.0),
+            float(h.get("vector_score") or 0.0),
+            float(h.get("sparse_score") or 0.0),
+        )
         if s >= thr:
             out.append(h)
     return out
@@ -427,10 +477,15 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     # Pick collection by tenant
     collection = _collection_for_tenant(tenant)
 
+    # Enforce tenant scoping via payload filters (single collection strategy).
+    filters: Dict[str, Any] = dict(metadata_filters or {})
+    if tenant and "tenant_id" not in filters:
+        filters["tenant_id"] = tenant
+
     # Vector search
     vector_k = max(HYBRID_K, k)
     vec_hits, qdrant_meta = _qdrant_search_with_retry(
-        vec, collection, top_k=vector_k, metadata_filters=metadata_filters
+        vec, collection, top_k=vector_k, metadata_filters=filters
     )
 
     bm25_hits: List[Dict[str, Any]] = []
@@ -438,7 +493,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     bm25_k = max(HYBRID_K, k)
     if USE_BM25:
         bm25_hits, bm25_error = _bm25_search(
-            q, collection, top_k=bm25_k, metadata_filters=metadata_filters
+            q, collection, top_k=bm25_k, metadata_filters=filters
         )
 
     # Placeholder: BM25 could be merged here when enabled
@@ -519,6 +574,7 @@ __all__ = [
     "startup_warmup",
     "init_bm25",
     "prewarm_embeddings",
+    "resolve_embedding_model",
     "resolve_embedding_config",
     "hybrid_retrieve",
     "FINAL_K",

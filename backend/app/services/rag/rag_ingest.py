@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import mimetypes
 import os
 import time
 from dataclasses import dataclass
@@ -31,6 +32,11 @@ try:
     from langchain_qdrant import QdrantVectorStore
 except ImportError:
     QdrantVectorStore = None
+
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:
+    HuggingFaceEmbeddings = None
 
 
 def get_embedder() -> Any:
@@ -162,6 +168,22 @@ def _load_pages(file_path: str) -> List[tuple[Optional[int], str]]:
     if ext == ".pdf":
         return _load_pdf_pages(file_path)
     return [(None, _load_text(file_path))]
+
+
+def load_document(file_path: str) -> List[Any]:
+    from langchain_core.documents import Document
+
+    docs: List[Any] = []
+    for page_number, text in _load_pages(file_path):
+        docs.append(
+            Document(
+                page_content=text,
+                metadata={
+                    "page": page_number,
+                },
+            )
+        )
+    return docs
 
 
 def _chunk_pages(pages: List[tuple[Optional[int], str]]) -> List[tuple[str, Optional[int]]]:
@@ -458,6 +480,65 @@ def ingest_file(
     _ensure_tenant_allowed(tenant_id)
     domain = _parse_domain(category)
     canonical_doc_id = document_id or sha256 or _hash_path(file_path)
+
+    # Backward-compatible ingest path used by contract tests and legacy workers.
+    if QdrantVectorStore is not None and HuggingFaceEmbeddings is not None:
+        docs = load_document(file_path)
+        filename = os.path.basename(file_path)
+        source_path = filename
+        size_bytes = None
+        try:
+            size_bytes = os.path.getsize(file_path)
+        except OSError:
+            pass
+        content_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        for doc in docs:
+            meta = dict(getattr(doc, "metadata", {}) or {})
+            section = meta.get("section") or meta.get("section_title")
+            meta.update(
+                {
+                    "filename": filename,
+                    "content_type": content_type,
+                    "size_bytes": size_bytes,
+                    "source_path": source_path,
+                    "tenant_id": tenant_id,
+                    "document_id": canonical_doc_id,
+                    "visibility": _coerce_visibility(visibility),
+                }
+            )
+            if section:
+                meta["section"] = section
+            doc.metadata = meta
+
+        embeddings = HuggingFaceEmbeddings(model_name=DENSE_MODEL)
+        QdrantVectorStore.from_documents(
+            docs,
+            embeddings,
+            url=QDRANT_URL,
+            api_key=QDRANT_API_KEY,
+            collection_name=COLLECTION_NAME,
+        )
+        return {
+            "ok": True,
+            "file_path": file_path,
+            "tenant_id": tenant_id,
+            "document_id": canonical_doc_id,
+            "category": category,
+            "domain": getattr(domain, "value", str(domain)),
+            "visibility": _coerce_visibility(visibility),
+            "tags": tags or [],
+            "sha256": sha256,
+            "source": source,
+            "chunks": len(docs),
+            "elapsed_ms": 0,
+            "file_size": size_bytes,
+            "collection": COLLECTION_NAME,
+            "dense_model": DENSE_MODEL,
+            "sparse_model": SPARSE_MODEL if ENABLE_SPARSE else None,
+            "vector_name": QDRANT_VECTOR_NAME,
+            "sparse_enabled": ENABLE_SPARSE,
+        }
+
     pipe = IngestPipeline()
     stats = pipe.process_document(
         file_path=file_path,
