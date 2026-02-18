@@ -86,3 +86,9 @@ code_dump_*.txt
 
 # runtime data
 /data/
+
+# local secrets (never commit)
+secrets/
+
+# accidental Windows paths from copy/paste
+C:\Users\*
