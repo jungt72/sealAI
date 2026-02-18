@@ -406,6 +406,35 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
 
     intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
     notes = dict(getattr(state.working_memory, "comparison_notes", None) or {}) if state.working_memory else {}
+    requires_rag = bool(getattr(state, "requires_rag", False))
+
+    if not requires_rag:
+        retrieval_meta: Dict[str, Any] = {
+            "tenant_id": state.tenant_id,
+            "retrieval_attempted": False,
+            "skipped": True,
+            "reason": "requires_rag_false",
+            "k_returned": 0,
+            "hits_count": 0,
+            "retry_count": int(getattr(state, "retrieval_retry_count", 0) or 0),
+        }
+        sources = list(state.sources or [])
+        sources_status = "ok" if sources else "missing"
+        if intent_goal == "explanation_or_comparison":
+            wm = _update_working_memory(state, {"comparison_notes": notes})
+        else:
+            wm = _update_working_memory(state, {"comparison_notes": notes, "panel_norms_rag": notes})
+        return {
+            "working_memory": wm,
+            "sources": sources,
+            "retrieval_meta": retrieval_meta,
+            "retrieval_retry_count": int(getattr(state, "retrieval_retry_count", 0) or 0),
+            "sources_status": sources_status,
+            "phase": PHASE.RAG,
+            "last_node": "rag_support_node",
+            "needs_sources": False,
+            "requires_rag": False,
+        }
 
     user_text = latest_user_text(state.messages or []) or ""
     query_text = user_text.strip() or "Aktuelle technische Frage"
