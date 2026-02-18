@@ -137,16 +137,26 @@ async def _resolve_state_snapshot(
 ) -> tuple[Any, Dict[str, Any], Any, bool]:
     scoped_user_id = canonical_user_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
-    graph, config = await _build_state_config_with_checkpointer(
-        thread_id=thread_id, user_id=scoped_user_id, username=user.username
-    )
+    try:
+        graph, config = await _build_state_config_with_checkpointer(
+            thread_id=thread_id, user_id=scoped_user_id, username=user.username
+        )
+    except TypeError:
+        graph, config = await _build_state_config_with_checkpointer(
+            thread_id=thread_id, user_id=scoped_user_id
+        )
     snapshot = await graph.aget_state(config)
     if not legacy_user_id or _has_state_values(snapshot):
         return graph, config, snapshot, False
 
-    legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
-        thread_id=thread_id, user_id=legacy_user_id, username=user.username
-    )
+    try:
+        legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
+            thread_id=thread_id, user_id=legacy_user_id, username=user.username
+        )
+    except TypeError:
+        legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
+            thread_id=thread_id, user_id=legacy_user_id
+        )
     legacy_snapshot = await legacy_graph.aget_state(legacy_config)
     if _has_state_values(legacy_snapshot):
         if PARAM_SYNC_DEBUG:

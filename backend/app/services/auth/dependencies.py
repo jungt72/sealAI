@@ -38,10 +38,12 @@ def _resolve_user_id(payload: dict) -> str:
     claim = (os.getenv("AUTH_USER_ID_CLAIM") or "sub").strip()
     value = payload.get(claim)
     if value is None or value == "":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=error_detail("missing_user_id_claim", claim=claim),
-        )
+        value = payload.get("preferred_username") or payload.get("email") or payload.get("sub")
+        if value is None or value == "":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=error_detail("missing_user_id_claim", claim=claim),
+            )
     return str(value)
 
 

@@ -46,7 +46,7 @@ def search_knowledge_base(
         filters["category"] = category
 
     try:
-        results, metrics = hybrid_retrieve(
+        retrieved = hybrid_retrieve(
             query=query,
             k=k,
             metadata_filters=filters,
@@ -54,6 +54,10 @@ def search_knowledge_base(
             tenant=tenant,
             return_metrics=True,
         )
+        if isinstance(retrieved, tuple) and len(retrieved) == 2:
+            results, metrics = retrieved
+        else:
+            results, metrics = retrieved, {}
     except Exception as exc:
         logger.error("RAG retrieval failed: %s", exc)
         return f"Fehler beim Abrufen der Wissensdatenbank: {exc}"
@@ -64,19 +68,13 @@ def search_knowledge_base(
         retrieval_meta["category"] = category
 
     if not results:
-        return {
-            "context": "Keine relevanten Informationen in der Wissensdatenbank gefunden.",
-            "retrieval_meta": retrieval_meta,
-        }
+        return "Keine relevanten Informationen in der Wissensdatenbank gefunden."
 
     output = ["**Gefundene Informationen aus der Wissensdatenbank:**"]
     for hit in results:
         output.append(_format_hit(hit))
 
-    return {
-        "context": "\n".join(output),
-        "retrieval_meta": retrieval_meta,
-    }
+    return "\n".join(output)
 
 
 __all__ = ["search_knowledge_base"]

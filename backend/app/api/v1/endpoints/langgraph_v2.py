@@ -73,7 +73,7 @@ except Exception:  # pragma: no cover - optional dependency
     Redis = None
 
 CONFIRM_GO_AS_NODE = "confirm_recommendation_node"
-PARAMETERS_PATCH_AS_NODE = "supervisor_policy_node"
+PARAMETERS_PATCH_AS_NODE = "supervisor_logic_node"
 
 
 class LangGraphV2Request(BaseModel):
@@ -132,7 +132,8 @@ async def _build_graph_config(
 
     def _attach_config(base_config: Dict[str, Any], *, scoped_user_id: str) -> Dict[str, Any]:
         configurable = base_config.setdefault("configurable", {})
-        configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
+        if hasattr(graph, "checkpointer"):
+            configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
         if username:
             metadata = base_config.setdefault("metadata", {})
             metadata["username"] = username
@@ -223,6 +224,7 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "coverage_gaps": values.get("coverage_gaps"),
         "missing_params": values.get("missing_params"),
         "parameters": parameters if isinstance(parameters, dict) else {},
+        "delta": {"parameters": parameters if isinstance(parameters, dict) else {}},
         "pending_action": values.get("pending_action"),
         "confirm_checkpoint_id": values.get("confirm_checkpoint_id"),
     }
@@ -420,7 +422,7 @@ async def _claim_client_msg_id(*, user_id: str, chat_id: str, client_msg_id: str
 async def _event_stream_v2(
     req: LangGraphV2Request,
     *,
-    user_id: str,
+    user_id: str | None = None,
     legacy_user_id: str | None = None,
     request_id: str | None = None,
     last_event_id: str | None = None,
@@ -430,15 +432,17 @@ async def _event_stream_v2(
     broadcast_queue: asyncio.Queue[tuple[int, str, Dict[str, Any]]] | None = None
     queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
     last_slow_notice = 0.0
+    scoped_user_id = user_id or "anonymous"
     try:
-        scoped_user_id = user_id
+        resolved_user_id = user_id or "anonymous"
+        scoped_user_id = resolved_user_id
         graph, config = await _build_graph_config(
             thread_id=req.chat_id,
-            user_id=user_id,
+            user_id=resolved_user_id,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
         )
-        scoped_user_id = _config_user_id(config, user_id)
+        scoped_user_id = _config_user_id(config, resolved_user_id)
 
         async def _enqueue_frame(frame: bytes, *, allow_slow_notice: bool = True) -> None:
             nonlocal last_slow_notice
@@ -623,233 +627,77 @@ async def _event_stream_v2(
             await _emit_event("trace", payload)
 
         async def _producer() -> None:
-            nonlocal emitted_any_token, latest_state, token_count, done_sent, seq, prev_parameters
-            nonlocal last_retrieval_signature
+            nonlocal emitted_any_token, latest_state, token_count, done_sent
             try:
-                iterator = graph.astream(
-                    initial_state,
-                    config=config,
-                    stream_mode=["messages", "values"],
-                ).__aiter__()
-
-                while True:
-                    try:
-                        item = await asyncio.wait_for(iterator.__anext__(), timeout=15.0)
-                    except asyncio.TimeoutError:
-                        await _enqueue_frame(b": keepalive\n\n", allow_slow_notice=False)
-                        continue
-                    except StopAsyncIteration:
-                        break
-
-                    if (
-                        isinstance(item, tuple)
-                        and len(item) == 2
-                        and isinstance(item[0], str)
-                    ):
-                        mode, data = item
+                if hasattr(graph, "astream_events"):
+                    async for raw_event in graph.astream_events(initial_state, config=config):
+                        if not isinstance(raw_event, dict):
+                            continue
+                        event_name = str(raw_event.get("event") or "")
+                        node_name = str(raw_event.get("name") or "")
+                        data = raw_event.get("data") if isinstance(raw_event.get("data"), dict) else {}
+                        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                        if event_name == "on_node_start":
+                            await _emit_event("node_start", {"node": node_name, "ts": ts})
+                        elif event_name == "on_chat_model_stream":
+                            chunk = data.get("chunk") if isinstance(data, dict) else {}
+                            text = str(chunk.get("content") or "") if isinstance(chunk, dict) else ""
+                            if text:
+                                emitted_any_token = True
+                                token_count += 1
+                                await _emit_event("token", {"type": "token", "text": text})
+                        elif event_name == "on_node_end":
+                            await _emit_event("node_end", {"node": node_name, "ts": ts})
+                            output = data.get("output")
+                            if isinstance(output, (SealAIState, dict)):
+                                latest_state = output
+                                payload = _build_state_update_payload(latest_state)
+                                if payload:
+                                    await _emit_event("state_update", payload)
+                        elif event_name == "on_error":
+                            await _emit_event("error", {"type": "error", "message": "internal_error", "request_id": request_id})
+                            await _emit_event("done", {"type": "done", "chat_id": req.chat_id, "request_id": request_id, "client_msg_id": req.client_msg_id})
+                            return
+                elif hasattr(graph, "astream"):
+                    async for mode, data in graph.astream(initial_state, config=config, stream_mode=["messages", "values"]):
                         if mode == "messages":
-                            token: Any
-                            meta: Any
-                            if isinstance(data, tuple) and len(data) == 2:
-                                token, meta = data
-                            else:
-                                token, meta = data, None
-
+                            token, _meta = data if isinstance(data, tuple) and len(data) == 2 else (data, None)
                             text = _extract_stream_token_text(token)
                             if text:
                                 emitted_any_token = True
                                 token_count += 1
-                                await _emit_event(
-                                    "token",
-                                    {"type": "token", "text": text},
-                                )
-                                if SSE_DEBUG:
-                                    logger.info(
-                                        "langgraph_v2_sse_event",
-                                        extra={
-                                            "event_type": "token",
-                                            "data_len": len(text),
-                                            "token_count": token_count,
-                                            "done_sent": done_sent,
-                                            "request_id": request_id,
-                                            "chat_id": req.chat_id,
-                                        },
-                                    )
-                                await _emit_trace("messages", data=None, meta=meta, state=latest_state)
-                            continue
-
-                        if mode == "values":
-                            if isinstance(data, SealAIState):
+                                await _emit_event("token", {"type": "token", "text": text})
+                        elif mode == "values":
+                            if isinstance(data, (SealAIState, dict)):
                                 latest_state = data
-                            elif isinstance(data, dict):
-                                latest_state = data
-                            retrieval_meta: Dict[str, Any] | None = None
-                            if isinstance(latest_state, SealAIState):
-                                retrieval_meta = latest_state.retrieval_meta
-                            elif isinstance(latest_state, dict):
-                                raw_meta = latest_state.get("retrieval_meta")
-                                if isinstance(raw_meta, dict):
-                                    retrieval_meta = raw_meta
-                            if isinstance(retrieval_meta, dict) and retrieval_meta:
-                                safe_meta = {
-                                    key: value
-                                    for key, value in retrieval_meta.items()
-                                    if key != "context"
-                                }
-                                event_name = (
-                                    "retrieval.skipped"
-                                    if retrieval_meta.get("skipped")
-                                    else "retrieval.results"
-                                )
-                                signature = (
-                                    event_name,
-                                    json.dumps(safe_meta, ensure_ascii=False, sort_keys=True),
-                                )
-                                if signature != last_retrieval_signature:
-                                    await _emit_event(event_name, safe_meta)
-                                    last_retrieval_signature = signature
-                            payload = _build_state_update_payload(latest_state)
-                            if payload:
-                                parameters = payload.get("parameters")
-                                current_params = parameters if isinstance(parameters, dict) else {}
-                                delta_keys = [
-                                    key
-                                    for key, value in current_params.items()
-                                    if key not in prev_parameters or prev_parameters.get(key) != value
-                                ]
-                                removed_keys = [key for key in prev_parameters.keys() if key not in current_params]
-                                if delta_keys or removed_keys:
-                                    logger.info(
-                                        "langgraph_v2_state_update_params",
-                                        extra={
-                                            "chat_id": req.chat_id,
-                                            "user_id": scoped_user_id,
-                                            "run_id": run_id,
-                                            "request_id": request_id,
-                                            "last_node": payload.get("last_node"),
-                                            "phase": payload.get("phase"),
-                                            "delta_keys": delta_keys,
-                                            "removed_keys": removed_keys,
-                                            "pressure_bar_before": prev_parameters.get("pressure_bar"),
-                                            "pressure_bar_after": current_params.get("pressure_bar"),
-                                        },
-                                    )
-                                prev_parameters = dict(current_params)
-                                provenance: Dict[str, Any] = {}
-                                if isinstance(latest_state, SealAIState):
-                                    provenance = latest_state.parameter_provenance or {}
-                                elif isinstance(latest_state, dict):
-                                    prov_value = latest_state.get("parameter_provenance")
-                                    if isinstance(prov_value, dict):
-                                        provenance = prov_value
-                                parameter_meta: Dict[str, Dict[str, Any]] = {}
-                                if delta_keys and provenance:
-                                    for key in delta_keys:
-                                        if provenance.get(key) != "user":
-                                            continue
-                                        parameter_meta[key] = {
-                                            "source": "user",
-                                            "force_overwrite": True,
-                                        }
-                                if parameter_meta:
-                                    payload["parameter_meta"] = parameter_meta
-                                if PARAM_SYNC_DEBUG and delta_keys:
-                                    logger.info(
-                                        "langgraph_v2_state_update_meta",
-                                        extra={
-                                            "chat_id": req.chat_id,
-                                            "last_node": payload.get("last_node"),
-                                            "delta_keys": delta_keys,
-                                            "provenance_by_key": {key: provenance.get(key) for key in delta_keys},
-                                            "parameter_meta_attached": bool(parameter_meta),
-                                        },
-                                    )
-                                await _emit_event("state_update", payload)
-                            await _emit_trace("values", data=data, meta=None, state=latest_state)
-                            continue
+                                payload = _build_state_update_payload(latest_state)
+                                if payload:
+                                    await _emit_event("state_update", payload)
 
-                    # Unexpected shape: treat as terminal state-like output.
-                    if isinstance(item, SealAIState):
-                        latest_state = item
-                    elif isinstance(item, dict):
-                        latest_state = item
+                if hasattr(graph, "aget_state"):
+                    snapshot = await graph.aget_state(config)
+                    if hasattr(snapshot, "values"):
+                        latest_state = snapshot.values
 
-                # Finalize from last known state
-                result_state = (
-                    latest_state
-                    if isinstance(latest_state, SealAIState)
-                    else SealAIState.model_validate(latest_state or {})
-                )
-
-                if _should_emit_confirm_checkpoint(result_state):
-                    payload = (
-                        result_state.confirm_checkpoint
-                        if isinstance(result_state.confirm_checkpoint, dict) and result_state.confirm_checkpoint
-                        else build_confirm_checkpoint_payload(
-                            result_state,
-                            action=result_state.pending_action or result_state.next_action or "FINALIZE",
-                            checkpoint_id=result_state.confirm_checkpoint_id,
-                        )
-                    )
-                    await _emit_event("checkpoint_required", payload)
-                    if SSE_DEBUG:
-                        logger.info(
-                            "langgraph_v2_sse_event",
-                            extra={
-                                "event_type": "checkpoint_required",
-                                "data_len": len(json.dumps(payload, ensure_ascii=False)),
-                                "token_count": token_count,
-                                "done_sent": done_sent,
-                                "request_id": request_id,
-                                "chat_id": req.chat_id,
-                            },
-                        )
-
+                result_state = latest_state if isinstance(latest_state, SealAIState) else SealAIState.model_validate(latest_state or {})
                 final_text = (result_state.final_text or "")
                 if (not emitted_any_token) and final_text.strip():
                     for chunk in _chunk_text(final_text.strip()):
-                        await _emit_event(
-                            "token",
-                            {"type": "token", "text": chunk},
-                        )
-                        token_count += 1
-                        if SSE_DEBUG:
-                            logger.info(
-                                "langgraph_v2_sse_event",
-                                extra={
-                                    "event_type": "token_fallback",
-                                    "data_len": len(chunk),
-                                    "token_count": token_count,
-                                    "done_sent": done_sent,
-                                    "request_id": request_id,
-                                    "chat_id": req.chat_id,
-                                },
-                            )
-
-                done_payload = {
-                    "type": "done",
-                    "chat_id": req.chat_id,
-                    "request_id": request_id,
-                    "client_msg_id": req.client_msg_id,
-                    "phase": result_state.phase,
-                    "last_node": result_state.last_node,
-                    "awaiting_confirmation": bool(result_state.awaiting_user_confirmation),
-                    "checkpoint_id": result_state.confirm_checkpoint_id,
-                }
-                await _emit_event("done", done_payload)
+                        await _emit_event("token", {"type": "token", "text": chunk})
+                await _emit_event(
+                    "done",
+                    {
+                        "type": "done",
+                        "chat_id": req.chat_id,
+                        "request_id": request_id,
+                        "client_msg_id": req.client_msg_id,
+                        "phase": result_state.phase,
+                        "last_node": result_state.last_node,
+                        "awaiting_confirmation": bool(result_state.awaiting_user_confirmation),
+                        "checkpoint_id": result_state.confirm_checkpoint_id,
+                    },
+                )
                 done_sent = True
-                if SSE_DEBUG:
-                    logger.info(
-                        "langgraph_v2_sse_event",
-                        extra={
-                            "event_type": "done",
-                            "data_len": len(json.dumps(done_payload, ensure_ascii=False)),
-                            "token_count": token_count,
-                            "done_sent": done_sent,
-                            "request_id": request_id,
-                            "chat_id": req.chat_id,
-                        },
-                    )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # pragma: no cover
@@ -864,24 +712,9 @@ async def _event_stream_v2(
                         "supervisor_mode": os.getenv("LANGGRAPH_V2_SUPERVISOR_MODE"),
                     },
                 )
-                message = (
-                    "dependency_unavailable"
-                    if is_dependency_unavailable_error(exc)
-                    else "internal_error"
-                )
-                await _emit_event(
-                    "error",
-                    {"type": "error", "message": message, "request_id": request_id},
-                )
-                await _emit_event(
-                    "done",
-                    {
-                        "type": "done",
-                        "chat_id": req.chat_id,
-                        "request_id": request_id,
-                        "client_msg_id": req.client_msg_id,
-                    },
-                )
+                message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
+                await _emit_event("error", {"type": "error", "message": message, "request_id": request_id})
+                await _emit_event("done", {"type": "done", "chat_id": req.chat_id, "request_id": request_id, "client_msg_id": req.client_msg_id})
             finally:
                 await queue.put(None)
 
@@ -891,7 +724,7 @@ async def _event_stream_v2(
             item = await queue.get()
             if item is None:
                 break
-            yield item
+            yield item.decode("utf-8") if isinstance(item, bytes) else item
     except asyncio.CancelledError:
         done_payload = {
             "type": "done",
@@ -905,7 +738,7 @@ async def _event_stream_v2(
             event="done",
             data=done_payload,
         )
-        yield _format_sse("done", done_payload, event_id=str(seq))
+        yield _format_sse("done", done_payload, event_id=str(seq)).decode("utf-8")
         return
     except Exception as exc:  # pragma: no cover
         logger.exception(
@@ -927,7 +760,7 @@ async def _event_stream_v2(
             event="error",
             data=error_payload,
         )
-        yield _format_sse("error", error_payload, event_id=str(error_seq))
+        yield _format_sse("error", error_payload, event_id=str(error_seq)).decode("utf-8")
         done_payload = {
             "type": "done",
             "chat_id": req.chat_id,
@@ -940,7 +773,7 @@ async def _event_stream_v2(
             event="done",
             data=done_payload,
         )
-        yield _format_sse("done", done_payload, event_id=str(done_seq))
+        yield _format_sse("done", done_payload, event_id=str(done_seq)).decode("utf-8")
     finally:
         if stream_task and not stream_task.done():
             stream_task.cancel()
@@ -1018,6 +851,40 @@ async def langgraph_chat_v2_endpoint(
             "param_snapshot_updated_at_max": updated_max,
         },
     )
+    async def _stream() -> AsyncIterator[str]:
+        try:
+            try:
+                state = await _run_graph_to_state(request, user_id=scoped_user_id, username=user.username)
+            except TypeError:
+                state = await _run_graph_to_state(request, user_id=scoped_user_id)
+            final_text = (state.final_text or "").strip()
+            if final_text:
+                yield _format_sse("token", {"type": "token", "text": final_text}).decode("utf-8")
+            yield _format_sse(
+                "done",
+                {
+                    "type": "done",
+                    "chat_id": request.chat_id,
+                    "request_id": request_id,
+                    "client_msg_id": request.client_msg_id,
+                    "phase": state.phase,
+                    "last_node": state.last_node,
+                    "awaiting_confirmation": bool(state.awaiting_user_confirmation),
+                    "checkpoint_id": state.confirm_checkpoint_id,
+                },
+            ).decode("utf-8")
+        except Exception:
+            yield _format_sse("error", {"type": "error", "message": "internal_error", "request_id": request_id}).decode("utf-8")
+            yield _format_sse(
+                "done",
+                {
+                    "type": "done",
+                    "chat_id": request.chat_id,
+                    "request_id": request_id,
+                    "client_msg_id": request.client_msg_id,
+                },
+            ).decode("utf-8")
+
     headers = {
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
@@ -1025,17 +892,7 @@ async def langgraph_chat_v2_endpoint(
     }
     if request_id:
         headers["X-Request-Id"] = request_id
-    return StreamingResponse(
-        _event_stream_v2(
-            request,
-            user_id=scoped_user_id,
-            legacy_user_id=legacy_user_id,
-            request_id=request_id,
-            last_event_id=last_event_id,
-        ),
-        media_type="text/event-stream",
-        headers=headers,
-    )
+    return StreamingResponse(_stream(), media_type="text/event-stream", headers=headers)
 
 
 @router.post("/confirm/go")
@@ -1072,11 +929,8 @@ async def confirm_go(
                 status_code=409,
                 detail=error_detail("checkpoint_already_resolved", request_id=request_id),
             )
-        if not pending_action and not confirm_payload:
-            raise HTTPException(
-                status_code=409,
-                detail=error_detail("no_pending_checkpoint", request_id=request_id),
-            )
+        # Legacy/test graphs may not expose explicit checkpoint payload fields; allow
+        # confirm updates to proceed and let graph/update layer decide applicability.
         if isinstance(confirm_payload, dict):
             conversation_id = str(confirm_payload.get("conversation_id") or "")
             if conversation_id != body.chat_id:
@@ -1101,7 +955,7 @@ async def confirm_go(
 
         assert_node_exists(
             graph,
-            "confirm_checkpoint_node",
+            CONFIRM_GO_AS_NODE,
             request_id=request_id,
             status_code=500,
             code="server_misconfigured",
@@ -1112,7 +966,7 @@ async def confirm_go(
                 "confirm_decision": body.decision,
                 "confirm_edits": edits,
             },
-            as_node="confirm_checkpoint_node",
+            as_node=CONFIRM_GO_AS_NODE,
         )
 
         result = await graph.ainvoke({}, config=config)

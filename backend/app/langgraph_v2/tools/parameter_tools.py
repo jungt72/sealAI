@@ -126,11 +126,7 @@ def set_parameters(
         source="llm",
     )
     
-    logger.info(
-        "set_parameters_tool_called",
-        updates=updates,
-        merged_params=merged_params,
-    )
+    logger.info("set_parameters_tool_called updates=%s merged_params=%s", updates, merged_params)
     
     # Return TechnicalParameters object
     from app.langgraph_v2.state import TechnicalParameters
