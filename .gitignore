@@ -92,3 +92,6 @@ secrets/
 
 # accidental Windows paths from copy/paste
 C:\Users\*
+
+# local env files
+.env.dev
