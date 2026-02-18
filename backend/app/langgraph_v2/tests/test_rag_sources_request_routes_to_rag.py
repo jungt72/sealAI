@@ -62,7 +62,7 @@ def test_graph_routes_norms_rag_and_comparison_loop_back_to_supervisor() -> None
         for edge in compiled.edges
     )
     assert any(
-        edge.source == "material_comparison_node" and edge.target == "assumption_lock_node"
+        edge.source == "material_comparison_node" and edge.target == "supervisor_policy_node"
         for edge in compiled.edges
     )
 

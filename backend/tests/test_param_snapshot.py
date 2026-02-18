@@ -17,6 +17,11 @@ os.environ.setdefault("qdrant_collection", "test")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
 os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.json")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
+os.environ.setdefault("nextauth_url", "http://localhost:3000")
+os.environ.setdefault("nextauth_secret", "dummy")
+os.environ.setdefault("keycloak_issuer", "http://localhost/realms/test")
+os.environ.setdefault("keycloak_client_id", "dummy")
+os.environ.setdefault("keycloak_client_secret", "dummy")
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint
 from app.services.auth.dependencies import RequestUser
@@ -46,7 +51,7 @@ def test_requires_param_snapshot(monkeypatch):
     monkeypatch.setattr(endpoint, "REQUIRE_PARAM_SNAPSHOT", True)
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
     raw_request = Request({"type": "http", "headers": []})
-    user = RequestUser(user_id="u1", username="u1", sub="u1", roles=[])
+    user = RequestUser(user_id="u1", tenant_id="tenant-1", username="u1", sub="u1", roles=[])
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(endpoint.langgraph_chat_v2_endpoint(req, raw_request, user))
@@ -74,7 +79,19 @@ def test_warns_on_stale_snapshot(monkeypatch, caplog):
     )
 
     async def _collect():
-        async for _ in endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1"):
+        checkpoint_thread_id = endpoint.resolve_checkpoint_thread_id(
+            tenant_id="tenant-1",
+            user_id="user-test",
+            chat_id=req.chat_id,
+        )
+        async for _ in endpoint._event_stream_v2(
+            req,
+            user_id="user-test",
+            tenant_id="tenant-1",
+            can_read_private=False,
+            request_id="req-1",
+            checkpoint_thread_id=checkpoint_thread_id,
+        ):
             break
 
     with caplog.at_level("WARNING"):

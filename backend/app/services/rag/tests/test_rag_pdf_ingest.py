@@ -62,6 +62,7 @@ class _DenseEmbedder:
 
 @pytest.mark.anyio
 async def test_pdf_extracts_text_non_empty() -> None:
+    pytest.importorskip("pypdf")
     fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
     pages = rag_ingest._load_pages(str(fixture_path))
     assert pages, "Expected PDF to load pages"
@@ -71,6 +72,7 @@ async def test_pdf_extracts_text_non_empty() -> None:
 
 @pytest.mark.anyio
 async def test_pdf_chunks_include_page_number_and_tenant() -> None:
+    pytest.importorskip("pypdf")
     fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
 
     pipeline = rag_ingest.IngestPipeline()

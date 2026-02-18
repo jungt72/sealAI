@@ -5,6 +5,8 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from app.langgraph_v2.utils.threading import resolve_checkpoint_thread_id
+
 
 def _set_minimal_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # Keep consistent with other contract tests: avoid settings init failures.
@@ -50,6 +52,14 @@ def _build_minimal_state_graph():
     return builder
 
 
+def _config_without_checkpoint_ns(config: dict) -> dict:
+    config_copy = dict(config)
+    configurable = dict(config_copy.get("configurable", {}))
+    configurable.pop("checkpoint_ns", None)
+    config_copy["configurable"] = configurable
+    return config_copy
+
+
 def test_state_recovery_persists_messages_across_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_minimal_settings_env(monkeypatch)
     from app.langgraph_v2.sealai_graph_v2 import build_v2_config
@@ -57,14 +67,20 @@ def test_state_recovery_persists_messages_across_runs(monkeypatch: pytest.Monkey
     graph = _build_minimal_state_graph().compile(checkpointer=InMemorySaver())
 
     config1 = build_v2_config(thread_id="t1", user_id="u1", tenant_id="tenant-1")
-    assert config1.get("configurable", {}).get("thread_id") == "u1|t1"
-    graph.invoke({"messages": [HumanMessage(content="Hi 1")]}, config1)
-    snap1 = graph.get_state(config1)
+    assert config1.get("configurable", {}).get("thread_id") == resolve_checkpoint_thread_id(
+        tenant_id="tenant-1",
+        user_id="u1",
+        chat_id="t1",
+    )
+    config1_plain = _config_without_checkpoint_ns(config1)
+    graph.invoke({"messages": [HumanMessage(content="Hi 1")]}, config1_plain)
+    snap1 = graph.get_state(config1_plain)
     assert len(snap1.values.get("messages") or []) == 1
 
     config2 = build_v2_config(thread_id="t1", user_id="u1", tenant_id="tenant-1")
-    graph.invoke({"messages": [HumanMessage(content="Hi 2")]}, config2)
-    snap2 = graph.get_state(config2)
+    config2_plain = _config_without_checkpoint_ns(config2)
+    graph.invoke({"messages": [HumanMessage(content="Hi 2")]}, config2_plain)
+    snap2 = graph.get_state(config2_plain)
     assert len(snap2.values.get("messages") or []) == 2
 
 
@@ -74,10 +90,14 @@ def test_state_isolation_across_users_with_same_thread_id(monkeypatch: pytest.Mo
 
     graph = _build_minimal_state_graph().compile(checkpointer=InMemorySaver())
 
-    config_user_a = build_v2_config(thread_id="same-thread", user_id="user-a", tenant_id="tenant-1")
+    config_user_a = _config_without_checkpoint_ns(
+        build_v2_config(thread_id="same-thread", user_id="user-a", tenant_id="tenant-1")
+    )
     graph.invoke({"messages": [HumanMessage(content="A1")]}, config_user_a)
 
-    config_user_b = build_v2_config(thread_id="same-thread", user_id="user-b", tenant_id="tenant-1")
+    config_user_b = _config_without_checkpoint_ns(
+        build_v2_config(thread_id="same-thread", user_id="user-b", tenant_id="tenant-1")
+    )
     snap_b_before = graph.get_state(config_user_b)
     assert (
         len(snap_b_before.values.get("messages") or []) == 0

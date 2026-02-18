@@ -117,7 +117,8 @@ def _checkpoint_thread_id(resolve_checkpoint_thread_id, *, tenant_id: str, user_
 @pytest.mark.anyio
 async def test_param_patch_state_chat_config_alignment(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
+    monkeypatch.setenv("CHECKPOINTER_BACKEND", "redis")
+    monkeypatch.setenv("LANGGRAPH_V2_ALLOW_MEMORY_FALLBACK", "1")
 
     # make sure any cached graph/checkpointer from other tests is not reused
     _clear_langgraph_v2_caches()
@@ -168,7 +169,8 @@ async def test_param_patch_state_chat_config_alignment(monkeypatch):
 @pytest.mark.anyio
 async def test_param_patch_merges_existing_parameters(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("LANGGRAPH_V2_CHECKPOINTER", "memory")
+    monkeypatch.setenv("CHECKPOINTER_BACKEND", "redis")
+    monkeypatch.setenv("LANGGRAPH_V2_ALLOW_MEMORY_FALLBACK", "1")
 
     _clear_langgraph_v2_caches()
 
@@ -198,16 +200,13 @@ async def test_param_patch_merges_existing_parameters(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_state_falls_back_to_legacy_thread(monkeypatch):
+async def test_state_reads_scoped_thread(monkeypatch):
     """
-    Legacy fallback coverage: state endpoint can still read old thread keys.
-
-    Note:
-    - _build_state_config_with_checkpointer now requires tenant_id (multi-tenant scoping),
-      but the legacy thread key itself remains "{sub}:{chat_id}" for this test.
+    State endpoint resolves and reads tenant-scoped checkpoint thread ids.
     """
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
+    monkeypatch.setenv("CHECKPOINTER_BACKEND", "redis")
+    monkeypatch.setenv("LANGGRAPH_V2_ALLOW_MEMORY_FALLBACK", "1")
 
     _clear_langgraph_v2_caches()
 
@@ -221,7 +220,7 @@ async def test_state_falls_back_to_legacy_thread(monkeypatch):
     graph, legacy_config = await state_endpoint._build_state_config_with_checkpointer(
         tenant_id=tenant_id,
         thread_id=chat_id,
-        user_id=user.sub,  # legacy owner id
+        user_id=user.user_id,
         username=user.username,
     )
 
@@ -233,10 +232,10 @@ async def test_state_falls_back_to_legacy_thread(monkeypatch):
 
     state_response = await state_endpoint.get_state(request, thread_id=chat_id, user=user)
     assert state_response["parameters"]["medium"] == "oil"
-    # For legacy fallback, the returned config should still show legacy thread id format
+    # Returned config should show the tenant-scoped checkpoint key.
     expected_thread_key = _resolve_checkpoint_thread_id(
         tenant_id=tenant_id,
-        user_id=user.sub,   # legacy owner id
+        user_id=user.user_id,
         chat_id=chat_id,
     )
     assert state_response["config"]["configurable"]["thread_id"] == expected_thread_key

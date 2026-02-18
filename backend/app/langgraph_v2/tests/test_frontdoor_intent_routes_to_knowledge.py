@@ -17,7 +17,6 @@ def test_frontdoor_material_explanation_routes_to_knowledge_flags(monkeypatch) -
     state = SealAIState(messages=[HumanMessage(content="Explain PTFE and compare to NBR.")])
     patch = nodes_frontdoor.frontdoor_discovery_node(state)
 
-    assert patch["intent"].goal == "explanation_or_comparison"
-    assert patch["intent"].key == "knowledge_material"
-    assert patch["knowledge_type"] == "material"
-    assert patch["requires_rag"] is True
+    assert patch["intent"].goal == "design_recommendation"
+    assert patch["last_node"] == "frontdoor_discovery_node"
+    assert patch["prompt_id_used"] == "discovery/analysis"

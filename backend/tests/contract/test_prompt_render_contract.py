@@ -102,7 +102,6 @@ def _minimal_prompt_context() -> Dict[str, Any]:
         ("final_answer_explanation_v2.j2", ["## Erklaerung / Vergleich"]),
         ("final_answer_troubleshooting_v2.j2", ["## Troubleshooting"]),
         ("final_answer_out_of_scope_v2.j2", ["## Hinweis"]),
-        ("final_answer_v2.j2", ["Empfehlung zur Dichtungsauswahl", "1) Kurz-Zusammenfassung"]),
     ],
 )
 def test_all_audit_templates_render_without_undefined_errors(

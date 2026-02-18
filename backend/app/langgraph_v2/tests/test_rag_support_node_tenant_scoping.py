@@ -21,6 +21,7 @@ def test_rag_support_node_uses_tenant_id(monkeypatch):
         messages=[HumanMessage(content="Test")],
         user_id="user-1",
         tenant_id="tenant-1",
+        requires_rag=True,
     )
     _ = nodes_flows.rag_support_node(state)
 

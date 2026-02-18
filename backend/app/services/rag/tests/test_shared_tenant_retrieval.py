@@ -38,6 +38,7 @@ def _import_orchestrator():
 def test_shared_tenant_enabled_builds_should_filter(monkeypatch):
     monkeypatch.setenv("RAG_SHARED_TENANT_ENABLED", "1")
     monkeypatch.setenv("RAG_SHARED_TENANT_ID", "default")
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "3")
     ro = _import_orchestrator()
 
     def _fake_embed(_texts):
@@ -93,6 +94,7 @@ def test_shared_tenant_enabled_builds_should_filter(monkeypatch):
 def test_shared_tenant_disabled_uses_tenant_only(monkeypatch):
     monkeypatch.setenv("RAG_SHARED_TENANT_ENABLED", "0")
     monkeypatch.setenv("RAG_SHARED_TENANT_ID", "default")
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "3")
     ro = _import_orchestrator()
 
     def _fake_embed(_texts):

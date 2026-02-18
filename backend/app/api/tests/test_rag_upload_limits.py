@@ -47,6 +47,11 @@ os.environ.setdefault("qdrant_collection", "test")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
 os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.json")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
+os.environ.setdefault("nextauth_url", "http://localhost:3000")
+os.environ.setdefault("nextauth_secret", "dummy")
+os.environ.setdefault("keycloak_issuer", "http://localhost/realms/test")
+os.environ.setdefault("keycloak_client_id", "dummy")
+os.environ.setdefault("keycloak_client_secret", "dummy")
 
 from app.api.v1.endpoints import rag as rag_endpoint  # noqa: E402
 from app.services.auth.dependencies import RequestUser  # noqa: E402
@@ -86,6 +91,17 @@ class DummyUploadFile:
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def _restore_upload_limits():
+    original_limit = rag_endpoint.RAG_UPLOAD_MAX_BYTES
+    original_root = rag_endpoint.UPLOAD_ROOT
+    try:
+        yield
+    finally:
+        rag_endpoint.RAG_UPLOAD_MAX_BYTES = original_limit
+        rag_endpoint.UPLOAD_ROOT = original_root
 
 
 @pytest.mark.anyio

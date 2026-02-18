@@ -50,6 +50,7 @@ class _FakeResponse:
 def test_qdrant_retry_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.rag import rag_orchestrator as ro
 
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "1")
     outcomes = [
         _FakeResponse(503, {}),
         _FakeResponse(
@@ -84,6 +85,7 @@ def test_qdrant_retry_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_qdrant_retry_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.rag import rag_orchestrator as ro
 
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "1")
     outcomes = [
         _FakeResponse(503, {}),
         _FakeResponse(503, {}),
@@ -114,6 +116,7 @@ def test_qdrant_retry_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_qdrant_maps_page_content_to_text(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.rag import rag_orchestrator as ro
 
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "1")
     outcomes = [
         _FakeResponse(
             200,

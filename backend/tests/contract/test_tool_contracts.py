@@ -23,27 +23,30 @@ def test_set_parameters_returns_parameters_object() -> None:
 def test_search_knowledge_base_formats_hits_and_handles_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.langgraph_v2.utils import rag_tool
 
-    def _fake_retrieve(*_args: Any, **_kwargs: Any) -> List[Dict[str, Any]]:
-        return [
-            {
-                "text": "FKM ist temperaturbeständig.",
-                "fused_score": 0.9,
-                "metadata": {"document_id": "doc1", "section_title": "Werkstoffe", "url": "https://example"},
-            }
-        ]
+    def _fake_retrieve(*_args: Any, **_kwargs: Any):
+        return (
+            [
+                {
+                    "text": "FKM ist temperaturbeständig.",
+                    "fused_score": 0.9,
+                    "metadata": {"document_id": "doc1", "section_title": "Werkstoffe", "url": "https://example"},
+                }
+            ],
+            {"k_returned": 1},
+        )
 
     monkeypatch.setattr(rag_tool, "hybrid_retrieve", _fake_retrieve)
     out = rag_tool.search_knowledge_base.invoke(
         {"query": "FKM", "category": "materials", "k": 1, "tenant": "t1"}
     )
-    assert "Gefundene Informationen" in out
-    assert "doc1" in out
+    assert "Gefundene Informationen" in out["context"]
+    assert "doc1" in out["context"]
 
-    def _boom(*_args: Any, **_kwargs: Any) -> List[Dict[str, Any]]:
+    def _boom(*_args: Any, **_kwargs: Any):
         raise RuntimeError("qdrant down")
 
     monkeypatch.setattr(rag_tool, "hybrid_retrieve", _boom)
     out2 = rag_tool.search_knowledge_base.invoke(
         {"query": "FKM", "category": "materials", "k": 1, "tenant": "t1"}
     )
-    assert "Fehler beim Abrufen" in out2
+    assert "Fehler beim Abrufen" in out2["context"]

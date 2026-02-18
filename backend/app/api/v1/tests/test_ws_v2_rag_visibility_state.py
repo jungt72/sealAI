@@ -78,12 +78,11 @@ def test_ws_state_applies_public_visibility_filter(monkeypatch: pytest.MonkeyPat
         params_patch=None,
         is_privileged=False,
     )
+    state = state.model_copy(update={"requires_rag": True}, deep=True)
 
     _ = nodes_flows.rag_support_node(state)
 
-    assert captured.get("metadata_filters") == {
-        "metadata.tenant_id": "tenant-1",
-        "category": "norms",
-        "metadata.visibility": "public",
-    }
+    filters = captured.get("metadata_filters") or {}
+    assert filters.get("metadata.domain") == "norms"
+    assert filters.get("metadata.visibility") == "public"
     assert captured.get("tenant") == "tenant-1"

@@ -22,6 +22,7 @@ def test_retry_not_triggered_when_good_score(monkeypatch):
         messages=[HumanMessage(content="Brauche Werkstoffvergleich NBR vs FKM")],
         user_id="user-1",
         tenant_id="tenant-1",
+        requires_rag=True,
     )
     patch = nodes_flows.rag_support_node(state)
 
@@ -54,6 +55,7 @@ def test_retry_triggered_on_skipped(monkeypatch):
         messages=[HumanMessage(content="Bitte prüfe Normen für PTFE Dichtung")],
         user_id="user-1",
         tenant_id="tenant-1",
+        requires_rag=True,
     )
     patch = nodes_flows.rag_support_node(state)
 
@@ -83,6 +85,7 @@ def test_loop_safety_only_one_retry(monkeypatch):
         messages=[HumanMessage(content="Normenvergleich für FKM")],
         user_id="user-1",
         tenant_id="tenant-1",
+        requires_rag=True,
     )
     patch = nodes_flows.rag_support_node(state)
 
@@ -108,6 +111,7 @@ def test_rag_support_uses_retrieval_sources_for_references(monkeypatch):
         messages=[HumanMessage(content="Kyrolon aus Wissensbasis mit Quellen")],
         user_id="user-1",
         tenant_id="tenant-1",
+        requires_rag=True,
     )
     patch = nodes_flows.rag_support_node(state)
 

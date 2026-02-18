@@ -4,10 +4,12 @@ from __future__ import annotations
 def test_hybrid_retrieve_adds_sources(monkeypatch) -> None:
     from app.services.rag import rag_orchestrator as ro
 
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "2")
+
     def fake_embed(_texts):
         return [[0.0, 0.0]]
 
-    def fake_search(_query_vec, _collection, top_k=6, metadata_filters=None):
+    def fake_search(_query_vec, _collection, top_k=6, qdrant_filter=None):
         hits = [
             {
                 "text": "A",

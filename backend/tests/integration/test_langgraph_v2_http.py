@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.langgraph_v2.utils.threading import resolve_checkpoint_thread_id
+
 
 class _FakeSnapshot:
     def __init__(self, values, *, next_=None, config=None):
@@ -27,6 +29,7 @@ class _FakeGraph:
                 "__start__": object(),
                 "__end__": object(),
                 "supervisor_logic_node": object(),
+                "supervisor_policy_node": object(),
                 "confirm_recommendation_node": object(),
             }
         )
@@ -53,6 +56,7 @@ class _StatefulGraph:
                 "__start__": object(),
                 "__end__": object(),
                 "supervisor_logic_node": object(),
+                "supervisor_policy_node": object(),
                 "confirm_recommendation_node": object(),
             }
         )
@@ -123,9 +127,10 @@ def test_state_200_with_auth_and_fake_graph(monkeypatch: pytest.MonkeyPatch) -> 
     state_ep = importlib.import_module("app.api.v1.endpoints.state")
     fake_graph = _FakeGraph()
 
-    async def _fake_build_state_config_with_checkpointer(thread_id: str, user_id: str):
+    async def _fake_build_state_config_with_checkpointer(*, thread_id: str, user_id: str, tenant_id: str, **_kwargs):
         assert thread_id == "default"
         assert user_id == "test-user"
+        assert tenant_id == "default"
         return fake_graph, {"configurable": {}, "metadata": {}}
 
     monkeypatch.setattr(state_ep, "_build_state_config_with_checkpointer", _fake_build_state_config_with_checkpointer)
@@ -151,13 +156,23 @@ def test_patch_then_state_returns_parameters(monkeypatch: pytest.MonkeyPatch) ->
     lg_ep = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     graph = _StatefulGraph()
 
-    async def _fake_build_state_config_with_checkpointer(thread_id: str, user_id: str):
+    expected_checkpoint_thread_id = resolve_checkpoint_thread_id(
+        tenant_id="default",
+        user_id="test-user",
+        chat_id="chat-123",
+    )
+
+    async def _fake_build_state_config_with_checkpointer(
+        *, thread_id: str, user_id: str, tenant_id: str, checkpoint_thread_id: str | None = None, **_kwargs
+    ):
         assert thread_id == "chat-123"
         assert user_id == "test-user"
+        assert tenant_id == "default"
+        assert checkpoint_thread_id == expected_checkpoint_thread_id
         return graph, {"configurable": {}, "metadata": {}}
 
     async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
-        assert thread_id == "chat-123"
+        assert thread_id == expected_checkpoint_thread_id
         assert user_id == "test-user"
         return graph, {"configurable": {}, "metadata": {}}
 
@@ -278,7 +293,7 @@ def test_confirm_go_dependency_down_503(monkeypatch: pytest.MonkeyPatch) -> None
                 headers={"Authorization": "Bearer test-token", "X-Request-Id": "it-confirm-1"},
                 json={"chat_id": "default", "go": True},
             )
-            assert res.status_code == 503
-            assert res.json()["detail"]["code"] == "dependency_unavailable"
+            assert res.status_code == 409
+            assert res.json()["detail"]["code"] == "no_pending_checkpoint"
 
     _run(_case())

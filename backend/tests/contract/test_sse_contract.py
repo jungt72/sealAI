@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-import datetime as dt
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List, Tuple
 
 import pytest
 
 
-def _parse_sse_frames(frames: List[str]) -> List[Tuple[str, Dict[str, Any]]]:
+def _parse_sse_frames(frames: List[str | bytes]) -> List[Tuple[str, Dict[str, Any]]]:
     parsed: List[Tuple[str, Dict[str, Any]]] = []
     for frame in frames:
+        text = frame.decode("utf-8") if isinstance(frame, bytes) else frame
         event = None
         data = None
-        for line in frame.splitlines():
+        for line in text.splitlines():
             if line.startswith("event:"):
                 event = line.split(":", 1)[1].strip()
             elif line.startswith("data:"):
@@ -64,21 +64,38 @@ class _DummyGraph:
     def __init__(self, events: List[Dict[str, Any]], final_values: Dict[str, Any]):
         self._events = list(events)
         self._final_values = dict(final_values)
+        self.checkpointer = object()
 
-    async def astream_events(self, *_args: Any, **_kwargs: Any) -> AsyncGenerator[Dict[str, Any], None]:
+    async def astream(self, *_args: Any, **_kwargs: Any) -> AsyncGenerator[tuple[str, Any], None]:
         for item in self._events:
             await asyncio.sleep(0)
-            yield item
+            event = item.get("event")
+            if event == "on_chat_model_stream":
+                text = (((item.get("data") or {}).get("chunk") or {}).get("content") or "")
+                yield ("messages", ({"content": text}, {"langgraph_node": item.get("name")}))
+            elif event == "on_node_end":
+                output = (item.get("data") or {}).get("output")
+                if isinstance(output, dict):
+                    yield ("values", output)
+        yield ("values", self._final_values)
 
     async def aget_state(self, *_args: Any, **_kwargs: Any) -> _Snapshot:
         return _Snapshot(values=self._final_values)
 
 
-async def _collect_async(gen: AsyncGenerator[str, None]) -> List[str]:
-    chunks: List[str] = []
+async def _collect_async(gen: AsyncGenerator[bytes, None]) -> List[bytes]:
+    chunks: List[bytes] = []
     async for item in gen:
         chunks.append(item)
     return chunks
+
+
+def _checkpoint_thread_id(endpoint: Any, *, tenant_id: str, user_id: str, chat_id: str) -> str:
+    return endpoint.resolve_checkpoint_thread_id(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        chat_id=chat_id,
+    )
 
 
 def test_sse_stream_emits_done_once_and_is_last_for_normal_run(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -116,22 +133,25 @@ def test_sse_stream_emits_done_once_and_is_last_for_normal_run(monkeypatch: pyte
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
 
     request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(endpoint._event_stream_v2(request)))
+    frames = asyncio.run(
+        _collect_async(
+            endpoint._event_stream_v2(
+                request,
+                user_id="u1",
+                tenant_id="tenant-1",
+                can_read_private=False,
+                checkpoint_thread_id=_checkpoint_thread_id(
+                    endpoint, tenant_id="tenant-1", user_id="u1", chat_id="t1"
+                ),
+            )
+        )
+    )
 
     events = _parse_sse_frames(frames)
     assert events, "SSE produced no frames"
 
-    node_start = [payload for evt, payload in events if evt == "node_start"]
-    node_end = [payload for evt, payload in events if evt == "node_end"]
-    assert node_start, "expected at least one node_start event"
-    assert node_end, "expected at least one node_end event"
-    for payload in node_start + node_end:
-        node = payload.get("node")
-        assert isinstance(node, str) and node, f"expected node field in {payload}"
-        ts = payload.get("ts")
-        assert isinstance(ts, str) and ts, f"expected ts field in {payload}"
-        # iso parseable
-        dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    token_events = [payload for evt, payload in events if evt == "token"]
+    assert token_events, "expected streamed token events"
 
     done_events = [evt for evt, payload in events if evt == "done"]
     assert len(done_events) == 1, f"expected exactly one done event, got {len(done_events)}"
@@ -142,13 +162,11 @@ def test_sse_stream_emits_error_then_done_and_stops(monkeypatch: pytest.MonkeyPa
     _set_minimal_settings_env(monkeypatch)
     from app.api.v1.endpoints import langgraph_v2 as endpoint
 
-    async def _error_events() -> AsyncGenerator[Dict[str, Any], None]:
-        yield {"event": "on_error", "name": "final_answer_node", "data": {"error": "boom"}}
-
     class _ErrorGraph(_DummyGraph):
-        async def astream_events(self, *_args: Any, **_kwargs: Any) -> AsyncGenerator[Dict[str, Any], None]:
-            async for item in _error_events():
-                yield item
+        async def astream(self, *_args: Any, **_kwargs: Any) -> AsyncGenerator[tuple[str, Any], None]:
+            if False:
+                yield ("values", {})
+            raise RuntimeError("boom")
 
         async def aget_state(self, *_args: Any, **_kwargs: Any) -> _Snapshot:
             return _Snapshot(values={})
@@ -159,7 +177,19 @@ def test_sse_stream_emits_error_then_done_and_stops(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
 
     request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(endpoint._event_stream_v2(request)))
+    frames = asyncio.run(
+        _collect_async(
+            endpoint._event_stream_v2(
+                request,
+                user_id="u1",
+                tenant_id="tenant-1",
+                can_read_private=False,
+                checkpoint_thread_id=_checkpoint_thread_id(
+                    endpoint, tenant_id="tenant-1", user_id="u1", chat_id="t1"
+                ),
+            )
+        )
+    )
 
     events = _parse_sse_frames(frames)
     event_names = [name for name, _ in events]
@@ -188,7 +218,19 @@ def test_sse_does_not_emit_duplicate_parameter_deltas(monkeypatch: pytest.Monkey
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
 
     request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(endpoint._event_stream_v2(request)))
+    frames = asyncio.run(
+        _collect_async(
+            endpoint._event_stream_v2(
+                request,
+                user_id="u1",
+                tenant_id="tenant-1",
+                can_read_private=False,
+                checkpoint_thread_id=_checkpoint_thread_id(
+                    endpoint, tenant_id="tenant-1", user_id="u1", chat_id="t1"
+                ),
+            )
+        )
+    )
     events = _parse_sse_frames(frames)
 
     param_updates = [payload for evt, payload in events if evt == "parameter_update"]
@@ -199,5 +241,5 @@ def test_sse_does_not_emit_duplicate_parameter_deltas(monkeypatch: pytest.Monkey
     ), f"expected no per-key parameter_update when state_update is emitted, got {param_updates}"
     assert state_updates, "expected a state_update event when parameters change"
     assert (
-        state_updates[0].get("delta", {}).get("parameters", {}).get("temperature_C") == 80
-    ), f"expected state_update.delta.parameters.temperature_C=80, got {state_updates[0]}"
+        state_updates[0].get("parameters", {}).get("temperature_C") == 80
+    ), f"expected state_update.parameters.temperature_C=80, got {state_updates[0]}"

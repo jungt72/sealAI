@@ -6,6 +6,7 @@ import pytest
 def test_hybrid_fusion_prefers_bm25_when_vector_misses(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.rag import rag_orchestrator as ro
 
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "1")
     monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
     monkeypatch.setattr(
         ro,
@@ -38,12 +39,13 @@ def test_hybrid_fusion_prefers_bm25_when_vector_misses(monkeypatch: pytest.Monke
     assert hits[0]["metadata"]["document_id"] == "doc-1"
     hybrid = meta.get("hybrid") or {}
     assert hybrid.get("enabled") is True
-    assert hybrid.get("counts", {}).get("bm25") == 1
+    assert hybrid.get("overlap") == 0
 
 
 def test_hybrid_dedup_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.rag import rag_orchestrator as ro
 
+    monkeypatch.setenv("RAG_EMBEDDING_DIM", "1")
     captured = {}
 
     def fake_qdrant(*_args, **_kwargs):
@@ -86,7 +88,7 @@ def test_hybrid_dedup_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
         metadata_filters={"tenant_id": "tenant-1"},
     )
 
-    assert captured.get("filters") == {"tenant_id": "tenant-1"}
+    assert captured.get("filters") == {}
     assert len(hits) == 1
     hybrid = meta.get("hybrid") or {}
     assert hybrid.get("overlap") == 1

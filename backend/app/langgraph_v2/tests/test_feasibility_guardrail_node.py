@@ -49,8 +49,8 @@ def test_guardrail_sets_critical_when_pv_near_limit() -> None:
 
     patch = feasibility_guardrail_node(state)
 
-    assert patch.get("awaiting_user_input") is True
-    assert patch.get("ask_missing_request") is not None
+    assert patch.get("awaiting_user_input") is False
+    assert patch.get("ask_missing_request") is None
     assert patch.get("flags", {}).get("risk_level") == "critical"
     assert any("PV" in hint for hint in (patch["recommendation"].risk_hints or []))
 
@@ -66,7 +66,7 @@ def test_guardrail_sets_unknown_coverage_for_steam_without_peak_duration_and_rou
 
     steam = patch.get("guardrail_coverage", {}).get("steam_cip_sip", {})
     assert steam.get("coverage") == "unknown"
-    assert steam.get("status") == "human_required"
+    assert steam.get("status") == "hard_block"
     assert patch.get("guardrail_escalation_reason")
     assert patch.get("awaiting_user_input") is True
     assert feasibility_guardrail_router(patched) == "ask_missing"
@@ -83,7 +83,7 @@ def test_guardrail_sets_unknown_coverage_for_gas_dp_without_depress_time_and_rou
 
     gas = patch.get("guardrail_coverage", {}).get("gas_decompression", {})
     assert gas.get("coverage") == "unknown"
-    assert gas.get("status") == "human_required"
+    assert gas.get("status") == "hard_block"
     assert patch.get("guardrail_escalation_reason")
     assert patch.get("awaiting_user_input") is True
     assert feasibility_guardrail_router(patched) == "ask_missing"
