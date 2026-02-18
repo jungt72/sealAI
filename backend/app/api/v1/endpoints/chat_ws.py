@@ -68,7 +68,7 @@ def _build_ws_thread_key(*, tenant_id: str, user_id: str, chat_id: str) -> str:
         raise ValueError("missing tenant_id for ws thread key")
     token = set_current_tenant_id(tenant_id)
     try:
-        return stable_thread_key(user_id, chat_id)
+        return stable_thread_key(user_id, chat_id, tenant_id=tenant_id)
     finally:
         reset_current_tenant_id(token)
 
@@ -91,11 +91,13 @@ def _build_ws_initial_state(
 ) -> SealAIState:
     messages = [SystemMessage(content=system_prompt)] + history + [HumanMessage(content=user_input)]
     parameters = TechnicalParameters.model_validate(params_patch or {})
+    knowledge_type = "norms" if re.search(r"\b(norm|normen|din|iso)\b", user_input or "", re.I) else None
     return SealAIState(
         messages=messages,
         tenant_id=tenant_id,
         user_id=user_id,
         thread_id=chat_id,
+        knowledge_type=knowledge_type,
         is_privileged=is_privileged,
         can_read_private=is_privileged,
         parameters=parameters,
