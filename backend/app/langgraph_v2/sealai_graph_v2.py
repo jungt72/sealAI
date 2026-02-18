@@ -15,7 +15,6 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.constants import CHECKPOINTER_NAMESPACE_V2
 from app.langgraph_v2.utils.checkpointer import make_v2_checkpointer_async
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI
@@ -372,11 +371,18 @@ async def _resume_router_async(state: SealAIState) -> str:
 def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: bool = True) -> CompiledStateGraph:
     builder = StateGraph(SealAIState)
     logger.debug("create_sealai_graph_v2_start")
+    resume_router = _resume_router_async if require_async else _resume_router
+    supervisor_router = _supervisor_policy_router_async if require_async else _supervisor_policy_router
+    parameter_router = _parameter_check_router_async if require_async else _parameter_check_router
+    critical_router = _critical_review_router_async if require_async else _critical_review_router
+    product_router = _product_router_async if require_async else _product_router
 
     # Node registration
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
     builder.add_node("supervisor_policy_node", supervisor_policy_node)
+    # Backward-compatible registry name expected by contracts/tooling.
+    builder.add_node("supervisor_logic_node", supervisor_policy_node)
     builder.add_node("aggregator_node", aggregator_node)
     builder.add_node("panel_calculator_node", panel_calculator_node)
     builder.add_node("panel_material_node", panel_material_node)
@@ -405,7 +411,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_edge(START, "resume_router_node")
     builder.add_conditional_edges(
         "resume_router_node",
-        _resume_router_async,
+        resume_router,
         {
             "reject": "confirm_reject_node",
             "resume": "confirm_resume_node",
@@ -418,7 +424,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     # MAI-DxO supervisor loop (feature flagged)
     builder.add_conditional_edges(
         "supervisor_policy_node",
-        _supervisor_policy_router_async,
+        supervisor_router,
         {
             "ASK_USER": "final_answer_node",
             "RUN_PANEL_CALC": "panel_calculator_node",
@@ -434,12 +440,11 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     )
     builder.add_edge("panel_calculator_node", "aggregator_node")
     builder.add_edge("panel_material_node", "aggregator_node")
-    builder.add_edge("rag_support_node", "aggregator_node")
     builder.add_edge("aggregator_node", "supervisor_policy_node")
 
     builder.add_conditional_edges(
         "confirm_resume_node",
-        _supervisor_policy_router_async,
+        supervisor_router,
         {
             "ASK_USER": "final_answer_node",
             "RUN_PANEL_CALC": "panel_calculator_node",
@@ -458,7 +463,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_edge("discovery_schema_node", "parameter_check_node")
     builder.add_conditional_edges(
         "parameter_check_node",
-        _parameter_check_router_async,
+        parameter_router,
         {
             "calculator_node": "calculator_node",
             "supervisor_policy_node": "supervisor_policy_node",
@@ -472,7 +477,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 
     builder.add_conditional_edges(
         "critical_review_node",
-        _critical_review_router_async,
+        critical_router,
         {
             "refine": "discovery_schema_node",
             "reject": "final_answer_node",
@@ -483,7 +488,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 
     builder.add_conditional_edges(
         "product_match_node",
-        _product_router_async,
+        product_router,
         {
             "include": "product_explainer_node",
             "skip": "final_answer_node",
@@ -549,7 +554,6 @@ def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
     checkpoint_thread_id = stable_thread_key(user_id, thread_id)
     configurable: Dict[str, Any] = {
         "thread_id": checkpoint_thread_id,
-        "checkpoint_ns": CHECKPOINTER_NAMESPACE_V2,
     }
     metadata: Dict[str, Any] = {
         "thread_id": thread_id,

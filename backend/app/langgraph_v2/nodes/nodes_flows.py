@@ -335,9 +335,17 @@ def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
 
 def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("rag_support_node", state)
+    user_text = latest_user_text(state.get("messages")) or ""
+    from app.langgraph_v2.nodes.nodes_frontdoor import detect_sources_request
+
+    if not bool(getattr(state, "requires_rag", False)) and not detect_sources_request(user_text):
+        return {
+            "phase": PHASE.KNOWLEDGE,
+            "last_node": "rag_support_node",
+        }
+
     intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
     notes = dict(state.working_memory.comparison_notes if state.working_memory else {})
-    user_text = latest_user_text(state.get("messages")) or ""
     rag_context = search_knowledge_base.invoke({
         "query": user_text or "Aktuelle technische Frage",
         "category": "norms",
