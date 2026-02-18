@@ -1,0 +1,12 @@
+Empfehlung zur Dichtungsauswahl
+
+1) Kurz-Zusammenfassung
+- {{ recommendation.summary if recommendation is defined and recommendation.summary is defined else "Vorläufige Einordnung auf Basis der verfügbaren Angaben." }}
+
+2) Technische Einordnung
+- Medium: {{ parameters.medium if parameters is defined and parameters.medium is defined else "nicht angegeben" }}
+- Temperatur: {{ parameters.temperature_C if parameters is defined and parameters.temperature_C is defined else "nicht angegeben" }}
+- Druck: {{ parameters.pressure_bar if parameters is defined and parameters.pressure_bar is defined else "nicht angegeben" }}
+
+3) Nächste Schritte
+- Fehlende Randbedingungen ergänzen und Empfehlung validieren.

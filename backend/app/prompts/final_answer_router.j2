@@ -25,6 +25,10 @@
 {%- if not rag_reference -%}
   {%- set rag_reference = (wm_comp.get('rag_reference') if wm_comp is mapping else none) -%}
 {%- endif -%}
+{%- set rag_note = (comp.get('rag_note') if comp is mapping else none) -%}
+{%- if not rag_note -%}
+  {%- set rag_note = (wm_comp.get('rag_note') if wm_comp is mapping else none) -%}
+{%- endif -%}
 {%- set has_rag_attempt = false -%}
 {%- if rag_context is string -%}
   {%- set has_rag_attempt = rag_context|trim != "" -%}
@@ -63,6 +67,9 @@
 {%- if goal == "troubleshooting_leakage" -%}
 - Leckage ist häufig ein Zusammenspiel aus Montage/Einlauf, Wellenlauf, Oberflächenzustand und Medien-/Temperaturfenster.
 {%- endif -%}
+
+## Allgemeines Fachwissen
+- Die Werkstoff-/Profilauswahl muss immer gegen Medium, Temperatur, Druck, Dynamik und Gegenlauffläche plausibilisiert werden.
 
 ## Risiken & Failure-Modes
 {%- if goal == "troubleshooting_leakage" -%}
@@ -139,8 +146,8 @@
 - Druck-/Δp (falls relevant) und Drehzahl/Umfangsgeschwindigkeit?
 {%- endif -%}
 
-{%- if has_rag_refs -%}
-## Quellen / Belege
+{%- if requires_rag and has_rag_refs -%}
+## Wissensdatenbank (Quellen)
 {%- if rag_reference is sequence and rag_reference is not string -%}
 {%- for ref in rag_reference -%}
 - {{ ref }}
@@ -148,4 +155,8 @@
 {%- else -%}
 - {{ rag_reference }}
 {%- endif -%}
+{%- elif requires_rag and rag_note -%}
+{{ rag_note }}
+{%- elif requires_rag and not has_rag_refs -%}
+Quellen derzeit nicht verfügbar.
 {%- endif -%}
