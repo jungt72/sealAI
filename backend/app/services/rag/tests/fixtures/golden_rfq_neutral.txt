@@ -1,0 +1,48 @@
+# Anfrage zur Angebotsabgabe (RFQ)
+
+**Session:** sess-abc-123
+**Mandant:** tenant-xyz-789
+
+---
+
+## Anforderungsprofil
+
+| Parameter | Wert |
+|---|---|
+| Medium | Heißdampf |
+| Max. Druck | 40.0 bar |
+| Max. Temperatur | 400.0 °C |
+| Flanschnorm | EN 1092-1 |
+| Nennweite (DN) | 150 |
+| Nenndruck (PN) | 40 |
+| Schraubenanzahl | 12 |
+| Schraubengröße | M20 |
+
+## Technische Auslegung
+
+### Materialempfehlung
+
+- **Material:** Spiraldichtung 316L/Graphit
+- **Familie:** Spiralwound
+- **Max. Temperatur:** 550 °C
+- **Max. Druck:** 100 bar
+- **Kompatible Medien:** Dampf, Wasser, Stickstoff
+
+### Berechnungsergebnisse
+
+| Kennwert | Ergebnis |
+|---|---|
+| Sicherheitsfaktor | 1.8 |
+| Erforderliche Schraubenkraft | 245.0 kN |
+| Flächenpressung | 50.0 MPa |
+
+**Hinweise:**
+- EN 13555 Anhang A angewendet
+- Kriechrelaxation berücksichtigt
+
+## Qualitätshinweise
+
+- Temperatur nahe Materialgrenze — Sicherheitsfaktor erhöht
+- Zyklische Belastung nicht spezifiziert
+
+

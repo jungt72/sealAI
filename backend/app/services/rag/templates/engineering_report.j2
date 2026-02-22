@@ -1,0 +1,51 @@
+# Flanschdichtungsauslegung — Engineering Report
+
+## Betriebsbedingungen
+
+| Parameter | Wert |
+|---|---|
+| Medium | {{ profile.medium }} |
+| Max. Druck | {{ profile.pressure_max_bar }} bar |
+| Max. Temperatur | {{ profile.temperature_max_c }} °C |
+| Flanschnorm | {{ profile.flange_standard }} |
+| Nennweite (DN) | {{ profile.flange_dn }} |
+| Nenndruck (PN) | {{ profile.flange_pn }} |
+| Schraubenanzahl | {{ profile.bolt_count }} |
+| Schraubengröße | {{ profile.bolt_size }} |
+
+## Materialempfehlung
+
+- **Material:** {{ material.name }}
+- **Familie:** {{ material.family }}
+- **Max. Temperatur:** {{ material.t_max_c }} °C
+- **Max. Druck:** {{ material.p_max_bar }} bar
+- **Kompatible Medien:** {{ material.compatible_media | join(", ") }}
+
+## Berechnungsergebnisse
+
+| Kennwert | Ergebnis |
+|---|---|
+| Sicherheitsfaktor | {{ calculation.safety_factor }} |
+| Erforderliche Schraubenkraft | {{ calculation.required_bolt_load_kn }} kN |
+| Flächenpressung | {{ calculation.gasket_stress_mpa }} MPa |
+
+{% if calculation.notes %}
+**Hinweise:**
+{% for note in calculation.notes %}
+- {{ note }}
+{% endfor %}
+{% endif %}
+
+## Qualitätshinweise
+
+{% if critique_log %}
+{% for warning in critique_log %}
+- {{ warning }}
+{% endfor %}
+{% else %}
+Keine Qualitätshinweise.
+{% endif %}
+
+{% if is_critical_application %}
+{% include "watermark_critical.j2" %}
+{% endif %}
