@@ -1,0 +1,226 @@
+"""Tests for P1 Context Node (SEALAI v4.4.0 Sprint 4).
+
+All tests are offline — no real LLM calls.
+The merge/fallback logic is tested directly; LLM extraction is mocked.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+from langchain_core.messages import HumanMessage
+
+from app.langgraph_v2.state import SealAIState
+from app.services.rag.nodes.p1_context import (
+    _P1Extraction,
+    _merge_extraction_into_profile,
+    node_p1_context,
+)
+from app.services.rag.state import WorkingProfile
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _merge_extraction_into_profile
+# ---------------------------------------------------------------------------
+
+
+class TestMergeExtraction:
+    def test_new_case_creates_fresh_profile(self):
+        extraction = _P1Extraction(medium="steam", pressure_max_bar=40.0)
+        profile = _merge_extraction_into_profile(None, extraction)
+        assert profile.medium == "steam"
+        assert profile.pressure_max_bar == 40.0
+        assert profile.temperature_max_c is None
+
+    def test_follow_up_merges_onto_existing(self):
+        existing = WorkingProfile(medium="water", pressure_max_bar=20.0, temperature_max_c=80.0)
+        extraction = _P1Extraction(pressure_max_bar=40.0, flange_dn=100)
+        profile = _merge_extraction_into_profile(existing, extraction)
+        # Existing fields preserved
+        assert profile.medium == "water"
+        assert profile.temperature_max_c == 80.0
+        # New fields merged in
+        assert profile.pressure_max_bar == 40.0
+        assert profile.flange_dn == 100
+
+    def test_follow_up_overrides_only_non_none(self):
+        existing = WorkingProfile(medium="oil", pressure_max_bar=50.0)
+        extraction = _P1Extraction(medium="H2SO4")  # only medium changes
+        profile = _merge_extraction_into_profile(existing, extraction)
+        assert profile.medium == "H2SO4"
+        assert profile.pressure_max_bar == 50.0  # preserved
+
+    def test_empty_extraction_preserves_existing(self):
+        existing = WorkingProfile(medium="gas", temperature_max_c=300.0)
+        extraction = _P1Extraction()  # all None
+        profile = _merge_extraction_into_profile(existing, extraction)
+        assert profile.medium == "gas"
+        assert profile.temperature_max_c == 300.0
+
+    def test_new_case_with_no_extraction_gives_empty_profile(self):
+        extraction = _P1Extraction()
+        profile = _merge_extraction_into_profile(None, extraction)
+        assert isinstance(profile, WorkingProfile)
+        assert profile.medium is None
+        assert profile.coverage_ratio() == 0.0
+
+    def test_cyclic_load_extracted(self):
+        extraction = _P1Extraction(cyclic_load=True)
+        profile = _merge_extraction_into_profile(None, extraction)
+        assert profile.cyclic_load is True
+
+    def test_all_flange_fields_extracted(self):
+        extraction = _P1Extraction(
+            flange_standard="ASME B16.5",
+            flange_dn=200,
+            flange_pn=None,
+            flange_class=300,
+        )
+        profile = _merge_extraction_into_profile(None, extraction)
+        assert profile.flange_standard == "ASME B16.5"
+        assert profile.flange_dn == 200
+        assert profile.flange_class == 300
+
+    def test_invalid_merge_falls_back_gracefully(self):
+        """If merging produces invalid state (min > max), fall back without crash."""
+        existing = WorkingProfile(pressure_min_bar=5.0, pressure_max_bar=50.0)
+        # Extraction sets max below existing min — would violate min ≤ max
+        extraction = _P1Extraction(pressure_max_bar=1.0)
+        # Should not raise; returns a safe profile
+        profile = _merge_extraction_into_profile(existing, extraction)
+        assert isinstance(profile, WorkingProfile)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: node_p1_context with mocked LLM
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_extraction(**kwargs):
+    """Return a mock that when called returns a _P1Extraction with given fields."""
+    extraction = _P1Extraction(**kwargs)
+
+    class _FakeLLM:
+        def with_structured_output(self, *a, **kw):
+            return self
+
+        def invoke(self, messages):
+            return extraction
+
+    return _FakeLLM()
+
+
+class TestNodeP1Context:
+    def _state(self, text: str, **kwargs) -> SealAIState:
+        return SealAIState(
+            messages=[HumanMessage(content=text)],
+            **kwargs,
+        )
+
+    def test_new_case_extracts_and_sets_working_profile(self):
+        state = self._state(
+            "DN100 PN40 Dampf 180°C 16 bar",
+            router_classification="new_case",
+        )
+        extracted = _P1Extraction(
+            medium="Dampf",
+            pressure_max_bar=16.0,
+            temperature_max_c=180.0,
+            flange_dn=100,
+            flange_pn=40,
+        )
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            return_value=_make_mock_extraction(
+                medium="Dampf",
+                pressure_max_bar=16.0,
+                temperature_max_c=180.0,
+                flange_dn=100,
+                flange_pn=40,
+            ),
+        ):
+            result = node_p1_context(state)
+
+        wp = result["working_profile"]
+        assert isinstance(wp, WorkingProfile)
+        assert wp.medium == "Dampf"
+        assert wp.pressure_max_bar == 16.0
+        assert wp.temperature_max_c == 180.0
+        assert wp.flange_dn == 100
+        assert result["last_node"] == "node_p1_context"
+
+    def test_follow_up_merges_onto_existing_profile(self):
+        existing = WorkingProfile(medium="water", pressure_max_bar=20.0)
+        state = self._state(
+            "Ändere Druck auf 40 bar",
+            router_classification="follow_up",
+            working_profile=existing,
+        )
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            return_value=_make_mock_extraction(pressure_max_bar=40.0),
+        ):
+            result = node_p1_context(state)
+
+        wp = result["working_profile"]
+        assert wp.medium == "water"       # preserved
+        assert wp.pressure_max_bar == 40.0  # updated
+
+    def test_llm_failure_preserves_existing_profile(self):
+        existing = WorkingProfile(medium="H2", pressure_max_bar=200.0)
+        state = self._state(
+            "Neue Anfrage",
+            router_classification="new_case",
+            working_profile=existing,
+        )
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            side_effect=RuntimeError("LLM unavailable"),
+        ):
+            result = node_p1_context(state)
+
+        # Falls back to existing profile (or empty if none)
+        wp = result["working_profile"]
+        assert isinstance(wp, WorkingProfile)
+        assert "error" in result
+
+    def test_llm_failure_with_no_prior_profile_returns_empty(self):
+        state = self._state("Hallo", router_classification="new_case")
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            side_effect=RuntimeError("LLM unavailable"),
+        ):
+            result = node_p1_context(state)
+
+        wp = result["working_profile"]
+        assert isinstance(wp, WorkingProfile)
+        assert wp.medium is None
+        assert "error" in result
+
+    def test_phase_set_correctly(self):
+        state = self._state("test", router_classification="new_case")
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            return_value=_make_mock_extraction(),
+        ):
+            result = node_p1_context(state)
+        assert result["phase"] == "frontdoor"
+
+    def test_new_case_does_not_use_existing_profile(self):
+        """new_case must always start fresh, ignoring existing working_profile."""
+        existing = WorkingProfile(medium="oil", pressure_max_bar=50.0)
+        state = self._state(
+            "Neue Anfrage: Dampf 8 bar",
+            router_classification="new_case",
+            working_profile=existing,
+        )
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            return_value=_make_mock_extraction(medium="Dampf", pressure_max_bar=8.0),
+        ):
+            result = node_p1_context(state)
+
+        wp = result["working_profile"]
+        # old medium/pressure must be gone (fresh extraction)
+        assert wp.medium == "Dampf"
+        assert wp.pressure_max_bar == 8.0

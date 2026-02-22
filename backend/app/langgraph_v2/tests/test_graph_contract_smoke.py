@@ -18,6 +18,7 @@ def test_graph_contract_smoke_map_reduce_topology_has_required_v2_nodes() -> Non
     required_nodes = {
         "profile_loader_node",
         "node_router",
+        "node_p1_context",
         "frontdoor_discovery_node",
         "supervisor_policy_node",
         "material_agent",

@@ -16,7 +16,8 @@ STABLE_V2_NODE_CONTRACT: frozenset[str] = frozenset(
         "supervisor_policy_node",
         "confirm_recommendation_node",
         "confirm_checkpoint_node",
-        "node_router",  # v4.4.0 Sprint 3: Router Node
+        "node_router",       # v4.4.0 Sprint 3: Router Node
+        "node_p1_context",   # v4.4.0 Sprint 4: P1 Context Node
     }
 )
 

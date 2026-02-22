@@ -35,6 +35,7 @@ logger = structlog.get_logger("langgraph_v2.graph")
 
 from app.langgraph_v2.nodes.profile_loader import profile_loader_node
 from app.langgraph_v2.nodes.node_router import node_router
+from app.services.rag.nodes.p1_context import node_p1_context
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node, confirm_recommendation_node
 from app.langgraph_v2.nodes.nodes_supervisor import (
@@ -495,13 +496,15 @@ def _supervisor_policy_router(state: SealAIState) -> str:
 
 def _node_router_dispatch(state: SealAIState) -> str:
     classification = getattr(state, "router_classification", None) or "new_case"
-    if classification in ("new_case", "follow_up", "resume"):
+    if classification in ("new_case", "follow_up"):
+        return "p1_context"
+    if classification == "resume":
         return "resume_router"
     if classification == "clarification":
         return "clarification"
     if classification == "rfq_trigger":
         return "rfq_trigger"
-    return "resume_router"
+    return "p1_context"
 
 
 def _resume_router(state: SealAIState) -> str:
@@ -588,7 +591,8 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
 
     # Node registration
     builder.add_node("profile_loader_node", profile_loader_node) # Long-term Memory
-    builder.add_node("node_router", node_router)  # v4.4.0 Sprint 3: Router Node
+    builder.add_node("node_router", node_router)          # v4.4.0 Sprint 3: Router Node
+    builder.add_node("node_p1_context", node_p1_context)  # v4.4.0 Sprint 4: P1 Context Node
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
     builder.add_node("smalltalk_node", smalltalk_node)
@@ -629,16 +633,19 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_edge(START, "profile_loader_node")
     builder.add_edge("profile_loader_node", "node_router")
 
-    # v4.4.0 Router dispatch
+    # v4.4.0 Router dispatch (Sprint 3/4)
     builder.add_conditional_edges(
         "node_router",
         node_router_dispatch,
         {
+            "p1_context": "node_p1_context",
             "resume_router": "resume_router_node",
             "clarification": "smalltalk_node",
             "rfq_trigger": "response_node",
         },
     )
+    # P1 → existing flow (Sprint 5 will fan out to P2/P3 instead)
+    builder.add_edge("node_p1_context", "resume_router_node")
 
     builder.add_conditional_edges(
         "resume_router_node",

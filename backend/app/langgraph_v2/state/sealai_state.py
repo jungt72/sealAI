@@ -12,6 +12,11 @@ from langgraph.graph import add_messages
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing_extensions import Literal
 
+try:
+    from app.services.rag.state import WorkingProfile
+except Exception:
+    WorkingProfile = Any  # type: ignore[assignment,misc]
+
 from app.langgraph_v2.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
 from app.langgraph_v2.types import (
     IntentKey,
@@ -347,6 +352,9 @@ class SealAIState(BaseModel):
         Literal["new_case", "follow_up", "clarification", "rfq_trigger"]
     ] = None
 
+    # v4.4.0 P1 Context — structured engineering profile (WorkingProfile)
+    working_profile: Optional[WorkingProfile] = None
+
     # Discovery / Bedarfsklärung
     discovery_summary: Optional[str] = None
     discovery_coverage: Optional[float] = None
@@ -485,6 +493,7 @@ class SealAIState(BaseModel):
     def _normalize_state_knowledge_type(cls, value: Any) -> Any:
         """Top-level `knowledge_type` im State ebenfalls normalisieren."""
         return normalize_knowledge_type(value)
+
 
 
 __all__ = [
