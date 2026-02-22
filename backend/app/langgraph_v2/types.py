@@ -41,6 +41,7 @@ from typing_extensions import Literal, TypeAlias
 
 # Keep in sync with app.langgraph_v2.phase.PHASE.
 PhaseLiteral: TypeAlias = Literal[
+    "routing",
     "entry",
     "frontdoor",
     "smalltalk",

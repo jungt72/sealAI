@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Mapping, Set
+from typing import Any, Iterable, Mapping, Optional, Set
 
 from fastapi import HTTPException
+from pydantic import BaseModel, ConfigDict
+from typing_extensions import Literal
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +16,24 @@ STABLE_V2_NODE_CONTRACT: frozenset[str] = frozenset(
         "supervisor_policy_node",
         "confirm_recommendation_node",
         "confirm_checkpoint_node",
+        "node_router",  # v4.4.0 Sprint 3: Router Node
     }
 )
+
+
+class HITLResumeCommand(BaseModel):
+    action: Literal["approve", "reject", "update_context"]
+    feedback: Optional[str] = None
+    override_params: Optional[dict] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class HITLResumeRequest(BaseModel):
+    checkpoint_id: str
+    command: HITLResumeCommand
+
+    model_config = ConfigDict(extra="forbid")
 
 
 def error_detail(code: str, *, request_id: str | None = None, message: str | None = None, **extra: Any) -> dict:
@@ -127,6 +145,8 @@ def is_dependency_unavailable_error(exc: BaseException) -> bool:
 
 
 __all__ = [
+    "HITLResumeCommand",
+    "HITLResumeRequest",
     "STABLE_V2_NODE_CONTRACT",
     "assert_node_exists",
     "error_detail",

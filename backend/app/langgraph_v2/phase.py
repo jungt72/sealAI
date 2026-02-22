@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 PHASE = SimpleNamespace(
+    ROUTING="routing",
     ENTRY="entry",
     FRONTDOOR="frontdoor",
     SMALLTALK="smalltalk",

@@ -5,6 +5,7 @@ import asyncio
 import re
 import uuid
 from typing import Any, Dict, List
+import json
 
 import structlog
 from langchain_core.messages import BaseMessage, SystemMessage
@@ -13,7 +14,9 @@ from langchain_core.runnables import RunnableLambda, RunnableParallel
 from langgraph.graph import StateGraph, END, START
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.store.base import BaseStore
 
+from app.core.memory import get_postgres_store
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.utils.checkpointer import make_v2_checkpointer_async
 from app.langgraph_v2.utils.jinja import render_template
@@ -21,6 +24,7 @@ from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.threading import stable_thread_key
 from app.langgraph_v2.utils.state_debug import log_state_debug
+from app.mcp.knowledge_tool import discover_tools_for_scopes
 
 logger = structlog.get_logger("langgraph_v2.graph")
 
@@ -29,20 +33,28 @@ logger = structlog.get_logger("langgraph_v2.graph")
 # Node Imports
 # ---------------------------------------------------------------------------
 
+from app.langgraph_v2.nodes.profile_loader import profile_loader_node
+from app.langgraph_v2.nodes.node_router import node_router
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node, confirm_recommendation_node
 from app.langgraph_v2.nodes.nodes_supervisor import (
     aggregator_node,
+    calculator_agent_node,
     panel_calculator_node,
     panel_material_node,
+    pricing_agent_node,
+    safety_agent_node,
     supervisor_policy_node,
 )
+from app.langgraph_v2.nodes.reducer import reducer_node
 from app.langgraph_v2.nodes.response_node import response_node
 from app.langgraph_v2.nodes.nodes_resume import (
     confirm_reject_node,
     confirm_resume_node,
     resume_router_node,
 )
+from app.langgraph_v2.nodes.nodes_error import smalltalk_node
+from app.langgraph_v2.nodes.orchestrator import orchestrator_node
 from app.langgraph_v2.nodes.nodes_flows import (
     build_final_answer_context,
     map_final_answer_to_state,
@@ -58,6 +70,7 @@ from app.langgraph_v2.nodes.nodes_flows import (
     profile_agent_node,
     rag_support_node,
     render_final_answer_draft,
+    prepare_final_answer_llm_payload,
     troubleshooting_explainer_node,
     troubleshooting_pattern_node,
     validation_agent_node,
@@ -86,6 +99,8 @@ RECOMMENDATION_TEMPLATE = "final_answer_recommendation_v2.j2"
 EXPLANATION_TEMPLATE = "final_answer_explanation_v2.j2"
 TROUBLESHOOTING_TEMPLATE = "final_answer_troubleshooting_v2.j2"
 OUT_OF_SCOPE_TEMPLATE = "final_answer_out_of_scope_v2.j2"
+SAFETY_CHECK_TEMPLATE = "check_1.1.0.j2"
+SAFETY_CHECK_VERSION = "check_1.1.0"
 
 
 def _select_final_answer_template(goal: str | None, recommendation_go: bool) -> str:
@@ -120,7 +135,9 @@ def _build_final_answer_template_context(
     calc_results = state.calc_results.model_dump(exclude_none=True) if state.calc_results else {}
     recommendation = state.recommendation.model_dump(exclude_none=True) if state.recommendation else {}
     working_memory = state.working_memory.model_dump(exclude_none=True) if state.working_memory else {}
+    sources = [src.model_dump(exclude_none=True) for src in (state.sources or [])]
     template_context = dict(base_context or {})
+    available_mcp_tools = discover_mcp_tools_for_state(state)
     template_context.update(
         {
             "draft": draft,
@@ -141,11 +158,14 @@ def _build_final_answer_template_context(
             "seal_family": state.seal_family,
             "plan": state.plan or {},
             "working_memory": working_memory,
+            "sources": sources,
             "recommendation": recommendation,
             "calc_results": calc_results,
             "intent_high_impact_gaps": getattr(state.intent, "high_impact_gaps", []),
             "parameters": parameters,
             "flags": state.flags or {},
+            "user_context": getattr(state, "user_context", {}) or {}, # INJECTED
+            "available_mcp_tools": available_mcp_tools,
         }
     )
     return template_context
@@ -160,15 +180,40 @@ def _normalize_smalltalk_text(text: str | None) -> str:
     return normalized.strip()
 
 
-def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
-    """
-    Baut die endgültige Prompt-Message-Liste für das LLM.
+def _collect_retrieved_facts(template_context: Dict[str, Any]) -> str:
+    blocks: List[str] = []
+    seen: set[str] = set()
 
-    Wichtig: Wir geben hier **direkt** eine Liste von BaseMessages zurück,
-    damit ChatOpenAI eine gültige Eingabe bekommt (kein dict!).
+    def _append(value: Any) -> None:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            return
+        seen.add(text)
+        blocks.append(text)
+
+    _append(template_context.get("context"))
+    _append(template_context.get("material_retrieved_context"))
+
+    working_memory = template_context.get("working_memory")
+    if isinstance(working_memory, dict):
+        panel_material = working_memory.get("panel_material")
+        if isinstance(panel_material, dict):
+            _append(panel_material.get("rag_context"))
+            _append(panel_material.get("reducer_context"))
+        comparison_notes = working_memory.get("comparison_notes")
+        if isinstance(comparison_notes, dict):
+            _append(comparison_notes.get("rag_context"))
+
+    return "\n\n".join(blocks).strip()
+
+
+def _render_final_prompt_package(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
+    Build system prompt + metadata package for final answer generation.
+    """
+    goal = payload["template_context"].get("goal")
     template_name = _select_final_answer_template(
-        payload["template_context"].get("goal"),
+        goal,
         payload["template_context"].get("recommendation_go", False),
     )
     payload["template_context"].setdefault("is_micro_smalltalk", False)
@@ -177,42 +222,135 @@ def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
     include_policy = str(style_profile).strip().lower() not in {"off", "none", "disabled", "disable"}
 
     prompt_text = render_template(template_name, payload["template_context"])
+    try:
+        safety_check_text = render_template(SAFETY_CHECK_TEMPLATE, {})
+    except FileNotFoundError:
+        safety_check_text = ""
+    safety_check_text = (safety_check_text or "").strip()
+    if safety_check_text:
+        prompt_text = f"{safety_check_text}\n\n{(prompt_text or '').strip()}"
     if include_policy:
         policy_text = render_template("senior_policy_de.j2", {})
         policy_text = (policy_text or "").strip()
         if policy_text:
             prompt_text = f"{policy_text}\n\n{(prompt_text or '').strip()}"
+    plan = payload["template_context"].get("plan") or {}
+    if isinstance(plan, dict):
+        raw_system_instructions = plan.get("system_instructions")
+        if isinstance(raw_system_instructions, list):
+            cleaned = [str(item).strip() for item in raw_system_instructions if str(item).strip()]
+            if cleaned:
+                prompt_text = f"{prompt_text}\n\n" + "\n".join(cleaned)
+
+    state: Dict[str, str] = {}
+    retrieved_chunks = _collect_retrieved_facts(payload["template_context"])
+    if retrieved_chunks:
+        state["context"] = retrieved_chunks
+    print(f"!!! FINAL LLM CONTEXT PAYLOAD: {state.get('context', 'EMPTY')} !!!")
+    prompt_text = (
+        f"{prompt_text}\n\n"
+        "### BEANTWORTUNGS-REGELN (Blueprint v4.1):\n"
+        "1. Beantworte die Anfrage basierend auf dem bereitgestellten RAG-KONTEXT.\n"
+        "2. GROUNDED REASONING: Du darfst technische Schlussfolgerungen ziehen und Informationen aus verschiedenen Chunks kombinieren, "
+        "sofern sie sich logisch aus dem Text ableiten lassen.\n"
+        "3. KEINE HALLUZINATIONEN: Erfinde niemals Spezifikationen, Werte oder Materialeigenschaften, die nicht im Kontext erwähnt werden.\n"
+        "4. Falls der Kontext absolut keine relevanten Informationen enthält, sage: 'Ich habe in der Datenbank derzeit keine spezifischen Details dazu gefunden.'"
+    )
+    if state.get("context"):
+        prompt_text = f"{prompt_text}\n\nRETRIEVED KNOWLEDGE BASE FACTS:\n{state['context']}"
+    else:
+        # We still explicitly label empty context but the reasoning logic handles the "no info" message
+        prompt_text = f"{prompt_text}\n\nRETRIEVED KNOWLEDGE BASE FACTS:\n[EMPTY]"
+
+    # BaseStore User Context Injection
+    user_context = payload["template_context"].get("user_context")
+    if user_context:
+        context_str = json.dumps(user_context, indent=2, ensure_ascii=False)
+        prompt_text = f"{prompt_text}\n\nUSER CONTEXT (LONG-TERM MEMORY):\n{context_str}"
+
+    available_tools = payload["template_context"].get("available_mcp_tools") or []
+    if isinstance(available_tools, list) and available_tools:
+        lines = ["MCP TOOLS AVAILABLE TO THIS USER:"]
+        for item in available_tools:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            description = str(item.get("description") or "").strip()
+            lines.append(f"- {name}: {description}")
+        if len(lines) > 1:
+            prompt_text = f"{prompt_text}\n\n" + "\n".join(lines)
+
     meta = payload.get("meta") if isinstance(payload, dict) else None
     if isinstance(meta, dict):
         logger.info(
             "final_prompt_selected",
-            goal=payload["template_context"].get("goal"),
+            goal=goal,
             selected_template_name=template_name,
+            safety_check_version=SAFETY_CHECK_VERSION,
             senior_policy_enabled=bool(include_policy),
             phase=meta.get("phase"),
             last_node=meta.get("last_node"),
             run_id=meta.get("run_id"),
             thread_id=meta.get("thread_id"),
         )
-    else:
-        logger.info(
-            "final_prompt_selected",
-            goal=payload["template_context"].get("goal"),
-            selected_template_name=template_name,
-            senior_policy_enabled=bool(include_policy),
-        )
     messages: List[BaseMessage] = [SystemMessage(content=prompt_text)]
     messages.extend(list(payload.get("messages") or []))
-    return messages
+    return {
+        "state": payload.get("state"),
+        "messages": messages,
+        "prompt_text": prompt_text,
+        "prompt_metadata": {
+            "selected_template_name": template_name,
+            "prompt_version": SAFETY_CHECK_VERSION,
+            "safety_check_template": SAFETY_CHECK_TEMPLATE,
+            "senior_policy_enabled": bool(include_policy),
+        },
+    }
+
+
+def _render_final_prompt_messages(payload: Dict[str, Any]) -> List[BaseMessage]:
+    package = _render_final_prompt_package(payload)
+    return list(package.get("messages") or [])
+
+
+def _extract_auth_scopes_from_state(state: SealAIState) -> List[str]:
+    user_context = getattr(state, "user_context", {}) or {}
+    raw_scopes = user_context.get("auth_scopes")
+    if raw_scopes is None:
+        return []
+    if isinstance(raw_scopes, str):
+        return [token for token in raw_scopes.replace(",", " ").split() if token]
+    if isinstance(raw_scopes, list):
+        return [str(token).strip() for token in raw_scopes if str(token).strip()]
+    return []
+
+
+def discover_mcp_tools_for_state(state: SealAIState) -> List[Dict[str, Any]]:
+    auth_scopes = _extract_auth_scopes_from_state(state)
+    tools = discover_tools_for_scopes(auth_scopes)
+    logger.info(
+        "mcp_tool_discovery",
+        scope_count=len(auth_scopes),
+        scopes=sorted(set(auth_scopes)),
+        matched_scope_count=len(set(auth_scopes) & {"mcp:pim:read", "mcp:knowledge:read"}),
+        tool_count=len(tools),
+        tools=[str(tool.get("name") or "") for tool in tools if isinstance(tool, dict)],
+    )
+    return tools
 
 
 def _build_final_answer_chain() -> Any:
     llm = LazyChatOpenAI(
         model="gpt-4.1-mini",
-        temperature=0.15,
+        temperature=0,
+        cache=False,
         max_tokens=800,
         streaming=True,
     )
+
+    output_parser = StrOutputParser()
 
     def _prepare_inputs(state: Any) -> Dict[str, Any]:
         s = _ensure_state_model(state)
@@ -276,6 +414,7 @@ def _build_final_answer_chain() -> Any:
             draft=(
                 RunnableLambda(
                     lambda d: {
+                        "state": d["state"],
                         "messages": d["messages"],
                         "template_context": d["template_context"],
                         "meta": {
@@ -286,17 +425,35 @@ def _build_final_answer_chain() -> Any:
                         },
                     }
                 )
-                # Hier wird jetzt eine List[BaseMessage] erzeugt …
-                | RunnableLambda(_render_final_prompt_messages)
-                # … und direkt an das LLM übergeben.
-                | llm
-                | StrOutputParser()
+                | RunnableLambda(_render_final_prompt_package)
+                | RunnableLambda(
+                    lambda d: prepare_final_answer_llm_payload(
+                        _ensure_state_model(d.get("state")),
+                        system_prompt=d.get("prompt_text") or "",
+                        rendered_messages=list(d.get("messages") or []),
+                        user_messages=list(getattr(d.get("state"), "messages", []) or []),
+                        prompt_metadata=d.get("prompt_metadata") or {},
+                    )
+                )
+                | RunnableParallel(
+                    text=RunnableLambda(
+                        lambda d: (
+                            d.get("forced_text")
+                            if d.get("forced_text")
+                            else output_parser.invoke(llm.invoke(d.get("messages") or []))
+                        )
+                    ),
+                    prompt_text=RunnableLambda(lambda d: d.get("prompt_text") or ""),
+                    prompt_metadata=RunnableLambda(lambda d: d.get("prompt_metadata") or {}),
+                )
             ),
         )
         | RunnableLambda(
             lambda d: map_final_answer_to_state(
                 _ensure_state_model(d["state"]),
-                d["draft"],
+                d["draft"].get("text") or "",
+                final_prompt=d["draft"].get("prompt_text") or "",
+                final_prompt_metadata=d["draft"].get("prompt_metadata") or {},
             )
         )
     )
@@ -336,11 +493,39 @@ def _supervisor_policy_router(state: SealAIState) -> str:
     return str(getattr(state, "next_action", "FINALIZE") or "FINALIZE")
 
 
+def _node_router_dispatch(state: SealAIState) -> str:
+    classification = getattr(state, "router_classification", None) or "new_case"
+    if classification in ("new_case", "follow_up", "resume"):
+        return "resume_router"
+    if classification == "clarification":
+        return "clarification"
+    if classification == "rfq_trigger":
+        return "rfq_trigger"
+    return "resume_router"
+
+
 def _resume_router(state: SealAIState) -> str:
     if state.awaiting_user_confirmation and (state.confirm_decision or "").strip():
         decision = (state.confirm_decision or "").strip().lower()
         return "reject" if decision == "reject" else "resume"
     return "frontdoor"
+
+
+def _frontdoor_router(state: SealAIState) -> str:
+    flags = state.flags or {}
+    if bool(flags.get("frontdoor_bypass_supervisor")):
+        return "smalltalk"
+    return "supervisor"
+
+
+def _reducer_router(state: SealAIState) -> str:
+    if bool(getattr(state, "requires_human_review", False)):
+        return "human_review"
+    return "standard"
+
+
+async def _node_router_dispatch_async(state: SealAIState) -> str:
+    return _node_router_dispatch(state)
 
 
 async def _parameter_check_router_async(state: SealAIState) -> str:
@@ -363,33 +548,66 @@ async def _resume_router_async(state: SealAIState) -> str:
     return _resume_router(state)
 
 
+async def _frontdoor_router_async(state: SealAIState) -> str:
+    return _frontdoor_router(state)
+
+
+async def _reducer_router_async(state: SealAIState) -> str:
+    return _reducer_router(state)
+
+
+def human_review_node(state: SealAIState) -> Dict[str, Any]:
+    # This node is used only as HITL breakpoint target (interrupt_before).
+    # If resumed, emit a compact response hint for manual approval flow.
+    return {
+        "phase": PHASE.CONFIRM,
+        "last_node": "human_review_node",
+        "awaiting_user_confirmation": True,
+        "pending_action": "human_review",
+        "confirm_status": "pending",
+        "error": "Human review required before continuing.",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Graph-Definition
 # ---------------------------------------------------------------------------
 
 
-def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: bool = True) -> CompiledStateGraph:
+def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, *, require_async: bool = True) -> CompiledStateGraph:
     builder = StateGraph(SealAIState)
     logger.debug("create_sealai_graph_v2_start")
+    node_router_dispatch = _node_router_dispatch_async if require_async else _node_router_dispatch
     resume_router = _resume_router_async if require_async else _resume_router
     supervisor_router = _supervisor_policy_router_async if require_async else _supervisor_policy_router
     parameter_router = _parameter_check_router_async if require_async else _parameter_check_router
     critical_router = _critical_review_router_async if require_async else _critical_review_router
     product_router = _product_router_async if require_async else _product_router
+    frontdoor_router = _frontdoor_router_async if require_async else _frontdoor_router
+    reducer_router = _reducer_router_async if require_async else _reducer_router
 
     # Node registration
+    builder.add_node("profile_loader_node", profile_loader_node) # Long-term Memory
+    builder.add_node("node_router", node_router)  # v4.4.0 Sprint 3: Router Node
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
-    builder.add_node("supervisor_policy_node", supervisor_policy_node)
-    # Backward-compatible registry name expected by contracts/tooling.
+    builder.add_node("smalltalk_node", smalltalk_node)
+    builder.add_node("supervisor_policy_node", orchestrator_node)
     builder.add_node("supervisor_logic_node", supervisor_policy_node)
     builder.add_node("aggregator_node", aggregator_node)
+    builder.add_node("reducer_node", reducer_node)
+    builder.add_node("human_review_node", human_review_node)
+    
     builder.add_node("panel_calculator_node", panel_calculator_node)
     builder.add_node("panel_material_node", panel_material_node)
+    builder.add_node("calculator_agent", calculator_agent_node)
+    builder.add_node("pricing_agent", pricing_agent_node)
+    builder.add_node("safety_agent", safety_agent_node)
     builder.add_node("discovery_schema_node", discovery_schema_node)
     builder.add_node("parameter_check_node", parameter_check_node)
     builder.add_node("calculator_node", calculator_node)
     builder.add_node("material_agent_node", material_agent_node)
+    builder.add_node("material_agent", material_agent_node)
     builder.add_node("profile_agent_node", profile_agent_node)
     builder.add_node("validation_agent_node", validation_agent_node)
     builder.add_node("critical_review_node", critical_review_node)
@@ -407,8 +625,21 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_node("final_answer_node", _build_final_answer_chain())
     builder.add_node("response_node", response_node)
 
-    # Entrypoint
-    builder.add_edge(START, "resume_router_node")
+    # Entrypoint: START -> profile_loader -> node_router -> [dispatch]
+    builder.add_edge(START, "profile_loader_node")
+    builder.add_edge("profile_loader_node", "node_router")
+
+    # v4.4.0 Router dispatch
+    builder.add_conditional_edges(
+        "node_router",
+        node_router_dispatch,
+        {
+            "resume_router": "resume_router_node",
+            "clarification": "smalltalk_node",
+            "rfq_trigger": "response_node",
+        },
+    )
+
     builder.add_conditional_edges(
         "resume_router_node",
         resume_router,
@@ -419,45 +650,39 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
             "default": "response_node",
         },
     )
-    builder.add_edge("frontdoor_discovery_node", "supervisor_policy_node")
-
-    # MAI-DxO supervisor loop (feature flagged)
     builder.add_conditional_edges(
-        "supervisor_policy_node",
-        supervisor_router,
+        "frontdoor_discovery_node",
+        frontdoor_router,
         {
-            "ASK_USER": "final_answer_node",
-            "RUN_PANEL_CALC": "panel_calculator_node",
-            "RUN_PANEL_MATERIAL": "panel_material_node",
-            "RUN_PANEL_NORMS_RAG": "rag_support_node",
-            "RUN_COMPARISON": "material_comparison_node",
-            "RUN_TROUBLESHOOTING": "leakage_troubleshooting_node",
-            "RUN_CONFIRM": "confirm_recommendation_node",
-            "REQUIRE_CONFIRM": "confirm_checkpoint_node",
-            "FINALIZE": "final_answer_node",
-            "__else__": "final_answer_node",
+            "smalltalk": "smalltalk_node",
+            "supervisor": "supervisor_policy_node",
         },
     )
-    builder.add_edge("panel_calculator_node", "aggregator_node")
-    builder.add_edge("panel_material_node", "aggregator_node")
-    builder.add_edge("aggregator_node", "supervisor_policy_node")
+    builder.add_edge("smalltalk_node", "response_node")
 
+    # Map-Reduce Flow
+    # Workers route to Reducer
+    builder.add_edge("panel_calculator_node", "reducer_node")
+    builder.add_edge("panel_material_node", "reducer_node")
+    builder.add_edge("material_agent", "reducer_node")
+    builder.add_edge("calculator_agent", "reducer_node")
+    builder.add_edge("pricing_agent", "reducer_node")
+    builder.add_edge("safety_agent", "reducer_node")
+    # Reducer routes either through HITL gate or to normal finalization.
     builder.add_conditional_edges(
-        "confirm_resume_node",
-        supervisor_router,
+        "reducer_node",
+        reducer_router,
         {
-            "ASK_USER": "final_answer_node",
-            "RUN_PANEL_CALC": "panel_calculator_node",
-            "RUN_PANEL_MATERIAL": "panel_material_node",
-            "RUN_PANEL_NORMS_RAG": "rag_support_node",
-            "RUN_COMPARISON": "material_comparison_node",
-            "RUN_TROUBLESHOOTING": "leakage_troubleshooting_node",
-            "RUN_CONFIRM": "confirm_recommendation_node",
-            "REQUIRE_CONFIRM": "confirm_checkpoint_node",
-            "FINALIZE": "final_answer_node",
-            "__else__": "final_answer_node",
+            "human_review": "human_review_node",
+            "standard": "final_answer_node",
         },
     )
+    builder.add_edge("human_review_node", "response_node")
+
+    # Back-links
+    builder.add_edge("rag_support_node", "supervisor_policy_node")
+    builder.add_edge("material_comparison_node", "supervisor_policy_node")
+    builder.add_edge("confirm_resume_node", "supervisor_policy_node")
 
     # Design flow
     builder.add_edge("discovery_schema_node", "parameter_check_node")
@@ -498,10 +723,6 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
 
     builder.add_edge("product_explainer_node", "final_answer_node")
 
-    # Comparison flow
-    builder.add_edge("material_comparison_node", "supervisor_policy_node")
-    builder.add_edge("rag_support_node", "supervisor_policy_node")
-
     # Troubleshooting flow
     builder.add_edge("leakage_troubleshooting_node", "troubleshooting_pattern_node")
     builder.add_edge("troubleshooting_pattern_node", "troubleshooting_explainer_node")
@@ -511,11 +732,14 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, *, require_async: 
     builder.add_edge("confirm_checkpoint_node", END)
     builder.add_edge("confirm_reject_node", END)
 
-    # Smalltalk / out-of-scope share final answer node (already defined in supervisor routing)
     builder.add_edge("final_answer_node", END)
     builder.add_edge("response_node", END)
 
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(
+        checkpointer=checkpointer,
+        store=store,
+        interrupt_before=["human_review_node"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -527,8 +751,10 @@ _GRAPH_LOCK = asyncio.Lock()
 
 
 async def _build_graph(require_async: bool = True) -> CompiledStateGraph:
+    # Initialize Checkpointer & Store (Async)
     checkpointer = await make_v2_checkpointer_async(require_async=require_async)
-    return create_sealai_graph_v2(checkpointer=checkpointer, require_async=require_async)
+    store = await get_postgres_store()
+    return create_sealai_graph_v2(checkpointer=checkpointer, store=store, require_async=require_async)
 
 
 async def get_sealai_graph_v2() -> CompiledStateGraph:

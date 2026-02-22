@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import operator
 import re
 from typing import Annotated, Any, Dict, List, Optional
 
@@ -11,7 +12,7 @@ from langgraph.graph import add_messages
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing_extensions import Literal
 
-from app.langgraph.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
+from app.langgraph_v2.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
 from app.langgraph_v2.types import (
     IntentKey,
     KnowledgeType,
@@ -53,6 +54,42 @@ class Intent(BaseModel):
     def _normalize_knowledge_type(cls, value: Any) -> Any:
         """LLM-Rohoutput (de/en) auf canonical KnowledgeType mappen."""
         return normalize_knowledge_type(value)
+
+
+class SealAIExtractedParameters(BaseModel):
+    pressure_bar: Optional[float] = None
+    temperature_c: Optional[float] = None
+    medium: Optional[str] = None
+    quantity: Optional[int] = None
+    sku: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SealAIIntentOutput(BaseModel):
+    intent_category: Literal[
+        "CHIT_CHAT",
+        "GENERAL_KNOWLEDGE",
+        "MATERIAL_RESEARCH",
+        "COMMERCIAL",
+        "ENGINEERING_CALCULATION",
+    ]
+    is_safety_critical: bool
+    requires_rag: bool
+    needs_pricing: bool
+    extracted_parameters: SealAIExtractedParameters = Field(default_factory=SealAIExtractedParameters)
+    reasoning: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RenderedPrompt(BaseModel):
+    template_name: str
+    version: str
+    rendered_text: str
+    hash_sha256: str
+
+    model_config = ConfigDict(extra="forbid")
 
 
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
@@ -298,12 +335,17 @@ class SealAIState(BaseModel):
     messages: Annotated[List[BaseMessage], add_messages] = Field(default_factory=list)
     user_id: Optional[str] = None
     thread_id: Optional[str] = None
+    user_context: Dict[str, Any] = Field(default_factory=dict)
     # Observability – carry run_id into state for logging/metadata
     run_id: Optional[str] = None
+    prompt_traces: Annotated[list[RenderedPrompt], operator.add] = Field(default_factory=list)
 
     # Orchestrator meta
     phase: Optional[PhaseLiteral] = None
     last_node: Optional[str] = None
+    router_classification: Optional[
+        Literal["new_case", "follow_up", "clarification", "rfq_trigger"]
+    ] = None
 
     # Discovery / Bedarfsklärung
     discovery_summary: Optional[str] = None
@@ -344,6 +386,9 @@ class SealAIState(BaseModel):
     # Empfehlung / Empfehlungstext
     recommendation: Optional[Recommendation] = None
 
+    # HITL gate
+    requires_human_review: bool = False
+
     # Wissens-/Quellenbezug
     need_sources: bool = False
     # Optional RAG for comparison/explanation flows.
@@ -351,6 +396,7 @@ class SealAIState(BaseModel):
     sources: List[Source] = Field(default_factory=list)
     knowledge_type: Optional[KnowledgeType] = None
     retrieval_meta: Optional[Dict[str, Any]] = None
+    context: Optional[str] = None
 
     # Finaler Output / Fehler
     error: Optional[str] = None
@@ -444,6 +490,9 @@ class SealAIState(BaseModel):
 __all__ = [
     "Intent",
     "IntentGoal",
+    "SealAIExtractedParameters",
+    "SealAIIntentOutput",
+    "RenderedPrompt",
     "CalcResults",
     "Recommendation",
     "Source",
