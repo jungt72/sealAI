@@ -39,6 +39,8 @@ from app.services.rag.nodes.p1_context import node_p1_context
 from app.services.rag.nodes.p2_rag_lookup import node_p2_rag_lookup
 from app.services.rag.nodes.p3_gap_detection import node_p3_gap_detection
 from app.services.rag.nodes.p3_5_merge import node_p3_5_merge
+from app.services.rag.nodes.p4a_extract import node_p4a_extract
+from app.services.rag.nodes.p4b_calc_render import node_p4b_calc_render
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node, confirm_recommendation_node
 from app.langgraph_v2.nodes.nodes_supervisor import (
@@ -599,6 +601,8 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("node_p2_rag_lookup", node_p2_rag_lookup)    # v4.4.0 Sprint 5: P2 RAG Material-Lookup
     builder.add_node("node_p3_gap_detection", node_p3_gap_detection)  # v4.4.0 Sprint 5: P3 Gap-Detection
     builder.add_node("node_p3_5_merge", node_p3_5_merge)          # v4.4.0 Sprint 5: P3.5 Merge
+    builder.add_node("node_p4a_extract", node_p4a_extract)       # v4.4.0 Sprint 6: P4a Parameter-Extraction
+    builder.add_node("node_p4b_calc_render", node_p4b_calc_render)  # v4.4.0 Sprint 6: P4b MCP Calc + Render
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
     builder.add_node("smalltalk_node", smalltalk_node)
@@ -654,7 +658,9 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     # P2/P3 workers → P3.5 merge → existing flow
     builder.add_edge("node_p2_rag_lookup", "node_p3_5_merge")
     builder.add_edge("node_p3_gap_detection", "node_p3_5_merge")
-    builder.add_edge("node_p3_5_merge", "resume_router_node")
+    builder.add_edge("node_p3_5_merge", "node_p4a_extract")       # Sprint 6: P3.5 → P4a
+    builder.add_edge("node_p4a_extract", "node_p4b_calc_render")  # Sprint 6: P4a → P4b
+    builder.add_edge("node_p4b_calc_render", "resume_router_node")  # Sprint 6: P4b → resume
 
     builder.add_conditional_edges(
         "resume_router_node",

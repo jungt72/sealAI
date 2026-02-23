@@ -384,6 +384,11 @@ class SealAIState(BaseModel):
     ask_missing_scope: Optional[AskMissingScope] = None
     awaiting_user_input: bool = False
 
+    # v4.4.0 Sprint 6: P4a/P4b parameter extraction & calculation
+    extracted_params: Dict[str, Any] = Field(default_factory=dict)
+    calculation_result: Optional[Dict[str, Any]] = None
+    is_critical_application: bool = False
+
     analysis_complete: bool = False
     calc_results_ok: bool = False
     calc_results: Optional[CalcResults] = None
