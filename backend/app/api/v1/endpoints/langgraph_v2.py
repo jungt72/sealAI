@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -11,9 +12,10 @@ from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.messages.ai import AIMessageChunk
-from pydantic import BaseModel, Field
+from langgraph.types import Command
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from pydantic.config import ConfigDict
 
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
@@ -21,7 +23,12 @@ from langgraph.errors import InvalidUpdateError
 
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, TechnicalParameters
-from app.langgraph_v2.contracts import assert_node_exists, error_detail, is_dependency_unavailable_error
+from app.langgraph_v2.contracts import (
+    HITLResumeRequest,
+    assert_node_exists,
+    error_detail,
+    is_dependency_unavailable_error,
+)
 from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
 from app.langgraph_v2.utils.parameter_patch import (
@@ -43,6 +50,15 @@ SSE_QUEUE_MAXSIZE = int(os.getenv("SEALAI_SSE_QUEUE_MAXSIZE", "200"))
 SSE_SLOW_NOTICE_SEC = float(os.getenv("SEALAI_SSE_SLOW_NOTICE_SEC", "5"))
 REQUIRE_PARAM_SNAPSHOT = os.getenv("SEALAI_REQUIRE_PARAM_SNAPSHOT") == "1"
 WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") == "1"
+DEFAULT_GRAPH_RECURSION_LIMIT = 25
+CONVERSATIONAL_STREAM_NODES = frozenset(
+    {
+        "final_answer_node",
+        "response_node",
+        "smalltalk_node",
+        "out_of_scope_node",
+    }
+)
 
 
 def _lg_trace_enabled() -> bool:
@@ -79,11 +95,69 @@ PARAMETERS_PATCH_AS_NODE = "supervisor_logic_node"
 class LangGraphV2Request(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    input: str = Field(default="", description="User prompt")
-    chat_id: str = Field(default="default", description="Conversation/thread id")
-    client_msg_id: Optional[str] = Field(default=None, description="Client message id for tracing")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Optional client metadata")
-    client_context: Dict[str, Any] = Field(default_factory=dict, description="Optional client context")
+    input: str = Field(
+        default="",
+        validation_alias=AliasChoices("input", "message", "text"),
+        description="User prompt",
+    )
+    chat_id: str = Field(
+        default="default",
+        validation_alias=AliasChoices("chat_id", "chatId", "thread_id", "threadId"),
+        description="Conversation/thread id",
+    )
+    client_msg_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("client_msg_id", "clientMsgId"),
+        description="Client message id for tracing",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("metadata", "meta"),
+        description="Optional client metadata",
+    )
+    client_context: Dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("client_context", "clientContext"),
+        description="Optional client context",
+    )
+
+    @field_validator("input", mode="before")
+    @classmethod
+    def _coerce_input(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return value if isinstance(value, str) else str(value)
+
+    @field_validator("chat_id", mode="before")
+    @classmethod
+    def _coerce_chat_id(cls, value: Any) -> str:
+        if value is None:
+            return "default"
+        return value if isinstance(value, str) else str(value)
+
+    @field_validator("client_msg_id", mode="before")
+    @classmethod
+    def _coerce_client_msg_id(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        return value if isinstance(value, str) else str(value)
+
+    @field_validator("metadata", "client_context", mode="before")
+    @classmethod
+    def _coerce_mapping_fields(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    @model_validator(mode="after")
+    def _normalize_fields(self) -> "LangGraphV2Request":
+        self.input = (self.input or "").strip()
+        chat_id = (self.chat_id or "").strip()
+        self.chat_id = chat_id or "default"
+        if self.client_msg_id is not None:
+            client_msg_id = self.client_msg_id.strip()
+            self.client_msg_id = client_msg_id or None
+        return self
 
 
 def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> bytes:
@@ -119,16 +193,55 @@ def _has_checkpoint_state(snapshot: Any) -> bool:
     return bool(values)
 
 
+def _snapshot_waiting_on_human_review(snapshot: Any) -> bool:
+    next_nodes = getattr(snapshot, "next", None)
+    if not isinstance(next_nodes, (list, tuple, set)):
+        return False
+    for node in next_nodes:
+        if isinstance(node, str) and node == "human_review_node":
+            return True
+        if isinstance(node, (list, tuple)):
+            if any(isinstance(item, str) and item == "human_review_node" for item in node):
+                return True
+    return False
+
+
+def _extract_snapshot_checkpoint_id(snapshot: Any, state_values: Dict[str, Any], *, fallback: str) -> str:
+    from_state = state_values.get("confirm_checkpoint_id")
+    if isinstance(from_state, str) and from_state.strip():
+        return from_state.strip()
+
+    snapshot_config = getattr(snapshot, "config", None)
+    if isinstance(snapshot_config, dict):
+        configurable = snapshot_config.get("configurable")
+        if isinstance(configurable, dict):
+            for key in ("checkpoint_id", "checkpoint_ns", "thread_id"):
+                value = configurable.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        for key in ("checkpoint_id", "checkpoint_ns"):
+            value = snapshot_config.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return fallback
+
+
 async def _build_graph_config(
     *,
     thread_id: str,
     user_id: str,
     username: str | None = None,
+    auth_scopes: list[str] | None = None,
     legacy_user_id: str | None = None,
     request_id: str | None = None,
     allow_legacy_fallback: bool = True,
 ) -> tuple[Any, Dict[str, Any]]:
     graph = await get_sealai_graph_v2()
+
+    def _with_default_recursion_limit(base_config: Dict[str, Any]) -> Dict[str, Any]:
+        config = dict(base_config or {})
+        config["recursion_limit"] = DEFAULT_GRAPH_RECURSION_LIMIT
+        return config
 
     def _attach_config(base_config: Dict[str, Any], *, scoped_user_id: str) -> Dict[str, Any]:
         configurable = base_config.setdefault("configurable", {})
@@ -138,9 +251,14 @@ async def _build_graph_config(
             metadata = base_config.setdefault("metadata", {})
             metadata["username"] = username
             metadata["user_sub"] = scoped_user_id
+        if auth_scopes:
+            metadata = base_config.setdefault("metadata", {})
+            metadata["auth_scopes"] = list(auth_scopes)
         return base_config
 
-    config = _attach_config(build_v2_config(thread_id=thread_id, user_id=user_id), scoped_user_id=user_id)
+    config = _with_default_recursion_limit(
+        _attach_config(build_v2_config(thread_id=thread_id, user_id=user_id), scoped_user_id=user_id)
+    )
     if not allow_legacy_fallback or not legacy_user_id or legacy_user_id == user_id:
         return graph, config
 
@@ -149,9 +267,11 @@ async def _build_graph_config(
         if _has_checkpoint_state(snapshot):
             return graph, config
 
-        legacy_config = _attach_config(
-            build_v2_config(thread_id=thread_id, user_id=legacy_user_id),
-            scoped_user_id=legacy_user_id,
+        legacy_config = _with_default_recursion_limit(
+            _attach_config(
+                build_v2_config(thread_id=thread_id, user_id=legacy_user_id),
+                scoped_user_id=legacy_user_id,
+            )
         )
         legacy_snapshot = await graph.aget_state(legacy_config)
         if _has_checkpoint_state(legacy_snapshot):
@@ -180,12 +300,26 @@ async def _build_graph_config(
     return graph, config
 
 
-async def _run_graph_to_state(req: LangGraphV2Request, *, user_id: str, username: str | None = None) -> SealAIState:
-    graph, config = await _build_graph_config(thread_id=req.chat_id, user_id=user_id, username=username)
+async def _run_graph_to_state(
+    req: LangGraphV2Request,
+    *,
+    user_id: str,
+    username: str | None = None,
+    auth_scopes: list[str] | None = None,
+    tenant_id: str | None = None,
+) -> SealAIState:
+    graph, config = await _build_graph_config(
+        thread_id=req.chat_id,
+        user_id=user_id,
+        username=username,
+        auth_scopes=auth_scopes,
+    )
     initial_state = SealAIState(
         user_id=user_id,
+        tenant_id=tenant_id,
         thread_id=req.chat_id,
         messages=[HumanMessage(content=req.input)],
+        user_context={"auth_scopes": list(auth_scopes or []), "tenant_id": tenant_id},
     )
     result = await graph.ainvoke(initial_state, config=config)
     if isinstance(result, SealAIState):
@@ -210,6 +344,7 @@ def _should_emit_confirm_checkpoint(state: SealAIState) -> bool:
 def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str, Any]:
     values = _state_values_to_dict(state)
     parameters = values.get("parameters") if isinstance(values, dict) else {}
+    prompt_meta = values.get("final_prompt_metadata") if isinstance(values, dict) else None
     if isinstance(parameters, TechnicalParameters):
         parameters = parameters.model_dump(exclude_none=True)
     payload = {
@@ -227,6 +362,7 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "delta": {"parameters": parameters if isinstance(parameters, dict) else {}},
         "pending_action": values.get("pending_action"),
         "confirm_checkpoint_id": values.get("confirm_checkpoint_id"),
+        "final_prompt_metadata": prompt_meta if isinstance(prompt_meta, dict) and prompt_meta else None,
     }
     return {key: value for key, value in payload.items() if value is not None}
 
@@ -242,33 +378,85 @@ def _flatten_message_content(message: Any) -> str:
                 parts.append(chunk)
             elif isinstance(chunk, dict):
                 text_value = chunk.get("text") or chunk.get("content")
-                if text_value is None:
-                    continue
-                parts.append(str(text_value))
+                nested = _flatten_message_content(text_value)
+                if nested:
+                    parts.append(nested)
             else:
-                parts.append(str(chunk))
+                nested = _flatten_message_content(chunk)
+                if nested:
+                    parts.append(nested)
         return "".join(parts)
     if isinstance(content, dict):
         text_value = content.get("text") or content.get("content")
-        return str(text_value) if text_value is not None else str(content)
+        return _flatten_message_content(text_value)
     if content is None:
         return ""
-    return str(content)
+    if isinstance(content, (int, float)):
+        return str(content)
+    return ""
 
 
-def _extract_stream_token_text(token: Any) -> str | None:
+def _is_structured_payload_text(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped or stripped[0] not in {"{", "["}:
+        return False
+    try:
+        parsed = json.loads(stripped)
+    except Exception:
+        return False
+    return isinstance(parsed, (dict, list))
+
+
+def _normalize_stream_node_name(node_name: Any) -> str | None:
+    if isinstance(node_name, str):
+        candidate = node_name.strip()
+        if candidate:
+            return candidate
+    return None
+
+
+def _resolve_stream_node_name(*, node_name: Any = None, meta: Any = None) -> str | None:
+    candidates: list[Any] = []
+    if isinstance(meta, dict):
+        candidates.extend([meta.get("langgraph_node"), meta.get("node"), meta.get("name")])
+        nested_meta = meta.get("metadata")
+        if isinstance(nested_meta, dict):
+            candidates.extend([nested_meta.get("langgraph_node"), nested_meta.get("node"), nested_meta.get("name")])
+    candidates.append(node_name)
+    for candidate in candidates:
+        resolved = _normalize_stream_node_name(candidate)
+        if resolved:
+            return resolved
+    return None
+
+
+def _is_allowed_stream_source(token: Any, *, stream_node: str | None) -> bool:
+    if not (stream_node and stream_node in CONVERSATIONAL_STREAM_NODES):
+        return False
+    return isinstance(token, (AIMessage, AIMessageChunk))
+
+
+def _extract_stream_token_text(token: Any, *, stream_node: str | None = None) -> str | None:
     if token is None:
         return None
-    if isinstance(token, BaseMessage) and not _is_message_chunk(token):
+    if not isinstance(token, (AIMessage, AIMessageChunk)):
+        return None
+    if isinstance(token, dict):
+        return None
+    if isinstance(token, BaseMessage) and not (_is_message_chunk(token) or isinstance(token, AIMessage)):
+        return None
+    if not _is_allowed_stream_source(token, stream_node=stream_node):
         return None
     text_attr = getattr(token, "text", None)
     if isinstance(text_attr, str) and text_attr:
-        return text_attr
+        return None if _is_structured_payload_text(text_attr) else text_attr
     content_attr = getattr(token, "content", None)
     if isinstance(content_attr, str) and content_attr:
-        return content_attr
+        return None if _is_structured_payload_text(content_attr) else content_attr
     text = _flatten_message_content(token)
-    return text if text else None
+    if not text or _is_structured_payload_text(text):
+        return None
+    return text
 
 
 def _is_message_chunk(token: BaseMessage) -> bool:
@@ -369,6 +557,39 @@ def _extract_trace_action(*, data: Any = None, state: Any = None) -> str | None:
     return None
 
 
+def _extract_prompt_trace_metadata(*, data: Any = None, state: Any = None) -> tuple[str | None, str | None]:
+    """Return (prompt_hash, prompt_version) from node output/state for trace events."""
+    candidates: list[Any] = [data]
+    if isinstance(state, SealAIState):
+        candidates.append(state.model_dump(exclude_none=True))
+    elif isinstance(state, dict):
+        candidates.append(state)
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        raw_meta = candidate.get("final_prompt_metadata")
+        meta = raw_meta if isinstance(raw_meta, dict) else {}
+        raw_hash = meta.get("prompt_hash") or meta.get("hash")
+        prompt_hash = str(raw_hash).strip() if raw_hash else None
+        raw_version = (
+            meta.get("prompt_version")
+            or meta.get("version")
+            or meta.get("safety_check_version")
+        )
+        prompt_version = str(raw_version).strip() if raw_version else None
+
+        if not prompt_hash:
+            prompt_text = candidate.get("final_prompt")
+            if isinstance(prompt_text, str) and prompt_text.strip():
+                prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+
+        if prompt_hash or prompt_version:
+            return prompt_hash, prompt_version
+
+    return None, None
+
+
 def _build_trace_payload(
     *,
     mode: str,
@@ -379,11 +600,14 @@ def _build_trace_payload(
     node_name = _extract_trace_node(meta=meta, data=data, state=state)
     phase = _extract_trace_phase(data=data, state=state)
     action = _extract_trace_action(data=data, state=state)
+    prompt_hash, prompt_version = _extract_prompt_trace_metadata(data=data, state=state)
     payload = {
         "node": node_name,
         "type": mode,
         "phase": phase,
         "action": action,
+        "prompt_hash": prompt_hash,
+        "prompt_version": prompt_version,
     }
     return {key: value for key, value in payload.items() if value}
 
@@ -423,6 +647,9 @@ async def _event_stream_v2(
     req: LangGraphV2Request,
     *,
     user_id: str | None = None,
+    username: str | None = None,
+    auth_scopes: list[str] | None = None,
+    tenant_id: str | None = None,
     legacy_user_id: str | None = None,
     request_id: str | None = None,
     last_event_id: str | None = None,
@@ -439,6 +666,8 @@ async def _event_stream_v2(
         graph, config = await _build_graph_config(
             thread_id=req.chat_id,
             user_id=resolved_user_id,
+            username=username,
+            auth_scopes=auth_scopes,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
         )
@@ -582,8 +811,10 @@ async def _event_stream_v2(
         prev_parameters: Dict[str, Any] = {}
         initial_state = SealAIState(
             user_id=scoped_user_id,
+            tenant_id=tenant_id,
             thread_id=req.chat_id,
             messages=[HumanMessage(content=req.input)],
+            user_context={"auth_scopes": list(auth_scopes or []), "tenant_id": tenant_id},
         )
 
         emitted_any_token = False
@@ -605,6 +836,8 @@ async def _event_stream_v2(
                 payload.get("type"),
                 payload.get("phase"),
                 payload.get("action"),
+                payload.get("prompt_hash"),
+                payload.get("prompt_version"),
             )
             if signature == last_trace_signature:
                 return
@@ -622,6 +855,8 @@ async def _event_stream_v2(
                     "event_type": payload.get("type"),
                     "phase": payload.get("phase"),
                     "supervisor_action": payload.get("action"),
+                    "prompt_hash": payload.get("prompt_hash"),
+                    "prompt_version": payload.get("prompt_version"),
                 },
             )
             await _emit_event("trace", payload)
@@ -630,56 +865,129 @@ async def _event_stream_v2(
             nonlocal emitted_any_token, latest_state, token_count, done_sent
             try:
                 if hasattr(graph, "astream_events"):
+                    event_count = 0
+                    if SSE_DEBUG or _lg_trace_enabled():
+                        logger.info(
+                            "langgraph_v2_stream_mode",
+                            extra={
+                                "request_id": request_id,
+                                "chat_id": req.chat_id,
+                                "user_id": scoped_user_id,
+                                "mode": "astream_events",
+                            },
+                        )
                     async for raw_event in graph.astream_events(initial_state, config=config):
                         if not isinstance(raw_event, dict):
                             continue
+                        event_count += 1
                         event_name = str(raw_event.get("event") or "")
                         node_name = str(raw_event.get("name") or "")
                         data = raw_event.get("data") if isinstance(raw_event.get("data"), dict) else {}
                         ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                         if event_name == "on_node_start":
                             await _emit_event("node_start", {"node": node_name, "ts": ts})
+                            await _emit_trace("node_start", data=data, meta=raw_event.get("metadata"), state=latest_state)
                         elif event_name == "on_chat_model_stream":
-                            chunk = data.get("chunk") if isinstance(data, dict) else {}
-                            text = str(chunk.get("content") or "") if isinstance(chunk, dict) else ""
-                            if text:
+                            chunk = data.get("chunk") if isinstance(data, dict) else None
+                            stream_node = _resolve_stream_node_name(
+                                node_name=node_name,
+                                meta=raw_event.get("metadata"),
+                            )
+                            text = _extract_stream_token_text(chunk, stream_node=stream_node)
+                            if isinstance(text, str) and text:
                                 emitted_any_token = True
                                 token_count += 1
                                 await _emit_event("token", {"type": "token", "text": text})
                         elif event_name == "on_node_end":
                             await _emit_event("node_end", {"node": node_name, "ts": ts})
+                            # Prometheus node counter — never raises
+                            try:
+                                from app.core.metrics import graph_node_runs_total
+                                if node_name:
+                                    graph_node_runs_total.labels(node=node_name).inc()
+                            except Exception:
+                                pass
                             output = data.get("output")
                             if isinstance(output, (SealAIState, dict)):
                                 latest_state = output
-                                payload = _build_state_update_payload(latest_state)
-                                if payload:
-                                    await _emit_event("state_update", payload)
+                            await _emit_trace(
+                                "node_end",
+                                data=(output if isinstance(output, (SealAIState, dict)) else data),
+                                meta=raw_event.get("metadata"),
+                                state=latest_state,
+                            )
                         elif event_name == "on_error":
                             await _emit_event("error", {"type": "error", "message": "internal_error", "request_id": request_id})
                             await _emit_event("done", {"type": "done", "chat_id": req.chat_id, "request_id": request_id, "client_msg_id": req.client_msg_id})
                             return
+                    if SSE_DEBUG or _lg_trace_enabled():
+                        logger.info(
+                            "langgraph_v2_stream_mode_complete",
+                            extra={
+                                "request_id": request_id,
+                                "chat_id": req.chat_id,
+                                "user_id": scoped_user_id,
+                                "mode": "astream_events",
+                                "event_count": event_count,
+                                "token_count": token_count,
+                            },
+                        )
                 elif hasattr(graph, "astream"):
                     async for mode, data in graph.astream(initial_state, config=config, stream_mode=["messages", "values"]):
                         if mode == "messages":
-                            token, _meta = data if isinstance(data, tuple) and len(data) == 2 else (data, None)
-                            text = _extract_stream_token_text(token)
-                            if text:
+                            token, meta = data if isinstance(data, tuple) and len(data) == 2 else (data, None)
+                            stream_node = _resolve_stream_node_name(meta=meta)
+                            text = _extract_stream_token_text(token, stream_node=stream_node)
+                            if isinstance(text, str) and text:
                                 emitted_any_token = True
                                 token_count += 1
                                 await _emit_event("token", {"type": "token", "text": text})
                         elif mode == "values":
                             if isinstance(data, (SealAIState, dict)):
                                 latest_state = data
-                                payload = _build_state_update_payload(latest_state)
-                                if payload:
-                                    await _emit_event("state_update", payload)
+                                await _emit_trace("values", data=data, state=latest_state)
 
+                snapshot = None
                 if hasattr(graph, "aget_state"):
                     snapshot = await graph.aget_state(config)
                     if hasattr(snapshot, "values"):
-                        latest_state = snapshot.values
+                        snapshot_values = _state_values_to_dict(snapshot.values)
+                        if snapshot_values:
+                            latest_state = snapshot.values
 
                 result_state = latest_state if isinstance(latest_state, SealAIState) else SealAIState.model_validate(latest_state or {})
+                state_values = _state_values_to_dict(result_state)
+                interrupted = bool(snapshot is not None and _snapshot_waiting_on_human_review(snapshot))
+                if interrupted:
+                    checkpoint_id = _extract_snapshot_checkpoint_id(
+                        snapshot,
+                        state_values,
+                        fallback=f"{req.chat_id}:{uuid.uuid4().hex}",
+                    )
+                    await _emit_event(
+                        "interrupt",
+                        {
+                            "thread_id": req.chat_id,
+                            "checkpoint_id": checkpoint_id,
+                            "reason": "Paused before human_review_node",
+                            "required_action": "approve_specification",
+                        },
+                    )
+                if _should_emit_confirm_checkpoint(result_state):
+                    checkpoint_payload = result_state.confirm_checkpoint or build_confirm_checkpoint_payload(
+                        result_state,
+                        action=str(result_state.pending_action or "human_review"),
+                        checkpoint_id=result_state.confirm_checkpoint_id,
+                    )
+                    await _emit_event(
+                        "checkpoint_required",
+                        {
+                            "chat_id": req.chat_id,
+                            "checkpoint_id": checkpoint_payload.get("checkpoint_id"),
+                            "pending_action": checkpoint_payload.get("action"),
+                            "risk": checkpoint_payload.get("risk"),
+                        },
+                    )
                 final_text = (result_state.final_text or "")
                 if (not emitted_any_token) and final_text.strip():
                     for chunk in _chunk_text(final_text.strip()):
@@ -698,6 +1006,20 @@ async def _event_stream_v2(
                     },
                 )
                 done_sent = True
+
+                # Audit log — fire-and-forget, never blocks
+                try:
+                    from app.services.audit.audit_logger import get_global_audit_logger
+                    _al = get_global_audit_logger()
+                    if _al is not None:
+                        _al.append(
+                            session_id=req.chat_id,
+                            tenant_id=tenant_id,
+                            state=_state_values_to_dict(result_state),
+                        )
+                except Exception:
+                    pass
+
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # pragma: no cover
@@ -851,40 +1173,32 @@ async def langgraph_chat_v2_endpoint(
             "param_snapshot_updated_at_max": updated_max,
         },
     )
-    async def _stream() -> AsyncIterator[str]:
-        try:
-            try:
-                state = await _run_graph_to_state(request, user_id=scoped_user_id, username=user.username)
-            except TypeError:
-                state = await _run_graph_to_state(request, user_id=scoped_user_id)
-            final_text = (state.final_text or "").strip()
-            if final_text:
-                yield _format_sse("token", {"type": "token", "text": final_text}).decode("utf-8")
-            yield _format_sse(
-                "done",
-                {
-                    "type": "done",
-                    "chat_id": request.chat_id,
-                    "request_id": request_id,
-                    "client_msg_id": request.client_msg_id,
-                    "phase": state.phase,
-                    "last_node": state.last_node,
-                    "awaiting_confirmation": bool(state.awaiting_user_confirmation),
-                    "checkpoint_id": state.confirm_checkpoint_id,
-                },
-            ).decode("utf-8")
-        except Exception:
-            yield _format_sse("error", {"type": "error", "message": "internal_error", "request_id": request_id}).decode("utf-8")
-            yield _format_sse(
-                "done",
-                {
-                    "type": "done",
-                    "chat_id": request.chat_id,
-                    "request_id": request_id,
-                    "client_msg_id": request.client_msg_id,
-                },
-            ).decode("utf-8")
-
+    scope_values = sorted({str(scope).strip() for scope in (user.scopes or []) if str(scope).strip()})
+    has_mcp_pim_read = "mcp:pim:read" in scope_values
+    has_mcp_knowledge_read = "mcp:knowledge:read" in scope_values
+    logger.info(
+        "langgraph_v2_auth_scopes",
+        extra={
+            "request_id": request_id,
+            "chat_id": request.chat_id,
+            "user": user.user_id,
+            "username": user.username,
+            "scope_count": len(scope_values),
+            "scopes": scope_values,
+            "has_mcp_pim_read": has_mcp_pim_read,
+            "has_mcp_knowledge_read": has_mcp_knowledge_read,
+        },
+    )
+    stream = _event_stream_v2(
+        request,
+        user_id=scoped_user_id,
+        username=user.username,
+        auth_scopes=user.scopes,
+        tenant_id=user.tenant_id,
+        legacy_user_id=legacy_user_id,
+        request_id=request_id,
+        last_event_id=last_event_id,
+    )
     headers = {
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
@@ -892,7 +1206,7 @@ async def langgraph_chat_v2_endpoint(
     }
     if request_id:
         headers["X-Request-Id"] = request_id
-    return StreamingResponse(_stream(), media_type="text/event-stream", headers=headers)
+    return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
 
 
 @router.post("/confirm/go")
@@ -913,6 +1227,7 @@ async def confirm_go(
             thread_id=body.chat_id,
             user_id=scoped_user_id,
             username=user.username,
+            auth_scopes=user.scopes,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
         )
@@ -1002,6 +1317,87 @@ async def confirm_go(
         ) from exc
 
 
+@router.post("/chat/v2/threads/{thread_id}/runs/resume")
+async def resume_run(
+    thread_id: str,
+    body: HITLResumeRequest,
+    raw_request: Request,
+    user: RequestUser = Depends(get_current_request_user),
+) -> Dict[str, Any]:
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    scoped_user_id = canonical_user_id(user)
+    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
+    try:
+        thread_id = (thread_id or "").strip()
+        if not thread_id:
+            raise HTTPException(status_code=400, detail=error_detail("missing_thread_id", request_id=request_id))
+        if not (body.checkpoint_id or "").strip():
+            raise HTTPException(status_code=400, detail=error_detail("missing_checkpoint_id", request_id=request_id))
+
+        graph, config = await _build_graph_config(
+            thread_id=thread_id,
+            user_id=scoped_user_id,
+            username=user.username,
+            auth_scopes=user.scopes,
+            legacy_user_id=legacy_user_id,
+            request_id=request_id,
+        )
+        snapshot = await graph.aget_state(config)
+        state_values = _state_values_to_dict(snapshot.values)
+        state_checkpoint_id = state_values.get("confirm_checkpoint_id") if isinstance(state_values, dict) else None
+        if (
+            isinstance(state_checkpoint_id, str)
+            and state_checkpoint_id.strip()
+            and state_checkpoint_id.strip() != body.checkpoint_id.strip()
+        ):
+            raise HTTPException(status_code=409, detail=error_detail("checkpoint_mismatch", request_id=request_id))
+
+        # Resume contract payload passed to graph runtime (LangGraph resume protocol).
+        resume_payload = {
+            "checkpoint_id": body.checkpoint_id,
+            "action": body.command.action,
+            "feedback": body.command.feedback,
+            "override_params": body.command.override_params or {},
+        }
+        result = await graph.ainvoke(Command(resume=resume_payload), config=config)
+        state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result or {})
+        return {
+            "ok": True,
+            "thread_id": thread_id,
+            "checkpoint_id": body.checkpoint_id,
+            "action": body.command.action,
+            "phase": state.phase,
+            "last_node": state.last_node,
+            "final_text": state.final_text or "",
+            "requires_human_review": bool(getattr(state, "requires_human_review", False)),
+        }
+    except HTTPException:
+        raise
+    except InvalidUpdateError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail("invalid_resume_command", request_id=request_id, message=str(exc)),
+        ) from exc
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "langgraph_v2_resume_error",
+            extra={
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "user": user.user_id,
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
+
+
 @router.post("/parameters/patch")
 async def patch_parameters(
     body: ParametersPatchRequest,
@@ -1033,6 +1429,7 @@ async def patch_parameters(
             thread_id=chat_id,
             user_id=scoped_user_id,
             username=user.username,
+            auth_scopes=user.scopes,
             legacy_user_id=legacy_user_id,
             request_id=request_id,
         )

@@ -565,6 +565,18 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
 
     result = run_quality_gate(calc_result, profile)
 
+    # Prometheus metrics — never raises, must not degrade reliability
+    try:
+        from app.core.metrics import qgate_checks_total
+        for chk in result.checks:
+            qgate_checks_total.labels(
+                check_name=chk.check_id,
+                severity=chk.severity,
+                passed=str(chk.passed),
+            ).inc()
+    except Exception:  # noqa: BLE001
+        pass
+
     # Update is_critical_application from FLAG check
     critical_check = next(
         (c for c in result.checks if c.check_id == "critical_flag"), None

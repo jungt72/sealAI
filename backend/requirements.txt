@@ -71,6 +71,10 @@ redis==7.1.0
 # Lokale Embeddings (RAG Ingest & Query)
 fastembed==0.7.4
 onnxruntime==1.23.2
+numpy==2.3.4
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0+cpu
+sentence-transformers==5.1.2
 
 # =============================================================================
 # Datenbanken
@@ -95,6 +99,7 @@ cryptography==46.0.4
 # Logging / Observability
 # =============================================================================
 structlog==25.5.0
+prometheus-client>=0.20,<1.0
 
 # =============================================================================
 # Prompting / Templates
@@ -114,3 +119,6 @@ pypdf==5.6.0
 # - Alembic nutzt POSTGRES_SYNC_URL (psycopg2)
 # - Runtime nutzt DATABASE_URL (asyncpg)
 ###############################################################################
+nest_asyncio==1.6.0
+psycopg-pool
+psycopg[binary]
