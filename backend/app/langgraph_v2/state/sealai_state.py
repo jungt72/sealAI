@@ -389,6 +389,11 @@ class SealAIState(BaseModel):
     calculation_result: Optional[Dict[str, Any]] = None
     is_critical_application: bool = False
 
+    # v4.4.0 Sprint 7: P4.5 Quality Gate
+    critique_log: List[str] = Field(default_factory=list)
+    qgate_has_blockers: bool = False
+    qgate_result: Optional[Dict[str, Any]] = None
+
     analysis_complete: bool = False
     calc_results_ok: bool = False
     calc_results: Optional[CalcResults] = None

@@ -54,6 +54,7 @@ PhaseLiteral: TypeAlias = Literal[
     "preflight_parameters",
     "extraction",
     "calculation",
+    "quality_gate",
     "consulting",
     "knowledge",
     "validation",

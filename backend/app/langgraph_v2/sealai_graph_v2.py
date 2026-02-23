@@ -41,6 +41,7 @@ from app.services.rag.nodes.p3_gap_detection import node_p3_gap_detection
 from app.services.rag.nodes.p3_5_merge import node_p3_5_merge
 from app.services.rag.nodes.p4a_extract import node_p4a_extract
 from app.services.rag.nodes.p4b_calc_render import node_p4b_calc_render
+from app.services.rag.nodes.p4_5_quality_gate import node_p4_5_qgate
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node, confirm_recommendation_node
 from app.langgraph_v2.nodes.nodes_supervisor import (
@@ -532,6 +533,16 @@ def _reducer_router(state: SealAIState) -> str:
     return "standard"
 
 
+def _qgate_router(state: SealAIState) -> str:
+    if bool(getattr(state, "qgate_has_blockers", False)):
+        return "has_blockers"
+    return "no_blockers"
+
+
+async def _qgate_router_async(state: SealAIState) -> str:
+    return _qgate_router(state)
+
+
 async def _node_router_dispatch_async(state: SealAIState) -> str:
     return _node_router_dispatch(state)
 
@@ -593,6 +604,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     product_router = _product_router_async if require_async else _product_router
     frontdoor_router = _frontdoor_router_async if require_async else _frontdoor_router
     reducer_router = _reducer_router_async if require_async else _reducer_router
+    qgate_router = _qgate_router_async if require_async else _qgate_router
 
     # Node registration
     builder.add_node("profile_loader_node", profile_loader_node) # Long-term Memory
@@ -603,6 +615,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("node_p3_5_merge", node_p3_5_merge)          # v4.4.0 Sprint 5: P3.5 Merge
     builder.add_node("node_p4a_extract", node_p4a_extract)       # v4.4.0 Sprint 6: P4a Parameter-Extraction
     builder.add_node("node_p4b_calc_render", node_p4b_calc_render)  # v4.4.0 Sprint 6: P4b MCP Calc + Render
+    builder.add_node("node_p4_5_qgate", node_p4_5_qgate)          # v4.4.0 Sprint 7: P4.5 Quality Gate
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
     builder.add_node("smalltalk_node", smalltalk_node)
@@ -660,7 +673,15 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_edge("node_p3_gap_detection", "node_p3_5_merge")
     builder.add_edge("node_p3_5_merge", "node_p4a_extract")       # Sprint 6: P3.5 → P4a
     builder.add_edge("node_p4a_extract", "node_p4b_calc_render")  # Sprint 6: P4a → P4b
-    builder.add_edge("node_p4b_calc_render", "resume_router_node")  # Sprint 6: P4b → resume
+    builder.add_edge("node_p4b_calc_render", "node_p4_5_qgate")      # Sprint 7: P4b → Q-Gate
+    builder.add_conditional_edges(                                    # Sprint 7: Q-Gate routing
+        "node_p4_5_qgate",
+        qgate_router,
+        {
+            "no_blockers": "resume_router_node",
+            "has_blockers": "response_node",
+        },
+    )
 
     builder.add_conditional_edges(
         "resume_router_node",

@@ -16,6 +16,7 @@ PHASE = SimpleNamespace(
     PREFLIGHT_PARAMETERS="preflight_parameters",
     EXTRACTION="extraction",
     CALCULATION="calculation",
+    QUALITY_GATE="quality_gate",
     CONSULTING="consulting",
     KNOWLEDGE="knowledge",
     VALIDATION="validation",
