@@ -22,6 +22,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from langgraph.types import Command, Send
+
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.utils.messages import latest_user_text
@@ -158,10 +160,11 @@ def _merge_extraction_into_profile(
 # ---------------------------------------------------------------------------
 
 
-def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
     """P1 Context Node — extract/update WorkingProfile from user messages.
 
     Wired after node_router for 'new_case' and 'follow_up' paths.
+    Fans out to P2 (RAG Material-Lookup) and P3 (Gap-Detection) in parallel.
     Does NOT touch RAG retrieval, material research, or intent classification.
     """
     user_text = latest_user_text(state.messages) or ""
@@ -222,7 +225,15 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     if error_hint:
         result["error"] = error_hint
 
-    return result
+    # Fan out to P2 (RAG Material-Lookup) and P3 (Gap-Detection) in parallel
+    updated_state = state.model_copy(update=result)
+    return Command(
+        update=result,
+        goto=[
+            Send("node_p2_rag_lookup", updated_state),
+            Send("node_p3_gap_detection", updated_state),
+        ],
+    )
 
 
 __all__ = [

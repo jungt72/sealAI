@@ -36,6 +36,9 @@ logger = structlog.get_logger("langgraph_v2.graph")
 from app.langgraph_v2.nodes.profile_loader import profile_loader_node
 from app.langgraph_v2.nodes.node_router import node_router
 from app.services.rag.nodes.p1_context import node_p1_context
+from app.services.rag.nodes.p2_rag_lookup import node_p2_rag_lookup
+from app.services.rag.nodes.p3_gap_detection import node_p3_gap_detection
+from app.services.rag.nodes.p3_5_merge import node_p3_5_merge
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node, confirm_recommendation_node
 from app.langgraph_v2.nodes.nodes_supervisor import (
@@ -593,6 +596,9 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("profile_loader_node", profile_loader_node) # Long-term Memory
     builder.add_node("node_router", node_router)          # v4.4.0 Sprint 3: Router Node
     builder.add_node("node_p1_context", node_p1_context)  # v4.4.0 Sprint 4: P1 Context Node
+    builder.add_node("node_p2_rag_lookup", node_p2_rag_lookup)    # v4.4.0 Sprint 5: P2 RAG Material-Lookup
+    builder.add_node("node_p3_gap_detection", node_p3_gap_detection)  # v4.4.0 Sprint 5: P3 Gap-Detection
+    builder.add_node("node_p3_5_merge", node_p3_5_merge)          # v4.4.0 Sprint 5: P3.5 Merge
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
     builder.add_node("smalltalk_node", smalltalk_node)
@@ -644,8 +650,11 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
             "rfq_trigger": "response_node",
         },
     )
-    # P1 → existing flow (Sprint 5 will fan out to P2/P3 instead)
-    builder.add_edge("node_p1_context", "resume_router_node")
+    # Sprint 5: P1 fans out to P2/P3 via Command/Send (no direct edge needed).
+    # P2/P3 workers → P3.5 merge → existing flow
+    builder.add_edge("node_p2_rag_lookup", "node_p3_5_merge")
+    builder.add_edge("node_p3_gap_detection", "node_p3_5_merge")
+    builder.add_edge("node_p3_5_merge", "resume_router_node")
 
     builder.add_conditional_edges(
         "resume_router_node",

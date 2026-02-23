@@ -363,6 +363,7 @@ class SealAIState(BaseModel):
     coverage_gaps: List[str] = Field(default_factory=list)
     recommendation_ready: bool = False
     recommendation_go: bool = False
+    gap_report: Dict[str, Any] = Field(default_factory=dict)  # v4.4.0 Sprint 5: P3 Gap-Detection output
 
     # Intent / Use-Case
     intent: Optional[Intent] = None
