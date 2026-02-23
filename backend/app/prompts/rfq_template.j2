@@ -1,0 +1,72 @@
+ANFRAGE FÜR ANGEBOT (RFQ) — SealAI v4.4.0
+==========================================
+{% if is_critical_application %}
+╔══════════════════════════════════════════════════════════════╗
+║  ⚠️  KRITISCHE ANWENDUNG — INGENIEURSPRÜFUNG ERFORDERLICH  ⚠️  ║
+╠══════════════════════════════════════════════════════════════╣
+║  Dieser Bericht betrifft eine sicherheitskritische Anwendung  ║
+║  (z. B. Wasserstoff, Sauerstoff, p > 100 bar, T > 400 °C     ║
+║  oder T < –40 °C).                                           ║
+║                                                              ║
+║  Alle technischen Daten MÜSSEN durch einen zugelassenen       ║
+║  Ingenieur geprüft und bestätigt werden, bevor eine          ║
+║  Bestellung aufgegeben wird.                                  ║
+╚══════════════════════════════════════════════════════════════╝
+{% endif %}
+
+1. BETRIEBSPROFIL
+-----------------
+Medium:                   {{ medium }}
+Max. Betriebsdruck:       {{ pressure_max_bar }} bar
+Max. Betriebstemperatur:  {{ temperature_max_c }} °C
+Flanschstandard:          {{ flange_standard }}
+DN:                       {{ flange_dn }}
+PN / Class:               {{ flange_pn_or_class }}
+Verschraubung:            {{ bolt_count }}× {{ bolt_size }}
+Zyklische Belastung:      {{ "Ja" if cyclic_load else "Nein" }}
+{% if emission_class %}Emissionsklasse:          {{ emission_class }}
+{% endif %}{% if industry_sector %}Branche:                  {{ industry_sector }}
+{% endif %}
+
+2. AUSLEGUNGSERGEBNISSE (P4b)
+------------------------------
+Dichtungs-Innen-Ø:              {{ gasket_inner_d_mm }} mm
+Dichtungs-Außen-Ø:              {{ gasket_outer_d_mm }} mm
+Erforderliche Dichtungsspannung: {{ required_gasket_stress_mpa }} MPa
+{% if available_bolt_load_kn is not none %}Verfügbare Verschraubungskraft:  {{ available_bolt_load_kn }} kN
+{% endif %}Sicherheitsfaktor:              {{ safety_factor }}
+Temperaturgegenwert:             {{ temperature_margin_c }} K
+Druckgegenwert:                  {{ pressure_margin_bar }} bar
+
+3. QUALITÄTSPRÜFUNG (P4.5)
+---------------------------
+{% if critique_log %}Befunde:
+{% for entry in critique_log %}  • {{ entry }}
+{% endfor %}{% else %}Alle Qualitätsprüfungen bestanden. Keine Befunde.
+{% endif %}
+
+4. PARTNERVERMITTLUNG
+----------------------
+{% if fallback %}HINWEIS: Kein qualifizierter Partner verfügbar.
+Grund: {{ fallback_reason }}
+
+Dieser Bericht kann für eine manuelle Anfrage ohne Partnerbranding
+verwendet werden. Bitte kontaktieren Sie einen Fachhändler direkt.
+{% else %}Vorgeschlagene Partner ({{ matched_partners | length }}):
+{% for p in matched_partners %}
+  [{{ loop.index }}] {{ p.name }}
+       Partner-ID:  {{ p.partner_id }}
+       Standort:    {{ p.locations | join(", ") }}
+       Lieferzeit:  ca. {{ p.delivery_days }} Werktage
+       Bauformen:   {{ p.supported_bauformen | join(", ") }}
+{% endfor %}{% if procurement_warning %}
+HINWEIS: {{ procurement_warning }}
+{% endif %}{% endif %}
+
+══════════════════════════════════════════════════════════════════
+Erstellt von: SealAI v4.4.0  |  Datum: {{ generated_at }}
+Mandant:      {{ tenant_id }}
+
+WICHTIG: Dieser Bericht ist maschinell erstellt und ersetzt keine
+         fachkundige Beratung durch einen Dichttechnik-Spezialisten.
+══════════════════════════════════════════════════════════════════

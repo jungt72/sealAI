@@ -9,8 +9,9 @@ Auth-Dependencies für FastAPI-/WebSocket-Endpoints.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
+from typing import Optional
 
 from fastapi import Depends, HTTPException, WebSocket, status, Header
 
@@ -28,6 +29,8 @@ class RequestUser:
     username: str
     sub: str
     roles: list[str]
+    scopes: list[str] = field(default_factory=list)
+    tenant_id: Optional[str] = None
 
 
 def verify_access_token(token: str) -> dict:
@@ -70,6 +73,42 @@ def _extract_roles(payload: dict) -> list[str]:
     return sorted(roles)
 
 
+def _resolve_tenant_id(payload: dict) -> Optional[str]:
+    claim = (os.getenv("AUTH_TENANT_ID_CLAIM") or "tenant_id").strip()
+    value = payload.get(claim)
+    if value is not None and str(value).strip():
+        return str(value).strip()
+    return None
+
+
+def _extract_scopes(payload: dict) -> list[str]:
+    scopes: set[str] = set()
+    raw_scope = payload.get("scope")
+    if isinstance(raw_scope, str):
+        for scope in raw_scope.replace(",", " ").split():
+            scope = scope.strip()
+            if scope:
+                scopes.add(scope)
+    raw_scp = payload.get("scp")
+    if isinstance(raw_scp, str):
+        for scope in raw_scp.replace(",", " ").split():
+            scope = scope.strip()
+            if scope:
+                scopes.add(scope)
+    elif isinstance(raw_scp, list):
+        for scope in raw_scp:
+            scope_str = str(scope).strip()
+            if scope_str:
+                scopes.add(scope_str)
+
+    # Some Keycloak setups encode fine-grained privileges as roles.
+    # Keep those visible as effective scopes for authorization gates.
+    for role in _extract_roles(payload):
+        if role.startswith("mcp:"):
+            scopes.add(role)
+    return sorted(scopes)
+
+
 def canonical_user_id(user: RequestUser) -> str:
     """Return the canonical user id for scoping (claim-based preferred)."""
     return user.user_id or user.sub
@@ -100,7 +139,9 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
     roles = _extract_roles(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)
+    scopes = _extract_scopes(payload)
+    tenant_id = _resolve_tenant_id(payload)
+    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles, scopes=scopes, tenant_id=tenant_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -143,4 +184,6 @@ async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
     username = _resolve_username(payload)
     sub = str(payload.get("sub") or user_id)
     roles = _extract_roles(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles)
+    scopes = _extract_scopes(payload)
+    tenant_id = _resolve_tenant_id(payload)
+    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles, scopes=scopes, tenant_id=tenant_id)

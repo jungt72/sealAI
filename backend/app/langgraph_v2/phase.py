@@ -17,6 +17,7 @@ PHASE = SimpleNamespace(
     EXTRACTION="extraction",
     CALCULATION="calculation",
     QUALITY_GATE="quality_gate",
+    PROCUREMENT="procurement",
     CONSULTING="consulting",
     KNOWLEDGE="knowledge",
     VALIDATION="validation",

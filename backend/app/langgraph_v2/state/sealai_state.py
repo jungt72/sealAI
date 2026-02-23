@@ -394,6 +394,13 @@ class SealAIState(BaseModel):
     qgate_has_blockers: bool = False
     qgate_result: Optional[Dict[str, Any]] = None
 
+    # v4.4.0 Sprint 8: Tenant isolation
+    tenant_id: Optional[str] = None
+
+    # v4.4.0 Sprint 8: P5 Procurement
+    procurement_result: Optional[Dict[str, Any]] = None
+    rfq_pdf_text: Optional[str] = None
+
     analysis_complete: bool = False
     calc_results_ok: bool = False
     calc_results: Optional[CalcResults] = None

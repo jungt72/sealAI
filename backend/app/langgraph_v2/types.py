@@ -55,6 +55,7 @@ PhaseLiteral: TypeAlias = Literal[
     "extraction",
     "calculation",
     "quality_gate",
+    "procurement",
     "consulting",
     "knowledge",
     "validation",

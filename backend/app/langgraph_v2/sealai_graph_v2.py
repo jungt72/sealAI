@@ -42,6 +42,7 @@ from app.services.rag.nodes.p3_5_merge import node_p3_5_merge
 from app.services.rag.nodes.p4a_extract import node_p4a_extract
 from app.services.rag.nodes.p4b_calc_render import node_p4b_calc_render
 from app.services.rag.nodes.p4_5_quality_gate import node_p4_5_qgate
+from app.services.rag.nodes.p5_procurement import node_p5_procurement
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node, confirm_recommendation_node
 from app.langgraph_v2.nodes.nodes_supervisor import (
@@ -616,6 +617,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("node_p4a_extract", node_p4a_extract)       # v4.4.0 Sprint 6: P4a Parameter-Extraction
     builder.add_node("node_p4b_calc_render", node_p4b_calc_render)  # v4.4.0 Sprint 6: P4b MCP Calc + Render
     builder.add_node("node_p4_5_qgate", node_p4_5_qgate)          # v4.4.0 Sprint 7: P4.5 Quality Gate
+    builder.add_node("node_p5_procurement", node_p5_procurement)   # v4.4.0 Sprint 8: P5 Procurement Engine
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
     builder.add_node("smalltalk_node", smalltalk_node)
@@ -664,7 +666,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
             "p1_context": "node_p1_context",
             "resume_router": "resume_router_node",
             "clarification": "smalltalk_node",
-            "rfq_trigger": "response_node",
+            "rfq_trigger": "node_p5_procurement",
         },
     )
     # Sprint 5: P1 fans out to P2/P3 via Command/Send (no direct edge needed).
@@ -682,6 +684,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
             "has_blockers": "response_node",
         },
     )
+    builder.add_edge("node_p5_procurement", "response_node")          # Sprint 8: P5 → response
 
     builder.add_conditional_edges(
         "resume_router_node",
