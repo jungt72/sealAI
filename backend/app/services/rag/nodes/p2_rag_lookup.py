@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 
-from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState, Source, WorkingMemory
 from app.mcp.knowledge_tool import search_technical_docs
 from app.services.rag.state import WorkingProfile
@@ -98,10 +97,7 @@ def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
             coverage=round(profile.coverage_ratio(), 3) if profile else 0.0,
             run_id=state.run_id,
         )
-        return {
-            "phase": PHASE.RAG,
-            "last_node": "node_p2_rag_lookup",
-        }
+        return {}
 
     query = _build_rag_query(profile)
     logger.info("p2_rag_lookup_query", query=query, run_id=state.run_id)
@@ -119,8 +115,6 @@ def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
             run_id=state.run_id,
         )
         return {
-            "phase": PHASE.RAG,
-            "last_node": "node_p2_rag_lookup",
             "retrieval_meta": {"error": f"{type(exc).__name__}: {exc}"},
         }
 
@@ -166,8 +160,6 @@ def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         "sources": sources,
         "context": rag_context,
         "retrieval_meta": retrieval_meta,
-        "phase": PHASE.RAG,
-        "last_node": "node_p2_rag_lookup",
     }
 
 

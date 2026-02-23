@@ -66,14 +66,12 @@ class TestNodeP2RagLookup:
         """Coverage < 0.2 → skip RAG, return minimal state."""
         state = _make_state(working_profile=WorkingProfile())
         result = node_p2_rag_lookup(state)
-        assert result["last_node"] == "node_p2_rag_lookup"
         assert "context" not in result  # no RAG context
         assert "sources" not in result
 
     def test_no_profile_skips_rag(self):
         state = _make_state(working_profile=None)
         result = node_p2_rag_lookup(state)
-        assert result["last_node"] == "node_p2_rag_lookup"
         assert "context" not in result
 
     @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
@@ -104,7 +102,6 @@ class TestNodeP2RagLookup:
         call_kwargs = mock_search.call_args
         assert call_kwargs.kwargs.get("tenant_id") == "test-user" or call_kwargs[1].get("tenant_id") == "test-user"
 
-        assert result["last_node"] == "node_p2_rag_lookup"
         assert len(result["sources"]) == 1
         assert result["sources"][0].source == "material_catalog.pdf"
         assert "NBR 70" in result["context"]
@@ -123,5 +120,4 @@ class TestNodeP2RagLookup:
         state = _make_state(working_profile=profile)
         result = node_p2_rag_lookup(state)
 
-        assert result["last_node"] == "node_p2_rag_lookup"
         assert "error" in str(result.get("retrieval_meta", {})).lower() or "RuntimeError" in str(result.get("retrieval_meta", {}))

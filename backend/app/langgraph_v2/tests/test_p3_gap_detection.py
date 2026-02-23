@@ -96,7 +96,6 @@ class TestNodeP3GapDetection:
     def test_returns_gap_report_in_state(self):
         state = _make_state(working_profile=WorkingProfile(medium="Dampf"))
         result = node_p3_gap_detection(state)
-        assert result["last_node"] == "node_p3_gap_detection"
         assert "gap_report" in result
         assert isinstance(result["gap_report"], dict)
         assert "missing_critical" in result["gap_report"]

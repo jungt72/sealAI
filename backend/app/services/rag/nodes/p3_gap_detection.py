@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 
-from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
 from app.services.rag.state import WorkingProfile
 
@@ -122,8 +121,6 @@ def node_p3_gap_detection(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
 
     return {
         "gap_report": gap_report,
-        "phase": PHASE.FRONTDOOR,
-        "last_node": "node_p3_gap_detection",
     }
 
 

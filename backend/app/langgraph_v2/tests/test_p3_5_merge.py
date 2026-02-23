@@ -25,7 +25,6 @@ class TestNodeP35Merge:
     def test_merges_p2_and_p3_results(self):
         state = _make_state()
         p2_result = {
-            "last_node": "node_p2_rag_lookup",
             "sources": [
                 Source(snippet="NBR 70 Shore A", source="catalog.pdf", metadata={"panel": "p2_rag_lookup"}),
             ],
@@ -36,7 +35,6 @@ class TestNodeP35Merge:
             ),
         }
         p3_result = {
-            "last_node": "node_p3_gap_detection",
             "gap_report": {
                 "missing_critical": ["flange_standard", "flange_dn"],
                 "missing_optional": ["bolt_count", "bolt_size"],
@@ -65,10 +63,8 @@ class TestNodeP35Merge:
         """P2 returned nothing (sparse profile), P3 has report."""
         state = _make_state()
         p2_result = {
-            "last_node": "node_p2_rag_lookup",
         }
         p3_result = {
-            "last_node": "node_p3_gap_detection",
             "gap_report": {
                 "missing_critical": ["medium", "pressure_max_bar", "temperature_max_c", "flange_standard", "flange_dn"],
                 "missing_optional": [],
