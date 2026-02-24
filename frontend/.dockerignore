@@ -1,4 +1,10 @@
 node_modules
-out
-dist
 .next
+out
+build
+.env.local
+.git
+.gitignore
+README.md
+Dockerfile
+.dockerignore

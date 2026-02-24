@@ -1,0 +1,144 @@
+{
+  "schema_version": "1.3",
+  "generated_at": "2026-02-23",
+  "description": "PTFE Compound Decision Matrix for pre-screening material candidates",
+  "matrix": [
+    {
+      "id": "CDM-001",
+      "filler_id": "ptfe_virgin",
+      "compound_name": "PTFE (unversetzt / Virgin)",
+      "description": "Reines PTFE ohne Füllstoffe — chemisch universell, geringer Reibwert",
+      "screening_conditions": {
+        "temp_max_c": {"lte": 260},
+        "temp_min_c": {"gte": -200},
+        "pressure_max_bar": {"lte": 200},
+        "application_type": {"not_in": ["dynamic_high_load"]}
+      },
+      "hard_exclusions": {
+        "medium_ids": ["hf_acid", "hydrofluoric_acid"],
+        "reason": "Ausschluss nur bei Flusssäure (chemisch nicht beständig)"
+      },
+      "score": 90,
+      "food_grade": true,
+      "rationale": "Universell chemisch beständig, ideal für statische Dichtungen, food-grade. Einschränkung: Kaltfluss unter dauerhafter Last.",
+      "recommended_for": [
+        "statische_flanschdichtungen",
+        "chemisch_aggressive_medien",
+        "lebensmittel_pharma",
+        "allgemeine_abdichtung"
+      ]
+    },
+    {
+      "id": "CDM-002",
+      "filler_id": "ptfe_25_glass",
+      "compound_name": "PTFE + 25% Glasfaser",
+      "description": "Glasfaserverstärktes PTFE — verbesserte Kriechfestigkeit und Druckbelastbarkeit",
+      "screening_conditions": {
+        "temp_max_c": {"lte": 250},
+        "temp_min_c": {"gte": -70},
+        "pressure_max_bar": {"lte": 350}
+      },
+      "hard_exclusions": {
+        "medium_ids": ["hf_acid", "hydrofluoric_acid", "flusssaeure", "strong_fluorides"],
+        "reason": "Glasfaser wird durch Flusssäure und starke Fluoride abgebaut"
+      },
+      "score": 82,
+      "food_grade": false,
+      "rationale": "Besonders geeignet für höhere Drücke und Anwendungen, bei denen Kriechfestigkeit wichtig ist. Nicht für food-grade oder HF-haltige Medien.",
+      "recommended_for": [
+        "hochdruck_statik",
+        "flanschdichtungen_erhöhter_last",
+        "backup_rings_hydraulik"
+      ]
+    },
+    {
+      "id": "CDM-003",
+      "filler_id": "ptfe_15_carbon",
+      "compound_name": "PTFE + 15% Kohlenstoff",
+      "description": "Carbon-gefülltes PTFE — antistatisch, gutes Trockenlaufverhalten",
+      "screening_conditions": {
+        "temp_max_c": {"lte": 250},
+        "temp_min_c": {"gte": -200},
+        "pressure_max_bar": {"lte": 250},
+        "application_type": {"in": ["dry_running", "static", "backup"]}
+      },
+      "hard_exclusions": {
+        "medium_ids": [
+          "salpetersaeure",
+          "nitric_acid",
+          "h2o2_concentrated",
+          "strong_oxidizers"
+        ],
+        "reason": "Starke Oxidationsmittel greifen Kohlenstoff an"
+      },
+      "score": 75,
+      "food_grade": false,
+      "rationale": "Ideal für antistatische Anforderungen und Trockenlauf. Nicht für food-grade oder stark oxidierende Medien.",
+      "recommended_for": [
+        "antistatisch",
+        "trockenlauf",
+        "elektrisch_ableitfähig",
+        "backup_rings"
+      ]
+    },
+    {
+      "id": "CDM-004",
+      "filler_id": "ptfe_60_bronze",
+      "compound_name": "PTFE + 60% Bronze",
+      "description": "Bronze-gefülltes PTFE — hohe Druckfestigkeit und Wärmeableitung",
+      "screening_conditions": {
+        "temp_max_c": {"lte": 200},
+        "temp_min_c": {"gte": -60},
+        "pressure_max_bar": {"lte": 500},
+        "application_type": {"in": ["guide_ring", "high_load", "hydraulic"]}
+      },
+      "hard_exclusions": {
+        "medium_ids": [
+          "ammoniak",
+          "ammonia",
+          "amines",
+          "hf_acid",
+          "salt_water",
+          "strong_acids",
+          "strong_alkalis"
+        ],
+        "reason": "Bronze ist in korrosiven Medien (Säuren, Laugen, Ammoniak, Salzwasser) nicht beständig"
+      },
+      "score": 78,
+      "food_grade": false,
+      "rationale": "Höchste Drucklast unter PTFE-Typen, gute Wärmeableitung. Eingeschränkte chemische Beständigkeit — nur für neutrale Medien (Öle, Hydraulikflüssigkeiten).",
+      "recommended_for": [
+        "führungsringe_hydraulik",
+        "gleitlager_hohe_last",
+        "hydraulikzylinder",
+        "wärmeableitung"
+      ]
+    },
+    {
+      "id": "CDM-005",
+      "filler_id": "ptfe_modified",
+      "compound_name": "Modifiziertes PTFE (ePTFE / mPTFE)",
+      "description": "Modifiziertes PTFE mit reduziertem Kaltfluss — ideal für Rohrleitungsdichtungen",
+      "screening_conditions": {
+        "temp_max_c": {"lte": 260},
+        "temp_min_c": {"gte": -200},
+        "pressure_max_bar": {"lte": 150},
+        "application_type": {"in": ["gasket", "pipe_flange", "pharma", "static"]}
+      },
+      "hard_exclusions": {
+        "medium_ids": ["hf_acid", "hydrofluoric_acid", "flusssaeure"],
+        "reason": "Flusssäure ist bei PTFE generell einzuschränken (Werkzeugverschleiß)"
+      },
+      "score": 88,
+      "food_grade": true,
+      "rationale": "Beste Wahl bei Kriechproblemen mit virgin PTFE. FDA-konform, hervorragend für Pharma und Chemie. Niedrigerer Druckbereich als verstärkte Typen.",
+      "recommended_for": [
+        "rohrleitungsdichtungen",
+        "pharmazeutische_anwendungen",
+        "aggressive_chemikalien",
+        "lebensmittel",
+        "hochwertige_gaskets"
+      ]
+    }
+  ]
+}

@@ -7,8 +7,8 @@ from typing import Dict, List
 
 from langchain_core.messages import HumanMessage
 
+from app.langgraph_v2.io import AskMissingRequest
 from app.langgraph_v2.state import AskMissingScope, SealAIState, TechnicalParameters, WorkingMemory
-from app.langgraph.io import AskMissingRequest
 from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
 
 

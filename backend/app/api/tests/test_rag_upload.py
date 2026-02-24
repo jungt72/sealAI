@@ -167,7 +167,7 @@ async def test_rag_upload_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         current_user=user,
         session=dummy_session,
     )
-    assert payload["status"] == "queued"
+    assert payload["status"] == "processing"
     document_id = payload["document_id"]
 
     status_payload = await rag_endpoint.get_rag_document(
@@ -175,7 +175,7 @@ async def test_rag_upload_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         current_user=user,
         session=dummy_session,
     )
-    assert status_payload["status"] == "queued"
+    assert status_payload["status"] == "processing"
 
     stored = next(iter(dummy_session.docs.values()))
     assert Path(stored.path).exists()
@@ -310,6 +310,6 @@ async def test_rag_upload_retry_failed(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     assert payload["document_id"] == existing_id
     stored = dummy_session.docs[existing_id]
-    assert stored.status == "queued"
+    assert stored.status == "processing"
     assert stored.error is None
     assert len(enqueued) == 1

@@ -100,6 +100,11 @@ class RenderedPrompt(BaseModel):
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
 
 
+def resolve_last_node(left: Optional[str], right: Optional[str]) -> Optional[str]:
+    """Reducer for concurrent writes to last_node: prefer the newest (right) value."""
+    return right if right is not None else left
+
+
 def _coerce_number(value: Any, field_name: str) -> Any:
     if value is None or isinstance(value, (int, float)):
         return value
@@ -139,6 +144,26 @@ class Source(BaseModel):
     snippet: Optional[str] = None
     source: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AnswerContract(BaseModel):
+    resolved_parameters: Dict[str, Any] = Field(default_factory=dict)
+    calc_results: Dict[str, Any] = Field(default_factory=dict)
+    selected_fact_ids: List[str] = Field(default_factory=list)
+    required_disclaimers: List[str] = Field(default_factory=list)
+    respond_with_uncertainty: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class VerificationReport(BaseModel):
+    contract_hash: str
+    draft_hash: str
+    status: Literal["pass", "fail"]
+    failure_type: Optional[str] = None
+    failed_claim_spans: List[Dict[str, Any]] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -347,9 +372,9 @@ class SealAIState(BaseModel):
 
     # Orchestrator meta
     phase: Optional[PhaseLiteral] = None
-    last_node: Optional[str] = None
+    last_node: Annotated[Optional[str], resolve_last_node] = None
     router_classification: Optional[
-        Literal["new_case", "follow_up", "clarification", "rfq_trigger"]
+        Literal["new_case", "follow_up", "clarification", "rfq_trigger", "resume", "ask_user"]
     ] = None
 
     # v4.4.0 P1 Context — structured engineering profile (WorkingProfile)
@@ -399,6 +424,10 @@ class SealAIState(BaseModel):
 
     # v4.4.0 Sprint 8: P5 Procurement
     procurement_result: Optional[Dict[str, Any]] = None
+
+    # v4.4.0 KB Integration: deterministic material decisions from structured knowledge base
+    kb_factcard_result: Dict[str, Any] = Field(default_factory=dict)
+    compound_filter_results: Dict[str, Any] = Field(default_factory=dict)
     rfq_pdf_text: Optional[str] = None
 
     analysis_complete: bool = False
@@ -427,8 +456,18 @@ class SealAIState(BaseModel):
     # Finaler Output / Fehler
     error: Optional[str] = None
     final_text: Optional[str] = None
+    final_answer: Optional[str] = None  # Alias/Copy of final_text for verification node
     final_prompt: Optional[str] = None
     final_prompt_metadata: Dict[str, Any] = Field(default_factory=dict)
+    answer_contract: Optional[AnswerContract] = None
+    draft_text: Optional[str] = None
+    draft_base_hash: Optional[str] = None
+    verification_report: Optional[VerificationReport] = None
+
+    # Number Verification Result
+    verification_passed: bool = True
+    verification_error: Optional[Dict[str, Any]] = None
+    factcard_matches: List[Dict[str, Any]] = Field(default_factory=list)
 
     # Human-in-the-loop confirmation
     pending_action: Optional[str] = None
@@ -523,6 +562,8 @@ __all__ = [
     "CalcResults",
     "Recommendation",
     "Source",
+    "AnswerContract",
+    "VerificationReport",
     "QuestionItem",
     "FactItem",
     "CandidateItem",

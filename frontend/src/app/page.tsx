@@ -1,105 +1,61 @@
-import { Navbar } from "@/components/ui/Navbar";
-import { SectionNav } from "@/components/ui/SectionNav";
-import { IntroHeadline } from "@/components/ui/IntroHeadline";
-import { ProductTabs } from "@/components/ui/ProductTabs";
-import { FeatureGrid } from "@/components/ui/FeatureGrid";
-import { CommunityBlock } from "@/components/ui/CommunityBlock";
-import { NextSteps } from "@/components/ui/NextSteps";
-import { ImageTextBlock } from "@/components/ui/ImageTextBlock";
-import LandingCtaClient from "@/components/LandingCtaClient";
-import { getLandingPageData } from "@/lib/strapi";
-import type { Section } from "@/lib/types";
+import Link from "next/link";
+import { ArrowRight, ShieldCheck, Zap, Activity } from "lucide-react";
 
-const slugify = (value?: string) =>
-  (value ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-
-const buildContentId = (section: Section) =>
-  slugify(section.title) || `section-${section.id}`;
-
-const normalizeSectionHref = (href?: string) => {
-  if (!href) return "#products";
-  if (href.startsWith("#")) return href;
-  const trimmed = href.replace(/^\//, "");
-  return trimmed ? `#${trimmed}` : "#products";
-};
-
-export default async function Page() {
-  const data = await getLandingPageData();
-  const { global, homepage } = data;
-
-  const sectionNavItems =
-    global?.sectionNavItems?.map((item) => ({
-      ...item,
-      href: normalizeSectionHref(item.href),
-    })) ?? [];
-
-  const productTabs = homepage?.productTabs ?? [];
-  const features = homepage?.features ?? [];
-  const sections = homepage?.contentSections ?? [];
-  const nextSteps = homepage?.nextSteps ?? [];
-  const community = homepage?.community;
-  const introHeadline = homepage?.introHeadline ?? "";
-
+export default function Home() {
   return (
-    <>
-      {global?.navbar && <Navbar data={global.navbar} />}
-      <main className="min-h-[100dvh] bg-transparent text-zinc-200">
-        <LandingCtaClient data={homepage?.hero} />
-        {sectionNavItems.length > 0 && <SectionNav sections={sectionNavItems} />}
-        {introHeadline && (
-          <div className="scroll-mt-32">
-            <IntroHeadline text={introHeadline} />
-          </div>
-        )}
-        {productTabs.length > 0 && (
-          <div id="products" className="scroll-mt-32">
-            <ProductTabs tabs={productTabs} />
-          </div>
-        )}
-        {features.length > 0 && (
-          <div id="features" className="scroll-mt-32">
-            <FeatureGrid features={features} />
-          </div>
-        )}
-        {sections.map((section) => (
-          <div
-            id={buildContentId(section)}
-            key={section.id}
-            className="scroll-mt-32"
+    <main className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
+      {/* Hero Section */}
+      <section className="relative flex flex-1 flex-col justify-center items-center overflow-hidden px-6 pt-16 text-center">
+        
+        {/* Abstract Background Elements */}
+        <div className="absolute top-0 left-1/2 -ml-[40rem] shadow-[0_0_1000px_100px_rgba(14,165,233,0.15)] rounded-full w-[80rem] h-[80rem] bg-indigo-500/10 blur-3xl -z-10" />
+        
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/50 px-3 py-1 text-xs font-medium text-slate-400 backdrop-blur">
+          <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          System Operational • v3.1 Platinum
+        </div>
+
+        <h1 className="max-w-4xl text-5xl font-extrabold tracking-tight text-white lg:text-7xl">
+          Industrial AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300">Orchestration</span>
+        </h1>
+        
+        <p className="mt-6 max-w-2xl text-lg text-slate-400">
+          Autonomous multi-agent supervision for high-pressure sealing environments. 
+          Monitor reasoning streams, verify material compatibility, and ensure ISO compliance in real-time.
+        </p>
+
+        <div className="mt-10 flex flex-col gap-4 sm:flex-row">
+          <Link 
+            href="/dashboard"
+            className="inline-flex h-12 items-center justify-center rounded-md bg-gradient-to-r from-sky-600 to-cyan-600 px-8 text-sm font-medium text-white shadow-lg transition-all hover:brightness-110 hover:shadow-cyan-500/25"
           >
-            <ImageTextBlock data={section} />
+            Enter Supervisor Dashboard
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Link>
+          <button disabled className="inline-flex h-12 items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-8 text-sm font-medium text-slate-500 cursor-not-allowed">
+            View Documentation
+          </button>
+        </div>
+
+        {/* Feature Grid Mockup */}
+        <div className="mt-24 grid w-full max-w-5xl grid-cols-1 gap-8 md:grid-cols-3 text-left">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 backdrop-blur transition hover:border-slate-700">
+            <Zap className="h-8 w-8 text-sky-400 mb-4" />
+            <h3 className="font-semibold text-white">Real-Time Reasoning</h3>
+            <p className="mt-2 text-sm text-slate-400">Observe agent thought processes as they execute standard operating procedures.</p>
           </div>
-        ))}
-        {nextSteps.length > 0 && (
-          <div id="next-steps" className="scroll-mt-32">
-            <NextSteps steps={nextSteps} />
+          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 backdrop-blur transition hover:border-slate-700">
+            <ShieldCheck className="h-8 w-8 text-emerald-400 mb-4" />
+            <h3 className="font-semibold text-white">Safety Guardrails</h3>
+            <p className="mt-2 text-sm text-slate-400">Automated verification of hydrogen compatibility and pressure limits.</p>
           </div>
-        )}
-        {community && (
-          <div id="community" className="scroll-mt-32">
-            <CommunityBlock data={community} />
+          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 backdrop-blur transition hover:border-slate-700">
+            <Activity className="h-8 w-8 text-amber-400 mb-4" />
+            <h3 className="font-semibold text-white">Live Telemetry</h3>
+            <p className="mt-2 text-sm text-slate-400">Connect to industrial sensors via MCP protocol for live data ingestion.</p>
           </div>
-        )}
-        <footer className="bg-slate-950/80 border-t border-white/10 text-zinc-300 py-10">
-          <div className="max-w-6xl mx-auto px-6 flex flex-col gap-2 text-sm">
-            <div className="flex flex-wrap gap-4 text-xs uppercase tracking-widest text-zinc-400">
-              <span>{global?.siteName || "SealAI"}</span>
-              <span>© {new Date().getFullYear()}</span>
-            </div>
-            {global?.copyrightText && (
-              <p className="text-xs text-zinc-500">{global.copyrightText}</p>
-            )}
-            <p className="text-xs text-zinc-500">
-              Powered by Strapi-driven content.
-            </p>
-          </div>
-        </footer>
-      </main>
-    </>
+        </div>
+      </section>
+    </main>
   );
 }

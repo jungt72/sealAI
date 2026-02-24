@@ -1,0 +1,222 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SealAI Knowledge Base Schema (FactCards & Gates)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "doc",
+    "sources",
+    "factcards",
+    "gates"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.[2-9]$"
+    },
+    "doc": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "language",
+        "source_hierarchy"
+      ]
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "title",
+          "type",
+          "rank"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "edition": {
+            "type": "string"
+          },
+          "clause": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "factcards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "topic",
+          "property",
+          "value",
+          "source_rank",
+          "source",
+          "confidence",
+          "do_not_infer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^PTFE-F-\\d{3}$"
+          },
+          "topic": {
+            "type": "string"
+          },
+          "property": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "array"
+            ]
+          },
+          "units": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conditions": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "test_method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_rank": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "medium_high",
+              "high"
+            ]
+          },
+          "do_not_infer": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "trigger_patterns",
+          "required_fields_schema",
+          "if_missing_fields",
+          "hard_blocks",
+          "assistant_actions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^PTFE-G-\\d{3}(-[A-Z0-9]+)?$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "trigger_patterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_fields_schema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "field",
+                "type"
+              ],
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "boolean",
+                    "enum"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "if_missing_fields": {
+            "type": "string"
+          },
+          "hard_blocks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assistant_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "superseded"
+            ]
+          },
+          "superseded_by": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

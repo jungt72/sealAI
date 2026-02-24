@@ -1,7 +1,9 @@
-import asyncio
 import os
 
-from app.langgraph_v2.sealai_graph_v2 import get_sealai_graph_v2
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.store.memory import InMemoryStore
+
+from app.langgraph_v2.sealai_graph_v2 import create_sealai_graph_v2
 
 
 def test_sealai_graph_v2_instantiation(monkeypatch):
@@ -12,7 +14,7 @@ def test_sealai_graph_v2_instantiation(monkeypatch):
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "http://localhost")
     monkeypatch.setenv("LANGSMITH_PROJECT", "test-project")
 
-    graph = asyncio.run(get_sealai_graph_v2())
+    graph = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore())
 
     assert graph is not None
     # CompiledStateGraph should expose invoke/ainvoke

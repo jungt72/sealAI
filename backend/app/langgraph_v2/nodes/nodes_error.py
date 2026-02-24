@@ -22,7 +22,7 @@ def smalltalk_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
             "SealAI ist auf Dichtungstechnik spezialisiert. "
             "Bleib kurz und locker, keine langen Monologe."
         ),
-        temperature=0.5,
+        temperature=0,
         max_tokens=120,
         metadata={
             "run_id": state.run_id,
@@ -54,7 +54,7 @@ def out_of_scope_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object
             "Wenn die Frage nicht dazu passt, erkläre höflich den Fokus "
             "und biete Unterstützung für dichtungsbezogene Themen an."
         ),
-        temperature=0.3,
+        temperature=0,
         max_tokens=160,
         metadata={
             "run_id": state.run_id,

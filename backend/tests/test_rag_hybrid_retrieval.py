@@ -90,3 +90,61 @@ def test_hybrid_dedup_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(hits) == 1
     hybrid = meta.get("hybrid") or {}
     assert hybrid.get("overlap") == 1
+
+
+def test_hybrid_retrieve_filters_zero_scores(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.rag import rag_orchestrator as ro
+
+    monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
+    monkeypatch.setattr(
+        ro,
+        "_qdrant_search_with_retry",
+        lambda *_args, **_kwargs: (
+            [
+                {
+                    "text": "irrelevant-zero",
+                    "vector_score": 0.0,
+                    "metadata": {"document_id": "doc-0", "chunk_index": 0, "tenant_id": "tenant-1"},
+                }
+            ],
+            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+        ),
+    )
+    monkeypatch.setattr(
+        ro,
+        "_bm25_search",
+        lambda *_args, **_kwargs: (
+            [
+                {
+                    "text": "irrelevant-zero-bm25",
+                    "sparse_score": 0.0,
+                    "metadata": {"document_id": "doc-1", "chunk_index": 0, "tenant_id": "tenant-1"},
+                }
+            ],
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        ro,
+        "_fallback_external_search",
+        lambda *_args, **_kwargs: [
+            {
+                "text": "low-quality",
+                "vector_score": 0.0,
+                "metadata": {"document_id": "doc-2"},
+            }
+        ],
+    )
+    monkeypatch.setattr(ro, "USE_BM25", True)
+
+    hits, meta = ro.hybrid_retrieve(
+        query="unmatched query",
+        tenant="tenant-1",
+        k=3,
+        use_rerank=False,
+        return_metrics=True,
+    )
+
+    assert hits == []
+    assert meta.get("k_returned") == 0
+    assert meta.get("top_scores") == []

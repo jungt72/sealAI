@@ -17,7 +17,7 @@ IngestFunc = Callable[..., Any]
 async def pick_next_rag_document(session: AsyncSession) -> RagDocument | None:
     stmt = (
         select(RagDocument)
-        .where(RagDocument.status == "queued")
+        .where(RagDocument.status.in_(("queued", "processing")))
         .order_by(RagDocument.created_at.asc())
         .with_for_update(skip_locked=True)
     )
@@ -75,13 +75,13 @@ async def process_rag_document(
         stats = {"elapsed_ms": elapsed_ms}
         if file_size is not None:
             stats["file_size"] = file_size
-        doc.status = "done"
+        doc.status = "indexed"
         doc.ingest_stats = stats
         doc.error = None
         if doc.size_bytes is None and file_size is not None:
             doc.size_bytes = file_size
     except Exception as exc:
-        doc.status = "failed"
+        doc.status = "error"
         doc.error = f"{type(exc).__name__}: {exc}"
     session.add(doc)
     await session.commit()

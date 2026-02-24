@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SealAI Compound Decision Matrix Schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "compound_decision_matrix"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "compound_decision_matrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "filler_id",
+          "filler_type",
+          "forbidden_conditions_structured"
+        ],
+        "properties": {
+          "filler_id": {
+            "type": "string",
+            "pattern": "^PTFE-CMP-[A-Z]+$"
+          },
+          "filler_type": {
+            "type": "string"
+          },
+          "wt_percent_typical": {
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "wear_resistance": {
+            "type": "string"
+          },
+          "abrasivity_to_counterface": {
+            "type": "string"
+          },
+          "chemical_resistance": {
+            "type": "string"
+          },
+          "uhp_suitability": {
+            "type": "string"
+          },
+          "creep_resistance": {
+            "type": "string"
+          },
+          "forbidden_conditions_structured": {
+            "type": "object",
+            "properties": {
+              "min_counterface_hardness_hrc": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "max_pv_limit_MPa_m_s": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "forbidden_media_tags": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "HF",
+                    "molten_alkali",
+                    "strong_alkali",
+                    "oxidizer",
+                    "halogen_fluoride"
+                  ]
+                }
+              },
+              "forbidden_purity_classes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "UHP",
+                    "FDA",
+                    "Pharma_USP_VI"
+                  ]
+                }
+              },
+              "requires_electrical_insulation": {
+                "type": "boolean"
+              },
+              "custom_blocks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "recommended_use": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

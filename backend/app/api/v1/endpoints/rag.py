@@ -3,23 +3,71 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.langgraph_v2.contracts import error_detail
+from app.core.config import settings
 from app.database import get_db
 from app.models.rag_document import RagDocument
 from app.services.auth.dependencies import RequestUser, get_current_request_user
 from app.services.jobs.queue import enqueue_job
 
 router = APIRouter(prefix="/rag", tags=["rag"])
+logger = structlog.get_logger("api.rag")
 
-UPLOAD_ROOT = os.getenv("RAG_UPLOAD_DIR", "/app/data/uploads")
+
+async def _check_upload_rate_limit(tenant_id: str) -> None:
+    """Sliding-window rate limit using Redis incr/expire (no extra dependencies).
+
+    Raises HTTP 429 when the tenant exceeds ``settings.rate_limit_upload``
+    requests within ``settings.rate_limit_window_s`` seconds.
+    Silently skips when Redis is unavailable (fail-open to avoid blocking uploads).
+    """
+    redis_url = os.getenv("REDIS_URL", "")
+    if not redis_url:
+        return
+    try:
+        from redis.asyncio import Redis
+
+        window = settings.rate_limit_window_s
+        limit = settings.rate_limit_upload
+        bucket = int(time.time()) // window
+        key = f"rl:rag_upload:{tenant_id}:{bucket}"
+        async with Redis.from_url(redis_url, decode_responses=True) as r:
+            count = await r.incr(key)
+            if count == 1:
+                await r.expire(key, window * 2)
+        if count > limit:
+            logger.warning(
+                "rag_upload_rate_limited",
+                tenant_id=tenant_id,
+                count=count,
+                limit=limit,
+                window_s=window,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail=error_detail(
+                    "rate_limit_exceeded",
+                    limit=limit,
+                    window_s=window,
+                    retry_after=window - (int(time.time()) % window),
+                ),
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.debug("rag_upload_rate_limit_check_skipped", reason=str(exc))
+
+UPLOAD_ROOT = (os.getenv("RAG_UPLOAD_DIR") or "/app/data/uploads").strip() or "/app/data/uploads"
 RAG_UPLOAD_MAX_BYTES = int(os.getenv("RAG_UPLOAD_MAX_BYTES", str(50 * 1024 * 1024)))
 ALLOWED_VISIBILITY = {"private", "public"}
 ALLOWED_EXT = {".pdf", ".txt", ".md", ".docx"}
@@ -29,6 +77,10 @@ ALLOWED_CT = {
     "text/markdown",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+QDRANT_URL = (os.getenv("QDRANT_URL") or "http://qdrant:6333").rstrip("/")
+QDRANT_API_KEY = (os.getenv("QDRANT_API_KEY") or "").strip() or None
+QDRANT_COLLECTION = (os.getenv("QDRANT_COLLECTION") or "sealai_knowledge").strip()
+_UPLOAD_DIR_READY = False
 
 
 def _normalize_tags(raw: Optional[str]) -> Optional[List[str]]:
@@ -72,6 +124,100 @@ def _cleanup_upload_path(target_path: Path) -> None:
         pass
 
 
+def _resolve_upload_dir(*, tenant_id: str, document_id: str) -> Path:
+    root = Path(UPLOAD_ROOT).resolve()
+    target_dir = (root / tenant_id / document_id).resolve()
+    if target_dir != root and root not in target_dir.parents:
+        raise HTTPException(status_code=500, detail="Invalid upload path")
+    return target_dir
+
+
+def ensure_upload_directory() -> Path:
+    global _UPLOAD_DIR_READY
+    root = Path(UPLOAD_ROOT).resolve()
+    if _UPLOAD_DIR_READY and root.is_dir():
+        return root
+    try:
+        os.makedirs(root, mode=0o777, exist_ok=True)
+    except PermissionError as exc:
+        logger.error(
+            "rag_upload_root_permission_denied",
+            upload_root=str(root),
+            uid=os.getuid(),
+            gid=os.getgid(),
+            error=str(exc),
+        )
+        raise
+    _UPLOAD_DIR_READY = True
+    return root
+
+
+def _qdrant_client():
+    try:
+        from qdrant_client import QdrantClient  # type: ignore
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=error_detail("qdrant_client_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+        ) from exc
+    return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+
+
+def _qdrant_vector_count(*, tenant_id: str, document_id: str) -> int:
+    try:
+        from qdrant_client import models as qmodels  # type: ignore
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=error_detail("qdrant_models_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+        ) from exc
+    client = _qdrant_client()
+    result = client.count(
+        collection_name=QDRANT_COLLECTION,
+        count_filter=qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="tenant_id",
+                    match=qmodels.MatchValue(value=tenant_id),
+                ),
+                qmodels.FieldCondition(
+                    key="document_id",
+                    match=qmodels.MatchValue(value=document_id),
+                ),
+            ]
+        ),
+        exact=True,
+    )
+    return int(getattr(result, "count", 0) or 0)
+
+
+def _qdrant_delete_document(*, tenant_id: str, document_id: str) -> None:
+    try:
+        from qdrant_client import models as qmodels  # type: ignore
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=error_detail("qdrant_models_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+        ) from exc
+    client = _qdrant_client()
+    client.delete(
+        collection_name=QDRANT_COLLECTION,
+        points_selector=qmodels.FilterSelector(
+            filter=qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="tenant_id",
+                        match=qmodels.MatchValue(value=tenant_id),
+                    ),
+                    qmodels.FieldCondition(
+                        key="document_id",
+                        match=qmodels.MatchValue(value=document_id),
+                    ),
+                ]
+            )
+        ),
+        wait=True,
+    )
 @router.post("/upload")
 async def upload_rag_document(
     file: UploadFile = File(...),
@@ -81,7 +227,13 @@ async def upload_rag_document(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
+    try:
+        ensure_upload_directory()
+    except PermissionError as exc:
+        raise HTTPException(status_code=500, detail="Storage permission denied") from exc
+
     tenant_id = current_user.user_id
+    await _check_upload_rate_limit(tenant_id)
     if visibility not in ALLOWED_VISIBILITY:
         raise HTTPException(status_code=400, detail=error_detail("invalid_visibility"))
 
@@ -98,8 +250,20 @@ async def upload_rag_document(
             status_code=415,
             detail=error_detail("unsupported_content_type", content_type=content_type),
         )
-    target_dir = Path(UPLOAD_ROOT) / tenant_id / document_id
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir = _resolve_upload_dir(tenant_id=tenant_id, document_id=document_id)
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError as exc:
+        logger.error(
+            "rag_upload_storage_permission_denied",
+            tenant_id=tenant_id,
+            document_id=document_id,
+            upload_dir=str(target_dir),
+            uid=os.getuid(),
+            gid=os.getgid(),
+            error=str(exc),
+        )
+        raise HTTPException(status_code=500, detail="Storage permission denied") from exc
     target_path = target_dir / f"original{ext}"
 
     digest = hashlib.sha256()
@@ -137,12 +301,24 @@ async def upload_rag_document(
     filename = safe_name or f"upload{ext}"
     existing_doc = await _find_existing_document(session, tenant_id, sha256)
     if existing_doc:
-        if existing_doc.status != "failed":
+        if existing_doc.status not in {"failed", "error"}:
             _cleanup_upload_path(target_path)
             return {"document_id": existing_doc.document_id, "status": existing_doc.status}
 
-        retry_dir = Path(UPLOAD_ROOT) / tenant_id / existing_doc.document_id
-        retry_dir.mkdir(parents=True, exist_ok=True)
+        retry_dir = _resolve_upload_dir(tenant_id=tenant_id, document_id=existing_doc.document_id)
+        try:
+            retry_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError as exc:
+            logger.error(
+                "rag_upload_storage_permission_denied",
+                tenant_id=tenant_id,
+                document_id=existing_doc.document_id,
+                upload_dir=str(retry_dir),
+                uid=os.getuid(),
+                gid=os.getgid(),
+                error=str(exc),
+            )
+            raise HTTPException(status_code=500, detail="Storage permission denied") from exc
         retry_path = retry_dir / f"original{ext}"
         if retry_path != target_path:
             try:
@@ -154,7 +330,7 @@ async def upload_rag_document(
             except OSError:
                 retry_path = target_path
 
-        existing_doc.status = "queued"
+        existing_doc.status = "processing"
         existing_doc.error = None
         existing_doc.visibility = visibility
         existing_doc.filename = filename
@@ -181,13 +357,14 @@ async def upload_rag_document(
             },
         )
 
-        return {"document_id": existing_doc.document_id, "status": "queued"}
+        return {"document_id": existing_doc.document_id, "status": "processing"}
 
     doc = RagDocument(
         document_id=document_id,
         tenant_id=tenant_id,
-        status="queued",
+        status="processing",
         visibility=visibility,
+        enabled=True,
         filename=filename,
         content_type=content_type,
         size_bytes=None,
@@ -214,7 +391,7 @@ async def upload_rag_document(
         },
     )
 
-    return {"document_id": document_id, "status": "queued"}
+    return {"document_id": doc.document_id, "status": doc.status}
 
 
 @router.get("/documents/{document_id}")
@@ -237,6 +414,125 @@ async def get_rag_document(
         "error": doc.error,
         "ingest_stats": doc.ingest_stats,
     }
+
+
+@router.get("/documents/{document_id}/health-check")
+async def rag_document_health_check(
+    document_id: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    doc = await session.get(RagDocument, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
+    if doc.tenant_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail=error_detail("forbidden"))
+
+    file_exists = Path(doc.path).exists()
+    qdrant_points = 0
+    qdrant_error = None
+    try:
+        qdrant_points = _qdrant_vector_count(tenant_id=doc.tenant_id, document_id=doc.document_id)
+    except Exception as exc:
+        qdrant_error = f"{type(exc).__name__}: {exc}"
+
+    status_now = str(doc.status or "")
+    indexed_like = status_now in {"indexed", "done"}
+    vector_missing = indexed_like and qdrant_points <= 0
+    file_missing = indexed_like and not file_exists
+
+    issues: List[str] = []
+    if file_missing:
+        issues.append("missing_file_for_indexed_document")
+    if vector_missing:
+        issues.append("missing_qdrant_vectors_for_indexed_document")
+    if qdrant_error:
+        issues.append("qdrant_check_failed")
+
+    return {
+        "document_id": doc.document_id,
+        "tenant_id": doc.tenant_id,
+        "status": status_now,
+        "collection": QDRANT_COLLECTION,
+        "filesystem": {
+            "path": doc.path,
+            "exists": file_exists,
+        },
+        "qdrant": {
+            "points": qdrant_points,
+            "error": qdrant_error,
+        },
+        "is_consistent": len(issues) == 0,
+        "issues": issues,
+    }
+
+
+@router.post("/documents/{document_id}/reingest")
+async def reingest_rag_document(
+    document_id: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    doc = await session.get(RagDocument, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
+    if doc.tenant_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail=error_detail("forbidden"))
+
+    if not Path(doc.path).exists():
+        raise HTTPException(
+            status_code=409,
+            detail=error_detail("source_file_missing", path=doc.path),
+        )
+
+    doc.status = "processing"
+    doc.error = None
+    doc.ingest_stats = None
+    session.add(doc)
+    await session.commit()
+
+    await enqueue_job(
+        "rag_ingest",
+        {
+            "document_id": doc.document_id,
+            "tenant_id": doc.tenant_id,
+            "path": doc.path,
+            "category": doc.category,
+            "tags": doc.tags,
+            "visibility": doc.visibility,
+            "sha256": doc.sha256,
+        },
+    )
+    return {"document_id": doc.document_id, "status": doc.status}
+
+
+@router.delete("/documents/{document_id}")
+async def delete_rag_document(
+    document_id: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    doc = await session.get(RagDocument, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
+    if doc.tenant_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail=error_detail("forbidden"))
+
+    try:
+        _qdrant_delete_document(tenant_id=doc.tenant_id, document_id=doc.document_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=error_detail("qdrant_delete_failed", reason=f"{type(exc).__name__}: {exc}"),
+        ) from exc
+
+    path = Path(doc.path)
+    if path.exists():
+        _cleanup_upload_path(path)
+
+    await session.delete(doc)
+    await session.commit()
+    return {"document_id": document_id, "deleted": True}
 
 
 @router.get("/documents")

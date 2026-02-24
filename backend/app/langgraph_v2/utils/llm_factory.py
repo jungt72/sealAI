@@ -11,10 +11,41 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Iterator, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.runnables import Runnable
+from openai import APIError, RateLimitError, APITimeoutError
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    before_sleep_log,
+)
 
+from app.core.config import settings
 from app.langgraph_v2.constants import MODEL_PRO
 
 logger = logging.getLogger(__name__)
+
+
+def bind_permitted_tools(chat: ChatOpenAI, user_scopes: List[str] | None = None) -> ChatOpenAI:
+    """
+    Bind MCP tools dynamically based on user scopes.
+
+    Scope-to-tool mapping is centralized in `app.mcp.knowledge_tool.get_permitted_tools`.
+    If no scopes are granted, returns the original model unmodified.
+    """
+    from app.mcp.knowledge_tool import get_permitted_tools
+
+    tools = get_permitted_tools(list(user_scopes or []))
+    if not tools:
+        return chat
+    return chat.bind_tools(tools)
+
+
+def _global_temperature() -> float:
+    try:
+        return float(getattr(settings, "openai_temperature", 0.0) or 0.0)
+    except Exception:
+        return 0.0
 
 # ---------------------------------------------------------------------------
 # Singleton / Cache für Chat-Modelle
@@ -32,12 +63,14 @@ class LazyChatOpenAI(Runnable[Any, Any]):
         streaming: bool = False,
         max_tokens: int | None = None,
         max_retries: int | None = None,
+        cache: bool | None = None,
     ) -> None:
         self._model = model
         self._temperature = temperature
         self._streaming = streaming
         self._max_tokens = max_tokens
         self._max_retries = max_retries
+        self._cache = cache
         self._client: ChatOpenAI | None = None
         self._lock = Lock()
 
@@ -49,12 +82,13 @@ class LazyChatOpenAI(Runnable[Any, Any]):
                         "model": self._model,
                         "streaming": self._streaming,
                     }
-                    if self._temperature is not None:
-                        kwargs["temperature"] = float(self._temperature)
+                    kwargs["temperature"] = _global_temperature()
                     if self._max_tokens is not None:
                         kwargs["max_tokens"] = int(self._max_tokens)
                     if self._max_retries is not None:
                         kwargs["max_retries"] = int(self._max_retries)
+                    if self._cache is not None:
+                        kwargs["cache"] = bool(self._cache)
                     self._client = ChatOpenAI(**kwargs)
         return self._client
 
@@ -83,7 +117,7 @@ def _get_chat_model(model: str, temperature: float | None) -> ChatOpenAI:
     - zentrale Konfiguration (Retry, Temperatur)
     - automatische Integration mit LangSmith/Telemetry, falls Umgebungsvariablen gesetzt sind
     """
-    temp = float(temperature) if temperature is not None else 0.0
+    temp = _global_temperature()
 
     return ChatOpenAI(
         model=model,
@@ -99,7 +133,7 @@ def _get_streaming_chat_model(model: str, temperature: float | None) -> ChatOpen
     Streaming-fähiges Chat-Modell (streaming=True).
     Wird separat gecached, um parallele non-streaming Calls nicht zu beeinflussen.
     """
-    temp = float(temperature) if temperature is not None else 0.0
+    temp = _global_temperature()
     return ChatOpenAI(
         model=model,
         temperature=temp,
@@ -291,6 +325,62 @@ def run_llm(
         )
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIError, RateLimitError, APITimeoutError)),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+async def _invoke_with_retry(chat: Any, messages: list, **kwargs: Any) -> Any:
+    """Internal helper: calls chat.ainvoke() with exponential-backoff retry on transient API errors.
+
+    Retry strategy:
+    - Attempt 1: immediate
+    - Attempt 2: wait 2 s
+    - Attempt 3: wait 4 s (capped at 10 s)
+    - Then re-raise to the caller for final fallback.
+    """
+    return await chat.ainvoke(messages, **kwargs)
+
+
+async def run_llm_async(
+    *,
+    model: str,
+    prompt: str,
+    system: str,
+    temperature: float | None = 1.0,
+    max_tokens: int | None = None,
+    metadata: Dict[str, Any] | None = None,
+) -> str:
+    """Async variant of run_llm — uses ChatOpenAI.ainvoke() with 3× retry on transient errors."""
+    if _use_fake_llm():
+        return _run_fake_llm(
+            model=model,
+            prompt=prompt,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    try:
+        chat = _get_chat_model(model, temperature)
+        messages = [
+            SystemMessage(content=system),
+            HumanMessage(content=prompt),
+        ]
+        extra_kwargs: Dict[str, Any] = {}
+        if max_tokens is not None:
+            extra_kwargs["max_tokens"] = int(max_tokens)
+        response = await _invoke_with_retry(chat, messages, **extra_kwargs)
+        return _normalize_lc_content(response.content).strip()
+    except Exception as e:
+        logger.exception("run_llm_async: Fehler nach allen Retries (model=%s): %s", model, e)
+        return (
+            "Entschuldigung, bei der internen Modellabfrage ist ein Fehler aufgetreten. "
+            "Bitte versuche es in Kürze erneut."
+        )
+
+
 async def run_llm_stream(
     *,
     model: str,
@@ -351,4 +441,4 @@ async def run_llm_stream(
     return "".join(collected).strip()
 
 
-__all__ = ["LazyChatOpenAI", "get_model_tier", "run_llm", "run_llm_stream"]
+__all__ = ["LazyChatOpenAI", "bind_permitted_tools", "get_model_tier", "run_llm", "run_llm_async", "run_llm_stream"]

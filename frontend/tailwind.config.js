@@ -1,70 +1,76 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: 'class',
   content: [
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
+    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
-      fontFamily: {
-        // OpenAI-Hausschrift, Fallback auf SystemSans
-        sans: ['Söhne', 'Inter', 'ui-sans-serif', 'system-ui'],
-      },
       colors: {
-        // Chat-Hintergrund
-        chatBg: '#FFFFFF',           // Main chat area
-        userBg: '#FFFFFF',           // User bubble
-        assistantBg: '#F7F7F8',      // Assistant bubble
-        inputBorder: '#D1D5DB',      // Input-Feld-Rand
-        inputFocus: '#10B981',       // Input-Fokusring (emerald-500)
-      },
-      borderRadius: {
-        md: '6px',  // für Message-Bubbles
-        lg: '8px',  // für Input-Feld
-      },
-      fontSize: {
-        base: ['16px', '24px'],            // Fließtext
-        'xl-title': ['20px', '1.75'],      // Header im Chat
-        sm: ['12px', '18px'],              // Kleintexte
-      },
-      typography: (theme) => ({
-        DEFAULT: {
-          css: {
-            color: theme('colors.gray.800'),
-            a: { color: theme('colors.blue.600'), textDecoration: 'underline' },
-            strong: { fontWeight: '600' },
-            code: {
-              backgroundColor: theme('colors.gray.100'),
-              padding: '0.2rem 0.4rem',
-              borderRadius: '0.25rem',
-              fontSize: '0.875em',
-            },
-            pre: {
-              backgroundColor: theme('colors.gray.800'),
-              color: theme('colors.white'),
-              borderRadius: '0.5rem',
-              padding: '1rem',
-              overflowX: 'auto',
-            },
-            h1: { fontSize: '1.5em', marginTop: '1em', marginBottom: '0.5em', fontWeight: '700' },
-            h2: { fontSize: '1.25em', marginTop: '1em', marginBottom: '0.5em', fontWeight: '600' },
-            h3: { fontSize: '1.1em', marginTop: '1em', marginBottom: '0.5em', fontWeight: '600' },
-            ul: { paddingLeft: '1.25em' },
-            ol: { paddingLeft: '1.25em' },
-            li: { marginTop: '0.25em', marginBottom: '0.25em' },
-            blockquote: {
-              borderLeft: `4px solid ${theme('colors.blue.300')}`,
-              color: theme('colors.gray.500'),
-              fontStyle: 'italic',
-              paddingLeft: '1em',
-              marginTop: '1em',
-              marginBottom: '1em',
-            },
-          },
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
-      }),
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        'seal-platinum': '#E5E7E6',
+        'seal-silver': '#778DA9',
+        'seal-ylnmn': '#415A77',
+        'seal-oxford': '#1B263B',
+        'seal-rich': '#0D1B2A',
+        platinum: {
+          50: "#f8fafc",
+          100: "#f1f5f9",
+          200: "#e2e8f0",
+          300: "#cbd5e1",
+          400: "#94a3b8",
+          500: "#64748b",
+          600: "#475569",
+          700: "#334155",
+          800: "#1e293b",
+          900: "#0f172a",
+          950: "#020617",
+        },
+        industrial: {
+          blue: "#0ea5e9",
+          cyan: "#06b6d4",
+          amber: "#f59e0b",
+          emerald: "#10b981",
+        }
+      },
+      backgroundImage: {
+        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
+        "industrial-gradient": "linear-gradient(to bottom right, #0f172a, #1e293b)",
+      },
     },
   },
-  plugins: [require('@tailwindcss/typography')],
-}
+  plugins: [],
+};

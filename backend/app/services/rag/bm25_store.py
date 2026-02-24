@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 from threading import RLock
@@ -11,15 +12,72 @@ from typing import Any, Dict, Iterable, List, Optional
 from app.services.rag.document import Document
 from langchain_community.retrievers import bm25
 
-DEFAULT_BM25_DIR = os.getenv("RAG_BM25_DIR", "backend/data/rag/bm25")
+_DEFAULT_UPLOAD_ROOT = "/app/data/uploads"
+_DEFAULT_MODELS_ROOT = "/app/data/models"
+_DEFAULT_BM25_SUBDIR = "bm25"
 DEFAULT_BM25_TOP_K = int(os.getenv("RAG_BM25_TOP_K", "60"))
+
+
+def _resolve_upload_root() -> Path:
+    raw = (os.getenv("RAG_UPLOAD_DIR") or _DEFAULT_UPLOAD_ROOT).strip()
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        return Path(_DEFAULT_UPLOAD_ROOT)
+    return candidate
+
+
+def _is_within(base: Path, target: Path) -> bool:
+    try:
+        target.relative_to(base)
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_bm25_dir() -> Path:
+    upload_root = _resolve_upload_root().resolve()
+    models_root = Path(_DEFAULT_MODELS_ROOT).resolve()
+    default_dir = (upload_root / "tmp" / _DEFAULT_BM25_SUBDIR).resolve()
+    configured = (os.getenv("RAG_BM25_DIR") or "").strip()
+
+    configured_path: Path | None = None
+    if configured:
+        raw_path = Path(configured)
+        if raw_path.is_absolute():
+            candidate = raw_path.resolve()
+            if _is_within(upload_root, candidate) or _is_within(models_root, candidate):
+                configured_path = candidate
+
+    candidates = [p for p in [configured_path, default_dir, (models_root / _DEFAULT_BM25_SUBDIR).resolve()] if p is not None]
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except PermissionError:
+            continue
+    raise PermissionError(
+        "No writable BM25 directory under allowed roots. "
+        f"Tried: {[str(p) for p in candidates]}"
+    )
+
+
+def _resolve_explicit_bm25_dir(data_dir: str) -> Path:
+    upload_root = _resolve_upload_root().resolve()
+    models_root = Path(_DEFAULT_MODELS_ROOT).resolve()
+    candidate_raw = Path(data_dir)
+    if not candidate_raw.is_absolute():
+        return _resolve_bm25_dir()
+    candidate = candidate_raw.resolve()
+    if not (_is_within(upload_root, candidate) or _is_within(models_root, candidate)):
+        return _resolve_bm25_dir()
+    return candidate
 
 
 class BM25Repository:
     """Persistent BM25 store with per-collection retrievers."""
 
     def __init__(self, data_dir: Optional[str] = None):
-        self.data_dir = Path(data_dir or DEFAULT_BM25_DIR)
+        self.data_dir = _resolve_explicit_bm25_dir(data_dir) if data_dir else _resolve_bm25_dir()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
         self._documents: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -80,12 +138,62 @@ class BM25Repository:
                 self._retrievers.pop(collection, None)
             return
         docs = self._build_docs(data.values())
-        retriever = bm25.BM25Retriever.from_documents(docs, k=DEFAULT_BM25_TOP_K) if docs else None
+        retriever = None
+        if docs:
+            try:
+                retriever = bm25.BM25Retriever.from_documents(docs, k=DEFAULT_BM25_TOP_K)
+            except Exception:
+                retriever = None
         with self._lock:
             if retriever:
                 self._retrievers[collection] = retriever
             else:
                 self._retrievers.pop(collection, None)
+
+    @staticmethod
+    def _tokenize(text: str) -> List[str]:
+        return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+    def _fallback_keyword_search(
+        self,
+        *,
+        collection: str,
+        query: str,
+        top_k: int,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        query_tokens = self._tokenize(query)
+        if not query_tokens:
+            return []
+        entries = list((self._documents.get(collection) or {}).values())
+        scored: List[tuple[float, Dict[str, Any]]] = []
+        for entry in entries:
+            text = str(entry.get("text") or "")
+            metadata = entry.get("metadata") or {}
+            if metadata_filters and not all(metadata.get(k) == v for k, v in metadata_filters.items()):
+                continue
+            text_tokens = self._tokenize(text)
+            if not text_tokens:
+                continue
+            token_set = set(text_tokens)
+            overlap = sum(1 for token in query_tokens if token in token_set)
+            if overlap <= 0:
+                continue
+            score = overlap / max(1, len(query_tokens))
+            scored.append((float(score), entry))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        hits: List[Dict[str, Any]] = []
+        for score, entry in scored[:top_k]:
+            metadata = dict(entry.get("metadata") or {})
+            hits.append(
+                {
+                    "text": str(entry.get("text") or ""),
+                    "source": metadata.get("source") or metadata.get("document_title") or "keyword_fallback",
+                    "metadata": metadata,
+                    "sparse_score": float(score),
+                }
+            )
+        return hits
 
     def upsert_documents(self, collection: str, documents: Iterable[Document]) -> None:
         entries = self._documents.setdefault(collection, {})
@@ -123,7 +231,12 @@ class BM25Repository:
     ) -> List[Dict[str, Any]]:
         retriever = self._retrievers.get(collection)
         if not retriever:
-            return []
+            return self._fallback_keyword_search(
+                collection=collection,
+                query=query,
+                top_k=top_k,
+                metadata_filters=metadata_filters,
+            )
         processed_query = retriever.preprocess_func(query)
         vectorizer = retriever.vectorizer
         scores = vectorizer.get_scores(processed_query)

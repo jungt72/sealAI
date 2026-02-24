@@ -20,7 +20,7 @@ def test_rag_support_node_skips_on_no_hits(monkeypatch):
 
     monkeypatch.setattr(nf, "search_knowledge_base", FakeSearchTool())
 
-    state = SealAIState(messages=[HumanMessage(content="Test")], user_id="tenant-1")
+    state = SealAIState(messages=[HumanMessage(content="Test")], user_id="tenant-1", requires_rag=True)
     patch = rag_support_node(state)
     meta = patch.get("retrieval_meta") or {}
     assert meta.get("skipped") is True
@@ -43,7 +43,7 @@ def test_rag_support_node_skips_on_low_score(monkeypatch):
 
     monkeypatch.setattr(nf, "search_knowledge_base", FakeSearchTool())
 
-    state = SealAIState(messages=[HumanMessage(content="Test")], user_id="tenant-1")
+    state = SealAIState(messages=[HumanMessage(content="Test")], user_id="tenant-1", requires_rag=True)
     patch = rag_support_node(state)
     meta = patch.get("retrieval_meta") or {}
     assert meta.get("skipped") is True

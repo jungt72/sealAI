@@ -6,6 +6,7 @@ import types
 
 
 def test_ingest_file_enriches_metadata(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("RAG_INGEST_LEGACY_VECTORSTORE", "1")
     if "langchain_qdrant" not in sys.modules:
         qdrant_stub = types.ModuleType("langchain_qdrant")
 
@@ -108,3 +109,37 @@ def test_ingest_file_enriches_metadata(monkeypatch, tmp_path: Path) -> None:
     assert meta.get("source_path") == "doc.txt"
     assert meta.get("page") == 1
     assert meta.get("section") == "Einleitung"
+
+
+def test_ingest_file_skips_empty_document_in_legacy_mode(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("RAG_INGEST_LEGACY_VECTORSTORE", "1")
+    from app.services.rag import rag_ingest
+
+    called = {"from_documents": 0}
+
+    class DummyQdrant:
+        @staticmethod
+        def from_documents(*_args, **_kwargs):
+            called["from_documents"] += 1
+            return None
+
+    class DummyEmbeddings:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(rag_ingest, "QdrantVectorStore", DummyQdrant)
+    monkeypatch.setattr(rag_ingest, "HuggingFaceEmbeddings", DummyEmbeddings)
+    monkeypatch.setattr(rag_ingest, "load_document", lambda _file_path: [])
+
+    file_path = tmp_path / "empty.docx"
+    file_path.write_text("", encoding="utf-8")
+
+    result = rag_ingest.ingest_file(
+        str(file_path),
+        tenant_id="tenant-1",
+        document_id="doc-empty",
+        category="specs",
+    )
+
+    assert result["chunks"] == 0
+    assert called["from_documents"] == 0

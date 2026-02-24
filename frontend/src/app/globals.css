@@ -1,84 +1,44 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme {
-  --color-primary: #0066B1;
-  --color-secondary: #00D4AA;
-  --color-accent: #F5C242;
-  --font-sans: var(--font-inter);
+@layer base {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
 }
 
-:root {
-  --font-inter: "Inter", system-ui, sans-serif;
-  --background: #FFFFFF;
-  --foreground: #1F1F1F;
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
-}
-
-/* Typo-Scale auf 8px-Raster abgestimmt */
-.h1-b2b {
-  font-size: clamp(2.5rem, 1vw + 2rem, 4.5rem);
-  /* ~40–72px */
-  line-height: 1.1;
-  /* very tight */
-  letter-spacing: -0.01em;
-  font-weight: 700;
-}
-
-.h2-b2b {
-  font-size: clamp(2rem, 0.8vw + 1.6rem, 3rem);
-  /* ~32–48px */
-  line-height: 1.25;
-  /* ~40–60px */
-  letter-spacing: -0.005em;
-  font-weight: 700;
-}
-
-.h3-b2b {
-  font-size: clamp(1.5rem, 0.6vw + 1.1rem, 2.125rem);
-  /* ~24–34px */
-  line-height: 1.3;
-  /* ~31–44px */
-  font-weight: 700;
-}
-
-.body-lg-b2b {
-  font-size: 1.125rem;
-  /* 18px */
-  line-height: 1.6;
-  /* ~29px */
-}
-
-/* === NEU: Chat-Layout-Theme mit Grok-Farben und Typografie nur für den Chat-Screen === */
-@import "../styles/chat-layout.css";
-
-/* === SealAI Chat Input – Grok-like Shell ========================= */
-.sai-input-shell {
-  position: relative;
-  width: 100%;
-  max-width: 880px;
-  border-radius: 999px; /* Pill-Form wie Grok */
-  background-color: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.06); /* sehr dezente Kante */
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 10px 32px rgba(15, 23, 42, 0.10); /* weicher Glow nach unten */
-  padding: 10px 14px 8px 14px; /* kompakte Innenabstände */
-  transition:
-    background-color 120ms ease-in-out,
-    box-shadow 120ms ease-in-out,
-    border-color 120ms ease-in-out;
-}
-
-/* Fokus-Glow wie bei Grok, wenn Textarea oder Button fokussiert ist */
-.sai-input-shell:focus-within {
-  border-color: rgba(15, 23, 42, 0.25);
-  box-shadow:
-    0 1px 3px rgba(15, 23, 42, 0.10),
-    0 18px 60px rgba(15, 23, 42, 0.22);
-  background-color: #ffffff;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

@@ -8,7 +8,7 @@ langchain==1.0.2
 langchain-core==1.0.1
 langchain-openai==1.0.1
 openai==2.3.0
-fastapi==0.119.1
+fastapi==0.128.0
 starlette==0.48.0
 httpx==0.28.1
 anyio==4.11.0

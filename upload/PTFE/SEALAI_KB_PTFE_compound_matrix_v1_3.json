@@ -1,0 +1,165 @@
+{
+  "schema_version": "1.3",
+  "doc_id": "SEALAI-KB-PTFE-COMPOUND-MATRIX-001",
+  "domain": "materials_polymers_fluoropolymers_compounds",
+  "purpose": "Deterministic pre-filter for PTFE compound/filler family screening before LLM generation",
+  "warning": "Qualitative screen only. Final selection requires grade-specific datasheets/tests and application conditions (PV, counterface, medium, temperature, purity).",
+  "match_policy": {
+    "forbidden_conditions_logic": "ANY match => exclude candidate pending explicit override justification",
+    "override_requires": [
+      "application_conditions",
+      "counterface_data",
+      "chemical_compatibility_check",
+      "purity_requirement_check"
+    ]
+  },
+  "compound_decision_matrix": [
+    {
+      "filler_id": "PTFE-CMP-VIRGIN",
+      "filler_type": "None (Virgin PTFE)",
+      "wt_percent_typical": 0,
+      "wear_resistance": "Poor",
+      "abrasivity_to_counterface": "Very Low",
+      "chemical_resistance": "Excellent (broad; exceptions exist)",
+      "uhp_suitability": "High (if specific grade + cleaning/qualification)",
+      "creep_resistance": "Poor",
+      "forbidden_conditions": [
+        "High PV dynamic sealing",
+        "High continuous mechanical load (> 5 MPa at RT) without creep validation",
+        "Abrasive media"
+      ],
+      "recommended_use": "Static seals, UHP fluid handling (with qualification), extreme chemicals, FDA/Pharma (grade/compliance specific).",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": null,
+        "max_pv_limit_MPa_m_s": 0,
+        "forbidden_media_tags": [],
+        "forbidden_purity_classes": [],
+        "requires_electrical_insulation": false,
+        "custom_blocks": [
+          "High PV dynamic sealing not recommended without validated grade-specific test data.",
+          "Abrasive media increases wear risk; screen out for severe abrasion unless sacrificial design accepted.",
+          "High continuous load >5 MPa at RT requires creep validation and anti-extrusion design."
+        ]
+      }
+    },
+    {
+      "filler_id": "PTFE-CMP-GLASS",
+      "filler_type": "Glass Fiber / Glass Beads",
+      "wt_percent_typical": "15-25%",
+      "wear_resistance": "Good",
+      "abrasivity_to_counterface": "High",
+      "chemical_resistance": "Good (exceptions apply; filler chemistry matters)",
+      "uhp_suitability": "Low (extractables/particle risk)",
+      "creep_resistance": "Good",
+      "forbidden_conditions": [
+        "Soft counterface (e.g., Aluminum, Bronze, Unhardened Steel < 45 HRC)",
+        "Hydrofluoric acid (HF)",
+        "Strong alkalis (e.g., hot NaOH)",
+        "UHP / Semiconductor wet bench"
+      ],
+      "recommended_use": "General dynamic seals against hardened steel, oxidative environments (validate wear/counterface finish).",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": 45,
+        "max_pv_limit_MPa_m_s": null,
+        "forbidden_media_tags": [
+          "HF",
+          "strong_alkali"
+        ],
+        "forbidden_purity_classes": [
+          "UHP"
+        ],
+        "requires_electrical_insulation": false,
+        "custom_blocks": [
+          "Avoid soft counterfaces due to abrasive wear; hardened shafts and controlled finish required."
+        ]
+      }
+    },
+    {
+      "filler_id": "PTFE-CMP-CARBON",
+      "filler_type": "Carbon / Graphite",
+      "wt_percent_typical": "10-25%",
+      "wear_resistance": "Excellent",
+      "abrasivity_to_counterface": "Low to Medium",
+      "chemical_resistance": "Excellent (grade/filler-system dependent)",
+      "uhp_suitability": "Low (particle shedding / extractables concerns)",
+      "creep_resistance": "Excellent",
+      "forbidden_conditions": [
+        "UHP fluid handling",
+        "Applications requiring high electrical insulation",
+        "Dry running without trace moisture (depending on graphite type and tribo-pair)"
+      ],
+      "recommended_use": "Water/steam applications, higher PV sliding against medium-hard shafts, chemical pumps (validate galvanic/contamination context).",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": null,
+        "max_pv_limit_MPa_m_s": null,
+        "forbidden_media_tags": [],
+        "forbidden_purity_classes": [
+          "UHP"
+        ],
+        "requires_electrical_insulation": true,
+        "custom_blocks": [
+          "Graphite/carbon grades may compromise insulation and UHP cleanliness; validate tribopair and contamination budget."
+        ]
+      }
+    },
+    {
+      "filler_id": "PTFE-CMP-BRONZE",
+      "filler_type": "Bronze",
+      "wt_percent_typical": "40-60%",
+      "wear_resistance": "Excellent",
+      "abrasivity_to_counterface": "Medium",
+      "chemical_resistance": "Poor in many corrosive media",
+      "uhp_suitability": "Zero",
+      "creep_resistance": "Excellent",
+      "forbidden_conditions": [
+        "Acids and corrosive chemicals",
+        "Oxidizing media",
+        "Food / Pharma contact (unless explicitly compliant grade and application allows)",
+        "Electrical insulation required"
+      ],
+      "recommended_use": "Hydraulic cylinders, machine tool guideways, high compressive mechanical load in compatible media.",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": null,
+        "max_pv_limit_MPa_m_s": null,
+        "forbidden_media_tags": [
+          "oxidizer"
+        ],
+        "forbidden_purity_classes": [
+          "FDA",
+          "Pharma_USP_VI"
+        ],
+        "requires_electrical_insulation": true,
+        "custom_blocks": [
+          "Bronze-filled grades incompatible with many corrosive/oxidizing media and conductive by design."
+        ]
+      }
+    },
+    {
+      "filler_id": "PTFE-CMP-POLYMER",
+      "filler_type": "Polymeric (e.g., Polyimide, Ekonol)",
+      "wt_percent_typical": "5-15%",
+      "wear_resistance": "Excellent",
+      "abrasivity_to_counterface": "Very Low",
+      "chemical_resistance": "Good to Excellent (specific filler dependent)",
+      "uhp_suitability": "Medium (depends on polymer filler + extractables)",
+      "creep_resistance": "Good",
+      "forbidden_conditions": [
+        "Extremely strong oxidizing acids (for some polymer fillers)",
+        "Temperatures exceeding degradation point of the specific filler system"
+      ],
+      "recommended_use": "Rotary seals against soft metal shafts (Al, Brass), dry-running gas compressors (with validation).",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": null,
+        "max_pv_limit_MPa_m_s": null,
+        "forbidden_media_tags": [
+          "oxidizer"
+        ],
+        "forbidden_purity_classes": [],
+        "requires_electrical_insulation": false,
+        "custom_blocks": [
+          "Specific polymer filler chemistry/temperature limits must be checked grade-by-grade."
+        ]
+      }
+    }
+  ]
+}

@@ -58,6 +58,8 @@ Felder:
 - cyclic_load: true wenn zyklische/schwellende Belastung erwähnt wird, sonst false
 - emission_class: Emissionsklasse (z.B. "TA-Luft", "VDI 2440", "EPA Method 21")
 - industry_sector: Branche (z.B. "Petrochemie", "Pharma", "Kraftwerk")
+- material: Erwähnter Dichtungswerkstoff (z.B. "NBR", "FKM", "PTFE", "Kyrolon")
+- product_name: Produkt- oder Handelsname (z.B. "Gylon", "Sigraflex")
 
 Antworte ausschließlich mit dem JSON-Objekt. Keine Erklärungen.
 """
@@ -86,6 +88,8 @@ class _P1Extraction(BaseModel):
     cyclic_load: Optional[bool] = None
     emission_class: Optional[str] = None
     industry_sector: Optional[str] = None
+    material: Optional[str] = None
+    product_name: Optional[str] = None
 
     model_config = ConfigDict(extra="ignore")
 

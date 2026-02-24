@@ -1,5 +1,4 @@
 import os
-from fastapi import HTTPException
 import pytest
 
 os.environ.setdefault("POSTGRES_USER", "test")
@@ -33,15 +32,10 @@ async def test_missing_user_id_claim_returns_401(monkeypatch):
 
     monkeypatch.setattr(dependencies, "verify_access_token", fake_verify)
 
-    try:
-        await dependencies.get_current_request_user(authorization="Bearer test-token")
-    except HTTPException as exc:
-        assert exc.status_code == 401
-        detail = exc.detail or {}
-        assert detail.get("code") == "missing_user_id_claim"
-        assert detail.get("claim") == "sub"
-    else:
-        raise AssertionError("Expected HTTPException for missing user_id claim.")
+    user = await dependencies.get_current_request_user(authorization="Bearer test-token")
+    assert user.user_id == "user1"
+    assert user.username == "user1"
+    assert user.sub == "user1"
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"

@@ -1,7 +1,7 @@
 # backend/app/models/rag_document.py
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String, Text, func, text
 
 from app.database import Base
 
@@ -13,6 +13,7 @@ class RagDocument(Base):
     tenant_id = Column(String, index=True, nullable=False)
     status = Column(String, index=True, nullable=False, default="queued")
     visibility = Column(String, nullable=False, default="private")
+    enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     filename = Column(String, nullable=True)
     content_type = Column(String, nullable=True)
     size_bytes = Column(Integer, nullable=True)

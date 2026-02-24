@@ -1,6 +1,8 @@
 """State schemas for LangGraph v2."""
 
+from app.services.rag.state import WorkingProfile
 from .sealai_state import (
+    AnswerContract,
     AskMissingScope,
     Budget,
     CalcResults,
@@ -18,13 +20,17 @@ from .sealai_state import (
     Source,
     TechnicalParameters,
     SealParameterUpdate,
+    VerificationReport,
     WorkingMemory,
 )
 
 __all__ = [
+    "WorkingProfile",
     "SealAIState",
     "Intent",
     "IntentGoal",
+    "AnswerContract",
+    "VerificationReport",
     "CalcResults",
     "QuestionItem",
     "FactItem",

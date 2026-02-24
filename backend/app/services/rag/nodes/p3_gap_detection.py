@@ -121,6 +121,7 @@ def node_p3_gap_detection(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
 
     return {
         "gap_report": gap_report,
+        "last_node": "node_p3_gap_detection",
     }
 
 

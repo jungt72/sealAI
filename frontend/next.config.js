@@ -1,22 +1,21 @@
 /** @type {import('next').NextConfig} */
-const disableTurbopack = process.env.NEXT_DISABLE_TURBOPACK === "1";
-
 const nextConfig = {
-  reactStrictMode: true,
-
-  // erzeugt .next/standalone für schlanke Docker-Runner-Images
-  output: 'standalone',
-
-  // Repo enthält zusätzlich ein Node-Projekt im Root; explizit den Frontend-Root setzen,
-  // damit Next.js nicht das Root-Lockfile als Workspace-Root verwendet.
-  ...(disableTurbopack ? {} : { turbopack: { root: __dirname } }),
-
-  // Builds in CI/Container robuster machen
-  typescript: { ignoreBuildErrors: true },
-
-  // optional – falls envs im Build fehlen, lieber nicht crashen:
-  experimental: {
-    // weitere Flags nur bei Bedarf
+  output: "standalone",
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "**",
+      },
+    ],
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: "http://backend:8000/api/v1/:path*", // Docker internal networking
+      },
+    ];
   },
 };
 

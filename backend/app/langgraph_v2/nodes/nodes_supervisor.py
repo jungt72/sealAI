@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Tuple
+import re
+from typing import Any, Dict, List, Tuple, Literal
 
 from pydantic import ValidationError
+from langgraph.types import Command, Send
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.utils.state_debug import log_state_debug
@@ -13,11 +15,13 @@ from app.langgraph_v2.state import (
     CandidateItem,
     DecisionEntry,
     FactItem,
+    Intent,
     QuestionItem,
     SealAIState,
     Source,
     WorkingMemory,
 )
+from app.langgraph_v2.nodes.nodes_frontdoor import detect_material_or_trade_query
 from app.langgraph_v2.utils.messages import latest_user_text
 
 logger = logging.getLogger(__name__)
@@ -83,6 +87,53 @@ _PARAM_LABELS: Dict[str, str] = {
     "speed_rpm": "Drehzahl (rpm)",
 }
 
+_MATERIAL_DOC_TOKENS: tuple[str, ...] = (
+    "datenblatt",
+    "datasheet",
+    "data sheet",
+    "technical sheet",
+    "werkstoff",
+    "material",
+    "nbr",
+    "fkm",
+    "epdm",
+    "hnbr",
+    "ptfe",
+    "vmq",
+    "ffkm",
+)
+_MATERIAL_CODE_PATTERN = re.compile(r"\b[a-z]{2,6}[-_/]?\d{2,4}\b", re.IGNORECASE)
+_EXPLICIT_KNOWLEDGE_LOOKUP_TOKENS: tuple[str, ...] = (
+    "search_technical_docs",
+    "get_available_filters",
+    "qdrant",
+    "knowledge-base",
+    "knowledge base",
+    "trade_name",
+)
+
+SUPERVISOR_SYSTEM_INSTRUCTION_QDRANT = (
+    "You HAVE access to technical data sheets via the `search_technical_docs` tool in Qdrant. "
+    "This tool performs semantic search on PDF documents. "
+    "Use `get_available_filters` to discover dynamic metadata filters before applying targeted filter constraints. "
+    "For material-data, norm, or datasheet questions, call `search_technical_docs` before answering. "
+    "Never claim you cannot access Qdrant."
+)
+
+
+def _with_supervisor_qdrant_instruction(plan: Dict[str, Any] | None) -> Dict[str, Any]:
+    next_plan = dict(plan or {})
+    raw = next_plan.get("system_instructions")
+    instructions: List[str] = []
+    if isinstance(raw, list):
+        instructions = [str(item).strip() for item in raw if str(item).strip()]
+    elif isinstance(raw, str) and raw.strip():
+        instructions = [raw.strip()]
+    if SUPERVISOR_SYSTEM_INSTRUCTION_QDRANT not in instructions:
+        instructions.append(SUPERVISOR_SYSTEM_INSTRUCTION_QDRANT)
+    next_plan["system_instructions"] = instructions
+    return next_plan
+
 
 def _compute_coverage(required: List[str], missing: List[str]) -> float:
     if not required:
@@ -111,10 +162,9 @@ def supervisor_logic_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     recommendation_ready = coverage_score >= _READY_THRESHOLD
     return {
         "working_memory": wm,
-        # WICHTIG: Phase auf einen gültigen PhaseLiteral-Wert setzen
+        "plan": _with_supervisor_qdrant_instruction(state.plan),
         "phase": PHASE.INTENT,
         "last_node": "supervisor_logic_node",
-        # Deterministic readiness/coverage for supervisor gating.
         "missing_params": missing,
         "coverage_gaps": missing,
         "coverage_score": coverage_score,
@@ -210,9 +260,10 @@ def _coerce_candidates(items: List[CandidateItem | Dict[str, Any]] | None) -> Li
     return candidates
 
 
-def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
     log_state_debug("supervisor_policy_node", state)
     _maybe_set_recommendation_go(state)
+
     missing = _infer_missing_params(state, _REQUIRED_PARAMS_FOR_READY)
     coverage_score = _compute_coverage(_REQUIRED_PARAMS_FOR_READY, missing)
     recommendation_ready = coverage_score >= _READY_THRESHOLD
@@ -222,151 +273,112 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
         questions = _derive_open_questions(state)
         derived = True
 
-    budget = state.budget if isinstance(state.budget, Budget) else Budget.model_validate(state.budget or {})
-    round_index = int(state.round_index or 0)
-    confidence = float(state.confidence or 0.0)
-    awaiting = bool(getattr(state, "awaiting_user_input", False))
-
-    candidates = _coerce_candidates(state.candidates)
-    contradictions = _detect_candidate_contradictions(candidates)
-
-    high_open = [q for q in questions if q.priority == "high" and q.status == "open"]
-
-    reason = "default_finalize"
-    action = ACTION_FINALIZE
     goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
+    user_text = latest_user_text(state.messages or []) or ""
+    flags = dict(state.flags or {})
+    frontdoor_intent_category = str(flags.get("frontdoor_intent_category") or "").upper()
 
-    if goal in ("smalltalk", "out_of_scope"):
-        reason = "non_technical_goal"
-        action = ACTION_FINALIZE
-    elif goal == "troubleshooting_leakage":
-        reason = "troubleshooting_flow"
-        action = ACTION_RUN_TROUBLESHOOTING
-    elif goal == "explanation_or_comparison":
-        comparison_notes = getattr(state.working_memory, "comparison_notes", {}) if state.working_memory else {}
-        has_comparison = bool(comparison_notes.get("comparison_text"))
-        has_rag = bool(comparison_notes.get("rag_context"))
-        # Fallback for patched/stubbed comparison flows: treat node execution as completion signal
-        # so supervisor does not loop forever when notes are intentionally omitted in tests.
-        if not has_comparison and state.last_node in {"material_comparison_node", "rag_support_node"}:
-            has_comparison = True
-        if not has_rag and state.last_node == "rag_support_node":
-            has_rag = True
-        if not has_comparison:
-            reason = "comparison_missing"
-            action = ACTION_RUN_COMPARISON
-        elif bool(getattr(state, "requires_rag", False)) and not has_rag:
-            reason = "comparison_needs_rag"
-            action = ACTION_RUN_PANEL_NORMS_RAG
-        else:
-            reason = "comparison_ready"
-            action = ACTION_FINALIZE
-    elif recommendation_ready and not state.recommendation_go:
-        reason = "await_recommendation_go"
-        action = ACTION_CONFIRM_RECOMMENDATION
-    elif budget.remaining <= 0:
-        reason = "budget_exhausted"
-        action = ACTION_FINALIZE
-    elif round_index >= MAX_SUPERVISOR_ROUNDS:
-        reason = "max_rounds_reached"
-        action = ACTION_FINALIZE
-    elif confidence >= 0.8 and not high_open:
-        reason = "confidence_high"
-        action = ACTION_FINALIZE
-    elif high_open and not awaiting:
-        reason = "missing_high_priority_inputs"
-        action = ACTION_ASK_USER
-    else:
-        missing_calc = state.calc_results is None or not bool(getattr(state, "calc_results_ok", False))
-        material_choice = state.material_choice or {}
-        missing_material = not bool(material_choice.get("material"))
-        intent_needs_sources = bool(getattr(state.intent, "needs_sources", False)) if state.intent else False
-        intent_need_sources = bool(getattr(state.intent, "need_sources", False)) if state.intent else False
-        needs_rag = bool(
-            getattr(state, "requires_rag", False)
-            or intent_needs_sources
-            or intent_need_sources
-            or getattr(state, "need_sources", False)
-        )
+    intent_needs_sources = bool(getattr(state.intent, "needs_sources", False) or getattr(state.intent, "need_sources", False)) if state.intent else False
+    material_trade_query = detect_material_or_trade_query(user_text)
+    explicit_knowledge_lookup = _is_explicit_knowledge_lookup(user_text)
+    doc_like_query = _looks_like_material_doc_query(user_text)
+    has_material_report = _has_material_report(state)
 
-        if missing_calc:
-            reason = "missing_calc_facts"
-            action = ACTION_RUN_PANEL_CALC
-        elif missing_material:
-            reason = "missing_material_decision"
-            action = ACTION_RUN_PANEL_MATERIAL
-        elif contradictions or needs_rag:
-            reason = "resolve_contradictions" if contradictions else "needs_rag"
-            action = ACTION_RUN_PANEL_NORMS_RAG
-        else:
-            reason = "no_action_required"
-            action = ACTION_FINALIZE
-
-    requires_confirm = (
-        action == ACTION_RUN_PANEL_NORMS_RAG
-        and goal != "explanation_or_comparison"
-        and action not in (state.confirmed_actions or [])
-        and not state.awaiting_user_confirmation
+    requires_rag = bool(
+        state.requires_rag
+        or state.need_sources
+        or intent_needs_sources
+        or frontdoor_intent_category == "MATERIAL_RESEARCH"
+        or material_trade_query
+        or explicit_knowledge_lookup
+        or doc_like_query
     )
-    if requires_confirm:
-        pending_action = action
-        action = ACTION_REQUIRE_CONFIRM
-    else:
-        pending_action = state.pending_action
-
-    if state.awaiting_user_confirmation and pending_action:
-        action = ACTION_REQUIRE_CONFIRM
-
-    cost = _ACTION_COSTS.get(action, 0)
-    updated_budget = budget.model_copy()
-    if cost > 0:
-        updated_budget = updated_budget.model_copy(
-            update={
-                "remaining": max(0, updated_budget.remaining - cost),
-                "spent": updated_budget.spent + cost,
-            }
-        )
-
-    new_round = round_index + 1
-    decision_entry = DecisionEntry(
-        round=new_round,
-        action=action,
-        reason=reason,
-        cost=cost,
-        confidence=confidence,
-        open_questions_summary=_open_questions_summary(questions),
+    needs_pricing = bool(flags.get("needs_pricing") or frontdoor_intent_category == "COMMERCIAL")
+    is_safety_critical = bool(flags.get("is_safety_critical"))
+    is_engineering = bool(
+        frontdoor_intent_category == "ENGINEERING_CALCULATION"
+        or goal == "design_recommendation"
     )
 
-    retrieval_meta: Dict[str, Any] | None = None
-    if (
-        goal == "explanation_or_comparison"
-        and action != ACTION_RUN_PANEL_NORMS_RAG
-        and not getattr(state, "requires_rag", False)
-    ):
-        retrieval_meta = {
-            "skipped": True,
-            "reason": "requires_rag_false",
-            "tenant_id": state.user_id,
-        }
+    forced_intent = state.intent
+    if requires_rag:
+        if forced_intent is None:
+            forced_intent = Intent(
+                goal="explanation_or_comparison",
+                confidence=0.8,
+                high_impact_gaps=[],
+                needs_sources=True,
+                need_sources=True,
+            )
+        else:
+            forced_goal = forced_intent.goal
+            if material_trade_query and forced_goal in {"smalltalk", "out_of_scope"}:
+                forced_goal = "explanation_or_comparison"
+            forced_intent = forced_intent.model_copy(
+                update={
+                    "goal": forced_goal,
+                    "needs_sources": True,
+                    "need_sources": True,
+                }
+            )
 
-    patch: Dict[str, Any] = {
-        "next_action": action,
-        "pending_action": pending_action,
-        "decision_log": [*(state.decision_log or []), decision_entry],
-        "round_index": new_round,
-        "budget": updated_budget,
+    update: Dict[str, Any] = {
+        "plan": _with_supervisor_qdrant_instruction(state.plan),
         "phase": PHASE.SUPERVISOR,
         "last_node": "supervisor_policy_node",
         "missing_params": missing,
         "coverage_gaps": missing,
         "coverage_score": coverage_score,
         "recommendation_ready": recommendation_ready,
+        "requires_rag": requires_rag,
+        "need_sources": requires_rag,
     }
-    if retrieval_meta:
-        patch["retrieval_meta"] = retrieval_meta
+    if forced_intent is not None:
+        update["intent"] = forced_intent
     if derived:
-        patch["open_questions"] = questions
-    return patch
+        update["open_questions"] = questions
+
+    actions: List[Send] = []
+    seen_nodes: set[str] = set()
+
+    def _append_action(node: str, payload_state: SealAIState) -> None:
+        if node in seen_nodes:
+            return
+        actions.append(Send(node, payload_state))
+        seen_nodes.add(node)
+
+    if is_safety_critical:
+        _append_action("safety_agent", state.model_copy(update=update))
+
+    if requires_rag and not has_material_report:
+        material_update = dict(update)
+        if forced_intent is not None:
+            material_update["intent"] = forced_intent
+        _append_action("material_agent", state.model_copy(update=material_update))
+
+    if needs_pricing:
+        _append_action("pricing_agent", state.model_copy(update=update))
+
+    if is_engineering and (state.calc_results is None or not bool(state.calc_results_ok)):
+        _append_action("calculator_agent", state.model_copy(update=update))
+
+    if actions:
+        update["next_action"] = "MAP_REDUCE_PARALLEL"
+        return Command(update=update, goto=actions)
+
+    if goal == "troubleshooting_leakage":
+        update["next_action"] = ACTION_RUN_TROUBLESHOOTING
+        return Command(update=update, goto="leakage_troubleshooting_node")
+
+    if goal == "explanation_or_comparison":
+        update["next_action"] = ACTION_RUN_COMPARISON
+        return Command(update=update, goto="material_comparison_node")
+
+    if any(q.priority == "high" and q.status == "open" for q in questions):
+        update["next_action"] = ACTION_ASK_USER
+    else:
+        update["next_action"] = ACTION_FINALIZE
+    return Command(update=update, goto="final_answer_node")
 
 
 def _merge_fact(existing: FactItem | None, update: FactItem) -> FactItem:
@@ -525,13 +537,7 @@ def panel_calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
         else {},
     }
     wm = wm.model_copy(update={"panel_calculator": panel_payload})
-    patch.update(
-        {
-            "working_memory": wm,
-            "phase": PHASE.PANEL,
-            "last_node": "panel_calculator_node",
-        }
-    )
+    patch.update({"working_memory": wm})
     return patch
 
 
@@ -541,20 +547,15 @@ def panel_material_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
 
     patch = material_agent_node(state, *_args, **_kwargs)
     wm = patch.get("working_memory") or state.working_memory or WorkingMemory()
-    panel_payload = {
-        "material_choice": patch.get("material_choice") or state.material_choice,
-        "material_candidates": (patch.get("working_memory") or state.working_memory).material_candidates
-        if (patch.get("working_memory") or state.working_memory)
-        else [],
-    }
-    wm = wm.model_copy(update={"panel_material": panel_payload})
-    patch.update(
+    panel_payload = dict(wm.panel_material or {})
+    panel_payload.update(
         {
-            "working_memory": wm,
-            "phase": PHASE.PANEL,
-            "last_node": "panel_material_node",
+            "material_choice": patch.get("material_choice") or state.material_choice,
+            "material_candidates": list(wm.material_candidates or []),
         }
     )
+    wm = wm.model_copy(update={"panel_material": panel_payload})
+    patch.update({"working_memory": wm})
     return patch
 
 
@@ -565,22 +566,55 @@ def panel_norms_rag_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     return rag_support_node(state, *_args, **_kwargs)
 
 
+def calculator_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    return panel_calculator_node(state, *_args, **_kwargs)
+
+
+def safety_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("safety_agent_node", state)
+    wm = state.working_memory or WorkingMemory()
+    design_notes = dict(wm.design_notes or {})
+    design_notes.update(
+        {
+            "safety_review_required": True,
+            "safety_reason": "High-risk operating conditions detected in frontdoor classification.",
+        }
+    )
+    wm = wm.model_copy(update={"design_notes": design_notes})
+    critical = dict(state.critical or {})
+    critical.update({"status": "requires_safety_review", "target": "safety_agent", "severity": 4})
+    safety_review = {
+        "severity": 4,
+        "code": "SAFETY_CRITICAL_H2_APPLICATION",
+        "reason": "Safety-critical operating conditions require human validation.",
+    }
+    return {
+        "working_memory": wm,
+        "critical": critical,
+        "safety_review": safety_review,
+    }
+
+
+def pricing_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    log_state_debug("pricing_agent_node", state)
+    wm = state.working_memory or WorkingMemory()
+    design_notes = dict(wm.design_notes or {})
+    pricing_payload = {
+        "needs_pricing": True,
+        "quantity": design_notes.get("requested_quantity"),
+        "sku": design_notes.get("requested_sku"),
+    }
+    comparison_notes = dict(wm.comparison_notes or {})
+    comparison_notes.update({"pricing_request": pricing_payload})
+    wm = wm.model_copy(update={"comparison_notes": comparison_notes})
+    return {
+        "working_memory": wm,
+    }
+
+
 def supervisor_route(state: SealAIState) -> str:
-    goal = getattr(state.intent, "goal", "smalltalk") if state.intent else "smalltalk"
-    ready = bool(getattr(state, "recommendation_ready", False))
-    go = bool(getattr(state, "recommendation_go", False))
-    if goal == "design_recommendation":
-        if not ready:
-            return "intermediate"
-        if go:
-            return "design_flow"
-        return "confirm"
-    if goal == "explanation_or_comparison":
-        return "comparison"
-    if goal == "troubleshooting_leakage":
-        return "troubleshooting"
-    if goal == "out_of_scope":
-        return "out_of_scope"
+    # Legacy routing function - now deprecated/unused by main policy
+    # but kept for interface compatibility if imported elsewhere
     return "smalltalk"
 
 
@@ -598,6 +632,38 @@ def _maybe_set_recommendation_go(state: SealAIState) -> None:
         state.recommendation_go = False
 
 
+def _looks_like_material_doc_query(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    if not normalized:
+        return False
+    if any(token in normalized for token in _MATERIAL_DOC_TOKENS):
+        return True
+    return bool(_MATERIAL_CODE_PATTERN.search(normalized))
+
+
+def _is_explicit_knowledge_lookup(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    if not normalized:
+        return False
+    return any(token in normalized for token in _EXPLICIT_KNOWLEDGE_LOOKUP_TOKENS)
+
+
+def _has_material_report(state: SealAIState) -> bool:
+    panel_material = getattr(state.working_memory, "panel_material", {}) if state.working_memory else {}
+    if isinstance(panel_material, dict):
+        docs = panel_material.get("technical_docs")
+        if isinstance(docs, list) and docs:
+            return True
+        rag_context = panel_material.get("rag_context") or panel_material.get("reducer_context")
+        if isinstance(rag_context, str) and rag_context.strip():
+            return True
+    retrieval_meta = state.retrieval_meta or {}
+    reducer_meta = retrieval_meta.get("reducer") if isinstance(retrieval_meta, dict) else None
+    if isinstance(reducer_meta, dict) and int(reducer_meta.get("count") or 0) > 0:
+        return True
+    return False
+
+
 __all__ = [
     "supervisor_logic_node",
     "supervisor_route",
@@ -606,6 +672,9 @@ __all__ = [
     "panel_calculator_node",
     "panel_material_node",
     "panel_norms_rag_node",
+    "calculator_agent_node",
+    "safety_agent_node",
+    "pricing_agent_node",
     "ACTION_ASK_USER",
     "ACTION_RUN_PANEL_CALC",
     "ACTION_RUN_PANEL_MATERIAL",

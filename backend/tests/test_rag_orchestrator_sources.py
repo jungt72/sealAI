@@ -7,7 +7,7 @@ def test_hybrid_retrieve_adds_sources(monkeypatch) -> None:
     def fake_embed(_texts):
         return [[0.0, 0.0]]
 
-    def fake_search(_query_vec, _collection, top_k=6, metadata_filters=None):
+    def fake_search(_query_vec, _sparse_query, _collection, top_k=6, metadata_filters=None, timeout_s=None):
         hits = [
             {
                 "text": "A",

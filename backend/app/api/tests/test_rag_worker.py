@@ -79,5 +79,5 @@ async def test_process_once_updates_status(tmp_path: Path) -> None:
         picker=picker,
     )
     assert done is True
-    assert doc.status == "done"
+    assert doc.status == "indexed"
     assert isinstance(doc.ingest_stats, dict)

@@ -1,5 +1,1 @@
-export const runtime = "nodejs";
-
-export async function GET() {
-  return new Response("ok", { status: 200 });
-}
+import { NextResponse } from "next/server"; export async function GET() { return NextResponse.json({ status: "ok" }); }

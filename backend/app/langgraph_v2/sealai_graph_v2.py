@@ -63,6 +63,15 @@ from app.langgraph_v2.nodes.nodes_resume import (
 )
 from app.langgraph_v2.nodes.nodes_error import smalltalk_node
 from app.langgraph_v2.nodes.orchestrator import orchestrator_node
+from app.langgraph_v2.nodes.factcard_lookup import node_factcard_lookup
+from app.langgraph_v2.nodes.compound_filter import node_compound_filter
+from app.langgraph_v2.nodes.merge_deterministic import node_merge_deterministic
+from app.langgraph_v2.nodes.p4_6_number_verification import node_p4_6_number_verification
+from app.langgraph_v2.nodes.request_clarification import request_clarification_node
+from app.langgraph_v2.nodes.answer_subgraph.subgraph_builder import (
+    answer_subgraph_node,
+    answer_subgraph_node_async,
+)
 from app.langgraph_v2.nodes.nodes_flows import (
     build_final_answer_context,
     map_final_answer_to_state,
@@ -415,6 +424,12 @@ def _build_final_answer_chain() -> Any:
             "template_context": template_context,
         }
 
+    async def _call_llm_async(d: dict) -> str:
+        if d.get("forced_text"):
+            return d["forced_text"]
+        response = await llm.ainvoke(d.get("messages") or [])
+        return output_parser.invoke(response)
+
     chain = (
         RunnableLambda(_prepare_inputs)
         | RunnableParallel(
@@ -444,25 +459,22 @@ def _build_final_answer_chain() -> Any:
                     )
                 )
                 | RunnableParallel(
-                    text=RunnableLambda(
-                        lambda d: (
-                            d.get("forced_text")
-                            if d.get("forced_text")
-                            else output_parser.invoke(llm.invoke(d.get("messages") or []))
-                        )
-                    ),
+                    text=RunnableLambda(_call_llm_async),
                     prompt_text=RunnableLambda(lambda d: d.get("prompt_text") or ""),
                     prompt_metadata=RunnableLambda(lambda d: d.get("prompt_metadata") or {}),
                 )
             ),
         )
         | RunnableLambda(
-            lambda d: map_final_answer_to_state(
-                _ensure_state_model(d["state"]),
-                d["draft"].get("text") or "",
-                final_prompt=d["draft"].get("prompt_text") or "",
-                final_prompt_metadata=d["draft"].get("prompt_metadata") or {},
-            )
+            lambda d: {
+                **map_final_answer_to_state(
+                    _ensure_state_model(d["state"]),
+                    d["draft"].get("text") or "",
+                    final_prompt=d["draft"].get("prompt_text") or "",
+                    final_prompt_metadata=d["draft"].get("prompt_metadata") or {},
+                ),
+                "final_answer": (d["draft"].get("text") or "").strip()
+            }
         )
     )
 
@@ -523,6 +535,24 @@ def _resume_router(state: SealAIState) -> str:
 
 def _frontdoor_router(state: SealAIState) -> str:
     flags = state.flags or {}
+    task_intents_raw = flags.get("frontdoor_task_intents") or []
+    task_intents = (
+        [str(intent).strip() for intent in task_intents_raw]
+        if isinstance(task_intents_raw, list)
+        else []
+    )
+    has_task_intents = any(task_intents)
+    social_opening = bool(flags.get("frontdoor_social_opening"))
+    intent_category = str(flags.get("frontdoor_intent_category") or "").strip().upper()
+
+    if has_task_intents:
+        return "supervisor"
+    if social_opening:
+        return "smalltalk"
+    if intent_category == "CHIT_CHAT":
+        return "smalltalk"
+    if bool(flags.get("frontdoor_technical_cue_veto")):
+        return "supervisor"
     if bool(flags.get("frontdoor_bypass_supervisor")):
         return "smalltalk"
     return "supervisor"
@@ -572,6 +602,47 @@ async def _frontdoor_router_async(state: SealAIState) -> str:
     return _frontdoor_router(state)
 
 
+def _merge_deterministic_router(state: SealAIState) -> str:
+    """Route after parallel deterministic KB worker merge.
+
+    - ``deterministic`` → response_node (pre-computed KB answer)
+    - otherwise         → supervisor_policy_node
+    """
+    kb_result = state.kb_factcard_result or {}
+    if kb_result.get("deterministic"):
+        return "deterministic"
+    return "supervisor"
+
+
+async def _merge_deterministic_router_async(state: SealAIState) -> str:
+    return _merge_deterministic_router(state)
+
+
+def _frontdoor_parallel_fanout_node(_state: SealAIState) -> Dict[str, Any]:
+    """No-op node to fan out into deterministic parallel workers."""
+    return {}
+
+
+async def _node_factcard_lookup_parallel(state: SealAIState) -> Dict[str, Any]:
+    """Run FactCard lookup in parallel branch without conflicting last_node writes."""
+    result = node_factcard_lookup(state)
+    if asyncio.iscoroutine(result):
+        result = await result
+    updates = dict(result or {})
+    updates.pop("last_node", None)
+    return updates
+
+
+async def _node_compound_filter_parallel(state: SealAIState) -> Dict[str, Any]:
+    """Run compound filter in parallel branch without conflicting last_node writes."""
+    result = node_compound_filter(state)
+    if asyncio.iscoroutine(result):
+        result = await result
+    updates = dict(result or {})
+    updates.pop("last_node", None)
+    return updates
+
+
 async def _reducer_router_async(state: SealAIState) -> str:
     return _reducer_router(state)
 
@@ -604,6 +675,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     critical_router = _critical_review_router_async if require_async else _critical_review_router
     product_router = _product_router_async if require_async else _product_router
     frontdoor_router = _frontdoor_router_async if require_async else _frontdoor_router
+    merge_deterministic_router = _merge_deterministic_router_async if require_async else _merge_deterministic_router
     reducer_router = _reducer_router_async if require_async else _reducer_router
     qgate_router = _qgate_router_async if require_async else _qgate_router
 
@@ -617,9 +689,15 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("node_p4a_extract", node_p4a_extract)       # v4.4.0 Sprint 6: P4a Parameter-Extraction
     builder.add_node("node_p4b_calc_render", node_p4b_calc_render)  # v4.4.0 Sprint 6: P4b MCP Calc + Render
     builder.add_node("node_p4_5_qgate", node_p4_5_qgate)          # v4.4.0 Sprint 7: P4.5 Quality Gate
+    builder.add_node("p4_6_number_verification", node_p4_6_number_verification)
+    builder.add_node("request_clarification_node", request_clarification_node)
     builder.add_node("node_p5_procurement", node_p5_procurement)   # v4.4.0 Sprint 8: P5 Procurement Engine
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
+    builder.add_node("frontdoor_parallel_fanout_node", _frontdoor_parallel_fanout_node)
+    builder.add_node("node_factcard_lookup_parallel", _node_factcard_lookup_parallel)    # KB Integration
+    builder.add_node("node_compound_filter_parallel", _node_compound_filter_parallel)    # KB Integration
+    builder.add_node("node_merge_deterministic", node_merge_deterministic)
     builder.add_node("smalltalk_node", smalltalk_node)
     builder.add_node("supervisor_policy_node", orchestrator_node)
     builder.add_node("supervisor_logic_node", supervisor_policy_node)
@@ -651,7 +729,10 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("confirm_resume_node", confirm_resume_node)
     builder.add_node("confirm_reject_node", confirm_reject_node)
     builder.add_node("confirm_recommendation_node", confirm_recommendation_node)
-    builder.add_node("final_answer_node", _build_final_answer_chain())
+    builder.add_node(
+        "final_answer_node",
+        answer_subgraph_node_async if require_async else answer_subgraph_node,
+    )
     builder.add_node("response_node", response_node)
 
     # Entrypoint: START -> profile_loader -> node_router -> [dispatch]
@@ -680,10 +761,19 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
         "node_p4_5_qgate",
         qgate_router,
         {
-            "no_blockers": "resume_router_node",
+            "no_blockers": "p4_6_number_verification",
             "has_blockers": "response_node",
         },
     )
+    builder.add_conditional_edges(
+        "p4_6_number_verification",
+        lambda state: "pass" if state.get("verification_passed", True) else "fail",
+        {
+            "pass": "final_answer_node",
+            "fail": "request_clarification_node"
+        }
+    )
+    builder.add_edge("request_clarification_node", END)
     builder.add_edge("node_p5_procurement", "response_node")          # Sprint 8: P5 → response
 
     builder.add_conditional_edges(
@@ -701,6 +791,18 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
         frontdoor_router,
         {
             "smalltalk": "smalltalk_node",
+            "supervisor": "frontdoor_parallel_fanout_node",   # KB Integration: run deterministic workers in parallel
+        },
+    )
+    builder.add_edge("frontdoor_parallel_fanout_node", "node_factcard_lookup_parallel")
+    builder.add_edge("frontdoor_parallel_fanout_node", "node_compound_filter_parallel")
+    builder.add_edge("node_factcard_lookup_parallel", "node_merge_deterministic")
+    builder.add_edge("node_compound_filter_parallel", "node_merge_deterministic")
+    builder.add_conditional_edges(
+        "node_merge_deterministic",
+        merge_deterministic_router,
+        {
+            "deterministic": "response_node",
             "supervisor": "supervisor_policy_node",
         },
     )

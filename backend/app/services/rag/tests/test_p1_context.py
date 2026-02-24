@@ -139,8 +139,9 @@ class TestNodeP1Context:
                 flange_pn=40,
             ),
         ):
-            result = node_p1_context(state)
+            command = node_p1_context(state)
 
+        result = command.update
         wp = result["working_profile"]
         assert isinstance(wp, WorkingProfile)
         assert wp.medium == "Dampf"
@@ -148,6 +149,23 @@ class TestNodeP1Context:
         assert wp.temperature_max_c == 180.0
         assert wp.flange_dn == 100
         assert result["last_node"] == "node_p1_context"
+
+    def test_new_case_extracts_material_and_product(self):
+        state = self._state(
+            "Was ist Kyrolon?",
+            router_classification="new_case",
+        )
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            return_value=_make_mock_extraction(
+                material="Kyrolon",
+            ),
+        ):
+            command = node_p1_context(state)
+
+        result = command.update
+        wp = result["working_profile"]
+        assert wp.material == "Kyrolon"
 
     def test_follow_up_merges_onto_existing_profile(self):
         existing = WorkingProfile(medium="water", pressure_max_bar=20.0)
@@ -160,8 +178,9 @@ class TestNodeP1Context:
             "app.services.rag.nodes.p1_context.ChatOpenAI",
             return_value=_make_mock_extraction(pressure_max_bar=40.0),
         ):
-            result = node_p1_context(state)
+            command = node_p1_context(state)
 
+        result = command.update
         wp = result["working_profile"]
         assert wp.medium == "water"       # preserved
         assert wp.pressure_max_bar == 40.0  # updated
@@ -177,9 +196,10 @@ class TestNodeP1Context:
             "app.services.rag.nodes.p1_context.ChatOpenAI",
             side_effect=RuntimeError("LLM unavailable"),
         ):
-            result = node_p1_context(state)
+            command = node_p1_context(state)
 
         # Falls back to existing profile (or empty if none)
+        result = command.update
         wp = result["working_profile"]
         assert isinstance(wp, WorkingProfile)
         assert "error" in result
@@ -190,8 +210,9 @@ class TestNodeP1Context:
             "app.services.rag.nodes.p1_context.ChatOpenAI",
             side_effect=RuntimeError("LLM unavailable"),
         ):
-            result = node_p1_context(state)
+            command = node_p1_context(state)
 
+        result = command.update
         wp = result["working_profile"]
         assert isinstance(wp, WorkingProfile)
         assert wp.medium is None
@@ -203,7 +224,8 @@ class TestNodeP1Context:
             "app.services.rag.nodes.p1_context.ChatOpenAI",
             return_value=_make_mock_extraction(),
         ):
-            result = node_p1_context(state)
+            command = node_p1_context(state)
+        result = command.update
         assert result["phase"] == "frontdoor"
 
     def test_new_case_does_not_use_existing_profile(self):
@@ -218,8 +240,9 @@ class TestNodeP1Context:
             "app.services.rag.nodes.p1_context.ChatOpenAI",
             return_value=_make_mock_extraction(medium="Dampf", pressure_max_bar=8.0),
         ):
-            result = node_p1_context(state)
+            command = node_p1_context(state)
 
+        result = command.update
         wp = result["working_profile"]
         # old medium/pressure must be gone (fresh extraction)
         assert wp.medium == "Dampf"

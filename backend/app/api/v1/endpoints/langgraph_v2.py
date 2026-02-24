@@ -102,7 +102,7 @@ class LangGraphV2Request(BaseModel):
     )
     chat_id: str = Field(
         default="default",
-        validation_alias=AliasChoices("chat_id", "chatId", "thread_id", "threadId"),
+        validation_alias=AliasChoices("chat_id", "chatId", "thread_id", "threadId", "session_id", "sessionId"),
         description="Conversation/thread id",
     )
     client_msg_id: Optional[str] = Field(
@@ -153,7 +153,11 @@ class LangGraphV2Request(BaseModel):
     def _normalize_fields(self) -> "LangGraphV2Request":
         self.input = (self.input or "").strip()
         chat_id = (self.chat_id or "").strip()
-        self.chat_id = chat_id or "default"
+        if not chat_id or chat_id == "default":
+            self.chat_id = uuid.uuid4().hex
+        else:
+            self.chat_id = chat_id
+
         if self.client_msg_id is not None:
             client_msg_id = self.client_msg_id.strip()
             self.client_msg_id = client_msg_id or None

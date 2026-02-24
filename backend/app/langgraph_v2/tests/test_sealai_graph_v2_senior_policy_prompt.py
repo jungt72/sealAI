@@ -42,3 +42,25 @@ def test_style_profile_can_disable_policy() -> None:
     messages = _render_final_prompt_messages(payload)
     system_text = messages[0].content
     assert "Denk- und Antwort-Rahmen" not in system_text
+
+
+def test_final_prompt_enforces_grounding_on_retrieved_facts() -> None:
+    payload = {
+        "template_context": {
+            "goal": "smalltalk",
+            "recommendation_go": False,
+            "latest_user_text": "Was weißt du über Kyrolon?",
+            "coverage_score": 0.0,
+            "coverage_gaps_text": "keine",
+            "draft": "DRAFT",
+            "plan": {},
+            "context": "Kyrolon 79X ist ein PTFE-basierter Werkstoff.",
+        },
+        "messages": [],
+    }
+    messages = _render_final_prompt_messages(payload)
+    system_text = messages[0].content
+    assert "You must base your answer ONLY on the RETRIEVED KNOWLEDGE BASE FACTS." in system_text
+    assert "Ich habe keine Daten dazu gefunden." in system_text
+    assert "Do not guess." in system_text
+    assert "RETRIEVED KNOWLEDGE BASE FACTS:\nKyrolon 79X ist ein PTFE-basierter Werkstoff." in system_text

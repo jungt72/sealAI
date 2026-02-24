@@ -80,6 +80,10 @@ class WorkingProfile(BaseModel):
     # Context
     industry_sector: Optional[str] = None
 
+    # Knowledge / Material lookup bypass fields
+    material: Optional[str] = None
+    product_name: Optional[str] = None
+
     model_config = ConfigDict(extra="forbid")
 
     # -- Field validators (string → float coercion) --
@@ -178,6 +182,8 @@ class WorkingProfile(BaseModel):
         "cyclic_load",
         "emission_class",
         "industry_sector",
+        "material",
+        "product_name",
     })
 
     def as_dict(self) -> Dict[str, Any]:

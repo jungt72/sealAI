@@ -4,21 +4,12 @@ import asyncio
 import json
 from typing import Any, Dict, List
 
-from starlette.websockets import WebSocketState
-
+import pytest
 from langchain_core.messages.ai import AIMessageChunk
+from langchain_core.messages import HumanMessage
 
-from app.langgraph.compile import build_initial_state, build_stream_config, iter_langgraph_payloads
-
-
-class DummyWebSocket:
-    def __init__(self) -> None:
-        self.sent: List[Dict[str, Any]] = []
-        self.application_state = WebSocketState.CONNECTED
-
-    async def send_text(self, text: str) -> None:
-        self.sent.append(json.loads(text))
-
+from app.api.v1.endpoints import langgraph_v2 as endpoint_v2
+from app.langgraph_v2.state import SealAIState
 
 class FakeGraph:
     def __init__(self, events: List[Dict[str, Any]]) -> None:
@@ -28,38 +19,57 @@ class FakeGraph:
         for event in self._events:
             yield event
 
+async def _collect_sse_payloads(req: endpoint_v2.LangGraphV2Request, **kwargs: Any) -> List[Dict[str, Any]]:
+    payloads: List[Dict[str, Any]] = []
+    async for frame in endpoint_v2._event_stream_v2(req, **kwargs):
+        if not frame:
+            continue
+        # frame is ALREADY a string (decrypted by _event_stream_v2 internally)
+        # It can be bytes or str, but _event_stream_v2 yields str usually
+        decoded_frame = frame.decode("utf-8") if isinstance(frame, bytes) else frame
+        for line in decoded_frame.splitlines():
+            line = line.strip()
+            if line.startswith("data:"):
+                try:
+                    data_json = line[5:].strip()
+                    payloads.append(json.loads(data_json))
+                except Exception:
+                    pass
+    return payloads
 
-def test_streaming_flow_emits_multiple_tokens() -> None:
-    payload = {
-        "input": "Testprompt",
-        "chat_id": "ws-test",
-        "consent": True,
-        "user_id": "user-1",
-    }
-    state = build_initial_state(payload, chat_id="ws-test", user_id="user-1", user_input="Testprompt")
-    config = build_stream_config(thread_id="ws-test", user_id="user-1")
-
+@pytest.mark.asyncio
+async def test_streaming_flow_v2_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 1. Setup mock events
     events = [
-        {"event": "on_chat_model_stream", "data": {"chunk": AIMessageChunk(content="Hallo ")}},
-        {"event": "on_chat_model_stream", "data": {"chunk": AIMessageChunk(content="Welt")}},
+        {"event": "on_chat_model_stream", "name": "response_node", "data": {"chunk": AIMessageChunk(content="Hallo ")}},
+        {"event": "on_chat_model_stream", "name": "response_node", "data": {"chunk": AIMessageChunk(content="Welt")}},
         {
             "event": "on_graph_end",
-            "data": {"output": {"slots": {"final_answer": "Hallo Welt"}}},
+            "data": {"output": SealAIState(final_text="Hallo Welt")},
         },
-        {"event": "end"},
     ]
-
-    graph = FakeGraph(events)
-
-    async def _collect() -> list[Dict[str, Any]]:
-        collected: list[Dict[str, Any]] = []
-        async for payload in iter_langgraph_payloads(graph, state, config):
-            collected.append(payload)
-        return collected
-
-    payloads = asyncio.run(_collect())
-
-    token_events = [frame for frame in payloads if frame.get("type") == "token"]
-    assert len(token_events) >= 2
-    assert [frame.get("text") for frame in token_events[:2]] == ["Hallo ", "Welt"]
-    assert any(frame.get("type") == "done" for frame in payloads)
+    
+    fake_graph = FakeGraph(events)
+    
+    # 2. Mock graph getter in endpoint module
+    async def _mock_get_graph(*args, **kwargs):
+        return fake_graph
+    
+    monkeypatch.setattr(endpoint_v2, "get_sealai_graph_v2", _mock_get_graph)
+    
+    # 3. Create request
+    req = endpoint_v2.LangGraphV2Request(
+        input="Hi",
+        chat_id="ws-test-123",
+    )
+    
+    # 4. Invoke the stream helper
+    payloads = await _collect_sse_payloads(req, user_id="user-1")
+    
+    # 5. Verify results
+    token_events = [p for p in payloads if p.get("type") == "token"]
+    assert len(token_events) == 2
+    assert [p.get("text") for p in token_events] == ["Hallo ", "Welt"]
+    
+    # Check for done event
+    assert any(p.get("type") == "done" for p in payloads)

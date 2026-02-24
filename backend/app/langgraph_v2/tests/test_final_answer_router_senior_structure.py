@@ -40,4 +40,4 @@ def test_final_answer_router_shows_sources_only_when_refs_present() -> None:
             "requires_rag": True,
         },
     )
-    assert "## Quellen / Belege" in text
+    assert "## Wissensdatenbank (Quellen)" in text

@@ -119,7 +119,7 @@ class DummyGraphRetrievalSkipped:
 async def _collect(gen) -> str:
     text = ""
     async for chunk in gen:
-        text += chunk.decode("utf-8")
+        text += chunk.decode("utf-8") if hasattr(chunk, "decode") else chunk
     return text
 
 

@@ -1,0 +1,347 @@
+{
+  "schema_version": "1.3",
+  "generated_at": "2026-02-23",
+  "description": "PTFE FactCards and Safety Gates for deterministic material decisions",
+  "factcards": [
+    {
+      "id": "FC-PTFE-001",
+      "title": "PTFE (unversetzt / Virgin PTFE)",
+      "material_family": "PTFE",
+      "compound_id": "ptfe_virgin",
+      "topic_tags": [
+        "temperature_resistance",
+        "chemical_resistance",
+        "food_grade",
+        "static_sealing"
+      ],
+      "properties": {
+        "temp_min_c": -200,
+        "temp_max_c": 260,
+        "pressure_max_bar": 200,
+        "friction_coefficient": 0.04,
+        "hardness_shore_d": 55,
+        "compressive_strength_mpa": 12,
+        "tensile_strength_mpa": 20,
+        "density_g_cm3": 2.15
+      },
+      "chemical_resistance": {
+        "acids_weak": "excellent",
+        "acids_strong": "good",
+        "acids_hf": "not_suitable",
+        "acids_oleum": "limited",
+        "alkalis": "excellent",
+        "solvents": "excellent",
+        "hydrocarbons": "excellent",
+        "steam": "good",
+        "oxidizers": "good",
+        "halogens": "limited",
+        "ammoniak": "excellent",
+        "chlor_gasfoermig": "good"
+      },
+      "applications": [
+        "statische_flanschdichtungen",
+        "backup_rings",
+        "gaskets",
+        "auskleidungen",
+        "schauglasdichtungen"
+      ],
+      "limitations": [
+        "Kaltfluss (Kriechneigung) unter Last",
+        "geringe mechanische Festigkeit",
+        "nicht für dynamische Dichtung geeignet",
+        "kein Kontakt mit Flusssäure (HF)"
+      ],
+      "standards": ["DIN 3869", "EN 1514-1", "ASME B16.21", "DIN EN 12560-4"],
+      "food_grade": true,
+      "fda_approved": true,
+      "answer_template": "PTFE (virgin) besitzt universelle chemische Beständigkeit und ist einsetzbar von -200\u00b0C bis +260\u00b0C bei statischen Anwendungen bis 200 bar. Es ist FDA-konform und geeignet für Lebensmittelanwendungen. Achtung: Kaltfluss unter dauerhafter Last und kein Einsatz bei Flusssäure.",
+      "deterministic_triggers": [
+        "chemical_resistance_query",
+        "temperature_range_query",
+        "food_grade_query",
+        "fda_query"
+      ]
+    },
+    {
+      "id": "FC-PTFE-002",
+      "title": "PTFE + 25% Glasfaser (GF25)",
+      "material_family": "PTFE",
+      "compound_id": "ptfe_25_glass",
+      "topic_tags": [
+        "creep_resistance",
+        "mechanical_strength",
+        "moderate_temperature"
+      ],
+      "properties": {
+        "temp_min_c": -70,
+        "temp_max_c": 250,
+        "pressure_max_bar": 350,
+        "friction_coefficient": 0.12,
+        "hardness_shore_d": 64,
+        "compressive_strength_mpa": 20,
+        "tensile_strength_mpa": 14,
+        "density_g_cm3": 2.26
+      },
+      "chemical_resistance": {
+        "acids_weak": "good",
+        "acids_strong": "limited",
+        "acids_hf": "not_suitable",
+        "alkalis": "good",
+        "solvents": "excellent",
+        "hydrocarbons": "excellent",
+        "steam": "good",
+        "oxidizers": "limited",
+        "halogens": "limited"
+      },
+      "applications": [
+        "statische_hochdruckdichtungen",
+        "flanschdichtungen_erhöhter_druck",
+        "backup_rings_hydraulik"
+      ],
+      "limitations": [
+        "nicht bei Flusssäure und starken Fluoriden (Glasfaserangriff)",
+        "erhöhte Reibung gegenüber virgin PTFE",
+        "Temperaturlimit 250°C (nicht 260°C)"
+      ],
+      "standards": ["DIN 3869", "EN 1514-1"],
+      "food_grade": false,
+      "fda_approved": false,
+      "answer_template": "PTFE + 25% Glasfaser bietet verbesserte Kriechfestigkeit gegenüber virgin PTFE. Einsatzbereich: -70\u00b0C bis +250\u00b0C bei bis zu 350 bar. Nicht geeignet für Flusssäure oder starke Fluoride (Glasfaserangriff). Nicht FDA/food-grade.",
+      "deterministic_triggers": [
+        "creep_resistance_query",
+        "high_pressure_static_query"
+      ]
+    },
+    {
+      "id": "FC-PTFE-003",
+      "title": "PTFE + 15% Kohlenstoff (Carbon)",
+      "material_family": "PTFE",
+      "compound_id": "ptfe_15_carbon",
+      "topic_tags": [
+        "antistatisch",
+        "tribologie",
+        "trockenlauf",
+        "elektrische_leitfähigkeit"
+      ],
+      "properties": {
+        "temp_min_c": -200,
+        "temp_max_c": 250,
+        "pressure_max_bar": 250,
+        "friction_coefficient": 0.08,
+        "hardness_shore_d": 62,
+        "compressive_strength_mpa": 16,
+        "tensile_strength_mpa": 15,
+        "density_g_cm3": 2.08
+      },
+      "chemical_resistance": {
+        "acids_weak": "good",
+        "acids_strong": "limited",
+        "acids_hf": "not_suitable",
+        "alkalis": "good",
+        "solvents": "excellent",
+        "hydrocarbons": "excellent",
+        "oxidizers_strong": "not_suitable",
+        "steam": "good",
+        "salpetersäure": "not_suitable"
+      },
+      "applications": [
+        "trockenlaufende_gleitlager",
+        "antistatische_anwendungen",
+        "elektrisch_ableitfähige_dichtungen",
+        "backup_rings"
+      ],
+      "limitations": [
+        "nicht bei starken Oxidationsmitteln (Salpetersäure, H2O2 konzentriert)",
+        "nicht FDA-konform",
+        "geringere Temperaturbeständigkeit als virgin PTFE"
+      ],
+      "standards": ["DIN 3869"],
+      "food_grade": false,
+      "fda_approved": false,
+      "answer_template": "PTFE + 15% Kohlenstoff ist antistatisch, elektrisch leitfähig und eignet sich für Trockenlaufanwendungen. Einsatzbereich: -200\u00b0C bis +250\u00b0C. Nicht geeignet bei starken Oxidationsmitteln (Salpetersäure, konzentriertes H2O2) und nicht FDA/food-grade.",
+      "deterministic_triggers": [
+        "antistatic_query",
+        "dry_running_query",
+        "electrical_conductivity_query"
+      ]
+    },
+    {
+      "id": "FC-PTFE-004",
+      "title": "PTFE + 60% Bronze",
+      "material_family": "PTFE",
+      "compound_id": "ptfe_60_bronze",
+      "topic_tags": [
+        "wärmeableitung",
+        "hohe_last",
+        "hydraulik",
+        "führungsring"
+      ],
+      "properties": {
+        "temp_min_c": -60,
+        "temp_max_c": 200,
+        "pressure_max_bar": 500,
+        "friction_coefficient": 0.1,
+        "hardness_shore_d": 70,
+        "compressive_strength_mpa": 50,
+        "tensile_strength_mpa": 10,
+        "density_g_cm3": 4.0,
+        "thermal_conductivity_w_mk": 1.2
+      },
+      "chemical_resistance": {
+        "acids": "limited",
+        "alkalis": "limited",
+        "solvents": "limited",
+        "ammoniak": "not_suitable",
+        "hydrocarbons": "good",
+        "water": "limited",
+        "salt_water": "not_suitable"
+      },
+      "applications": [
+        "hydraulische_führungsringe",
+        "gleitlager_hohe_last",
+        "wärmeableitende_anwendungen"
+      ],
+      "limitations": [
+        "begrenzte chemische Beständigkeit (Säuren, Laugen, Ammoniak)",
+        "nicht für korrosive Medien",
+        "reduziertes Temperaturlimit 200°C"
+      ],
+      "standards": ["ISO 10766", "DIN ISO 7425"],
+      "food_grade": false,
+      "fda_approved": false,
+      "answer_template": "PTFE + 60% Bronze bietet hohe Druckfestigkeit (bis 500 bar), gute Wärmeableitung und eignet sich für Führungsringe und Gleitlager unter hoher Last. Einsatzbereich: -60\u00b0C bis +200\u00b0C. Eingeschränkte chemische Beständigkeit — nicht für Säuren, Laugen oder Ammoniak.",
+      "deterministic_triggers": [
+        "high_load_query",
+        "thermal_conductivity_query",
+        "guide_ring_query"
+      ]
+    },
+    {
+      "id": "FC-PTFE-005",
+      "title": "Modifiziertes PTFE (ePTFE / mPTFE)",
+      "material_family": "PTFE",
+      "compound_id": "ptfe_modified",
+      "topic_tags": [
+        "reduzierter_kaltfluss",
+        "dichtheit",
+        "gasket",
+        "rohrleitungsdichtung"
+      ],
+      "properties": {
+        "temp_min_c": -200,
+        "temp_max_c": 260,
+        "pressure_max_bar": 150,
+        "friction_coefficient": 0.05,
+        "hardness_shore_d": 52,
+        "compressive_strength_mpa": 15,
+        "tensile_strength_mpa": 18,
+        "density_g_cm3": 2.12
+      },
+      "chemical_resistance": {
+        "acids_weak": "excellent",
+        "acids_strong": "excellent",
+        "acids_hf": "not_suitable",
+        "alkalis": "excellent",
+        "solvents": "excellent",
+        "hydrocarbons": "excellent",
+        "steam": "excellent",
+        "oxidizers": "good"
+      },
+      "applications": [
+        "rohrleitungsdichtungen",
+        "flanschdichtungen_aggressive_medien",
+        "hochwertige_gasket_anwendungen",
+        "pharmaindustrie"
+      ],
+      "limitations": [
+        "kein Einsatz bei Flusssäure",
+        "geringerer Druckbereich als verstärkte Typen",
+        "höhere Kosten"
+      ],
+      "standards": ["EN 1514-1", "ASME B16.20", "EN 13555"],
+      "food_grade": true,
+      "fda_approved": true,
+      "answer_template": "Modifiziertes PTFE (ePTFE/mPTFE) kombiniert die chemische Universalbeständigkeit von PTFE mit deutlich reduziertem Kaltfluss. Ideal für Rohrleitungs- und Flanschdichtungen in der Pharma- und Chemieindustrie. Einsatzbereich: -200\u00b0C bis +260\u00b0C, FDA-konform.",
+      "deterministic_triggers": [
+        "cold_flow_reduction_query",
+        "pharma_query",
+        "aggressive_medium_gasket_query"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "GATE-TEMP-MAX-260",
+      "type": "temperature_max",
+      "description": "Standard-PTFE Maximaltemperatur überschritten",
+      "condition_field": "temperature_max_c",
+      "condition_op": "gt",
+      "condition_value": 260,
+      "action": "hard_block",
+      "severity": "critical",
+      "message": "PTFE-Werkstoffe sind nicht geeignet für Temperaturen über 260°C. Alternativen: FFKM (Perfluorelastomer) oder Graphit-Dichtungen.",
+      "applies_to_compounds": ["ptfe_virgin", "ptfe_25_glass", "ptfe_15_carbon", "ptfe_60_bronze", "ptfe_modified"]
+    },
+    {
+      "id": "GATE-TEMP-MIN-GLASS",
+      "type": "temperature_min",
+      "description": "GF25/Bronze PTFE Minimaltemperatur unterschritten",
+      "condition_field": "temperature_min_c",
+      "condition_op": "lt",
+      "condition_value": -70,
+      "action": "soft_warn",
+      "severity": "warning",
+      "message": "PTFE + Glasfaser / Bronze ist unter -70°C eingeschränkt einsetzbar. Für Tieftemperatur prüfen Sie virgin PTFE oder modifiziertes PTFE.",
+      "applies_to_compounds": ["ptfe_25_glass", "ptfe_60_bronze"]
+    },
+    {
+      "id": "GATE-HF-ACID",
+      "type": "chemical",
+      "description": "Flusssäure (HF) — PTFE Glasfaser nicht geeignet",
+      "condition_field": "medium_id",
+      "condition_op": "in",
+      "condition_value": ["hf_acid", "hydrofluoric_acid", "flusssaeure"],
+      "action": "hard_block",
+      "severity": "critical",
+      "message": "Bei Flusssäure (HF) darf kein glasfasergefülltes PTFE verwendet werden. Glasfaser wird durch HF abgebaut. Nur virgin PTFE oder modifiziertes PTFE verwenden.",
+      "applies_to_compounds": ["ptfe_25_glass", "ptfe_60_bronze"]
+    },
+    {
+      "id": "GATE-OXIDIZER-CARBON",
+      "type": "chemical",
+      "description": "Starke Oxidationsmittel — Carbon-PTFE nicht geeignet",
+      "condition_field": "medium_id",
+      "condition_op": "in",
+      "condition_value": ["salpetersaeure", "nitric_acid", "h2o2_concentrated", "chlor"],
+      "action": "hard_block",
+      "severity": "critical",
+      "message": "Starke Oxidationsmittel (Salpetersäure, konz. H₂O₂) greifen Kohlenstoffpartikeln in Carbon-PTFE an. Verwenden Sie virgin PTFE oder modifiziertes PTFE.",
+      "applies_to_compounds": ["ptfe_15_carbon"]
+    },
+    {
+      "id": "GATE-FOOD-GRADE",
+      "type": "compliance",
+      "description": "Lebensmittelkontakt / FDA — nur zertifizierte Typen",
+      "condition_field": "food_grade_required",
+      "condition_op": "eq",
+      "condition_value": true,
+      "action": "filter",
+      "severity": "info",
+      "message": "Für Lebensmittelkontakt (FDA/food-grade) sind nur virgin PTFE und modifiziertes PTFE zertifiziert. Glasfaser-, Carbon- und Bronze-gefüllte Typen sind ausgeschlossen.",
+      "applies_to_compounds": ["ptfe_25_glass", "ptfe_15_carbon", "ptfe_60_bronze"],
+      "allowed_compounds": ["ptfe_virgin", "ptfe_modified"]
+    },
+    {
+      "id": "GATE-DYNAMIC-SEALING",
+      "type": "application",
+      "description": "Dynamische Dichtung — PTFE Einschränkung",
+      "condition_field": "application_type",
+      "condition_op": "in",
+      "condition_value": ["dynamic", "rotary", "reciprocating"],
+      "action": "soft_warn",
+      "severity": "warning",
+      "message": "Für dynamische Dichtanwendungen (rotierend, hubbeweglich) ist unbefülltes virgin PTFE eingeschränkt geeignet (Kaltfluss). Empfehlung: PTFE + Glasfaser, Carbon oder Bronze — oder PTFE-Coil-Dichtungen.",
+      "applies_to_compounds": ["ptfe_virgin", "ptfe_modified"]
+    }
+  ]
+}

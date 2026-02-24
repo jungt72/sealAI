@@ -60,6 +60,12 @@ class TestBuildRagQuery:
         assert "50.0 bar" in query
         assert "°C" not in query
 
+    def test_profile_with_material_and_product(self):
+        profile = WorkingProfile(material="Kyrolon", product_name="Gylon")
+        query = _build_rag_query(profile)
+        assert "Werkstoff Kyrolon" in query
+        assert "Produkt Gylon" in query
+
 
 class TestNodeP2RagLookup:
     def test_sparse_profile_skips_rag(self):
@@ -68,6 +74,30 @@ class TestNodeP2RagLookup:
         result = node_p2_rag_lookup(state)
         assert "context" not in result  # no RAG context
         assert "sources" not in result
+
+    @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
+    def test_sparse_profile_bypass_with_material(self, mock_search):
+        """Profile contains 'material' → bypass sparse check."""
+        mock_search.return_value = {"hits": [], "context": "found something", "retrieval_meta": {}}
+        profile = WorkingProfile(material="Kyrolon")
+        # Coverage is 1/17 ~ 0.058 (well below 0.2)
+        state = _make_state(working_profile=profile)
+        result = node_p2_rag_lookup(state)
+        mock_search.assert_called_once()
+        assert result["context"] == "found something"
+
+    @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
+    def test_sparse_profile_bypass_with_knowledge_intent(self, mock_search):
+        """Intent is 'explanation_or_comparison' → bypass sparse check."""
+        mock_search.return_value = {"hits": [], "context": "found something", "retrieval_meta": {}}
+        from app.langgraph_v2.state import Intent
+        state = _make_state(
+            working_profile=WorkingProfile(),
+            intent=Intent(goal="explanation_or_comparison")
+        )
+        result = node_p2_rag_lookup(state)
+        mock_search.assert_called_once()
+        assert result["context"] == "found something"
 
     def test_no_profile_skips_rag(self):
         state = _make_state(working_profile=None)

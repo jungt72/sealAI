@@ -159,7 +159,10 @@ async def _bootstrap_audit_log() -> None:
         from app.services.audit import AuditLogger
         from app.services.audit.audit_logger import set_global_audit_logger
 
-        pool = await asyncpg.create_pool(settings.database_url, min_size=1, max_size=3)
+        # asyncpg expects 'postgresql://' or 'postgres://', not the
+        # SQLAlchemy-style 'postgresql+asyncpg://' that DATABASE_URL often carries.
+        dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3)
         al = AuditLogger(pool)
         await al.ensure_table()
         set_global_audit_logger(al)

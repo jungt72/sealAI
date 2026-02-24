@@ -23,6 +23,7 @@ Checks:
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Literal, Optional
 
 import structlog
@@ -472,6 +473,46 @@ def _check_critical_flag(
     )
 
 
+def _check_unit_consistency(state: SealAIState) -> List[str]:
+    """Check for mixed engineering units in generated answer text."""
+    errors: List[str] = []
+    text = str(state.get("final_answer", "") or state.get("final_text", "") or "").lower()
+
+    if not text:
+        return errors
+
+    if "bar" in text and "psi" in text:
+        errors.append("WARNING: Text enthält sowohl 'bar' als auch 'psi'. Mögliche Einheiten-Verwirrung.")
+    if ("°c" in text or " c" in text) and ("°f" in text or " f" in text):
+        errors.append("WARNING: Text enthält sowohl '°C' als auch '°F'.")
+
+    return errors
+
+
+def _check_physics_plausibility(state: SealAIState) -> List[str]:
+    """Check for obvious physics violations in generated answer text."""
+    errors: List[str] = []
+    text = str(state.get("final_answer", "") or state.get("final_text", "") or "")
+
+    if not text:
+        return errors
+
+    temps = re.findall(r"(\d+(?:\.\d+)?)\s*°C", text, flags=re.IGNORECASE)
+    text_upper = text.upper()
+
+    for temp_str in temps:
+        try:
+            temp = float(temp_str)
+        except ValueError:
+            continue
+        if temp > 350.0 and "PTFE" in text_upper:
+            errors.append(
+                f"CRITICAL: Temperatur {temp}°C ist zu hoch für PTFE (Limit ~260-300°C)."
+            )
+
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # Run all checks
 # ---------------------------------------------------------------------------
@@ -564,6 +605,16 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         }
 
     result = run_quality_gate(calc_result, profile)
+    extra_findings: List[str] = []
+    extra_findings.extend(_check_unit_consistency(state))
+    extra_findings.extend(_check_physics_plausibility(state))
+    if extra_findings:
+        result.critique_log.extend(extra_findings)
+        result.warning_count += sum(1 for msg in extra_findings if msg.startswith("WARNING:"))
+        extra_criticals = sum(1 for msg in extra_findings if msg.startswith("CRITICAL:"))
+        if extra_criticals:
+            result.blocker_count += extra_criticals
+            result.has_blockers = True
 
     # Prometheus metrics — never raises, must not degrade reliability
     try:
@@ -624,4 +675,6 @@ __all__ = [
     "QGateResult",
     "node_p4_5_qgate",
     "run_quality_gate",
+    "_check_unit_consistency",
+    "_check_physics_plausibility",
 ]

@@ -11,6 +11,7 @@
 {%- set troubleshoot = troubleshooting if troubleshooting is defined else {} -%}
 {%- set current_date_text = current_date if current_date is defined else 'Heute' -%}
 {%- set requires_rag = (requires_rag if requires_rag is defined else false) -%}
+{%- set sources_ctx = (sources if sources is defined and sources is sequence else []) -%}
 {%- set wm = working_memory if working_memory is defined else {} -%}
 {%- if wm is mapping -%}
   {%- set wm_comp = wm.get('comparison_notes') or {} -%}
@@ -159,4 +160,15 @@
 {{ rag_note }}
 {%- elif requires_rag and not has_rag_refs -%}
 Quellen derzeit nicht verfügbar.
+{%- endif -%}
+
+{%- if sources_ctx and sources_ctx|length > 0 -%}
+## Referenzen (State)
+{%- for src in sources_ctx[:8] -%}
+{%- if src is mapping -%}
+- {{ src.get('source') or src.get('filename') or src.get('document_id') or 'unbekannt' }}{%- if src.get('metadata') and src.get('metadata').get('page') is not none -%} (Seite {{ src.get('metadata').get('page') }}){%- endif -%}
+{%- else -%}
+- {{ src.source if src.source is defined else 'unbekannt' }}
+{%- endif -%}
+{%- endfor -%}
 {%- endif -%}

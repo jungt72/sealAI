@@ -1,9 +1,11 @@
-// Server Component
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-import DashboardClient from "./DashboardClient";
+import ChatInterface from "@/components/dashboard/ChatInterface";
 
 export default function DashboardPage() {
-  return <DashboardClient />;
+    return (
+        <div className="flex h-full w-full overflow-hidden bg-white">
+            <div className="w-full h-full flex flex-col">
+                <ChatInterface />
+            </div>
+        </div>
+    );
 }

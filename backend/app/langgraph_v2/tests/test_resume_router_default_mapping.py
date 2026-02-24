@@ -1,4 +1,5 @@
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.store.memory import InMemoryStore
 
 from app.langgraph_v2.nodes.nodes_resume import resume_router_node
 from app.langgraph_v2.sealai_graph_v2 import create_sealai_graph_v2
@@ -14,7 +15,7 @@ def test_resume_router_default_mapping_safe_fallback() -> None:
     updates = resume_router_node(state)
     assert updates["phase"] == "confirm"
 
-    graph = create_sealai_graph_v2(checkpointer=MemorySaver())
+    graph = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore())
     compiled = graph.get_graph()
     edges = [
         edge

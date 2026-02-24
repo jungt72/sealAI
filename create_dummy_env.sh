@@ -1,0 +1,20 @@
+cat <<EOF > backend/.env.test
+POSTGRES_USER=test
+POSTGRES_PASSWORD=test
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=test
+DATABASE_URL=postgresql://test:test@localhost:5432/test
+POSTGRES_SYNC_URL=postgresql://test:test@localhost:5432/test
+OPENAI_API_KEY=sk-dummy
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION=test
+REDIS_URL=redis://localhost:6379/0
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=test
+KEYCLOAK_ISSUER=http://localhost:8080/realms/test
+KEYCLOAK_JWKS_URL=http://localhost:8080/realms/test/protocol/openid-connect/certs
+KEYCLOAK_CLIENT_ID=test
+KEYCLOAK_CLIENT_SECRET=test
+KEYCLOAK_EXPECTED_AZP=test
+EOF

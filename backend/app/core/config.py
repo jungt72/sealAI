@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Prometheus metrics
     prometheus_enabled: bool = True
 
+    # Rate limiting (upload endpoint)
+    rate_limit_upload: int = 20        # max requests per window
+    rate_limit_window_s: int = 60      # window size in seconds
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
