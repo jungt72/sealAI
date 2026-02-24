@@ -168,14 +168,26 @@ def evidence_authority_score(metadata: Optional[Mapping[str, Any]], source_hint:
     )
     haystack = _compact(haystack).lower()
     if _pattern_match(haystack, _STANDARD_PATTERNS):
-        return AUTHORITY_NORM_STANDARD
-    if _pattern_match(haystack, _MANUFACTURER_PATTERNS):
-        return AUTHORITY_MANUFACTURER_SPEC
-    if _pattern_match(haystack, _INTERNAL_PATTERNS):
-        return AUTHORITY_INTERNAL_WIKI
-    if _pattern_match(haystack, _FORUM_PATTERNS):
-        return AUTHORITY_FORUM_UNKNOWN
-    return AUTHORITY_FORUM_UNKNOWN
+        inferred = AUTHORITY_NORM_STANDARD
+    elif _pattern_match(haystack, _MANUFACTURER_PATTERNS):
+        inferred = AUTHORITY_MANUFACTURER_SPEC
+    elif _pattern_match(haystack, _INTERNAL_PATTERNS):
+        inferred = AUTHORITY_INTERNAL_WIKI
+    elif _pattern_match(haystack, _FORUM_PATTERNS):
+        inferred = AUTHORITY_FORUM_UNKNOWN
+    else:
+        inferred = AUTHORITY_FORUM_UNKNOWN
+
+    # Optional metadata confidence guard: a source that "sounds official" but
+    # is explicitly marked low-trust must not outrank trusted evidence.
+    source_class = md.get("source_class")
+    if source_class is not None:
+        try:
+            source_class_f = max(0.0, min(1.0, float(source_class)))
+            inferred = min(inferred, source_class_f)
+        except (TypeError, ValueError):
+            pass
+    return inferred
 
 
 def _chunk_text(chunk: Mapping[str, Any]) -> str:

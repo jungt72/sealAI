@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 from typing import Any, Dict, List
 
 import structlog
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.draft_answer")
+_DRAFT_LLM: Any | None = None
 
 
 def _render_block(title: str, entries: List[str]) -> List[str]:
@@ -53,7 +56,50 @@ def _render_contract_draft(contract: AnswerContract) -> str:
     return "\n".join(lines).strip()
 
 
-def node_draft_answer(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+def _chunk_to_text(chunk: Any) -> str:
+    content = getattr(chunk, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                text = part.get("text")
+                if text is not None:
+                    parts.append(str(text))
+            elif isinstance(part, str):
+                parts.append(part)
+        return "".join(parts)
+    return str(content or "")
+
+
+def _extract_langgraph_config(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Any | None:
+    config = kwargs.get("config")
+    if config is not None:
+        return config
+    if args:
+        candidate = args[0]
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
+def _get_draft_llm() -> Any:
+    global _DRAFT_LLM
+    if _DRAFT_LLM is None:
+        from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI
+
+        _DRAFT_LLM = LazyChatOpenAI(
+            model="gpt-4.1-mini",
+            temperature=0,
+            cache=False,
+            max_tokens=800,
+            streaming=True,
+        )
+    return _DRAFT_LLM
+
+
+async def node_draft_answer(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     contract = state.answer_contract
     if contract is None:
         logger.error("draft_answer.missing_contract")
@@ -65,9 +111,30 @@ def node_draft_answer(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
         }
 
     contract_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
-    draft_text = _render_contract_draft(contract)
+    contract_text = _render_contract_draft(contract)
+    config = _extract_langgraph_config(_args, _kwargs)
+    messages = [
+        SystemMessage(
+            content=(
+                "Write a concise technical answer in German. "
+                "Use only the provided contract facts. "
+                "Include all numeric values and all required disclaimers verbatim. "
+                "Do not invent additional numbers."
+            )
+        ),
+        HumanMessage(content=f"ANSWER CONTRACT:\n{contract_text}"),
+    ]
+    chunks: List[str] = []
+    llm = _get_draft_llm()
+    async for chunk in llm.astream(messages, config=config):
+        text = _chunk_to_text(chunk)
+        if text:
+            chunks.append(text)
+    draft_text = "".join(chunks).strip()
+    if not draft_text:
+        draft_text = contract_text
 
-    flags = dict(state.flags or {})
+    flags = deepcopy(state.flags or {})
     flags["answer_contract_hash"] = contract_hash
 
     logger.info(
@@ -84,4 +151,3 @@ def node_draft_answer(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
 
 
 __all__ = ["node_draft_answer"]
-

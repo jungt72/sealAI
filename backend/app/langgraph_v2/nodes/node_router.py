@@ -30,6 +30,12 @@ logger = structlog.get_logger("langgraph_v2.node_router")
 _RFQ_PATTERNS = re.compile(
     r"\b("
     r"angebot(?:e|s)?\s+(?:einholen|anfordern|senden|erstellen)"
+    r"|angebot\s+f(?:u|ue|ü)r"
+    r"|ich\s+(?:brauche|ben[oö]tige|m[oö]chte)\s+ein\s+angebot"
+    r"|preisanfrage"
+    r"|preis\s+f(?:u|ue|ü)r"
+    r"|quote\s+for"
+    r"|bitte\s+um\s+(?:ein\s+)?angebot"
     r"|rfq\s+(?:senden|erstellen|generieren)"
     r"|anfrage\s+(?:senden|versenden)"
     r"|request\s+for\s+quotation"

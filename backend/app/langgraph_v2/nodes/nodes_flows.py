@@ -6,6 +6,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from app.langgraph_v2.phase import PHASE
@@ -50,6 +51,7 @@ _MATERIAL_CODE_PATTERN = re.compile(r"\b([a-z]{2,6}[-_/]?\d{2,4})\b", re.IGNOREC
 _TRADE_NAME_PATTERN = re.compile(r"trade_name\s*[:=]?\s*['\"]([^'\"]{2,120})['\"]", re.IGNORECASE)
 _SIMPLE_QUOTED_PATTERN = re.compile(r"['\"]([^'\"]{2,120})['\"]")
 _GLOBAL_SHARED_TENANT = "sealai"
+logger = structlog.get_logger("langgraph_v2.nodes_flows")
 
 
 def _update_working_memory(state: SealAIState, updates: Dict[str, Any]) -> WorkingMemory:
@@ -199,7 +201,12 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
             if trade_name_key:
                 metadata_filters[trade_name_key] = trade_name
         query = user_text
-        print(f"DEBUG RAG: Searching Qdrant for '{query}' with allowed tenants: {allowed_tenants}")
+        logger.debug(
+            "material_agent.rag_search_start",
+            query=query,
+            allowed_tenants=allowed_tenants,
+            collection="technical_docs",
+        )
         payload: Dict[str, Any] = {}
         rag_search_exception: Exception | None = None
         for tenant_scope in allowed_tenants:
@@ -213,8 +220,13 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
                 )
             except Exception as exc:
                 rag_search_exception = exc
-                print(f"!!! RAG SEARCH FAILED OR RETURNED 0 HITS FOR: {query} !!!")
-                print(f"!!! RAG EXCEPTION: {type(exc).__name__}: {exc} !!!")
+                logger.warning(
+                    "material_agent.rag_search_exception",
+                    query=query,
+                    tenant_scope=tenant_scope,
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                )
                 payload = {
                     "hits": [],
                     "context": "",
@@ -229,11 +241,16 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
                 break
         hits = payload.get("hits") or []
         if not hits:
-            print(f"!!! RAG SEARCH FAILED OR RETURNED 0 HITS FOR: {query} !!!")
+            logger.warning(
+                "material_agent.rag_search_no_hits",
+                query=query,
+                allowed_tenants=allowed_tenants,
+            )
             if rag_search_exception is not None:
-                print(
-                    "!!! LAST RAG ERROR: "
-                    f"{type(rag_search_exception).__name__}: {rag_search_exception} !!!"
+                logger.warning(
+                    "material_agent.rag_search_last_error",
+                    error_type=type(rag_search_exception).__name__,
+                    error=str(rag_search_exception),
                 )
         retrieval_meta = dict(payload.get("retrieval_meta") or {})
         retrieval_meta["allowed_tenants"] = allowed_tenants
@@ -921,8 +938,11 @@ def prepare_final_answer_llm_payload(
     forced_text: str | None = None
     prepared_messages: List[BaseMessage] = list(rendered_messages or [])
 
-    # Debug Visibility
-    print(f"DEBUG RAG: Routing query '{user_query}' with context length: {len(context_text)}")
+    logger.debug(
+        "final_answer.rag_routing_context",
+        query=user_query,
+        context_len=len(context_text),
+    )
 
     # We keep the messages structure but remove the forced_text manipulation logic
     # that existed here for 'kyrolon' specific masking.

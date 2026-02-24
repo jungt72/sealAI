@@ -55,6 +55,8 @@ class QGateCheck(BaseModel):
     severity: Severity
     passed: bool
     message: str
+    alternatives: List[str] = Field(default_factory=list)
+    remediation_steps: List[str] = Field(default_factory=list)
     details: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -117,6 +119,63 @@ _MATERIAL_P_MAX_BAR = 250.0
 # ---------------------------------------------------------------------------
 # Individual check functions
 # ---------------------------------------------------------------------------
+
+
+def _get_alternative_materials_for_medium(medium: str) -> List[str]:
+    """Return pragmatic fallback material options for aggressive media."""
+    medium_lower = (medium or "").strip().lower()
+
+    if any(token in medium_lower for token in ("hf", "flusssäure", "flusssaeure", "hydrofluoric")):
+        return [
+            "PTFE (virgin, ungefuellt)",
+            "Kalrez 4079 (FFKM)",
+            "Kalrez 6375 (FFKM)",
+            "FFKM 70 Shore",
+        ]
+    if any(token in medium_lower for token in ("chromsäure", "chromsaeure", "chromic")):
+        return [
+            "Kalrez 4079 (FFKM)",
+            "PTFE",
+            "EPDM (bei niedrigen Konzentrationen)",
+        ]
+    if any(token in medium_lower for token in ("h2so4", "schwefelsäure", "schwefelsaeure", "sulfuric")):
+        return [
+            "Kalrez 4079 (FFKM)",
+            "PTFE",
+            "Viton/FKM (bei <70% Konzentration)",
+        ]
+    if any(token in medium_lower for token in ("naoh", "koh", "natronlauge", "caustic")):
+        return [
+            "Kalrez 4079 (FFKM)",
+            "EPDM",
+            "Viton/FKM (bei <50% Konzentration)",
+        ]
+    return [
+        "Kalrez 4079 (FFKM, universell)",
+        "PTFE (chemisch inert)",
+    ]
+
+
+def _calculate_required_flange_class(safety_factor: float) -> str:
+    """Suggest a conservative flange class upgrade from low safety factor."""
+    if safety_factor < 0.6:
+        return "ASME Class 600 / PN100+"
+    if safety_factor < 0.8:
+        return "ASME Class 300 / PN63"
+    return "ASME Class 150 / PN40"
+
+
+def _format_blocker_summary(blockers: List[QGateCheck]) -> str:
+    lines: List[str] = []
+    for blocker in blockers:
+        lines.append(blocker.message)
+        if blocker.alternatives:
+            lines.append("ALTERNATIVEN:")
+            lines.extend(f"  - {alt}" for alt in blocker.alternatives)
+        if blocker.remediation_steps:
+            lines.append("EMPFOHLENE MASSNAHMEN:")
+            lines.extend(f"  - {step}" for step in blocker.remediation_steps)
+    return "\n".join(lines)
 
 
 def _check_thermal_margin(
@@ -227,12 +286,19 @@ def _check_medium_compatibility(
     medium_lower = str(medium).strip().lower()
 
     if medium_lower in _INCOMPATIBLE_MEDIA:
+        alternatives = _get_alternative_materials_for_medium(str(medium))
         return QGateCheck(
             check_id="medium_compatibility",
             name="Medienverträglichkeit",
             severity="CRITICAL",
             passed=False,
-            message=f"Medium '{medium}' ist mit dem Standard-Dichtungswerkstoff NICHT verträglich — BLOCKER.",
+            message=f"BLOCKER: Medium '{medium}' ist mit dem Standard-Dichtungswerkstoff nicht verträglich.",
+            alternatives=alternatives,
+            remediation_steps=[
+                f"Wechsel auf ein kompatibles Material: {', '.join(alternatives)}",
+                "Mediumkonzentration und Temperatur gegen Beständigkeitsdatenblatt prüfen",
+                "Chemische Beständigkeit mit Herstellerguide verifizieren",
+            ],
             details={"medium": medium, "incompatible": True},
         )
 
@@ -246,13 +312,20 @@ def _check_medium_compatibility(
             details={"medium": medium, "compatible": True},
         )
 
+    alternatives = _get_alternative_materials_for_medium(str(medium))
     # Unknown medium — flag as critical because we can't confirm compatibility.
     return QGateCheck(
         check_id="medium_compatibility",
         name="Medienverträglichkeit",
         severity="CRITICAL",
         passed=False,
-        message=f"Medium '{medium}' — Verträglichkeit kann nicht automatisch bestätigt werden. Manuelle Prüfung erforderlich — BLOCKER.",
+        message=f"BLOCKER: Medium '{medium}' — Verträglichkeit kann nicht automatisch bestätigt werden.",
+        alternatives=alternatives,
+        remediation_steps=[
+            "Medium spezifizieren (Konzentration, Reinheit, Temperaturbereich)",
+            f"Vorab mit robusten Alternativen prüfen: {', '.join(alternatives)}",
+            "Freigabe durch chemische Beständigkeitsdatenbank einholen",
+        ],
         details={"medium": medium, "unknown": True},
     )
 
@@ -283,20 +356,42 @@ def _check_flange_class_match(
     sf = float(safety_factor)
     passed = sf >= 1.0
 
+    if passed:
+        return QGateCheck(
+            check_id="flange_class_match",
+            name="Flanschklassen-Match",
+            severity="CRITICAL",
+            passed=True,
+            message=f"Sicherheitsfaktor {sf:.2f} >= 1.0 — Flanschklasse ausreichend.",
+            details={
+                "safety_factor": sf,
+                "flange_pn": flange_pn,
+                "flange_class": flange_class,
+            },
+        )
+
+    required_class = _calculate_required_flange_class(sf)
     return QGateCheck(
         check_id="flange_class_match",
         name="Flanschklassen-Match",
         severity="CRITICAL",
-        passed=passed,
-        message=(
-            f"Sicherheitsfaktor {sf:.2f} >= 1.0 — Flanschklasse ausreichend."
-            if passed
-            else f"Sicherheitsfaktor {sf:.2f} < 1.0 — Flanschklasse/Verschraubung unzureichend — BLOCKER."
-        ),
+        passed=False,
+        message=f"BLOCKER: Flanschklasse/Verschraubung unzureichend (Sicherheitsfaktor {sf:.2f} < 1.0).",
+        alternatives=[
+            f"Upgrade auf {required_class}",
+            "Hoeherfeste Schrauben (z.B. A4-80 statt A4-70)",
+            "Betriebstemperatur reduzieren (Richtwert: -20%)",
+        ],
+        remediation_steps=[
+            f"Flanschdruckstufe auf mindestens {required_class} anheben",
+            "Schraubenmaterial und Vorspannkraftkonzept aktualisieren",
+            "Betriebsfenster (Druck/Temperatur) neu freigeben",
+        ],
         details={
             "safety_factor": sf,
             "flange_pn": flange_pn,
             "flange_class": flange_class,
+            "required_class": required_class,
         },
     )
 
@@ -657,15 +752,8 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     }
 
     if result.has_blockers:
-        # Build a user-facing blocker summary
-        blocker_messages = [
-            c.message for c in result.checks
-            if c.severity == "CRITICAL" and not c.passed
-        ]
-        update["error"] = (
-            "Quality Gate BLOCKER: "
-            + " | ".join(blocker_messages)
-        )
+        blockers = [c for c in result.checks if c.severity == "CRITICAL" and not c.passed]
+        update["error"] = "Quality Gate BLOCKER:\n" + _format_blocker_summary(blockers)
 
     return update
 

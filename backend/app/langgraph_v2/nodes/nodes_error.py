@@ -23,7 +23,7 @@ def smalltalk_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
             "Bleib kurz und locker, keine langen Monologe."
         ),
         temperature=0,
-        max_tokens=120,
+        max_tokens=400,
         metadata={
             "run_id": state.run_id,
             "thread_id": state.thread_id,

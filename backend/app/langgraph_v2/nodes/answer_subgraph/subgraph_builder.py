@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+"""Build and execute the contract-first answer subgraph topology.
+
+Topology:
+START -> prepare_contract -> draft_answer -> verify_claims
+verify_claims --pass--> finalize -> END
+verify_claims --render_mismatch--> targeted_patch -> verify_claims (loop)
+verify_claims --abort--> safe_fallback -> END
+
+The loop implements Deterministic Patching: only bounded, rule-based edits are
+allowed after verification failures. ``MAX_PATCH_ATTEMPTS`` prevents infinite
+repair loops and guarantees termination.
+"""
+
 import hashlib
 from typing import Any, Dict
 
@@ -21,7 +34,26 @@ MAX_PATCH_ATTEMPTS = 3
 _ANSWER_SUBGRAPH_CACHE: CompiledStateGraph | None = None
 
 
+def _extract_langgraph_config(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Any | None:
+    config = kwargs.get("config")
+    if config is not None:
+        return config
+    if args:
+        candidate = args[0]
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
 def _verification_router(state: SealAIState) -> str:
+    """Route verify results to finalize, deterministic patch loop, or abort.
+
+    Args:
+        state: Current graph state after ``node_verify_claims``.
+
+    Returns:
+        Route key: ``pass``, ``render_mismatch``, or ``abort``.
+    """
     report = state.verification_report
     if report is None:
         return "abort"
@@ -36,6 +68,16 @@ def _verification_router(state: SealAIState) -> str:
 
 
 def _safe_fallback_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    """Generate a safe terminal answer when verification cannot recover.
+
+    Args:
+        state: Current graph state.
+        *_args: Unused positional arguments for LangGraph compatibility.
+        **_kwargs: Unused keyword arguments for LangGraph compatibility.
+
+    Returns:
+        State patch with conservative fallback text and verification metadata.
+    """
     fallback_text = str(state.draft_text or "").strip()
     if not fallback_text:
         fallback_text = "Unable to produce a verified answer. Please request clarification."
@@ -70,6 +112,11 @@ def _safe_fallback_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
 
 
 def build_answer_subgraph() -> CompiledStateGraph:
+    """Compile and cache the answer subgraph.
+
+    Returns:
+        Compiled state graph instance for contract-first answer generation.
+    """
     global _ANSWER_SUBGRAPH_CACHE
     if _ANSWER_SUBGRAPH_CACHE is not None:
         return _ANSWER_SUBGRAPH_CACHE
@@ -103,12 +150,29 @@ def build_answer_subgraph() -> CompiledStateGraph:
 
 
 def _as_state(value: Any) -> SealAIState:
+    """Normalize dict/model values into ``SealAIState``.
+
+    Args:
+        value: Raw state-like value.
+
+    Returns:
+        Materialized ``SealAIState`` instance.
+    """
     if isinstance(value, SealAIState):
         return value
     return SealAIState.model_validate(value or {})
 
 
 def _extract_patch(before: SealAIState, after: SealAIState) -> Dict[str, Any]:
+    """Extract changed fields between pre/post subgraph states.
+
+    Args:
+        before: State snapshot before execution.
+        after: State snapshot after execution.
+
+    Returns:
+        Minimal patch containing only changed tracked fields.
+    """
     tracked_fields = [
         "answer_contract",
         "draft_text",
@@ -134,9 +198,20 @@ def _extract_patch(before: SealAIState, after: SealAIState) -> Dict[str, Any]:
 
 
 def answer_subgraph_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    """Run the answer subgraph synchronously and return a state patch.
+
+    Args:
+        state: Current graph state.
+        *_args: Unused positional arguments for LangGraph compatibility.
+        **_kwargs: Unused keyword arguments for LangGraph compatibility.
+
+    Returns:
+        Patch with changed output fields from subgraph execution.
+    """
     before = _as_state(state)
     subgraph = build_answer_subgraph()
-    result = subgraph.invoke(before)
+    config = _extract_langgraph_config(_args, _kwargs)
+    result = subgraph.invoke(before, config=config)
     after = _as_state(result)
     patch = _extract_patch(before, after)
     patch.setdefault("last_node", "answer_subgraph_node")
@@ -145,9 +220,20 @@ def answer_subgraph_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
 
 
 async def answer_subgraph_node_async(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    """Run the answer subgraph asynchronously and return a state patch.
+
+    Args:
+        state: Current graph state.
+        *_args: Unused positional arguments for LangGraph compatibility.
+        **_kwargs: Unused keyword arguments for LangGraph compatibility.
+
+    Returns:
+        Patch with changed output fields from async subgraph execution.
+    """
     before = _as_state(state)
     subgraph = build_answer_subgraph()
-    result = await subgraph.ainvoke(before)
+    config = _extract_langgraph_config(_args, _kwargs)
+    result = await subgraph.ainvoke(before, config=config)
     after = _as_state(result)
     patch = _extract_patch(before, after)
     patch.setdefault("last_node", "answer_subgraph_node")
@@ -160,4 +246,3 @@ __all__ = [
     "answer_subgraph_node",
     "answer_subgraph_node_async",
 ]
-

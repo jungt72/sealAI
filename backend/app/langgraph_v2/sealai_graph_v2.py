@@ -66,6 +66,7 @@ from app.langgraph_v2.nodes.orchestrator import orchestrator_node
 from app.langgraph_v2.nodes.factcard_lookup import node_factcard_lookup
 from app.langgraph_v2.nodes.compound_filter import node_compound_filter
 from app.langgraph_v2.nodes.merge_deterministic import node_merge_deterministic
+from app.langgraph_v2.nodes.route_after_frontdoor import route_after_frontdoor_node
 from app.langgraph_v2.nodes.p4_6_number_verification import node_p4_6_number_verification
 from app.langgraph_v2.nodes.request_clarification import request_clarification_node
 from app.langgraph_v2.nodes.answer_subgraph.subgraph_builder import (
@@ -263,7 +264,11 @@ def _render_final_prompt_package(payload: Dict[str, Any]) -> Dict[str, Any]:
     retrieved_chunks = _collect_retrieved_facts(payload["template_context"])
     if retrieved_chunks:
         state["context"] = retrieved_chunks
-    print(f"!!! FINAL LLM CONTEXT PAYLOAD: {state.get('context', 'EMPTY')} !!!")
+    logger.debug(
+        "final_answer.llm_context_payload",
+        has_context=bool(state.get("context")),
+        context_chars=len(state.get("context") or ""),
+    )
     prompt_text = (
         f"{prompt_text}\n\n"
         "### BEANTWORTUNGS-REGELN (Blueprint v4.1):\n"
@@ -516,14 +521,14 @@ def _supervisor_policy_router(state: SealAIState) -> str:
 def _node_router_dispatch(state: SealAIState) -> str:
     classification = getattr(state, "router_classification", None) or "new_case"
     if classification in ("new_case", "follow_up"):
-        return "p1_context"
+        return "frontdoor"
     if classification == "resume":
         return "resume_router"
     if classification == "clarification":
         return "clarification"
     if classification == "rfq_trigger":
         return "rfq_trigger"
-    return "p1_context"
+    return "frontdoor"
 
 
 def _resume_router(state: SealAIState) -> str:
@@ -674,7 +679,6 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     parameter_router = _parameter_check_router_async if require_async else _parameter_check_router
     critical_router = _critical_review_router_async if require_async else _critical_review_router
     product_router = _product_router_async if require_async else _product_router
-    frontdoor_router = _frontdoor_router_async if require_async else _frontdoor_router
     merge_deterministic_router = _merge_deterministic_router_async if require_async else _merge_deterministic_router
     reducer_router = _reducer_router_async if require_async else _reducer_router
     qgate_router = _qgate_router_async if require_async else _qgate_router
@@ -694,6 +698,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("node_p5_procurement", node_p5_procurement)   # v4.4.0 Sprint 8: P5 Procurement Engine
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
+    builder.add_node("route_after_frontdoor", route_after_frontdoor_node)
     builder.add_node("frontdoor_parallel_fanout_node", _frontdoor_parallel_fanout_node)
     builder.add_node("node_factcard_lookup_parallel", _node_factcard_lookup_parallel)    # KB Integration
     builder.add_node("node_compound_filter_parallel", _node_compound_filter_parallel)    # KB Integration
@@ -744,7 +749,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
         "node_router",
         node_router_dispatch,
         {
-            "p1_context": "node_p1_context",
+            "frontdoor": "frontdoor_discovery_node",
             "resume_router": "resume_router_node",
             "clarification": "smalltalk_node",
             "rfq_trigger": "node_p5_procurement",
@@ -786,14 +791,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
             "default": "response_node",
         },
     )
-    builder.add_conditional_edges(
-        "frontdoor_discovery_node",
-        frontdoor_router,
-        {
-            "smalltalk": "smalltalk_node",
-            "supervisor": "frontdoor_parallel_fanout_node",   # KB Integration: run deterministic workers in parallel
-        },
-    )
+    builder.add_edge("frontdoor_discovery_node", "route_after_frontdoor")
     builder.add_edge("frontdoor_parallel_fanout_node", "node_factcard_lookup_parallel")
     builder.add_edge("frontdoor_parallel_fanout_node", "node_compound_filter_parallel")
     builder.add_edge("node_factcard_lookup_parallel", "node_merge_deterministic")
