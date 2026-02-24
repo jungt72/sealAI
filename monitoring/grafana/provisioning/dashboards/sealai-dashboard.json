@@ -1,0 +1,58 @@
+{
+  "id": null,
+  "uid": "sealai-monitoring",
+  "title": "SealAI LangGraph v2 - Production Monitoring",
+  "tags": ["sealai", "langgraph", "production"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Request Rate",
+      "id": 1,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "sum(rate(sealai_http_requests_total[5m]))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "P95 Latency (s)",
+      "id": 2,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(sealai_http_request_duration_seconds_bucket[5m])))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "P99 Latency (s)",
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "histogram_quantile(0.99, sum by (le) (rate(sealai_http_request_duration_seconds_bucket[5m])))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Error Rate (5xx)",
+      "id": 4,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "sum(rate(sealai_http_requests_total{status=~\"5..\"}[5m]))", "refId": "A"}]
+    },
+    {
+      "type": "bargauge",
+      "title": "Health Status",
+      "id": 5,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "sealai_dependency_up", "refId": "A"}]
+    },
+    {
+      "type": "piechart",
+      "title": "Pattern Distribution",
+      "id": 6,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "sum by (pattern) (sealai_pattern_requests_total)", "refId": "A"}]
+    }
+  ]
+}

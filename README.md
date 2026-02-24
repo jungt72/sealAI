@@ -21,3 +21,12 @@ See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, li
 ## Changelog
 - MIGRATION: Phase-1 - Initial structure.
 - MIGRATION: Phase-2 - Full architecture.
+
+## Monitoring Runbook (Phase 6)
+- Start stack: `docker-compose up -d`
+- API: `http://localhost:8000`
+- Health: `http://localhost:8000/health`
+- Metrics: `http://localhost:8000/metrics`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (`admin` / `admin`)
+- Smoke test: `python test_monitoring.py`

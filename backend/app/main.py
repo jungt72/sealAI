@@ -8,19 +8,22 @@ import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.api.v1.api import api_router
 from app.api.v1.endpoints.rag import ensure_upload_directory
 from app.langgraph_v2.constants import CHECKPOINTER_NAMESPACE_V2
+from app.observability.health import run_all_health_checks
 from app.services.rag.qdrant_bootstrap import bootstrap_rag_collection
 from app.services.jobs.worker import start_job_worker
 
 log = logging.getLogger("uvicorn.error")
+slog = structlog.get_logger("app.main")
 
 
 def _bool_env(name: str, default: str = "0") -> bool:
@@ -57,21 +60,33 @@ class _PrometheusMiddleware(BaseHTTPMiddleware):
         return path
 
     async def dispatch(self, request: Request, call_next):
-        from app.core.metrics import http_requests_total, http_request_duration_seconds
+        from app.observability.metrics import (
+            HTTP_REQUEST_DURATION_SECONDS,
+            HTTP_REQUESTS_TOTAL,
+        )
 
         method = request.method
         path = self._normalize_path(request.url.path)
         start = time.perf_counter()
+        status_code = 500
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            duration = time.perf_counter() - start
+            status = str(status_code)
 
-        duration = time.perf_counter() - start
-        status = str(response.status_code)
-
-        http_requests_total.labels(method=method, path=path, status=status).inc()
-        http_request_duration_seconds.labels(method=method, path=path).observe(duration)
-
-        return response
+            HTTP_REQUESTS_TOTAL.labels(method=method, path=path, status=status).inc()
+            HTTP_REQUEST_DURATION_SECONDS.labels(method=method, path=path).observe(duration)
+            slog.info(
+                "http.request_completed",
+                method=method,
+                path=path,
+                status=status_code,
+                duration_ms=round(duration * 1000, 2),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +193,7 @@ async def _bootstrap_audit_log() -> None:
 
 def create_app() -> FastAPI:
     from app.core.config import settings
+    from app.observability import metrics as _metrics  # noqa: F401
 
     # LangSmith tracing — set env vars before any LangChain model is created
     if settings.langchain_tracing_v2 and settings.langchain_api_key:
@@ -206,6 +222,22 @@ def create_app() -> FastAPI:
     # Prometheus middleware (after CORS so CORS headers are present on /metrics too)
     if settings.prometheus_enabled:
         app.add_middleware(_PrometheusMiddleware)
+        try:
+            from prometheus_fastapi_instrumentator import Instrumentator
+
+            instrumentator = Instrumentator(
+                should_group_status_codes=False,
+                should_ignore_untemplated=True,
+                should_respect_env_var=True,
+                should_instrument_requests_inprogress=True,
+                excluded_handlers=[r"/metrics", r"/health", r"/healthz", r"/readyz"],
+                env_var_name="ENABLE_METRICS",
+                inprogress_name="sealai_http_requests_inprogress",
+                inprogress_labels=True,
+            )
+            instrumentator.instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+        except Exception as exc:
+            log.warning("Prometheus instrumentator setup failed (non-fatal): %s", exc)
 
     @app.get("/")
     async def root():
@@ -223,15 +255,15 @@ def create_app() -> FastAPI:
     async def ready():
         return {"ready": bool(getattr(app.state, "warmed_up", False))}
 
+    @app.get("/health", include_in_schema=False)
+    async def health_check():
+        result = await run_all_health_checks()
+        status_code = 200 if result.get("status") == "healthy" else 503
+        return JSONResponse(status_code=status_code, content=result)
+
     @app.get("/api/v1/ping")
     async def ping():
         return {"pong": True}
-
-    @app.get("/metrics", include_in_schema=False)
-    async def metrics():
-        """Prometheus metrics endpoint."""
-        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # v1-API mounten
     app.include_router(api_router, prefix="/api/v1")

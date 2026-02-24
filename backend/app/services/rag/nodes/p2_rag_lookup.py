@@ -14,11 +14,13 @@ Does NOT modify RAG internals — only calls existing MCP/RAG search APIs.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Dict, List, Optional
 
 import structlog
 
 from app.langgraph_v2.state import SealAIState, Source, WorkingMemory
+from app.observability.metrics import track_error, track_rag_retrieval
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.rag_cache import RAGCache
 from app.mcp.knowledge_tool import search_technical_docs
@@ -118,6 +120,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     Feeds into node_p3_5_merge.
     """
     profile: Optional[WorkingProfile] = getattr(state, "working_profile", None)
+    node_start = time.perf_counter()
 
     logger.info(
         "p2_rag_lookup_start",
@@ -210,6 +213,12 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             hit_count=len(cached_hits),
             run_id=state.run_id,
         )
+        track_rag_retrieval(
+            method="cache",
+            tier=0,
+            latency_seconds=time.perf_counter() - node_start,
+            cache_hit=True,
+        )
         return {
             "working_memory": wm,
             "sources": sources,
@@ -219,6 +228,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         }
 
     logger.info("p2_rag_lookup_cache_miss", tenant_id=tenant_scope, run_id=state.run_id)
+    track_rag_retrieval(method="cache", tier=0, latency_seconds=0.0, cache_hit=False)
 
     loop = asyncio.get_event_loop()
 
@@ -231,6 +241,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     rag_method: str = "hybrid"
 
     try:
+        tier_start = time.perf_counter()
         payload = await loop.run_in_executor(
             None,
             lambda: search_technical_docs(query=query, tenant_id=state.tenant_id, k=4),
@@ -245,9 +256,16 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             {"hits": hits, "context": rag_context, "retrieval_meta": retrieval_meta},
             ttl=3600,
         )
+        track_rag_retrieval(
+            method="qdrant_hybrid",
+            tier=1,
+            latency_seconds=time.perf_counter() - tier_start,
+            cache_hit=False,
+        )
         logger.info("p2_rag_lookup_tier1_ok", hit_count=len(hits), run_id=state.run_id)
 
     except Exception as exc:
+        track_error("rag", type(exc).__name__)
         logger.warning(
             "p2_rag_lookup_tier1_failed",
             error=str(exc),
@@ -260,6 +278,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             # Tier 2: BM25-only fallback (no vector store required)
             # ----------------------------------------------------------------
             try:
+                tier_start = time.perf_counter()
                 bm25_hits = await loop.run_in_executor(
                     None,
                     lambda: bm25_repo.search(
@@ -276,12 +295,19 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
                     {"hits": hits, "context": "", "retrieval_meta": retrieval_meta},
                     ttl=3600,
                 )
+                track_rag_retrieval(
+                    method="bm25",
+                    tier=2,
+                    latency_seconds=time.perf_counter() - tier_start,
+                    cache_hit=False,
+                )
                 logger.info(
                     "p2_rag_lookup_tier2_bm25_ok",
                     hit_count=len(hits),
                     run_id=state.run_id,
                 )
             except Exception as bm25_exc:
+                track_error("rag", type(bm25_exc).__name__)
                 # ------------------------------------------------------------
                 # Tier 3: Graceful empty result — node completes without crash
                 # ------------------------------------------------------------
@@ -299,6 +325,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
                 }
         else:
             # Non-Qdrant error — return error meta, don't crash graph
+            track_error("rag", type(exc).__name__)
             retrieval_meta["rag_method"] = "failed_gracefully"
             logger.error(
                 "p2_rag_lookup_non_qdrant_error",

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from functools import lru_cache
 from threading import Lock
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Iterator, List, Optional
@@ -24,6 +25,23 @@ from app.core.config import settings
 from app.langgraph_v2.constants import MODEL_PRO
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_text_tokens(text: str) -> int:
+    """Best-effort token estimate without additional runtime dependencies."""
+    stripped = (text or "").strip()
+    if not stripped:
+        return 0
+    # Approximation: ~4 chars per token in mixed EN/DE technical text.
+    return max(1, len(stripped) // 4)
+
+
+def _estimate_message_tokens(messages: list[Any]) -> int:
+    total_chars = 0
+    for msg in messages:
+        content = getattr(msg, "content", "")
+        total_chars += len(_normalize_lc_content(content))
+    return max(0, total_chars // 4)
 
 
 def bind_permitted_tools(chat: ChatOpenAI, user_scopes: List[str] | None = None) -> ChatOpenAI:
@@ -354,14 +372,21 @@ async def run_llm_async(
     metadata: Dict[str, Any] | None = None,
 ) -> str:
     """Async variant of run_llm — uses ChatOpenAI.ainvoke() with 3× retry on transient errors."""
+    from app.observability.metrics import track_error, track_llm_call
+
+    start_time = time.perf_counter()
     if _use_fake_llm():
-        return _run_fake_llm(
+        text = _run_fake_llm(
             model=model,
             prompt=prompt,
             system=system,
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        duration = time.perf_counter() - start_time
+        tokens = _estimate_text_tokens(text)
+        track_llm_call(model=model, latency_seconds=duration, input_tokens=tokens, output_tokens=tokens, success=True)
+        return text
     try:
         chat = _get_chat_model(model, temperature)
         messages = [
@@ -372,8 +397,20 @@ async def run_llm_async(
         if max_tokens is not None:
             extra_kwargs["max_tokens"] = int(max_tokens)
         response = await _invoke_with_retry(chat, messages, **extra_kwargs)
-        return _normalize_lc_content(response.content).strip()
+        text = _normalize_lc_content(response.content).strip()
+        duration = time.perf_counter() - start_time
+        track_llm_call(
+            model=model,
+            latency_seconds=duration,
+            input_tokens=_estimate_message_tokens(messages),
+            output_tokens=_estimate_text_tokens(text),
+            success=True,
+        )
+        return text
     except Exception as e:
+        duration = time.perf_counter() - start_time
+        track_llm_call(model=model, latency_seconds=duration, input_tokens=0, output_tokens=0, success=False)
+        track_error("llm", type(e).__name__)
         logger.exception("run_llm_async: Fehler nach allen Retries (model=%s): %s", model, e)
         return (
             "Entschuldigung, bei der internen Modellabfrage ist ein Fehler aufgetreten. "
@@ -398,6 +435,9 @@ async def run_llm_stream(
     - on_chunk wird bei jedem Text-Snippet (Token/Delta) aufgerufen
     - Gibt den kompletten zusammengefügten Text zurück
     """
+    from app.observability.metrics import track_error, track_llm_call
+
+    start_time = time.perf_counter()
     if _use_fake_llm():
         text = _run_fake_llm(
             model=model,
@@ -410,6 +450,9 @@ async def run_llm_stream(
         for part in parts:
             if part and on_chunk is not None:
                 await on_chunk(part)
+        duration = time.perf_counter() - start_time
+        tokens = _estimate_text_tokens(text)
+        track_llm_call(model=model, latency_seconds=duration, input_tokens=tokens, output_tokens=tokens, success=True)
         return text.strip()
 
     messages = [
@@ -435,10 +478,22 @@ async def run_llm_stream(
             if on_chunk is not None:
                 await on_chunk(text_part)
     except Exception as e:
+        duration = time.perf_counter() - start_time
+        track_llm_call(model=model, latency_seconds=duration, input_tokens=0, output_tokens=0, success=False)
+        track_error("llm", type(e).__name__)
         logger.exception("run_llm_stream: Fehler beim Streaming-LLM (model=%s): %s", model, e)
         raise
 
-    return "".join(collected).strip()
+    full_text = "".join(collected).strip()
+    duration = time.perf_counter() - start_time
+    track_llm_call(
+        model=model,
+        latency_seconds=duration,
+        input_tokens=_estimate_message_tokens(messages),
+        output_tokens=_estimate_text_tokens(full_text),
+        success=True,
+    )
+    return full_text
 
 
 __all__ = ["LazyChatOpenAI", "bind_permitted_tools", "get_model_tier", "run_llm", "run_llm_async", "run_llm_stream"]

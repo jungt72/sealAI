@@ -97,6 +97,7 @@ services:
       RAG_UPLOAD_DIR: "/app/data/uploads"
       HF_HOME: "/app/data/models"
       FASTEMBED_CACHE_PATH: "/app/data/models"
+      ENABLE_METRICS: "true"
       PYTHONUNBUFFERED: "1"
       OPENAI_ROUTER_MODEL: "${OPENAI_ROUTER_MODEL:-gpt-5-nano}"
       GENERATION_MODEL: "gpt-5-large"
@@ -145,6 +146,36 @@ services:
       retries: 5
       start_period: 30s
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    depends_on:
+      backend: { condition: service_started }
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      prometheus: { condition: service_started }
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+
   nginx:
     image: nginx:1.29.4
     container_name: nginx
@@ -171,3 +202,5 @@ volumes:
   pgdata:
   qdrant_storage:
   redis-data:
+  prometheus-data:
+  grafana-data:
