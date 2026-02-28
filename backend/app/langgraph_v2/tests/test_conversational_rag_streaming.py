@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from app.langgraph_v2.state import WorkingMemory
+
 import pytest
 from langchain_core.messages import HumanMessage
 
@@ -33,7 +35,7 @@ class _FakeLLM:
 async def test_conversational_rag_streams_chunks_and_forwards_config():
     state = SimpleNamespace(
         messages=[HumanMessage(content="Was ist geeignet?")],
-        working_memory=SimpleNamespace(panel_material={"rag_context": "Fakt A"}),
+        working_memory=WorkingMemory(panel_material={"rag_context": "Fakt A"}),
         context="",
         flags={},
         run_id="run-1",
@@ -58,7 +60,7 @@ async def test_conversational_rag_streams_chunks_and_forwards_config():
 async def test_conversational_rag_low_quality_short_circuits_without_llm():
     state = SimpleNamespace(
         messages=[HumanMessage(content="Was ist geeignet?")],
-        working_memory=SimpleNamespace(panel_material={"rag_context": "Fakt A"}),
+        working_memory=WorkingMemory(panel_material={"rag_context": "Fakt A"}),
         context="",
         flags={"rag_low_quality_results": True},
         run_id="run-1",

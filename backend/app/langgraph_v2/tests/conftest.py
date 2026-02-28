@@ -19,8 +19,32 @@ if "app.core.config" not in sys.modules:
         keycloak_jwks_url="https://auth.example.test/realms/sealai/protocol/openid-connect/certs",
         keycloak_client_id="sealai-backend-api",
         keycloak_expected_azp="sealai-backend-api",
+        redis_url="redis://localhost:6379",
     )
     sys.modules["app.core.config"] = config_stub
+
+if "prometheus_client" not in sys.modules:
+    def _make_prom_metric(*_a, **_kw):
+        class _Stub:
+            def inc(self, *a, **kw): pass
+            def observe(self, *a, **kw): pass
+            def set(self, *a, **kw): pass
+            def labels(self, *a, **kw): return self
+        return _Stub()
+    _prometheus_stub = types.ModuleType("prometheus_client")
+    _prometheus_stub.Counter = _make_prom_metric
+    _prometheus_stub.Histogram = _make_prom_metric
+    _prometheus_stub.Gauge = _make_prom_metric
+    sys.modules["prometheus_client"] = _prometheus_stub
+
+if "app.services.rag.bm25_store" not in sys.modules:
+    _bm25_stub = types.ModuleType("app.services.rag.bm25_store")
+    _bm25_stub.bm25_repo = SimpleNamespace(
+        search=lambda *a, **kw: [],
+        index=lambda *a, **kw: None,
+        delete=lambda *a, **kw: None,
+    )
+    sys.modules["app.services.rag.bm25_store"] = _bm25_stub
 
 
 def pytest_configure(config: pytest.Config) -> None:
