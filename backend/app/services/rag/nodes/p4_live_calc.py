@@ -1,0 +1,359 @@
+"""P4 Live-Tile deterministic calculations for SEALAI v5 foundation."""
+
+from __future__ import annotations
+
+import math
+import re
+from typing import Any, Dict, Iterable, Literal, Optional
+
+import structlog
+
+from app.langgraph_v2.phase import PHASE
+from app.langgraph_v2.state import LiveCalcTile, SealAIState
+
+logger = structlog.get_logger("rag.nodes.p4_live_calc")
+
+_NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
+
+_HRC_WARNING_MIN = 58.0
+_HRC_CRITICAL_MIN = 55.0
+_RUNOUT_WARNING_MAX_MM = 0.2
+_RUNOUT_CRITICAL_MAX_MM = 0.3
+_PV_WARNING_MAX = 2.0
+_PV_CRITICAL_MAX = 3.0
+_FRICTION_COEFF_PTFE = 0.15
+_PTFE_ALPHA_PER_K = 1.2e-4
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        match = _NUMBER_PATTERN.search(raw.replace(",", "."))
+        if not match:
+            return None
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return None
+    return None
+
+
+def _first_float(payload: Dict[str, Any], keys: Iterable[str]) -> Optional[float]:
+    for key in keys:
+        parsed = _coerce_float(payload.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _collect_parameter_payload(state: SealAIState) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    extracted = state.extracted_params or {}
+    if isinstance(extracted, dict):
+        payload.update(extracted)
+
+    params = getattr(state, "parameters", None)
+    as_dict = getattr(params, "as_dict", None)
+    if callable(as_dict):
+        payload.update(as_dict() or {})
+    elif isinstance(params, dict):
+        payload.update(params)
+
+    if state.pressure_bar is not None:
+        payload.setdefault("pressure_bar", state.pressure_bar)
+    return payload
+
+
+def _to_dict(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    as_dict = getattr(value, "as_dict", None)
+    if callable(as_dict):
+        result = as_dict()
+        if isinstance(result, dict):
+            return result
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        result = model_dump(exclude_none=True)
+        if isinstance(result, dict):
+            return result
+    return {}
+
+
+def _sanitize_primitive_parameters(payload: Dict[str, Any]) -> Dict[str, str | int | float]:
+    sanitized: Dict[str, str | int | float] = {}
+    for key, value in payload.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (str, int, float)):
+            if isinstance(value, str) and not value.strip():
+                continue
+            sanitized[str(key)] = value
+    return sanitized
+
+
+def _collect_captured_parameters(state: SealAIState) -> Dict[str, str | int | float]:
+    merged: Dict[str, Any] = {}
+    merged.update(_to_dict(getattr(state, "extracted_params", {}) or {}))
+    merged.update(_to_dict(getattr(state, "parameters", {}) or {}))
+    merged.update(_to_dict(getattr(state, "working_profile", {}) or {}))
+    return _sanitize_primitive_parameters(merged)
+
+
+def _get_diameter_mm(payload: Dict[str, Any]) -> Optional[float]:
+    return _first_float(
+        payload,
+        (
+            "d1",
+            "shaft_d1",
+            "shaft_diameter",
+            "d_shaft_nominal",
+            "diameter",
+            "nominal_diameter",
+            "rod_diameter",
+            "inner_diameter_mm",
+        ),
+    )
+
+
+def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
+    diameter_mm = _get_diameter_mm(payload)
+    rpm = _first_float(payload, ("rpm", "speed_rpm", "n", "n_max"))
+    pressure_bar = _first_float(payload, ("pressure_bar", "pressure_max_bar", "pressure", "p_max"))
+    hrc_value = _first_float(payload, ("hrc", "hrc_value", "shaft_hardness", "hardness"))
+    runout_mm = _first_float(payload, ("runout_mm", "runout", "shaft_runout", "dynamic_runout"))
+    cross_section_d2 = _first_float(payload, ("cross_section_d2", "d2", "seal_cross_section"))
+
+    v_surface_m_s: Optional[float] = None
+    if diameter_mm is not None and rpm is not None and diameter_mm >= 0 and rpm >= 0:
+        v_surface_m_s = (diameter_mm * math.pi * rpm) / 60000.0
+
+    pv_value_mpa_m_s: Optional[float] = None
+    if v_surface_m_s is not None and pressure_bar is not None and pressure_bar >= 0:
+        pv_value_mpa_m_s = (pressure_bar * 0.1) * v_surface_m_s
+
+    friction_power_watts: Optional[float] = None
+    if diameter_mm is not None and v_surface_m_s is not None and pressure_bar is not None and pressure_bar >= 0:
+        contact_width_mm = cross_section_d2 if cross_section_d2 and cross_section_d2 > 0 else 1.0
+        contact_area_m2 = math.pi * (diameter_mm / 1000.0) * (max(contact_width_mm, 0.1) / 1000.0)
+        normal_force_n = (pressure_bar * 1e5) * contact_area_m2
+        friction_power_watts = _FRICTION_COEFF_PTFE * normal_force_n * v_surface_m_s
+
+    hrc_warning = bool(hrc_value is not None and hrc_value < _HRC_WARNING_MIN)
+    runout_warning = bool(runout_mm is not None and runout_mm > _RUNOUT_WARNING_MAX_MM)
+    pv_warning = bool(pv_value_mpa_m_s is not None and pv_value_mpa_m_s > _PV_WARNING_MAX)
+
+    lubrication_mode = str(payload.get("lubrication_mode") or payload.get("lubrication") or "").strip().lower()
+    medium = str(payload.get("medium") or payload.get("medium_type") or "").strip()
+    dry_running_risk = bool(
+        (lubrication_mode in {"dry", "none"} and (v_surface_m_s or 0.0) > 1.0)
+        or (not medium and not lubrication_mode and (v_surface_m_s or 0.0) > 4.0)
+    )
+
+    critical = bool(
+        (hrc_value is not None and hrc_value < _HRC_CRITICAL_MIN)
+        or (runout_mm is not None and runout_mm > _RUNOUT_CRITICAL_MAX_MM)
+        or (pv_value_mpa_m_s is not None and pv_value_mpa_m_s > _PV_CRITICAL_MAX)
+    )
+    has_data = any(
+        value is not None
+        for value in (diameter_mm, rpm, pressure_bar, v_surface_m_s, pv_value_mpa_m_s, hrc_value, runout_mm)
+    )
+    return {
+        "v_surface_m_s": v_surface_m_s,
+        "pv_value_mpa_m_s": pv_value_mpa_m_s,
+        "hrc_value": hrc_value,
+        "hrc_warning": hrc_warning,
+        "runout_warning": runout_warning,
+        "pv_warning": pv_warning,
+        "friction_power_watts": friction_power_watts,
+        "dry_running_risk": dry_running_risk,
+        "critical": critical,
+        "has_data": has_data,
+    }
+
+
+def calc_extrusion(payload: Dict[str, Any]) -> Dict[str, Any]:
+    pressure_bar = _first_float(payload, ("pressure_bar", "pressure_max_bar", "pressure", "p_max"))
+    clearance_gap_mm = _first_float(payload, ("clearance_gap_mm", "clearance_gap", "gap_mm"))
+
+    extrusion_risk = bool(
+        (pressure_bar is not None and pressure_bar > 100.0 and clearance_gap_mm is not None and clearance_gap_mm > 0.1)
+        or (pressure_bar is not None and pressure_bar > 250.0 and clearance_gap_mm is None)
+    )
+    return {
+        "clearance_gap_mm": clearance_gap_mm,
+        "extrusion_risk": extrusion_risk,
+        "requires_backup_ring": extrusion_risk,
+        "has_data": pressure_bar is not None or clearance_gap_mm is not None,
+    }
+
+
+def calc_geometry(payload: Dict[str, Any]) -> Dict[str, Any]:
+    cross_section_d2 = _first_float(payload, ("cross_section_d2", "d2", "seal_cross_section"))
+    groove_depth = _first_float(payload, ("groove_depth", "groove_depth_mm"))
+    groove_width = _first_float(payload, ("groove_width", "groove_width_mm"))
+    shaft_d1 = _first_float(payload, ("shaft_d1", "d1", "shaft_diameter"))
+    seal_inner_d = _first_float(payload, ("seal_inner_d", "seal_inner_diameter", "seal_id"))
+
+    compression_ratio_pct: Optional[float] = None
+    groove_fill_pct: Optional[float] = None
+    stretch_pct: Optional[float] = None
+    geometry_warning = False
+
+    if cross_section_d2 is not None and groove_depth is not None and cross_section_d2 > 0:
+        compression_ratio_pct = ((cross_section_d2 - groove_depth) / cross_section_d2) * 100.0
+        if compression_ratio_pct < 8.0 or compression_ratio_pct > 30.0:
+            geometry_warning = True
+
+    if (
+        cross_section_d2 is not None
+        and groove_depth is not None
+        and groove_width is not None
+        and groove_depth > 0
+        and groove_width > 0
+    ):
+        area_seal = math.pi * ((cross_section_d2 / 2.0) ** 2)
+        area_groove = groove_width * groove_depth
+        if area_groove > 0:
+            groove_fill_pct = (area_seal / area_groove) * 100.0
+            if groove_fill_pct > 85.0:
+                geometry_warning = True
+
+    if shaft_d1 is not None and seal_inner_d is not None and seal_inner_d > 0:
+        stretch_pct = ((shaft_d1 - seal_inner_d) / seal_inner_d) * 100.0
+        if stretch_pct > 6.0:
+            geometry_warning = True
+
+    has_data = any(
+        value is not None
+        for value in (cross_section_d2, groove_depth, groove_width, shaft_d1, seal_inner_d, compression_ratio_pct, groove_fill_pct, stretch_pct)
+    )
+    return {
+        "compression_ratio_pct": compression_ratio_pct,
+        "groove_fill_pct": groove_fill_pct,
+        "stretch_pct": stretch_pct,
+        "geometry_warning": geometry_warning,
+        "has_data": has_data,
+    }
+
+
+def calc_thermal(payload: Dict[str, Any]) -> Dict[str, Any]:
+    temp_min_c = _first_float(payload, ("temp_min_c", "temperature_min_c", "temperature_min", "T_medium_min", "temp_min"))
+    temp_max_c = _first_float(payload, ("temp_max_c", "temperature_max_c", "temperature_max", "T_medium_max", "temp_max"))
+    diameter_mm = _get_diameter_mm(payload)
+
+    thermal_expansion_mm: Optional[float] = None
+    if diameter_mm is not None and temp_min_c is not None and temp_max_c is not None:
+        thermal_expansion_mm = diameter_mm * _PTFE_ALPHA_PER_K * (temp_max_c - temp_min_c)
+
+    shrinkage_risk = bool(temp_min_c is not None and temp_min_c < -50.0)
+    has_data = any(value is not None for value in (temp_min_c, temp_max_c, thermal_expansion_mm))
+    return {
+        "thermal_expansion_mm": thermal_expansion_mm,
+        "shrinkage_risk": shrinkage_risk,
+        "has_data": has_data,
+    }
+
+
+def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    """Compute deterministic live-tile values and warnings across physics domains."""
+    payload = _collect_parameter_payload(state)
+
+    tribology = calc_tribology(payload)
+    extrusion = calc_extrusion(payload)
+    geometry = calc_geometry(payload)
+    thermal = calc_thermal(payload)
+
+    risk_flags = bool(extrusion["extrusion_risk"] or geometry["geometry_warning"] or thermal["shrinkage_risk"])
+    base_critical = bool(tribology["critical"])
+    warning_flags = bool(
+        tribology["hrc_warning"]
+        or tribology["runout_warning"]
+        or tribology["pv_warning"]
+        or tribology["dry_running_risk"]
+    )
+    has_meaningful_output = any(
+        value is not None
+        for value in (
+            tribology["v_surface_m_s"],
+            tribology["pv_value_mpa_m_s"],
+            tribology["friction_power_watts"],
+            tribology["hrc_value"],
+            geometry["compression_ratio_pct"],
+            geometry["groove_fill_pct"],
+            geometry["stretch_pct"],
+            thermal["thermal_expansion_mm"],
+            extrusion["clearance_gap_mm"],
+        )
+    )
+
+    status: Literal["ok", "warning", "critical", "insufficient_data"]
+    if risk_flags or base_critical:
+        status = "critical"
+    elif warning_flags:
+        status = "warning"
+    elif has_meaningful_output:
+        status = "ok"
+    else:
+        status = "insufficient_data"
+
+    captured_parameters = _collect_captured_parameters(state)
+
+    tile = LiveCalcTile(
+        v_surface_m_s=tribology["v_surface_m_s"],
+        pv_value_mpa_m_s=tribology["pv_value_mpa_m_s"],
+        hrc_value=tribology["hrc_value"],
+        hrc_warning=tribology["hrc_warning"],
+        runout_warning=tribology["runout_warning"],
+        pv_warning=tribology["pv_warning"],
+        friction_power_watts=tribology["friction_power_watts"],
+        dry_running_risk=tribology["dry_running_risk"],
+        clearance_gap_mm=extrusion["clearance_gap_mm"],
+        extrusion_risk=extrusion["extrusion_risk"],
+        requires_backup_ring=extrusion["requires_backup_ring"],
+        compression_ratio_pct=geometry["compression_ratio_pct"],
+        groove_fill_pct=geometry["groove_fill_pct"],
+        stretch_pct=geometry["stretch_pct"],
+        geometry_warning=geometry["geometry_warning"],
+        thermal_expansion_mm=thermal["thermal_expansion_mm"],
+        shrinkage_risk=thermal["shrinkage_risk"],
+        status=status,
+        parameters=captured_parameters,
+    )
+
+    logger.info(
+        "p4_live_calc_done",
+        v_surface_m_s=tile.v_surface_m_s,
+        pv_value_mpa_m_s=tile.pv_value_mpa_m_s,
+        friction_power_watts=tile.friction_power_watts,
+        extrusion_risk=tile.extrusion_risk,
+        requires_backup_ring=tile.requires_backup_ring,
+        compression_ratio_pct=tile.compression_ratio_pct,
+        groove_fill_pct=tile.groove_fill_pct,
+        stretch_pct=tile.stretch_pct,
+        thermal_expansion_mm=tile.thermal_expansion_mm,
+        shrinkage_risk=tile.shrinkage_risk,
+        status=tile.status,
+        run_id=state.run_id,
+        thread_id=state.thread_id,
+    )
+
+    return {
+        "live_calc_tile": tile.model_dump(),
+        "phase": PHASE.CALCULATION,
+        "last_node": "node_p4_live_calc",
+    }
+
+
+__all__ = ["node_p4_live_calc", "calc_tribology", "calc_extrusion", "calc_geometry", "calc_thermal"]
