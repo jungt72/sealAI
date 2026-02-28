@@ -13,12 +13,13 @@ safe fallback paths.
 """
 
 import hashlib
+import json
 import re
 from typing import Any, Dict, List, Set
 
 import structlog
 
-from app.langgraph_v2.state.sealai_state import SealAIState, VerificationReport
+from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, VerificationReport
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.verify_claims")
 
@@ -68,6 +69,60 @@ def _find_suspicious_unicode_spans(text: str) -> List[str]:
         for match in pattern.finditer(text or ""):
             spans.append(match.group(0))
     return spans
+
+
+def _expected_numbers_from_user_fields(contract: AnswerContract) -> Set[str]:
+    """Extract expected numeric claims from user-facing contract fields only.
+
+    Internal identifiers like selected fact/chunk IDs are intentionally excluded.
+    """
+    expected: Set[str] = set()
+    expected |= _numbers_from_text(json.dumps(contract.resolved_parameters, ensure_ascii=False))
+    expected |= _numbers_from_text(json.dumps(contract.calc_results, ensure_ascii=False))
+    for disclaimer in contract.required_disclaimers:
+        expected |= _numbers_from_text(disclaimer)
+    return expected
+
+
+def _allowed_number_tokens_from_flags(state: SealAIState) -> Set[str]:
+    flags = getattr(state, "flags", {}) or {}
+    raw = flags.get("answer_subgraph_allowed_number_tokens")
+    if not isinstance(raw, list):
+        return set()
+    out: Set[str] = set()
+    for token in raw:
+        text = str(token or "").strip()
+        if text:
+            out.add(text)
+    return out
+
+
+def _numbers_from_sources(state: SealAIState) -> Set[str]:
+    numbers: Set[str] = set()
+    for source in list(getattr(state, "sources", []) or []):
+        snippet = ""
+        if isinstance(source, dict):
+            snippet = str(source.get("snippet") or source.get("text") or "")
+        else:
+            snippet = str(getattr(source, "snippet", "") or getattr(source, "text", "") or "")
+        numbers |= _numbers_from_text(snippet)
+    numbers |= _numbers_from_text(str(getattr(state, "context", "") or ""))
+    return numbers
+
+
+def _skip_strict_number_checks(state: SealAIState) -> bool:
+    flags = getattr(state, "flags", {}) or {}
+    if bool(flags.get("number_verification_skip_active")):
+        return True
+    goal = str(getattr(getattr(state, "intent", None), "goal", "") or "").strip().lower()
+    if goal == "explanation_or_comparison":
+        return True
+    category = str(
+        getattr(state, "intent_category", None)
+        or flags.get("frontdoor_intent_category")
+        or ""
+    ).strip().upper()
+    return category == "MATERIAL_RESEARCH"
 
 
 def _build_failure_span(
@@ -157,11 +212,19 @@ def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
 
     contract = state.answer_contract
     contract_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
-    expected_numbers = _numbers_from_text(contract.model_dump_json())
+    expected_numbers = _expected_numbers_from_user_fields(contract)
+    allowed_numbers = _allowed_number_tokens_from_flags(state) | _numbers_from_sources(state)
     rendered_numbers = _numbers_from_text(draft_text, ignore_formatting_numbers=True)
+    strict_numbers_disabled = _skip_strict_number_checks(state)
 
-    missing_numbers = sorted(expected_numbers - rendered_numbers)
-    unexpected_numbers = sorted(rendered_numbers - expected_numbers)
+    if strict_numbers_disabled:
+        missing_numbers = []
+        unexpected_numbers = []
+    else:
+        missing_numbers = sorted(expected_numbers - rendered_numbers)
+        unexpected_numbers = sorted(
+            token for token in (rendered_numbers - expected_numbers) if token not in allowed_numbers
+        )
     missing_disclaimers = [text for text in contract.required_disclaimers if text not in draft_text]
     suspicious_unicode_spans = _find_suspicious_unicode_spans(draft_text)
 
@@ -193,6 +256,7 @@ def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
     logger.info(
         "verify_claims.done",
         status=status,
+        strict_numbers_disabled=strict_numbers_disabled,
         missing_numbers=len(missing_numbers),
         unexpected_numbers=len(unexpected_numbers),
         missing_disclaimers=len(missing_disclaimers),

@@ -1,144 +1,165 @@
 {
   "schema_version": "1.3",
-  "generated_at": "2026-02-23",
-  "description": "PTFE Compound Decision Matrix for pre-screening material candidates",
-  "matrix": [
+  "doc_id": "SEALAI-KB-PTFE-COMPOUND-MATRIX-001",
+  "domain": "materials_polymers_fluoropolymers_compounds",
+  "purpose": "Deterministic pre-filter for PTFE compound/filler family screening before LLM generation",
+  "warning": "Qualitative screen only. Final selection requires grade-specific datasheets/tests and application conditions (PV, counterface, medium, temperature, purity).",
+  "match_policy": {
+    "forbidden_conditions_logic": "ANY match => exclude candidate pending explicit override justification",
+    "override_requires": [
+      "application_conditions",
+      "counterface_data",
+      "chemical_compatibility_check",
+      "purity_requirement_check"
+    ]
+  },
+  "compound_decision_matrix": [
     {
-      "id": "CDM-001",
-      "filler_id": "ptfe_virgin",
-      "compound_name": "PTFE (unversetzt / Virgin)",
-      "description": "Reines PTFE ohne Füllstoffe — chemisch universell, geringer Reibwert",
-      "screening_conditions": {
-        "temp_max_c": {"lte": 260},
-        "temp_min_c": {"gte": -200},
-        "pressure_max_bar": {"lte": 200},
-        "application_type": {"not_in": ["dynamic_high_load"]}
-      },
-      "hard_exclusions": {
-        "medium_ids": ["hf_acid", "hydrofluoric_acid"],
-        "reason": "Ausschluss nur bei Flusssäure (chemisch nicht beständig)"
-      },
-      "score": 90,
-      "food_grade": true,
-      "rationale": "Universell chemisch beständig, ideal für statische Dichtungen, food-grade. Einschränkung: Kaltfluss unter dauerhafter Last.",
-      "recommended_for": [
-        "statische_flanschdichtungen",
-        "chemisch_aggressive_medien",
-        "lebensmittel_pharma",
-        "allgemeine_abdichtung"
-      ]
+      "filler_id": "PTFE-CMP-VIRGIN",
+      "filler_type": "None (Virgin PTFE)",
+      "wt_percent_typical": 0,
+      "wear_resistance": "Poor",
+      "abrasivity_to_counterface": "Very Low",
+      "chemical_resistance": "Excellent (broad; exceptions exist)",
+      "uhp_suitability": "High (if specific grade + cleaning/qualification)",
+      "creep_resistance": "Poor",
+      "forbidden_conditions": [
+        "High PV dynamic sealing",
+        "High continuous mechanical load (> 5 MPa at RT) without creep validation",
+        "Abrasive media"
+      ],
+      "recommended_use": "Static seals, UHP fluid handling (with qualification), extreme chemicals, FDA/Pharma (grade/compliance specific).",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": null,
+        "max_pv_limit_MPa_m_s": 0,
+        "forbidden_media_tags": [],
+        "forbidden_purity_classes": [],
+        "requires_electrical_insulation": false,
+        "custom_blocks": [
+          "High PV dynamic sealing not recommended without validated grade-specific test data.",
+          "Abrasive media increases wear risk; screen out for severe abrasion unless sacrificial design accepted.",
+          "High continuous load >5 MPa at RT requires creep validation and anti-extrusion design."
+        ]
+      }
     },
     {
-      "id": "CDM-002",
-      "filler_id": "ptfe_25_glass",
-      "compound_name": "PTFE + 25% Glasfaser",
-      "description": "Glasfaserverstärktes PTFE — verbesserte Kriechfestigkeit und Druckbelastbarkeit",
-      "screening_conditions": {
-        "temp_max_c": {"lte": 250},
-        "temp_min_c": {"gte": -70},
-        "pressure_max_bar": {"lte": 350}
-      },
-      "hard_exclusions": {
-        "medium_ids": ["hf_acid", "hydrofluoric_acid", "flusssaeure", "strong_fluorides"],
-        "reason": "Glasfaser wird durch Flusssäure und starke Fluoride abgebaut"
-      },
-      "score": 82,
-      "food_grade": false,
-      "rationale": "Besonders geeignet für höhere Drücke und Anwendungen, bei denen Kriechfestigkeit wichtig ist. Nicht für food-grade oder HF-haltige Medien.",
-      "recommended_for": [
-        "hochdruck_statik",
-        "flanschdichtungen_erhöhter_last",
-        "backup_rings_hydraulik"
-      ]
-    },
-    {
-      "id": "CDM-003",
-      "filler_id": "ptfe_15_carbon",
-      "compound_name": "PTFE + 15% Kohlenstoff",
-      "description": "Carbon-gefülltes PTFE — antistatisch, gutes Trockenlaufverhalten",
-      "screening_conditions": {
-        "temp_max_c": {"lte": 250},
-        "temp_min_c": {"gte": -200},
-        "pressure_max_bar": {"lte": 250},
-        "application_type": {"in": ["dry_running", "static", "backup"]}
-      },
-      "hard_exclusions": {
-        "medium_ids": [
-          "salpetersaeure",
-          "nitric_acid",
-          "h2o2_concentrated",
-          "strong_oxidizers"
+      "filler_id": "PTFE-CMP-GLASS",
+      "filler_type": "Glass Fiber / Glass Beads",
+      "wt_percent_typical": "15-25%",
+      "wear_resistance": "Good",
+      "abrasivity_to_counterface": "High",
+      "chemical_resistance": "Good (exceptions apply; filler chemistry matters)",
+      "uhp_suitability": "Low (extractables/particle risk)",
+      "creep_resistance": "Good",
+      "forbidden_conditions": [
+        "Soft counterface (e.g., Aluminum, Bronze, Unhardened Steel < 45 HRC)",
+        "Hydrofluoric acid (HF)",
+        "Strong alkalis (e.g., hot NaOH)",
+        "UHP / Semiconductor wet bench"
+      ],
+      "recommended_use": "General dynamic seals against hardened steel, oxidative environments (validate wear/counterface finish).",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": 45,
+        "max_pv_limit_MPa_m_s": null,
+        "forbidden_media_tags": [
+          "HF",
+          "strong_alkali"
         ],
-        "reason": "Starke Oxidationsmittel greifen Kohlenstoff an"
-      },
-      "score": 75,
-      "food_grade": false,
-      "rationale": "Ideal für antistatische Anforderungen und Trockenlauf. Nicht für food-grade oder stark oxidierende Medien.",
-      "recommended_for": [
-        "antistatisch",
-        "trockenlauf",
-        "elektrisch_ableitfähig",
-        "backup_rings"
-      ]
-    },
-    {
-      "id": "CDM-004",
-      "filler_id": "ptfe_60_bronze",
-      "compound_name": "PTFE + 60% Bronze",
-      "description": "Bronze-gefülltes PTFE — hohe Druckfestigkeit und Wärmeableitung",
-      "screening_conditions": {
-        "temp_max_c": {"lte": 200},
-        "temp_min_c": {"gte": -60},
-        "pressure_max_bar": {"lte": 500},
-        "application_type": {"in": ["guide_ring", "high_load", "hydraulic"]}
-      },
-      "hard_exclusions": {
-        "medium_ids": [
-          "ammoniak",
-          "ammonia",
-          "amines",
-          "hf_acid",
-          "salt_water",
-          "strong_acids",
-          "strong_alkalis"
+        "forbidden_purity_classes": [
+          "UHP"
         ],
-        "reason": "Bronze ist in korrosiven Medien (Säuren, Laugen, Ammoniak, Salzwasser) nicht beständig"
-      },
-      "score": 78,
-      "food_grade": false,
-      "rationale": "Höchste Drucklast unter PTFE-Typen, gute Wärmeableitung. Eingeschränkte chemische Beständigkeit — nur für neutrale Medien (Öle, Hydraulikflüssigkeiten).",
-      "recommended_for": [
-        "führungsringe_hydraulik",
-        "gleitlager_hohe_last",
-        "hydraulikzylinder",
-        "wärmeableitung"
-      ]
+        "requires_electrical_insulation": false,
+        "custom_blocks": [
+          "Avoid soft counterfaces due to abrasive wear; hardened shafts and controlled finish required."
+        ]
+      }
     },
     {
-      "id": "CDM-005",
-      "filler_id": "ptfe_modified",
-      "compound_name": "Modifiziertes PTFE (ePTFE / mPTFE)",
-      "description": "Modifiziertes PTFE mit reduziertem Kaltfluss — ideal für Rohrleitungsdichtungen",
-      "screening_conditions": {
-        "temp_max_c": {"lte": 260},
-        "temp_min_c": {"gte": -200},
-        "pressure_max_bar": {"lte": 150},
-        "application_type": {"in": ["gasket", "pipe_flange", "pharma", "static"]}
-      },
-      "hard_exclusions": {
-        "medium_ids": ["hf_acid", "hydrofluoric_acid", "flusssaeure"],
-        "reason": "Flusssäure ist bei PTFE generell einzuschränken (Werkzeugverschleiß)"
-      },
-      "score": 88,
-      "food_grade": true,
-      "rationale": "Beste Wahl bei Kriechproblemen mit virgin PTFE. FDA-konform, hervorragend für Pharma und Chemie. Niedrigerer Druckbereich als verstärkte Typen.",
-      "recommended_for": [
-        "rohrleitungsdichtungen",
-        "pharmazeutische_anwendungen",
-        "aggressive_chemikalien",
-        "lebensmittel",
-        "hochwertige_gaskets"
-      ]
+      "filler_id": "PTFE-CMP-CARBON",
+      "filler_type": "Carbon / Graphite",
+      "wt_percent_typical": "10-25%",
+      "wear_resistance": "Excellent",
+      "abrasivity_to_counterface": "Low to Medium",
+      "chemical_resistance": "Excellent (grade/filler-system dependent)",
+      "uhp_suitability": "Low (particle shedding / extractables concerns)",
+      "creep_resistance": "Excellent",
+      "forbidden_conditions": [
+        "UHP fluid handling",
+        "Applications requiring high electrical insulation",
+        "Dry running without trace moisture (depending on graphite type and tribo-pair)"
+      ],
+      "recommended_use": "Water/steam applications, higher PV sliding against medium-hard shafts, chemical pumps (validate galvanic/contamination context).",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": null,
+        "max_pv_limit_MPa_m_s": null,
+        "forbidden_media_tags": [],
+        "forbidden_purity_classes": [
+          "UHP"
+        ],
+        "requires_electrical_insulation": true,
+        "custom_blocks": [
+          "Graphite/carbon grades may compromise insulation and UHP cleanliness; validate tribopair and contamination budget."
+        ]
+      }
+    },
+    {
+      "filler_id": "PTFE-CMP-BRONZE",
+      "filler_type": "Bronze",
+      "wt_percent_typical": "40-60%",
+      "wear_resistance": "Excellent",
+      "abrasivity_to_counterface": "Medium",
+      "chemical_resistance": "Poor in many corrosive media",
+      "uhp_suitability": "Zero",
+      "creep_resistance": "Excellent",
+      "forbidden_conditions": [
+        "Acids and corrosive chemicals",
+        "Oxidizing media",
+        "Food / Pharma contact (unless explicitly compliant grade and application allows)",
+        "Electrical insulation required"
+      ],
+      "recommended_use": "Hydraulic cylinders, machine tool guideways, high compressive mechanical load in compatible media.",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": null,
+        "max_pv_limit_MPa_m_s": null,
+        "forbidden_media_tags": [
+          "oxidizer"
+        ],
+        "forbidden_purity_classes": [
+          "FDA",
+          "Pharma_USP_VI"
+        ],
+        "requires_electrical_insulation": true,
+        "custom_blocks": [
+          "Bronze-filled grades incompatible with many corrosive/oxidizing media and conductive by design."
+        ]
+      }
+    },
+    {
+      "filler_id": "PTFE-CMP-POLYMER",
+      "filler_type": "Polymeric (e.g., Polyimide, Ekonol)",
+      "wt_percent_typical": "5-15%",
+      "wear_resistance": "Excellent",
+      "abrasivity_to_counterface": "Very Low",
+      "chemical_resistance": "Good to Excellent (specific filler dependent)",
+      "uhp_suitability": "Medium (depends on polymer filler + extractables)",
+      "creep_resistance": "Good",
+      "forbidden_conditions": [
+        "Extremely strong oxidizing acids (for some polymer fillers)",
+        "Temperatures exceeding degradation point of the specific filler system"
+      ],
+      "recommended_use": "Rotary seals against soft metal shafts (Al, Brass), dry-running gas compressors (with validation).",
+      "forbidden_conditions_structured": {
+        "min_counterface_hardness_hrc": null,
+        "max_pv_limit_MPa_m_s": null,
+        "forbidden_media_tags": [
+          "oxidizer"
+        ],
+        "forbidden_purity_classes": [],
+        "requires_electrical_insulation": false,
+        "custom_blocks": [
+          "Specific polymer filler chemistry/temperature limits must be checked grade-by-grade."
+        ]
+      }
     }
   ]
 }

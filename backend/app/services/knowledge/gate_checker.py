@@ -6,6 +6,7 @@ Falls back gracefully if KB files are absent.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("app.services.knowledge.gate_checker")
@@ -22,6 +23,9 @@ class GateResult:
         severity: str,
         message: str,
         applies_to_compounds: Optional[List[str]] = None,
+        required_fields_schema: Optional[List[Dict[str, Any]]] = None,
+        missing_required_fields: Optional[List[Dict[str, Any]]] = None,
+        matched_patterns: Optional[List[str]] = None,
     ) -> None:
         self.gate_id = gate_id
         self.triggered = triggered
@@ -29,6 +33,9 @@ class GateResult:
         self.severity = severity
         self.message = message
         self.applies_to_compounds = applies_to_compounds or []
+        self.required_fields_schema = required_fields_schema or []
+        self.missing_required_fields = missing_required_fields or []
+        self.matched_patterns = matched_patterns or []
 
     def is_hard_block(self) -> bool:
         return self.triggered and self.action == "hard_block"
@@ -44,6 +51,9 @@ class GateResult:
             "severity": self.severity,
             "message": self.message,
             "applies_to_compounds": self.applies_to_compounds,
+            "required_fields_schema": self.required_fields_schema,
+            "missing_required_fields": self.missing_required_fields,
+            "matched_patterns": self.matched_patterns,
         }
 
 
@@ -114,6 +124,50 @@ class GateChecker:
             result = self._evaluate_gate(gate, user_context)
             if result.triggered:
                 triggered.append(result)
+        return triggered
+
+    def check_trigger_patterns(self, query_text: str, user_context: Dict[str, Any]) -> List[GateResult]:
+        """Evaluate gate trigger_patterns directly from user query text."""
+        query = (query_text or "").strip().lower()
+        if not query:
+            return []
+
+        triggered: List[GateResult] = []
+        for gate in self._gates:
+            patterns = [str(p or "").strip() for p in (gate.get("trigger_patterns") or []) if str(p or "").strip()]
+            matched = [p for p in patterns if p.lower() in query]
+            if not matched:
+                continue
+
+            required_schema = list(gate.get("required_fields_schema") or [])
+            missing = []
+            for item in required_schema:
+                field_name = str((item or {}).get("field") or "").strip()
+                if not field_name:
+                    continue
+                if not self._has_context_value(field_name, user_context):
+                    missing.append(item)
+
+            missing_fields_text = ", ".join(str(i.get("field")) for i in missing if i.get("field"))
+            base_message = str(gate.get("if_missing_fields") or gate.get("name") or "Gate triggered").strip()
+            if missing_fields_text:
+                message = f"{base_message} Missing required fields: {missing_fields_text}."
+            else:
+                message = base_message
+
+            triggered.append(
+                GateResult(
+                    gate_id=str(gate.get("id") or "unknown"),
+                    triggered=True,
+                    action="hard_block",
+                    severity="high",
+                    message=message,
+                    applies_to_compounds=[],
+                    required_fields_schema=required_schema,
+                    missing_required_fields=missing,
+                    matched_patterns=matched,
+                )
+            )
         return triggered
 
     def check_gate(self, gate_id: str, user_context: Dict[str, Any]) -> Optional[GateResult]:
@@ -196,4 +250,28 @@ class GateChecker:
             if isinstance(threshold, list):
                 return str(value).lower() not in [str(t).lower() for t in threshold]
 
+        return False
+
+    @staticmethod
+    def _normalize_field_name(field_name: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "_", (field_name or "").strip().lower())
+        return re.sub(r"_+", "_", normalized).strip("_")
+
+    @classmethod
+    def _has_context_value(cls, field_name: str, ctx: Dict[str, Any]) -> bool:
+        normalized = cls._normalize_field_name(field_name)
+        candidates = {
+            normalized,
+            normalized.replace("_if_gas", ""),
+            normalized.replace("_or_", "_"),
+            normalized.replace("temperature_c", "temperature_max_c"),
+            normalized.replace("temperature_c", "temperature_min_c"),
+            normalized.replace("medium_name", "medium_id"),
+        }
+        for key in candidates:
+            if not key:
+                continue
+            value = ctx.get(key)
+            if value is not None and str(value).strip() != "":
+                return True
         return False

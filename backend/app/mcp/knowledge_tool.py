@@ -3,12 +3,25 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Sequence
+import inspect
+from datetime import date, datetime, timezone
+from functools import lru_cache, wraps
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from langchain_core.tools import BaseTool, StructuredTool
 from qdrant_client import QdrantClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.langgraph_v2.state.audit import (
+    ToolCallRecord,
+    append_tool_call_to_state,
+    build_tool_call_record,
+    emit_tool_call_record,
+)
 from app.services.rag.rag_orchestrator import hybrid_retrieve
 
 logger = logging.getLogger(__name__)
@@ -18,6 +31,7 @@ MCP_ERP_READ_SCOPES = frozenset({"mcp:erp:read"})
 MCP_SALES_ADMIN_SCOPES = frozenset({"mcp:sales:admin"})
 SEARCH_TECHNICAL_DOCS_TOOL_NAME = "search_technical_docs"
 GET_AVAILABLE_FILTERS_TOOL_NAME = "get_available_filters"
+QUERY_DETERMINISTIC_NORMS_TOOL_NAME = "query_deterministic_norms"
 PRICING_TOOL_NAME = "pricing_tool"
 STOCK_CHECK_TOOL_NAME = "stock_check_tool"
 APPROVE_DISCOUNT_TOOL_NAME = "approve_discount"
@@ -78,6 +92,24 @@ GET_AVAILABLE_FILTERS_SPEC: Dict[str, Any] = {
             },
         },
         "required": [],
+    },
+}
+
+QUERY_DETERMINISTIC_NORMS_SPEC: Dict[str, Any] = {
+    "name": QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
+    "description": (
+        "Deterministically query versioned DIN/material numeric limits from PostgreSQL "
+        "using exact/range SQL filters (no vector retrieval)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "material": {"type": "string", "description": "Material identifier (e.g. FKM, NBR, PTFE)."},
+            "temp": {"type": "number", "description": "Operating temperature in °C."},
+            "pressure": {"type": "number", "description": "Operating pressure in bar."},
+            "tenant_id": {"type": "string", "description": "Optional tenant scope."},
+        },
+        "required": ["material", "temp", "pressure"],
     },
 }
 
@@ -183,6 +215,127 @@ def _has_any_scope(scopes: set[str], required: frozenset[str]) -> bool:
     return bool(scopes & required)
 
 
+def _bound_args_payload(func: Callable[..., Any], args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        signature = inspect.signature(func)
+        bound = signature.bind_partial(*args, **kwargs)
+        return {key: value for key, value in bound.arguments.items()}
+    except Exception:
+        return dict(kwargs or {})
+
+
+def _append_tool_call_record(
+    *,
+    record: ToolCallRecord,
+    state: Any = None,
+    audit_trail: Optional[List[Dict[str, Any] | ToolCallRecord]] = None,
+) -> None:
+    emit_tool_call_record(record)
+    append_tool_call_to_state(state, record)
+    if isinstance(audit_trail, list):
+        audit_trail.append(record.model_dump(mode="python"))
+
+
+def _invoke_tool_with_audit(
+    *,
+    tool_name: str,
+    tool_fn: Callable[..., Any],
+    args: tuple[Any, ...] = (),
+    kwargs: Optional[Dict[str, Any]] = None,
+    state: Any = None,
+    audit_trail: Optional[List[Dict[str, Any] | ToolCallRecord]] = None,
+    run_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> Any:
+    call_kwargs = dict(kwargs or {})
+    started_at = datetime.now(timezone.utc)
+    call_input = _bound_args_payload(tool_fn, args, call_kwargs)
+    try:
+        output = tool_fn(*args, **call_kwargs)
+    except Exception as exc:
+        finished_at = datetime.now(timezone.utc)
+        record = build_tool_call_record(
+            tool_name=tool_name,
+            tool_input=call_input,
+            tool_output={},
+            started_at=started_at,
+            finished_at=finished_at,
+            error=exc,
+            run_id=run_id,
+            thread_id=thread_id,
+            tenant_id=tenant_id,
+            metadata={"user_id": user_id} if user_id else None,
+        )
+        _append_tool_call_record(record=record, state=state, audit_trail=audit_trail)
+        logger.warning(
+            "mcp_tool_call_failed",
+            extra={
+                "tool_name": tool_name,
+                "duration_ms": record.duration_ms,
+                "run_id": run_id,
+                "thread_id": thread_id,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "error": str(exc),
+            },
+        )
+        raise
+
+    finished_at = datetime.now(timezone.utc)
+    record = build_tool_call_record(
+        tool_name=tool_name,
+        tool_input=call_input,
+        tool_output=output,
+        started_at=started_at,
+        finished_at=finished_at,
+        run_id=run_id,
+        thread_id=thread_id,
+        tenant_id=tenant_id,
+        metadata={"user_id": user_id} if user_id else None,
+    )
+    _append_tool_call_record(record=record, state=state, audit_trail=audit_trail)
+    logger.info(
+        "mcp_tool_call_audit",
+        extra={
+            "tool_name": tool_name,
+            "duration_ms": record.duration_ms,
+            "run_id": run_id,
+            "thread_id": thread_id,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "status": record.status,
+        },
+    )
+    return output
+
+
+def _audited_tool(tool_name: str, tool_fn: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(tool_fn)
+    def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        state = kwargs.pop("__audit_state", None)
+        audit_trail = kwargs.pop("__audit_trail", None)
+        run_id = kwargs.pop("__audit_run_id", None)
+        thread_id = kwargs.pop("__audit_thread_id", None)
+        tenant_id = kwargs.pop("__audit_tenant_id", None)
+        user_id = kwargs.pop("__audit_user_id", None)
+        return _invoke_tool_with_audit(
+            tool_name=tool_name,
+            tool_fn=tool_fn,
+            args=args,
+            kwargs=kwargs,
+            state=state,
+            audit_trail=audit_trail,
+            run_id=run_id,
+            thread_id=thread_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+
+    return _wrapped
+
+
 def _pricing_tool(sku: str, quantity: int = 1, currency: str = "EUR") -> Dict[str, Any]:
     return {
         "tool": PRICING_TOOL_NAME,
@@ -213,12 +366,18 @@ def _approve_discount_tool(quote_id: str, discount_percent: float, reason: str |
 
 
 def _build_tool_registry() -> Dict[str, Dict[str, Any]]:
+    search_docs_tool = _audited_tool(SEARCH_TECHNICAL_DOCS_TOOL_NAME, search_technical_docs)
+    filters_tool = _audited_tool(GET_AVAILABLE_FILTERS_TOOL_NAME, get_available_filters)
+    deterministic_norms_tool = _audited_tool(QUERY_DETERMINISTIC_NORMS_TOOL_NAME, query_deterministic_norms)
+    pricing_tool = _audited_tool(PRICING_TOOL_NAME, _pricing_tool)
+    stock_tool = _audited_tool(STOCK_CHECK_TOOL_NAME, _stock_check_tool)
+    discount_tool = _audited_tool(APPROVE_DISCOUNT_TOOL_NAME, _approve_discount_tool)
     return {
         SEARCH_TECHNICAL_DOCS_TOOL_NAME: {
             "scopes": MCP_KNOWLEDGE_READ_SCOPES,
             "spec": SEARCH_TECHNICAL_DOCS_SPEC,
             "tool": StructuredTool.from_function(
-                func=search_technical_docs,
+                func=search_docs_tool,
                 name=SEARCH_TECHNICAL_DOCS_TOOL_NAME,
                 description=SEARCH_TECHNICAL_DOCS_SPEC["description"],
             ),
@@ -227,16 +386,25 @@ def _build_tool_registry() -> Dict[str, Dict[str, Any]]:
             "scopes": MCP_KNOWLEDGE_READ_SCOPES,
             "spec": GET_AVAILABLE_FILTERS_SPEC,
             "tool": StructuredTool.from_function(
-                func=get_available_filters,
+                func=filters_tool,
                 name=GET_AVAILABLE_FILTERS_TOOL_NAME,
                 description=GET_AVAILABLE_FILTERS_SPEC["description"],
+            ),
+        },
+        QUERY_DETERMINISTIC_NORMS_TOOL_NAME: {
+            "scopes": MCP_KNOWLEDGE_READ_SCOPES,
+            "spec": QUERY_DETERMINISTIC_NORMS_SPEC,
+            "tool": StructuredTool.from_function(
+                func=deterministic_norms_tool,
+                name=QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
+                description=QUERY_DETERMINISTIC_NORMS_SPEC["description"],
             ),
         },
         PRICING_TOOL_NAME: {
             "scopes": MCP_ERP_READ_SCOPES,
             "spec": PRICING_TOOL_SPEC,
             "tool": StructuredTool.from_function(
-                func=_pricing_tool,
+                func=pricing_tool,
                 name=PRICING_TOOL_NAME,
                 description=PRICING_TOOL_SPEC["description"],
             ),
@@ -245,7 +413,7 @@ def _build_tool_registry() -> Dict[str, Dict[str, Any]]:
             "scopes": MCP_ERP_READ_SCOPES,
             "spec": STOCK_CHECK_TOOL_SPEC,
             "tool": StructuredTool.from_function(
-                func=_stock_check_tool,
+                func=stock_tool,
                 name=STOCK_CHECK_TOOL_NAME,
                 description=STOCK_CHECK_TOOL_SPEC["description"],
             ),
@@ -254,7 +422,7 @@ def _build_tool_registry() -> Dict[str, Dict[str, Any]]:
             "scopes": MCP_SALES_ADMIN_SCOPES,
             "spec": APPROVE_DISCOUNT_TOOL_SPEC,
             "tool": StructuredTool.from_function(
-                func=_approve_discount_tool,
+                func=discount_tool,
                 name=APPROVE_DISCOUNT_TOOL_NAME,
                 description=APPROVE_DISCOUNT_TOOL_SPEC["description"],
             ),
@@ -346,6 +514,265 @@ def _normalize_tenant_scope(tenant_id: Optional[str]) -> List[str]:
             continue
         scope.append(tenant)
     return scope
+
+
+def _resolve_sync_postgres_url() -> str:
+    raw = str(getattr(settings, "POSTGRES_SYNC_URL", "") or getattr(settings, "database_url", "") or "").strip()
+    if raw.startswith("postgresql+asyncpg://"):
+        return raw.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    if raw.startswith("postgres+asyncpg://"):
+        return raw.replace("postgres+asyncpg://", "postgresql+psycopg://", 1)
+    return raw
+
+
+@lru_cache(maxsize=1)
+def _get_sync_engine() -> Engine:
+    sync_url = _resolve_sync_postgres_url()
+    if not sync_url:
+        raise RuntimeError("POSTGRES_SYNC_URL/database_url is not configured for deterministic norms query.")
+    return create_engine(sync_url, future=True, pool_pre_ping=True)
+
+
+def _normalize_material(material: str) -> str:
+    return str(material or "").strip().lower()
+
+
+def _serialize_date(value: Any) -> str | None:
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if value is None:
+        return None
+    return str(value)
+
+
+def _serialize_din_norm_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    payload = row.get("payload_json")
+    if not isinstance(payload, dict):
+        payload = {}
+    return {
+        "norm_code": row.get("norm_code"),
+        "material": row.get("material"),
+        "medium": row.get("medium"),
+        "pressure_min_bar": row.get("pressure_min_bar"),
+        "pressure_max_bar": row.get("pressure_max_bar"),
+        "temperature_min_c": row.get("temperature_min_c"),
+        "temperature_max_c": row.get("temperature_max_c"),
+        "payload": payload,
+        "source_ref": row.get("source_ref"),
+        "revision": row.get("revision"),
+        "version": int(row.get("version") or 1),
+        "effective_date": _serialize_date(row.get("effective_date")),
+        "valid_until": _serialize_date(row.get("valid_until")),
+        "tenant_id": row.get("tenant_id"),
+    }
+
+
+def _serialize_material_limit_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    conditions = row.get("conditions_json")
+    if not isinstance(conditions, dict):
+        conditions = {}
+    return {
+        "material": row.get("material"),
+        "medium": row.get("medium"),
+        "limit_kind": row.get("limit_kind"),
+        "min_value": row.get("min_value"),
+        "max_value": row.get("max_value"),
+        "unit": row.get("unit"),
+        "conditions": conditions,
+        "source_ref": row.get("source_ref"),
+        "revision": row.get("revision"),
+        "version": int(row.get("version") or 1),
+        "effective_date": _serialize_date(row.get("effective_date")),
+        "valid_until": _serialize_date(row.get("valid_until")),
+        "tenant_id": row.get("tenant_id"),
+    }
+
+
+def query_deterministic_norms(
+    material: str,
+    temp: float,
+    pressure: float,
+    *,
+    tenant_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Deterministic SQL query for numeric norms/material limits."""
+    material_norm = _normalize_material(material)
+    if not material_norm:
+        raise ValueError("material is required")
+    try:
+        temp_value = float(temp)
+        pressure_value = float(pressure)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("temp and pressure must be numeric") from exc
+
+    today = date.today()
+    tenant_scope = _normalize_tenant_scope(tenant_id)
+    normalized_tenant_id = str(tenant_id or "").strip() or None
+
+    try:
+        engine = _get_sync_engine()
+        with Session(engine) as session:
+            norm_result = session.execute(
+                text(
+                    """
+                    SELECT
+                        tenant_id,
+                        norm_code,
+                        material,
+                        medium,
+                        pressure_min_bar,
+                        pressure_max_bar,
+                        temperature_min_c,
+                        temperature_max_c,
+                        payload_json,
+                        source_ref,
+                        revision,
+                        version,
+                        effective_date,
+                        valid_until
+                    FROM deterministic_din_norms
+                    WHERE lower(material) = :material
+                      AND is_active = TRUE
+                      AND effective_date <= :today
+                      AND (valid_until IS NULL OR valid_until >= :today)
+                      AND (temperature_min_c IS NULL OR temperature_min_c <= :temp)
+                      AND (temperature_max_c IS NULL OR temperature_max_c >= :temp)
+                      AND (pressure_min_bar IS NULL OR pressure_min_bar <= :pressure)
+                      AND (pressure_max_bar IS NULL OR pressure_max_bar >= :pressure)
+                      AND (
+                            :tenant_id IS NULL
+                            OR tenant_id IS NULL
+                            OR tenant_id = :tenant_id
+                            OR tenant_id = :global_tenant
+                      )
+                    ORDER BY effective_date DESC, version DESC
+                    LIMIT 25
+                    """
+                ),
+                {
+                    "material": material_norm,
+                    "temp": temp_value,
+                    "pressure": pressure_value,
+                    "today": today,
+                    "tenant_id": normalized_tenant_id,
+                    "global_tenant": GLOBAL_SHARED_TENANT,
+                },
+            )
+            limit_result = session.execute(
+                text(
+                    """
+                    SELECT
+                        tenant_id,
+                        material,
+                        medium,
+                        limit_kind,
+                        min_value,
+                        max_value,
+                        unit,
+                        conditions_json,
+                        source_ref,
+                        revision,
+                        version,
+                        effective_date,
+                        valid_until
+                    FROM deterministic_material_limits
+                    WHERE lower(material) = :material
+                      AND is_active = TRUE
+                      AND effective_date <= :today
+                      AND (valid_until IS NULL OR valid_until >= :today)
+                      AND (
+                            :tenant_id IS NULL
+                            OR tenant_id IS NULL
+                            OR tenant_id = :tenant_id
+                            OR tenant_id = :global_tenant
+                      )
+                      AND (
+                            limit_kind NOT IN ('temperature', 'pressure')
+                            OR (
+                                limit_kind = 'temperature'
+                                AND (min_value IS NULL OR min_value <= :temp)
+                                AND (max_value IS NULL OR max_value >= :temp)
+                            )
+                            OR (
+                                limit_kind = 'pressure'
+                                AND (min_value IS NULL OR min_value <= :pressure)
+                                AND (max_value IS NULL OR max_value >= :pressure)
+                            )
+                      )
+                    ORDER BY effective_date DESC, version DESC
+                    LIMIT 50
+                    """
+                ),
+                {
+                    "material": material_norm,
+                    "temp": temp_value,
+                    "pressure": pressure_value,
+                    "today": today,
+                    "tenant_id": normalized_tenant_id,
+                    "global_tenant": GLOBAL_SHARED_TENANT,
+                },
+            )
+            norm_rows = [dict(row._mapping) for row in norm_result]
+            limit_rows = [dict(row._mapping) for row in limit_result]
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "query_deterministic_norms_sql_error",
+            extra={
+                "material": material,
+                "temp": temp_value,
+                "pressure": pressure_value,
+                "tenant_id": tenant_id,
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
+        return {
+            "tool": QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
+            "material": material,
+            "temp": temp_value,
+            "pressure": pressure_value,
+            "status": "error",
+            "matches": {"din_norms": [], "material_limits": []},
+            "context": "Deterministic norms query failed.",
+            "retrieval_meta": {
+                "source": "postgresql",
+                "mode": "exact_range_sql",
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        }
+
+    norm_matches = [_serialize_din_norm_row(row) for row in norm_rows]
+    limit_matches = [_serialize_material_limit_row(row) for row in limit_rows]
+
+    status = "ok" if norm_matches or limit_matches else "no_match"
+    if status == "ok":
+        summary = (
+            f"Deterministic limits matched: {len(norm_matches)} DIN norm rows, "
+            f"{len(limit_matches)} material limit rows."
+        )
+    else:
+        summary = "No deterministic norm/material limit rows matched the input range."
+
+    return {
+        "tool": QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
+        "material": material,
+        "temp": temp_value,
+        "pressure": pressure_value,
+        "status": status,
+        "matches": {
+            "din_norms": norm_matches,
+            "material_limits": limit_matches,
+        },
+        "context": summary,
+        "retrieval_meta": {
+            "source": "postgresql",
+            "mode": "exact_range_sql",
+            "tenant_scope": tenant_scope,
+            "din_match_count": len(norm_matches),
+            "material_limit_match_count": len(limit_matches),
+        },
+    }
 
 
 def _extract_tables_from_metadata(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -660,51 +1087,126 @@ def execute_tool_call(
     tool_name: str,
     arguments: Optional[Dict[str, Any]],
     tenant_id: Optional[str],
+    state: Any = None,
+    audit_trail: Optional[List[Dict[str, Any] | ToolCallRecord]] = None,
+    run_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     args = arguments or {}
     if tool_name == SEARCH_TECHNICAL_DOCS_TOOL_NAME:
-        payload = search_technical_docs(
-            query=str(args.get("query") or ""),
-            material_code=(str(args.get("material_code")) if args.get("material_code") is not None else None),
+        payload = _invoke_tool_with_audit(
+            tool_name=SEARCH_TECHNICAL_DOCS_TOOL_NAME,
+            tool_fn=search_technical_docs,
+            kwargs={
+                "query": str(args.get("query") or ""),
+                "material_code": (str(args.get("material_code")) if args.get("material_code") is not None else None),
+                "tenant_id": tenant_id,
+                "k": int(args.get("k") or 5),
+                "metadata_filters": (
+                    args.get("metadata_filters") if isinstance(args.get("metadata_filters"), dict) else None
+                ),
+            },
+            state=state,
+            audit_trail=audit_trail,
+            run_id=run_id,
+            thread_id=thread_id,
             tenant_id=tenant_id,
-            k=int(args.get("k") or 5),
-            metadata_filters=(args.get("metadata_filters") if isinstance(args.get("metadata_filters"), dict) else None),
+            user_id=user_id,
         )
         return build_mcp_tool_result(payload)
     if tool_name == GET_AVAILABLE_FILTERS_TOOL_NAME:
-        payload = get_available_filters(
-            tenant_id=str(args.get("tenant_id") or tenant_id or "").strip() or None,
-            max_points=int(args.get("max_points") or 2000),
+        payload = _invoke_tool_with_audit(
+            tool_name=GET_AVAILABLE_FILTERS_TOOL_NAME,
+            tool_fn=get_available_filters,
+            kwargs={
+                "tenant_id": str(args.get("tenant_id") or tenant_id or "").strip() or None,
+                "max_points": int(args.get("max_points") or 2000),
+            },
+            state=state,
+            audit_trail=audit_trail,
+            run_id=run_id,
+            thread_id=thread_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+        return build_mcp_tool_result(payload)
+    if tool_name == QUERY_DETERMINISTIC_NORMS_TOOL_NAME:
+        payload = _invoke_tool_with_audit(
+            tool_name=QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
+            tool_fn=query_deterministic_norms,
+            kwargs={
+                "material": str(args.get("material") or ""),
+                "temp": float(args.get("temp")),
+                "pressure": float(args.get("pressure")),
+                "tenant_id": str(args.get("tenant_id") or tenant_id or "").strip() or None,
+            },
+            state=state,
+            audit_trail=audit_trail,
+            run_id=run_id,
+            thread_id=thread_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
         return build_mcp_tool_result(payload)
     if tool_name == PRICING_TOOL_NAME:
-        return build_mcp_tool_result(
-            _pricing_tool(
-                sku=str(args.get("sku") or ""),
-                quantity=int(args.get("quantity") or 1),
-                currency=str(args.get("currency") or "EUR"),
-            )
+        payload = _invoke_tool_with_audit(
+            tool_name=PRICING_TOOL_NAME,
+            tool_fn=_pricing_tool,
+            kwargs={
+                "sku": str(args.get("sku") or ""),
+                "quantity": int(args.get("quantity") or 1),
+                "currency": str(args.get("currency") or "EUR"),
+            },
+            state=state,
+            audit_trail=audit_trail,
+            run_id=run_id,
+            thread_id=thread_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
+        return build_mcp_tool_result(payload)
     if tool_name == STOCK_CHECK_TOOL_NAME:
-        return build_mcp_tool_result(
-            _stock_check_tool(
-                sku=str(args.get("sku") or ""),
-                warehouse=(str(args.get("warehouse")) if args.get("warehouse") is not None else None),
-            )
+        payload = _invoke_tool_with_audit(
+            tool_name=STOCK_CHECK_TOOL_NAME,
+            tool_fn=_stock_check_tool,
+            kwargs={
+                "sku": str(args.get("sku") or ""),
+                "warehouse": (str(args.get("warehouse")) if args.get("warehouse") is not None else None),
+            },
+            state=state,
+            audit_trail=audit_trail,
+            run_id=run_id,
+            thread_id=thread_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
+        return build_mcp_tool_result(payload)
     if tool_name == APPROVE_DISCOUNT_TOOL_NAME:
-        return build_mcp_tool_result(
-            _approve_discount_tool(
-                quote_id=str(args.get("quote_id") or ""),
-                discount_percent=float(args.get("discount_percent") or 0.0),
-                reason=(str(args.get("reason")) if args.get("reason") is not None else None),
-            )
+        payload = _invoke_tool_with_audit(
+            tool_name=APPROVE_DISCOUNT_TOOL_NAME,
+            tool_fn=_approve_discount_tool,
+            kwargs={
+                "quote_id": str(args.get("quote_id") or ""),
+                "discount_percent": float(args.get("discount_percent") or 0.0),
+                "reason": (str(args.get("reason")) if args.get("reason") is not None else None),
+            },
+            state=state,
+            audit_trail=audit_trail,
+            run_id=run_id,
+            thread_id=thread_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
+        return build_mcp_tool_result(payload)
     raise KeyError(f"unknown_tool:{tool_name}")
 
 
 def tool_spec_json() -> str:
-    return json.dumps([SEARCH_TECHNICAL_DOCS_SPEC, GET_AVAILABLE_FILTERS_SPEC], ensure_ascii=False)
+    return json.dumps(
+        [SEARCH_TECHNICAL_DOCS_SPEC, GET_AVAILABLE_FILTERS_SPEC, QUERY_DETERMINISTIC_NORMS_SPEC],
+        ensure_ascii=False,
+    )
 
 
 __all__ = [
@@ -716,6 +1218,8 @@ __all__ = [
     "MCP_TRANSPORT_PREFERENCE",
     "GET_AVAILABLE_FILTERS_SPEC",
     "GET_AVAILABLE_FILTERS_TOOL_NAME",
+    "QUERY_DETERMINISTIC_NORMS_SPEC",
+    "QUERY_DETERMINISTIC_NORMS_TOOL_NAME",
     "PRICING_TOOL_NAME",
     "PRICING_TOOL_SPEC",
     "SEARCH_TECHNICAL_DOCS_SPEC",
@@ -729,6 +1233,7 @@ __all__ = [
     "get_permitted_tool_specs",
     "get_available_filters",
     "has_knowledge_scope",
+    "query_deterministic_norms",
     "search_technical_docs",
     "tool_spec_json",
 ]

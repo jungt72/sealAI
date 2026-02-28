@@ -15,10 +15,11 @@ Responsibilities:
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 import structlog
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -31,6 +32,78 @@ from app.services.rag.state import WorkingProfile
 
 logger = structlog.get_logger("rag.nodes.p1_context")
 
+_SEAL_MATERIAL_TOKENS = frozenset(
+    {
+        "ptfe",
+        "nbr",
+        "hnbr",
+        "fkm",
+        "ffkm",
+        "epdm",
+        "vmq",
+        "fvmq",
+        "pu",
+        "pur",
+        "tpu",
+        "peek",
+        "elastomer",
+        "elastomeric",
+    }
+)
+_OPTION_A_PATTERN = re.compile(r"\boption\s*a\b", re.IGNORECASE)
+_OPTION_B_PATTERN = re.compile(r"\boption\s*b\b", re.IGNORECASE)
+_OPTION_SELECTION_MARKERS = (
+    "wir nehmen",
+    "ich nehme",
+    "nehmen wir",
+    "nehme ich",
+    "wir waehlen",
+    "ich waehle",
+    "wir wählen",
+    "ich wähle",
+    "entscheide",
+    "entscheidung",
+    "akzept",
+    "passt",
+    "einverstanden",
+    "go with",
+    "choose",
+    "chosen",
+)
+_HRC_PATTERN = re.compile(r"([-+]?\d+(?:[.,]\d+)?)\s*hrc\b", re.IGNORECASE)
+_OPTION_BLOCK_PATTERN = r"(?is)(option\s*{letter}\b.*?)(?=option\s*[a-z]\b|$)"
+_MIN_ACCEPTED_HRC = 58.0
+
+
+def _to_float_or_none(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        raw = value.strip().replace(",", ".")
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+    return None
+
+
+def _normalize_material_token(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def _looks_like_seal_material(value: Any) -> bool:
+    token = _normalize_material_token(value)
+    if not token:
+        return False
+    return token in _SEAL_MATERIAL_TOKENS
+
 # ---------------------------------------------------------------------------
 # Prompt
 # ---------------------------------------------------------------------------
@@ -41,6 +114,16 @@ Du bist ein technischer Datenextraktionsassistent für Flanschdichtungsanwendung
 Analysiere die Benutzeranfrage und extrahiere alle genannten technischen Parameter.
 Gib NUR Felder zurück, die explizit oder klar implizit im Text genannt werden.
 Fehlende Felder bleiben null.
+
+CRITICAL INSTRUCTION: You are a strict data extractor. If the user mentions ANY numbers related to diameter
+(e.g., "50mm Welle"), speed ("1500 U/min"), pressure ("300 bar"), temperature, or hardness ("40 HRC"),
+you MUST extract them IMMEDIATELY into the schema on this very first turn.
+Do NOT wait for a follow-up confirmation to extract data that is already present in the text.
+
+Bei aktiven Resume/HITL-Dialogen gilt zusaetzlich:
+- Wenn der User eine zuvor vom Assistenten angebotene Option annimmt ("Option A/B"), werte das als verbindliche Parameterentscheidung.
+- Übernimm die daraus resultierenden technischen Werte in die Extraktion (z. B. "Option A = 58 HRC" => hrc_value=58).
+- Ein explizites "Wir nehmen Option A" ist ausreichend, auch wenn der Wert nur in der vorherigen Assistenten-Nachricht stand.
 
 Felder:
 - medium: Prozessmedium (z.B. "Dampf", "Erdgas", "H2SO4")
@@ -58,8 +141,13 @@ Felder:
 - cyclic_load: true wenn zyklische/schwellende Belastung erwähnt wird, sonst false
 - emission_class: Emissionsklasse (z.B. "TA-Luft", "VDI 2440", "EPA Method 21")
 - industry_sector: Branche (z.B. "Petrochemie", "Pharma", "Kraftwerk")
-- material: Erwähnter Dichtungswerkstoff (z.B. "NBR", "FKM", "PTFE", "Kyrolon")
+- material: Material der Welle/Gegenlauffläche (z.B. "Stahl", "Edelstahl", "1.4404"); niemals Dichtungswerkstoff
+- seal_material: Dichtungswerkstoff (z.B. "PTFE", "NBR", "FKM")
 - product_name: Produkt- oder Handelsname (z.B. "Gylon", "Sigraflex")
+- shaft_d1_mm: Wellendurchmesser d1 in mm (Zahl)
+- rpm: Drehzahl in U/min (Zahl)
+- hrc_value: Härtewert in HRC (Zahl)
+- clearance_gap_mm: Spaltmaß in mm (Zahl)
 
 Antworte ausschließlich mit dem JSON-Objekt. Keine Erklärungen.
 """
@@ -88,8 +176,20 @@ class _P1Extraction(BaseModel):
     cyclic_load: Optional[bool] = None
     emission_class: Optional[str] = None
     industry_sector: Optional[str] = None
-    material: Optional[str] = None
+    material: Optional[str] = Field(
+        default=None,
+        description=(
+            "The material of the shaft/counter-surface (e.g., steel, stainless steel, 1.4404). "
+            "STRICT RULE: NEVER extract the seal material (e.g., PTFE, elastomer) into this field. "
+            "This is ONLY for the hardware/shaft."
+        ),
+    )
+    seal_material: Optional[str] = None
     product_name: Optional[str] = None
+    shaft_d1_mm: Optional[float] = None
+    rpm: Optional[float] = None
+    hrc_value: Optional[float] = None
+    clearance_gap_mm: Optional[float] = None
 
     model_config = ConfigDict(extra="ignore")
 
@@ -109,6 +209,108 @@ def _build_messages(user_text: str, history: List[Any]) -> List[Any]:
         if user_text.strip():
             msgs.append(HumanMessage(content=user_text.strip()))
     return msgs
+
+
+def _message_to_text(msg: Any) -> str:
+    content = getattr(msg, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                text = part.get("text")
+                if text is not None:
+                    parts.append(str(text))
+            elif isinstance(part, str):
+                parts.append(part)
+        return "".join(parts)
+    return str(content or "")
+
+
+def _latest_assistant_text(history: List[Any]) -> str:
+    for msg in reversed(list(history or [])):
+        if isinstance(msg, AIMessage):
+            return _message_to_text(msg).strip()
+        if isinstance(msg, dict):
+            role = str(msg.get("role") or msg.get("type") or "").strip().lower()
+            if role in {"assistant", "ai"}:
+                return str(msg.get("content") or "").strip()
+    return ""
+
+
+def _is_active_resume_session(state: SealAIState) -> bool:
+    classification = str(getattr(state, "router_classification", "") or "").strip().lower()
+    if classification == "resume":
+        return True
+    if bool(getattr(state, "awaiting_user_confirmation", False)):
+        return True
+    if bool((getattr(state, "pending_action", "") or "").strip()):
+        return True
+    return bool(getattr(state, "qgate_has_blockers", False))
+
+
+def _detect_selected_option(user_text: str) -> str:
+    text = (user_text or "").strip().lower()
+    if not text:
+        return ""
+    selected = ""
+    if _OPTION_A_PATTERN.search(text):
+        selected = "a"
+    elif _OPTION_B_PATTERN.search(text):
+        selected = "b"
+    if not selected:
+        return ""
+    if any(marker in text for marker in _OPTION_SELECTION_MARKERS):
+        return selected
+    if text.startswith(f"option {selected}"):
+        return selected
+    return ""
+
+
+def _extract_option_block(text: str, option_letter: str) -> str:
+    if not text or option_letter not in {"a", "b"}:
+        return ""
+    match = re.search(_OPTION_BLOCK_PATTERN.format(letter=option_letter), text, re.IGNORECASE)
+    if not match:
+        return ""
+    return str(match.group(1) or "").strip()
+
+
+def _extract_hrc_value(*texts: str) -> Optional[float]:
+    for text in texts:
+        if not text:
+            continue
+        match = _HRC_PATTERN.search(text)
+        if not match:
+            continue
+        value = _to_float_or_none(match.group(1))
+        if value is not None:
+            return value
+    return None
+
+
+def _derive_resume_overrides(state: SealAIState, user_text: str, history: List[Any]) -> Dict[str, Any]:
+    if not _is_active_resume_session(state):
+        return {}
+    selected_option = _detect_selected_option(user_text)
+    if not selected_option:
+        return {}
+
+    assistant_text = _latest_assistant_text(history)
+    selected_block = _extract_option_block(assistant_text, selected_option)
+    hrc_value = _extract_hrc_value(user_text, selected_block, assistant_text)
+
+    # Option-A fallback for hardness blockers when no explicit HRC number is repeated.
+    if hrc_value is None and selected_option == "a":
+        lower_ctx = f"{user_text}\n{selected_block}\n{assistant_text}".lower()
+        mentions_hardness = any(token in lower_ctx for token in ("hrc", "härte", "haerte", "harden", "haerten"))
+        if mentions_hardness:
+            hrc_value = _MIN_ACCEPTED_HRC
+
+    if hrc_value is None:
+        return {}
+    return {"hrc_value": hrc_value}
 
 
 def _invoke_extraction(user_text: str, history: List[Any]) -> _P1Extraction:
@@ -138,8 +340,12 @@ def _merge_extraction_into_profile(
     """
     base: Dict[str, Any] = existing.model_dump() if existing else {}
 
+    profile_fields = set(getattr(WorkingProfile, "model_fields", {}).keys())
     for field_name, value in extracted.model_dump().items():
-        if value is not None:
+        if field_name == "material" and _looks_like_seal_material(value):
+            # Protect shaft/counterface material from seal-material cross-talk.
+            continue
+        if value is not None and field_name in profile_fields:
             base[field_name] = value
 
     # Pydantic validates cross-field consistency (min ≤ max, bolt_count even, etc.)
@@ -157,6 +363,49 @@ def _merge_extraction_into_profile(
             return WorkingProfile.model_validate(extracted.model_dump(exclude_none=True))
         except ValidationError:
             return existing or WorkingProfile()
+
+
+def _merge_extraction_into_extracted_params(
+    existing: Optional[Dict[str, Any]],
+    extracted: _P1Extraction,
+) -> Dict[str, Any]:
+    """Merge P1 extraction into state.extracted_params with physics-friendly aliases."""
+    merged: Dict[str, Any] = dict(existing or {})
+    payload = extracted.model_dump(exclude_none=True)
+
+    # Direct values that downstream deterministic nodes consume.
+    for key in ("pressure_max_bar", "temperature_max_c", "rpm", "hrc_value", "clearance_gap_mm"):
+        if key in payload:
+            numeric_value = _to_float_or_none(payload.get(key))
+            if numeric_value is not None:
+                merged[key] = numeric_value
+
+    # Diameter aliases for robust lookup in node_p4_live_calc.
+    shaft_d1_mm = _to_float_or_none(payload.get("shaft_d1_mm"))
+    if shaft_d1_mm is not None:
+        merged["shaft_d1_mm"] = shaft_d1_mm
+        merged["shaft_d1"] = shaft_d1_mm
+        merged["d1"] = shaft_d1_mm
+
+    # Hardness alias for existing consumers that read "hrc".
+    if "hrc_value" in payload and "hrc_value" in merged:
+        merged["hrc"] = merged["hrc_value"]
+
+    # Keep selected seal material explicitly separate from shaft material.
+    seal_material = payload.get("seal_material")
+    if isinstance(seal_material, str) and seal_material.strip():
+        merged["seal_material"] = seal_material.strip()
+
+    # If the model still emitted a seal token in `material`, remap it safely.
+    raw_material = payload.get("material")
+    if _looks_like_seal_material(raw_material):
+        text = str(raw_material or "").strip()
+        if text:
+            merged.setdefault("seal_material", text)
+            if str(merged.get("material") or "").strip().lower() == text.lower():
+                merged.pop("material", None)
+
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -184,16 +433,31 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
         thread_id=state.thread_id,
     )
 
+    history = list(state.messages or [])
     extracted: Optional[_P1Extraction] = None
     error_hint: Optional[str] = None
 
     try:
-        extracted = _invoke_extraction(user_text, list(state.messages or []))
+        extracted = _invoke_extraction(user_text, history)
     except Exception as exc:
         error_hint = f"p1_extraction_failed: {exc}"
         logger.warning(
             "p1_context_llm_failed",
             error=str(exc),
+            classification=classification,
+            run_id=state.run_id,
+        )
+
+    resume_overrides = _derive_resume_overrides(state, user_text, history)
+    if resume_overrides:
+        extracted = (
+            extracted.model_copy(update=resume_overrides)
+            if extracted is not None
+            else _P1Extraction.model_validate(resume_overrides)
+        )
+        logger.info(
+            "p1_context_resume_overrides_applied",
+            overrides=resume_overrides,
             classification=classification,
             run_id=state.run_id,
         )
@@ -221,13 +485,27 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
         run_id=state.run_id,
     )
 
+    merged_extracted_params = (
+        _merge_extraction_into_extracted_params(state.extracted_params, extracted)
+        if extracted is not None
+        else dict(state.extracted_params or {})
+    )
+
     result: Dict[str, Any] = {
         "working_profile": merged_profile,
+        "extracted_params": merged_extracted_params,
         "phase": PHASE.FRONTDOOR,  # reuse existing FRONTDOOR phase; P1 is pre-frontdoor in v4
         "last_node": "node_p1_context",
+        "turn_count": int(getattr(state, "turn_count", 0) or 0) + 1,
     }
     if error_hint:
         result["error"] = error_hint
+
+    if bool((state.flags or {}).get("use_reasoning_core_r3")):
+        return Command(
+            update=result,
+            goto="combinatorial_chemistry_guard_node",
+        )
 
     # Fan out to P2 (RAG Material-Lookup) and P3 (Gap-Detection) in parallel
     updated_state = state.model_copy(update=result)

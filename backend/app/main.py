@@ -54,9 +54,16 @@ class _PrometheusMiddleware(BaseHTTPMiddleware):
     def _normalize_path(self, path: str) -> str:
         """Replace variable path segments to avoid high cardinality."""
         import re
-        # Replace UUIDs and numeric IDs
-        path = re.sub(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "/{id}", path)
-        path = re.sub(r"/\d+", "/{id}", path)
+        # Replace common ID-like path segments (UUID, 32-char hex, numeric IDs).
+        # Match until "/" or end-of-string so we do not partially replace a segment.
+        path = re.sub(
+            r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=/|$)",
+            "/{id}",
+            path,
+            flags=re.IGNORECASE,
+        )
+        path = re.sub(r"/[0-9a-f]{32}(?=/|$)", "/{id}", path, flags=re.IGNORECASE)
+        path = re.sub(r"/\d+(?=/|$)", "/{id}", path)
         return path
 
     async def dispatch(self, request: Request, call_next):

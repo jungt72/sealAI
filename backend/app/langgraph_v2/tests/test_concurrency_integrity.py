@@ -44,7 +44,7 @@ class _ContractEchoLLM:
         contract_text = ""
         if messages:
             candidate = getattr(messages[-1], "content", "") or ""
-            prefix = "ANSWER CONTRACT:\n"
+            prefix = "VERIFIED FACT SHEET:\n"
             if isinstance(candidate, str) and candidate.startswith(prefix):
                 contract_text = candidate[len(prefix) :]
         yield _ContractEchoChunk(contract_text or "Resolved Parameters:\n- pressure_bar: 80.0")

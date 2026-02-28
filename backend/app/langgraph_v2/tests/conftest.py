@@ -15,6 +15,10 @@ if "app.core.config" not in sys.modules:
     config_stub.settings = SimpleNamespace(
         qdrant_collection="test_collection",
         openai_temperature=0.0,
+        backend_keycloak_issuer="https://auth.example.test/realms/sealai",
+        keycloak_jwks_url="https://auth.example.test/realms/sealai/protocol/openid-connect/certs",
+        keycloak_client_id="sealai-backend-api",
+        keycloak_expected_azp="sealai-backend-api",
     )
     sys.modules["app.core.config"] = config_stub
 

@@ -1,347 +1,2813 @@
 {
   "schema_version": "1.3",
-  "generated_at": "2026-02-23",
-  "description": "PTFE FactCards and Safety Gates for deterministic material decisions",
+  "doc": {
+    "id": "SEALAI-KB-PTFE-001",
+    "title": "PTFE (Polytetrafluoroethylen) – Engineering- und RAG-Referenz (v1.2)",
+    "language": "de",
+    "scope": "Werkstoffkunde + Dichtungs-/Tribologie-/UHP-Relevanz; RAG-optimiert mit Hard-Gates",
+    "source_hierarchy": {
+      "1": "Norm/Standard/Peer-Review",
+      "2": "Hersteller-Handbuch/Technical Guide",
+      "3": "Distributor/Marketing (nur als Hinweis)"
+    },
+    "upgrade_note": "v1.2: Permeation normative anchors, hardened UHP gate, additional UHP/permeation factcards, compound decision matrix (separate JSON)."
+  },
+  "sources": {
+    "S1": {
+      "title": "TEKU GmbH – PTFE fluoroplastic: Properties and characteristic data (EN_Fluoroplastics_s.pdf)",
+      "url": "https://www.teku-gmbh.com/en/download/pdf_en/EN_Fluoroplastics_s.pdf",
+      "type": "manufacturer_technical_brochure",
+      "rank": 2
+    },
+    "S2": {
+      "title": "TEADIT – PTFE Chemical Compatibility Chart (Tealon_Chemical_Compatibility.pdf)",
+      "url": "https://teadit.com/wp-content/uploads/2021/08/Tealon_Chemical_Compatibility.pdf",
+      "type": "manufacturer_compatibility_chart",
+      "rank": 2
+    },
+    "S3": {
+      "title": "ScienceDirect Topics – Poly(tetrafluoroethylene) overview (tables on permeation; book excerpts incl. McKeen 2012)",
+      "url": "https://www.sciencedirect.com/topics/chemistry/poly-tetrafluoroethylene",
+      "type": "handbook_excerpt",
+      "rank": 2
+    },
+    "S4": {
+      "title": "ASTM D1434-82(2015)e1 – Determining Gas Permeability Characteristics of Plastic Film and Sheeting",
+      "url": "https://img.antpedia.com/standard/files/pdfs_ora/20221211/astm/ASTM%20D1434-82%20%282015%29e1.pdf",
+      "type": "standard_test_method",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S5": {
+      "title": "ASTM D4745 – Filled PTFE molding compounds classification system (summary page)",
+      "url": "https://www.astm.org/d4745-19.html",
+      "type": "standard_specification",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S6": {
+      "title": "Bal Seal Engineering – Chemical Compatibility Guide TR-60A (compound notes incl. glass-filled abrasive; polymer-filled for soft metals; semiconductor note)",
+      "url": "https://www.balseal.com/wp-content/uploads/2019/03/bal_seal_chemical_compatibility_guideTR_60A.pdf",
+      "type": "manufacturer_guide",
+      "rank": 2
+    },
+    "S7": {
+      "title": "Chemours / Teflon™ – PTFE product info (paste extrusion; lubricant removal 100–300°C; sintering ~342°C)",
+      "url": "https://www.teflon.com/en/-/media/files/teflon/teflon-ptfe-62-x-prodinfo.pdf",
+      "type": "manufacturer_datasheet",
+      "rank": 2
+    },
+    "S8": {
+      "title": "pro-kunststoff.de – Introduction into the processing of PTFE resins (Feb 2020)",
+      "url": "https://www.pro-kunststoff.de/assets/Merkbl%C3%A4tter%20und%20Co/TM%2002%20Introduction%20into%20the%20processing%20of%20PTFE%20resins%20%28February%202020%29.pdf",
+      "type": "processing_guide",
+      "rank": 2
+    },
+    "S9": {
+      "title": "CRP Technology – Managing Permeation on PTFE lined Piping in Chlorine & ... (NACE webinar basis)",
+      "url": "https://www.crp.co.uk/wp-content/uploads/2023/01/Managing-Permeation-Webinar-Jan-2023-basis-NACE-Presentation.pdf",
+      "type": "industry_presentation",
+      "rank": 2
+    },
+    "S10": {
+      "title": "CDC/NIOSH – Decomposition products of fluorocarbon polymers (PTFE) (stacks.cdc.gov PDF)",
+      "url": "https://stacks.cdc.gov/view/cdc/19394/cdc_19394_DS1.pdf",
+      "type": "government_report",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S11": {
+      "title": "Dolatabad et al. 2025 – Thermal decomposition of fluoropolymers (ScienceDirect abstract)",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S0304389425022381",
+      "type": "peer_reviewed_review",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S12": {
+      "title": "Chemours – Teflon™ fluoropolymers and the semiconductor industry brochure (PDF)",
+      "url": "https://www.chemours.com/fr/-/media/files/teflon/teflon-semicon-brochure.pdf",
+      "type": "manufacturer_brochure",
+      "rank": 2
+    },
+    "S13": {
+      "title": "Klaas et al. 2005 – The tribological behaviour of glass filled PTFE (Tribology International)",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S0301679X05000800",
+      "type": "peer_reviewed_paper",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S14": {
+      "title": "Bahadur 1984 – The wear of filled polytetrafluoroethylene (Wear)",
+      "url": "https://www.sciencedirect.com/science/article/pii/0043164884902138",
+      "type": "peer_reviewed_paper",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S15": {
+      "title": "ASTM D543 – Chemical Resistance of Plastics (overview)",
+      "url": "https://www.astm.org/d0543-23.html",
+      "type": "standard_test_method",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S16": {
+      "title": "ISO 15105-1 — Plastics — Film and sheeting — Determination of gas-transmission rate — Part 1: Differential-pressure methods",
+      "url": "https://www.iso.org/",
+      "type": "standard_test_method",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S17": {
+      "title": "ISO 15105-2 — Plastics — Film and sheeting — Determination of gas-transmission rate — Part 2: Equal-pressure method",
+      "url": "https://www.iso.org/",
+      "type": "standard_test_method",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S18": {
+      "title": "SEMI F57 — Polymer Components Used in Ultrapure Water and Liquid Chemical Distribution Systems (standard, licensed)",
+      "url": "https://www.semi.org/en/standards",
+      "type": "standard_specification",
+      "rank": 1,
+      "edition": "",
+      "clause": ""
+    },
+    "S19": {
+      "title": "Industry UHP fluid handling surface finish practice (Ra requirements; vendor-/fab-specific qualification specs)",
+      "url": "",
+      "type": "industry_standard_practice",
+      "rank": 2
+    }
+  },
   "factcards": [
     {
-      "id": "FC-PTFE-001",
-      "title": "PTFE (unversetzt / Virgin PTFE)",
-      "material_family": "PTFE",
-      "compound_id": "ptfe_virgin",
-      "topic_tags": [
-        "temperature_resistance",
-        "chemical_resistance",
-        "food_grade",
-        "static_sealing"
-      ],
-      "properties": {
-        "temp_min_c": -200,
-        "temp_max_c": 260,
-        "pressure_max_bar": 200,
-        "friction_coefficient": 0.04,
-        "hardness_shore_d": 55,
-        "compressive_strength_mpa": 12,
-        "tensile_strength_mpa": 20,
-        "density_g_cm3": 2.15
-      },
-      "chemical_resistance": {
-        "acids_weak": "excellent",
-        "acids_strong": "good",
-        "acids_hf": "not_suitable",
-        "acids_oleum": "limited",
-        "alkalis": "excellent",
-        "solvents": "excellent",
-        "hydrocarbons": "excellent",
-        "steam": "good",
-        "oxidizers": "good",
-        "halogens": "limited",
-        "ammoniak": "excellent",
-        "chlor_gasfoermig": "good"
-      },
-      "applications": [
-        "statische_flanschdichtungen",
-        "backup_rings",
-        "gaskets",
-        "auskleidungen",
-        "schauglasdichtungen"
-      ],
-      "limitations": [
-        "Kaltfluss (Kriechneigung) unter Last",
-        "geringe mechanische Festigkeit",
-        "nicht für dynamische Dichtung geeignet",
-        "kein Kontakt mit Flusssäure (HF)"
-      ],
-      "standards": ["DIN 3869", "EN 1514-1", "ASME B16.21", "DIN EN 12560-4"],
-      "food_grade": true,
-      "fda_approved": true,
-      "answer_template": "PTFE (virgin) besitzt universelle chemische Beständigkeit und ist einsetzbar von -200\u00b0C bis +260\u00b0C bei statischen Anwendungen bis 200 bar. Es ist FDA-konform und geeignet für Lebensmittelanwendungen. Achtung: Kaltfluss unter dauerhafter Last und kein Einsatz bei Flusssäure.",
-      "deterministic_triggers": [
-        "chemical_resistance_query",
-        "temperature_range_query",
-        "food_grade_query",
-        "fda_query"
-      ]
+      "id": "PTFE-F-001",
+      "topic": "structure",
+      "property": "repeat_unit",
+      "value": "(–CF2–CF2–)n",
+      "units": null,
+      "conditions": "Linear, unbranched fluoropolymer; carbon backbone shielded by fluorine helix",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not infer melt-processability from being a thermoplastic; PTFE has extremely high melt viscosity and is typically processed by sintering."
     },
     {
-      "id": "FC-PTFE-002",
-      "title": "PTFE + 25% Glasfaser (GF25)",
-      "material_family": "PTFE",
-      "compound_id": "ptfe_25_glass",
-      "topic_tags": [
-        "creep_resistance",
-        "mechanical_strength",
-        "moderate_temperature"
-      ],
-      "properties": {
-        "temp_min_c": -70,
-        "temp_max_c": 250,
-        "pressure_max_bar": 350,
-        "friction_coefficient": 0.12,
-        "hardness_shore_d": 64,
-        "compressive_strength_mpa": 20,
-        "tensile_strength_mpa": 14,
-        "density_g_cm3": 2.26
-      },
-      "chemical_resistance": {
-        "acids_weak": "good",
-        "acids_strong": "limited",
-        "acids_hf": "not_suitable",
-        "alkalis": "good",
-        "solvents": "excellent",
-        "hydrocarbons": "excellent",
-        "steam": "good",
-        "oxidizers": "limited",
-        "halogens": "limited"
-      },
-      "applications": [
-        "statische_hochdruckdichtungen",
-        "flanschdichtungen_erhöhter_druck",
-        "backup_rings_hydraulik"
-      ],
-      "limitations": [
-        "nicht bei Flusssäure und starken Fluoriden (Glasfaserangriff)",
-        "erhöhte Reibung gegenüber virgin PTFE",
-        "Temperaturlimit 250°C (nicht 260°C)"
-      ],
-      "standards": ["DIN 3869", "EN 1514-1"],
-      "food_grade": false,
-      "fda_approved": false,
-      "answer_template": "PTFE + 25% Glasfaser bietet verbesserte Kriechfestigkeit gegenüber virgin PTFE. Einsatzbereich: -70\u00b0C bis +250\u00b0C bei bis zu 350 bar. Nicht geeignet für Flusssäure oder starke Fluoride (Glasfaserangriff). Nicht FDA/food-grade.",
-      "deterministic_triggers": [
-        "creep_resistance_query",
-        "high_pressure_static_query"
-      ]
+      "id": "PTFE-F-002",
+      "topic": "morphology",
+      "property": "crystallinity",
+      "value": "partly crystalline (semi-crystalline)",
+      "units": null,
+      "conditions": "Properties depend strongly on crystallinity and processing history (sinter + cooling)",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not assume a single crystallinity value without DSC/XRD data and the exact grade/process."
     },
     {
-      "id": "FC-PTFE-003",
-      "title": "PTFE + 15% Kohlenstoff (Carbon)",
-      "material_family": "PTFE",
-      "compound_id": "ptfe_15_carbon",
-      "topic_tags": [
-        "antistatisch",
-        "tribologie",
-        "trockenlauf",
-        "elektrische_leitfähigkeit"
-      ],
-      "properties": {
-        "temp_min_c": -200,
-        "temp_max_c": 250,
-        "pressure_max_bar": 250,
-        "friction_coefficient": 0.08,
-        "hardness_shore_d": 62,
-        "compressive_strength_mpa": 16,
-        "tensile_strength_mpa": 15,
-        "density_g_cm3": 2.08
-      },
-      "chemical_resistance": {
-        "acids_weak": "good",
-        "acids_strong": "limited",
-        "acids_hf": "not_suitable",
-        "alkalis": "good",
-        "solvents": "excellent",
-        "hydrocarbons": "excellent",
-        "oxidizers_strong": "not_suitable",
-        "steam": "good",
-        "salpetersäure": "not_suitable"
-      },
-      "applications": [
-        "trockenlaufende_gleitlager",
-        "antistatische_anwendungen",
-        "elektrisch_ableitfähige_dichtungen",
-        "backup_rings"
-      ],
-      "limitations": [
-        "nicht bei starken Oxidationsmitteln (Salpetersäure, H2O2 konzentriert)",
-        "nicht FDA-konform",
-        "geringere Temperaturbeständigkeit als virgin PTFE"
-      ],
-      "standards": ["DIN 3869"],
-      "food_grade": false,
-      "fda_approved": false,
-      "answer_template": "PTFE + 15% Kohlenstoff ist antistatisch, elektrisch leitfähig und eignet sich für Trockenlaufanwendungen. Einsatzbereich: -200\u00b0C bis +250\u00b0C. Nicht geeignet bei starken Oxidationsmitteln (Salpetersäure, konzentriertes H2O2) und nicht FDA/food-grade.",
-      "deterministic_triggers": [
-        "antistatic_query",
-        "dry_running_query",
-        "electrical_conductivity_query"
-      ]
+      "id": "PTFE-F-003",
+      "topic": "thermal",
+      "property": "crystalline_melting_point",
+      "value": "~327",
+      "units": "°C",
+      "conditions": "Crystallite melting range referenced for PTFE",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not treat 327°C as a safe operating limit; it is the melting transition, not a continuous service rating."
     },
     {
-      "id": "FC-PTFE-004",
-      "title": "PTFE + 60% Bronze",
-      "material_family": "PTFE",
-      "compound_id": "ptfe_60_bronze",
-      "topic_tags": [
-        "wärmeableitung",
-        "hohe_last",
-        "hydraulik",
-        "führungsring"
-      ],
-      "properties": {
-        "temp_min_c": -60,
-        "temp_max_c": 200,
-        "pressure_max_bar": 500,
-        "friction_coefficient": 0.1,
-        "hardness_shore_d": 70,
-        "compressive_strength_mpa": 50,
-        "tensile_strength_mpa": 10,
-        "density_g_cm3": 4.0,
-        "thermal_conductivity_w_mk": 1.2
-      },
-      "chemical_resistance": {
-        "acids": "limited",
-        "alkalis": "limited",
-        "solvents": "limited",
-        "ammoniak": "not_suitable",
-        "hydrocarbons": "good",
-        "water": "limited",
-        "salt_water": "not_suitable"
-      },
-      "applications": [
-        "hydraulische_führungsringe",
-        "gleitlager_hohe_last",
-        "wärmeableitende_anwendungen"
-      ],
-      "limitations": [
-        "begrenzte chemische Beständigkeit (Säuren, Laugen, Ammoniak)",
-        "nicht für korrosive Medien",
-        "reduziertes Temperaturlimit 200°C"
-      ],
-      "standards": ["ISO 10766", "DIN ISO 7425"],
-      "food_grade": false,
-      "fda_approved": false,
-      "answer_template": "PTFE + 60% Bronze bietet hohe Druckfestigkeit (bis 500 bar), gute Wärmeableitung und eignet sich für Führungsringe und Gleitlager unter hoher Last. Einsatzbereich: -60\u00b0C bis +200\u00b0C. Eingeschränkte chemische Beständigkeit — nicht für Säuren, Laugen oder Ammoniak.",
-      "deterministic_triggers": [
-        "high_load_query",
-        "thermal_conductivity_query",
-        "guide_ring_query"
-      ]
+      "id": "PTFE-F-004",
+      "topic": "thermal",
+      "property": "continuous_service_temperature_guideline",
+      "value": "≤260",
+      "units": "°C",
+      "conditions": "Common engineering guideline for continuous use; must be validated per grade, stress and environment",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not guarantee long-term performance at 260°C without creep/load and media-specific validation."
     },
     {
-      "id": "FC-PTFE-005",
-      "title": "Modifiziertes PTFE (ePTFE / mPTFE)",
-      "material_family": "PTFE",
-      "compound_id": "ptfe_modified",
-      "topic_tags": [
-        "reduzierter_kaltfluss",
-        "dichtheit",
-        "gasket",
-        "rohrleitungsdichtung"
-      ],
-      "properties": {
-        "temp_min_c": -200,
-        "temp_max_c": 260,
-        "pressure_max_bar": 150,
-        "friction_coefficient": 0.05,
-        "hardness_shore_d": 52,
-        "compressive_strength_mpa": 15,
-        "tensile_strength_mpa": 18,
-        "density_g_cm3": 2.12
-      },
-      "chemical_resistance": {
-        "acids_weak": "excellent",
-        "acids_strong": "excellent",
-        "acids_hf": "not_suitable",
-        "alkalis": "excellent",
-        "solvents": "excellent",
-        "hydrocarbons": "excellent",
-        "steam": "excellent",
-        "oxidizers": "good"
-      },
-      "applications": [
-        "rohrleitungsdichtungen",
-        "flanschdichtungen_aggressive_medien",
-        "hochwertige_gasket_anwendungen",
-        "pharmaindustrie"
-      ],
-      "limitations": [
-        "kein Einsatz bei Flusssäure",
-        "geringerer Druckbereich als verstärkte Typen",
-        "höhere Kosten"
-      ],
-      "standards": ["EN 1514-1", "ASME B16.20", "EN 13555"],
-      "food_grade": true,
-      "fda_approved": true,
-      "answer_template": "Modifiziertes PTFE (ePTFE/mPTFE) kombiniert die chemische Universalbeständigkeit von PTFE mit deutlich reduziertem Kaltfluss. Ideal für Rohrleitungs- und Flanschdichtungen in der Pharma- und Chemieindustrie. Einsatzbereich: -200\u00b0C bis +260\u00b0C, FDA-konform.",
-      "deterministic_triggers": [
-        "cold_flow_reduction_query",
-        "pharma_query",
-        "aggressive_medium_gasket_query"
-      ]
+      "id": "PTFE-F-005",
+      "topic": "thermal",
+      "property": "decomposition_onset_guideline",
+      "value": ">300",
+      "units": "°C",
+      "conditions": "Breakdown products must be expected above ~300°C per manufacturer guidance",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer exact toxic species or rates without a controlled decomposition study and temperature history."
+    },
+    {
+      "id": "PTFE-F-006",
+      "topic": "safety",
+      "property": "HF_release_threshold",
+      "value": ">300",
+      "units": "°C",
+      "conditions": "Hydrogen fluoride reported released when PTFE heated above 300°C in decomposition studies",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "government_report",
+      "source": "S10",
+      "confidence": "high",
+      "do_not_infer": "Do not assume HF is the only hazard; particulate and other fluorinated products can dominate toxicity depending on conditions."
+    },
+    {
+      "id": "PTFE-F-007",
+      "topic": "safety",
+      "property": "rapid_pyrolysis_regime",
+      "value": ">400",
+      "units": "°C",
+      "conditions": "Peer-reviewed review notes C–F bond cleavage begins above ~400°C with release of TFE and radicals",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_review",
+      "source": "S11",
+      "confidence": "high",
+      "do_not_infer": "Do not extrapolate decomposition chemistry to normal service temperatures (<300°C)."
+    },
+    {
+      "id": "PTFE-F-008",
+      "topic": "thermal",
+      "property": "low_temperature_capability",
+      "value": "cryogenic-capable",
+      "units": null,
+      "conditions": "PTFE remains usable at very low temperatures; design must consider stiffness increase and seal energization",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer elastomer-like resilience at cryogenic temperatures; PTFE is not elastic and needs mechanical energization for seals."
+    },
+    {
+      "id": "PTFE-F-009",
+      "topic": "physical",
+      "property": "water_absorption",
+      "value": "undetectable / very low",
+      "units": null,
+      "conditions": "Manufacturer guidance: water absorption essentially undetectable",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer zero outgassing; low bulk absorption does not eliminate surface-adsorbed water or volatiles."
+    },
+    {
+      "id": "PTFE-F-010",
+      "topic": "physical",
+      "property": "surface_energy",
+      "value": "very low",
+      "units": null,
+      "conditions": "Low surface energy drives non-stick behavior and low adhesion",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer low friction under all loads/speeds; wear can still be high depending on counterface and PV."
+    },
+    {
+      "id": "PTFE-F-011",
+      "topic": "chemical_resistance",
+      "property": "universal_resistance_claim",
+      "value": "Resistant to many aggressive acids/bases/solvents",
+      "units": null,
+      "conditions": "Examples: HCl, HF, fuming H2SO4/HNO3, hot NaOH, Cl2, H2O2, esters, ketones, alcohols, acid chlorides",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not infer compatibility at any temperature/concentration/phase; always require explicit conditions."
+    },
+    {
+      "id": "PTFE-F-012",
+      "topic": "chemical_resistance",
+      "property": "swelling_fluorinated_oils_near_melt",
+      "value": "susceptible near ~327°C",
+      "units": null,
+      "conditions": "Highly fluorinated oils can attack/swell PTFE close to crystallite melting range",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not infer chemical attack at room temperature from this; the effect is temperature-dependent."
+    },
+    {
+      "id": "PTFE-F-013",
+      "topic": "chemical_resistance",
+      "property": "swelling_fluorine_containing_hydrocarbons",
+      "value": "reversible swelling",
+      "units": null,
+      "conditions": "At room temperature, fluorine-containing hydrocarbons can swell PTFE reversibly",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not infer permanent damage from swelling without dimensional/weight-change data and recovery check."
+    },
+    {
+      "id": "PTFE-F-014",
+      "topic": "chemical_resistance",
+      "property": "molten_alkali_metals_attack",
+      "value": "attacked in molten or dissolved form",
+      "units": null,
+      "conditions": "Molten/dissolved alkali metals attack PTFE; brown discoloration; fluorine extracted from molecule",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not infer that aqueous alkali solutions behave like molten alkali metals; phase and temperature are decisive."
+    },
+    {
+      "id": "PTFE-F-015",
+      "topic": "chemical_resistance",
+      "property": "ClF3_high_T_limit",
+      "value": "resistance deteriorates at high temperature",
+      "units": null,
+      "conditions": "At high temperatures, resistance to chlorine trifluoride deteriorates",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not infer safe use with ClF3 at any temperature; require explicit compatibility validation and safety review."
+    },
+    {
+      "id": "PTFE-F-016",
+      "topic": "chemical_resistance",
+      "property": "elemental_fluorine_high_T_limit",
+      "value": "resistance deteriorates at high temperature",
+      "units": null,
+      "conditions": "At high temperatures, resistance to elemental fluorine deteriorates",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not infer safe use in fluorination service without specialized materials selection and testing."
+    },
+    {
+      "id": "PTFE-F-017",
+      "topic": "chemical_resistance",
+      "property": "TEADIT_ClF3_rating",
+      "value": "Not recommended (C)",
+      "units": null,
+      "conditions": "PTFE sealing products rated 'C' for chlorine trifluoride in TEADIT chart",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_compatibility_chart",
+      "source": "S2",
+      "confidence": "medium",
+      "do_not_infer": "Do not treat a single vendor chart as universal truth; use as a red-flag requiring deeper validation."
+    },
+    {
+      "id": "PTFE-F-018",
+      "topic": "chemical_resistance",
+      "property": "TEADIT_molten_alkali_metals_rating",
+      "value": "Not recommended (C)",
+      "units": null,
+      "conditions": "PTFE sealing products rated 'C' for molten alkali metals in TEADIT chart",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_compatibility_chart",
+      "source": "S2",
+      "confidence": "medium",
+      "do_not_infer": "Do not assume PTFE failure mode; different compounds and hardware can shift behavior but hazard remains extreme."
+    },
+    {
+      "id": "PTFE-F-019",
+      "topic": "permeation",
+      "property": "core_principle",
+      "value": "Chemical resistance ≠ impermeability",
+      "units": null,
+      "conditions": "Even chemically inert PTFE can allow permeation of gases/vapors; permeation depends on thickness, temperature, gradient, morphology",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "standard_test_method",
+      "source": "S4",
+      "confidence": "high",
+      "do_not_infer": "Do not infer 'no permeation' from 'inert'. Always consider permeation in lined steel, vacuum, UHP systems."
+    },
+    {
+      "id": "PTFE-F-020",
+      "topic": "permeation",
+      "property": "ASTM_D1434_outputs",
+      "value": "GTR, permeance, permeability",
+      "units": null,
+      "conditions": "D1434 defines gas transmission rate, permeance, permeability; permeability meaningful for homogeneous materials",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "standard_test_method",
+      "source": "S4",
+      "confidence": "high",
+      "do_not_infer": "Do not compare permeability values unless test conditions (T, Δp, humidity) and units match."
+    },
+    {
+      "id": "PTFE-F-021",
+      "topic": "permeation",
+      "property": "SO2_permeability_TFM1700",
+      "value": "213",
+      "units": "cm^3·mm/(m^2·day·atm)",
+      "conditions": "SO2 at 23°C; Dyneon TFM 1700 PTFE",
+      "test_method": "DIN 53380 Part 4.1.2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not apply to other grades, thicknesses, or temperatures without correction; values are grade- and condition-specific."
+    },
+    {
+      "id": "PTFE-F-022",
+      "topic": "permeation",
+      "property": "SO2_permeability_TF1750",
+      "value": "314",
+      "units": "cm^3·mm/(m^2·day·atm)",
+      "conditions": "SO2 at 23°C; Dyneon TF 1750 PTFE",
+      "test_method": "DIN 53380 Part 4.1.2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer ranking between materials unless same method/conditions are used."
+    },
+    {
+      "id": "PTFE-F-023",
+      "topic": "permeation",
+      "property": "HCl_permeability_TFM1700",
+      "value": "466",
+      "units": "cm^3·mm/(m^2·day·atm)",
+      "conditions": "HCl gas at 54°C; Dyneon TFM 1700 PTFE",
+      "test_method": "DIN 53380 Part 4.1.2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not assume HCl resistance implies zero permeation; corrosion can occur behind liners."
+    },
+    {
+      "id": "PTFE-F-024",
+      "topic": "permeation",
+      "property": "HCl_permeability_TF1750",
+      "value": "648",
+      "units": "cm^3·mm/(m^2·day·atm)",
+      "conditions": "HCl gas at 54°C; Dyneon TF 1750 PTFE",
+      "test_method": "DIN 53380 Part 4.1.2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer that a lower permeability necessarily means lower corrosion risk; defects and bonding dominate in practice."
+    },
+    {
+      "id": "PTFE-F-025",
+      "topic": "permeation",
+      "property": "chlorine_permeability_TFM1700",
+      "value": "162",
+      "units": "cm^3·mm/(m^2·day·atm)",
+      "conditions": "Chlorine gas at 54°C; Dyneon TFM 1700 PTFE",
+      "test_method": "DIN 53380 Part 4.1.2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer that chlorine gas is 'blocked' by PTFE; permeation is non-zero."
+    },
+    {
+      "id": "PTFE-F-026",
+      "topic": "permeation",
+      "property": "water_vapor_transmission_TFM1700_20C",
+      "value": "0.0045",
+      "units": "g·mm/(m^2·day)",
+      "conditions": "Water vapor at 20°C; Dyneon TFM 1700 PTFE",
+      "test_method": "DIN 53122-2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not extrapolate to vacuum bakeout; surface adsorption and diffusion kinetics matter."
+    },
+    {
+      "id": "PTFE-F-027",
+      "topic": "permeation",
+      "property": "permeation_impacts_lined_steel",
+      "value": "blistering + corrosion of steel",
+      "units": null,
+      "conditions": "Permeation through PTFE liners can cause blistering of PTFE and corrosion of steel substrate; increases maintenance and risk",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "industry_presentation",
+      "source": "S9",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer the liner has failed chemically; permeation is a transport phenomenon even without polymer attack."
+    },
+    {
+      "id": "PTFE-F-028",
+      "topic": "purity",
+      "property": "semiconductor_rationale",
+      "value": "used to reduce contamination/corrosion/leaching",
+      "units": null,
+      "conditions": "Chemours brochure: fluoropolymers chemically inert and protect against ionic/metallic contamination in fab fluid handling",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_brochure",
+      "source": "S12",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer PTFE automatically meets UHP specs; grade, additives, cleaning, extractables and particle shedding must be qualified."
+    },
+    {
+      "id": "PTFE-F-029",
+      "topic": "processing",
+      "property": "two_step_heat_paste_extrusion",
+      "value": "lubricant removal then sintering",
+      "units": null,
+      "conditions": "Chemours: lubricant removal typically 100–300°C; sintering above melting point (~342°C) to produce void-free PTFE",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_datasheet",
+      "source": "S7",
+      "confidence": "high",
+      "do_not_infer": "Do not infer an article is void-free without density/porosity checks; cycle control is necessary but not sufficient."
+    },
+    {
+      "id": "PTFE-F-030",
+      "topic": "processing",
+      "property": "lubricant_selection_rule",
+      "value": "boiling point depends on wall thickness",
+      "units": null,
+      "conditions": "Processing guide: thin-walled/films use high-boiling lubricants; thick-walled/liners prefer low-boiling",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer lubricant choice from geometry alone; extrusion method, removal route, and contamination limits also govern."
+    },
+    {
+      "id": "PTFE-F-031",
+      "topic": "processing",
+      "property": "lubricant_quality_requirements",
+      "value": "must absorb readily + be removed easily; must not discolor during sintering",
+      "units": null,
+      "conditions": "Processing guide requirement for lubricant",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "high",
+      "do_not_infer": "Do not infer a lubricant is acceptable for UHP without extractables/ionic contamination data."
+    },
+    {
+      "id": "PTFE-F-032",
+      "topic": "processing",
+      "property": "properties_depend_on_cycle",
+      "value": "preform pressure + sintering time/temperature + cooling rate",
+      "units": null,
+      "conditions": "Chemours PTFE granular product info: final properties depend on preform pressure, sintering time/temperature, cooling rate",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_datasheet",
+      "source": "S7",
+      "confidence": "high",
+      "do_not_infer": "Do not compare mechanical properties across vendors without matching cycles and test standards."
+    },
+    {
+      "id": "PTFE-F-033",
+      "topic": "processing",
+      "property": "crystalline_transition_near_19C",
+      "value": "solid-solid transition ~19°C (important for dimensional stability)",
+      "units": null,
+      "conditions": "Processing guide notes crystalline transition around ~19°C affecting volume",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not claim a specific expansion jump without measuring the specific grade; transition range can vary."
+    },
+    {
+      "id": "PTFE-F-034",
+      "topic": "mechanical",
+      "property": "creep_tendency",
+      "value": "strong tendency to creep (cold flow)",
+      "units": null,
+      "conditions": "PTFE exhibits significant creep; design needs preload/energization and creep allowance",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer creep rate without stress, temperature and time; requires creep curves for the specific grade/compound."
+    },
+    {
+      "id": "PTFE-F-035",
+      "topic": "tribology",
+      "property": "unfilled_wear",
+      "value": "abrasion resistance of unfilled PTFE is low",
+      "units": null,
+      "conditions": "Manufacturer guidance: abrasion resistance of PTFE is low; compounded PTFE improves abrasion",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer absolute wear rate; wear depends on PV, counterface, lubrication and debris."
+    },
+    {
+      "id": "PTFE-F-036",
+      "topic": "tribology",
+      "property": "compounded_abrasion",
+      "value": "PTFE compounds show good abrasion resistance at relatively high loads",
+      "units": null,
+      "conditions": "General statement for PTFE compounds",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not assume all compounds improve wear; filler selection can worsen wear vs certain counterfaces."
+    },
+    {
+      "id": "PTFE-F-037",
+      "topic": "compounds",
+      "property": "virgin_ptfe_attributes",
+      "value": "low friction; very good chemical resistance; FDA compliant; light-duty service",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer suitability for high PV dynamic sealing from 'low friction'; wear and creep can dominate."
+    },
+    {
+      "id": "PTFE-F-038",
+      "topic": "compounds",
+      "property": "glass_filled_abrasive_note",
+      "value": "glass-fiber-filled PTFE with lubricant: good wear resistance but abrasive to counter surface",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not recommend glass-filled against soft shafts without hardness and surface finish confirmation."
+    },
+    {
+      "id": "PTFE-F-039",
+      "topic": "compounds",
+      "property": "polymer_filled_soft_metals",
+      "value": "polymer-filled PTFE recommended for low-to-high speed against soft metals",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer universal chemical compatibility; some polymer-filled grades are not suitable with strong acids/high pH."
+    },
+    {
+      "id": "PTFE-F-040",
+      "topic": "compounds",
+      "property": "polymer_filled_acid_limit",
+      "value": "some polymer-filled PTFE not suitable with strong acids and high pH liquids",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer that 'polymer-filled' implies chemical resistance equal to virgin PTFE; fill system can reduce compatibility."
+    },
+    {
+      "id": "PTFE-F-041",
+      "topic": "compounds",
+      "property": "vacuum_inert_gas_grade",
+      "value": "MoS2-filled PTFE noted for vacuum/inert gas service; excellent wear; high extrusion resistance",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer semiconductor compatibility; MoS2 can be a contamination concern depending on spec."
+    },
+    {
+      "id": "PTFE-F-042",
+      "topic": "compounds",
+      "property": "semiconductor_suitable_grade_claim",
+      "value": "PTFE compound noted as suitable for semiconductor applications (low permeability/deformation)",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not treat as a generic PTFE property; this is grade-specific and still requires fab qualification."
+    },
+    {
+      "id": "PTFE-F-043",
+      "topic": "standards",
+      "property": "ASTM_D4745_scope",
+      "value": "classification system for filled PTFE molding compounds",
+      "units": null,
+      "conditions": "D4745 covers filled PTFE molding compounds based on virgin PTFE resins (with certain exclusions); defines types",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "standard_specification",
+      "source": "S5",
+      "confidence": "high",
+      "do_not_infer": "Do not infer a compound meets D4745 unless supplier certifies and test results match."
+    },
+    {
+      "id": "PTFE-F-044",
+      "topic": "permeation",
+      "property": "He_permeation_NXT_vs_PTFE_2mm",
+      "value": "93 vs 1",
+      "units": "(relative; see table)",
+      "conditions": "Table shows helium gas permeation: PTFE vs Teflon NXT at 2 mm: 93 vs 1 (units per table)",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not use as absolute without the original table context (temperature, method, units). Use as evidence that modified PTFE can reduce permeation."
+    },
+    {
+      "id": "PTFE-F-045",
+      "topic": "permeation",
+      "property": "O2_permeability_TFM1700_20C",
+      "value": "178",
+      "units": "cm^3·mm/(m^2·day·atm)",
+      "conditions": "Oxygen at 20°C; Dyneon TFM 1700",
+      "test_method": "DIN 53380 Part 4.1.2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not extrapolate across temperature; permeability rises strongly with temperature."
+    },
+    {
+      "id": "PTFE-F-046",
+      "topic": "permeation",
+      "property": "CO2_permeability_TFM1700_20C",
+      "value": "487",
+      "units": "cm^3·mm/(m^2·day·atm)",
+      "conditions": "CO2 at 20°C; Dyneon TFM 1700",
+      "test_method": "DIN 53380 Part 4.1.2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not compare to other materials unless same test standard/conditions."
+    },
+    {
+      "id": "PTFE-F-047",
+      "topic": "permeation",
+      "property": "N2_permeability_TFM1700_20C",
+      "value": "64",
+      "units": "cm^3·mm/(m^2·day·atm)",
+      "conditions": "N2 at 20°C; Dyneon TFM 1700",
+      "test_method": "DIN 53380 Part 4.1.2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not assume nitrogen is negligible; in vacuum systems, even small permeation can set base pressure."
+    },
+    {
+      "id": "PTFE-F-048",
+      "topic": "defects",
+      "property": "blistering_root_cause_class",
+      "value": "entrapped volatiles / permeant gas + temperature",
+      "units": null,
+      "conditions": "Blistering can result from permeation and from trapped volatiles (lubricant not removed) during sinter",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "industry_presentation",
+      "source": "S9",
+      "confidence": "medium",
+      "do_not_infer": "Do not attribute blistering to 'chemical attack' without confirming media, temperature, and internal pressure mechanisms."
+    },
+    {
+      "id": "PTFE-F-049",
+      "topic": "defects",
+      "property": "discoloration_brown_metal_attack",
+      "value": "brown discoloration indicates alkali-metal attack extracting fluorine",
+      "units": null,
+      "conditions": "Observed when PTFE attacked by molten/dissolved alkali metals",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not generalize brown color to chemical attack in all cases; overheating can also discolor; require context."
+    },
+    {
+      "id": "PTFE-F-050",
+      "topic": "processing",
+      "property": "void_free_requirement",
+      "value": "sinter above melt point to consolidate void-free structure",
+      "units": null,
+      "conditions": "Chemours: sintering above melting point (~342°C) produces void-free solid PTFE resin",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_datasheet",
+      "source": "S7",
+      "confidence": "high",
+      "do_not_infer": "Do not infer void-free without density/CT/ultrasound; process claims are not proof."
+    },
+    {
+      "id": "PTFE-F-051",
+      "topic": "selection",
+      "property": "counterface_sensitivity",
+      "value": "filler choice must match counterface hardness/finish",
+      "units": null,
+      "conditions": "Abrasive fillers (e.g., glass fiber) can damage soft metals; polymer-filled options can reduce abrasion",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not recommend a filler without knowing counterface material/hardness and lubrication regime."
+    },
+    {
+      "id": "PTFE-F-052",
+      "topic": "selection",
+      "property": "purity_constraint",
+      "value": "UHP/semicon forbids uncontrolled fillers/additives/metal ions",
+      "units": null,
+      "conditions": "Fab fluid handling targets low ionic/metallic contamination; material grade + cleaning matter",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_brochure",
+      "source": "S12",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer purity from polymer family name; request grade (UHP/HP), certification, extractables data."
+    },
+    {
+      "id": "PTFE-F-053",
+      "topic": "safety",
+      "property": "PFIB_presence_high_T",
+      "value": "PFIB identified among decomposition products at ~380–400°C and above",
+      "units": null,
+      "conditions": "CDC report summarizing literature; PFIB is highly toxic",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "government_report",
+      "source": "S10",
+      "confidence": "high",
+      "do_not_infer": "Do not claim PFIB generation in normal service; it is a decomposition product requiring overheating conditions."
+    },
+    {
+      "id": "PTFE-F-054",
+      "topic": "safety",
+      "property": "particulate_fume_hazard",
+      "value": "particulate fraction can dominate toxicity; filtration reduced lethality in animal studies",
+      "units": null,
+      "conditions": "CDC report: filtering pyrolysis products removed toxicity in some studies",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "government_report",
+      "source": "S10",
+      "confidence": "high",
+      "do_not_infer": "Do not infer safe handling without proper industrial hygiene; use established safety protocols for overheating events."
+    },
+    {
+      "id": "PTFE-F-055",
+      "topic": "chemical_resistance",
+      "property": "HF_anhydrous_vendor_rating",
+      "value": "Not recommended for many PTFE grades",
+      "units": null,
+      "conditions": "TEADIT chart lists some HF cases (e.g., anhydrous HF) as C for several PTFE gasket products; temperature dependent",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_compatibility_chart",
+      "source": "S2",
+      "confidence": "medium",
+      "do_not_infer": "Do not generalize HF compatibility; require concentration, temperature, and product/grade."
+    },
+    {
+      "id": "PTFE-F-056",
+      "topic": "chemical_resistance",
+      "property": "iodine_pentafluoride_vendor_rating",
+      "value": "Consult (B)",
+      "units": null,
+      "conditions": "TEADIT chart lists iodine pentafluoride as B (consult)",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_compatibility_chart",
+      "source": "S2",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer compatibility; treat B as hard gate requiring specialist review."
+    },
+    {
+      "id": "PTFE-F-057",
+      "topic": "defects",
+      "property": "decolouration_sintering",
+      "value": "lubricant must not cause decolouration during sintering",
+      "units": null,
+      "conditions": "Processing guide requirement",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "high",
+      "do_not_infer": "Do not attribute discoloration to lubricant without checking temperature overshoot and oxygen exposure."
+    },
+    {
+      "id": "PTFE-F-058",
+      "topic": "processing",
+      "property": "paste_extrusion_lube_removal_range",
+      "value": "100–300",
+      "units": "°C",
+      "conditions": "Lubricant removal step typically in 100–300°C range",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_datasheet",
+      "source": "S7",
+      "confidence": "high",
+      "do_not_infer": "Do not infer full removal without mass-loss or residual analysis; thick sections require time and venting."
+    },
+    {
+      "id": "PTFE-F-059",
+      "topic": "processing",
+      "property": "sintering_above_melt_point",
+      "value": "~342",
+      "units": "°C",
+      "conditions": "Sinter step to melt resin above melting point; vendor datasheet quotes ~342°C",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_datasheet",
+      "source": "S7",
+      "confidence": "high",
+      "do_not_infer": "Do not assume 342°C is universal; PTFE melt range depends on grade; always follow supplier profile."
+    },
+    {
+      "id": "PTFE-F-060",
+      "topic": "thermal",
+      "property": "highly_fluorinated_oils_limit",
+      "value": "susceptible near melting range",
+      "units": null,
+      "conditions": "Highly fluorinated oils can attack PTFE near 327°C",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "high",
+      "do_not_infer": "Do not infer attack at lower temperatures; specify actual oil identity and temperature profile."
+    },
+    {
+      "id": "PTFE-F-061",
+      "topic": "permeation",
+      "property": "water_vapor_transmission_TFM1700_80C",
+      "value": "0.241",
+      "units": "g·mm/(m^2·day)",
+      "conditions": "Water vapor at 80°C; Dyneon TFM 1700",
+      "test_method": "DIN 53122-2",
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not extrapolate linearly; diffusion is temperature-activated and non-linear."
+    },
+    {
+      "id": "PTFE-F-062",
+      "topic": "design",
+      "property": "seal_energization_need",
+      "value": "PTFE seals often require energizers / preload",
+      "units": null,
+      "conditions": "Because PTFE is not elastomeric and creeps, sealing needs spring-energized or controlled compression",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer that a static compression set metric exists like elastomers; PTFE behaves differently."
+    },
+    {
+      "id": "PTFE-F-063",
+      "topic": "rag_rules",
+      "property": "ask_for_conditions",
+      "value": "Always request: media, concentration, temperature, phase, pressure, time, stress",
+      "units": null,
+      "conditions": "Hard gate for any 'compatibility' answer",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "standard_test_method",
+      "source": "S4",
+      "confidence": "high",
+      "do_not_infer": "Do not provide unconditional compatibility statements."
+    },
+    {
+      "id": "PTFE-F-064",
+      "topic": "compounds",
+      "property": "graphite_carbon_filled_note",
+      "value": "high chemical resistance; moderate duty service",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer higher wear resistance than all other fillers; performance is application-specific."
+    },
+    {
+      "id": "PTFE-F-065",
+      "topic": "compounds",
+      "property": "graphite_fiber_reinforced_note",
+      "value": "good wear resistance in liquids and humid conditions",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer good dry-run performance from humid/liquid rating."
+    },
+    {
+      "id": "PTFE-F-066",
+      "topic": "compounds",
+      "property": "polyimide_filled_gas_compressor_note",
+      "value": "polyimide-filled PTFE designed for gas compressor/oxygen intensifier systems; FDA compliant; extremely low seal wear",
+      "units": null,
+      "conditions": null,
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not declare oxygen-service safe solely based on a compound label; perform oxygen compatibility and ignition risk assessment (pressure, velocity, contaminants)."
+    },
+    {
+      "id": "PTFE-F-067",
+      "topic": "permeation",
+      "property": "low_permeability_design_goal",
+      "value": "use modified PTFE / filled systems to reduce permeability and deformation",
+      "units": null,
+      "conditions": "Bal Seal TA compound description: low permeability/deformation; suitable for semiconductor; good finishes",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer that all modified PTFE has low permeability; request permeation test data for target media."
+    },
+    {
+      "id": "PTFE-F-068",
+      "topic": "tribology",
+      "property": "transfer_film_importance",
+      "value": "wear depends on ability to form adherent transfer film on counterface",
+      "units": null,
+      "conditions": "Dry sliding and water-lubricated tests: wear dependent on transfer film formation",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "high",
+      "do_not_infer": "Do not infer wear rate from filler name only; transfer-film formation depends on counterface roughness, material and environment."
+    },
+    {
+      "id": "PTFE-F-069",
+      "topic": "tribology",
+      "property": "glass_form_factor_effect",
+      "value": "glass bead filled shows thicker films + higher wear vs other glass forms",
+      "units": null,
+      "conditions": "25 wt% glass beads vs fibers/flakes; dry and water tests",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "high",
+      "do_not_infer": "Do not generalize across bead type (hollow vs solid) and test conditions; require filler morphology data."
+    },
+    {
+      "id": "PTFE-F-070",
+      "topic": "tribology",
+      "property": "glass_fiber_best_wear_in_study",
+      "value": "glass fibers and solid beads showed lowest wear; hollow beads highest",
+      "units": null,
+      "conditions": "Klaas 2005 test range 2.6–6.4 MPa; v~0.2 m/s",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "high",
+      "do_not_infer": "Do not apply these rankings to lubricated oil, abrasive slurry, or different PV; verify in application-relevant tests."
+    },
+    {
+      "id": "PTFE-F-071",
+      "topic": "tribology",
+      "property": "lamellar_lubricant_synergy",
+      "value": "adding lamellar solid lubricant to glass fiber reduced wear and friction",
+      "units": null,
+      "conditions": "Klaas 2005 observation",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "high",
+      "do_not_infer": "Do not infer which lubricant (MoS2 vs graphite) is best without considering purity, environment and counterface."
+    },
+    {
+      "id": "PTFE-F-072",
+      "topic": "tribology",
+      "property": "metal_fluoride_presence",
+      "value": "XPS showed presence of metal fluoride on metal counterface",
+      "units": null,
+      "conditions": "Tribochemical effects in PTFE/stainless steel wear couples",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "high",
+      "do_not_infer": "Do not infer corrosion risk without environment details; tribochemical fluorination is a surface phenomenon during sliding."
+    },
+    {
+      "id": "PTFE-F-073",
+      "topic": "morphology",
+      "property": "banded_structure_note",
+      "value": "banded structure with crystalline slices separated by thin amorphous regions",
+      "units": null,
+      "conditions": "Klaas 2005 cites PTFE banded morphology; linked to wear debris formation",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer slice thickness or morphology without microscopy; structure varies by grade and processing."
+    },
+    {
+      "id": "PTFE-F-074",
+      "topic": "tribology",
+      "property": "unfilled_wear_order",
+      "value": "unfilled PTFE wear rate often quoted ~1e-3 mm^3/(N·m)",
+      "units": null,
+      "conditions": "Literature value referenced in Klaas 2005 introduction",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "medium",
+      "do_not_infer": "Do not use as design value; wear rates vary orders of magnitude with PV, roughness, debris and environment."
+    },
+    {
+      "id": "PTFE-F-075",
+      "topic": "tribology",
+      "property": "filler_wear_improvement_orders",
+      "value": "wear can improve up to ~3 orders of magnitude with suitable fillers",
+      "units": null,
+      "conditions": "Klaas 2005 overview statement",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer a specific improvement factor without identifying filler type, loading and test method."
+    },
+    {
+      "id": "PTFE-F-076",
+      "topic": "standards",
+      "property": "ASTM_D543_scope",
+      "value": "standard practice for evaluating chemical resistance of plastics (exposure + property change)",
+      "units": null,
+      "conditions": "Chemical resistance testing framework (mass/size/property change after exposure)",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "standard_test_method",
+      "source": "S15",
+      "confidence": "high",
+      "do_not_infer": "Do not infer compatibility from polymer family name; require test or credible compatibility data for target conditions."
+    },
+    {
+      "id": "PTFE-F-077",
+      "topic": "permeation",
+      "property": "temperature_dependence",
+      "value": "permeability increases with temperature",
+      "units": null,
+      "conditions": "Diffusion activated; tables show higher water vapor transmission at 80°C vs 20°C",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "high",
+      "do_not_infer": "Do not extrapolate linearly; use Arrhenius-style fits or measured data if high accuracy is required."
+    },
+    {
+      "id": "PTFE-F-078",
+      "topic": "vacuum",
+      "property": "vacuum_service_requires_permeation_check",
+      "value": "vacuum/inert gas service stresses permeation and outgassing; use low-permeability grades",
+      "units": null,
+      "conditions": "Bal Seal lists certain PTFE compounds for vacuum service; permeation data needed",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer vacuum suitability from 'chemically inert'; quantify permeation/outgassing and particle shedding."
+    },
+    {
+      "id": "PTFE-F-079",
+      "topic": "chemical_resistance",
+      "property": "filler_can_limit_compatibility",
+      "value": "fill systems can reduce compatibility vs virgin PTFE",
+      "units": null,
+      "conditions": "Example: polymer-filled PTFE not suitable with strong acids/high pH per Bal Seal guide",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "high",
+      "do_not_infer": "Do not treat compatibility as solely polymer-driven; consider filler chemistry and binder/additives."
+    },
+    {
+      "id": "PTFE-F-080",
+      "topic": "purity",
+      "property": "fab_fluid_handling_use_cases",
+      "value": "bulk chemical distribution; wet etch/strip/clean; CMP; wafer handling",
+      "units": null,
+      "conditions": "Chemours brochure use-cases for fluoropolymers in semiconductor fabs",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_brochure",
+      "source": "S12",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer the same material is suitable for all fab chemistries; verify with process chemical list and specs."
+    },
+    {
+      "id": "PTFE-F-081",
+      "topic": "safety",
+      "property": "fume_particle_size",
+      "value": "pyrolysis particulate reported ~0.2–0.5 µm; 99% <2 µm in one study",
+      "units": null,
+      "conditions": "CDC report summarizing fume particulate sizes and inhalable fraction",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "government_report",
+      "source": "S10",
+      "confidence": "high",
+      "do_not_infer": "Do not infer exposure levels; this is particle-size characterization, not workplace concentration."
+    },
+    {
+      "id": "PTFE-F-082",
+      "topic": "processing",
+      "property": "compression_molded_free_sintered",
+      "value": "PTFE composites in study were compression molded and free sintered to billets",
+      "units": null,
+      "conditions": "Klaas 2005 materials preparation",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer your product is equivalent unless processing route and cycle are similar."
+    },
+    {
+      "id": "PTFE-F-083",
+      "topic": "permeation",
+      "property": "modified_PTFE_can_reduce_permeation",
+      "value": "modified PTFE grades (e.g., TFM, NXT) show lower permeability for some gases than conventional PTFE",
+      "units": null,
+      "conditions": "Tables compare TFM vs TF; NXT vs PTFE",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer 'modified' always better; request specific permeation dataset for target gas and temperature."
+    },
+    {
+      "id": "PTFE-F-084",
+      "topic": "defects",
+      "property": "porosity_from_incomplete_lube_removal",
+      "value": "residual lubricant/volatiles can create voids, blisters, porosity during heating",
+      "units": null,
+      "conditions": "Lubricant must be removed before sintering; thick sections are high risk",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_datasheet",
+      "source": "S7",
+      "confidence": "medium",
+      "do_not_infer": "Do not diagnose without process log; ask for thermal profile, mass loss, and cross-section microscopy."
+    },
+    {
+      "id": "PTFE-F-085",
+      "topic": "defects",
+      "property": "cloudy_appearance_indicator",
+      "value": "cloudy/opaque PTFE can indicate voids, insufficient sintering, or filler dispersion issues",
+      "units": null,
+      "conditions": "Common troubleshooting; confirm by density, microscopy, CT",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not equate 'cloudy' with 'bad' for filled PTFE; fillers can make material opaque by design."
+    },
+    {
+      "id": "PTFE-F-086",
+      "topic": "chemical_resistance",
+      "property": "weather_ozone_uv",
+      "value": "excellent weather resistance (incl. ozone/UV)",
+      "units": null,
+      "conditions": "Manufacturer guidance: PTFE resists aging/weather under extreme climate",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer absence of mechanical degradation under combined stress (UV + load + temperature); validate if high-stress outdoor application."
+    },
+    {
+      "id": "PTFE-F-087",
+      "topic": "electrical",
+      "property": "insulation_property",
+      "value": "excellent electrical insulation; low dielectric loss",
+      "units": null,
+      "conditions": "Fluoropolymers used as insulators; PTFE notable",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer dielectric performance at high frequency/temperature without datasheet for the exact grade."
+    },
+    {
+      "id": "PTFE-F-088",
+      "topic": "tribology",
+      "property": "low_friction_mechanism",
+      "value": "low friction attributed to low shear transfer film; fluorine shields backbone",
+      "units": null,
+      "conditions": "Klaas 2005 discussion of mechanism",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer COF constant; COF depends on counterface, load, speed, and environment."
+    },
+    {
+      "id": "PTFE-F-089",
+      "topic": "standards",
+      "property": "conditioning_importance",
+      "value": "permeation tests must state conditioning and test conditions (T, humidity, Δp)",
+      "units": null,
+      "conditions": "ASTM D1434 requires stating temperature, partial pressure and other factors like humidity",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "standard_test_method",
+      "source": "S4",
+      "confidence": "high",
+      "do_not_infer": "Do not compare results across labs without explicit conditioning and test cell details."
+    },
+    {
+      "id": "PTFE-F-090",
+      "topic": "design",
+      "property": "gas_seal_limit",
+      "value": "gas sealing limited by permeation and creep; consider energizers and low-permeability grades",
+      "units": null,
+      "conditions": "Combine creep tendency and permeation data",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not promise leak-tightness for gases without leak-rate specs and test at pressure/temperature cycles."
+    },
+    {
+      "id": "PTFE-F-091",
+      "topic": "tribology",
+      "property": "high_speed_heat_generation_risk",
+      "value": "at high sliding speed, frictional heating and poor thermal conductivity can drive wear; fillers can improve heat conduction",
+      "units": null,
+      "conditions": "General tribology principle; fillers like metals/carbon used for thermal conduction",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer safe PV limit; require application PV, cooling, and validated wear tests."
+    },
+    {
+      "id": "PTFE-F-092",
+      "topic": "chemical_resistance",
+      "property": "metal_filled_corrosion_risk",
+      "value": "metal-filled PTFE can lose chemical resistance if filler corrodes (e.g., acids/alkalis attack metals)",
+      "units": null,
+      "conditions": "General material-selection caution; verify filler chemistry",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "medium",
+      "do_not_infer": "Do not recommend bronze/steel-filled PTFE in corrosive media without a filler-specific compatibility review."
+    },
+    {
+      "id": "PTFE-F-093",
+      "topic": "chemical_resistance",
+      "property": "strong_oxidizers_general",
+      "value": "PTFE generally resistant to many oxidizers (e.g., H2O2, fuming acids) at many conditions",
+      "units": null,
+      "conditions": "Vendor list includes oxidizers; depends on temperature",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_technical_brochure",
+      "source": "S1",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer compatibility with halogen fluorides (ClF3, BrF3) or elemental fluorine; treat as special-case killers."
+    },
+    {
+      "id": "PTFE-F-094",
+      "topic": "permeation",
+      "property": "halogen_permeation_risk",
+      "value": "halogen gases can permeate PTFE; behind-liner corrosion possible",
+      "units": null,
+      "conditions": "Chlorine permeability values + lined equipment issues",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "handbook_excerpt",
+      "source": "S3",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer that polymer survives means equipment is safe; evaluate substrate, venting, and detection."
+    },
+    {
+      "id": "PTFE-F-095",
+      "topic": "design",
+      "property": "thickness_effect_on_permeation",
+      "value": "permeance relates to thickness; permeability is bulk property; increasing thickness reduces GTR at fixed permeability",
+      "units": null,
+      "conditions": "ASTM D1434 definitions",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "standard_test_method",
+      "source": "S4",
+      "confidence": "high",
+      "do_not_infer": "Do not infer thicker is always better; thicker liners increase thermal gradients and can trap permeant leading to blistering."
+    },
+    {
+      "id": "PTFE-F-096",
+      "topic": "tribology",
+      "property": "counterface_roughness_effect",
+      "value": "transfer film growth involves mechanical interlocking into asperity valleys; roughness matters",
+      "units": null,
+      "conditions": "Klaas 2005 observation",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "high",
+      "do_not_infer": "Do not infer that rougher is always better; too rough increases abrasion and wear."
+    },
+    {
+      "id": "PTFE-F-097",
+      "topic": "tribology",
+      "property": "environment_effect",
+      "value": "wear mechanisms differ in dry vs water-lubricated sliding",
+      "units": null,
+      "conditions": "Klaas 2005 performed both; rankings can shift",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "peer_reviewed_paper",
+      "source": "S13",
+      "confidence": "medium",
+      "do_not_infer": "Do not extrapolate dry test results to aqueous service without validation."
+    },
+    {
+      "id": "PTFE-F-098",
+      "topic": "rag_rules",
+      "property": "units_and_methods_mandatory",
+      "value": "any quantitative property must include units + method + conditions",
+      "units": null,
+      "conditions": "RAG hard rule",
+      "test_method": null,
+      "source_rank": 1,
+      "source_type": "standard_test_method",
+      "source": "S4",
+      "confidence": "high",
+      "do_not_infer": "Do not generate numbers from memory or inference."
+    },
+    {
+      "id": "PTFE-F-099",
+      "topic": "rag_rules",
+      "property": "compatibility_chart_rank",
+      "value": "vendor compatibility charts are rank-2; treat A/B/C as guidance, not certification",
+      "units": null,
+      "conditions": "Use TEADIT/Bal Seal as red-flag layer; confirm with rank-1 tests/standards for high-risk",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_compatibility_chart",
+      "source": "S2",
+      "confidence": "high",
+      "do_not_infer": "Do not treat A-rating as a guarantee for your exact compound, stress state, and temperature."
+    },
+    {
+      "id": "PTFE-F-100",
+      "topic": "safety",
+      "property": "oxygen_service_gate",
+      "value": "oxygen service requires ignition risk assessment; material label alone insufficient",
+      "units": null,
+      "conditions": "Bal Seal mentions oxygen intensifier systems; oxygen compatibility is system-level",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "manufacturer_guide",
+      "source": "S6",
+      "confidence": "high",
+      "do_not_infer": "Do not recommend for oxygen > certain pressures/velocities without oxygen compatibility protocol and cleanliness controls."
+    },
+    {
+      "id": "PTFE-F-101",
+      "topic": "thermal",
+      "property": "melting_point_virgin_resin",
+      "value": "~342",
+      "units": "°C",
+      "conditions": "Pro-kunststoff guide: PTFE virgin resin melting point about 342°C; above becomes translucent",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not treat 342°C as universal; melting behavior depends on grade and measurement (DSC vs sintered)."
+    },
+    {
+      "id": "PTFE-F-102",
+      "topic": "thermal",
+      "property": "melting_point_sintered_goods",
+      "value": "327",
+      "units": "°C",
+      "conditions": "Pro-kunststoff guide: sintered finished goods show melting point 327°C",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not assume your component matches this unless processed similarly; DSC recommended."
+    },
+    {
+      "id": "PTFE-F-103",
+      "topic": "morphology",
+      "property": "crystallinity_virgin_resin_range",
+      "value": "92–96",
+      "units": "%",
+      "conditions": "Pro-kunststoff guide: virgin resin crystallinity range",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer finished part crystallinity from resin value; processing reduces crystallinity substantially."
+    },
+    {
+      "id": "PTFE-F-104",
+      "topic": "physical",
+      "property": "specific_gravity_void_free_range",
+      "value": "2.13–2.20",
+      "units": "g/cm^3",
+      "conditions": "Void-free finished products depending on processing conditions; corresponds to crystallinity 50–70% per guide",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not use density alone to certify void-free; use microscopy/CT and compare to reference."
+    },
+    {
+      "id": "PTFE-F-105",
+      "topic": "thermal",
+      "property": "transition_19C_volume_change",
+      "value": "~1",
+      "units": "%",
+      "conditions": "Important crystalline transition at ~19°C (triclinic→hexagonal) with ~1% volume increase",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "high",
+      "do_not_infer": "Do not ignore in precision fits; for tight tolerances, require stabilization or design clearance across 10–30°C."
+    },
+    {
+      "id": "PTFE-F-106",
+      "topic": "environment",
+      "property": "temperature_range_guideline",
+      "value": "-250 to +260",
+      "units": "°C",
+      "conditions": "Pro-kunststoff summary of application temperature range",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer mechanical performance constant over this range; modulus and creep change strongly with temperature."
+    },
+    {
+      "id": "PTFE-F-107",
+      "topic": "purity",
+      "property": "virgin_without_additives_claim",
+      "value": "very high purity; without additives",
+      "units": null,
+      "conditions": "Pro-kunststoff summary: PTFE very high purity; without additives",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer 'additive-free' for all commercial grades; some grades may contain processing aids or fillers; request certification."
+    },
+    {
+      "id": "PTFE-F-108",
+      "topic": "modified_ptfe",
+      "property": "modifier_chemistry",
+      "value": "PPVE (perfluoropropyl vinyl ether) comonomer (small amount)",
+      "units": null,
+      "conditions": "Pro-kunststoff: modified PTFE contains small amount of fully fluorinated modifier PPVE",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer equivalence between all 'modified PTFE' brands; comonomer content and effects vary."
+    },
+    {
+      "id": "PTFE-F-109",
+      "topic": "modified_ptfe",
+      "property": "reduced_porosity_permeation_cold_flow",
+      "value": "reduced vs standard PTFE",
+      "units": null,
+      "conditions": "Pro-kunststoff: modified PTFE can reduce porosity, permeation, and strong cold-flow",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not assume modified PTFE solves permeation; still requires permeation data for target gas/temperature."
+    },
+    {
+      "id": "PTFE-F-110",
+      "topic": "processing",
+      "property": "sintering_cycle_max_temp",
+      "value": "370–380",
+      "units": "°C",
+      "conditions": "Pro-kunststoff: defined sintering cycle with max 370–380°C; above 342°C PTFE becomes amorphous and particles sinter",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not exceed temperature without decomposition risk review; monitor oven uniformity and oxygen exposure."
+    },
+    {
+      "id": "PTFE-F-111",
+      "topic": "processing",
+      "property": "air_escape_during_compaction",
+      "value": "compaction must allow incorporated air to escape",
+      "units": null,
+      "conditions": "Pro-kunststoff: compacting serves to compress powder and allow air to escape",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "high",
+      "do_not_infer": "Do not assume void-free if compaction/dwell time not controlled; trapped air is a primary void mechanism."
+    },
+    {
+      "id": "PTFE-F-112",
+      "topic": "processing",
+      "property": "storage_below_19C_for_paste_ptfe",
+      "value": "store ~12–15°C before processing",
+      "units": null,
+      "conditions": "Pro-kunststoff: recommended to store paste-PTFE below transition point 19°C to prevent clumping; cooling can take >35h for 25kg drum",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer your resin is conditioned; request handling history and storage temperatures."
+    },
+    {
+      "id": "PTFE-F-113",
+      "topic": "processing",
+      "property": "mechanical_strain_void_risk",
+      "value": "avoid strong mechanical strain during processing to avoid voids",
+      "units": null,
+      "conditions": "Pro-kunststoff caution: polymer powder sensitive; strong mechanical strain can cause voids",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not diagnose without knowing processing route (ram extrusion vs compression) and shear history."
+    },
+    {
+      "id": "PTFE-F-114",
+      "topic": "modified_ptfe",
+      "property": "semicon_biotech_application_note",
+      "value": "modified PTFE main applications include chemical engineering, semiconductor, biotechnology",
+      "units": null,
+      "conditions": "Pro-kunststoff: application note for modified PTFE",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "low",
+      "do_not_infer": "Do not infer automatic fab qualification; this is a general application statement."
+    },
+    {
+      "id": "PTFE-F-115",
+      "topic": "modified_ptfe",
+      "property": "improved_deformation_and_creep_under_load",
+      "value": "less cold flow; less creep especially at higher temperature/load",
+      "units": null,
+      "conditions": "Pro-kunststoff: summary of modified PTFE improvements",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "processing_guide",
+      "source": "S8",
+      "confidence": "medium",
+      "do_not_infer": "Do not infer magnitude without the original curves and load/time conditions."
+    },
+    {
+      "id": "PTFE-F-116",
+      "topic": "permeation_standards",
+      "property": "iso_15105_1_vs_2",
+      "value": "Test methods differ (differential pressure vs isostatic/equal-pressure carrier-gas setups)",
+      "units": null,
+      "conditions": "Gas permeability / transmission testing; methodology influences comparability of values",
+      "test_method": "ISO 15105-1 / ISO 15105-2",
+      "source_rank": 1,
+      "source_type": "standard_test_method",
+      "source": "S16",
+      "confidence": "high",
+      "do_not_infer": "Do not directly compare permeability/transmission values across different ISO/ASTM methods without acknowledging methodological offsets and units."
+    },
+    {
+      "id": "PTFE-F-117",
+      "topic": "uhp_semicon",
+      "property": "semi_f57_compliance",
+      "value": "SEMI F57 is a key qualification reference for ultra-pure polymer components",
+      "units": null,
+      "conditions": "UPW and liquid chemical distribution systems; exact acceptance depends on component class and test scope",
+      "test_method": "SEMI F57",
+      "source_rank": 1,
+      "source_type": "standard_specification",
+      "source": "S18",
+      "confidence": "high",
+      "do_not_infer": "Do not claim UHP suitability without documented SEMI F57 compliance (or equivalent extractables/particles test evidence)."
+    },
+    {
+      "id": "PTFE-F-118",
+      "topic": "uhp_semicon",
+      "property": "metallic_extractables_limit",
+      "value": "low ppb to ppt range",
+      "units": "ppb/ppt",
+      "conditions": "UHP PTFE components after controlled extraction (e.g., hot UPW or dilute acid); exact analyte list and limits are spec-dependent",
+      "test_method": "SEMI F57 / ICP-MS workflow (typical)",
+      "source_rank": 1,
+      "source_type": "standard_specification",
+      "source": "S18",
+      "confidence": "medium_high",
+      "do_not_infer": "Do not state a component is 'metal-free'; request analyte-specific ICP-MS extractables data for the wetted surface and the relevant fab spec."
+    },
+    {
+      "id": "PTFE-F-119",
+      "topic": "uhp_semicon",
+      "property": "surface_roughness_uhp",
+      "value": "<0.25 (often tighter, application-specific)",
+      "units": "µm Ra",
+      "conditions": "Typical UHP fluid-handling practice; exact finish requirement is fab/vendor/spec specific and may be lower (e.g., <0.15 µm)",
+      "test_method": "Profilometry / AFM (as specified)",
+      "source_rank": 2,
+      "source_type": "industry_standard_practice",
+      "source": "S19",
+      "confidence": "medium_high",
+      "do_not_infer": "Do not recommend standard skived/machined PTFE for UHP without specifying surface finishing route, cleaning and particle qualification."
+    },
+    {
+      "id": "PTFE-F-121",
+      "topic": "dynamic_sealing",
+      "property": "dynamic_shaft_runout_limit_above_20mps",
+      "value": "0.05",
+      "units": "mm",
+      "conditions": "For v > 20 m/s, dynamic run-out limit is 0.05 mm; standard RWDR fails above >0.1 mm deflection.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not assume standard RWDR stability when dynamic deflection exceeds 0.1 mm."
+    },
+    {
+      "id": "PTFE-F-122",
+      "topic": "counterface",
+      "property": "iso_21920_surface_spec_for_ptfe_lips",
+      "value": "Ra 0.1-0.4; Rz 1.2-3.0; Rmr 50-70",
+      "units": "um/%",
+      "conditions": "ISO 21920 surface specification for PTFE lips.",
+      "test_method": "ISO 21920",
+      "source_rank": 1,
+      "source_type": "standard_specification",
+      "source": "S21",
+      "confidence": "high",
+      "do_not_infer": "Do not approve a shaft without explicit Ra, Rz and Rmr evidence."
+    },
+    {
+      "id": "PTFE-F-123",
+      "topic": "thermal",
+      "property": "total_thermal_load_arrhenius",
+      "value": "T_total = T_medium + DeltaT_friction; +10K doubles aging rate",
+      "units": null,
+      "conditions": "Thermal load model with Arrhenius aging acceleration.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not rate lifetime from medium temperature alone; include frictional self-heating."
+    },
+    {
+      "id": "PTFE-F-124",
+      "topic": "counterface",
+      "property": "minimum_shaft_hardness_for_ptfe_compounds",
+      "value": ">=58",
+      "units": "HRC",
+      "conditions": "Required due to abrasive filler effects in PTFE compounds.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not recommend filled PTFE compounds on softer shafts."
+    },
+    {
+      "id": "PTFE-F-130",
+      "topic": "dynamic_sealing",
+      "property": "prelonring_bp31_application_window",
+      "value": "Prelonring BP 31: FDA/EU 1935 konform, federlos, bis 6 bar",
+      "units": null,
+      "conditions": "Ideal fuer Teiganwendungen, wenn die Welle mindestens 58 HRC hat.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not recommend BP 31 for dough mixers if shaft hardness is below 58 HRC."
+    },
+    {
+      "id": "PTFE-F-131",
+      "topic": "dynamic_sealing",
+      "property": "rwdr_runout_limit_and_gliding_mechanical_seal_alternative",
+      "value": "Bei hohem Wellenschlag (>0,2 mm) sind RWDR ungeeignet; Empfehlung: Gleitringdichtungen (z.B. EagleBurgmann SeccoMix).",
+      "units": null,
+      "conditions": "Use as fallback when runout exceeds RWDR-stable operation window.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not recommend RWDR/PTFE-lip solutions when shaft runout exceeds 0.2 mm."
     }
   ],
   "gates": [
     {
-      "id": "GATE-TEMP-MAX-260",
-      "type": "temperature_max",
-      "description": "Standard-PTFE Maximaltemperatur überschritten",
-      "condition_field": "temperature_max_c",
-      "condition_op": "gt",
-      "condition_value": 260,
-      "action": "hard_block",
-      "severity": "critical",
-      "message": "PTFE-Werkstoffe sind nicht geeignet für Temperaturen über 260°C. Alternativen: FFKM (Perfluorelastomer) oder Graphit-Dichtungen.",
-      "applies_to_compounds": ["ptfe_virgin", "ptfe_25_glass", "ptfe_15_carbon", "ptfe_60_bronze", "ptfe_modified"]
+      "id": "PTFE-G-001",
+      "name": "Chemical Compatibility Hard-Gate",
+      "trigger_patterns": [
+        "beständig",
+        "kompatibel",
+        "verträglich",
+        "chemical resistance",
+        "PTFE gegen",
+        "darf ich PTFE in",
+        "PTFE für",
+        "Medienbeständigkeit"
+      ],
+      "required_fields": [
+        "medium_name",
+        "phase (gas/liquid/solid)",
+        "temperature_C",
+        "pressure_bar (if gas)",
+        "concentration_or_purity",
+        "exposure_time",
+        "mechanical_stress (static/dynamic, stress_MPa if known)"
+      ],
+      "if_missing_fields": "Ask clarifying questions; refuse unconditional compatibility statement; propose test method ASTM D543 or supplier data.",
+      "hard_blocks": [
+        "Block any statement that implies universal resistance without conditions."
+      ],
+      "assistant_actions": [
+        "Return a structured question list to collect missing fields.",
+        "Flag special-case oxidizers/halogen fluorides and alkali metals as red-flag chemicals requiring specialist review and often 'not recommended'.",
+        "Recommend using rank-1 sources (ASTM tests) when stakes are high."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-011",
+        "PTFE-F-063",
+        "PTFE-F-076",
+        "PTFE-F-099"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "medium_name",
+          "type": "string",
+          "description": "medium_name"
+        },
+        {
+          "field": "phase",
+          "type": "enum",
+          "description": "phase (gas/liquid/solid)"
+        },
+        {
+          "field": "temperature_C",
+          "type": "number",
+          "description": "temperature_C"
+        },
+        {
+          "field": "pressure_bar",
+          "type": "number",
+          "description": "pressure_bar (if gas)"
+        },
+        {
+          "field": "concentration_or_purity",
+          "type": "string",
+          "description": "concentration_or_purity"
+        },
+        {
+          "field": "exposure_time",
+          "type": "string",
+          "description": "exposure_time"
+        },
+        {
+          "field": "mechanical_stress",
+          "type": "number",
+          "description": "mechanical_stress (static/dynamic, stress_MPa if known)"
+        }
+      ],
+      "status": "active"
     },
     {
-      "id": "GATE-TEMP-MIN-GLASS",
-      "type": "temperature_min",
-      "description": "GF25/Bronze PTFE Minimaltemperatur unterschritten",
-      "condition_field": "temperature_min_c",
-      "condition_op": "lt",
-      "condition_value": -70,
-      "action": "soft_warn",
-      "severity": "warning",
-      "message": "PTFE + Glasfaser / Bronze ist unter -70°C eingeschränkt einsetzbar. Für Tieftemperatur prüfen Sie virgin PTFE oder modifiziertes PTFE.",
-      "applies_to_compounds": ["ptfe_25_glass", "ptfe_60_bronze"]
+      "id": "PTFE-G-002",
+      "name": "Permeation / Behind-Liner Corrosion Gate",
+      "trigger_patterns": [
+        "permeation",
+        "diffusion",
+        "gasdicht",
+        "Ausgasung",
+        "liner",
+        "auskleidung",
+        "blister",
+        "unterwanderung",
+        "korrosion hinter",
+        "HCl gas",
+        "chlor",
+        "SO2"
+      ],
+      "required_fields": [
+        "gas_or_vapor_identity",
+        "temperature_C",
+        "pressure_gradient",
+        "liner_thickness_mm",
+        "substrate_material",
+        "venting_or_detection",
+        "service_cycles (pressure/temperature cycles)"
+      ],
+      "if_missing_fields": "Ask for thickness, T, Δp and substrate; state that inert polymer can still permeate; recommend lower-permeation grades and venting.",
+      "hard_blocks": [
+        "Block claims like 'PTFE ist gasdicht' or 'keine Korrosion möglich' without data."
+      ],
+      "assistant_actions": [
+        "Explain the difference between permeability, permeance, and transmission rate (ASTM D1434).",
+        "If lined steel: warn about blistering/corrosion risk; suggest monitoring and design mitigations (venting, dual-liner, permeation barriers, modified PTFE).",
+        "Provide order-of-magnitude or table values only if the exact media and temperature match a cited dataset."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-019",
+        "PTFE-F-020",
+        "PTFE-F-023",
+        "PTFE-F-025",
+        "PTFE-F-027",
+        "PTFE-F-095"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "gas_or_vapor_identity",
+          "type": "string",
+          "description": "gas_or_vapor_identity"
+        },
+        {
+          "field": "temperature_C",
+          "type": "number",
+          "description": "temperature_C"
+        },
+        {
+          "field": "pressure_gradient",
+          "type": "number",
+          "description": "pressure_gradient"
+        },
+        {
+          "field": "liner_thickness_mm",
+          "type": "number",
+          "description": "liner_thickness_mm"
+        },
+        {
+          "field": "substrate_material",
+          "type": "string",
+          "description": "substrate_material"
+        },
+        {
+          "field": "venting_or_detection",
+          "type": "string",
+          "description": "venting_or_detection"
+        },
+        {
+          "field": "service_cycles",
+          "type": "number",
+          "description": "service_cycles (pressure/temperature cycles)"
+        }
+      ],
+      "status": "active"
     },
     {
-      "id": "GATE-HF-ACID",
-      "type": "chemical",
-      "description": "Flusssäure (HF) — PTFE Glasfaser nicht geeignet",
-      "condition_field": "medium_id",
-      "condition_op": "in",
-      "condition_value": ["hf_acid", "hydrofluoric_acid", "flusssaeure"],
-      "action": "hard_block",
-      "severity": "critical",
-      "message": "Bei Flusssäure (HF) darf kein glasfasergefülltes PTFE verwendet werden. Glasfaser wird durch HF abgebaut. Nur virgin PTFE oder modifiziertes PTFE verwenden.",
-      "applies_to_compounds": ["ptfe_25_glass", "ptfe_60_bronze"]
+      "id": "PTFE-G-003",
+      "name": "Halogen Fluoride / Elemental Fluorine / ClF3 Killer Gate",
+      "trigger_patterns": [
+        "ClF3",
+        "chlorine trifluoride",
+        "BrF3",
+        "elementares fluor",
+        "fluorine gas",
+        "F2",
+        "halogen fluoride"
+      ],
+      "required_fields": [
+        "chemical_identity",
+        "temperature_C",
+        "pressure_bar",
+        "materials_of_construction (all wetted parts)",
+        "process_mode (static/dynamic)",
+        "safety_controls"
+      ],
+      "if_missing_fields": "Default to 'special-case, typically not recommended'; require specialist review and vendor confirmation; provide safe alternatives list only as 'candidates' not decisions.",
+      "hard_blocks": [
+        "Block any endorsement of PTFE for ClF3/F2 at elevated temperatures without explicit certified compatibility."
+      ],
+      "assistant_actions": [
+        "State that multiple sources flag deterioration/not recommended for ClF3 and elemental fluorine at high temperature.",
+        "Escalate to safety review; recommend consulting chemical supplier and performing dedicated compatibility/ignition assessment."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-015",
+        "PTFE-F-016",
+        "PTFE-F-017"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "chemical_identity",
+          "type": "string",
+          "description": "chemical_identity"
+        },
+        {
+          "field": "temperature_C",
+          "type": "number",
+          "description": "temperature_C"
+        },
+        {
+          "field": "pressure_bar",
+          "type": "number",
+          "description": "pressure_bar"
+        },
+        {
+          "field": "materials_of_construction",
+          "type": "number",
+          "description": "materials_of_construction (all wetted parts)"
+        },
+        {
+          "field": "process_mode",
+          "type": "enum",
+          "description": "process_mode (static/dynamic)"
+        },
+        {
+          "field": "safety_controls",
+          "type": "number",
+          "description": "safety_controls"
+        }
+      ],
+      "status": "active"
     },
     {
-      "id": "GATE-OXIDIZER-CARBON",
-      "type": "chemical",
-      "description": "Starke Oxidationsmittel — Carbon-PTFE nicht geeignet",
-      "condition_field": "medium_id",
-      "condition_op": "in",
-      "condition_value": ["salpetersaeure", "nitric_acid", "h2o2_concentrated", "chlor"],
-      "action": "hard_block",
-      "severity": "critical",
-      "message": "Starke Oxidationsmittel (Salpetersäure, konz. H₂O₂) greifen Kohlenstoffpartikeln in Carbon-PTFE an. Verwenden Sie virgin PTFE oder modifiziertes PTFE.",
-      "applies_to_compounds": ["ptfe_15_carbon"]
+      "id": "PTFE-G-004",
+      "name": "Molten Alkali Metals Killer Gate",
+      "trigger_patterns": [
+        "molten sodium",
+        "molten potassium",
+        "molten lithium",
+        "geschmolzenes natrium",
+        "geschmolzenem natrium",
+        "alkalimetall schmelze",
+        "Na (schmelze)",
+        "K (schmelze)"
+      ],
+      "required_fields": [
+        "alkali_metal",
+        "state (molten/dissolved)",
+        "temperature_C",
+        "containment_materials"
+      ],
+      "if_missing_fields": "Default to 'not recommended'; explain attack mechanism; request confirmation of phase (molten vs aqueous).",
+      "hard_blocks": [
+        "Block mixing up aqueous NaOH with molten Na/K."
+      ],
+      "assistant_actions": [
+        "Explain that molten/dissolved alkali metals attack PTFE and extract fluorine (discoloration).",
+        "Ask if it is molten metal or aqueous alkali; if aqueous, fall back to standard chemical compatibility gate."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-014",
+        "PTFE-F-018",
+        "PTFE-F-049"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "alkali_metal",
+          "type": "string",
+          "description": "alkali_metal"
+        },
+        {
+          "field": "state",
+          "type": "enum",
+          "description": "state (molten/dissolved)"
+        },
+        {
+          "field": "temperature_C",
+          "type": "number",
+          "description": "temperature_C"
+        },
+        {
+          "field": "containment_materials",
+          "type": "string",
+          "description": "containment_materials"
+        }
+      ],
+      "status": "active"
     },
     {
-      "id": "GATE-FOOD-GRADE",
-      "type": "compliance",
-      "description": "Lebensmittelkontakt / FDA — nur zertifizierte Typen",
-      "condition_field": "food_grade_required",
-      "condition_op": "eq",
-      "condition_value": true,
-      "action": "filter",
-      "severity": "info",
-      "message": "Für Lebensmittelkontakt (FDA/food-grade) sind nur virgin PTFE und modifiziertes PTFE zertifiziert. Glasfaser-, Carbon- und Bronze-gefüllte Typen sind ausgeschlossen.",
-      "applies_to_compounds": ["ptfe_25_glass", "ptfe_15_carbon", "ptfe_60_bronze"],
-      "allowed_compounds": ["ptfe_virgin", "ptfe_modified"]
+      "id": "PTFE-G-005",
+      "name": "High-Speed Rotary / PV / Heat Gate",
+      "trigger_patterns": [
+        "drehzahl",
+        "rpm",
+        "rotary",
+        "wellendichtring",
+        "shaft seal",
+        "hohe geschwindigkeit",
+        "trockenlauf",
+        "PV",
+        "reibleistung"
+      ],
+      "required_fields": [
+        "shaft_diameter_mm",
+        "rpm",
+        "contact_pressure_MPa_or_preload",
+        "counterface_material_and_hardness",
+        "surface_finish_Ra",
+        "lubrication (dry/oil/water/gas)",
+        "cooling_path",
+        "target_life"
+      ],
+      "if_missing_fields": "Ask for missing tribology inputs; do not give wear-life predictions; propose validation test plan.",
+      "hard_blocks": [
+        "Block wear-life numbers if no PV and counterface details."
+      ],
+      "assistant_actions": [
+        "Compute sliding speed from rpm and diameter if provided; otherwise request.",
+        "Explain transfer-film dependency and counterface roughness effects.",
+        "Offer compound buckets (abrasive vs soft-counterface-safe) but require confirmation before final recommendation."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-068",
+        "PTFE-F-091",
+        "PTFE-F-096",
+        "PTFE-F-051"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "shaft_diameter_mm",
+          "type": "string",
+          "description": "shaft_diameter_mm"
+        },
+        {
+          "field": "rpm",
+          "type": "string",
+          "description": "rpm"
+        },
+        {
+          "field": "contact_pressure_MPa_or_preload",
+          "type": "number",
+          "description": "contact_pressure_MPa_or_preload"
+        },
+        {
+          "field": "counterface_material_and_hardness",
+          "type": "string",
+          "description": "counterface_material_and_hardness"
+        },
+        {
+          "field": "surface_finish_Ra",
+          "type": "number",
+          "description": "surface_finish_Ra"
+        },
+        {
+          "field": "lubrication",
+          "type": "enum",
+          "description": "lubrication (dry/oil/water/gas)"
+        },
+        {
+          "field": "cooling_path",
+          "type": "string",
+          "description": "cooling_path"
+        },
+        {
+          "field": "target_life",
+          "type": "string",
+          "description": "target_life"
+        }
+      ],
+      "status": "active"
     },
     {
-      "id": "GATE-DYNAMIC-SEALING",
-      "type": "application",
-      "description": "Dynamische Dichtung — PTFE Einschränkung",
-      "condition_field": "application_type",
-      "condition_op": "in",
-      "condition_value": ["dynamic", "rotary", "reciprocating"],
-      "action": "soft_warn",
-      "severity": "warning",
-      "message": "Für dynamische Dichtanwendungen (rotierend, hubbeweglich) ist unbefülltes virgin PTFE eingeschränkt geeignet (Kaltfluss). Empfehlung: PTFE + Glasfaser, Carbon oder Bronze — oder PTFE-Coil-Dichtungen.",
-      "applies_to_compounds": ["ptfe_virgin", "ptfe_modified"]
+      "id": "PTFE-G-006",
+      "name": "Counterface Soft Metal Abrasion Gate",
+      "trigger_patterns": [
+        "weicher stahl",
+        "aluminium",
+        "messing",
+        "bronze (counterface)",
+        "soft metal",
+        "härte",
+        "HRC",
+        "HV"
+      ],
+      "required_fields": [
+        "counterface_material",
+        "hardness",
+        "surface_finish_Ra",
+        "motion_type",
+        "filler_candidate"
+      ],
+      "if_missing_fields": "Warn against abrasive fillers (glass); steer to polymer-filled or carbon-filled options; require hardness confirmation.",
+      "hard_blocks": [
+        "Block recommending glass-filled PTFE if counterface is soft/unknown."
+      ],
+      "assistant_actions": [
+        "Ask for counterface hardness and finish.",
+        "Explain that some fillers are abrasive and can score shafts; propose safer filler families when soft metals are involved."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-038",
+        "PTFE-F-051"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "counterface_material",
+          "type": "string",
+          "description": "counterface_material"
+        },
+        {
+          "field": "hardness",
+          "type": "string",
+          "description": "hardness"
+        },
+        {
+          "field": "surface_finish_Ra",
+          "type": "number",
+          "description": "surface_finish_Ra"
+        },
+        {
+          "field": "motion_type",
+          "type": "string",
+          "description": "motion_type"
+        },
+        {
+          "field": "filler_candidate",
+          "type": "number",
+          "description": "filler_candidate"
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PTFE-G-007",
+      "name": "UHP / Semiconductor Purity Gate",
+      "trigger_patterns": [
+        "UHP",
+        "semiconductor",
+        "fab",
+        "ultra high purity",
+        "ionic contamination",
+        "metallisch",
+        "leachables",
+        "extractables",
+        "particle shedding"
+      ],
+      "required_fields": [
+        "process_chemical_list",
+        "max_ionic_ppb",
+        "max_particles",
+        "cleaning_protocol",
+        "grade_certification",
+        "wetted_metals",
+        "temperature_C"
+      ],
+      "if_missing_fields": "Require explicit purity specs and grade; provide only conditional guidance; encourage certification/qualification.",
+      "hard_blocks": [
+        "Block claiming 'PTFE ist per se UHP'."
+      ],
+      "assistant_actions": [
+        "Ask for ionic/metallic contamination limits and particle specs.",
+        "Recommend considering modified PTFE (lower permeation, less cold flow) when barrier/purity is critical, but demand data.",
+        "Highlight that vendor brochures are rank-2 and need fab qualification."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-028",
+        "PTFE-F-052",
+        "PTFE-F-114"
+      ],
+      "status": "superseded",
+      "superseded_by": "PTFE-G-007-V2",
+      "required_fields_schema": [
+        {
+          "field": "process_chemical_list",
+          "type": "number",
+          "description": "process_chemical_list"
+        },
+        {
+          "field": "max_ionic_ppb",
+          "type": "number",
+          "description": "max_ionic_ppb"
+        },
+        {
+          "field": "max_particles",
+          "type": "number",
+          "description": "max_particles"
+        },
+        {
+          "field": "cleaning_protocol",
+          "type": "string",
+          "description": "cleaning_protocol"
+        },
+        {
+          "field": "grade_certification",
+          "type": "number",
+          "description": "grade_certification"
+        },
+        {
+          "field": "wetted_metals",
+          "type": "string",
+          "description": "wetted_metals"
+        },
+        {
+          "field": "temperature_C",
+          "type": "number",
+          "description": "temperature_C"
+        }
+      ]
+    },
+    {
+      "id": "PTFE-G-008",
+      "name": "Vacuum / Outgassing Gate",
+      "trigger_patterns": [
+        "vakuum",
+        "outgassing",
+        "base pressure",
+        "ultra-high vacuum",
+        "UHV",
+        "cleanroom vacuum"
+      ],
+      "required_fields": [
+        "target_pressure",
+        "bakeout_temperature_C",
+        "gas_species",
+        "material_grade",
+        "surface_cleaning",
+        "permeation_constraints"
+      ],
+      "if_missing_fields": "Explain surface vs bulk; require bake-out temperature and compatibility; warn about permeation setting base pressure.",
+      "hard_blocks": [
+        "Block promises like 'UHV-ready' without outgassing/permeation data and bake-out window."
+      ],
+      "assistant_actions": [
+        "Ask for bakeout temperature and allowable contaminants.",
+        "Flag decomposition hazards if bakeout near/above 300°C."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-078",
+        "PTFE-F-005",
+        "PTFE-F-006"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "target_pressure",
+          "type": "number",
+          "description": "target_pressure"
+        },
+        {
+          "field": "bakeout_temperature_C",
+          "type": "number",
+          "description": "bakeout_temperature_C"
+        },
+        {
+          "field": "gas_species",
+          "type": "string",
+          "description": "gas_species"
+        },
+        {
+          "field": "material_grade",
+          "type": "string",
+          "description": "material_grade"
+        },
+        {
+          "field": "surface_cleaning",
+          "type": "number",
+          "description": "surface_cleaning"
+        },
+        {
+          "field": "permeation_constraints",
+          "type": "number",
+          "description": "permeation_constraints"
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PTFE-G-009",
+      "name": "Processing Defect: Cloudy/Opaque vs Transparent Gate",
+      "trigger_patterns": [
+        "trüb",
+        "cloudy",
+        "opaque",
+        "milky",
+        "transparent",
+        "porosität",
+        "voids",
+        "dichte"
+      ],
+      "required_fields": [
+        "is_filled_or_virgin",
+        "visual_description",
+        "density_g_cm3",
+        "process_route",
+        "sinter_profile",
+        "lube_removal",
+        "cooling_rate"
+      ],
+      "if_missing_fields": "Differentiate between intentional opacity (filled) and defect; request density and cross-section images; propose root causes.",
+      "hard_blocks": [
+        "Block diagnosing without knowing whether material is filled or virgin."
+      ],
+      "assistant_actions": [
+        "Ask whether it is filled PTFE; if filled, opacity is expected.",
+        "If virgin: request density (target range) and process log; suggest CT/microscopy to confirm voids."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-085",
+        "PTFE-F-104",
+        "PTFE-F-050"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "is_filled_or_virgin",
+          "type": "boolean",
+          "description": "is_filled_or_virgin"
+        },
+        {
+          "field": "visual_description",
+          "type": "string",
+          "description": "visual_description"
+        },
+        {
+          "field": "density_g_cm3",
+          "type": "number",
+          "description": "density_g_cm3"
+        },
+        {
+          "field": "process_route",
+          "type": "string",
+          "description": "process_route"
+        },
+        {
+          "field": "sinter_profile",
+          "type": "string",
+          "description": "sinter_profile"
+        },
+        {
+          "field": "lube_removal",
+          "type": "string",
+          "description": "lube_removal"
+        },
+        {
+          "field": "cooling_rate",
+          "type": "number",
+          "description": "cooling_rate"
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PTFE-G-010",
+      "name": "Processing Defect: Blisters / Bubbles Gate",
+      "trigger_patterns": [
+        "blister",
+        "blasen",
+        "bubbles",
+        "delamination",
+        "aufblähung"
+      ],
+      "required_fields": [
+        "component_geometry",
+        "thickness_mm",
+        "process_route",
+        "lube_type",
+        "lube_removal_profile",
+        "service_media",
+        "temperature_cycles"
+      ],
+      "if_missing_fields": "Treat as either trapped volatiles or permeation-driven; request whether it occurred after sintering or in service.",
+      "hard_blocks": [
+        "Block single-cause explanations."
+      ],
+      "assistant_actions": [
+        "Ask: did blisters appear right after sintering or after chemical service?",
+        "If after service: run permeation gate; if after processing: focus on lube removal, venting, compaction and heating rate."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-027",
+        "PTFE-F-048",
+        "PTFE-F-084",
+        "PTFE-F-111"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "component_geometry",
+          "type": "string",
+          "description": "component_geometry"
+        },
+        {
+          "field": "thickness_mm",
+          "type": "number",
+          "description": "thickness_mm"
+        },
+        {
+          "field": "process_route",
+          "type": "string",
+          "description": "process_route"
+        },
+        {
+          "field": "lube_type",
+          "type": "string",
+          "description": "lube_type"
+        },
+        {
+          "field": "lube_removal_profile",
+          "type": "string",
+          "description": "lube_removal_profile"
+        },
+        {
+          "field": "service_media",
+          "type": "string",
+          "description": "service_media"
+        },
+        {
+          "field": "temperature_cycles",
+          "type": "number",
+          "description": "temperature_cycles"
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PTFE-G-011",
+      "name": "Agitator Rotary System Hard-Gate",
+      "trigger_patterns": [
+        "rührwerk",
+        "agitator",
+        "mischer",
+        "mixer"
+      ],
+      "required_fields": [
+        "dynamic_shaft_runout_mm",
+        "pressure_direction",
+        "medium_consistency",
+        "shaft_misalignment_mm",
+        "shaft_hardness_hrc"
+      ],
+      "if_missing_fields": "Agitator applications require mandatory run-out, pressure direction, media consistency and shaft misalignment data before any recommendation.",
+      "hard_blocks": [
+        "Block any material recommendation for agitator duty when run-out or shaft hardness data is missing."
+      ],
+      "assistant_actions": [
+        "Interrupt and ask mandatory agitator questions before recommending a material.",
+        "Confirm minimum shaft hardness >=58 HRC for PTFE compounds."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-121",
+        "PTFE-F-122",
+        "PTFE-F-123",
+        "PTFE-F-124"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "dynamic_shaft_runout_mm",
+          "type": "number",
+          "description": "dynamic_shaft_runout_mm"
+        },
+        {
+          "field": "pressure_direction",
+          "type": "string",
+          "description": "pressure_direction"
+        },
+        {
+          "field": "medium_consistency",
+          "type": "string",
+          "description": "medium_consistency"
+        },
+        {
+          "field": "shaft_misalignment_mm",
+          "type": "number",
+          "description": "shaft_misalignment_mm"
+        },
+        {
+          "field": "shaft_hardness_hrc",
+          "type": "string",
+          "description": "shaft_hardness_hrc"
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PTFE-G-012",
+      "name": "Overtemperature / Decomposition Safety Gate",
+      "trigger_patterns": [
+        "überhitzt",
+        "smoke",
+        "fumes",
+        "pyrolysis",
+        "bräunlich (nach hitze)",
+        "HF",
+        "PFIB",
+        "decomposition"
+      ],
+      "required_fields": [
+        "temperature_history",
+        "presence_of_flame_or_hot_surface",
+        "ventilation",
+        "person_exposure",
+        "nearby_materials"
+      ],
+      "if_missing_fields": "Prioritize safety; advise immediate ventilation and industrial hygiene; avoid detailed medical advice; recommend contacting safety professionals.",
+      "hard_blocks": [
+        "Block normalizing overheating; block claims that fumes are harmless."
+      ],
+      "assistant_actions": [
+        "State that decomposition products can include HF and other toxic species above ~300°C; severe above ~400°C.",
+        "Recommend following SDS and workplace safety procedures; if exposure suspected, seek medical evaluation."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-006",
+        "PTFE-F-007",
+        "PTFE-F-053",
+        "PTFE-F-054"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "temperature_history",
+          "type": "string",
+          "description": "temperature_history"
+        },
+        {
+          "field": "presence_of_flame_or_hot_surface",
+          "type": "string",
+          "description": "presence_of_flame_or_hot_surface"
+        },
+        {
+          "field": "ventilation",
+          "type": "string",
+          "description": "ventilation"
+        },
+        {
+          "field": "person_exposure",
+          "type": "string",
+          "description": "person_exposure"
+        },
+        {
+          "field": "nearby_materials",
+          "type": "string",
+          "description": "nearby_materials"
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PTFE-G-007-V2",
+      "name": "Hard UHP / Semiconductor Purity Gate",
+      "trigger_patterns": [
+        "UHP",
+        "semiconductor",
+        "wafer",
+        "SEMI",
+        "ppt",
+        "ppb",
+        "extractables",
+        "TOC"
+      ],
+      "required_fields": [
+        "SEMI_F57_compliance_status",
+        "max_metallic_extractables_ppb",
+        "max_anionic_extractables_ppb",
+        "TOC_limit",
+        "surface_roughness_Ra"
+      ],
+      "if_missing_fields": "Halt recommendation. State that 'PTFE' is a polymer family and does not guarantee UHP. Demand extractables data (ICP-MS, IC, TOC) and particle metrics.",
+      "hard_blocks": [
+        "Block any qualitative statement like 'PTFE ist sehr rein und daher geeignet' without quantitative ppb/ppt data or SEMI F57-aligned evidence."
+      ],
+      "assistant_actions": [
+        "Enforce the distinction between standard commercial PTFE (possible catalyst/process residues, machining oils) and UHP-grade molded/cleaned PTFE.",
+        "Ask for analyte list, extraction protocol and whether particle shedding / surface finish was qualified."
+      ],
+      "relevant_fact_ids": [
+        "PTFE-F-117",
+        "PTFE-F-118",
+        "PTFE-F-119"
+      ],
+      "required_fields_schema": [
+        {
+          "field": "SEMI_F57_compliance_status",
+          "type": "enum",
+          "description": "SEMI_F57_compliance_status"
+        },
+        {
+          "field": "max_metallic_extractables_ppb",
+          "type": "number",
+          "description": "max_metallic_extractables_ppb"
+        },
+        {
+          "field": "max_anionic_extractables_ppb",
+          "type": "number",
+          "description": "max_anionic_extractables_ppb"
+        },
+        {
+          "field": "TOC_limit",
+          "type": "number",
+          "description": "TOC_limit"
+        },
+        {
+          "field": "surface_roughness_Ra",
+          "type": "number",
+          "description": "surface_roughness_Ra"
+        }
+      ],
+      "status": "active"
     }
-  ]
+  ],
+  "runtime_policy": {
+    "gate_version_precedence": "Prefer higher semantic version suffix (e.g., PTFE-G-007-V2 over PTFE-G-007) when both match.",
+    "uhp_gate_default": "PTFE-G-007-V2",
+    "strict_validation_schema": "kb_schema_v1_3.json",
+    "integrity_checks": [
+      "factcard_source_exists",
+      "source_rank_matches_source_registry"
+    ],
+    "notes": "Schema v1.3 adds machine-readable required_fields_schema for gates."
+  }
 }

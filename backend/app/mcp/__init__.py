@@ -10,11 +10,13 @@ from .calc_schemas import CalcInput, CalcOutput
 from .knowledge_tool import (
     APPROVE_DISCOUNT_TOOL_NAME,
     GET_AVAILABLE_FILTERS_TOOL_NAME,
+    QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
     MCP_ERP_READ_SCOPES,
     MCP_KNOWLEDGE_READ_SCOPES,
     MCP_SALES_ADMIN_SCOPES,
     MCP_TRANSPORT_PREFERENCE,
     PRICING_TOOL_NAME,
+    QUERY_DETERMINISTIC_NORMS_SPEC,
     STOCK_CHECK_TOOL_NAME,
     build_mcp_tool_result,
     discover_tools_for_scopes,
@@ -22,6 +24,7 @@ from .knowledge_tool import (
     get_permitted_tools,
     get_available_filters,
     has_knowledge_scope,
+    query_deterministic_norms,
     search_technical_docs,
 )
 
@@ -34,11 +37,13 @@ __all__ = [
     "mcp_calc_gasket",
     "APPROVE_DISCOUNT_TOOL_NAME",
     "GET_AVAILABLE_FILTERS_TOOL_NAME",
+    "QUERY_DETERMINISTIC_NORMS_TOOL_NAME",
     "MCP_ERP_READ_SCOPES",
     "MCP_KNOWLEDGE_READ_SCOPES",
     "MCP_SALES_ADMIN_SCOPES",
     "MCP_TRANSPORT_PREFERENCE",
     "PRICING_TOOL_NAME",
+    "QUERY_DETERMINISTIC_NORMS_SPEC",
     "STOCK_CHECK_TOOL_NAME",
     "build_mcp_tool_result",
     "discover_tools_for_scopes",
@@ -46,5 +51,6 @@ __all__ = [
     "get_permitted_tools",
     "get_available_filters",
     "has_knowledge_scope",
+    "query_deterministic_norms",
     "search_technical_docs",
 ]

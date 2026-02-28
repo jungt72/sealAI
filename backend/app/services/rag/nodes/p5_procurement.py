@@ -1,20 +1,7 @@
-"""P5 Procurement Engine Node for SEALAI v4.4.0 (Sprint 8).
+"""P5 Procurement Engine with capability-based partner matching.
 
-Pure Python — no LLM (R1 enforced). Implements 4-stage partner matching
+Pure Python — no LLM (R1 enforced). Implements deterministic partner matching
 and generates an RFQ-PDF via Jinja2 StrictUndefined (R2 enforced).
-
-Matching stages:
-  Stage 1 (MUST): is_paying_partner == True
-  Stage 2 (MUST): seal_family in partner.supported_bauformen
-  Stage 3 (SHOULD): medium in partner.supported_media AND
-                    pressure_max_bar <= partner.pressure_max_bar
-  Stage 4 (NICE):  sort by delivery_days ASC (fastest first)
-
-Fallback: if Stage 1 or Stage 2 yields 0 candidates, fallback=True and a
-neutral PDF (no partner branding) is rendered.
-
-Watermark: if state.is_critical_application == True, the RFQ-PDF includes
-a hardcoded critical-application warning block.
 """
 
 from __future__ import annotations
@@ -51,6 +38,7 @@ class PartnerRecord(BaseModel):
     pressure_max_bar: float         # Maximum pressure the partner can handle
     locations: List[str]            # ISO country codes, e.g. ["DE", "AT"]
     delivery_days: int              # Typical delivery time in calendar days
+    capabilities: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -61,24 +49,26 @@ class PartnerRecord(BaseModel):
 
 _PARTNER_REGISTRY: List[PartnerRecord] = [
     PartnerRecord(
-        partner_id="P001",
-        name="Müller Dichtungstechnik GmbH",
+        partner_id="p1",
+        name="Partner A",
         is_paying_partner=True,
-        supported_bauformen=["Spiraldichtung", "Kammprofil", "Flachdichtung"],
-        supported_media=["steam", "gas", "liquid", "water"],
-        pressure_max_bar=200.0,
+        supported_bauformen=["PTFE-Dichtung", "O-Ring", "Spiraldichtung"],
+        supported_media=["steam", "gas", "liquid", "water", "food", "pharma"],
+        pressure_max_bar=180.0,
         locations=["DE"],
-        delivery_days=7,
+        delivery_days=6,
+        capabilities=["FDA", "STANDARD_PTFE"],
     ),
     PartnerRecord(
-        partner_id="P002",
-        name="Alpine Seals AG",
+        partner_id="p2",
+        name="Partner B",
         is_paying_partner=True,
-        supported_bauformen=["Spiraldichtung", "O-Ring"],
-        supported_media=["H2", "O2", "gas", "liquid"],
+        supported_bauformen=["Spiraldichtung", "O-Ring", "PTFE-Dichtung"],
+        supported_media=["H2", "O2", "gas", "liquid", "steam", "cryo"],
         pressure_max_bar=500.0,
-        locations=["AT", "CH"],
+        locations=["DE", "AT", "CH"],
         delivery_days=10,
+        capabilities=["HIGH_PRESSURE_MACHINING", "CRYO", "API_682", "SPRING_ENERGIZED"],
     ),
     PartnerRecord(
         partner_id="P003",
@@ -89,16 +79,7 @@ _PARTNER_REGISTRY: List[PartnerRecord] = [
         pressure_max_bar=100.0,
         locations=["DE"],
         delivery_days=5,
-    ),
-    PartnerRecord(
-        partner_id="P004",
-        name="TechSeal BV",
-        is_paying_partner=True,
-        supported_bauformen=["PTFE-Dichtung", "Flachdichtung"],
-        supported_media=["liquid", "steam"],
-        pressure_max_bar=150.0,
-        locations=["DE", "NL"],
-        delivery_days=14,
+        capabilities=["STANDARD_PTFE"],
     ),
     PartnerRecord(
         partner_id="P005",
@@ -109,6 +90,7 @@ _PARTNER_REGISTRY: List[PartnerRecord] = [
         pressure_max_bar=300.0,
         locations=["DE"],
         delivery_days=3,
+        capabilities=["STANDARD_PTFE", "HIGH_PRESSURE_MACHINING"],
     ),
 ]
 
@@ -126,6 +108,8 @@ class ProcurementResult(BaseModel):
     stages_completed: int = 0  # 0 = no MUST stages passed; 1 = stage1 only; 2 = stage1+2; 3 = +SHOULD
     fallback_reason: str = ""
     warning: Optional[str] = None
+    capabilities_needed: List[str] = Field(default_factory=list)
+    critical_capabilities: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -133,6 +117,91 @@ class ProcurementResult(BaseModel):
 # ---------------------------------------------------------------------------
 # 4-Stage matching logic
 # ---------------------------------------------------------------------------
+
+
+def _normalize_capability(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    text = text.replace("-", "_").replace(" ", "_")
+    while "__" in text:
+        text = text.replace("__", "_")
+    return text
+
+
+def _unique_capabilities(values: List[Any]) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for value in values:
+        cap = _normalize_capability(value)
+        if not cap or cap in seen:
+            continue
+        seen.add(cap)
+        out.append(cap)
+    return out
+
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump(exclude_none=True)
+        if isinstance(dumped, dict):
+            return dumped
+    return {}
+
+
+def _live_calc_tile_dict(state: SealAIState) -> Dict[str, Any]:
+    return _as_dict(getattr(state, "live_calc_tile", {}) or {})
+
+
+def _derive_capability_requirements(state: SealAIState) -> Dict[str, Any]:
+    existing = dict(getattr(state, "capability_requirements", {}) or {})
+    existing_needed = existing.get("capabilities_needed")
+    existing_critical = existing.get("critical_capabilities")
+
+    if isinstance(existing_needed, list) and existing_needed:
+        capabilities_needed = _unique_capabilities(existing_needed)
+        critical_capabilities = (
+            _unique_capabilities(existing_critical)
+            if isinstance(existing_critical, list) and existing_critical
+            else list(capabilities_needed)
+        )
+        return {
+            **existing,
+            "capabilities_needed": capabilities_needed,
+            "critical_capabilities": critical_capabilities,
+            "source": existing.get("source") or "state",
+        }
+
+    tile = _live_calc_tile_dict(state)
+    wp = getattr(state, "working_profile", None)
+    medium_value = (
+        (getattr(wp, "medium", None) if wp is not None else None)
+        or getattr(getattr(state, "parameters", None), "medium", None)
+        or getattr(state, "medium", None)
+        or ""
+    )
+    medium = str(medium_value).strip().lower()
+
+    capabilities_needed: List[str] = []
+    food_markers = ("teig", "food", "pharma", "lebensmittel", "hygien")
+    if any(marker in medium for marker in food_markers):
+        capabilities_needed.append("FDA")
+    if bool(tile.get("shrinkage_risk")):
+        capabilities_needed.extend(["CRYO", "SPRING_ENERGIZED"])
+    if bool(tile.get("requires_backup_ring")):
+        capabilities_needed.append("HIGH_PRESSURE_MACHINING")
+
+    capabilities_needed = _unique_capabilities(capabilities_needed)
+    critical_capabilities = list(capabilities_needed)
+    return {
+        **existing,
+        "capabilities_needed": capabilities_needed,
+        "critical_capabilities": critical_capabilities,
+        "source": "derived",
+    }
 
 
 def _match_stage1_paying(candidates: List[PartnerRecord]) -> List[PartnerRecord]:
@@ -152,6 +221,25 @@ def _match_stage2_bauform(
         p for p in candidates
         if any(b.strip().lower() == needle for b in p.supported_bauformen)
     ]
+
+
+def _match_stage2b_capabilities(
+    candidates: List[PartnerRecord],
+    *,
+    critical_capabilities: List[str],
+) -> List[PartnerRecord]:
+    """Stage 2b (MUST): partner must satisfy all critical capabilities."""
+    if not candidates:
+        return []
+    if not critical_capabilities:
+        return list(candidates)
+    critical = set(_unique_capabilities(critical_capabilities))
+    matched: List[PartnerRecord] = []
+    for partner in candidates:
+        partner_caps = set(_unique_capabilities(list(partner.capabilities or [])))
+        if critical.issubset(partner_caps):
+            matched.append(partner)
+    return matched
 
 
 def _match_stage3_medium_druck(
@@ -185,15 +273,31 @@ def _match_stage4_geo(candidates: List[PartnerRecord]) -> List[PartnerRecord]:
     return sorted(candidates, key=lambda p: p.delivery_days)
 
 
+def _capability_match_score(partner: PartnerRecord, capabilities_needed: List[str]) -> int:
+    if not capabilities_needed:
+        return 0
+    target = set(_unique_capabilities(capabilities_needed))
+    if not target:
+        return 0
+    partner_caps = set(_unique_capabilities(list(partner.capabilities or [])))
+    return len(target.intersection(partner_caps))
+
+
 def run_procurement_matching(
     seal_family: Optional[str],
     medium: Optional[str],
     pressure_max_bar: Optional[float],
     *,
+    capabilities_needed: Optional[List[str]] = None,
+    critical_capabilities: Optional[List[str]] = None,
     registry: Optional[List[PartnerRecord]] = None,
 ) -> ProcurementResult:
-    """Execute all 4 stages and return a ProcurementResult."""
+    """Execute capability-based matching and return a ProcurementResult."""
     candidates: List[PartnerRecord] = list(_PARTNER_REGISTRY if registry is None else registry)
+    capabilities_needed_n = _unique_capabilities(list(capabilities_needed or []))
+    critical_capabilities_n = _unique_capabilities(
+        list(critical_capabilities or capabilities_needed_n)
+    )
 
     # Stage 1: MUST — paying partner
     stage1 = _match_stage1_paying(candidates)
@@ -203,6 +307,8 @@ def run_procurement_matching(
             fallback=True,
             stages_completed=0,
             fallback_reason="Keine zahlenden Partner im Netzwerk",
+            capabilities_needed=capabilities_needed_n,
+            critical_capabilities=critical_capabilities_n,
         )
 
     # Stage 2: MUST — Bauform
@@ -213,34 +319,58 @@ def run_procurement_matching(
             fallback=True,
             stages_completed=1,
             fallback_reason=f"Kein Partner unterstützt Bauform '{seal_family or 'unbekannt'}'",
+            capabilities_needed=capabilities_needed_n,
+            critical_capabilities=critical_capabilities_n,
         )
 
-    # Stage 3: SHOULD — Medium/Druck
-    stage3 = _match_stage3_medium_druck(stage2, medium, pressure_max_bar)
+    # Stage 2b: MUST — critical capabilities
+    stage2b = _match_stage2b_capabilities(
+        stage2,
+        critical_capabilities=critical_capabilities_n,
+    )
+    if not stage2b:
+        return ProcurementResult(
+            matched_partners=[],
+            fallback=True,
+            stages_completed=2,
+            fallback_reason=(
+                "Kein Partner erfüllt die kritischen Fähigkeiten: "
+                + ", ".join(critical_capabilities_n or ["n/a"])
+            ),
+            capabilities_needed=capabilities_needed_n,
+            critical_capabilities=critical_capabilities_n,
+        )
+
+    # Stage 3: SHOULD — medium/pressure
+    stage3 = _match_stage3_medium_druck(stage2b, medium, pressure_max_bar)
     warning: Optional[str] = None
-    stages_reached = 2
-    if stage3 != stage2:
+    stages_reached = 3
+    if stage3 != stage2b:
         # SHOULD filter was effective
-        stages_reached = 3
+        stages_reached = 4
     else:
-        # SHOULD returned all Stage-2 survivors (either all passed or none — check which)
+        # SHOULD returned all Stage-2b survivors (either all passed or none — check which)
         strict_filtered = [
-            p for p in stage2
+            p for p in stage2b
             if (
                 (medium is None or any(m.strip().lower() == (medium or "").strip().lower() for m in p.supported_media))
                 and (pressure_max_bar is None or pressure_max_bar <= p.pressure_max_bar)
             )
         ]
         if strict_filtered:
-            stages_reached = 3
+            stages_reached = 4
         else:
             warning = (
                 f"Kein Partner mit Medien/Druckfreigabe für '{medium or '?'}' / "
-                f"{pressure_max_bar or '?'} bar — alle Stage-2-Partner aufgeführt"
+                f"{pressure_max_bar or '?'} bar — alle capability-konformen Partner aufgeführt"
             )
 
-    # Stage 4: NICE — sort by delivery_days
-    final = _match_stage4_geo(stage3)
+    # Stage 4: NICE — prefer capability coverage, then fastest delivery
+    ranked = sorted(
+        stage3,
+        key=lambda p: (-_capability_match_score(p, capabilities_needed_n), p.delivery_days),
+    )
+    final = _match_stage4_geo(ranked)
 
     return ProcurementResult(
         matched_partners=final,
@@ -248,6 +378,8 @@ def run_procurement_matching(
         stages_completed=stages_reached,
         fallback_reason="",
         warning=warning,
+        capabilities_needed=capabilities_needed_n,
+        critical_capabilities=critical_capabilities_n,
     )
 
 
@@ -259,6 +391,9 @@ def run_procurement_matching(
 def _build_rfq_template_context(
     result: ProcurementResult,
     state: SealAIState,
+    *,
+    capability_requirements: Optional[Dict[str, Any]] = None,
+    rfq_payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build Jinja2 context dict for rfq_template.j2."""
     wp = state.working_profile
@@ -297,6 +432,7 @@ def _build_rfq_template_context(
 
     # Matched partners as plain dicts (for template iteration)
     matched_partners_dicts = [p.model_dump() for p in result.matched_partners]
+    capability_blob = dict(capability_requirements or {})
 
     return {
         # Watermark flag
@@ -328,16 +464,78 @@ def _build_rfq_template_context(
         "fallback": result.fallback,
         "fallback_reason": result.fallback_reason or "",
         "procurement_warning": result.warning or "",
+        "capability_requirements": capability_blob,
+        "capabilities_needed": list(result.capabilities_needed or []),
+        "critical_capabilities": list(result.critical_capabilities or []),
+        "rfq_payload": dict(rfq_payload or {}),
         # Metadata
         "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "tenant_id": state.tenant_id or "n/a",
     }
 
 
-def _render_rfq_pdf(result: ProcurementResult, state: SealAIState) -> str:
+def _render_rfq_pdf(
+    result: ProcurementResult,
+    state: SealAIState,
+    *,
+    capability_requirements: Optional[Dict[str, Any]] = None,
+    rfq_payload: Optional[Dict[str, Any]] = None,
+) -> str:
     """Render the RFQ document via Jinja2 StrictUndefined (R2 enforced)."""
-    ctx = _build_rfq_template_context(result, state)
+    ctx = _build_rfq_template_context(
+        result,
+        state,
+        capability_requirements=capability_requirements,
+        rfq_payload=rfq_payload,
+    )
     return render_template(_RFQ_TEMPLATE_NAME, ctx)
+
+
+def _validated_parameters_dict(state: SealAIState) -> Dict[str, Any]:
+    wp = getattr(state, "working_profile", None)
+    if wp is not None:
+        wp_dict = _as_dict(wp)
+        if wp_dict:
+            return wp_dict
+    params = getattr(state, "parameters", None)
+    if params is not None:
+        as_dict = getattr(params, "as_dict", None)
+        if callable(as_dict):
+            return dict(as_dict() or {})
+    return {}
+
+
+def _build_sealai_poc_rationale(
+    state: SealAIState,
+    tile: Dict[str, Any],
+    capability_requirements: Dict[str, Any],
+) -> str:
+    if bool(tile.get("hrc_warning")):
+        return "Option B chosen due to hrc_warning: shaft hardness below recommended PTFE threshold."
+    if bool(tile.get("requires_backup_ring")):
+        return "Option with backup-ring capability chosen due to extrusion risk under high pressure."
+    if bool(tile.get("shrinkage_risk")):
+        return "Cryogenic path chosen due to shrinkage_risk; spring-energized capability required."
+    critical_caps = list((capability_requirements or {}).get("critical_capabilities") or [])
+    if critical_caps:
+        return f"Partner path chosen to satisfy critical capabilities: {', '.join(critical_caps)}."
+    return "Standard capability path chosen with available validated parameters and physics checks."
+
+
+def _build_rfq_payload(
+    state: SealAIState,
+    result: ProcurementResult,
+    capability_requirements: Dict[str, Any],
+) -> Dict[str, Any]:
+    tile = _live_calc_tile_dict(state)
+    partners = [partner.model_dump() for partner in result.matched_partners]
+    return {
+        "validated_parameters": _validated_parameters_dict(state),
+        "kinematics_and_physics": tile,
+        "sealai_poc_rationale": _build_sealai_poc_rationale(state, tile, capability_requirements),
+        "matched_partners": partners,
+        "capability_requirements": dict(capability_requirements or {}),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +555,9 @@ def node_p5_procurement(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
     """
     wp = state.working_profile
     calc = state.calculation_result
+    capability_requirements = _derive_capability_requirements(state)
+    capabilities_needed = list(capability_requirements.get("capabilities_needed") or [])
+    critical_capabilities = list(capability_requirements.get("critical_capabilities") or [])
 
     logger.info(
         "p5_procurement_start",
@@ -366,6 +567,8 @@ def node_p5_procurement(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
         run_id=state.run_id,
         thread_id=state.thread_id,
         tenant_id=state.tenant_id,
+        capabilities_needed=capabilities_needed,
+        critical_capabilities=critical_capabilities,
     )
 
     # Derive inputs for matching
@@ -378,7 +581,10 @@ def node_p5_procurement(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
         seal_family=seal_family,
         medium=medium,
         pressure_max_bar=pressure_max_bar,
+        capabilities_needed=capabilities_needed,
+        critical_capabilities=critical_capabilities,
     )
+    rfq_payload = _build_rfq_payload(state, result, capability_requirements)
 
     logger.info(
         "p5_procurement_matching_done",
@@ -386,6 +592,8 @@ def node_p5_procurement(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
         stages_completed=result.stages_completed,
         matched_count=len(result.matched_partners),
         fallback_reason=result.fallback_reason,
+        capabilities_needed=result.capabilities_needed,
+        critical_capabilities=result.critical_capabilities,
         run_id=state.run_id,
     )
 
@@ -394,7 +602,12 @@ def node_p5_procurement(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
     render_error: Optional[str] = None
 
     try:
-        rfq_pdf_text = _render_rfq_pdf(result, state)
+        rfq_pdf_text = _render_rfq_pdf(
+            result,
+            state,
+            capability_requirements=capability_requirements,
+            rfq_payload=rfq_payload,
+        )
     except UndefinedError as exc:
         render_error = f"P5: Jinja2 template error: {exc}"
         logger.error(
@@ -413,6 +626,8 @@ def node_p5_procurement(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
 
     update: Dict[str, Any] = {
         "procurement_result": result.model_dump(),
+        "capability_requirements": capability_requirements,
+        "rfq_payload": rfq_payload,
         "phase": PHASE.PROCUREMENT,
         "last_node": "node_p5_procurement",
     }

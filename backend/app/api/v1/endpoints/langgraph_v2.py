@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -46,6 +47,7 @@ SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 DEDUP_TTL_SEC = int(os.getenv("LANGGRAPH_V2_DEDUP_TTL_SEC", "900"))
 SSE_RETRY_MS = int(os.getenv("SEALAI_SSE_RETRY_MS", "3000"))
+SSE_HEARTBEAT_SEC = float(os.getenv("SEALAI_SSE_HEARTBEAT_SEC", "10"))
 SSE_QUEUE_MAXSIZE = int(os.getenv("SEALAI_SSE_QUEUE_MAXSIZE", "200"))
 SSE_SLOW_NOTICE_SEC = float(os.getenv("SEALAI_SSE_SLOW_NOTICE_SEC", "5"))
 REQUIRE_PARAM_SNAPSHOT = os.getenv("SEALAI_REQUIRE_PARAM_SNAPSHOT") == "1"
@@ -53,12 +55,21 @@ WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") =
 DEFAULT_GRAPH_RECURSION_LIMIT = 25
 CONVERSATIONAL_STREAM_NODES = frozenset(
     {
-        "final_answer_node",
         "response_node",
         "smalltalk_node",
         "out_of_scope_node",
+        "conversational_rag_node",
+        "troubleshooting_wizard_node",
     }
 )
+_STREAM_NODE_BLOCKLIST = frozenset({"final_answer_node"})
+SPEAKING_NODES = {
+    "smalltalk_node",
+    "reasoning_core_node",
+    "response_node",
+    "conversational_rag_node",
+    "contract_first_output_node",
+}
 
 
 def _lg_trace_enabled() -> bool:
@@ -76,6 +87,98 @@ def _state_values_to_dict(values: Any) -> Dict[str, Any]:
         return dict(values)
     except Exception:
         return {}
+
+
+def _is_meaningful_live_calc_tile(tile: Any) -> bool:
+    if hasattr(tile, "model_dump"):
+        tile = tile.model_dump(exclude_none=True)
+    if not isinstance(tile, dict) or not tile:
+        return False
+
+    status = tile.get("status")
+    if isinstance(status, str) and status in {"ok", "warning", "critical"}:
+        return True
+
+    numeric_keys = (
+        "v_surface_m_s",
+        "pv_value_mpa_m_s",
+        "friction_power_watts",
+        "compression_ratio_pct",
+        "groove_fill_pct",
+        "stretch_pct",
+        "thermal_expansion_mm",
+    )
+    for key in numeric_keys:
+        if tile.get(key) is not None:
+            return True
+
+    warning_flags = (
+        "hrc_warning",
+        "runout_warning",
+        "pv_warning",
+        "extrusion_risk",
+        "requires_backup_ring",
+        "shrinkage_risk",
+        "dry_running_risk",
+        "geometry_warning",
+    )
+    if any(bool(tile.get(key)) for key in warning_flags):
+        return True
+
+    parameters = tile.get("parameters")
+    if isinstance(parameters, dict):
+        for value in parameters.values():
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            return True
+
+    return False
+
+
+def _normalize_live_calc_tile(tile: Any) -> Dict[str, Any] | None:
+    if hasattr(tile, "model_dump"):
+        tile = tile.model_dump(exclude_none=True)
+    if not _is_meaningful_live_calc_tile(tile):
+        return None
+    if not isinstance(tile, dict):
+        return None
+    return dict(tile)
+
+
+def _inject_live_calc_tile(payload: Dict[str, Any], *, live_calc_tile: Dict[str, Any] | None) -> None:
+    tile = _normalize_live_calc_tile(live_calc_tile)
+    if tile is None:
+        return
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        data = {}
+        payload["data"] = data
+    current_tile = _normalize_live_calc_tile(data.get("live_calc_tile"))
+    if current_tile is None:
+        data["live_calc_tile"] = dict(tile)
+    payload["live_calc_tile"] = data.get("live_calc_tile")
+
+
+async def _get_graph_state_values_for_stream(graph: Any, config: Any) -> Dict[str, Any]:
+    try:
+        if hasattr(graph, "aget_state"):
+            snapshot = await graph.aget_state(config)
+            if hasattr(snapshot, "values"):
+                return _state_values_to_dict(snapshot.values)
+    except Exception:
+        logger.exception("langgraph_v2_stream_aget_state_failed")
+    try:
+        if hasattr(graph, "get_state"):
+            snapshot = graph.get_state(config)
+            if asyncio.iscoroutine(snapshot):
+                snapshot = await snapshot
+            if hasattr(snapshot, "values"):
+                return _state_values_to_dict(snapshot.values)
+    except Exception:
+        logger.exception("langgraph_v2_stream_get_state_failed")
+    return {}
 
 
 def _short_user_id(user_id: str | None) -> str:
@@ -165,10 +268,17 @@ class LangGraphV2Request(BaseModel):
 
 
 def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> bytes:
-    prefix = f"id: {event_id}\n" if event_id else ""
-    return (
-        prefix + f"event: {event}\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-    ).encode("utf-8")
+    safe_event = str(event).replace("\r", "").replace("\n", "")
+    safe_event_id = str(event_id).replace("\r", "").replace("\n", "") if event_id else None
+    payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    # Guarantee a single data line per SSE event even if payload serialization ever changes.
+    payload_json = payload_json.replace("\r", "\\r").replace("\n", "\\n")
+    prefix = f"id: {safe_event_id}\n" if safe_event_id else ""
+    return (prefix + f"event: {safe_event}\n" + f"data: {payload_json}\n\n").encode("utf-8")
+
+
+def _format_sse_text(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> str:
+    return _format_sse(event, payload, event_id=event_id).decode("utf-8")
 
 
 def _chunk_text(text: str, *, max_len: int = 700) -> list[str]:
@@ -249,15 +359,16 @@ async def _build_graph_config(
 
     def _attach_config(base_config: Dict[str, Any], *, scoped_user_id: str) -> Dict[str, Any]:
         configurable = base_config.setdefault("configurable", {})
+        metadata = base_config.setdefault("metadata", {})
         if hasattr(graph, "checkpointer"):
             configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
         if username:
-            metadata = base_config.setdefault("metadata", {})
             metadata["username"] = username
             metadata["user_sub"] = scoped_user_id
         if auth_scopes:
-            metadata = base_config.setdefault("metadata", {})
             metadata["auth_scopes"] = list(auth_scopes)
+        if request_id:
+            metadata["run_id"] = request_id
         return base_config
 
     config = _with_default_recursion_limit(
@@ -349,13 +460,31 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
     values = _state_values_to_dict(state)
     parameters = values.get("parameters") if isinstance(values, dict) else {}
     prompt_meta = values.get("final_prompt_metadata") if isinstance(values, dict) else None
+    live_calc_tile = values.get("live_calc_tile") if isinstance(values, dict) else None
+    has_live_calc_tile = _is_meaningful_live_calc_tile(live_calc_tile)
+    if isinstance(state, dict) and "live_calc_tile" not in state:
+        has_live_calc_tile = False
+    rfq_pdf_base64 = values.get("rfq_pdf_base64") if isinstance(values, dict) else None
+    rfq_pdf_url = values.get("rfq_pdf_url") if isinstance(values, dict) else None
+    rfq_html_report = values.get("rfq_html_report") if isinstance(values, dict) else None
     if isinstance(parameters, TechnicalParameters):
         parameters = parameters.model_dump(exclude_none=True)
-    payload = {
-        "type": "state_update",
+    if hasattr(live_calc_tile, "model_dump"):
+        live_calc_tile = live_calc_tile.model_dump(exclude_none=True)
+    rfq_document = {
+        "ready": bool(values.get("rfq_ready") or rfq_pdf_base64 or rfq_pdf_url or rfq_html_report),
+        "has_pdf_base64": bool(rfq_pdf_base64),
+        "has_pdf_url": bool(rfq_pdf_url),
+        "has_html_report": bool(rfq_html_report),
+    }
+
+    data = {
         "phase": values.get("phase"),
         "last_node": values.get("last_node"),
+        "final_text": values.get("final_text"),
+        "final_answer": values.get("final_answer"),
         "awaiting_user_input": values.get("awaiting_user_input"),
+        "streaming_complete": values.get("streaming_complete"),
         "awaiting_user_confirmation": values.get("awaiting_user_confirmation"),
         "recommendation_ready": values.get("recommendation_ready"),
         "recommendation_go": values.get("recommendation_go"),
@@ -367,6 +496,39 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "pending_action": values.get("pending_action"),
         "confirm_checkpoint_id": values.get("confirm_checkpoint_id"),
         "final_prompt_metadata": prompt_meta if isinstance(prompt_meta, dict) and prompt_meta else None,
+        "rfq_ready": values.get("rfq_ready"),
+        "rfq_document": rfq_document,
+        "rfq_pdf_base64": rfq_pdf_base64,
+        "rfq_html_report": rfq_html_report,
+    }
+    if has_live_calc_tile and isinstance(live_calc_tile, dict):
+        data["live_calc_tile"] = live_calc_tile
+    data = {key: value for key, value in data.items() if value is not None}
+    payload = {
+        "type": "state_update",
+        "data": data,
+        # Legacy top-level mirrors kept for compatibility with existing clients.
+        "phase": data.get("phase"),
+        "last_node": data.get("last_node"),
+        "final_text": data.get("final_text"),
+        "final_answer": data.get("final_answer"),
+        "awaiting_user_input": data.get("awaiting_user_input"),
+        "streaming_complete": data.get("streaming_complete"),
+        "awaiting_user_confirmation": data.get("awaiting_user_confirmation"),
+        "recommendation_ready": data.get("recommendation_ready"),
+        "recommendation_go": data.get("recommendation_go"),
+        "coverage_score": data.get("coverage_score"),
+        "coverage_gaps": data.get("coverage_gaps"),
+        "missing_params": data.get("missing_params"),
+        "parameters": data.get("parameters"),
+        "delta": data.get("delta"),
+        "pending_action": data.get("pending_action"),
+        "confirm_checkpoint_id": data.get("confirm_checkpoint_id"),
+        "final_prompt_metadata": data.get("final_prompt_metadata"),
+        "rfq_ready": data.get("rfq_ready"),
+        "rfq_document": data.get("rfq_document"),
+        "rfq_pdf_base64": data.get("rfq_pdf_base64"),
+        "rfq_html_report": data.get("rfq_html_report"),
     }
     return {key: value for key, value in payload.items() if value is not None}
 
@@ -434,13 +596,24 @@ def _resolve_stream_node_name(*, node_name: Any = None, meta: Any = None) -> str
     return None
 
 
-def _is_allowed_stream_source(token: Any, *, stream_node: str | None) -> bool:
-    if not (stream_node and stream_node in CONVERSATIONAL_STREAM_NODES):
+def _is_allowed_stream_source(token: Any, *, stream_node: str | None, state: Any = None) -> bool:
+    is_rfq = False
+    if state:
+        sv = _state_values_to_dict(state)
+        # Commercial/RFQ intents often have rfq_ready or procurement phase markers.
+        if sv.get("rfq_ready") or sv.get("phase") == "procurement":
+            is_rfq = True
+
+    if stream_node and stream_node in _STREAM_NODE_BLOCKLIST:
+        if not is_rfq:
+            return False
+    # Allow streaming for conversational nodes OR final_answer_node/node_finalize if it's an RFQ.
+    if not (stream_node and (stream_node in CONVERSATIONAL_STREAM_NODES or (is_rfq and stream_node in {"final_answer_node", "node_finalize"}))):
         return False
     return isinstance(token, (AIMessage, AIMessageChunk))
 
 
-def _extract_stream_token_text(token: Any, *, stream_node: str | None = None) -> str | None:
+def _extract_stream_token_text(token: Any, *, stream_node: str | None = None, state: Any = None) -> str | None:
     if token is None:
         return None
     if not isinstance(token, (AIMessage, AIMessageChunk)):
@@ -449,7 +622,7 @@ def _extract_stream_token_text(token: Any, *, stream_node: str | None = None) ->
         return None
     if isinstance(token, BaseMessage) and not (_is_message_chunk(token) or isinstance(token, AIMessage)):
         return None
-    if not _is_allowed_stream_source(token, stream_node=stream_node):
+    if not _is_allowed_stream_source(token, stream_node=stream_node, state=state):
         return None
     text_attr = getattr(token, "text", None)
     if isinstance(text_attr, str) and text_attr:
@@ -461,6 +634,30 @@ def _extract_stream_token_text(token: Any, *, stream_node: str | None = None) ->
     if not text or _is_structured_payload_text(text):
         return None
     return text
+
+
+def _event_belongs_to_current_run(raw_event: Any, expected_run_id: str | None) -> bool:
+    if not expected_run_id or not isinstance(raw_event, dict):
+        return True
+    event_ids: set[str] = set()
+    metadata = raw_event.get("metadata") if isinstance(raw_event.get("metadata"), dict) else {}
+    for source in (raw_event, metadata):
+        if not isinstance(source, dict):
+            continue
+        run_id = source.get("run_id")
+        if isinstance(run_id, str) and run_id:
+            event_ids.add(run_id)
+        parent_run_id = source.get("parent_run_id")
+        if isinstance(parent_run_id, str) and parent_run_id:
+            event_ids.add(parent_run_id)
+        parent_ids = source.get("parent_ids")
+        if isinstance(parent_ids, (list, tuple, set)):
+            for parent_id in parent_ids:
+                if isinstance(parent_id, str) and parent_id:
+                    event_ids.add(parent_id)
+    if not event_ids:
+        return True
+    return expected_run_id in event_ids
 
 
 def _is_message_chunk(token: BaseMessage) -> bool:
@@ -561,6 +758,424 @@ def _extract_trace_action(*, data: Any = None, state: Any = None) -> str | None:
     return None
 
 
+def _looks_like_state_payload(data: Dict[str, Any]) -> bool:
+    if not isinstance(data, dict):
+        return False
+    expected_keys = {
+        "phase",
+        "last_node",
+        "messages",
+        "final_text",
+        "final_answer",
+        "parameters",
+        "live_calc_tile",
+        "rfq_ready",
+        "rfq_document",
+        "awaiting_user_input",
+        "awaiting_user_confirmation",
+    }
+    return any(key in data for key in expected_keys)
+
+
+def _extract_state_update_source(data: Any) -> SealAIState | Dict[str, Any] | None:
+    if isinstance(data, SealAIState):
+        return data
+    if not isinstance(data, dict):
+        return None
+
+    for key in ("output", "state", "final_state", "values", "result", "chunk", "patch", "update", "delta"):
+        candidate = data.get(key)
+        if isinstance(candidate, SealAIState):
+            return candidate
+        if isinstance(candidate, dict):
+            nested_values = candidate.get("values")
+            if isinstance(nested_values, (SealAIState, dict)):
+                return nested_values
+            if _looks_like_state_payload(candidate):
+                return candidate
+
+    if _looks_like_state_payload(data):
+        return data
+    return None
+
+
+_NODE_LABELS: Dict[str, str] = {
+    "profile_loader_node": "Profile Loader",
+    "safety_synonym_guard_node": "Safety Synonym Guard",
+    "combinatorial_chemistry_guard_node": "Combinatorial Chemistry Guard",
+    "frontdoor_discovery_node": "Intent Discovery",
+    "node_router": "Router",
+    "node_p1_context": "Parameter Extraction",
+    "reasoning_core_node": "Reasoning Core",
+    "human_review_node": "Human Review",
+    "contract_first_output_node": "Contract Output",
+    "worm_evidence_node": "WORM Evidence",
+}
+
+
+def _human_node_label(node_name: str | None) -> str:
+    normalized = str(node_name or "").strip()
+    if not normalized:
+        return "Unknown Node"
+    return _NODE_LABELS.get(normalized, normalized.replace("_", " ").title())
+
+
+def _extract_chunk_text_from_stream_event(chunk: Any) -> str:
+    if chunk is None:
+        return ""
+    if isinstance(chunk, str):
+        text = chunk
+    elif isinstance(chunk, (AIMessage, AIMessageChunk, BaseMessage)):
+        text = _flatten_message_content(chunk)
+    elif isinstance(chunk, dict):
+        text = _flatten_message_content(chunk.get("content") or chunk.get("text") or chunk)
+    else:
+        text = _flatten_message_content(chunk)
+    if not text:
+        return ""
+    structured_probe = text.strip()
+    if structured_probe and _is_structured_payload_text(structured_probe):
+        return ""
+    return text
+
+
+def _extract_working_profile_payload(state_like: SealAIState | Dict[str, Any] | None) -> Dict[str, Any] | None:
+    values = _state_values_to_dict(state_like)
+    raw_profile = values.get("working_profile")
+    if hasattr(raw_profile, "model_dump"):
+        raw_profile = raw_profile.model_dump(exclude_none=True)
+    if isinstance(raw_profile, dict):
+        return dict(raw_profile)
+    return None
+
+
+def _extract_blocker_conflicts(state_like: SealAIState | Dict[str, Any] | None) -> list[Dict[str, Any]]:
+    profile = _extract_working_profile_payload(state_like)
+    if not isinstance(profile, dict):
+        return []
+    conflicts = profile.get("conflicts_detected")
+    if not isinstance(conflicts, list):
+        return []
+    blockers: list[Dict[str, Any]] = []
+    for conflict in conflicts:
+        if isinstance(conflict, dict):
+            severity = str(conflict.get("severity") or "").upper()
+            if severity == "BLOCKER":
+                blockers.append(dict(conflict))
+            continue
+        severity = str(getattr(conflict, "severity", "") or "").upper()
+        if severity != "BLOCKER":
+            continue
+        if hasattr(conflict, "model_dump"):
+            blockers.append(conflict.model_dump(exclude_none=True))
+        else:
+            blockers.append(
+                {
+                    "rule_id": str(getattr(conflict, "rule_id", "") or ""),
+                    "severity": severity,
+                    "title": str(getattr(conflict, "title", "") or ""),
+                    "reason": str(getattr(conflict, "reason", "") or ""),
+                }
+            )
+    return blockers
+
+
+async def event_multiplexer(
+    graph: Any,
+    state_input: SealAIState,
+    config: Dict[str, Any],
+    request: Request,
+) -> AsyncIterator[str]:
+    """Translate LangGraph firehose events into strict typed SSE events.
+
+    Output format is always:
+    `event: <type>\ndata: <json>\n\n`
+    """
+    metadata = config.get("metadata") if isinstance(config, dict) else {}
+    expected_run_id = metadata.get("run_id") if isinstance(metadata, dict) else None
+    thread_id = state_input.thread_id
+
+    if not hasattr(graph, "astream_events"):
+        yield _format_sse_text(
+            "error",
+            {"type": "error", "message": "astream_events_not_supported"},
+        )
+        yield _format_sse_text("turn_complete", {"type": "turn_complete"})
+        if thread_id:
+            await _release_thread_lock(thread_id)
+        return
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=max(32, SSE_QUEUE_MAXSIZE // 2))
+    latest_state: SealAIState | Dict[str, Any] | None = state_input
+    turn_complete_sent = False
+
+    async def _queue_emit(event_name: str, payload: Dict[str, Any]) -> None:
+        frame = _format_sse_text(event_name, payload)
+        if queue.full():
+            with contextlib.suppress(asyncio.QueueEmpty):
+                queue.get_nowait()
+        queue.put_nowait(frame)
+
+    async def _producer() -> None:
+        nonlocal latest_state, turn_complete_sent
+        try:
+            async for raw_event in graph.astream_events(state_input, config=config, version="v2"):
+                if await request.is_disconnected():
+                    raise asyncio.CancelledError()
+                if not isinstance(raw_event, dict):
+                    continue
+
+                if not _event_belongs_to_current_run(raw_event, expected_run_id):
+                    continue
+
+                event_name = str(raw_event.get("event") or "")
+                node_name = _resolve_stream_node_name(
+                    node_name=raw_event.get("name"),
+                    meta=raw_event.get("metadata"),
+                )
+                data = raw_event.get("data") if isinstance(raw_event.get("data"), dict) else {}
+
+                if event_name in {"on_node_start", "on_chain_start"}:
+                    await _queue_emit(
+                        "node_status",
+                        {
+                            "type": "node_status",
+                            "node": _human_node_label(node_name),
+                            "status": "running",
+                        },
+                    )
+                    continue
+
+                if event_name == "on_chat_model_stream":
+                    tags = raw_event.get("tags") or []
+                    is_speaking = any(f"langsmith:graph:node:{n}" in tags for n in SPEAKING_NODES) or str(
+                        node_name
+                    ) in SPEAKING_NODES
+                    if is_speaking:
+                        chunk_text = _extract_chunk_text_from_stream_event(data.get("chunk"))
+                        if chunk_text:
+                            await _queue_emit("text_chunk", {"type": "text_chunk", "text": chunk_text})
+                    continue
+
+                update_source = _extract_state_update_source(data)
+                if isinstance(update_source, (SealAIState, dict)):
+                    latest_state = _merge_state_like(latest_state, update_source)
+
+                if event_name in {"on_custom_event", "on_node_end", "on_chain_end"}:
+                    profile_payload = _extract_working_profile_payload(latest_state)
+                    if profile_payload and (
+                        event_name == "on_custom_event"
+                        or str(node_name or "") in {"combinatorial_chemistry_guard_node", "reasoning_core_node"}
+                    ):
+                        await _queue_emit(
+                            "profile_update",
+                            {
+                                "type": "profile_update",
+                                "node": _human_node_label(node_name),
+                                "working_profile": profile_payload,
+                            },
+                        )
+
+                    blockers = _extract_blocker_conflicts(latest_state)
+                    if blockers:
+                        await _queue_emit(
+                            "safety_alert",
+                            {
+                                "type": "safety_alert",
+                                "severity": "BLOCKER",
+                                "blockers": blockers,
+                            },
+                        )
+
+                if event_name in {"on_node_end", "on_chain_end"}:
+                    await _queue_emit(
+                        "node_status",
+                        {
+                            "type": "node_status",
+                            "node": _human_node_label(node_name),
+                            "status": "completed",
+                        },
+                    )
+
+                if event_name == "on_chat_model_end" or (
+                    event_name == "on_chain_end" and str(node_name or "") == "reasoning_core_node"
+                ):
+                    await _queue_emit("turn_complete", {"type": "turn_complete"})
+                    turn_complete_sent = True
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("langgraph_v2_event_multiplexer_error")
+            await _queue_emit(
+                "error",
+                {
+                    "type": "error",
+                    "message": "internal_error",
+                },
+            )
+            await _queue_emit("turn_complete", {"type": "turn_complete"})
+            turn_complete_sent = True
+        finally:
+            if not turn_complete_sent:
+                await _queue_emit("turn_complete", {"type": "turn_complete"})
+            with contextlib.suppress(asyncio.QueueFull):
+                queue.put_nowait(None)
+
+    producer = asyncio.create_task(_producer())
+    try:
+        while True:
+            if await request.is_disconnected():
+                producer.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await producer
+                return
+            try:
+                frame = await asyncio.wait_for(queue.get(), timeout=max(0.25, SSE_HEARTBEAT_SEC))
+            except asyncio.TimeoutError:
+                yield ": keep-alive\n\n"
+                continue
+            if frame is None:
+                try:
+                    if hasattr(graph, "aget_state"):
+                        snapshot = await graph.aget_state(config)
+                        vals = snapshot.values if snapshot else {}
+                        final = str(vals.get("final_answer", "") or "")
+                        if final:
+                            logger.info("hitl_final_answer_flushed", extra={"length": len(final)})
+                            yield _format_sse_text("token", {"type": "token", "text": final})
+                            yield _format_sse_text("turn_complete", {"type": "turn_complete"})
+                except Exception as _flush_err:
+                    logger.warning("hitl_flush_error", extra={"error": str(_flush_err)})
+                break
+            yield frame
+    except asyncio.CancelledError:
+        producer.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await producer
+        return
+    finally:
+        if not producer.done():
+            producer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await producer
+        if thread_id:
+            await _release_thread_lock(thread_id)
+
+
+def _merge_state_like(
+    current: SealAIState | Dict[str, Any] | None,
+    update: SealAIState | Dict[str, Any] | None,
+) -> SealAIState | Dict[str, Any] | None:
+    update_dict = _state_values_to_dict(update)
+    if not update_dict:
+        return current
+    base = _state_values_to_dict(current)
+    merged = dict(base)
+    merged.update(update_dict)
+    if not _is_meaningful_live_calc_tile(update_dict.get("live_calc_tile")):
+        current_tile = base.get("live_calc_tile")
+        if _is_meaningful_live_calc_tile(current_tile):
+            merged["live_calc_tile"] = current_tile
+    return merged
+
+
+def _latest_ai_text(messages: Any, *, after_last_human: bool = False) -> str:
+    if not isinstance(messages, list):
+        return ""
+    scan_from = 0
+    if after_last_human:
+        for idx in range(len(messages) - 1, -1, -1):
+            msg = messages[idx]
+            role = getattr(msg, "type", None) or getattr(msg, "role", None)
+            if role is None and isinstance(msg, dict):
+                role = msg.get("type") or msg.get("role")
+            if role in ("human", "user"):
+                scan_from = idx + 1
+                break
+    for msg in reversed(messages[scan_from:]):
+        role = getattr(msg, "type", None) or getattr(msg, "role", None)
+        if role is None and isinstance(msg, dict):
+            role = msg.get("type") or msg.get("role")
+        if role not in ("ai", "assistant"):
+            continue
+        text = _flatten_message_content(msg).strip()
+        if text:
+            return text
+    return ""
+
+
+def _resolve_final_text(state: SealAIState | Dict[str, Any]) -> str:
+    if isinstance(state, SealAIState):
+        text = str(state.final_text or state.final_answer or "").strip()
+        if text:
+            return text
+        return _latest_ai_text(state.messages or [], after_last_human=True)
+    if isinstance(state, dict):
+        value = state.get("final_text")
+        if not isinstance(value, str):
+            value = state.get("final_answer")
+        text = str(value or "").strip()
+        if text:
+            return text
+        return _latest_ai_text(state.get("messages") or [], after_last_human=True)
+    return ""
+
+
+def _extract_terminal_text_candidate(state: SealAIState | Dict[str, Any] | None) -> str:
+    if not isinstance(state, (SealAIState, dict)):
+        return ""
+    values = _state_values_to_dict(state)
+    value = values.get("final_text")
+    if not isinstance(value, str):
+        value = values.get("final_answer")
+    text = str(value or "").strip()
+    return text
+
+
+def _extract_final_text_from_patch(data: Any) -> str:
+    stack: list[Any] = [data]
+    seen: set[int] = set()
+    while stack:
+        current = stack.pop()
+        if current is None:
+            continue
+        marker = id(current)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        if isinstance(current, SealAIState):
+            text = _extract_terminal_text_candidate(current)
+            if text:
+                return text
+            stack.append(current.model_dump(exclude_none=True))
+            continue
+        if isinstance(current, dict):
+            value = current.get("final_text")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            value = current.get("final_answer")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            chunk_type = current.get("chunk_type")
+            if isinstance(chunk_type, str) and chunk_type.strip().lower() == "final_answer":
+                for key in ("text", "content", "message", "delta"):
+                    text = _flatten_message_content(current.get(key)).strip()
+                    if text:
+                        return text
+            for key in ("output", "state", "final_state", "values", "result", "chunk", "patch", "update", "delta", "data"):
+                nested = current.get(key)
+                if nested is not None:
+                    stack.append(nested)
+            for nested in current.values():
+                if isinstance(nested, (dict, list, tuple, SealAIState)):
+                    stack.append(nested)
+            continue
+        if isinstance(current, (list, tuple)):
+            stack.extend(current)
+    return ""
+
+
 def _extract_prompt_trace_metadata(*, data: Any = None, state: Any = None) -> tuple[str | None, str | None]:
     """Return (prompt_hash, prompt_version) from node output/state for trace events."""
     candidates: list[Any] = [data]
@@ -647,6 +1262,33 @@ async def _claim_client_msg_id(*, user_id: str, chat_id: str, client_msg_id: str
         return True
 
 
+async def _claim_thread_lock(thread_id: str, ttl: int = 120) -> bool:
+    """Try to claim a concurrency lock for a thread_id. Return True if successful."""
+    client = await _get_dedup_redis()
+    if client is None:
+        return True
+    key = f"langgraph_v2:lock:{thread_id}"
+    try:
+        # Default 120s TTL to prevent permanent locks if a worker crashes.
+        claimed = await client.set(key, "1", nx=True, ex=ttl)
+        return bool(claimed)
+    except Exception:
+        logger.exception("langgraph_v2_lock_claim_failed", extra={"chat_id": thread_id})
+        return True
+
+
+async def _release_thread_lock(thread_id: str):
+    """Release the concurrency lock for a thread_id."""
+    client = await _get_dedup_redis()
+    if client is None:
+        return
+    key = f"langgraph_v2:lock:{thread_id}"
+    try:
+        await client.delete(key)
+    except Exception:
+        logger.exception("langgraph_v2_lock_release_failed", extra={"chat_id": thread_id})
+
+
 async def _event_stream_v2(
     req: LangGraphV2Request,
     *,
@@ -664,6 +1306,8 @@ async def _event_stream_v2(
     queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
     last_slow_notice = 0.0
     scoped_user_id = user_id or "anonymous"
+    sticky_live_calc_tile: Dict[str, Any] | None = None
+    initial_stream_values: Dict[str, Any] = {}
     try:
         resolved_user_id = user_id or "anonymous"
         scoped_user_id = resolved_user_id
@@ -676,6 +1320,8 @@ async def _event_stream_v2(
             request_id=request_id,
         )
         scoped_user_id = _config_user_id(config, resolved_user_id)
+        initial_stream_values = await _get_graph_state_values_for_stream(graph, config)
+        sticky_live_calc_tile = _normalize_live_calc_tile(initial_stream_values.get("live_calc_tile"))
 
         async def _enqueue_frame(frame: bytes, *, allow_slow_notice: bool = True) -> None:
             nonlocal last_slow_notice
@@ -720,6 +1366,17 @@ async def _event_stream_v2(
                     queue.put_nowait(slow_frame)
 
         async def _emit_event(event_name: str, payload: Dict[str, Any]) -> None:
+            nonlocal sticky_live_calc_tile
+            if event_name == "state_update":
+                payload_data = payload.get("data")
+                candidate_tile = None
+                if isinstance(payload_data, dict):
+                    candidate_tile = _normalize_live_calc_tile(payload_data.get("live_calc_tile"))
+                if candidate_tile is None:
+                    candidate_tile = _normalize_live_calc_tile(payload.get("live_calc_tile"))
+                if candidate_tile is not None:
+                    sticky_live_calc_tile = candidate_tile
+                _inject_live_calc_tile(payload, live_calc_tile=sticky_live_calc_tile)
             seq = await sse_broadcast.record_event(
                 user_id=scoped_user_id,
                 chat_id=req.chat_id,
@@ -732,6 +1389,7 @@ async def _event_stream_v2(
         broadcast_queue = await sse_broadcast.subscribe(user_id=scoped_user_id, chat_id=req.chat_id)
 
         async def _broadcast_forwarder() -> None:
+            nonlocal sticky_live_calc_tile
             if broadcast_queue is None:
                 return
             try:
@@ -740,6 +1398,17 @@ async def _event_stream_v2(
                     if not item:
                         continue
                     seq, event_name, payload = item
+                    if event_name == "state_update":
+                        candidate_tile = None
+                        payload_data = payload.get("data") if isinstance(payload, dict) else None
+                        if isinstance(payload_data, dict):
+                            candidate_tile = _normalize_live_calc_tile(payload_data.get("live_calc_tile"))
+                        if candidate_tile is None and isinstance(payload, dict):
+                            candidate_tile = _normalize_live_calc_tile(payload.get("live_calc_tile"))
+                        if candidate_tile is not None:
+                            sticky_live_calc_tile = candidate_tile
+                        if isinstance(payload, dict):
+                            _inject_live_calc_tile(payload, live_calc_tile=sticky_live_calc_tile)
                     frame = _format_sse(event_name, payload, event_id=str(seq))
                     await _enqueue_frame(frame)
             except asyncio.CancelledError:
@@ -778,8 +1447,10 @@ async def _event_stream_v2(
         snapshot_versions = _snapshot_versions(snapshot)
         if WARN_STALE_PARAM_SNAPSHOT and snapshot_versions:
             try:
-                server_snapshot = await graph.aget_state(config)
-                state_values = _state_values_to_dict(server_snapshot.values)
+                state_values = dict(initial_stream_values)
+                if not state_values and hasattr(graph, "aget_state"):
+                    server_snapshot = await graph.aget_state(config)
+                    state_values = _state_values_to_dict(server_snapshot.values)
                 server_versions = (
                     state_values.get("parameter_versions") if isinstance(state_values, dict) else {}
                 )
@@ -821,7 +1492,6 @@ async def _event_stream_v2(
             user_context={"auth_scopes": list(auth_scopes or []), "tenant_id": tenant_id},
         )
 
-        emitted_any_token = False
         token_count = 0
         done_sent = False
         latest_state: SealAIState | Dict[str, Any] = initial_state
@@ -866,7 +1536,67 @@ async def _event_stream_v2(
             await _emit_event("trace", payload)
 
         async def _producer() -> None:
-            nonlocal emitted_any_token, latest_state, token_count, done_sent
+            nonlocal latest_state, token_count, done_sent, sticky_live_calc_tile
+            live_tile_stream_signature: str | None = None
+            rfq_document_stream_signature: str | None = None
+            streamed_text_parts: list[str] = []
+            terminal_final_text: str = ""
+            latest_patch_final_text: str = ""
+            terminal_nodes = {
+                "node_finalize",
+                "node_safe_fallback",
+                "final_answer_node",
+                "response_node",
+            }
+
+            async def _emit_state_update_if_changed(
+                *,
+                update_source: SealAIState | Dict[str, Any] | None,
+                node_hint: str | None = None,
+            ) -> None:
+                nonlocal live_tile_stream_signature, rfq_document_stream_signature, sticky_live_calc_tile
+                if not isinstance(update_source, (SealAIState, dict)):
+                    return
+
+                source_values = _state_values_to_dict(update_source)
+                payload = _build_state_update_payload(update_source)
+                source_tile = _normalize_live_calc_tile(source_values.get("live_calc_tile"))
+                if source_tile is not None:
+                    sticky_live_calc_tile = source_tile
+                _inject_live_calc_tile(payload, live_calc_tile=sticky_live_calc_tile)
+                payload_data = payload.get("data")
+                if not isinstance(payload_data, dict):
+                    return
+
+                should_emit = False
+                has_live_calc_tile = _is_meaningful_live_calc_tile(payload_data.get("live_calc_tile"))
+                should_emit_live_tile = has_live_calc_tile
+                if should_emit_live_tile:
+                    tile = payload_data.get("live_calc_tile", {})
+                    tile_signature = json.dumps(tile, sort_keys=True, default=str)
+                    if tile_signature != live_tile_stream_signature:
+                        live_tile_stream_signature = tile_signature
+                        should_emit = True
+
+                has_rfq_document = (
+                    source_values.get("rfq_ready")
+                    or source_values.get("rfq_pdf_base64")
+                    or source_values.get("rfq_pdf_url")
+                    or source_values.get("rfq_html_report")
+                )
+                should_emit_rfq = bool(has_rfq_document) or node_hint == "node_p6_generate_pdf"
+                if should_emit_rfq:
+                    rfq_document = payload_data.get("rfq_document", {})
+                    rfq_signature = json.dumps(rfq_document, sort_keys=True, default=str)
+                    if rfq_signature != rfq_document_stream_signature:
+                        rfq_document_stream_signature = rfq_signature
+                        should_emit = True
+
+                if should_emit:
+                    await _emit_event("state_update", payload)
+
+            stream_error_emitted = False
+            producer_cancelled = False
             try:
                 if hasattr(graph, "astream_events"):
                     event_count = 0
@@ -881,25 +1611,39 @@ async def _event_stream_v2(
                             },
                         )
                     async for raw_event in graph.astream_events(initial_state, config=config):
+                        event = raw_event if isinstance(raw_event, dict) else {}
                         if not isinstance(raw_event, dict):
                             continue
                         event_count += 1
                         event_name = str(raw_event.get("event") or "")
                         node_name = str(raw_event.get("name") or "")
                         data = raw_event.get("data") if isinstance(raw_event.get("data"), dict) else {}
+                        if event_name in {
+                            "on_node_end",
+                            "on_chain_end",
+                            "on_graph_end",
+                            "on_chain_stream",
+                            "on_graph_stream",
+                        }:
+                            patch_final_text = _extract_final_text_from_patch(data)
+                            if patch_final_text:
+                                latest_patch_final_text = patch_final_text
+                                terminal_final_text = patch_final_text
                         ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                         if event_name == "on_node_start":
                             await _emit_event("node_start", {"node": node_name, "ts": ts})
                             await _emit_trace("node_start", data=data, meta=raw_event.get("metadata"), state=latest_state)
                         elif event_name == "on_chat_model_stream":
+                            if not _event_belongs_to_current_run(raw_event, run_id):
+                                continue
                             chunk = data.get("chunk") if isinstance(data, dict) else None
                             stream_node = _resolve_stream_node_name(
                                 node_name=node_name,
                                 meta=raw_event.get("metadata"),
                             )
-                            text = _extract_stream_token_text(chunk, stream_node=stream_node)
+                            text = _extract_stream_token_text(chunk, stream_node=stream_node, state=latest_state)
                             if isinstance(text, str) and text:
-                                emitted_any_token = True
+                                streamed_text_parts.append(text)
                                 token_count += 1
                                 await _emit_event("token", {"type": "token", "text": text})
                         elif event_name == "on_node_end":
@@ -913,17 +1657,55 @@ async def _event_stream_v2(
                                 pass
                             output = data.get("output")
                             if isinstance(output, (SealAIState, dict)):
-                                latest_state = output
+                                latest_state = _merge_state_like(latest_state, output)
+                            update_source = _extract_state_update_source(data)
+                            if isinstance(update_source, (SealAIState, dict)):
+                                latest_state = _merge_state_like(latest_state, update_source)
+                            else:
+                                update_source = (
+                                    output if isinstance(output, (SealAIState, dict)) else latest_state
+                                )
+                            if node_name in terminal_nodes:
+                                terminal_candidate = _extract_terminal_text_candidate(update_source)
+                                if not terminal_candidate and isinstance(output, (SealAIState, dict)):
+                                    terminal_candidate = _extract_terminal_text_candidate(output)
+                                if terminal_candidate:
+                                    terminal_final_text = terminal_candidate
+                            await _emit_state_update_if_changed(update_source=update_source, node_hint=node_name)
                             await _emit_trace(
                                 "node_end",
                                 data=(output if isinstance(output, (SealAIState, dict)) else data),
                                 meta=raw_event.get("metadata"),
                                 state=latest_state,
                             )
+                        elif event_name in {"on_chain_end", "on_graph_end"}:
+                            update_source = _extract_state_update_source(data)
+                            if isinstance(update_source, (SealAIState, dict)):
+                                latest_state = _merge_state_like(latest_state, update_source)
+                                terminal_candidate = _extract_terminal_text_candidate(update_source)
+                                if terminal_candidate:
+                                    terminal_final_text = terminal_candidate
+                            else:
+                                update_source = latest_state
+                            await _emit_state_update_if_changed(update_source=update_source, node_hint=node_name)
+
+                            await _emit_trace(
+                                event_name.replace("on_", ""),
+                                data=(update_source if isinstance(update_source, (SealAIState, dict)) else data),
+                                meta=raw_event.get("metadata"),
+                                state=latest_state,
+                            )
                         elif event_name == "on_error":
-                            await _emit_event("error", {"type": "error", "message": "internal_error", "request_id": request_id})
-                            await _emit_event("done", {"type": "done", "chat_id": req.chat_id, "request_id": request_id, "client_msg_id": req.client_msg_id})
-                            return
+                            if not stream_error_emitted:
+                                stream_error_emitted = True
+                                await _emit_event(
+                                    "error",
+                                    {
+                                        "type": "error",
+                                        "message": "internal_error",
+                                        "request_id": request_id,
+                                    },
+                                )
                     if SSE_DEBUG or _lg_trace_enabled():
                         logger.info(
                             "langgraph_v2_stream_mode_complete",
@@ -941,90 +1723,29 @@ async def _event_stream_v2(
                         if mode == "messages":
                             token, meta = data if isinstance(data, tuple) and len(data) == 2 else (data, None)
                             stream_node = _resolve_stream_node_name(meta=meta)
-                            text = _extract_stream_token_text(token, stream_node=stream_node)
+                            text = _extract_stream_token_text(token, stream_node=stream_node, state=latest_state)
                             if isinstance(text, str) and text:
-                                emitted_any_token = True
+                                streamed_text_parts.append(text)
                                 token_count += 1
                                 await _emit_event("token", {"type": "token", "text": text})
                         elif mode == "values":
                             if isinstance(data, (SealAIState, dict)):
-                                latest_state = data
+                                latest_state = _merge_state_like(latest_state, data)
+                                terminal_candidate = _extract_terminal_text_candidate(data)
+                                if terminal_candidate:
+                                    terminal_final_text = terminal_candidate
+                                    latest_patch_final_text = terminal_candidate
                                 await _emit_trace("values", data=data, state=latest_state)
-
-                snapshot = None
-                if hasattr(graph, "aget_state"):
-                    snapshot = await graph.aget_state(config)
-                    if hasattr(snapshot, "values"):
-                        snapshot_values = _state_values_to_dict(snapshot.values)
-                        if snapshot_values:
-                            latest_state = snapshot.values
-
-                result_state = latest_state if isinstance(latest_state, SealAIState) else SealAIState.model_validate(latest_state or {})
-                state_values = _state_values_to_dict(result_state)
-                interrupted = bool(snapshot is not None and _snapshot_waiting_on_human_review(snapshot))
-                if interrupted:
-                    checkpoint_id = _extract_snapshot_checkpoint_id(
-                        snapshot,
-                        state_values,
-                        fallback=f"{req.chat_id}:{uuid.uuid4().hex}",
-                    )
-                    await _emit_event(
-                        "interrupt",
-                        {
-                            "thread_id": req.chat_id,
-                            "checkpoint_id": checkpoint_id,
-                            "reason": "Paused before human_review_node",
-                            "required_action": "approve_specification",
-                        },
-                    )
-                if _should_emit_confirm_checkpoint(result_state):
-                    checkpoint_payload = result_state.confirm_checkpoint or build_confirm_checkpoint_payload(
-                        result_state,
-                        action=str(result_state.pending_action or "human_review"),
-                        checkpoint_id=result_state.confirm_checkpoint_id,
-                    )
-                    await _emit_event(
-                        "checkpoint_required",
-                        {
-                            "chat_id": req.chat_id,
-                            "checkpoint_id": checkpoint_payload.get("checkpoint_id"),
-                            "pending_action": checkpoint_payload.get("action"),
-                            "risk": checkpoint_payload.get("risk"),
-                        },
-                    )
-                final_text = (result_state.final_text or "")
-                if (not emitted_any_token) and final_text.strip():
-                    for chunk in _chunk_text(final_text.strip()):
-                        await _emit_event("token", {"type": "token", "text": chunk})
-                await _emit_event(
-                    "done",
-                    {
-                        "type": "done",
-                        "chat_id": req.chat_id,
-                        "request_id": request_id,
-                        "client_msg_id": req.client_msg_id,
-                        "phase": result_state.phase,
-                        "last_node": result_state.last_node,
-                        "awaiting_confirmation": bool(result_state.awaiting_user_confirmation),
-                        "checkpoint_id": result_state.confirm_checkpoint_id,
-                    },
-                )
-                done_sent = True
-
-                # Audit log — fire-and-forget, never blocks
-                try:
-                    from app.services.audit.audit_logger import get_global_audit_logger
-                    _al = get_global_audit_logger()
-                    if _al is not None:
-                        _al.append(
-                            session_id=req.chat_id,
-                            tenant_id=tenant_id,
-                            state=_state_values_to_dict(result_state),
-                        )
-                except Exception:
-                    pass
+                                node_hint = None
+                                if isinstance(data, SealAIState):
+                                    node_hint = data.last_node
+                                elif isinstance(data, dict):
+                                    last_node = data.get("last_node")
+                                    node_hint = last_node if isinstance(last_node, str) else None
+                                await _emit_state_update_if_changed(update_source=data, node_hint=node_hint)
 
             except asyncio.CancelledError:
+                producer_cancelled = True
                 raise
             except Exception as exc:  # pragma: no cover
                 logger.exception(
@@ -1038,16 +1759,182 @@ async def _event_stream_v2(
                         "supervisor_mode": os.getenv("LANGGRAPH_V2_SUPERVISOR_MODE"),
                     },
                 )
-                message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
-                await _emit_event("error", {"type": "error", "message": message, "request_id": request_id})
-                await _emit_event("done", {"type": "done", "chat_id": req.chat_id, "request_id": request_id, "client_msg_id": req.client_msg_id})
+                if not stream_error_emitted:
+                    stream_error_emitted = True
+                    message = "dependency_unavailable" if is_dependency_unavailable_error(exc) else "internal_error"
+                    await _emit_event("error", {"type": "error", "message": message, "request_id": request_id})
             finally:
-                await queue.put(None)
+                try:
+                    if not producer_cancelled:
+                        result_state: SealAIState = latest_state if isinstance(latest_state, SealAIState) else initial_state
+                        done_payload: Dict[str, Any] = {
+                            "type": "done",
+                            "chat_id": req.chat_id,
+                            "request_id": request_id,
+                            "client_msg_id": req.client_msg_id,
+                        }
+                        try:
+                            snapshot = None
+                            final_state = None
+                            final_state_values: Dict[str, Any] = {}
+                            if hasattr(graph, "aget_state"):
+                                final_state = await graph.aget_state(config)
+                                snapshot = final_state
+                                if hasattr(final_state, "values"):
+                                    final_state_values = _state_values_to_dict(final_state.values)
+                                    if final_state_values:
+                                        latest_state = _merge_state_like(latest_state, final_state.values)
+                            elif hasattr(graph, "get_state"):
+                                final_state = graph.get_state(config)
+                                if asyncio.iscoroutine(final_state):
+                                    final_state = await final_state
+                                snapshot = final_state
+                                if hasattr(final_state, "values"):
+                                    final_state_values = _state_values_to_dict(final_state.values)
+                                    if final_state_values:
+                                        latest_state = _merge_state_like(latest_state, final_state.values)
+
+                            result_state = (
+                                latest_state
+                                if isinstance(latest_state, SealAIState)
+                                else SealAIState.model_validate(latest_state or {})
+                            )
+                            state_values = _state_values_to_dict(result_state)
+                            await _emit_state_update_if_changed(
+                                update_source=result_state,
+                                node_hint=result_state.last_node,
+                            )
+                            interrupted = bool(snapshot is not None and _snapshot_waiting_on_human_review(snapshot))
+                            if interrupted:
+                                checkpoint_id = _extract_snapshot_checkpoint_id(
+                                    snapshot,
+                                    state_values,
+                                    fallback=f"{req.chat_id}:{uuid.uuid4().hex}",
+                                )
+                                await _emit_event(
+                                    "interrupt",
+                                    {
+                                        "thread_id": req.chat_id,
+                                        "checkpoint_id": checkpoint_id,
+                                        "reason": "Paused before human_review_node",
+                                        "required_action": "approve_specification",
+                                    },
+                                )
+                            if _should_emit_confirm_checkpoint(result_state):
+                                checkpoint_payload = result_state.confirm_checkpoint or build_confirm_checkpoint_payload(
+                                    result_state,
+                                    action=str(result_state.pending_action or "human_review"),
+                                    checkpoint_id=result_state.confirm_checkpoint_id,
+                                )
+                                await _emit_event(
+                                    "checkpoint_required",
+                                    {
+                                        "chat_id": req.chat_id,
+                                        "checkpoint_id": checkpoint_payload.get("checkpoint_id"),
+                                        "pending_action": checkpoint_payload.get("action"),
+                                        "risk": checkpoint_payload.get("risk"),
+                                    },
+                                )
+                            final_text = ""
+                            if final_state_values:
+                                state_final_text = final_state_values.get("final_text") or final_state_values.get("final_answer")
+                                if isinstance(state_final_text, str) and state_final_text.strip():
+                                    final_text = state_final_text.strip()
+                                else:
+                                    snapshot_message_text = _latest_ai_text(final_state_values.get("messages") or []).strip()
+                                    if snapshot_message_text:
+                                        final_text = snapshot_message_text
+                            if not final_text:
+                                if terminal_final_text:
+                                    final_text = str(terminal_final_text).strip()
+                                elif latest_patch_final_text:
+                                    final_text = str(latest_patch_final_text).strip()
+                                else:
+                                    final_text = str(_resolve_final_text(result_state)).strip()
+                            streamed_text = "".join(streamed_text_parts).strip()
+                            should_emit_final_text = bool(final_text) and ((not streamed_text) or (streamed_text != final_text))
+                            if final_text:
+                                # Emit an authoritative terminal assistant payload from final state so clients
+                                # can replace partial/stale content from token-only streaming paths.
+                                await _emit_event(
+                                    "message",
+                                    {
+                                        "type": "message",
+                                        "text": final_text,
+                                        "replace": True,
+                                        "source": "final_state",
+                                    },
+                                )
+                            if should_emit_final_text:
+                                # Frontend appends only `type=token` + `text` payloads to the active assistant turn.
+                                logger.info(f"Emitting final SSE text of length: {len(final_text)}")
+                                await _emit_event("token", {"type": "token", "text": final_text})
+
+                            done_payload.update(
+                                {
+                                    "phase": result_state.phase,
+                                    "last_node": result_state.last_node,
+                                    "awaiting_confirmation": bool(result_state.awaiting_user_confirmation),
+                                    "checkpoint_id": result_state.confirm_checkpoint_id,
+                                }
+                            )
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            logger.exception(
+                                "langgraph_v2_sse_finalize_error",
+                                extra={
+                                    "request_id": request_id,
+                                    "chat_id": req.chat_id,
+                                    "client_msg_id": req.client_msg_id,
+                                    "thread_id": req.chat_id,
+                                    "user_id": scoped_user_id,
+                                },
+                            )
+                        finally:
+                            if not done_sent:
+                                try:
+                                    await _emit_event("done", done_payload)
+                                    done_sent = True
+                                except Exception:
+                                    logger.exception(
+                                        "langgraph_v2_sse_done_emit_failed",
+                                        extra={
+                                            "request_id": request_id,
+                                            "chat_id": req.chat_id,
+                                            "client_msg_id": req.client_msg_id,
+                                            "thread_id": req.chat_id,
+                                            "user_id": scoped_user_id,
+                                        },
+                                    )
+
+                            # Audit log — fire-and-forget, never blocks
+                            try:
+                                from app.services.audit.audit_logger import get_global_audit_logger
+                                _al = get_global_audit_logger()
+                                if _al is not None:
+                                    _al.append(
+                                        session_id=req.chat_id,
+                                        tenant_id=tenant_id,
+                                        state=_state_values_to_dict(result_state),
+                                    )
+                            except Exception:
+                                pass
+                finally:
+                    await queue.put(None)
 
         stream_task = asyncio.create_task(_producer())
 
         while True:
-            item = await queue.get()
+            if SSE_HEARTBEAT_SEC > 0:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=SSE_HEARTBEAT_SEC)
+                except asyncio.TimeoutError:
+                    # Keep proxy/browser SSE connections warm during long-running graph steps.
+                    yield ": keep-alive\n\n"
+                    continue
+            else:
+                item = await queue.get()
             if item is None:
                 break
             yield item.decode("utf-8") if isinstance(item, bytes) else item
@@ -1193,24 +2080,47 @@ async def langgraph_chat_v2_endpoint(
             "has_mcp_knowledge_read": has_mcp_knowledge_read,
         },
     )
-    stream = _event_stream_v2(
-        request,
-        user_id=scoped_user_id,
-        username=user.username,
-        auth_scopes=user.scopes,
-        tenant_id=user.tenant_id,
-        legacy_user_id=legacy_user_id,
-        request_id=request_id,
-        last_event_id=last_event_id,
-    )
-    headers = {
-        "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
-        "X-Accel-Buffering": "no",
-    }
-    if request_id:
-        headers["X-Request-Id"] = request_id
-    return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
+    # Concurrency check: Ensure only one active run per thread_id.
+    locked = await _claim_thread_lock(request.chat_id, ttl=300)
+    if not locked:
+        raise HTTPException(
+            status_code=409,
+            detail=error_detail(
+                "thread_locked",
+                request_id=request_id,
+                message="Another request is already processing for this thread. Please wait.",
+            ),
+        )
+
+    try:
+        graph, config = await _build_graph_config(
+            thread_id=request.chat_id,
+            user_id=scoped_user_id,
+            username=user.username,
+            auth_scopes=user.scopes,
+            legacy_user_id=legacy_user_id,
+            request_id=request_id,
+        )
+        state_input = SealAIState(
+            user_id=scoped_user_id,
+            tenant_id=user.tenant_id,
+            thread_id=request.chat_id,
+            messages=[HumanMessage(content=request.input)],
+            user_context={"auth_scopes": list(user.scopes or []), "tenant_id": user.tenant_id},
+        )
+        stream = event_multiplexer(graph, state_input, config, raw_request)
+        headers = {
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+        if request_id:
+            headers["X-Request-Id"] = request_id
+        return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
+    except Exception:
+        # If we failed before returning the stream, release the lock immediately.
+        await _release_thread_lock(request.chat_id)
+        raise
 
 
 @router.post("/confirm/go")
@@ -1222,6 +2132,19 @@ async def confirm_go(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
+
+    # Concurrency check: Ensure only one active run per thread_id.
+    locked = await _claim_thread_lock(body.chat_id, ttl=300)
+    if not locked:
+        raise HTTPException(
+            status_code=409,
+            detail=error_detail(
+                "thread_locked",
+                request_id=request_id,
+                message="Another request is already processing for this thread. Please wait.",
+            ),
+        )
+
     try:
         if not (body.chat_id or "").strip():
             raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
@@ -1319,6 +2242,8 @@ async def confirm_go(
             status_code=500,
             detail=error_detail("internal_error", request_id=request_id),
         ) from exc
+    finally:
+        await _release_thread_lock(body.chat_id)
 
 
 @router.post("/chat/v2/threads/{thread_id}/runs/resume")
@@ -1331,6 +2256,19 @@ async def resume_run(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
+
+    # Concurrency check: Ensure only one active run per thread_id.
+    locked = await _claim_thread_lock(thread_id, ttl=300)
+    if not locked:
+        raise HTTPException(
+            status_code=409,
+            detail=error_detail(
+                "thread_locked",
+                request_id=request_id,
+                message="Another request is already processing for this thread. Please wait.",
+            ),
+        )
+
     try:
         thread_id = (thread_id or "").strip()
         if not thread_id:
@@ -1400,6 +2338,8 @@ async def resume_run(
             status_code=500,
             detail=error_detail("internal_error", request_id=request_id),
         ) from exc
+    finally:
+        await _release_thread_lock(thread_id)
 
 
 @router.post("/parameters/patch")

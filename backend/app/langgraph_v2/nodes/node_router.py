@@ -16,6 +16,7 @@ import re
 from typing import Any, Dict, Optional
 
 import structlog
+from langchain_core.messages import AIMessage
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState, TechnicalParameters, WorkingMemory
@@ -30,11 +31,16 @@ logger = structlog.get_logger("langgraph_v2.node_router")
 _RFQ_PATTERNS = re.compile(
     r"\b("
     r"angebot(?:e|s)?\s+(?:einholen|anfordern|senden|erstellen)"
+    r"|angebot\s+für\b"
     r"|angebot\s+f(?:u|ue|ü)r"
+    r"|preisanfrage\b"
+    r"|ich\s+brauche\s+ein\s+angebot\b"
     r"|ich\s+(?:brauche|ben[oö]tige|m[oö]chte)\s+ein\s+angebot"
     r"|preisanfrage"
     r"|preis\s+f(?:u|ue|ü)r"
+    r"|quote\s+for\b"
     r"|quote\s+for"
+    r"|bitte\s+um\s+ein\s+angebot\b"
     r"|bitte\s+um\s+(?:ein\s+)?angebot"
     r"|rfq\s+(?:senden|erstellen|generieren)"
     r"|anfrage\s+(?:senden|versenden)"
@@ -117,19 +123,29 @@ def _has_populated_parameters(state: SealAIState) -> bool:
 def _has_prior_response(state: SealAIState) -> bool:
     """Check if the graph has already produced a response in this session."""
     wm = state.working_memory
-    if wm is None:
-        return False
     if isinstance(wm, WorkingMemory):
-        return bool(wm.response_text)
-    if isinstance(wm, dict):
-        return bool(wm.get("response_text"))
+        if bool(wm.response_text):
+            return True
+    elif isinstance(wm, dict) and bool(wm.get("response_text")):
+        return True
+    if bool(getattr(state, "final_text", None)):
+        return True
+    for message in list(getattr(state, "messages", []) or []):
+        if isinstance(message, AIMessage):
+            return True
+        if isinstance(message, dict):
+            role = str(message.get("role") or "").strip().lower()
+            if role == "assistant":
+                return True
     return False
 
 
-def _is_hitl_resume(state: SealAIState) -> bool:
-    """Check if user is resuming from an HITL confirmation gate."""
+def _is_hitl_pending(state: SealAIState) -> bool:
+    """Check if state indicates pending HITL/follow-up handling."""
     return bool(
-        state.awaiting_user_confirmation and state.confirm_decision
+        state.awaiting_user_confirmation
+        or bool((state.pending_action or "").strip())
+        or bool(getattr(state, "qgate_has_blockers", False))
     )
 
 
@@ -149,8 +165,8 @@ def classify_input(state: SealAIState, user_text: str) -> str:
     if text and _RFQ_PATTERNS.search(text):
         return "rfq_trigger"
 
-    # 2. HITL resume passthrough
-    if _is_hitl_resume(state):
+    # 2. Pending HITL/follow-up passthrough
+    if _is_hitl_pending(state):
         return "resume"
 
     # 3. Explicit new-case request (overrides follow-up even with existing params)
@@ -188,7 +204,7 @@ def node_router(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, An
         user_text_len=len(user_text),
         has_params=_has_populated_parameters(state),
         has_response=_has_prior_response(state),
-        is_hitl=_is_hitl_resume(state),
+        is_hitl=_is_hitl_pending(state),
         run_id=state.run_id,
         thread_id=state.thread_id,
     )

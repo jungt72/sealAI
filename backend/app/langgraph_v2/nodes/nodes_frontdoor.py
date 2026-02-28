@@ -421,10 +421,19 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         )
 
     task_intents = _normalize_task_intents(structured.task_intents)
-    intent_category = _category_from_task_intents(task_intents, structured.social_opening)
+    technical_cue_matches = _detect_technical_cue_matches(user_text)
+
+    # Prioritize last human message if it's purely social without technical cues.
+    # This prevents history-bias where LLM still tags "material_research"
+    # for a simple "thank you" after a technical discussion.
+    if structured.social_opening and not technical_cue_matches:
+        task_intents = []
+        intent_category = "CHIT_CHAT"
+    else:
+        intent_category = _category_from_task_intents(task_intents, structured.social_opening)
+
     intent_goal = _intent_goal_from_category(intent_category)
     frontdoor_bypass_supervisor = bool(structured.social_opening and not task_intents)
-    technical_cue_matches = _detect_technical_cue_matches(user_text)
     technical_cue_veto = bool(technical_cue_matches)
     if technical_cue_veto:
         frontdoor_bypass_supervisor = False
@@ -436,6 +445,9 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         )
 
     requires_rag = bool(structured.requires_rag or intent_category == "MATERIAL_RESEARCH")
+    if intent_category == "CHIT_CHAT" and not technical_cue_matches:
+        requires_rag = False
+
     needs_pricing = bool(structured.needs_pricing or intent_category == "COMMERCIAL")
 
     intent = Intent(
