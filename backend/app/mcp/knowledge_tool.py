@@ -984,6 +984,13 @@ def search_technical_docs(
     metrics["configured_threshold"] = RAG_MIN_SCORE_THRESHOLD
     metrics["k_returned"] = len(final_hits)
     metrics["top_scores"] = top_scores[:5]
+    metrics["rag_low_quality_results"] = (
+        len(final_hits) == 0
+        or (
+            bool(top_scores)
+            and all(s < RAG_MIN_SCORE_THRESHOLD for s in top_scores[:5])
+        )
+    )
     logger.info(
         "mcp_search_technical_docs",
         extra={
