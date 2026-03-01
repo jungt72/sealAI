@@ -29,6 +29,7 @@ from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.services.rag.state import WorkingProfile
+from app.langgraph_v2.nodes.persona_detection import update_persona_in_state
 
 logger = structlog.get_logger("rag.nodes.p1_context")
 
@@ -498,6 +499,9 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
         "last_node": "node_p1_context",
         "turn_count": int(getattr(state, "turn_count", 0) or 0) + 1,
     }
+    persona_patch = update_persona_in_state(state)
+    result.update(persona_patch)
+
     if error_hint:
         result["error"] = error_hint
 

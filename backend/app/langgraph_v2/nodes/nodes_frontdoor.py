@@ -22,6 +22,7 @@ from app.langgraph_v2.utils.llm_factory import get_model_tier
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
 from app.langgraph_v2.utils.state_debug import log_state_debug
+from app.langgraph_v2.nodes.persona_detection import update_persona_in_state
 from app.utils.jinja_renderer import render_and_hash
 
 logger = structlog.get_logger("langgraph_v2.nodes_frontdoor")
@@ -510,6 +511,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         thread_id=state.thread_id,
     )
 
+    persona_patch = update_persona_in_state(state)
     return {
         "intent": intent,
         "working_memory": wm,
@@ -521,6 +523,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         "requires_rag": requires_rag,
         "need_sources": requires_rag,
         "flags": flags,
+        **persona_patch,
     }
 
 
