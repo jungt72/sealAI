@@ -1,4 +1,5 @@
 # path: backend/app/langgraph_v2/state/sealai_state.py
+# MASTER STATE — rag/state.py ist deprecated, wird in Phase 2 entfernt
 """Strict Pydantic state definition for SealAI LangGraph v2."""
 
 from __future__ import annotations
@@ -530,6 +531,15 @@ class SealAIState(BaseModel):
     coverage_disclosure_ready: bool = False
     rfq_pdf_text: Optional[str] = None
 
+    # v8 WorkingProfile fields — dynamic engineering parameters
+    dp_dt_bar_per_s: Optional[float] = None
+    side_load_kn: Optional[float] = None
+    aed_required: Optional[bool] = None
+    medium_additives: Optional[str] = None
+    fluid_contamination_iso: Optional[str] = None
+    surface_hardness_hrc: Optional[float] = None
+    pressure_spike_factor: Optional[float] = None
+
     analysis_complete: bool = False
     calc_results_ok: bool = False
     calc_results: Optional[CalcResults] = None
@@ -636,6 +646,9 @@ class SealAIState(BaseModel):
     confidence: float = 0.0
     round_index: int = 0
     turn_count: int = 0
+    max_turns: int = 12
+    user_persona: Optional[str] = None  # "erfahrener" | "einsteiger" | "entscheider"
+    knowledge_coverage: str = "limited"  # "full" | "partial" | "limited"
     rag_turn_count: int = 0
     next_action: Optional[str] = None
 
