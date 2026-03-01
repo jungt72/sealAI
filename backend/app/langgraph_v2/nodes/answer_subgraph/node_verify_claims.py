@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Set
 import structlog
 
 from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, VerificationReport
+from app.mcp.calculations.chemical_resistance import lookup as _chem_lookup
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.verify_claims")
 
@@ -32,6 +33,28 @@ _BRACKET_REFERENCE_PATTERN = re.compile(r"\[\s*\d+(?:\s*[-,]\s*\d+)*\s*\]")
 _LIST_PREFIX_PATTERN = re.compile(r"(?m)^\s*\d+\.\s+")
 _SUSPICIOUS_HOMOGLYPH_BAR_PATTERN = re.compile(r"\b\d+(?:[.,]\d+)?\s*[^\x00-\x7f]ar\b")
 _SUSPICIOUS_DEGREE_PATTERN = re.compile(r"\b\d+(?:[.,]\d+)?\s*˚\s*[cC]\b")
+
+# ── Chemical Resistance Post-Check ──────────────────────────────────────────
+_CHEM_MATERIAL_RE = re.compile(
+    r"\b(NBR|FKM|EPDM|PTFE|HNBR|FFKM|CR|VMQ|Viton|Kalrez|Neopren)\b",
+    re.IGNORECASE,
+)
+_CHEM_MEDIUM_RE = re.compile(
+    r"\b(Hydrauliköl|HLP|Wasser|Dampf|Diesel|Ethanol|Aceton"
+    r"|Schwefelsäure|H2SO4|Natronlauge|NaOH|Wasserstoff|H2"
+    r"|Sauerstoff|O2|Kohlendioxid|CO2)\b",
+    re.IGNORECASE,
+)
+_CHEM_POSITIVE_RE = re.compile(
+    r"\b(geeignet|beständig|empfohlen|einsetzbar|verwendbar|kompatibel"
+    r"|suitable|resistant|compatible|recommended)\b",
+    re.IGNORECASE,
+)
+_CHEM_NEGATIVE_RE = re.compile(
+    r"nicht\s+geeignet|ungeeignet|nicht\s+beständig|nicht\s+empfohlen"
+    r"|not\s+suitable|not\s+compatible",
+    re.IGNORECASE,
+)
 
 
 def _strip_formatting_numbers(text: str) -> str:
@@ -148,6 +171,45 @@ def _build_failure_span(
     }
 
 
+def _check_resistance_claims(draft_text: str) -> List[Dict[str, str]]:
+    """Scannt draft_text auf positive Beständigkeitsaussagen (Material × Medium)
+    und prüft jede deterministisch gegen chemical_resistance.lookup().
+    Gibt failure spans zurück wenn lookup() → C (nicht beständig).
+    Bereits korrigierte Paare (Korrekturhinweis vorhanden) werden übersprungen.
+    """
+    spans: List[Dict[str, str]] = []
+    sentences = re.split(r"[.!?\n]+", draft_text or "")
+    for sentence in sentences:
+        # Nur Sätze mit positivem Framing prüfen
+        if not _CHEM_POSITIVE_RE.search(sentence):
+            continue
+        # Sätze die bereits negieren sind korrekt — überspringen
+        if _CHEM_NEGATIVE_RE.search(sentence):
+            continue
+        materials = [m.group(0) for m in _CHEM_MATERIAL_RE.finditer(sentence)]
+        mediums = [m.group(0) for m in _CHEM_MEDIUM_RE.finditer(sentence)]
+        for mat in materials:
+            for med in mediums:
+                try:
+                    result = _chem_lookup(med, mat)
+                except KeyError:
+                    continue  # Unbekannte Kombination → X, kein hard fail
+                if result.rating != "C":
+                    continue
+                # Nicht erneut melden wenn Korrekturhinweis bereits im Text
+                if f"Korrekturhinweis: {result.material} ist für {med} nicht beständig" in draft_text:
+                    continue
+                spans.append(_build_failure_span(
+                    reason="chemical_resistance_contradiction",
+                    expected_value=(
+                        f"{result.material} ist für {med} nicht beständig "
+                        f"(Bewertung C – {result.source})."
+                    ),
+                    wrong_span="",  # Kein Replace — Disclaimer via targeted_patch Pass 2
+                ))
+    return spans
+
+
 def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Validate drafted answer content against the answer contract.
 
@@ -227,6 +289,7 @@ def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         )
     missing_disclaimers = [text for text in contract.required_disclaimers if text not in draft_text]
     suspicious_unicode_spans = _find_suspicious_unicode_spans(draft_text)
+    resistance_spans = _check_resistance_claims(draft_text)
 
     failed_claim_spans: List[Dict[str, str]] = []
     for number in missing_numbers:
@@ -243,6 +306,7 @@ def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         failed_claim_spans.append(
             _build_failure_span(reason="suspicious_unicode", expected_value="", wrong_span=span)
         )
+    failed_claim_spans.extend(resistance_spans)
 
     status = "pass" if not failed_claim_spans else "fail"
     failure_type = None if status == "pass" else "render_mismatch"
@@ -261,6 +325,7 @@ def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         unexpected_numbers=len(unexpected_numbers),
         missing_disclaimers=len(missing_disclaimers),
         suspicious_unicode=len(suspicious_unicode_spans),
+        resistance_contradictions=len(resistance_spans),
     )
     return {"verification_report": report, "last_node": "node_verify_claims"}
 
