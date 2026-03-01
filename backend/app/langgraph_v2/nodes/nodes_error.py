@@ -126,4 +126,35 @@ def out_of_scope_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object
     }
 
 
-__all__ = ["smalltalk_node", "out_of_scope_node"]
+_CRITICAL_FIELDS = ["medium", "pressure_bar", "temperature_c", "dynamic_type"]
+
+
+def _missing_critical(state: SealAIState) -> list[str]:
+    return [f for f in _CRITICAL_FIELDS if not getattr(state, f, None)]
+
+
+def turn_limit_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
+    missing = _missing_critical(state)
+    missing_str = ", ".join(missing) if missing else "–"
+    reply_text = (
+        f"Ich habe jetzt {state.max_turns} Runden mit dir gesprochen und konnte "
+        f"die Auslegung noch nicht abschließen. "
+        f"Fehlende Kernparameter: {missing_str}. "
+        f"Ich empfehle: direkt einen Hersteller-Ingenieur kontaktieren "
+        f"oder die Parameter ergänzen und neu starten."
+    )
+    wm = state.working_memory or WorkingMemory()
+    wm = wm.model_copy(update={"response_text": reply_text, "response_kind": "turn_limit"})
+    updated_messages = list(state.get("messages") or [])
+    updated_messages.append(AIMessage(content=[{"type": "text", "text": reply_text}]))
+    return {
+        "messages": updated_messages,
+        "phase": PHASE.ERROR,
+        "last_node": "turn_limit_node",
+        "working_memory": wm,
+        "final_text": reply_text,
+        "final_answer": reply_text,
+    }
+
+
+__all__ = ["smalltalk_node", "out_of_scope_node", "turn_limit_node"]

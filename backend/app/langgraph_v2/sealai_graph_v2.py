@@ -66,7 +66,7 @@ from app.langgraph_v2.nodes.nodes_resume import (
     confirm_resume_node,
     resume_router_node,
 )
-from app.langgraph_v2.nodes.nodes_error import smalltalk_node
+from app.langgraph_v2.nodes.nodes_error import smalltalk_node, turn_limit_node
 from app.langgraph_v2.nodes.orchestrator import orchestrator_node
 from app.langgraph_v2.nodes.factcard_lookup import node_factcard_lookup
 from app.langgraph_v2.nodes.compound_filter import node_compound_filter
@@ -800,6 +800,8 @@ def _node_router_dispatch(state: SealAIState) -> str:
         return "clarification"
     if classification == "rfq_trigger":
         return "rfq_trigger"
+    if classification == "turn_limit_exceeded":
+        return "turn_limit_exceeded"
     return "frontdoor"
 
 
@@ -1079,6 +1081,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("node_compound_filter_parallel", _node_compound_filter_parallel)    # KB Integration
     builder.add_node("node_merge_deterministic", node_merge_deterministic)
     builder.add_node("smalltalk_node", smalltalk_node)
+    builder.add_node("turn_limit_node", turn_limit_node)
     builder.add_node("supervisor_policy_node", orchestrator_node)
     builder.add_node("supervisor_logic_node", supervisor_policy_node)
     builder.add_node("aggregator_node", aggregator_node)
@@ -1134,10 +1137,11 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
         "node_router",
         node_router_dispatch,
         {
-            "frontdoor": "frontdoor_discovery_node",
-            "resume_router": "resume_router_node",
-            "clarification": "smalltalk_node",
-            "rfq_trigger": "rfq_validator_node",
+            "frontdoor":           "frontdoor_discovery_node",
+            "resume_router":       "resume_router_node",
+            "clarification":       "smalltalk_node",
+            "rfq_trigger":         "rfq_validator_node",
+            "turn_limit_exceeded": "turn_limit_node",
         },
     )
     # Sprint 5: P1 fans out to P2/P3 via Command/Send (no direct edge needed).
