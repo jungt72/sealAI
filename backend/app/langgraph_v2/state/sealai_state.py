@@ -539,6 +539,8 @@ class SealAIState(BaseModel):
     fluid_contamination_iso: Optional[str] = None
     surface_hardness_hrc: Optional[float] = None
     pressure_spike_factor: Optional[float] = None
+    dynamic_type: Optional[str] = None
+    # "rotating" | "oscillating" | "reciprocating" | "static"
 
     analysis_complete: bool = False
     calc_results_ok: bool = False
@@ -662,6 +664,22 @@ class SealAIState(BaseModel):
     def get(self, key: str, default: Any = None) -> Any:
         """Dict-like access helper to ease migration from TypedDict."""
         return getattr(self, key, default)
+
+    def compute_knowledge_coverage(self, intent: str) -> str:
+        """Deterministisch — kein LLM, kein confidence_score."""
+        if intent in ("greeting", "smalltalk", "info"):
+            return "full"
+        critical = [self.medium, self.pressure_bar,
+                    self.temperature_c, self.dynamic_type]
+        if not all(critical):
+            return "limited"
+        if intent in ("complex", "safety_critical"):
+            dynamic = [self.dp_dt_bar_per_s,
+                       self.aed_required,
+                       self.medium_additives]
+            if sum(1 for f in dynamic if f is None) > 1:
+                return "partial"
+        return "full"
 
     @field_validator("knowledge_type", mode="before")
     @classmethod
