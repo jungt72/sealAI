@@ -380,7 +380,7 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> C
 
     if goal == "explanation_or_comparison":
         update["next_action"] = ACTION_RUN_COMPARISON
-        return Command(update=update, goto="material_comparison_node")
+        return Command(update=update, goto="knowledge_agent_node")
 
     if any(q.priority == "high" and q.status == "open" for q in questions):
         update["next_action"] = ACTION_ASK_USER

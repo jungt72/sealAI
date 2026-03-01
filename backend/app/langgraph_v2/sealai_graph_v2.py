@@ -86,6 +86,7 @@ from app.langgraph_v2.nodes.conversational_rag import conversational_rag_node
 from app.langgraph_v2.nodes.troubleshooting_wizard import troubleshooting_wizard_node
 from app.langgraph_v2.nodes.hitl_triage_node import hitl_triage_node
 from app.langgraph_v2.nodes.worm_evidence_node import worm_evidence_node
+from app.langgraph_v2.agents.knowledge_agent import KnowledgeAgent
 from app.langgraph_v2.nodes.nodes_flows import (
     build_final_answer_context,
     map_final_answer_to_state,
@@ -1030,6 +1031,15 @@ def human_review_node(state: SealAIState) -> Command:
 
 
 # ---------------------------------------------------------------------------
+# Knowledge Agent — node wrapper
+# ---------------------------------------------------------------------------
+
+
+async def _knowledge_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    return await KnowledgeAgent().run(state, llm=None)
+
+
+# ---------------------------------------------------------------------------
 # Graph-Definition
 # ---------------------------------------------------------------------------
 
@@ -1109,6 +1119,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("product_match_node", product_match_node)
     builder.add_node("product_explainer_node", product_explainer_node)
     builder.add_node("material_comparison_node", material_comparison_node)
+    builder.add_node("knowledge_agent_node", _knowledge_agent_node)
     builder.add_node("rag_support_node", rag_support_node)
     builder.add_node("leakage_troubleshooting_node", leakage_troubleshooting_node)
     builder.add_node("troubleshooting_pattern_node", troubleshooting_pattern_node)
@@ -1301,6 +1312,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_edge("confirm_checkpoint_node", "hitl_triage_node")
     builder.add_edge("confirm_reject_node", "hitl_triage_node")
 
+    builder.add_edge("knowledge_agent_node", "hitl_triage_node")
     builder.add_edge(CONVERSATIONAL_RAG_NODE_KEY, "hitl_triage_node")
     builder.add_edge("contract_first_output_node", "hitl_triage_node")
     builder.add_edge("final_answer_node", "hitl_triage_node")

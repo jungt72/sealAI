@@ -102,7 +102,7 @@ def test_supervisor_policy_comparison_finalizes_without_rag() -> None:
     )
     cmd = supervisor_policy_node(state)
     assert cmd.update["next_action"] == ACTION_RUN_COMPARISON
-    assert cmd.goto == "material_comparison_node"
+    assert cmd.goto == "knowledge_agent_node"
 
 
 def test_supervisor_policy_troubleshooting_routes_to_wizard() -> None:

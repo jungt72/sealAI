@@ -26,7 +26,15 @@ class KnowledgeAgent:
         )
         goal = getattr(state.intent, "goal", "") or ""
         if "comparison" in goal:
-            return await material_comparison_node(state)
+            # material_comparison_node is a pre-processing step (writes
+            # comparison_notes to working_memory). Run it first, then
+            # synthesise the final answer via conversational_rag_node.
+            comp_patch = await material_comparison_node(state)
+            merged = state.model_copy(update={
+                k: v for k, v in comp_patch.items()
+                if k not in {"last_node", "phase"}
+            })
+            return await conversational_rag_node(merged, config={})
         return await conversational_rag_node(state, config={})
 
 
