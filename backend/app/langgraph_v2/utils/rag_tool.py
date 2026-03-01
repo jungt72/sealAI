@@ -46,7 +46,21 @@ def search_knowledge_base(
     if not tenant:
         raise ValueError("missing tenant_id for RAG retrieval")
 
-    if category == "norms" and material and temp is not None and pressure is not None:
+    if category == "norms":
+        # Hard block: norm queries NEVER reach Qdrant — SQL only.
+        # Return an actionable error if required params are missing.
+        missing = []
+        if not material:
+            missing.append("Material")
+        if temp is None:
+            missing.append("Temperatur")
+        if pressure is None:
+            missing.append("Druck")
+        if missing:
+            return (
+                f"Normabfrage nicht möglich — fehlende Parameter: {', '.join(missing)}. "
+                f"Bitte ergänzen Sie die fehlenden Angaben."
+            )
         try:
             deterministic_payload = query_deterministic_norms(
                 material=material,

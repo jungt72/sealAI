@@ -86,11 +86,23 @@ def _contains_wide_search_term(text: str) -> bool:
 
 
 def _build_rag_query(profile: WorkingProfile) -> str:
-    """Build a German-language semantic search query from filled profile fields."""
+    """Build a semantic-only search query for Qdrant from filled profile fields.
+
+    GUARD: Deterministic fields (norms, material limits, flange standards,
+    emission classes, numeric pressure/temperature) are intentionally excluded.
+    Those are handled exclusively via query_deterministic_norms() (SQL).
+
+    material is included as weak semantic context only when no normative
+    context is present (flange_standard or emission_class set → SQL path).
+    """
     parts: List[str] = ["Dichtungswerkstoff"]
 
-    if profile.material:
+    # material: semantic context for product docs/datasheets, but NOT when
+    # a normative context (flange_standard, emission_class) is present.
+    has_norm_context = bool(profile.flange_standard or profile.emission_class)
+    if profile.material and not has_norm_context:
         parts.append(f"Werkstoff {profile.material}")
+
     if profile.product_name:
         parts.append(f"Produkt {profile.product_name}")
 
@@ -99,26 +111,9 @@ def _build_rag_query(profile: WorkingProfile) -> str:
         if profile.medium_detail:
             parts.append(f"({profile.medium_detail})")
 
-    conditions: List[str] = []
-    if profile.pressure_max_bar is not None:
-        conditions.append(f"{profile.pressure_max_bar} bar")
-    if profile.temperature_max_c is not None:
-        conditions.append(f"{profile.temperature_max_c}°C")
-    if conditions:
-        parts.append(f"bei {', '.join(conditions)}")
-
-    if profile.flange_standard:
-        spec = profile.flange_standard
-        if profile.flange_dn is not None:
-            spec += f" DN{profile.flange_dn}"
-        if profile.flange_pn is not None:
-            spec += f" PN{profile.flange_pn}"
-        elif profile.flange_class is not None:
-            spec += f" Class {profile.flange_class}"
-        parts.append(spec)
-
-    if profile.emission_class:
-        parts.append(f"Emissionsklasse {profile.emission_class}")
+    # pressure_max_bar, temperature_max_c → SQL via query_deterministic_norms()
+    # flange_standard / flange_dn / flange_pn / flange_class → SQL
+    # emission_class → SQL
 
     if profile.industry_sector:
         parts.append(f"Branche: {profile.industry_sector}")

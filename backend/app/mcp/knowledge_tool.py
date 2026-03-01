@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import inspect
+import re
 from datetime import date, datetime, timezone
 from functools import lru_cache, wraps
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -902,6 +903,24 @@ def _render_context(hits: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+_DETERMINISTIC_NORM_PATTERNS = (
+    r"\bdin\s*en\b",
+    r"\bdin\s*\d{4,}",
+    r"\basme\b",
+    r"\bta-luft\b",
+    r"\bvdi\s*\d{4}\b",
+    r"\bdn\s*\d+\b",
+    r"\bpn\s*\d+\b",
+    r"\bemissionsklasse\b",
+    r"\bnorsok\b",
+    r"\biso\s*\d{4,}\b",
+    r"\ben\s*\d{4,}\b",
+)
+_DETERMINISTIC_NORM_RE = re.compile(
+    "|".join(_DETERMINISTIC_NORM_PATTERNS), re.IGNORECASE
+)
+
+
 def search_technical_docs(
     query: str,
     material_code: Optional[str] = None,
@@ -913,6 +932,25 @@ def search_technical_docs(
     query_text = (query or "").strip()
     if not query_text:
         raise ValueError("query is required")
+
+    # Guard: norm/standard identifiers must never reach Qdrant — SQL only.
+    if _DETERMINISTIC_NORM_RE.search(query_text):
+        logger.warning(
+            "search_technical_docs_blocked_norm_query",
+            query=query_text[:120],
+            reason="deterministic_norm_pattern_detected",
+        )
+        return {
+            "hits": [],
+            "context": (
+                "Normabfragen werden deterministisch über SQL verarbeitet. "
+                "Bitte query_deterministic_norms() verwenden."
+            ),
+            "retrieval_meta": {
+                "blocked": True,
+                "reason": "norm_query_in_vector_search",
+            },
+        }
 
     requested_k = max(1, min(int(k or 5), 10))
     retrieval_query = query_text

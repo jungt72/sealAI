@@ -7,7 +7,31 @@ def test_format_hit_does_not_emit_intern_source_when_missing_metadata() -> None:
     assert "intern" not in rendered
 
 
+def test_search_knowledge_base_norms_without_params_blocked(monkeypatch) -> None:
+    # Hard block: category="norms" without material/temp/pressure must never
+    # reach Qdrant — it returns an actionable error instead.
+    captured = {}
+
+    def fake_retrieve(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(rag_tool, "hybrid_retrieve", fake_retrieve)
+    result = rag_tool.search_knowledge_base.invoke(
+        {
+            "query": "test",
+            "category": "norms",
+            "k": 3,
+            "tenant": "tenant-1",
+        }
+    )
+    assert "fehlende Parameter" in result
+    assert "Material" in result
+    assert not captured  # hybrid_retrieve was never called
+
+
 def test_search_knowledge_base_applies_tenant_filter(monkeypatch) -> None:
+    # Non-norm category falls through to Qdrant with tenant filter applied.
     captured = {}
 
     def fake_retrieve(**kwargs):
@@ -18,12 +42,12 @@ def test_search_knowledge_base_applies_tenant_filter(monkeypatch) -> None:
     _ = rag_tool.search_knowledge_base.invoke(
         {
             "query": "test",
-            "category": "norms",
+            "category": "troubleshooting",
             "k": 3,
             "tenant": "tenant-1",
         }
     )
-    assert captured.get("metadata_filters") == {"tenant_id": "tenant-1", "category": "norms"}
+    assert captured.get("metadata_filters") == {"tenant_id": "tenant-1", "category": "troubleshooting"}
     assert captured.get("tenant") == "tenant-1"
 
 
