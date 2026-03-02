@@ -61,6 +61,8 @@ CONVERSATIONAL_STREAM_NODES = frozenset(
         "contract_first_output_node",
         "node_finalize",
         "final_answer_node",
+        "node_p4b_calc_render",
+        "p4b_calc_render",
         "troubleshooting_wizard_node",
     }
 )
@@ -72,6 +74,8 @@ SPEAKING_NODES = {
     "contract_first_output_node",
     "node_finalize",
     "final_answer_node",
+    "node_p4b_calc_render",
+    "p4b_calc_render",
     "troubleshooting_wizard_node",
 }
 
@@ -1565,6 +1569,8 @@ async def _event_stream_v2(
                 "node_safe_fallback",
                 "final_answer_node",
                 "response_node",
+                "node_p4b_calc_render",
+                "p4b_calc_render",
             }
 
             async def _emit_state_update_if_changed(

@@ -33,6 +33,7 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
   const [error, setError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const lastEventRef = useRef<any>(null);
 
   const sendMessage = useCallback(async (inputText: string, chatId: string) => {
     if (!inputText.trim()) return;
@@ -74,6 +75,7 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
 
         onmessage(ev) {
           const { event, data } = ev;
+          lastEventRef.current = { event, data };
           if (!data || data === ': keep-alive') return;
           
           try {
@@ -81,6 +83,20 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
             switch (event) {
               case 'text_chunk':
                 setCurrentAiText(prev => prev + payload.text);
+                break;
+              case 'token':
+                setCurrentAiText(prev => {
+                  if (prev.endsWith(payload.text)) return prev;
+                  if (payload.text.startsWith(prev)) return payload.text;
+                  return prev + payload.text;
+                });
+                break;
+              case 'message':
+                if (payload.replace) {
+                  setCurrentAiText(payload.text);
+                } else {
+                  setCurrentAiText(prev => prev + payload.text);
+                }
                 break;
               case 'profile_update':
                 setWorkingProfile(payload.working_profile);
@@ -128,6 +144,7 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
           }
         },
         onclose() {
+          console.log("LAST EVENT BEFORE END:", lastEventRef.current);
           setIsThinking(false);
         },
         onerror(err) {

@@ -12,6 +12,7 @@ from typing import Any, Dict
 import structlog
 from jinja2 import UndefinedError
 from pydantic import ValidationError
+from langchain_core.messages import AIMessage
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import CalcResults, SealAIState
@@ -281,6 +282,9 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         "is_critical_application": calc_output.is_critical_application,
         "phase": PHASE.CALCULATION,
         "last_node": "node_p4b_calc_render",
+        "final_text": rendered_report,
+        "final_answer": rendered_report,
+        "messages": [AIMessage(content=rendered_report)],
     }
 
 
