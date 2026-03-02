@@ -44,15 +44,15 @@ export default function ChatInterface() {
     } = useSealAIStream(streamApiEndpoint, accessToken);
 
     useEffect(() => {
-        if (workingProfile || workingProfile?.medium || workingProfile?.pressure_max_bar) {
+        if (workingProfile && typeof workingProfile === 'object' && Object.keys(workingProfile).length > 0) {
             console.log("DEBUG WP:", workingProfile);
-            const { temp_range, candidate_materials, ...rest } = workingProfile;
+            const { temp_range, candidate_materials, ...rest } = workingProfile as any;
             setLiveCalcTile({
-                status: workingProfile.knowledge_coverage === 'FULL' ? 'ok' : 'warning',
+                status: (workingProfile as any).knowledge_coverage === 'FULL' ? 'ok' : 'warning',
                 parameters: {
                     ...rest,
                     temperature_max_c: temp_range?.[1],
-                    pressure_max_bar: workingProfile.pressure_max_bar || workingProfile.pressure_bar
+                    pressure_max_bar: (workingProfile as any).pressure_max_bar || (workingProfile as any).pressure_bar
                 }
             });
             setShowTile(true);
