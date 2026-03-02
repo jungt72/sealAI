@@ -345,6 +345,40 @@ def calc_thermal(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None) -
     }
 
 
+def calc_chemical_resistance(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Deterministic chemical compatibility check for RWDR (v8 Fast-Path)."""
+    material_raw = str(payload.get("elastomer_material") or payload.get("material") or "").strip().upper()
+    medium_raw = str(payload.get("medium") or "").strip().upper()
+
+    if not material_raw or not medium_raw:
+        return {"chem_warning": False, "chem_message": None}
+
+    # Simple proof-of-concept mapping
+    # NBR: Mineral oil (HLP) OK, Bio (HEES) NO, Water (HFA) NO
+    # FKM: HLP OK, HEES OK, HFA/HFC PROB
+    
+    incompatible = False
+    message = f"Material {material_raw} ist beständig gegen Medium {medium_raw}."
+
+    if "NBR" in material_raw:
+        if any(x in medium_raw for x in ["HEES", "HFA", "BIO", "WASSER"]):
+            incompatible = True
+            message = f"NBR ist NICHT beständig gegen {medium_raw} (Schrumpfung/Zersetzung)."
+        elif "HLP" in medium_raw or "ÖL" in medium_raw:
+            incompatible = False
+            message = f"NBR ist beständig gegen {medium_raw}."
+    
+    elif "FKM" in material_raw or "VITON" in material_raw:
+        if any(x in medium_raw for x in ["HFA", "HFC"]):
+            incompatible = True
+            message = f"FKM ist bedingt beständig gegen {medium_raw} (Spezialmischung erforderlich)."
+        else:
+            incompatible = False
+            message = f"FKM ist beständig gegen {medium_raw}."
+
+    return {"chem_warning": incompatible, "chem_message": message}
+
+
 def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Compute deterministic live-tile values and warnings across physics domains."""
     payload = _collect_parameter_payload(state)
@@ -354,6 +388,7 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
     extrusion = calc_extrusion(payload, prev=prev)
     geometry = calc_geometry(payload, prev=prev)
     thermal = calc_thermal(payload, prev=prev)
+    chem = calc_chemical_resistance(payload)
 
     risk_flags = bool(extrusion["extrusion_risk"] or geometry["geometry_warning"] or thermal["shrinkage_risk"])
     base_critical = bool(tribology["critical"])
@@ -362,6 +397,7 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
         or tribology["runout_warning"]
         or tribology["pv_warning"]
         or tribology["dry_running_risk"]
+        or chem["chem_warning"]
     )
     has_meaningful_output = any(
         value is not None
@@ -415,6 +451,8 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
         geometry_warning=geometry["geometry_warning"],
         thermal_expansion_mm=thermal["thermal_expansion_mm"],
         shrinkage_risk=thermal["shrinkage_risk"],
+        chem_warning=chem["chem_warning"],
+        chem_message=chem["chem_message"],
         status=status,
         parameters=captured_parameters,
     )

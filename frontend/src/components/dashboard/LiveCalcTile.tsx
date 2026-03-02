@@ -31,6 +31,8 @@ export type LiveCalcTileData = {
   geometry_warning?: boolean;
   thermal_expansion_mm?: number | null;
   shrinkage_risk?: boolean;
+  chem_warning?: boolean;
+  chem_message?: string | null;
   status?: LiveCalcStatus;
   parameters?: Record<string, string | number | null | undefined>;
   // V8 Compliance & Resistance
@@ -215,19 +217,26 @@ export default function LiveCalcTile(props: LiveCalcTileProps) {
         <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-700">
           <div className="flex items-center gap-2">
             <Beaker className="h-4 w-4 text-indigo-500" />
-            Beständigkeit
+            Chem. Beständigkeit
           </div>
-          {tile?.resistance_status && (
-             <span className={`text-[10px] uppercase font-bold px-1.5 rounded border ${
-               tile.resistance_status === 'ok' ? 'text-emerald-600 border-emerald-200 bg-emerald-50' : 
-               tile.resistance_status === 'warning' ? 'text-amber-600 border-amber-200 bg-amber-50' : 
-               'text-rose-600 border-rose-200 bg-rose-50'
-             }`}>
-               {tile.resistance_status}
+          {tile?.chem_warning === false && tile?.chem_message && (
+             <span className="flex items-center gap-1 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border text-emerald-600 border-emerald-200 bg-emerald-50">
+               <CheckCircle2 className="h-3 w-3" /> Beständig
+             </span>
+          )}
+          {tile?.chem_warning && (
+             <span className="flex items-center gap-1 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border text-rose-600 border-rose-200 bg-rose-50">
+               <AlertTriangle className="h-3 w-3" /> Warnung
              </span>
           )}
         </div>
         
+        {tile?.chem_message && (
+          <p className={`text-[11px] leading-relaxed mb-2 ${tile.chem_warning ? 'text-rose-700 font-medium' : 'text-slate-600'}`}>
+            {tile.chem_message}
+          </p>
+        )}
+
         {/* Compliance Badges */}
         <div className="flex flex-wrap gap-1.5 mt-2">
           {tile?.compliance?.fda && (

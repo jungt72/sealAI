@@ -182,6 +182,8 @@ class LiveCalcTile(BaseModel):
     geometry_warning: bool = False
     thermal_expansion_mm: Optional[float] = None
     shrinkage_risk: bool = False
+    chem_warning: bool = False
+    chem_message: Optional[str] = None
     status: Literal["ok", "warning", "critical", "insufficient_data"] = "insufficient_data"
     parameters: Dict[str, str | int | float] = Field(default_factory=dict)
 

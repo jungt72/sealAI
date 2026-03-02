@@ -113,12 +113,16 @@ def _build_template_context(
         ctx["p_v_limit_check"] = tile.p_v_limit_check
         ctx["hrc_warning"] = tile.hrc_warning
         ctx["hrc_value"] = tile.hrc_value
+        ctx["chem_warning"] = tile.chem_warning
+        ctx["chem_message"] = tile.chem_message
         ctx["tribology"] = tile.model_dump()
     else:
         ctx["v_surface_m_s"] = None
         ctx["p_v_limit_check"] = None
         ctx["hrc_warning"] = False
         ctx["hrc_value"] = None
+        ctx["chem_warning"] = False
+        ctx["chem_message"] = None
         ctx["tribology"] = None
     # If tile is empty (first turn of fast path), compute deterministic physics once for rendering
     if not tile or tile.status == "insufficient_data":
