@@ -114,21 +114,17 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
                 break;
               case 'state_update':
                 const wp = payload.data?.working_profile || payload.working_profile;
-                if (wp) {
-                  setWorkingProfile(wp);
-                }
+                if (wp) setWorkingProfile(wp);
+
                 const cr = payload.data?.calc_results || payload.calc_results;
-                if (cr) {
-                  setCalcResults(cr);
-                }
+                if (cr) setCalcResults(cr);
+
                 const cmr = payload.data?.compliance_results || payload.compliance_results;
-                if (cmr) {
-                  setComplianceResults(cmr);
-                }
+                if (cmr) setComplianceResults(cmr);
+
+                // RWDR Fast-Path: Always update live_calc_tile if present to ensure 16.75 m/s is displayed immediately
                 const lct = payload.data?.live_calc_tile || payload.live_calc_tile;
-                if (lct) {
-                  setLiveCalcTile(lct);
-                }
+                if (lct) setLiveCalcTile(lct);
                 break;
               case 'safety_alert':
                 setSafetyAlerts(prev => [...prev, ...payload.blockers]);

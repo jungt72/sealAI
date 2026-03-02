@@ -187,7 +187,8 @@ def _calc_output_to_calc_results(calc_output: CalcOutput, state: Optional[SealAI
 def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """P4b Calc + Render — call MCP calc engine and render Jinja2 report.
 
-    Skips if extracted_params is empty (P4a determined calculation is not possible).
+    Skips if extracted_params is empty (P4a determined calculation is not possible),
+    UNLESS we are in Fast-Path (physics data available).
     """
     extracted_params = _merge_required_calc_fields(state, state.extracted_params or {})
 
@@ -199,10 +200,16 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         thread_id=state.thread_id,
     )
 
-    if not extracted_params:
+    # Fast-Path check: do we already have physics or calc results?
+    tile = state.live_calc_tile
+    is_fast_path = bool(
+        (tile and tile.v_surface_m_s is not None) or state.calc_results
+    )
+
+    if not extracted_params and not is_fast_path:
         logger.info(
             "p4b_calc_render_skip",
-            reason="empty_extracted_params",
+            reason="empty_extracted_params_no_fast_path",
             run_id=state.run_id,
         )
         return {
@@ -214,50 +221,71 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         extracted_params.get("pressure_max_bar") is not None
         and extracted_params.get("temperature_max_c") is not None
     )
-    if _intent_allows_calc_bypass(state) and not has_required_inputs:
-        logger.info(
-            "p4b_calc_render_skip",
-            reason="non_calculation_intent_missing_required_fields",
-            run_id=state.run_id,
-        )
-        return {
-            "phase": PHASE.CALCULATION,
-            "last_node": "node_p4b_calc_render",
-        }
 
-    # --- Build CalcInput ---
-    try:
-        calc_input = CalcInput.model_validate(extracted_params)
-    except ValidationError as exc:
-        logger.warning(
-            "p4b_calc_input_invalid",
-            error=str(exc),
-            run_id=state.run_id,
-        )
-        return {
-            "phase": PHASE.CALCULATION,
-            "last_node": "node_p4b_calc_render",
-            "error": f"P4b: invalid calc input: {exc}",
-        }
-
-    # --- Call MCP calc engine with retry ---
+    # --- Build CalcInput & Output ---
+    calc_input: CalcInput | None = None
     calc_output: CalcOutput | None = None
-    last_error: str | None = None
 
-    for attempt in range(1, _MAX_RETRIES + 1):
+    if not has_required_inputs and is_fast_path:
+        # Partial extraction in Fast-Path: create dummy objects for Jinja2 compatibility
+        calc_input = CalcInput(
+            pressure_max_bar=extracted_params.get("pressure_max_bar") or 0.0,
+            temperature_max_c=extracted_params.get("temperature_max_c") or 0.0,
+            medium=extracted_params.get("medium"),
+        )
+        calc_output = CalcOutput(
+            gasket_inner_d_mm=0.0,
+            gasket_outer_d_mm=0.0,
+            required_gasket_stress_mpa=0.0,
+            safety_factor=0.0,
+            temperature_margin_c=0.0,
+            pressure_margin_bar=0.0,
+            is_critical_application=False,
+            notes=["RWDR Fast-Path: Anzeige von physikalischen Kennwerten ohne Gasket-Berechnung."],
+        )
+    else:
+        if _intent_allows_calc_bypass(state) and not has_required_inputs:
+            logger.info(
+                "p4b_calc_render_skip",
+                reason="non_calculation_intent_missing_required_fields",
+                run_id=state.run_id,
+            )
+            return {
+                "phase": PHASE.CALCULATION,
+                "last_node": "node_p4b_calc_render",
+            }
+
         try:
-            calc_output = mcp_calc_gasket(calc_input)
-            break
-        except Exception as exc:
-            last_error = f"MCP calc attempt {attempt}/{_MAX_RETRIES} failed: {exc}"
+            calc_input = CalcInput.model_validate(extracted_params)
+        except ValidationError as exc:
             logger.warning(
-                "p4b_calc_retry",
-                attempt=attempt,
+                "p4b_calc_input_invalid",
                 error=str(exc),
                 run_id=state.run_id,
             )
-            if attempt < _MAX_RETRIES:
-                time.sleep(_RETRY_BACKOFF_S * attempt)
+            return {
+                "phase": PHASE.CALCULATION,
+                "last_node": "node_p4b_calc_render",
+                "error": f"P4b: invalid calc input: {exc}",
+            }
+
+        # --- Call MCP calc engine with retry ---
+        last_error: str | None = None
+
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                calc_output = mcp_calc_gasket(calc_input)
+                break
+            except Exception as exc:
+                last_error = f"MCP calc attempt {attempt}/{_MAX_RETRIES} failed: {exc}"
+                logger.warning(
+                    "p4b_calc_retry",
+                    attempt=attempt,
+                    error=str(exc),
+                    run_id=state.run_id,
+                )
+                if attempt < _MAX_RETRIES:
+                    time.sleep(_RETRY_BACKOFF_S * attempt)
 
     if calc_output is None:
         logger.error(
