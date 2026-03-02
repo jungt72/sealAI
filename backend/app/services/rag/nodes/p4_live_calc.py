@@ -24,6 +24,12 @@ _PV_CRITICAL_MAX = 3.0
 _FRICTION_COEFF_PTFE = 0.15
 _PTFE_ALPHA_PER_K = 1.2e-4
 
+# RWDR expert limits
+_RWDR_SPEED_LIMIT_NBR = 12.0
+_RWDR_SPEED_LIMIT_MAX = 35.0
+_RWDR_HRC_MIN_HIGH_SPEED = 45.0
+_RWDR_HIGH_SPEED_THRESHOLD = 4.0
+
 
 def _coerce_float(value: Any) -> Optional[float]:
     if value is None:
@@ -67,6 +73,15 @@ def _collect_parameter_payload(state: SealAIState) -> Dict[str, Any]:
 
     if state.pressure_bar is not None:
         payload.setdefault("pressure_bar", state.pressure_bar)
+    
+    # Explicitly pull elastomer material for RWDR logic
+    if state.working_profile:
+        wp_dict = _to_dict(state.working_profile)
+        if "elastomer_material" in wp_dict:
+            payload.setdefault("elastomer_material", wp_dict["elastomer_material"])
+        if "material" in wp_dict:
+            payload.setdefault("material", wp_dict["material"])
+    
     return payload
 
 
@@ -126,7 +141,7 @@ def _get_diameter_mm(payload: Dict[str, Any]) -> Optional[float]:
     )
 
 
-def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
+def calc_tribology(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None) -> Dict[str, Any]:
     diameter_mm = _get_diameter_mm(payload)
     rpm = _first_float(payload, ("rpm", "speed_rpm", "n", "n_max"))
     pressure_bar = _first_float(payload, ("pressure_bar", "pressure_max_bar", "pressure", "p_max"))
@@ -134,24 +149,51 @@ def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
     runout_mm = _first_float(payload, ("runout_mm", "runout", "shaft_runout", "dynamic_runout"))
     cross_section_d2 = _first_float(payload, ("cross_section_d2", "d2", "seal_cross_section"))
 
+    # Material extraction for RWDR logic
+    material = str(payload.get("elastomer_material") or payload.get("material") or "").strip().upper()
+
     v_surface_m_s: Optional[float] = None
     if diameter_mm is not None and rpm is not None and diameter_mm >= 0 and rpm >= 0:
         v_surface_m_s = (diameter_mm * math.pi * rpm) / 60000.0
+    elif prev:
+        v_surface_m_s = prev.v_surface_m_s
 
     pv_value_mpa_m_s: Optional[float] = None
     if v_surface_m_s is not None and pressure_bar is not None and pressure_bar >= 0:
         pv_value_mpa_m_s = (pressure_bar * 0.1) * v_surface_m_s
+    elif prev:
+        pv_value_mpa_m_s = prev.pv_value_mpa_m_s
 
     friction_power_watts: Optional[float] = None
-    if diameter_mm is not None and v_surface_m_s is not None and pressure_bar is not None and pressure_bar >= 0:
-        contact_width_mm = cross_section_d2 if cross_section_d2 and cross_section_d2 > 0 else 1.0
-        contact_area_m2 = math.pi * (diameter_mm / 1000.0) * (max(contact_width_mm, 0.1) / 1000.0)
-        normal_force_n = (pressure_bar * 1e5) * contact_area_m2
-        friction_power_watts = _FRICTION_COEFF_PTFE * normal_force_n * v_surface_m_s
+    if v_surface_m_s is not None and diameter_mm is not None:
+        # RWDR Expert: Friction power estimation (P_r)
+        # Standard RWDR approximation: Pr [W] ≈ 0.5 * d1 [mm] * vs [m/s]
+        friction_power_watts = 0.5 * diameter_mm * v_surface_m_s
+    elif prev:
+        friction_power_watts = prev.friction_power_watts
 
-    hrc_warning = bool(hrc_value is not None and hrc_value < _HRC_WARNING_MIN)
+    # HRC Warning: Standard limit OR RWDR expert high speed limit
+    hrc_warning = False
+    if hrc_value is not None:
+        if hrc_value < _HRC_WARNING_MIN:
+            hrc_warning = True
+        # RWDR expert: < 45 HRC at high speed
+        if v_surface_m_s is not None and v_surface_m_s > _RWDR_HIGH_SPEED_THRESHOLD and hrc_value < _RWDR_HRC_MIN_HIGH_SPEED:
+            hrc_warning = True
+    elif prev:
+        hrc_warning = prev.hrc_warning
+
+    # Speed validation: NBR limit
+    if v_surface_m_s is not None and v_surface_m_s > _RWDR_SPEED_LIMIT_NBR and "NBR" in material:
+        hrc_warning = True  # Use hrc_warning as specified for NBR speed warning
+
     runout_warning = bool(runout_mm is not None and runout_mm > _RUNOUT_WARNING_MAX_MM)
+    if runout_mm is None and prev:
+        runout_warning = prev.runout_warning
+
     pv_warning = bool(pv_value_mpa_m_s is not None and pv_value_mpa_m_s > _PV_WARNING_MAX)
+    if pv_value_mpa_m_s is None and prev:
+        pv_warning = prev.pv_warning
 
     lubrication_mode = str(payload.get("lubrication_mode") or payload.get("lubrication") or "").strip().lower()
     medium = str(payload.get("medium") or payload.get("medium_type") or "").strip()
@@ -164,6 +206,7 @@ def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
         (hrc_value is not None and hrc_value < _HRC_CRITICAL_MIN)
         or (runout_mm is not None and runout_mm > _RUNOUT_CRITICAL_MAX_MM)
         or (pv_value_mpa_m_s is not None and pv_value_mpa_m_s > _PV_CRITICAL_MAX)
+        or (v_surface_m_s is not None and v_surface_m_s > _RWDR_SPEED_LIMIT_MAX)
     )
     has_data = any(
         value is not None
@@ -183,14 +226,20 @@ def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def calc_extrusion(payload: Dict[str, Any]) -> Dict[str, Any]:
+def calc_extrusion(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None) -> Dict[str, Any]:
     pressure_bar = _first_float(payload, ("pressure_bar", "pressure_max_bar", "pressure", "p_max"))
     clearance_gap_mm = _first_float(payload, ("clearance_gap_mm", "clearance_gap", "gap_mm"))
+
+    if clearance_gap_mm is None and prev:
+        clearance_gap_mm = prev.clearance_gap_mm
 
     extrusion_risk = bool(
         (pressure_bar is not None and pressure_bar > 100.0 and clearance_gap_mm is not None and clearance_gap_mm > 0.1)
         or (pressure_bar is not None and pressure_bar > 250.0 and clearance_gap_mm is None)
     )
+    if pressure_bar is None and clearance_gap_mm is None and prev:
+        extrusion_risk = prev.extrusion_risk
+
     return {
         "clearance_gap_mm": clearance_gap_mm,
         "extrusion_risk": extrusion_risk,
@@ -199,7 +248,7 @@ def calc_extrusion(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def calc_geometry(payload: Dict[str, Any]) -> Dict[str, Any]:
+def calc_geometry(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None) -> Dict[str, Any]:
     cross_section_d2 = _first_float(payload, ("cross_section_d2", "d2", "seal_cross_section"))
     groove_depth = _first_float(payload, ("groove_depth", "groove_depth_mm"))
     groove_width = _first_float(payload, ("groove_width", "groove_width_mm"))
@@ -207,15 +256,12 @@ def calc_geometry(payload: Dict[str, Any]) -> Dict[str, Any]:
     seal_inner_d = _first_float(payload, ("seal_inner_d", "seal_inner_diameter", "seal_id"))
 
     compression_ratio_pct: Optional[float] = None
-    groove_fill_pct: Optional[float] = None
-    stretch_pct: Optional[float] = None
-    geometry_warning = False
-
     if cross_section_d2 is not None and groove_depth is not None and cross_section_d2 > 0:
         compression_ratio_pct = ((cross_section_d2 - groove_depth) / cross_section_d2) * 100.0
-        if compression_ratio_pct < 8.0 or compression_ratio_pct > 30.0:
-            geometry_warning = True
+    elif prev:
+        compression_ratio_pct = prev.compression_ratio_pct
 
+    groove_fill_pct: Optional[float] = None
     if (
         cross_section_d2 is not None
         and groove_depth is not None
@@ -227,13 +273,28 @@ def calc_geometry(payload: Dict[str, Any]) -> Dict[str, Any]:
         area_groove = groove_width * groove_depth
         if area_groove > 0:
             groove_fill_pct = (area_seal / area_groove) * 100.0
-            if groove_fill_pct > 85.0:
-                geometry_warning = True
+    elif prev:
+        groove_fill_pct = prev.groove_fill_pct
 
+    stretch_pct: Optional[float] = None
     if shaft_d1 is not None and seal_inner_d is not None and seal_inner_d > 0:
         stretch_pct = ((shaft_d1 - seal_inner_d) / seal_inner_d) * 100.0
-        if stretch_pct > 6.0:
-            geometry_warning = True
+    elif prev:
+        stretch_pct = prev.stretch_pct
+
+    geometry_warning = False
+    if compression_ratio_pct is not None and (compression_ratio_pct < 8.0 or compression_ratio_pct > 30.0):
+        geometry_warning = True
+    if groove_fill_pct is not None and groove_fill_pct > 85.0:
+        geometry_warning = True
+    if stretch_pct is not None and stretch_pct > 6.0:
+        geometry_warning = True
+    
+    if (
+        cross_section_d2 is None and groove_depth is None and groove_width is None
+        and shaft_d1 is None and seal_inner_d is None and prev
+    ):
+        geometry_warning = prev.geometry_warning
 
     has_data = any(
         value is not None
@@ -248,7 +309,7 @@ def calc_geometry(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def calc_thermal(payload: Dict[str, Any]) -> Dict[str, Any]:
+def calc_thermal(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None) -> Dict[str, Any]:
     temp_min_c = _first_float(payload, ("temp_min_c", "temperature_min_c", "temperature_min", "T_medium_min", "temp_min"))
     temp_max_c = _first_float(payload, ("temp_max_c", "temperature_max_c", "temperature_max", "T_medium_max", "temp_max"))
     diameter_mm = _get_diameter_mm(payload)
@@ -256,8 +317,13 @@ def calc_thermal(payload: Dict[str, Any]) -> Dict[str, Any]:
     thermal_expansion_mm: Optional[float] = None
     if diameter_mm is not None and temp_min_c is not None and temp_max_c is not None:
         thermal_expansion_mm = diameter_mm * _PTFE_ALPHA_PER_K * (temp_max_c - temp_min_c)
+    elif prev:
+        thermal_expansion_mm = prev.thermal_expansion_mm
 
     shrinkage_risk = bool(temp_min_c is not None and temp_min_c < -50.0)
+    if temp_min_c is None and prev:
+        shrinkage_risk = prev.shrinkage_risk
+
     has_data = any(value is not None for value in (temp_min_c, temp_max_c, thermal_expansion_mm))
     return {
         "thermal_expansion_mm": thermal_expansion_mm,
@@ -269,11 +335,12 @@ def calc_thermal(payload: Dict[str, Any]) -> Dict[str, Any]:
 def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Compute deterministic live-tile values and warnings across physics domains."""
     payload = _collect_parameter_payload(state)
+    prev = state.live_calc_tile
 
-    tribology = calc_tribology(payload)
-    extrusion = calc_extrusion(payload)
-    geometry = calc_geometry(payload)
-    thermal = calc_thermal(payload)
+    tribology = calc_tribology(payload, prev=prev)
+    extrusion = calc_extrusion(payload, prev=prev)
+    geometry = calc_geometry(payload, prev=prev)
+    thermal = calc_thermal(payload, prev=prev)
 
     risk_flags = bool(extrusion["extrusion_risk"] or geometry["geometry_warning"] or thermal["shrinkage_risk"])
     base_critical = bool(tribology["critical"])
@@ -313,6 +380,8 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
     calc_results = state.calc_results or CalcResults()
     calc_results.v_surface_m_s = tribology["v_surface_m_s"]
     calc_results.pv_value_mpa_m_s = tribology["pv_value_mpa_m_s"]
+    calc_results.friction_power_watts = tribology["friction_power_watts"]
+    calc_results.hrc_warning = tribology["hrc_warning"]
 
     tile = LiveCalcTile(
         v_surface_m_s=tribology["v_surface_m_s"],

@@ -156,6 +156,8 @@ class CalcResults(BaseModel):
     pressure_margin: Optional[float] = None
     v_surface_m_s: Optional[float] = None
     pv_value_mpa_m_s: Optional[float] = None
+    friction_power_watts: Optional[float] = None
+    hrc_warning: Optional[bool] = None
     notes: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
