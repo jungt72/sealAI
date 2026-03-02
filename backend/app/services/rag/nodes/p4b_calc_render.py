@@ -25,6 +25,7 @@ from app.services.rag.nodes.p4_live_calc import (
     calc_geometry,
     calc_thermal,
     _collect_parameter_payload,
+    _collect_captured_parameters,
 )
 
 logger = structlog.get_logger("rag.nodes.p4b_calc_render")
@@ -382,7 +383,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     tile.friction_power_watts = tribo.get("friction_power_watts")
     tile.hrc_warning = bool(tribo.get("hrc_warning"))
     tile.hrc_value = tribo.get("hrc_value")
-    tile.parameters = extracted_params
+    tile.parameters = _collect_captured_parameters(state)
     if tile.v_surface_m_s is not None:
         tile.status = "ok"
 
@@ -398,7 +399,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     return {
         "calculation_result": calculation_result,
         "calc_results": _calc_output_to_calc_results(calc_output, state),
-        "live_calc_tile": tile.model_dump(),
+        "live_calc_tile": tile,
         "is_critical_application": calc_output.is_critical_application,
         "phase": PHASE.CALCULATION,
         "last_node": "node_p4b_calc_render",

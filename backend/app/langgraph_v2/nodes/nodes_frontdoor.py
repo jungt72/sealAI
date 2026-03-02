@@ -475,6 +475,8 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
 
     extracted_patch = _extract_parameter_patch(structured)
     merged_provenance = state.parameter_provenance
+    merged_extracted_params = dict(state.extracted_params or {})
+    
     if extracted_patch:
         merged_params, merged_provenance = apply_parameter_patch_with_provenance(
             parameters.as_dict(),
@@ -483,6 +485,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             source="user",
         )
         parameters = TechnicalParameters.model_validate(merged_params)
+        merged_extracted_params.update(extracted_patch)
 
     flags = dict(state.flags or {})
     flags.update(
@@ -533,6 +536,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         "last_node": "frontdoor_discovery_node",
         "parameters": parameters,
         "parameter_provenance": merged_provenance,
+        "extracted_params": merged_extracted_params,
         "requires_rag": requires_rag,
         "need_sources": requires_rag,
         "flags": flags,

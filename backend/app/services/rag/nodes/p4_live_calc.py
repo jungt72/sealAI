@@ -460,10 +460,10 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
 
     return {
         "calc_results": calc_results,
-        "live_calc_tile": tile.model_dump(),
+        "live_calc_tile": tile,
         "phase": PHASE.CALCULATION,
         "last_node": "node_p4_live_calc",
     }
 
 
-__all__ = ["node_p4_live_calc", "calc_tribology", "calc_extrusion", "calc_geometry", "calc_thermal"]
+__all__ = ["node_p4_live_calc", "calc_tribology", "calc_extrusion", "calc_geometry", "calc_thermal", "_collect_captured_parameters"]
