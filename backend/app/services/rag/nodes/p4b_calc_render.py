@@ -19,6 +19,13 @@ from app.langgraph_v2.state import CalcResults, SealAIState
 from app.langgraph_v2.utils.jinja import render_template
 from app.mcp.calc_engine import mcp_calc_gasket
 from app.mcp.calc_schemas import CalcInput, CalcOutput
+from app.services.rag.nodes.p4_live_calc import (
+    calc_tribology,
+    calc_extrusion,
+    calc_geometry,
+    calc_thermal,
+    _collect_parameter_payload,
+)
 
 logger = structlog.get_logger("rag.nodes.p4b_calc_render")
 
@@ -124,17 +131,52 @@ def _build_template_context(
         ctx["bolt_size"] = calc_input.bolt_size or "nicht angegeben"
         ctx["cyclic_load"] = calc_input.cyclic_load
 
+    # --- Physics (RWDR Expert / Sprint 8) ---
+    tile = state.live_calc_tile
+    # If tile is empty (first turn of fast path), compute deterministic physics once for rendering
+    if not tile or tile.status == "insufficient_data":
+        payload = _collect_parameter_payload(state)
+        tribo = calc_tribology(payload, prev=tile)
+        ctx["v_surface_m_s"] = tribo.get("v_surface_m_s")
+        ctx["pv_value_mpa_m_s"] = tribo.get("pv_value_mpa_m_s")
+        ctx["friction_power_watts"] = tribo.get("friction_power_watts")
+        ctx["hrc_warning"] = tribo.get("hrc_warning")
+        ctx["hrc_value"] = tribo.get("hrc_value")
+        # Ensure RWDR-specific notes (M6 limits) are added to the list of notes for rendering
+        if tribo.get("notes"):
+             ctx["notes"] = list(ctx.get("notes") or []) + list(tribo["notes"])
+    elif tile.status != "insufficient_data":
+        ctx["v_surface_m_s"] = tile.v_surface_m_s
+        ctx["pv_value_mpa_m_s"] = tile.pv_value_mpa_m_s
+        ctx["friction_power_watts"] = tile.friction_power_watts
+        ctx["hrc_warning"] = tile.hrc_warning
+        ctx["hrc_value"] = tile.hrc_value
+        if tile.parameters:
+            ctx.update(tile.parameters)
+
     return ctx
 
 
-def _calc_output_to_calc_results(calc_output: CalcOutput) -> CalcResults:
+def _calc_output_to_calc_results(calc_output: CalcOutput, state: Optional[SealAIState] = None) -> CalcResults:
     """Map CalcOutput to the existing CalcResults model for final-answer compatibility."""
-    return CalcResults(
+    res = CalcResults(
         safety_factor=calc_output.safety_factor,
         temperature_margin=calc_output.temperature_margin_c,
         pressure_margin=calc_output.pressure_margin_bar,
         notes=list(calc_output.notes) + list(calc_output.warnings),
     )
+    # Enrich with physics if available in state
+    if state and state.live_calc_tile:
+        tile = state.live_calc_tile
+        if tile.v_surface_m_s is not None:
+            res.v_surface_m_s = tile.v_surface_m_s
+        if tile.pv_value_mpa_m_s is not None:
+            res.pv_value_mpa_m_s = tile.pv_value_mpa_m_s
+        if tile.friction_power_watts is not None:
+            res.friction_power_watts = tile.friction_power_watts
+        if tile.hrc_warning:
+            res.hrc_warning = True
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +289,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
             "last_node": "node_p4b_calc_render",
             "error": f"P4b: Jinja2 template error: {exc}",
             "is_critical_application": calc_output.is_critical_application,
-            "calc_results": _calc_output_to_calc_results(calc_output),
+            "calc_results": _calc_output_to_calc_results(calc_output, state),
         }
     except FileNotFoundError:
         logger.error(
@@ -260,7 +302,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
             "last_node": "node_p4b_calc_render",
             "error": f"P4b: template '{_TEMPLATE_NAME}' not found",
             "is_critical_application": calc_output.is_critical_application,
-            "calc_results": _calc_output_to_calc_results(calc_output),
+            "calc_results": _calc_output_to_calc_results(calc_output, state),
         }
 
     # --- Build result ---
@@ -278,7 +320,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
 
     return {
         "calculation_result": calculation_result,
-        "calc_results": _calc_output_to_calc_results(calc_output),
+        "calc_results": _calc_output_to_calc_results(calc_output, state),
         "is_critical_application": calc_output.is_critical_application,
         "phase": PHASE.CALCULATION,
         "last_node": "node_p4b_calc_render",
@@ -286,6 +328,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         "final_answer": rendered_report,
         "messages": [AIMessage(content=rendered_report)],
     }
+
 
 
 __all__ = ["node_p4b_calc_render"]

@@ -85,6 +85,15 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
                 setCurrentAiText(prev => prev + payload.text);
                 break;
               case 'token':
+                if (payload.working_profile) {
+                  setWorkingProfile(payload.working_profile);
+                }
+                if (payload.calc_results) {
+                  setCalcResults(payload.calc_results);
+                }
+                if (payload.live_calc_tile) {
+                  setLiveCalcTile(payload.live_calc_tile);
+                }
                 setCurrentAiText(prev => {
                   if (prev.endsWith(payload.text)) return prev;
                   if (payload.text.startsWith(prev)) return payload.text;
@@ -99,7 +108,9 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
                 }
                 break;
               case 'profile_update':
-                setWorkingProfile(payload.working_profile);
+                if (payload.working_profile) {
+                  setWorkingProfile(payload.working_profile);
+                }
                 break;
               case 'state_update':
                 const wp = payload.data?.working_profile || payload.working_profile;

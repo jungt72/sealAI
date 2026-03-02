@@ -131,6 +131,17 @@ def route_after_frontdoor_node(state: SealAIState) -> Command:
     if category == "ENGINEERING_CALCULATION":
         logger.info("route_after_frontdoor.design_pipeline_priority", category=category, goal=intent.goal)
         flags["use_reasoning_core_r3"] = True
+        
+        # RWDR Fast Path: if shaft diameter (d1) and speed (n) are present, shortcut to calc
+        params = state.parameters
+        d1 = params.shaft_diameter or params.get("d1") or params.get("shaft_d1_mm")
+        n = params.speed_rpm or params.get("n") or params.get("rpm")
+        
+        if d1 is not None and n is not None:
+            logger.info("route_after_frontdoor.rwdr_fast_path_triggered", d1=d1, n=n)
+            flags["force_instant_calc"] = True
+            return Command(update={"flags": flags}, goto="node_p4b_calc_render")
+
         return Command(update={"flags": flags}, goto="node_p1_context")
 
     # 4) Deterministic KB fast path
