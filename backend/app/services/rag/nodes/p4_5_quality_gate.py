@@ -701,7 +701,12 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
 
     # If no calculation result, skip quality gate (P4b was skipped)
     # UNLESS we have physics data (v_surface_m_s) in live_calc_tile (Fast-Path)
-    has_physics = bool(state.live_calc_tile and state.live_calc_tile.v_surface_m_s is not None)
+    # Synchronized check (Sprint 8): calc_results or non-empty tile count as physics
+    has_physics = bool(
+        (state.live_calc_tile and state.live_calc_tile.v_surface_m_s is not None)
+        or state.calc_results
+        or (state.live_calc_tile and state.live_calc_tile.status != "insufficient_data")
+    )
     if not calc_result and not has_physics:
         logger.info(
             "p4_5_qgate_skip",

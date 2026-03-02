@@ -187,29 +187,47 @@ def _calc_output_to_calc_results(calc_output: CalcOutput, state: Optional[SealAI
 def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """P4b Calc + Render — call MCP calc engine and render Jinja2 report.
 
-    Skips if extracted_params is empty (P4a determined calculation is not possible),
-    UNLESS we are in Fast-Path (physics data available).
+    Radical Fix (Sprint 8): Never skips if physics or technical data is available.
     """
+    # 1. FORCE physics calculation at the very beginning (M6/Sprint 8 requirement)
+    payload = _collect_parameter_payload(state)
+    tile = state.live_calc_tile
+    
+    # Check for technical parameters (mm, rpm)
+    has_tech_params = bool(
+        payload.get("rpm") or payload.get("n") or payload.get("n_max") or
+        payload.get("d1") or payload.get("diameter") or payload.get("shaft_diameter")
+    )
+    
+    # Compute tribology if v_surface is missing
+    if not tile or tile.v_surface_m_s is None:
+        tribo = calc_tribology(payload, prev=tile)
+        v_surface = tribo.get("v_surface_m_s")
+    else:
+        v_surface = tile.v_surface_m_s
+
+    # 2. Determine if we have enough to proceed (Fast-Path or Gasket-Calc)
     extracted_params = _merge_required_calc_fields(state, state.extracted_params or {})
+    
+    is_fast_path = bool(
+        v_surface is not None 
+        or state.calc_results 
+        or (tile and tile.status != "insufficient_data")
+    )
 
     logger.info(
         "p4b_calc_render_start",
         has_params=bool(extracted_params),
-        param_keys=sorted(extracted_params.keys()) if extracted_params else [],
+        is_fast_path=is_fast_path,
+        has_tech_params=has_tech_params,
         run_id=state.run_id,
-        thread_id=state.thread_id,
     )
 
-    # Fast-Path check: do we already have physics or calc results?
-    tile = state.live_calc_tile
-    is_fast_path = bool(
-        (tile and tile.v_surface_m_s is not None) or state.calc_results
-    )
-
-    if not extracted_params and not is_fast_path:
+    # Only skip if we have ABSOLUTELY NO parameters AND NO physics AND NO technical data
+    if not extracted_params and not is_fast_path and not has_tech_params:
         logger.info(
             "p4b_calc_render_skip",
-            reason="empty_extracted_params_no_fast_path",
+            reason="no_data_at_all",
             run_id=state.run_id,
         )
         return {
@@ -226,8 +244,8 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     calc_input: CalcInput | None = None
     calc_output: CalcOutput | None = None
 
-    if not has_required_inputs and is_fast_path:
-        # Partial extraction in Fast-Path: create dummy objects for Jinja2 compatibility
+    # If we have physics/tech but missing Gasket inputs -> Force Fast-Path Rendering
+    if (is_fast_path or has_tech_params) and not has_required_inputs:
         calc_input = CalcInput(
             pressure_max_bar=extracted_params.get("pressure_max_bar") or 0.0,
             temperature_max_c=extracted_params.get("temperature_max_c") or 0.0,
@@ -244,48 +262,63 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
             notes=["RWDR Fast-Path: Anzeige von physikalischen Kennwerten ohne Gasket-Berechnung."],
         )
     else:
-        if _intent_allows_calc_bypass(state) and not has_required_inputs:
-            logger.info(
-                "p4b_calc_render_skip",
-                reason="non_calculation_intent_missing_required_fields",
-                run_id=state.run_id,
-            )
-            return {
-                "phase": PHASE.CALCULATION,
-                "last_node": "node_p4b_calc_render",
-            }
-
+        # Normal calculation path
         try:
             calc_input = CalcInput.model_validate(extracted_params)
         except ValidationError as exc:
-            logger.warning(
-                "p4b_calc_input_invalid",
-                error=str(exc),
-                run_id=state.run_id,
-            )
-            return {
-                "phase": PHASE.CALCULATION,
-                "last_node": "node_p4b_calc_render",
-                "error": f"P4b: invalid calc input: {exc}",
-            }
-
-        # --- Call MCP calc engine with retry ---
-        last_error: str | None = None
-
-        for attempt in range(1, _MAX_RETRIES + 1):
-            try:
-                calc_output = mcp_calc_gasket(calc_input)
-                break
-            except Exception as exc:
-                last_error = f"MCP calc attempt {attempt}/{_MAX_RETRIES} failed: {exc}"
-                logger.warning(
-                    "p4b_calc_retry",
-                    attempt=attempt,
-                    error=str(exc),
-                    run_id=state.run_id,
+            # If we have tech params, don't fail, fallback to fast-path instead of error return
+            if is_fast_path or has_tech_params:
+                calc_input = CalcInput(
+                    pressure_max_bar=extracted_params.get("pressure_max_bar") or 0.0,
+                    temperature_max_c=extracted_params.get("temperature_max_c") or 0.0,
+                    medium=extracted_params.get("medium"),
                 )
-                if attempt < _MAX_RETRIES:
-                    time.sleep(_RETRY_BACKOFF_S * attempt)
+                calc_output = CalcOutput(
+                    gasket_inner_d_mm=0.0,
+                    gasket_outer_d_mm=0.0,
+                    required_gasket_stress_mpa=0.0,
+                    safety_factor=0.0,
+                    temperature_margin_c=0.0,
+                    pressure_margin_bar=0.0,
+                    is_critical_application=False,
+                    notes=[f"Eingabewarnung: {exc}. Anzeige von Basis-Kennwerten."],
+                )
+            else:
+                logger.warning("p4b_calc_input_invalid", error=str(exc))
+                return {
+                    "phase": PHASE.CALCULATION,
+                    "last_node": "node_p4b_calc_render",
+                    "error": f"P4b: invalid calc input: {exc}",
+                }
+
+        if calc_output is None:
+            # --- Call MCP calc engine with retry ---
+            last_error: str | None = None
+            for attempt in range(1, _MAX_RETRIES + 1):
+                try:
+                    calc_output = mcp_calc_gasket(calc_input)
+                    break
+                except Exception as exc:
+                    last_error = str(exc)
+                    if attempt < _MAX_RETRIES:
+                        time.sleep(_RETRY_BACKOFF_S * attempt)
+            
+            if calc_output is None:
+                # If MCP fails but we have physics, still proceed with partial data
+                if is_fast_path or has_tech_params:
+                     calc_output = CalcOutput(
+                        gasket_inner_d_mm=0.0, gasket_outer_d_mm=0.0,
+                        required_gasket_stress_mpa=0.0, safety_factor=0.0,
+                        temperature_margin_c=0.0, pressure_margin_bar=0.0,
+                        is_critical_application=False,
+                        notes=[f"Berechnungsfehler: {last_error}. Zeige physikalische Kennwerte."],
+                    )
+                else:
+                    return {
+                        "phase": PHASE.CALCULATION,
+                        "last_node": "node_p4b_calc_render",
+                        "error": f"P4b: MCP failed: {last_error}",
+                    }
 
     if calc_output is None:
         logger.error(
