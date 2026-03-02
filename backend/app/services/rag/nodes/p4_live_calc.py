@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, Literal, Optional
 import structlog
 
 from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import LiveCalcTile, SealAIState
+from app.langgraph_v2.state import CalcResults, LiveCalcTile, SealAIState
 
 logger = structlog.get_logger("rag.nodes.p4_live_calc")
 
@@ -310,6 +310,10 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
 
     captured_parameters = _collect_captured_parameters(state)
 
+    calc_results = state.calc_results or CalcResults()
+    calc_results.v_surface_m_s = tribology["v_surface_m_s"]
+    calc_results.pv_value_mpa_m_s = tribology["pv_value_mpa_m_s"]
+
     tile = LiveCalcTile(
         v_surface_m_s=tribology["v_surface_m_s"],
         pv_value_mpa_m_s=tribology["pv_value_mpa_m_s"],
@@ -350,7 +354,7 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
     )
 
     return {
-        "calc_results": state.calc_results,
+        "calc_results": calc_results,
         "live_calc_tile": tile.model_dump(),
         "phase": PHASE.CALCULATION,
         "last_node": "node_p4_live_calc",

@@ -8,6 +8,9 @@ export interface WorkingProfile {
   candidate_materials: string[];
   active_hypothesis?: string;
   knowledge_coverage: 'FULL' | 'PARTIAL' | 'LIMITED' | 'UNKNOWN';
+  shaft_diameter?: number;
+  speed_rpm?: number;
+  housing_bore?: number;
   [key: string]: any;
 }
 

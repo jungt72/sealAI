@@ -393,6 +393,12 @@ def _extract_parameter_patch(structured: FrontdoorRouteAxesOutput) -> Dict[str, 
         patch["temperature_C"] = float(extracted.temperature_c)
     if extracted.medium:
         patch["medium"] = extracted.medium.strip()
+    if extracted.shaft_diameter is not None:
+        patch["shaft_diameter"] = float(extracted.shaft_diameter)
+    if extracted.speed_rpm is not None:
+        patch["speed_rpm"] = float(extracted.speed_rpm)
+    if extracted.housing_bore is not None:
+        patch["housing_bore"] = float(extracted.housing_bore)
     return patch
 
 

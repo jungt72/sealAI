@@ -69,6 +69,9 @@ class SealAIExtractedParameters(BaseModel):
     medium: Optional[str] = None
     quantity: Optional[int] = None
     sku: Optional[str] = None
+    shaft_diameter: Optional[float] = None
+    speed_rpm: Optional[float] = None
+    housing_bore: Optional[float] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -151,6 +154,8 @@ class CalcResults(BaseModel):
     safety_factor: Optional[float] = None
     temperature_margin: Optional[float] = None
     pressure_margin: Optional[float] = None
+    v_surface_m_s: Optional[float] = None
+    pv_value_mpa_m_s: Optional[float] = None
     notes: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -275,6 +280,7 @@ class TechnicalParameters(BaseModel):
     temperature_min: Optional[float] = None
     shaft_diameter: Optional[float] = None
     housing_diameter: Optional[float] = None
+    housing_bore: Optional[float] = None
     speed_rpm: Optional[float] = None
     piston_diameter: Optional[float] = None
     bore_diameter: Optional[float] = None
