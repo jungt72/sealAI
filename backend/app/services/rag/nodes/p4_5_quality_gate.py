@@ -630,12 +630,14 @@ def _check_physics_plausibility(state: SealAIState) -> List[str]:
 def run_quality_gate(
     calc_result: Dict[str, Any],
     profile: Dict[str, Any],
+    force_instant_calc: bool = False,
 ) -> QGateResult:
     """Execute all 8 quality gate checks and return aggregate result.
 
     Args:
         calc_result: CalcOutput dict from P4b (calculation_result).
         profile: WorkingProfile dict (or extracted_params).
+        force_instant_calc: If True (Fast-Path), bypass blockers for missing P1.
 
     Returns:
         QGateResult with all checks, blocker status, and critique_log.
@@ -655,15 +657,41 @@ def run_quality_gate(
     warnings = [c for c in checks if c.severity == "WARNING" and not c.passed]
     flags = [c for c in checks if c.severity == "FLAG" and not c.passed]
 
+    # Fast-Path Bypass (Sprint 8): Blockers are downgraded to warnings or ignored
+    has_blockers = bool(blockers)
+    if force_instant_calc:
+        logger.info("p4_5_qgate.fast_path_bypass", original_blocker_count=len(blockers))
+        has_blockers = False
+        # Move original blockers to warnings so they still appear in logs/UI but don't stop the graph
+        for b in blockers:
+            if b not in warnings:
+                warnings.append(b)
+
+    # Inject hrc_warning from calc_result if present
+    if calc_result.get("hrc_warning"):
+        hrc_val = calc_result.get("hrc_value", "N/A")
+        warnings.append(QGateCheck(
+            check_id="hrc_warning",
+            name="Wellenhärte",
+            severity="WARNING",
+            passed=False,
+            message=f"WARNUNG: Wellenhärte unter Limit! (Ist: {hrc_val} HRC)",
+            details={"hrc_value": hrc_val}
+        ))
+
     critique_log: List[str] = []
     for c in checks:
         if not c.passed:
             critique_log.append(f"[{c.severity}] {c.name}: {c.message}")
 
+    # Add hrc_warning to critique log if it was added to warnings but not in checks
+    if any(w.check_id == "hrc_warning" for w in warnings):
+        critique_log.append(f"[WARNING] Wellenhärte: WARNUNG: Wellenhärte unter Limit!")
+
     return QGateResult(
         checks=checks,
-        has_blockers=bool(blockers),
-        blocker_count=len(blockers),
+        has_blockers=has_blockers,
+        blocker_count=len(blockers) if not force_instant_calc else 0,
         warning_count=len(warnings),
         flag_count=len(flags),
         critique_log=critique_log,
@@ -684,6 +712,11 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     calc_result = state.calculation_result or {}
     wp = state.working_profile
     profile = wp.model_dump() if wp is not None else {}
+    
+    # Fast-Path Flag detection
+    is_fast_path = False
+    if state.flags and state.flags.get("force_instant_calc"):
+        is_fast_path = True
 
     # Merge extracted_params as fallback for profile fields
     extracted = state.extracted_params or {}
@@ -695,6 +728,7 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         "p4_5_qgate_start",
         has_calc_result=bool(calc_result),
         has_profile=bool(profile),
+        is_fast_path=is_fast_path,
         run_id=state.run_id,
         thread_id=state.thread_id,
     )
@@ -720,7 +754,7 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
             "qgate_has_blockers": False,
         }
 
-    result = run_quality_gate(calc_result, profile)
+    result = run_quality_gate(calc_result, profile, force_instant_calc=is_fast_path)
     extra_findings: List[str] = []
     extra_findings.extend(_check_unit_consistency(state))
     extra_findings.extend(_check_physics_plausibility(state))
@@ -729,8 +763,12 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         result.warning_count += sum(1 for msg in extra_findings if msg.startswith("WARNING:"))
         extra_criticals = sum(1 for msg in extra_findings if msg.startswith("CRITICAL:"))
         if extra_criticals:
-            result.blocker_count += extra_criticals
-            result.has_blockers = True
+            if not is_fast_path:
+                result.blocker_count += extra_criticals
+                result.has_blockers = True
+            else:
+                # Downgrade extra criticals to warnings in Fast-Path
+                result.warning_count += extra_criticals
 
     # Prometheus metrics — never raises, must not degrade reliability
     try:

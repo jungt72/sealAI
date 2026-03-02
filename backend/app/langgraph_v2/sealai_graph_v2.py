@@ -847,6 +847,9 @@ def _reducer_router(state: SealAIState) -> str:
 
 
 def _qgate_router(state: SealAIState) -> str:
+    # Fast-Path Bypass (Sprint 8): Route directly to finalization if forced
+    if state.flags and state.flags.get("force_instant_calc"):
+        return "fast_path"
     if bool(getattr(state, "qgate_has_blockers", False)):
         return "has_blockers"
     return "no_blockers"
@@ -1175,6 +1178,7 @@ def create_sealai_graph_v2(
         {
             "no_blockers": "p4_6_number_verification",
             "has_blockers": CONVERSATIONAL_RAG_NODE_KEY,
+            "fast_path": "final_answer_node",
         },
     )
     builder.add_conditional_edges(
