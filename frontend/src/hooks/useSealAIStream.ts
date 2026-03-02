@@ -79,6 +79,12 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
               case 'profile_update':
                 setWorkingProfile(payload.working_profile);
                 break;
+              case 'state_update':
+                const wp = payload.data?.working_profile || payload.working_profile;
+                if (wp) {
+                  setWorkingProfile(wp);
+                }
+                break;
               case 'safety_alert':
                 setSafetyAlerts(prev => [...prev, ...payload.blockers]);
                 break;

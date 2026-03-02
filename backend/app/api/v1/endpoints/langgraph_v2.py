@@ -55,14 +55,10 @@ WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") =
 DEFAULT_GRAPH_RECURSION_LIMIT = 25
 CONVERSATIONAL_STREAM_NODES = frozenset(
     {
-        "response_node",
         "smalltalk_node",
-        "out_of_scope_node",
+        "response_node",
         "conversational_rag_node",
-        "troubleshooting_wizard_node",
-        "final_answer_node",
         "contract_first_output_node",
-        "node_draft_answer",
     }
 )
 _STREAM_NODE_BLOCKLIST = frozenset()
@@ -71,8 +67,6 @@ SPEAKING_NODES = {
     "response_node",
     "conversational_rag_node",
     "contract_first_output_node",
-    "final_answer_node",
-    "node_draft_answer",
 }
 
 
@@ -496,6 +490,7 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "coverage_gaps": values.get("coverage_gaps"),
         "missing_params": values.get("missing_params"),
         "parameters": parameters if isinstance(parameters, dict) else {},
+        "working_profile": values.get("working_profile"),
         "delta": {"parameters": parameters if isinstance(parameters, dict) else {}},
         "pending_action": values.get("pending_action"),
         "confirm_checkpoint_id": values.get("confirm_checkpoint_id"),
@@ -525,6 +520,7 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "coverage_gaps": data.get("coverage_gaps"),
         "missing_params": data.get("missing_params"),
         "parameters": data.get("parameters"),
+        "working_profile": data.get("working_profile"),
         "delta": data.get("delta"),
         "pending_action": data.get("pending_action"),
         "confirm_checkpoint_id": data.get("confirm_checkpoint_id"),

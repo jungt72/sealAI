@@ -20,6 +20,7 @@ export default function ChatInterface() {
     const [authError, setAuthError] = useState<string | null>(null);
     const [liveCalcTile, setLiveCalcTile] = useState<LiveCalcTileData | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [showTile, setShowTile] = useState(false);
     const [rfqReady, setRfqReady] = useState(false);
     const [rfqPdfBase64, setRfqPdfBase64] = useState<string | null>(null);
     const [rfqHtmlReport, setRfqHtmlReport] = useState<string | null>(null);
@@ -43,16 +44,18 @@ export default function ChatInterface() {
     } = useSealAIStream(streamApiEndpoint, accessToken);
 
     useEffect(() => {
-        if (workingProfile) {
+        if (workingProfile || workingProfile?.medium || workingProfile?.pressure_max_bar) {
+            console.log("DEBUG WP:", workingProfile);
             const { temp_range, candidate_materials, ...rest } = workingProfile;
             setLiveCalcTile({
                 status: workingProfile.knowledge_coverage === 'FULL' ? 'ok' : 'warning',
                 parameters: {
                     ...rest,
                     temperature_max_c: temp_range?.[1],
-                    pressure_max_bar: workingProfile.pressure_bar
+                    pressure_max_bar: workingProfile.pressure_max_bar || workingProfile.pressure_bar
                 }
             });
+            setShowTile(true);
         }
     }, [workingProfile]);
 
@@ -71,7 +74,7 @@ export default function ChatInterface() {
     }
 
     const hasTileData = Boolean(liveCalcTile && liveCalcTile.status !== "insufficient_data");
-    const showTile = hasTileData && isSidebarOpen;
+    const isSidebarVisible = (showTile || hasTileData) && isSidebarOpen;
     const shouldShowStreamingBubble = !suppressCurrentAiText && (isThinking || Boolean(currentAiText));
     const isZeroState = displayedMessages.length === 0 && !shouldShowStreamingBubble;
 
@@ -103,6 +106,7 @@ export default function ChatInterface() {
         setSuppressCurrentAiText(true);
         setAuthError(null);
         setLiveCalcTile(null);
+        setShowTile(false);
         setIsSidebarOpen(true);
         assistantMessageRefs.current = {};
         setRfqReady(false);
@@ -158,9 +162,9 @@ export default function ChatInterface() {
 
     return (
         <div className="h-full w-full overflow-hidden bg-[#f3f8ff]">
-            <div className={`relative mx-auto grid h-full w-full max-w-[1700px] gap-4 p-4 ${showTile ? "grid-cols-1 xl:grid-cols-3" : "grid-cols-1"}`}>
+            <div className={`relative mx-auto grid h-full w-full max-w-[1700px] gap-4 p-4 ${isSidebarVisible ? "grid-cols-1 xl:grid-cols-3" : "grid-cols-1"}`}>
                 
-                <div className={`relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all duration-300 ${showTile ? "xl:col-span-2" : "xl:col-span-3"} ${isZeroState ? "items-center justify-center" : ""}`}>
+                <div className={`relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all duration-300 ${isSidebarVisible ? "xl:col-span-2" : "xl:col-span-3"} ${isZeroState ? "items-center justify-center" : ""}`}>
 
                     {!isZeroState && (
                         <div className="absolute top-6 right-6 z-[70] flex items-center gap-2">
@@ -280,7 +284,7 @@ export default function ChatInterface() {
                 </div>
 
                 <AnimatePresence>
-                    {showTile && (
+                    {isSidebarVisible && (
                         <motion.div
                             key="live-calc-tile"
                             initial={{ opacity: 0, x: 28 }}
