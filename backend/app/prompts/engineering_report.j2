@@ -12,9 +12,9 @@ Betriebsparameter:
 {% if cyclic_load %}- Zyklische Belastung: Ja{% endif %}
 
 Dichtungsgeometrie:
-- Wellen-Ø / Innendurchmesser: {{ shaft_diameter or d1 or gasket_inner_d_mm }} mm
+- Wellen-Ø / Innendurchmesser: {{ shaft_diameter | default(d1 | default(gasket_inner_d_mm | default('nicht angegeben'))) }} mm
 - Außendurchmesser: {{ gasket_outer_d_mm }} mm
-- Drehzahl: {{ speed_rpm or rpm or n or n_max or 'nicht angegeben' }} U/min
+- Drehzahl: {{ speed_rpm | default(rpm | default(n | default(n_max | default('nicht angegeben')))) }} U/min
 {% if bolt_circle_d_mm %}- Lochkreisdurchmesser: {{ bolt_circle_d_mm }} mm{% endif %}
 
 Verschraubung:
