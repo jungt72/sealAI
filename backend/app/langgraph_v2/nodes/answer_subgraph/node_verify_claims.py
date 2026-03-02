@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Set
 
 import structlog
 
+from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, VerificationReport
 from app.mcp.calculations.chemical_resistance import lookup as _chem_lookup
 from app.mcp.calculations.material_limits import check as _limits_check
@@ -271,7 +272,7 @@ def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
     return spans
 
 
-def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Validate drafted answer content against the answer contract.
 
     The check sequence is intentionally strict:

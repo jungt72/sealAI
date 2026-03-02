@@ -7,7 +7,8 @@ from typing import Any, Dict, List
 import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState
+from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
+from app.langgraph_v2.state.sealai_state import AnswerContract
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.draft_answer")
 _DRAFT_LLM: Any | None = None
@@ -169,7 +170,13 @@ def _get_draft_llm() -> Any:
     return _DRAFT_LLM
 
 
-async def node_draft_answer(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+async def node_draft_answer(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    # STEP 3: Debugging Logging
+    if not getattr(state, "live_calc_tile", None):
+        logger.warning("DRAFT_ANSWER_BLIND_SPOT: live_calc_tile is missing in subgraph state!")
+    if not getattr(state, "working_profile", None):
+        logger.warning("DRAFT_ANSWER_BLIND_SPOT: working_profile is missing in subgraph state!")
+
     contract = state.answer_contract
     if contract is None:
         logger.error("draft_answer.missing_contract")
@@ -208,6 +215,8 @@ async def node_draft_answer(state: SealAIState, *_args: Any, **_kwargs: Any) -> 
 
     fact_sheet_text = _render_fact_sheet(contract)
     config = _extract_langgraph_config(_args, _kwargs)
+
+    # Base System Prompt
     system_prompt = (
         "Du bist SealAI, ein hilfreicher technischer Sidekick fuer Dichtungstechnik. "
         "Antworte kurz, klar und natuerlich auf Deutsch. "
@@ -220,15 +229,17 @@ async def node_draft_answer(state: SealAIState, *_args: Any, **_kwargs: Any) -> 
         "dass du dazu gerade keine Daten hast, und frage nach konkreten Parametern "
         "(Temperatur, Druck, Medium)."
     )
+
+    # DOMINANT INJECTION of Deterministic Constraints
+    constraints = _build_deterministic_constraints(state)
+    if constraints:
+        system_prompt = f"{constraints}\n\n{system_prompt}"
+        logger.info("draft_answer.deterministic_constraints_injected", constraints_len=len(constraints))
+
     if _should_use_detached_knowledge_instruction(state):
-        constraints = _build_deterministic_constraints(state)
         system_prompt += (
-            f"\n\n{constraints}\n\n"
-            "The user is asking a general knowledge or material research question. "
+            "\n\nThe user is asking a general knowledge or material research question. "
             "Provide a comprehensive, general overview based ONLY on the provided RAG context. "
-            "Be aware of the DETERMINISTIC SYSTEM STATE provided above. "
-            "If the system state contains a 'chem_warning' or critical PV values, you MUST prioritize this warning "
-            "over any general material suitability found in RAG documents. "
             "Treat this as an encyclopedia entry but with active safety monitoring based on the calculation state."
         )
 

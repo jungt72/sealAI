@@ -26,6 +26,7 @@ from app.langgraph_v2.nodes.answer_subgraph.node_finalize import node_finalize
 from app.langgraph_v2.nodes.answer_subgraph.node_prepare_contract import node_prepare_contract
 from app.langgraph_v2.nodes.answer_subgraph.node_targeted_patch import node_targeted_patch
 from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import node_verify_claims
+from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import SealAIState, VerificationReport
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.builder")
@@ -50,7 +51,7 @@ def _extract_langgraph_config(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> 
     return None
 
 
-def _verification_router(state: SealAIState) -> str:
+def _verification_router(state: AnswerSubgraphState) -> str:
     """Route verify results to finalize, deterministic patch loop, or abort.
 
     Args:
@@ -72,7 +73,7 @@ def _verification_router(state: SealAIState) -> str:
     return "abort"
 
 
-def _safe_fallback_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+def _safe_fallback_node(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Generate a safe terminal answer when verification cannot recover.
 
     Args:
@@ -140,7 +141,7 @@ def build_answer_subgraph() -> CompiledStateGraph:
     if _ANSWER_SUBGRAPH_CACHE is not None:
         return _ANSWER_SUBGRAPH_CACHE
 
-    builder = StateGraph(SealAIState)
+    builder = StateGraph(AnswerSubgraphState)
     builder.add_node("node_prepare_contract", node_prepare_contract)
     builder.add_node("node_draft_answer", node_draft_answer)
     builder.add_node("node_verify_claims", node_verify_claims)
@@ -236,7 +237,14 @@ def answer_subgraph_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     before = _as_state(state)
     subgraph = build_answer_subgraph()
     config = _extract_langgraph_config(_args, _kwargs)
-    result = subgraph.invoke(before, config=config)
+    
+    # Force explicit field mapping to ensure isolation doesn't drop critical state
+    subgraph_input = before.model_dump(exclude_none=False)
+    # Ensure live_calc_tile and working_profile are correctly present
+    subgraph_input["live_calc_tile"] = before.live_calc_tile
+    subgraph_input["working_profile"] = before.working_profile
+    
+    result = subgraph.invoke(subgraph_input, config=config)
     after = _as_state(result)
     patch = _extract_patch(before, after)
     patch.setdefault("last_node", "answer_subgraph_node")
@@ -258,7 +266,14 @@ async def answer_subgraph_node_async(state: SealAIState, *_args: Any, **_kwargs:
     before = _as_state(state)
     subgraph = build_answer_subgraph()
     config = _extract_langgraph_config(_args, _kwargs)
-    result = await subgraph.ainvoke(before, config=config)
+    
+    # Force explicit field mapping to ensure isolation doesn't drop critical state
+    subgraph_input = before.model_dump(exclude_none=False)
+    # Ensure live_calc_tile and working_profile are correctly present
+    subgraph_input["live_calc_tile"] = before.live_calc_tile
+    subgraph_input["working_profile"] = before.working_profile
+    
+    result = await subgraph.ainvoke(subgraph_input, config=config)
     after = _as_state(result)
     patch = _extract_patch(before, after)
     patch.setdefault("last_node", "answer_subgraph_node")

@@ -5,12 +5,13 @@ from typing import Any, Dict
 
 import structlog
 
+from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import SealAIState
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.targeted_patch")
 
 
-def node_targeted_patch(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+def node_targeted_patch(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     report = state.verification_report
     draft_text = str(state.draft_text or "")
 

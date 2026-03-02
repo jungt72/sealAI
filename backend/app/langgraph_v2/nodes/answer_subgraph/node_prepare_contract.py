@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Set, Tuple
 
 import structlog
 
+from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, WorkingMemory
 from app.langgraph_v2.utils.context_manager import build_final_context, dedupe_retrieval_chunks
 
@@ -575,7 +576,7 @@ def _build_resolved_parameters(state: SealAIState) -> Dict[str, Any]:
     return resolved
 
 
-def node_prepare_contract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Create an ``AnswerContract`` from state for contract-first answering.
 
     Transformation pipeline:

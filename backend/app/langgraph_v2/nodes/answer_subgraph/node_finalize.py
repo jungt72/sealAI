@@ -14,6 +14,7 @@ from typing import Any, Dict, Set, Tuple
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage
 
+from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import SealAIState
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.finalize")
@@ -243,7 +244,7 @@ def _should_bypass_no_new_numbers_guard(state: SealAIState) -> Tuple[bool, str]:
     return False, ""
 
 
-def node_finalize(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+def node_finalize(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Produce the user-visible final answer for the subgraph.
 
     Steps:
