@@ -1044,7 +1044,13 @@ async def _knowledge_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any)
 # ---------------------------------------------------------------------------
 
 
-def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, *, require_async: bool = True) -> CompiledStateGraph:
+def create_sealai_graph_v2(
+    checkpointer: BaseCheckpointSaver, 
+    store: BaseStore, 
+    *, 
+    require_async: bool = True,
+    return_builder: bool = False
+) -> CompiledStateGraph | StateGraph:
     builder = StateGraph(SealAIState)
     logger.debug("create_sealai_graph_v2_start")
     node_router_dispatch = _node_router_dispatch_async if require_async else _node_router_dispatch
@@ -1319,6 +1325,9 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_edge("response_node", "hitl_triage_node")
     builder.add_edge("hitl_triage_node", "worm_evidence_node")
     builder.add_edge("worm_evidence_node", END)
+
+    if return_builder:
+        return builder
 
     compiled = builder.compile(
         checkpointer=checkpointer,
