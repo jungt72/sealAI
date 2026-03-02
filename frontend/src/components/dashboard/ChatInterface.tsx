@@ -44,11 +44,12 @@ export default function ChatInterface() {
 
     useEffect(() => {
         if (workingProfile) {
+            const { temp_range, candidate_materials, ...rest } = workingProfile;
             setLiveCalcTile({
                 status: workingProfile.knowledge_coverage === 'FULL' ? 'ok' : 'warning',
                 parameters: {
-                    ...workingProfile,
-                    temperature_max_c: workingProfile.temp_range?.[1],
+                    ...rest,
+                    temperature_max_c: temp_range?.[1],
                     pressure_max_bar: workingProfile.pressure_bar
                 }
             });
