@@ -28,11 +28,11 @@ Berechnung:
 - Druckreserve: {{ pressure_margin_bar }} bar
 - Kritische Anwendung: {{ "Ja" if is_critical_application else "Nein" }}
 
-{% if v_surface_m_s is not None %}
+{% if v_surface_m_s is not none %}
 Physikalische Kennwerte:
 - Umfangsgeschwindigkeit (v): {{ "%.2f"|format(v_surface_m_s) }} m/s
-{% if pv_value_mpa_m_s is not None %}- PV-Wert: {{ "%.2f"|format(pv_value_mpa_m_s) }} MPa·m/s{% endif %}
-{% if friction_power_watts is not None %}- Reibleistung (geschätzt): {{ "%.1f"|format(friction_power_watts) }} W{% endif %}
+{% if pv_value_mpa_m_s is not none %}- PV-Wert: {{ "%.2f"|format(pv_value_mpa_m_s) }} MPa·m/s{% endif %}
+{% if friction_power_watts is not none %}- Reibleistung (geschätzt): {{ "%.1f"|format(friction_power_watts) }} W{% endif %}
 {% if hrc_warning %}- WARNUNG: Wellenhärte unter Limit!{% if hrc_value %} (Ist: {{ hrc_value }} HRC){% endif %}{% endif %}
 {% endif %}
 
