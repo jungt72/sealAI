@@ -48,36 +48,38 @@ export default function ChatInterface() {
 
     useEffect(() => {
         if ((workingProfile && typeof workingProfile === 'object' && Object.keys(workingProfile).length > 0) || calcResults || complianceResults || hookLiveCalcTile) {
-            console.log("DEBUG WP:", workingProfile);
-            console.log("DEBUG CALC:", calcResults);
-            console.log("DEBUG COMPLIANCE:", complianceResults);
-            console.log("DEBUG LCT:", hookLiveCalcTile);
+            console.log("FULL SYNC DATA:", { workingProfile, calcResults, hookLiveCalcTile, complianceResults });
             
             const wp = (workingProfile || {}) as any;
             const { temp_range, candidate_materials, ...rest } = wp;
             
-            // Map calcResults directly if they exist
-            // Backend CalcResults usually have safety_factor, temperature_margin, etc.
-            // But LiveCalcTile expects things like groove_fill_pct, v_surface_m_s.
-            // Also check for calc_results INSIDE workingProfile as per instructions
+            // Extract calc_results from WorkingProfile (M-Modules often write here)
             const wp_calc = (workingProfile as any)?.calc_results;
 
-            setLiveCalcTile(prev => ({
-                status: wp.knowledge_coverage === 'FULL' ? 'ok' : (prev?.status || 'warning'),
-                parameters: {
-                    ...rest,
-                    temperature_max_c: temp_range?.[1],
-                    pressure_max_bar: wp.pressure_max_bar || wp.pressure_bar
-                },
-                // Merge in liveCalcTile from hook (authoritative for physics fields)
-                ...hookLiveCalcTile,
-                // Merge in calcResults (e.g. v_surface, groove_fill)
-                ...calcResults,
-                // Merge in calc_results from inside WP
-                ...wp_calc,
-                // Merge in complianceResults
-                compliance: complianceResults || prev?.compliance
-            }));
+            setLiveCalcTile(prev => {
+                const baseTile = {
+                    status: wp.knowledge_coverage === 'FULL' ? 'ok' : (prev?.status || 'warning'),
+                    parameters: {
+                        ...rest,
+                        temperature_max_c: temp_range?.[1] || wp.temperature_max_c,
+                        pressure_max_bar: wp.pressure_max_bar || wp.pressure_bar
+                    }
+                };
+
+                // Defensive mapping strategy:
+                // Start with base tile, merge state-level calcResults, then deep WP calc_results,
+                // and finally hookLiveCalcTile as the primary authoritative source.
+                const mergedTile = {
+                    ...baseTile,
+                    ...(calcResults || {}),
+                    ...(wp_calc || {}),
+                    ...(hookLiveCalcTile || {}),
+                    compliance: complianceResults || prev?.compliance
+                };
+
+                console.log("MAPPED TILE DATA:", mergedTile);
+                return mergedTile as LiveCalcTileData;
+            });
             setShowTile(true);
         }
     }, [workingProfile, calcResults, complianceResults, hookLiveCalcTile]);

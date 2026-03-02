@@ -350,6 +350,7 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
     )
 
     return {
+        "calc_results": state.calc_results,
         "live_calc_tile": tile.model_dump(),
         "phase": PHASE.CALCULATION,
         "last_node": "node_p4_live_calc",

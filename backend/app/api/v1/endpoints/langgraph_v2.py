@@ -462,11 +462,15 @@ def _should_emit_confirm_checkpoint(state: SealAIState) -> bool:
 
 def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str, Any]:
     values = _state_values_to_dict(state)
+    print(f"DEBUG BACKEND STATE: {values.get('live_calc_tile')}")
     parameters = values.get("parameters") if isinstance(values, dict) else {}
     prompt_meta = values.get("final_prompt_metadata") if isinstance(values, dict) else None
     live_calc_tile = values.get("live_calc_tile") if isinstance(values, dict) else None
     has_live_calc_tile = _is_meaningful_live_calc_tile(live_calc_tile)
-    if isinstance(state, dict) and "live_calc_tile" not in state:
+    if not has_live_calc_tile and live_calc_tile:
+        # User Directive: "Stelle sicher, dass live_calc_tile NICHT gefiltert wird, wenn es vorhanden ist."
+        has_live_calc_tile = True
+    if isinstance(state, dict) and "live_calc_tile" not in state and not has_live_calc_tile:
         has_live_calc_tile = False
     rfq_pdf_base64 = values.get("rfq_pdf_base64") if isinstance(values, dict) else None
     rfq_pdf_url = values.get("rfq_pdf_url") if isinstance(values, dict) else None

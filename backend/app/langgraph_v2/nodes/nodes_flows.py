@@ -344,6 +344,7 @@ def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
         "calc_results": calc,
+        "live_calc_tile": getattr(state, "live_calc_tile", None),
         "calc_results_ok": True,
         "working_memory": wm,
         # Phase: Berechnung
