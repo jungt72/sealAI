@@ -30,6 +30,12 @@ _RWDR_SPEED_LIMIT_MAX = 35.0
 _RWDR_HRC_MIN_HIGH_SPEED = 45.0
 _RWDR_HIGH_SPEED_THRESHOLD = 4.0
 
+_RWDR_MATERIAL_LIMITS = {
+    "NBR": {"v_max": 12.0, "T_max": 100.0, "next": "FKM"},
+    "FKM": {"v_max": 35.0, "T_max": 200.0, "next": "PTFE"},
+    "PTFE": {"v_max": 45.0, "T_max": 250.0, "next": None},
+}
+
 
 def _coerce_float(value: Any) -> Optional[float]:
     if value is None:
@@ -148,6 +154,7 @@ def calc_tribology(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None)
     hrc_value = _first_float(payload, ("hrc", "hrc_value", "shaft_hardness", "hardness"))
     runout_mm = _first_float(payload, ("runout_mm", "runout", "shaft_runout", "dynamic_runout"))
     cross_section_d2 = _first_float(payload, ("cross_section_d2", "d2", "seal_cross_section"))
+    temp_max_c = _first_float(payload, ("temp_max_c", "temperature_max_c", "temperature_max", "T_medium_max", "temp_max"))
 
     # Material extraction for RWDR logic
     material = str(payload.get("elastomer_material") or payload.get("material") or "").strip().upper()
@@ -177,15 +184,41 @@ def calc_tribology(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None)
     if hrc_value is not None:
         if hrc_value < _HRC_WARNING_MIN:
             hrc_warning = True
-        # RWDR expert: < 45 HRC at high speed
+        # RWDR expert: < 45 HRC at high speed (v > 4 m/s)
         if v_surface_m_s is not None and v_surface_m_s > _RWDR_HIGH_SPEED_THRESHOLD and hrc_value < _RWDR_HRC_MIN_HIGH_SPEED:
             hrc_warning = True
     elif prev:
         hrc_warning = prev.hrc_warning
 
-    # Speed validation: NBR limit
+    # New M6 Material Validation Logic
+    notes: List[str] = []
+    material_limit_exceeded = False
+    
+    # Resolve canonical material key
+    mat_key = None
+    for k in _RWDR_MATERIAL_LIMITS:
+        if k in material:
+            mat_key = k
+            break
+            
+    if mat_key and v_surface_m_s is not None:
+        limits = _RWDR_MATERIAL_LIMITS[mat_key]
+        # Speed Check
+        if v_surface_m_s > limits["v_max"]:
+            material_limit_exceeded = True
+            notes.append(f"Umfangsgeschwindigkeit ({v_surface_m_s:.1f} m/s) liegt über Limit für {mat_key} ({limits['v_max']} m/s).")
+            if limits["next"]:
+                notes.append(f"Empfehlung: Wechsel auf {limits['next']} prüfen.")
+        
+        # Temperature Check
+        if temp_max_c is not None and temp_max_c > limits["T_max"]:
+            notes.append(f"Einsatztemperatur ({temp_max_c:.0f}°C) liegt über Limit für {mat_key} ({limits['T_max']}°C).")
+            if not material_limit_exceeded and limits["next"]:
+                 notes.append(f"Empfehlung: Wechsel auf {limits['next']} prüfen.")
+
+    # Speed validation: NBR limit (M6 override)
     if v_surface_m_s is not None and v_surface_m_s > _RWDR_SPEED_LIMIT_NBR and "NBR" in material:
-        hrc_warning = True  # Use hrc_warning as specified for NBR speed warning
+        hrc_warning = True  # Keep for backward compatibility/UI signal
 
     runout_warning = bool(runout_mm is not None and runout_mm > _RUNOUT_WARNING_MAX_MM)
     if runout_mm is None and prev:
@@ -207,6 +240,7 @@ def calc_tribology(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None)
         or (runout_mm is not None and runout_mm > _RUNOUT_CRITICAL_MAX_MM)
         or (pv_value_mpa_m_s is not None and pv_value_mpa_m_s > _PV_CRITICAL_MAX)
         or (v_surface_m_s is not None and v_surface_m_s > _RWDR_SPEED_LIMIT_MAX)
+        or material_limit_exceeded
     )
     has_data = any(
         value is not None
@@ -223,6 +257,7 @@ def calc_tribology(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None)
         "dry_running_risk": dry_running_risk,
         "critical": critical,
         "has_data": has_data,
+        "notes": notes,
     }
 
 
@@ -382,6 +417,7 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
     calc_results.pv_value_mpa_m_s = tribology["pv_value_mpa_m_s"]
     calc_results.friction_power_watts = tribology["friction_power_watts"]
     calc_results.hrc_warning = tribology["hrc_warning"]
+    calc_results.notes = tribology.get("notes", [])
 
     tile = LiveCalcTile(
         v_surface_m_s=tribology["v_surface_m_s"],

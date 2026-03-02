@@ -439,6 +439,13 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     else:
         intent_category = _category_from_task_intents(task_intents, structured.social_opening)
 
+    # Force engineering calculation if technical parameters are present
+    ext = structured.extracted_parameters
+    if any([ext.shaft_diameter, ext.speed_rpm, ext.pressure_bar]):
+        intent_category = "ENGINEERING_CALCULATION"
+        if "engineering_calculation" not in task_intents:
+            task_intents.append("engineering_calculation")
+
     intent_goal = _intent_goal_from_category(intent_category)
     frontdoor_bypass_supervisor = bool(structured.social_opening and not task_intents)
     technical_cue_veto = bool(technical_cue_matches)

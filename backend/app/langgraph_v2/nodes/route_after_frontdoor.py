@@ -127,7 +127,13 @@ def route_after_frontdoor_node(state: SealAIState) -> Command:
         logger.info("route_after_frontdoor.troubleshooting", category=category, goal=intent.goal)
         return Command(goto="troubleshooting_wizard_node")
 
-    # 3) Deterministic KB fast path
+    # 3) Engineering Calculation pipeline (Priority)
+    if category == "ENGINEERING_CALCULATION":
+        logger.info("route_after_frontdoor.design_pipeline_priority", category=category, goal=intent.goal)
+        flags["use_reasoning_core_r3"] = True
+        return Command(update={"flags": flags}, goto="node_p1_context")
+
+    # 4) Deterministic KB fast path
     if (
         bool(getattr(state, "requires_rag", False))
         or bool(getattr(state, "need_sources", False))
@@ -138,12 +144,12 @@ def route_after_frontdoor_node(state: SealAIState) -> Command:
         logger.info("route_after_frontdoor.kb_fast_path", category=category, goal=intent.goal)
         return Command(goto="frontdoor_parallel_fanout_node")
 
-    # 4) Explanation/Comparison
+    # 5) Explanation/Comparison
     if intent.goal == "explanation_or_comparison" or "general_knowledge" in task_intents:
         logger.info("route_after_frontdoor.comparison", category=category, goal=intent.goal)
         return Command(goto="supervisor_policy_node")
 
-    # 5) Full design pipeline
+    # 6) Full design pipeline fallback
     logger.info("route_after_frontdoor.design_pipeline", category=category, goal=intent.goal)
     flags["use_reasoning_core_r3"] = True
     return Command(update={"flags": flags}, goto="node_p1_context")
