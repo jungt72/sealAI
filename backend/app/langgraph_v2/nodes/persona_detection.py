@@ -33,13 +33,27 @@ def detect_persona(messages: list[str]) -> tuple[str, float]:
 
 def update_persona_in_state(state: SealAIState) -> dict:
     """Nach jedem Turn aufrufen. Gibt State-Patch zurück."""
-    messages = [
-        m.content for m in (state.messages or [])
-        if hasattr(m, "content") and m.content
-    ]
-    if not messages:
+    extracted_texts = []
+    for m in (state.messages or []):
+        if not hasattr(m, "content") or not m.content:
+            continue
+
+        content = m.content
+        if isinstance(content, str):
+            extracted_texts.append(content)
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, str):
+                    extracted_texts.append(part)
+                elif isinstance(part, dict) and part.get("type") == "text":
+                    text = part.get("text")
+                    if text:
+                        extracted_texts.append(text)
+
+    if not extracted_texts:
         return {}
-    persona, _ = detect_persona(messages)
+
+    persona, _ = detect_persona(extracted_texts)
     if persona == "unknown":
         return {}
     return {"user_persona": persona}
