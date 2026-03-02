@@ -449,7 +449,14 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
 
     # Force engineering calculation if technical parameters are present
     ext = structured.extracted_parameters
-    if any([ext.shaft_diameter, ext.speed_rpm, ext.pressure_bar]):
+    has_new_params = any([ext.shaft_diameter, ext.speed_rpm, ext.pressure_bar, ext.temperature_c, ext.medium])
+    
+    if has_new_params:
+        intent_category = "ENGINEERING_CALCULATION"
+        if "engineering_calculation" not in task_intents:
+            task_intents.append("engineering_calculation")
+    elif state.working_profile and has_new_params:
+        # State Continuity: Existing profile + any extracted parameter override
         intent_category = "ENGINEERING_CALCULATION"
         if "engineering_calculation" not in task_intents:
             task_intents.append("engineering_calculation")

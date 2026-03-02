@@ -181,9 +181,14 @@ def classify_input(state: SealAIState, user_text: str) -> str:
     has_params = _has_populated_parameters(state)
     has_response = _has_prior_response(state)
 
-    # 4. Follow-up: existing parameters + parameter-change language
-    if has_params and text and _PARAMETER_CHANGE_PATTERNS.search(text):
-        return "follow_up"
+    # 4. Follow-up: existing parameters + parameter-change language or generic text in active session
+    if has_params and text:
+        if _PARAMETER_CHANGE_PATTERNS.search(text):
+            return "follow_up"
+        if has_response:
+            # If we already have a profile and the user says SOMETHING, 
+            # assume it might be a parameter update (State Continuity).
+            return "follow_up"
 
     # 5. Clarification: prior response exists + clarification question
     if has_response and text and _CLARIFICATION_PATTERNS.search(text):

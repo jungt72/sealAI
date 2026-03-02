@@ -15,7 +15,7 @@ from typing import List
 import structlog
 from langgraph.types import Command
 
-from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.state import SealAIState, WorkingProfile
 
 logger = structlog.get_logger("langgraph_v2.route_after_frontdoor")
 _TEMPERATURE_C_PATTERN = re.compile(r"([-+]?\d+(?:[.,]\d+)?)\s*°?\s*c\b", re.IGNORECASE)
@@ -77,9 +77,17 @@ def _is_active_resume_session(state: SealAIState) -> bool:
         return True
     if bool(getattr(state, "awaiting_user_confirmation", False)):
         return True
-    if bool((getattr(state, "pending_action", "") or "").strip()):
+    if bool((state.pending_action or "").strip()):
         return True
-    return bool(getattr(state, "qgate_has_blockers", False))
+    if bool(getattr(state, "qgate_has_blockers", False)):
+        return True
+        
+    # State Continuity: If we have an existing profile AND new parameters were extracted 
+    # in this turn (indicated by router_classification == 'follow_up'), prioritize resuming.
+    if state.working_profile and classification == "follow_up":
+        return True
+        
+    return False
 
 
 def _is_extreme_suitability_query(state: SealAIState) -> bool:
@@ -140,7 +148,17 @@ def route_after_frontdoor_node(state: SealAIState) -> Command:
         if d1 is not None and n is not None:
             logger.info("route_after_frontdoor.rwdr_fast_path_triggered", d1=d1, n=n)
             flags["force_instant_calc"] = True
-            return Command(update={"flags": flags}, goto="node_p4b_calc_render")
+            
+            # Fast-path needs WorkingProfile for calc_chemical_resistance (P4b)
+            wp = state.working_profile or WorkingProfile()
+            if wp.d1 is None: wp.d1 = float(d1)
+            if wp.n is None: wp.n = float(n)
+            if wp.medium is None: wp.medium = params.medium
+            if wp.material is None and wp.elastomer_material is None:
+                # Default material for RWDR if none provided in prompt/params
+                wp.material = params.elastomer_material or "NBR"
+
+            return Command(update={"flags": flags, "working_profile": wp}, goto="node_p4b_calc_render")
 
         return Command(update={"flags": flags}, goto="node_p1_context")
 

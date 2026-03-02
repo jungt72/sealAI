@@ -1,47 +1,47 @@
 BERECHNUNGSERGEBNIS — Flanschdichtungsauslegung
-================================================
 
 Betriebsparameter:
-- Medium: {{ medium }}
+- Medium: {{ medium | default('nicht angegeben') }}
 - Max. Betriebsdruck: {{ pressure_max_bar }} bar
 - Max. Betriebstemperatur: {{ temperature_max_c }} °C
-{% if flange_standard %}- Flanschnorm: {{ flange_standard }}{% endif %}
-{% if flange_dn %}- Nennweite: DN{{ flange_dn }}{% endif %}
-{% if flange_pn %}- Nenndruck: PN{{ flange_pn }}{% endif %}
-{% if flange_class %}- ASME-Class: {{ flange_class }}{% endif %}
-{% if cyclic_load %}- Zyklische Belastung: Ja{% endif %}
+- Flanschnorm: {{ flange_standard | default('nicht angegeben') }}
 
 Dichtungsgeometrie:
-- Wellen-Ø / Innendurchmesser: {{ shaft_diameter | default(d1 | default(gasket_inner_d_mm | default('nicht angegeben')), true) }} mm
-- Außendurchmesser: {{ gasket_outer_d_mm | default('nicht angegeben') }} mm
-- Drehzahl: {{ speed_rpm | default(rpm | default(n | default(n_max | default('nicht angegeben'))), true) }} U/min
+- Wellen-Ø / Innendurchmesser: {{ shaft_diameter | default(d1 | default(gasket_inner_d_mm | default('nicht angegeben'))) }} mm
+- Außendurchmesser: {{ gasket_outer_d_mm }} mm
+- Drehzahl: {{ speed_rpm | default(rpm | default(n | default(n_max | default('nicht angegeben')))) }} U/min
 {% if bolt_circle_d_mm %}- Lochkreisdurchmesser: {{ bolt_circle_d_mm }} mm{% endif %}
 
 Verschraubung:
-{% if bolt_count %}- Schraubenanzahl: {{ bolt_count }}{% endif %}
 - Schraubengröße: {{ bolt_size | default('nicht angegeben') }}
-{% if available_bolt_load_kn %}- Verfügbare Schraubenkraft: {{ available_bolt_load_kn }} kN{% endif %}
 
 Berechnung:
-- Erforderliche Flächenpressung: {{ required_gasket_stress_mpa | default('nicht angegeben') }} MPa
-- Sicherheitsfaktor: {{ safety_factor | default('nicht angegeben') }}
-- Temperaturreserve: {{ temperature_margin_c | default('nicht angegeben') }} °C
-- Druckreserve: {{ pressure_margin_bar | default('nicht angegeben') }} bar
+- Erforderliche Flächenpressung: {{ required_gasket_stress_mpa }} MPa
+- Sicherheitsfaktor: {{ safety_factor }}
+- Temperaturreserve: {{ temperature_margin_c }} °C
+- Druckreserve: {{ pressure_margin_bar }} bar
 - Kritische Anwendung: {{ "Ja" if is_critical_application else "Nein" }}
 
-{% if v_surface_m_s is not none %}
 Physikalische Kennwerte:
+{% if v_surface_m_s is not none %}
 - Umfangsgeschwindigkeit (v): {{ "%.2f"|format(v_surface_m_s) }} m/s
-{% if pv_value_mpa_m_s is not none %}- PV-Wert: {{ "%.2f"|format(pv_value_mpa_m_s) }} MPa·m/s{% endif %}
-{% if friction_power_watts is not none %}- Reibleistung (geschätzt): {{ "%.1f"|format(friction_power_watts) }} W{% endif %}
-{% if hrc_warning %}- WARNUNG: Wellenhärte unter Limit!{% if hrc_value %} (Ist: {{ hrc_value }} HRC){% endif %}{% endif %}
+{% endif %}
+{% if pv_value_mpa_m_s is not none %}
+- PV-Wert: {{ "%.2f"|format(pv_value_mpa_m_s) }} MPa·m/s
+{% endif %}
+{% if friction_power_watts is not none %}
+- Reibleistung (geschätzt): {{ "%.1f"|format(friction_power_watts) }} W
+{% endif %}
+{% if hrc_warning %}
+- WARNUNG: Wellenhärte unter Limit!{% if hrc_value %} (Ist: {{ hrc_value }} HRC){% endif %}
 {% endif %}
 
-{% if notes %}
+{% if chem_warning %}
+🚨 CHEMISCHE BESTÄNDIGKEIT:
+- {{ chem_message }}
+{% endif %}
+
 HINWEISE:
-{% for n in notes %}- {{ n }}
-{% endfor %}{% endif %}
-{% if warnings %}
-WARNUNGEN:
-{% for w in warnings %}- {{ w }}
-{% endfor %}{% endif %}
+{% for note in notes %}
+- {{ note }}
+{% endfor %}

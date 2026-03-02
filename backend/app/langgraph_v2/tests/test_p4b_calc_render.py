@@ -227,7 +227,7 @@ class TestP4bMcpFailure:
             result = node_p4b_calc_render(state)
 
         assert "error" in result
-        assert "P4b: MCP failed:" in result["error"]
+        assert "P4b: MCP calc engine failed" in result["error"]
         assert "calculation_result" not in result
 
     def test_invalid_calc_input_sets_error(self):
