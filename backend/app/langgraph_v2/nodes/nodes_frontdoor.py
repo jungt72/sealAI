@@ -18,6 +18,7 @@ from app.langgraph_v2.state import (
     TechnicalParameters,
     WorkingMemory,
 )
+from app.services.rag.state import WorkingProfile
 from app.langgraph_v2.utils.llm_factory import get_model_tier
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
@@ -388,15 +389,21 @@ def _extract_parameter_patch(structured: FrontdoorRouteAxesOutput) -> Dict[str, 
     patch: Dict[str, Any] = {}
     extracted = structured.extracted_parameters
     if extracted.pressure_bar is not None:
+        patch["pressure_max_bar"] = float(extracted.pressure_bar)
         patch["pressure_bar"] = float(extracted.pressure_bar)
     if extracted.temperature_c is not None:
+        patch["temperature_max_c"] = float(extracted.temperature_c)
         patch["temperature_C"] = float(extracted.temperature_c)
     if extracted.medium:
         patch["medium"] = extracted.medium.strip()
     if extracted.shaft_diameter is not None:
         patch["shaft_diameter"] = float(extracted.shaft_diameter)
+        patch["shaft_d1"] = float(extracted.shaft_diameter)
+        patch["d1"] = float(extracted.shaft_diameter)
     if extracted.speed_rpm is not None:
         patch["speed_rpm"] = float(extracted.speed_rpm)
+        patch["rpm"] = float(extracted.speed_rpm)
+        patch["n"] = float(extracted.speed_rpm)
     if extracted.housing_bore is not None:
         patch["housing_bore"] = float(extracted.housing_bore)
     return patch
@@ -406,6 +413,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     log_state_debug("frontdoor_discovery_node", state)
     user_text = latest_user_text(state.get("messages")) or ""
     parameters = state.parameters or TechnicalParameters()
+    working_profile = state.working_profile or WorkingProfile()
     prompt_trace = _render_frontdoor_prompt_trace(state)
 
     try:
@@ -486,8 +494,17 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         )
         parameters = TechnicalParameters.model_validate(merged_params)
         merged_extracted_params.update(extracted_patch)
+        
+        # Sync to WorkingProfile
+        wp_dict = working_profile.model_dump()
+        wp_fields = set(working_profile.model_fields.keys())
+        for k, v in extracted_patch.items():
+            if k in wp_fields and v is not None:
+                wp_dict[k] = v
+        working_profile = WorkingProfile.model_validate(wp_dict)
 
     flags = dict(state.flags or {})
+
     flags.update(
         {
             "frontdoor_bypass_supervisor": frontdoor_bypass_supervisor,
@@ -531,6 +548,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     return {
         "intent": intent,
         "working_memory": wm,
+        "working_profile": working_profile,
         "prompt_traces": [prompt_trace],
         "phase": PHASE.FRONTDOOR,
         "last_node": "frontdoor_discovery_node",

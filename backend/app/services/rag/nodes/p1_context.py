@@ -146,7 +146,12 @@ Felder:
 - seal_material: Dichtungswerkstoff (z.B. "PTFE", "NBR", "FKM")
 - product_name: Produkt- oder Handelsname (z.B. "Gylon", "Sigraflex")
 - shaft_d1_mm: Wellendurchmesser d1 in mm (Zahl)
+- shaft_diameter: Wellendurchmesser in mm (Zahl)
 - rpm: Drehzahl in U/min (Zahl)
+- speed_rpm: Drehzahl in U/min (Zahl)
+- n: Drehzahl in U/min (Zahl)
+- d1: Wellendurchmesser in mm (Zahl)
+- elastomer_material: Elastomerwerkstoff (z.B. "NBR", "FKM")
 - hrc_value: Härtewert in HRC (Zahl)
 - clearance_gap_mm: Spaltmaß in mm (Zahl)
 
@@ -188,11 +193,17 @@ class _P1Extraction(BaseModel):
     seal_material: Optional[str] = None
     product_name: Optional[str] = None
     shaft_d1_mm: Optional[float] = None
+    shaft_diameter: Optional[float] = None
     rpm: Optional[float] = None
+    speed_rpm: Optional[float] = None
+    n: Optional[float] = None
+    d1: Optional[float] = None
+    elastomer_material: Optional[str] = None
     hrc_value: Optional[float] = None
     clearance_gap_mm: Optional[float] = None
 
     model_config = ConfigDict(extra="ignore")
+
 
 
 # ---------------------------------------------------------------------------

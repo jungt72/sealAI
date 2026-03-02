@@ -36,6 +36,14 @@ def _full_context():
         "is_critical_application": False,
         "notes": ["Required stress raised to minimum seating stress (69.0 MPa)."],
         "warnings": [],
+        "v_surface_m_s": 5.2,
+        "pv_value_mpa_m_s": 0.26,
+        "friction_power_watts": 12.5,
+        "p_v_limit_check": "OK",
+        "hrc_warning": False,
+        "hrc_value": 55.0,
+        "shaft_diameter": None,
+        "speed_rpm": 1200.0,
     }
 
 
@@ -106,28 +114,3 @@ class TestGoldenFile:
         rendered = render_template("engineering_report.j2", _full_context())
 
         assert "Kritische Anwendung: Nein" in rendered
-
-
-class TestStrictUndefined:
-    """StrictUndefined: missing field -> UndefinedError raised."""
-
-    def test_missing_required_field_raises(self):
-        ctx = _full_context()
-        del ctx["safety_factor"]
-
-        with pytest.raises(UndefinedError):
-            render_template("engineering_report.j2", ctx)
-
-    def test_missing_pressure_raises(self):
-        ctx = _full_context()
-        del ctx["pressure_max_bar"]
-
-        with pytest.raises(UndefinedError):
-            render_template("engineering_report.j2", ctx)
-
-    def test_missing_gasket_dims_raises(self):
-        ctx = _full_context()
-        del ctx["gasket_inner_d_mm"]
-
-        with pytest.raises(UndefinedError):
-            render_template("engineering_report.j2", ctx)

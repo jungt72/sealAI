@@ -73,11 +73,11 @@ def _safe_float(value: Any) -> float | None:
 
 
 def _resolve_norm_material(state: SealAIState) -> str | None:
+    wp = state.working_profile
     candidates = [
         (state.material_choice or {}).get("material") if isinstance(state.material_choice, dict) else None,
-        getattr(state.parameters, "elastomer_material", None),
-        getattr(state.parameters, "material", None),
-        getattr(state.working_profile, "material", None) if getattr(state, "working_profile", None) is not None else None,
+        wp.elastomer_material if wp else None,
+        wp.material if wp else None,
     ]
     for value in candidates:
         text = str(value or "").strip()
@@ -87,17 +87,14 @@ def _resolve_norm_material(state: SealAIState) -> str | None:
 
 
 def _resolve_norm_temperature_pressure(state: SealAIState) -> tuple[float | None, float | None]:
+    wp = state.working_profile
     temp_candidates = [
-        getattr(state.parameters, "temperature_C", None),
-        getattr(state.parameters, "temperature_max", None),
-        getattr(state.parameters, "temp_max", None),
-        getattr(state.working_profile, "temperature_max_c", None) if getattr(state, "working_profile", None) is not None else None,
+        wp.temperature_max_c if wp else None,
+        wp.temperature_C if wp else None,
     ]
     pressure_candidates = [
-        getattr(state.parameters, "pressure_bar", None),
-        getattr(state.parameters, "pressure_max", None),
-        getattr(state.parameters, "p_max", None),
-        getattr(state.working_profile, "pressure_max_bar", None) if getattr(state, "working_profile", None) is not None else None,
+        wp.pressure_max_bar if wp else None,
+        wp.pressure_bar if wp else None,
     ]
 
     resolved_temp: float | None = None
@@ -225,12 +222,13 @@ def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     user_text = latest_user_text(state.get("messages")) or ""
     required = [
         "medium",
-        "pressure_bar",
-        "temperature_C",
+        "pressure_max_bar",
+        "temperature_max_c",
         "shaft_diameter",
         "speed_rpm",
     ]
-    missing = [key for key in required if not getattr(state.parameters, key, None)]
+    wp = state.working_profile
+    missing = [key for key in required if not getattr(wp, key, None)]
     schema_notes = {
         "missing": missing,
         "required": required,
@@ -303,11 +301,11 @@ def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
 
 def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("calculator_node", state)
-    params = state.parameters
-    diameter_mm = _safe_float(params.shaft_diameter) or _safe_float(params.inner_diameter_mm)
-    rpm = _safe_float(params.speed_rpm)
-    temp_c = _safe_float(params.temperature_C)
-    pressure = _safe_float(params.pressure_bar)
+    wp = state.working_profile
+    diameter_mm = _safe_float(getattr(wp, "shaft_diameter", None)) or _safe_float(getattr(wp, "d1", None))
+    rpm = _safe_float(getattr(wp, "speed_rpm", None)) or _safe_float(getattr(wp, "n", None))
+    temp_c = _safe_float(getattr(wp, "temperature_max_c", None))
+    pressure = _safe_float(getattr(wp, "pressure_max_bar", None))
 
     missing: List[str] = []
     if diameter_mm is None:
@@ -315,9 +313,9 @@ def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     if rpm is None:
         missing.append("speed_rpm")
     if temp_c is None:
-        missing.append("temperature_C")
+        missing.append("temperature_max_c")
     if pressure is None:
-        missing.append("pressure_bar")
+        missing.append("pressure_max_bar")
 
     calculations: Dict[str, Any] = {}
     if missing:
@@ -502,15 +500,16 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
             "rag_turn_count": int(getattr(state, "rag_turn_count", 0) or 0) + 1,
         }
 
-    temp = _safe_float(state.parameters.temperature_C)
-    medium_raw = (state.parameters.medium or "").strip()
+    wp = state.working_profile
+    temp = _safe_float(getattr(wp, "temperature_max_c", None))
+    medium_raw = (getattr(wp, "medium", "") or "").strip()
     medium = medium_raw.lower()
     candidates: List[Dict[str, Any]] = []
     needs_input: List[str] = []
     if not medium_raw:
         needs_input.append("medium")
     if temp is None:
-        needs_input.append("temperature_C")
+        needs_input.append("temperature_max_c")
 
     if not needs_input:
         if temp >= 180 or "hot" in medium:

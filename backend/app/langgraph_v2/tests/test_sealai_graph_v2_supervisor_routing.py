@@ -8,6 +8,7 @@ from app.langgraph_v2.nodes.nodes_supervisor import supervisor_logic_node
 from app.langgraph_v2.sealai_graph_v2 import _merge_deterministic_router, _reducer_router, create_sealai_graph_v2
 from app.langgraph_v2.nodes.route_after_frontdoor import route_after_frontdoor_node
 from app.langgraph_v2.state import Intent, SealAIState, TechnicalParameters
+from app.services.rag.state import WorkingProfile
 
 
 def test_graph_entry_routes_to_kb_lookup_or_smalltalk() -> None:
@@ -165,19 +166,20 @@ def test_graph_troubleshooting_wizard_completion_routes_to_conversational_rag() 
 
 
 def test_supervisor_policy_node_sets_coverage_from_missing_params() -> None:
-    params = TechnicalParameters(
+    wp = WorkingProfile(
         medium="Hydraulikoel",
-        pressure_bar=10,
-        temperature_C=80,
+        pressure_max_bar=10,
+        temperature_max_c=80,
         shaft_diameter=50,
         # speed_rpm missing -> 4/5 coverage == 0.8 => ready True
     )
     state = SealAIState(
         intent=Intent(goal="design_recommendation"),
-        parameters=params,
+        working_profile=wp,
     )
     patch = supervisor_logic_node(state)
     assert patch["missing_params"] == ["speed_rpm"]
+
     assert patch["coverage_gaps"] == ["speed_rpm"]
     assert patch["coverage_score"] == 0.8
     assert patch["recommendation_ready"] is True

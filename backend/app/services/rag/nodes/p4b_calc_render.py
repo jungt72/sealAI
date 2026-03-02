@@ -67,36 +67,6 @@ def _intent_allows_calc_bypass(state: SealAIState) -> bool:
     return goal == "explanation_or_comparison" or category == "MATERIAL_RESEARCH"
 
 
-def _merge_required_calc_fields(state: SealAIState, extracted_params: Dict[str, Any]) -> Dict[str, Any]:
-    merged = dict(extracted_params or {})
-
-    pressure = _coerce_float(merged.get("pressure_max_bar"))
-    if pressure is None:
-        pressure = _coerce_float(merged.get("pressure_bar"))
-    if pressure is None:
-        wp = getattr(state, "working_profile", None)
-        pressure = _coerce_float(getattr(wp, "pressure_max_bar", None))
-    if pressure is None:
-        params = getattr(state, "parameters", None)
-        pressure = _coerce_float(getattr(params, "pressure_bar", None))
-    if pressure is not None:
-        merged["pressure_max_bar"] = pressure
-
-    temperature = _coerce_float(merged.get("temperature_max_c"))
-    if temperature is None:
-        temperature = _coerce_float(merged.get("temperature_c"))
-    if temperature is None:
-        wp = getattr(state, "working_profile", None)
-        temperature = _coerce_float(getattr(wp, "temperature_max_c", None))
-    if temperature is None:
-        params = getattr(state, "parameters", None)
-        temperature = _coerce_float(getattr(params, "temperature_C", None))
-    if temperature is not None:
-        merged["temperature_max_c"] = temperature
-
-    return merged
-
-
 def _build_template_context(
     calc_input: CalcInput,
     calc_output: CalcOutput,
@@ -109,14 +79,13 @@ def _build_template_context(
     ctx["pressure_max_bar"] = calc_input.pressure_max_bar
     ctx["temperature_max_c"] = calc_input.temperature_max_c
 
-    # Add tech parameters (RWDR/Sprint 8)
-    params = state.extracted_params or {}
-    ctx["shaft_diameter"] = params.get("shaft_diameter") or params.get("d1")
-    ctx["speed_rpm"] = params.get("speed_rpm") or params.get("rpm") or params.get("n") or params.get("n_max")
-
-    # Add WorkingProfile fields for template rendering
+    # Add WorkingProfile fields for template rendering (Single Source of Truth)
     wp = state.working_profile
     if wp is not None:
+        wp_data = wp.model_dump(exclude_none=True)
+        ctx["shaft_diameter"] = wp_data.get("shaft_diameter") or wp_data.get("shaft_d1") or wp_data.get("d1")
+        ctx["speed_rpm"] = wp_data.get("speed_rpm") or wp_data.get("rpm") or wp_data.get("n")
+
         ctx["medium"] = wp.medium or calc_input.medium or "nicht angegeben"
         ctx["flange_standard"] = wp.flange_standard or calc_input.flange_standard or "nicht angegeben"
         ctx["flange_dn"] = wp.flange_dn or calc_input.flange_dn
@@ -139,6 +108,18 @@ def _build_template_context(
 
     # --- Physics (RWDR Expert / Sprint 8) ---
     tile = state.live_calc_tile
+    if tile:
+        ctx["v_surface_m_s"] = tile.v_surface_m_s
+        ctx["p_v_limit_check"] = tile.p_v_limit_check
+        ctx["hrc_warning"] = tile.hrc_warning
+        ctx["hrc_value"] = tile.hrc_value
+        ctx["tribology"] = tile.model_dump()
+    else:
+        ctx["v_surface_m_s"] = None
+        ctx["p_v_limit_check"] = None
+        ctx["hrc_warning"] = False
+        ctx["hrc_value"] = None
+        ctx["tribology"] = None
     # If tile is empty (first turn of fast path), compute deterministic physics once for rendering
     if not tile or tile.status == "insufficient_data":
         payload = _collect_parameter_payload(state)
@@ -199,10 +180,11 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     payload = _collect_parameter_payload(state)
     tile = state.live_calc_tile
     
-    # Check for technical parameters (mm, rpm)
+    # Check for technical parameters in working_profile (Single Source of Truth)
+    wp_data = state.working_profile.model_dump(exclude_none=True) if state.working_profile else {}
     has_tech_params = bool(
-        payload.get("rpm") or payload.get("n") or payload.get("n_max") or
-        payload.get("d1") or payload.get("diameter") or payload.get("shaft_diameter")
+        wp_data.get("speed_rpm") or wp_data.get("rpm") or wp_data.get("n") or
+        wp_data.get("shaft_diameter") or wp_data.get("shaft_d1") or wp_data.get("d1")
     )
     
     # Compute tribology (always compute to have fresh values for tile)
@@ -210,7 +192,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     v_surface = tribo.get("v_surface_m_s")
 
     # 2. Determine if we have enough to proceed (Fast-Path or Gasket-Calc)
-    extracted_params = _merge_required_calc_fields(state, state.extracted_params or {})
+    extracted_params = wp_data
     
     is_fast_path = bool(
         v_surface is not None 
@@ -255,7 +237,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
             medium=extracted_params.get("medium"),
         )
         calc_output = CalcOutput(
-            gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("d1") or 0.0),
+            gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("shaft_d1") or extracted_params.get("d1") or 0.0),
             gasket_outer_d_mm=0.0,
             required_gasket_stress_mpa=0.0,
             safety_factor=0.0,
@@ -277,7 +259,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
                     medium=extracted_params.get("medium"),
                 )
                 calc_output = CalcOutput(
-                    gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("d1") or 0.0),
+                    gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("shaft_d1") or extracted_params.get("d1") or 0.0),
                     gasket_outer_d_mm=0.0,
                     required_gasket_stress_mpa=0.0,
                     safety_factor=0.0,
@@ -310,7 +292,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
                 # If MCP fails but we have physics, still proceed with partial data
                 if is_fast_path or has_tech_params:
                      calc_output = CalcOutput(
-                        gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("d1") or 0.0),
+                        gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("shaft_d1") or extracted_params.get("d1") or 0.0),
                         gasket_outer_d_mm=0.0,
                         required_gasket_stress_mpa=0.0, safety_factor=0.0,
                         temperature_margin_c=0.0, pressure_margin_bar=0.0,

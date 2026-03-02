@@ -12,21 +12,21 @@ Betriebsparameter:
 {% if cyclic_load %}- Zyklische Belastung: Ja{% endif %}
 
 Dichtungsgeometrie:
-- Wellen-Ø / Innendurchmesser: {{ shaft_diameter | default(d1 | default(gasket_inner_d_mm | default('nicht angegeben'))) }} mm
-- Außendurchmesser: {{ gasket_outer_d_mm }} mm
-- Drehzahl: {{ speed_rpm | default(rpm | default(n | default(n_max | default('nicht angegeben')))) }} U/min
+- Wellen-Ø / Innendurchmesser: {{ shaft_diameter | default(d1 | default(gasket_inner_d_mm | default('nicht angegeben')), true) }} mm
+- Außendurchmesser: {{ gasket_outer_d_mm | default('nicht angegeben') }} mm
+- Drehzahl: {{ speed_rpm | default(rpm | default(n | default(n_max | default('nicht angegeben'))), true) }} U/min
 {% if bolt_circle_d_mm %}- Lochkreisdurchmesser: {{ bolt_circle_d_mm }} mm{% endif %}
 
 Verschraubung:
 {% if bolt_count %}- Schraubenanzahl: {{ bolt_count }}{% endif %}
-- Schraubengröße: {{ bolt_size }}
+- Schraubengröße: {{ bolt_size | default('nicht angegeben') }}
 {% if available_bolt_load_kn %}- Verfügbare Schraubenkraft: {{ available_bolt_load_kn }} kN{% endif %}
 
 Berechnung:
-- Erforderliche Flächenpressung: {{ required_gasket_stress_mpa }} MPa
-- Sicherheitsfaktor: {{ safety_factor }}
-- Temperaturreserve: {{ temperature_margin_c }} °C
-- Druckreserve: {{ pressure_margin_bar }} bar
+- Erforderliche Flächenpressung: {{ required_gasket_stress_mpa | default('nicht angegeben') }} MPa
+- Sicherheitsfaktor: {{ safety_factor | default('nicht angegeben') }}
+- Temperaturreserve: {{ temperature_margin_c | default('nicht angegeben') }} °C
+- Druckreserve: {{ pressure_margin_bar | default('nicht angegeben') }} bar
 - Kritische Anwendung: {{ "Ja" if is_critical_application else "Nein" }}
 
 {% if v_surface_m_s is not none %}

@@ -227,13 +227,17 @@ class TestP4bMcpFailure:
             result = node_p4b_calc_render(state)
 
         assert "error" in result
-        assert "MCP calc engine failed" in result["error"]
+        assert "P4b: MCP failed:" in result["error"]
         assert "calculation_result" not in result
 
     def test_invalid_calc_input_sets_error(self):
         state = _make_state(
+            working_profile=WorkingProfile.model_construct(
+                pressure_max_bar=-999.0,  # Invalid
+                temperature_max_c=200.0,
+            ),
             extracted_params={
-                "pressure_max_bar": -999.0,  # Invalid but passes as raw dict
+                "pressure_max_bar": -999.0,
                 "temperature_max_c": 200.0,
             },
         )

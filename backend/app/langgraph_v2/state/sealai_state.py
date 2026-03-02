@@ -18,7 +18,7 @@ try:
 except Exception:
     WorkingProfile = Any  # type: ignore[assignment,misc]
 
-from .audit import EvidenceBundle, SourceRefPayload, ToolCallRecord
+from app.langgraph_v2.state.audit import EvidenceBundle, SourceRefPayload, ToolCallRecord
 from app.langgraph_v2.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
 from app.langgraph_v2.types import (
     IntentKey,
@@ -166,6 +166,7 @@ class CalcResults(BaseModel):
 class LiveCalcTile(BaseModel):
     v_surface_m_s: Optional[float] = None
     pv_value_mpa_m_s: Optional[float] = None
+    p_v_limit_check: Optional[str] = None
     hrc_value: Optional[float] = None
     hrc_warning: bool = False
     runout_warning: bool = False

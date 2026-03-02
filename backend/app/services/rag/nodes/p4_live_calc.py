@@ -65,30 +65,10 @@ def _first_float(payload: Dict[str, Any], keys: Iterable[str]) -> Optional[float
 
 
 def _collect_parameter_payload(state: SealAIState) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {}
-    extracted = state.extracted_params or {}
-    if isinstance(extracted, dict):
-        payload.update(extracted)
-
-    params = getattr(state, "parameters", None)
-    as_dict = getattr(params, "as_dict", None)
-    if callable(as_dict):
-        payload.update(as_dict() or {})
-    elif isinstance(params, dict):
-        payload.update(params)
-
-    if state.pressure_bar is not None:
-        payload.setdefault("pressure_bar", state.pressure_bar)
-    
-    # Explicitly pull elastomer material for RWDR logic
+    """Single source of truth: pull parameters ONLY from working_profile."""
     if state.working_profile:
-        wp_dict = _to_dict(state.working_profile)
-        if "elastomer_material" in wp_dict:
-            payload.setdefault("elastomer_material", wp_dict["elastomer_material"])
-        if "material" in wp_dict:
-            payload.setdefault("material", wp_dict["material"])
-    
-    return payload
+        return _to_dict(state.working_profile)
+    return {}
 
 
 def _to_dict(value: Any) -> Dict[str, Any]:
@@ -96,14 +76,14 @@ def _to_dict(value: Any) -> Dict[str, Any]:
         return {}
     if isinstance(value, dict):
         return dict(value)
-    as_dict = getattr(value, "as_dict", None)
-    if callable(as_dict):
-        result = as_dict()
-        if isinstance(result, dict):
-            return result
     model_dump = getattr(value, "model_dump", None)
     if callable(model_dump):
         result = model_dump(exclude_none=True)
+        if isinstance(result, dict):
+            return result
+    as_dict = getattr(value, "as_dict", None)
+    if callable(as_dict):
+        result = as_dict()
         if isinstance(result, dict):
             return result
     return {}
@@ -124,20 +104,18 @@ def _sanitize_primitive_parameters(payload: Dict[str, Any]) -> Dict[str, str | i
 
 
 def _collect_captured_parameters(state: SealAIState) -> Dict[str, str | int | float]:
-    merged: Dict[str, Any] = {}
-    merged.update(_to_dict(getattr(state, "extracted_params", {}) or {}))
-    merged.update(_to_dict(getattr(state, "parameters", {}) or {}))
-    merged.update(_to_dict(getattr(state, "working_profile", {}) or {}))
-    return _sanitize_primitive_parameters(merged)
+    """Legacy helper for UI, now purely derived from working_profile."""
+    return _sanitize_primitive_parameters(_to_dict(state.working_profile))
 
 
 def _get_diameter_mm(payload: Dict[str, Any]) -> Optional[float]:
     return _first_float(
         payload,
         (
-            "d1",
-            "shaft_d1",
             "shaft_diameter",
+            "shaft_d1",
+            "d1",
+            "d1",
             "d_shaft_nominal",
             "diameter",
             "nominal_diameter",
@@ -149,12 +127,12 @@ def _get_diameter_mm(payload: Dict[str, Any]) -> Optional[float]:
 
 def calc_tribology(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None) -> Dict[str, Any]:
     diameter_mm = _get_diameter_mm(payload)
-    rpm = _first_float(payload, ("rpm", "speed_rpm", "n", "n_max"))
-    pressure_bar = _first_float(payload, ("pressure_bar", "pressure_max_bar", "pressure", "p_max"))
-    hrc_value = _first_float(payload, ("hrc", "hrc_value", "shaft_hardness", "hardness"))
+    rpm = _first_float(payload, ("speed_rpm", "rpm", "n", "n_max"))
+    pressure_bar = _first_float(payload, ("pressure_max_bar", "pressure_bar", "pressure", "p_max"))
+    hrc_value = _first_float(payload, ("surface_hardness_hrc", "hrc", "hrc_value", "shaft_hardness", "hardness"))
     runout_mm = _first_float(payload, ("runout_mm", "runout", "shaft_runout", "dynamic_runout"))
     cross_section_d2 = _first_float(payload, ("cross_section_d2", "d2", "seal_cross_section"))
-    temp_max_c = _first_float(payload, ("temp_max_c", "temperature_max_c", "temperature_max", "T_medium_max", "temp_max"))
+    temp_max_c = _first_float(payload, ("temperature_max_c", "temp_max_c", "temperature_max", "T_medium_max", "temp_max"))
 
     # Material extraction for RWDR logic
     material = str(payload.get("elastomer_material") or payload.get("material") or "").strip().upper()

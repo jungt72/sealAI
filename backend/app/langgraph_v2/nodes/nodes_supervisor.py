@@ -47,8 +47,8 @@ NO_KEYWORDS: List[str] = [
 
 _REQUIRED_PARAMS_FOR_READY: List[str] = [
     "medium",
-    "pressure_bar",
-    "temperature_C",
+    "pressure_max_bar",
+    "temperature_max_c",
     "shaft_diameter",
     "speed_rpm",
 ]
@@ -81,11 +81,12 @@ _ACTION_COSTS: Dict[str, int] = {
 
 _PARAM_LABELS: Dict[str, str] = {
     "medium": "Medium",
-    "pressure_bar": "Druck (bar)",
-    "temperature_C": "Temperatur (°C)",
+    "pressure_max_bar": "Druck (bar)",
+    "temperature_max_c": "Temperatur (°C)",
     "shaft_diameter": "Wellen-Ø (mm)",
     "speed_rpm": "Drehzahl (rpm)",
 }
+
 
 _MATERIAL_DOC_TOKENS: tuple[str, ...] = (
     "datenblatt",
@@ -143,10 +144,10 @@ def _compute_coverage(required: List[str], missing: List[str]) -> float:
 
 
 def _infer_missing_params(state: SealAIState, required: List[str]) -> List[str]:
-    params = state.parameters
+    wp = state.working_profile
     missing: List[str] = []
     for key in required:
-        value = getattr(params, key, None)
+        value = getattr(wp, key, None)
         if value is None or value == "":
             missing.append(key)
     return missing
@@ -157,8 +158,15 @@ def supervisor_logic_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     _maybe_set_recommendation_go(state)
     wm = state.working_memory or WorkingMemory()
 
-    missing = _infer_missing_params(state, _REQUIRED_PARAMS_FOR_READY)
-    coverage_score = _compute_coverage(_REQUIRED_PARAMS_FOR_READY, missing)
+    required = [
+        "medium",
+        "pressure_max_bar",
+        "temperature_max_c",
+        "shaft_diameter",
+        "speed_rpm",
+    ]
+    missing = _infer_missing_params(state, required)
+    coverage_score = _compute_coverage(required, missing)
     recommendation_ready = coverage_score >= _READY_THRESHOLD
     return {
         "working_memory": wm,
@@ -507,11 +515,12 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
 
     questions = _coerce_questions(state.open_questions)
     updated_questions: List[QuestionItem] = []
+    wp = state.working_profile
     for question in questions:
         if question.status != "answered":
             param_value = None
-            if question.id:
-                param_value = getattr(state.parameters, question.id, None)
+            if question.id and wp:
+                param_value = getattr(wp, question.id, None)
             has_fact = bool(question.id and question.id in facts)
             if param_value not in (None, "") or has_fact:
                 question = question.model_copy(update={"status": "answered"})

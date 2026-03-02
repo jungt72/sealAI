@@ -80,9 +80,18 @@ export default function ChatInterface() {
                 console.log("MAPPED TILE DATA:", mergedTile);
                 return mergedTile as LiveCalcTileData;
             });
-            setShowTile(true);
         }
     }, [workingProfile, calcResults, complianceResults, hookLiveCalcTile]);
+
+    useEffect(() => {
+        if (
+            workingProfile !== null ||
+            (liveCalcTile && liveCalcTile.v_surface_m_s !== null && liveCalcTile.v_surface_m_s !== undefined) ||
+            calcResults !== null
+        ) {
+            setShowTile(true);
+        }
+    }, [workingProfile, liveCalcTile, calcResults]);
 
     const visibleHistory = chatHistory.slice(chatHistoryOffset);
     const completedMessages: Message[] = visibleHistory.map((message) => ({

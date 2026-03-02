@@ -109,6 +109,13 @@ class WorkingProfile(BaseModel):
     product_name: Optional[str] = None
 
     # Dynamic parameters (v6)
+    shaft_diameter: Optional[float] = None
+    speed_rpm: Optional[float] = None
+    shaft_d1: Optional[float] = None
+    rpm: Optional[float] = None
+    n: Optional[float] = None
+    d1: Optional[float] = None
+    elastomer_material: Optional[str] = None
     dp_dt_bar_per_s: Optional[float] = None
     side_load_kn: Optional[float] = None
     cycle_rate_hz: Optional[float] = None
@@ -142,6 +149,12 @@ class WorkingProfile(BaseModel):
         return _coerce_float(value, info.field_name)
 
     @field_validator(
+        "shaft_diameter",
+        "speed_rpm",
+        "shaft_d1",
+        "rpm",
+        "n",
+        "d1",
         "dp_dt_bar_per_s",
         "side_load_kn",
         "cycle_rate_hz",
@@ -239,7 +252,15 @@ class WorkingProfile(BaseModel):
         "industry_sector",
         "material",
         "product_name",
+        "shaft_diameter",
+        "speed_rpm",
+        "shaft_d1",
+        "rpm",
+        "n",
+        "d1",
+        "elastomer_material",
     })
+
 
     def as_dict(self) -> Dict[str, Any]:
         """Return non-None fields as dict."""
