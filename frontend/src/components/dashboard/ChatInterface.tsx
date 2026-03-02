@@ -35,11 +35,25 @@ export default function ChatInterface() {
         currentAiText,
         isThinking,
         nodeStatus,
+        workingProfile,
         error: streamError,
         sendMessage,
         cancelStream,
         clearError,
     } = useSealAIStream(streamApiEndpoint, accessToken);
+
+    useEffect(() => {
+        if (workingProfile) {
+            setLiveCalcTile({
+                status: workingProfile.knowledge_coverage === 'FULL' ? 'ok' : 'warning',
+                parameters: {
+                    ...workingProfile,
+                    temperature_max_c: workingProfile.temp_range?.[1],
+                    pressure_max_bar: workingProfile.pressure_bar
+                }
+            });
+        }
+    }, [workingProfile]);
 
     const visibleHistory = chatHistory.slice(chatHistoryOffset);
     const completedMessages: Message[] = visibleHistory.map((message) => ({
@@ -143,17 +157,9 @@ export default function ChatInterface() {
 
     return (
         <div className="h-full w-full overflow-hidden bg-[#f3f8ff]">
-            <div className="relative mx-auto flex h-full w-full max-w-[1700px] flex-col gap-4 p-4 xl:flex-row">
-                {hasTileData && !isSidebarOpen && (
-                    <button
-                        onClick={() => setIsSidebarOpen(true)}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 z-20 flex h-8 w-8 items-center justify-center rounded-l-full bg-white border border-slate-200 border-r-0 shadow-md hover:bg-slate-50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
-                        aria-label="Sidebar einblenden"
-                    >
-                        <ChevronLeft className="h-4 w-4 text-slate-600 mr-1" />
-                    </button>
-                )}
-                <div className={`relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all duration-300 ${showTile ? "xl:w-2/3 xl:flex-shrink-0" : "xl:w-full"} ${isZeroState ? "items-center justify-center" : ""}`}>
+            <div className={`relative mx-auto grid h-full w-full max-w-[1700px] gap-4 p-4 ${showTile ? "grid-cols-1 xl:grid-cols-3" : "grid-cols-1"}`}>
+                
+                <div className={`relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all duration-300 ${showTile ? "xl:col-span-2" : "xl:col-span-3"} ${isZeroState ? "items-center justify-center" : ""}`}>
 
                     {!isZeroState && (
                         <div className="absolute top-6 right-6 z-[70] flex items-center gap-2">
@@ -280,7 +286,7 @@ export default function ChatInterface() {
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: 28 }}
                             transition={{ duration: 0.25, ease: "easeOut" }}
-                            className="relative w-full xl:h-full xl:w-1/3 xl:flex-shrink-0"
+                            className="relative h-full xl:col-span-1"
                         >
                             <button
                                 onClick={() => setIsSidebarOpen(false)}

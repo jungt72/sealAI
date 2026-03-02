@@ -65,7 +65,6 @@ CONVERSATIONAL_STREAM_NODES = frozenset(
 _STREAM_NODE_BLOCKLIST = frozenset({"final_answer_node"})
 SPEAKING_NODES = {
     "smalltalk_node",
-    "reasoning_core_node",
     "response_node",
     "conversational_rag_node",
     "contract_first_output_node",
