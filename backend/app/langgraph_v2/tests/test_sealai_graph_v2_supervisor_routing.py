@@ -12,32 +12,28 @@ from app.langgraph_v2.state import Intent, SealAIState, TechnicalParameters
 
 def test_graph_entry_routes_to_kb_lookup_or_smalltalk() -> None:
     """Frontdoor should route through dedicated route_after_frontdoor node."""
-    graph = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore())
-    compiled = graph.get_graph()
-    entry_edges = [
-        edge for edge in compiled.edges if edge.source == "frontdoor_discovery_node"
-    ]
-    targets = {edge.target for edge in entry_edges}
-    assert "route_after_frontdoor" in targets
+    builder = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore(), return_builder=True)
+    
+    # In V8, frontdoor_discovery_node uses a direct edge to route_after_frontdoor
+    entry_targets = {target for source, target in builder.edges if source == "frontdoor_discovery_node"}
+    assert "route_after_frontdoor" in entry_targets
 
-    route_edges = [
-        edge for edge in compiled.edges if edge.source == "frontdoor_parallel_fanout_node"
-    ]
-    route_targets = {edge.target for edge in route_edges}
+    route_targets = {target for source, target in builder.edges if source == "frontdoor_parallel_fanout_node"}
     assert "node_factcard_lookup_parallel" in route_targets
     assert "node_compound_filter_parallel" in route_targets
 
-    # supervisor_policy_node is reached via node_merge_deterministic or direct route_after path
-    kb_edges = [
-        edge for edge in compiled.edges if edge.source == "node_merge_deterministic"
-    ]
-    assert any(e.target == "supervisor_policy_node" for e in kb_edges)
+    # supervisor_policy_node is reached via node_merge_deterministic
+    mapping = {}
+    for source, branches in builder.branches.items():
+        if source == "node_merge_deterministic":
+            for branch in branches.values():
+                mapping.update(branch.ends)
+    assert mapping["supervisor"] == "supervisor_policy_node"
 
 
 def test_graph_parallel_worker_edges_route_to_reducer() -> None:
-    graph = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore())
-    compiled = graph.get_graph()
-    node_ids = set(compiled.nodes.keys())
+    builder = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore(), return_builder=True)
+    node_ids = set(builder.nodes.keys())
     assert "calculator_agent" in node_ids
     assert "pricing_agent" in node_ids
     assert "safety_agent" in node_ids
@@ -46,13 +42,17 @@ def test_graph_parallel_worker_edges_route_to_reducer() -> None:
 
 
 def test_graph_rfq_trigger_routes_via_validator_before_procurement() -> None:
-    graph = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore())
-    compiled = graph.get_graph()
-    node_ids = set(compiled.nodes.keys())
-    assert "rfq_validator_node" in node_ids
+    builder = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore(), return_builder=True)
+    assert "rfq_validator_node" in builder.nodes
 
-    inbound_to_procurement = {edge.source for edge in compiled.edges if edge.target == "node_p5_procurement"}
-    assert "rfq_validator_node" in inbound_to_procurement
+    # Check conditional edges from rfq_validator_node
+    mapping = {}
+    for source, branches in builder.branches.items():
+        if source == "rfq_validator_node":
+            for branch in branches.values():
+                mapping.update(branch.ends)
+    
+    assert mapping["ready"] == "node_p5_procurement"
 
 
 def test_graph_reducer_routes_to_hitl_or_final() -> None:
@@ -152,12 +152,16 @@ def test_route_after_frontdoor_routes_extreme_temp_suitability_to_kb_fast_path()
 
 
 def test_graph_troubleshooting_wizard_completion_routes_to_conversational_rag() -> None:
-    graph = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore())
-    compiled = graph.get_graph()
-    wizard_edges = [edge for edge in compiled.edges if edge.source == "troubleshooting_wizard_node"]
-    targets = {edge.target for edge in wizard_edges}
-    assert "conversational_rag_node" in targets
-    assert "final_answer_node" not in targets
+    builder = create_sealai_graph_v2(checkpointer=MemorySaver(), store=InMemoryStore(), return_builder=True)
+    
+    mapping = {}
+    for source, branches in builder.branches.items():
+        if source == "troubleshooting_wizard_node":
+            for branch in branches.values():
+                mapping.update(branch.ends)
+                
+    assert mapping["complete"] == "conversational_rag_node"
+    assert "final_answer_node" not in mapping.values()
 
 
 def test_supervisor_policy_node_sets_coverage_from_missing_params() -> None:
