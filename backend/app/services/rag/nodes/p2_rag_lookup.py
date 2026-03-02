@@ -310,7 +310,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         tier_start = time.perf_counter()
         payload = await loop.run_in_executor(
             None,
-            lambda: search_technical_docs(query=query, tenant_id=state.tenant_id, k=requested_k),
+            lambda: search_technical_docs(query=query, tenant_id=state.tenant_id or state.user_id, k=requested_k),
         )
         hits = payload.get("hits") or []
         retrieval_meta = dict(payload.get("retrieval_meta") or {})

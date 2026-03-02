@@ -6,6 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 from app.services.rag.nodes.p2_rag_lookup import (
     _build_rag_query,
     node_p2_rag_lookup,
@@ -73,27 +79,29 @@ class TestBuildRagQuery:
         assert "Produkt Gylon" in query
 
 
+@pytest.mark.anyio
+@patch("app.services.rag.nodes.p2_rag_lookup.rag_cache.get", return_value=None)
 class TestNodeP2RagLookup:
-    def test_sparse_profile_skips_rag(self):
+    async def test_sparse_profile_skips_rag(self, mock_cache_get):
         """Coverage < 0.2 → skip RAG, return minimal state."""
         state = _make_state(working_profile=WorkingProfile())
-        result = node_p2_rag_lookup(state)
+        result = await node_p2_rag_lookup(state)
         assert "context" not in result  # no RAG context
         assert "sources" not in result
 
     @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
-    def test_sparse_profile_bypass_with_material(self, mock_search):
+    async def test_sparse_profile_bypass_with_material(self, mock_search, mock_cache_get):
         """Profile contains 'material' → bypass sparse check."""
         mock_search.return_value = {"hits": [], "context": "found something", "retrieval_meta": {}}
         profile = WorkingProfile(material="Kyrolon")
         # Coverage is 1/17 ~ 0.058 (well below 0.2)
         state = _make_state(working_profile=profile)
-        result = node_p2_rag_lookup(state)
+        result = await node_p2_rag_lookup(state)
         mock_search.assert_called_once()
         assert result["context"] == "found something"
 
     @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
-    def test_sparse_profile_bypass_with_knowledge_intent(self, mock_search):
+    async def test_sparse_profile_bypass_with_knowledge_intent(self, mock_search, mock_cache_get):
         """Intent is 'explanation_or_comparison' → bypass sparse check."""
         mock_search.return_value = {"hits": [], "context": "found something", "retrieval_meta": {}}
         from app.langgraph_v2.state import Intent
@@ -101,17 +109,17 @@ class TestNodeP2RagLookup:
             working_profile=WorkingProfile(),
             intent=Intent(goal="explanation_or_comparison")
         )
-        result = node_p2_rag_lookup(state)
+        result = await node_p2_rag_lookup(state)
         mock_search.assert_called_once()
         assert result["context"] == "found something"
 
-    def test_no_profile_skips_rag(self):
+    async def test_no_profile_skips_rag(self, mock_cache_get):
         state = _make_state(working_profile=None)
-        result = node_p2_rag_lookup(state)
+        result = await node_p2_rag_lookup(state)
         assert "context" not in result
 
     @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
-    def test_filled_profile_calls_rag(self, mock_search):
+    async def test_filled_profile_calls_rag(self, mock_search, mock_cache_get):
         mock_search.return_value = {
             "hits": [
                 {
@@ -132,7 +140,7 @@ class TestNodeP2RagLookup:
             flange_dn=50,
         )
         state = _make_state(working_profile=profile)
-        result = node_p2_rag_lookup(state)
+        result = await node_p2_rag_lookup(state)
 
         mock_search.assert_called_once()
         call_kwargs = mock_search.call_args
@@ -144,7 +152,7 @@ class TestNodeP2RagLookup:
         assert result["working_memory"].panel_material["source"] == "p2_rag_lookup"
 
     @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
-    def test_rag_failure_graceful(self, mock_search):
+    async def test_rag_failure_graceful(self, mock_search, mock_cache_get):
         mock_search.side_effect = RuntimeError("Qdrant timeout")
         profile = WorkingProfile(
             medium="Dampf",
@@ -154,6 +162,6 @@ class TestNodeP2RagLookup:
             flange_dn=50,
         )
         state = _make_state(working_profile=profile)
-        result = node_p2_rag_lookup(state)
+        result = await node_p2_rag_lookup(state)
 
         assert "error" in str(result.get("retrieval_meta", {})).lower() or "RuntimeError" in str(result.get("retrieval_meta", {}))
