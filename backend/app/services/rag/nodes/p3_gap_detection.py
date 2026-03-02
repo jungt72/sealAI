@@ -83,7 +83,15 @@ def _compute_gap_report(profile: Optional[WorkingProfile]) -> Dict[str, Any]:
                 continue
             missing_optional.append(field)
 
-    coverage_ratio = profile.coverage_ratio()
+    # Calculate coverage ratio based on discovery fields only (15 fields),
+    # ignoring solution-related fields like 'material' in WorkingProfile (v8).
+    total = len(_ALL_PROFILE_FIELDS)
+    filled = sum(
+        1 for f in _ALL_PROFILE_FIELDS
+        if getattr(profile, f, None) not in (None, False)
+    )
+    coverage_ratio = filled / total if total > 0 else 0.0
+
     recommendation_ready = len(missing_critical) == 0
 
     return {
