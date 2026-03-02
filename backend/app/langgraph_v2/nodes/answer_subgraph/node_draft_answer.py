@@ -100,6 +100,46 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return {}
 
 
+def _build_deterministic_constraints(state: SealAIState) -> str:
+    tile_obj = getattr(state, "live_calc_tile", None)
+    if tile_obj is None:
+        return ""
+    tile = _as_dict(tile_obj)
+    if not tile:
+        return ""
+
+    lines: List[str] = [
+        "### DETERMINISTIC SYSTEM STATE (INVIOLABLE RULES) ###",
+        "The following parameters and warnings are the result of deterministic physical calculations and material databases. They are absolute truth and override any general knowledge.",
+    ]
+
+    if tile.get("chem_warning"):
+        msg = tile.get("chem_message", "Inkompatibilitaet festgestellt.")
+        lines.append(
+            f"CRITICAL WARNING: {msg}. Du darfst dieses Material unter KEINEN UMSTÄNDEN als 'geeignet' oder 'sicher' empfehlen!"
+        )
+
+    pv = tile.get("pv_value_mpa_m_s")
+    if pv is not None:
+        lines.append(
+            f"Aktueller PV-Wert: {pv} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefährdet)."
+        )
+        lines.append(
+            "Berechne NIEMALS physikalische Werte (wie PV-Werte) selbst aus! Nutze AUSSCHLIESSLICH diesen bereitgestellten PV-Wert."
+        )
+
+    v = tile.get("v_surface_m_s")
+    if v is not None:
+        lines.append(f"Aktuelle Gleitgeschwindigkeit: {v} m/s.")
+
+    lines.append("\n### CONFLICT RESOLUTION (RAG vs. CALCULATION) ###")
+    lines.append(
+        "Wenn RAG-Dokumente eine allgemeine Eignung suggerieren, ABER der obige deterministische System State eine Warnung ausgibt, hat der System State IMMER Vorrang. Erkläre dem Nutzer explizit, warum die allgemeine Regel hier wegen der spezifischen Parameter nicht gilt."
+    )
+
+    return "\n".join(lines)
+
+
 def _should_use_detached_knowledge_instruction(state: SealAIState) -> bool:
     flags = _as_dict(getattr(state, "flags", {}) or {})
     intent_category = str(
@@ -181,12 +221,15 @@ async def node_draft_answer(state: SealAIState, *_args: Any, **_kwargs: Any) -> 
         "(Temperatur, Druck, Medium)."
     )
     if _should_use_detached_knowledge_instruction(state):
+        constraints = _build_deterministic_constraints(state)
         system_prompt += (
-            " The user is asking a general knowledge or material research question. "
+            f"\n\n{constraints}\n\n"
+            "The user is asking a general knowledge or material research question. "
             "Provide a comprehensive, general overview based ONLY on the provided RAG context. "
-            "DO NOT evaluate, validate, or cross-reference the material against the user's active technical "
-            "parameters (e.g., pressure, temperature from the working profile) unless explicitly asked. "
-            "Treat this as a detached encyclopedia entry. Ignore previous calculation reports."
+            "Be aware of the DETERMINISTIC SYSTEM STATE provided above. "
+            "If the system state contains a 'chem_warning' or critical PV values, you MUST prioritize this warning "
+            "over any general material suitability found in RAG documents. "
+            "Treat this as an encyclopedia entry but with active safety monitoring based on the calculation state."
         )
 
     messages = [

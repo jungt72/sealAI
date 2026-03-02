@@ -127,6 +127,7 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
     if tile.get("pv_value_mpa_m_s") is not None:
         pv = tile.get("pv_value_mpa_m_s")
         lines.append(f"Aktueller PV-Wert: {pv} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefährdet).")
+        lines.append("Berechne NIEMALS physikalische Werte (wie PV-Werte) selbst aus! Nutze AUSSCHLIESSLICH diesen bereitgestellten PV-Wert.")
     
     if tile.get("v_surface_m_s") is not None:
         v = tile.get("v_surface_m_s")
