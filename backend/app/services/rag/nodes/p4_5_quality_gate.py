@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
+from app.mcp.calculations.compliance import is_critical_application as _compliance_is_critical
 
 logger = structlog.get_logger("rag.nodes.p4_5_quality_gate")
 
@@ -535,29 +536,34 @@ def _check_critical_flag(
 ) -> QGateCheck:
     """Check 8: is_critical Flag (FLAG).
 
-    Sets is_critical_application=True for: H2, O2, >100 bar, >400°C, <-40°C.
+    Delegiert an compliance.is_critical_application — single source of truth.
     """
     is_critical = bool(calc_result.get("is_critical_application", False))
 
-    reasons: List[str] = []
-    medium = str(profile.get("medium") or "").strip().lower()
-    critical_media = {"h2", "hydrogen", "wasserstoff", "o2", "oxygen", "sauerstoff"}
-    if medium in critical_media:
-        reasons.append(f"Kritisches Medium: {profile.get('medium')}")
-
+    medium = profile.get("medium")
     pressure = profile.get("pressure_max_bar")
-    if pressure is not None and float(pressure) > 100.0:
-        reasons.append(f"Hochdruck: {pressure} bar > 100 bar")
-
     temp = profile.get("temperature_max_c")
-    if temp is not None:
-        if float(temp) > 400.0:
-            reasons.append(f"Hochtemperatur: {temp} °C > 400 °C")
-        if float(temp) < -40.0:
-            reasons.append(f"Kryogen: {temp} °C < -40 °C")
 
-    # Ensure flag matches calc_engine result OR own detection
-    effective_critical = is_critical or bool(reasons)
+    profile_critical = _compliance_is_critical(
+        medium=str(medium) if medium else None,
+        pressure_bar=float(pressure) if pressure is not None else None,
+        temp_c=float(temp) if temp is not None else None,
+    )
+
+    # Reasons nur für Nachrichtentext — Entscheidung liegt bei compliance
+    reasons: List[str] = []
+    if profile_critical:
+        if medium and _compliance_is_critical(medium=str(medium)):
+            reasons.append(f"Kritisches Medium: {medium}")
+        if pressure is not None and float(pressure) > 100.0:
+            reasons.append(f"Hochdruck: {pressure} bar > 100 bar")
+        if temp is not None:
+            if float(temp) > 400.0:
+                reasons.append(f"Hochtemperatur: {temp} °C > 400 °C")
+            if float(temp) < -40.0:
+                reasons.append(f"Kryogen: {temp} °C < -40 °C")
+
+    effective_critical = is_critical or profile_critical
 
     return QGateCheck(
         check_id="critical_flag",

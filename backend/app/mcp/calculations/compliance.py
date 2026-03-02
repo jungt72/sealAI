@@ -449,9 +449,29 @@ def check_compliance(
     )
 
 
+def is_critical_application(
+    medium: Optional[str] = None,
+    temp_c: Optional[float] = None,
+    pressure_bar: Optional[float] = None,
+) -> bool:
+    """Material-unabhängiger Critical-Flag.
+
+    Für Kontexte ohne bekannten Werkstoff (z.B. Flanschberechnung, Quality Gate).
+    Delegiert die Erkennungslogik aus check_compliance — single source of truth.
+    """
+    medium_norm = _normalize_medium(medium) or ""
+    return (
+        medium_norm in _CRITICAL_MEDIA
+        or (pressure_bar is not None and pressure_bar > 100.0)
+        or (temp_c is not None and temp_c > 400.0)
+        or (temp_c is not None and temp_c < -40.0)
+    )
+
+
 __all__ = [
     "ComplianceFlag",
     "FlagResult",
     "ComplianceResult",
     "check_compliance",
+    "is_critical_application",
 ]
