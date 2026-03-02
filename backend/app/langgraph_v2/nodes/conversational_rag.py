@@ -98,9 +98,12 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
         return "ENGINEERING PHYSICS REPORT: Keine berechneten Physikdaten verfuegbar.", False
 
     lines: List[str] = [
-        "### DETERMINISTIC SYSTEM STATE (INVIOLABLE RULES) ###",
-        "The following parameters and warnings are the result of deterministic physical calculations and material databases. They are absolute truth and override any general knowledge.",
-        f"- status: {tile.get('status')}",
+        "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###",
+        "Du hast Zugriff auf den aktuellen Zustand der deterministischen Berechnungsmaschine (System State). Dieser Zustand steht ÜBER allem RAG-Wissen!",
+        "1. WENN das System eine chemische Warnung meldet (z.B. NBR nicht beständig gegen HEES), MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für dieses Medium strikt AUSGESCHLOSSEN.' Verwende keine weichen Formulierungen wie 'fraglich' oder 'kritisch'.",
+        "2. WENN das System einen PV-Wert liefert, zitiere ihn. WENN der Wert > 1.5 MPa*m/s ist, betone, dass Standard-Elastomere bei diesem Limit sofort verbrennen und Hochleistungswerkstoffe zwingend erforderlich sind.",
+        "3. Du darfst das RAG-Wissen NUR nutzen, um Werkstoffe zu vergleichen, die laut System State noch zulässig sind, oder um zu erklären, WARUM das vom User gewählte Material laut System versagt.",
+        f"\n- status: {tile.get('status')}",
     ]
     for key in (
         "friction_power_watts",
@@ -156,17 +159,7 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
             "You MUST recommend a spring-energized seal (Elastil) to compensate for thermal shrinkage."
         )
 
-    lines.append("\n### CONFLICT RESOLUTION (RAG vs. CALCULATION) ###")
-    lines.append(
-        "ACHTUNG: Egal was in den RAG-Dokumenten steht - die Werte und Warnungen im DETERMINISTIC SYSTEM STATE sind unwiderruflich! "
-        "Wenn externe Informationen oder RAG-Dokumente eine allgemeine Eignung suggerieren (z.B. 'NBR ist gut für Öl'), "
-        "ABER der obige deterministische System State eine Warnung ausgibt (z. B. chemische Inkompatibilität oder PV-Limit überschritten), "
-        "hat der System State IMMER Vorrang. "
-        "Wenn das System sagt, NBR ist nicht beständig (z.B. wegen HEES), MUSST du in deinem Werkstoffvergleich NBR massiv abwerten "
-        "und den Nutzer auf diesen System-Konflikt hinweisen. "
-        "Du darfst den PV-Wert nicht selbst berechnen, sondern musst den Wert aus dem System nutzen."
-    )
-
+    # Conflict Resolution is now integrated into the Zero Tolerance rules above.
     return "\n".join(lines), has_risk
 
 

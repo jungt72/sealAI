@@ -21,9 +21,9 @@ def test_reasoning_core_prompt_with_chem_warning():
         calc_ranges="status=warning"
     )
     
-    assert "DETERMINISTIC SYSTEM STATE (INVIOLABLE RULES)" in prompt
+    assert "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###" in prompt
     assert "CRITICAL WARNING: NBR is incompatible with HEES oil at high temperatures." in prompt
-    assert "CONFLICT RESOLUTION (RAG vs. CALCULATION)" in prompt
+    assert "1. WENN das System eine chemische Warnung meldet" in prompt
     assert "Zwingende Einsatzbedingungen: Temperatur: 80.0 °C, Medium: HEES" in prompt
 
 def test_conversational_rag_report_with_pv_warning():
@@ -38,10 +38,10 @@ def test_conversational_rag_report_with_pv_warning():
     report, has_risk = _build_engineering_physics_report(tile_dict)
     
     assert has_risk is True
-    assert "DETERMINISTIC SYSTEM STATE (INVIOLABLE RULES)" in report
+    assert "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###" in report
     assert "CRITICAL WARNING: Material A is unsuitable for this chemical." in report
     assert "Aktueller PV-Wert: 2.5 MPa*m/s" in report
-    assert "CONFLICT RESOLUTION (RAG vs. CALCULATION)" in report
+    assert "2. WENN das System einen PV-Wert liefert" in report
 
 def test_reasoning_core_prompt_no_tile():
     state = SealAIState()
@@ -55,5 +55,5 @@ def test_reasoning_core_prompt_no_tile():
         calc_ranges="none"
     )
     
-    assert "DETERMINISTIC SYSTEM STATE (INVIOLABLE RULES)" in prompt
-    assert "The following parameters and warnings are the result of deterministic physical calculations" in prompt
+    assert "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###" in prompt
+    assert "Du hast Zugriff auf den aktuellen Zustand der deterministischen Berechnungsmaschine" in prompt
