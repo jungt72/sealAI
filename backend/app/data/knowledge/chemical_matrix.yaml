@@ -1,0 +1,30 @@
+entries:
+  - material_id: "NBR"
+    medium_id: "HEES"
+    rating: "C"
+    failure_modes: ["Schrumpfung", "Zersetzung", "Versprödung"]
+    conditions: ["Jeglicher Kontakt"]
+    evidence_source: "SealAI Baseline"
+  
+  - material_id: "NBR"
+    medium_id: "HLP"
+    rating: "A"
+    conditions: []
+    failure_modes: []
+    evidence_source: "SealAI Baseline"
+
+  - material_id: "PTFE"
+    medium_id: "HEES"
+    rating: "A"
+    t_max_continuous_c: 200.0
+    conditions: []
+    failure_modes: []
+    evidence_source: "SealAI Baseline"
+
+  - material_id: "FKM"
+    medium_id: "Wasser"
+    rating: "B"
+    t_max_continuous_c: 80.0
+    failure_modes: ["Hydrolyse > 80°C"]
+    conditions: []
+    evidence_source: "SealAI Baseline"
