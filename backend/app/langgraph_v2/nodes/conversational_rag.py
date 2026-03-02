@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import json
 import re
+import structlog
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -11,6 +12,7 @@ from app.langgraph_v2.state import SealAIState, WorkingMemory
 from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI, get_model_tier
 from app.langgraph_v2.utils.messages import latest_user_text
 
+logger = structlog.get_logger("langgraph_v2.conversational_rag")
 _FALLBACK_TEXT = (
     "Ich habe allgemeine Informationen zu PTFE-Dichtungen gefunden, benötige aber für eine präzise "
     "Auslegung Ihres Rührwerks noch folgende Daten: Material/Handelsname, Medium, Temperatur und Druck."
@@ -155,7 +157,15 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
         )
 
     lines.append("\n### CONFLICT RESOLUTION (RAG vs. CALCULATION) ###")
-    lines.append("Wenn externe Informationen oder RAG-Dokumente eine allgemeine Eignung suggerieren (z.B. 'NBR ist gut für Öl'), ABER der obige deterministische System State eine Warnung ausgibt (z. B. chemische Inkompatibilität oder PV-Limit überschritten), hat der System State IMMER Vorrang. Erkläre dem Nutzer explizit, warum die allgemeine Regel hier wegen der spezifischen Parameter nicht gilt.")
+    lines.append(
+        "ACHTUNG: Egal was in den RAG-Dokumenten steht - die Werte und Warnungen im DETERMINISTIC SYSTEM STATE sind unwiderruflich! "
+        "Wenn externe Informationen oder RAG-Dokumente eine allgemeine Eignung suggerieren (z.B. 'NBR ist gut für Öl'), "
+        "ABER der obige deterministische System State eine Warnung ausgibt (z. B. chemische Inkompatibilität oder PV-Limit überschritten), "
+        "hat der System State IMMER Vorrang. "
+        "Wenn das System sagt, NBR ist nicht beständig (z.B. wegen HEES), MUSST du in deinem Werkstoffvergleich NBR massiv abwerten "
+        "und den Nutzer auf diesen System-Konflikt hinweisen. "
+        "Du darfst den PV-Wert nicht selbst berechnen, sondern musst den Wert aus dem System nutzen."
+    )
 
     return "\n".join(lines), has_risk
 
@@ -223,6 +233,8 @@ async def conversational_rag_node(state: SealAIState, *_args: Any, **_kwargs: An
     live_calc_tile = _extract_live_calc_tile(state)
     profile_snapshot = _build_profile_snapshot(state)
     physics_report, has_physics_risk = _build_engineering_physics_report(live_calc_tile)
+    if physics_report:
+        logger.info("material_agent.deterministic_constraints_injected", physics_report_len=len(physics_report))
     flags = state.flags or {}
     low_quality = bool(flags.get("rag_low_quality_results"))
     rag_turn_count = int(getattr(state, "rag_turn_count", 0) or 0)

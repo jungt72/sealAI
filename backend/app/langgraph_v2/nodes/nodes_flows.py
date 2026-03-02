@@ -1,6 +1,7 @@
 # backend/app/langgraph_v2/nodes/nodes_flows.py
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -814,6 +815,62 @@ def product_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> D
     }
 
 
+def _as_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump(exclude_none=True)
+        if isinstance(dumped, dict):
+            return dict(dumped)
+    return {}
+
+
+def _build_deterministic_constraints(state: SealAIState) -> str:
+    tile_obj = getattr(state, "live_calc_tile", None)
+    if tile_obj is None:
+        return ""
+    tile = _as_dict(tile_obj)
+    if not tile:
+        return ""
+
+    lines: List[str] = [
+        "### DETERMINISTIC SYSTEM STATE (INVIOLABLE RULES) ###",
+        "The following parameters and warnings are the result of deterministic physical calculations and material databases. They are absolute truth and override any general knowledge.",
+    ]
+
+    if tile.get("chem_warning"):
+        msg = tile.get("chem_message", "Inkompatibilitaet festgestellt.")
+        lines.append(
+            f"CRITICAL WARNING: {msg}. Du darfst dieses Material unter KEINEN UMSTÄNDEN als 'geeignet' oder 'sicher' empfehlen!"
+        )
+
+    pv = tile.get("pv_value_mpa_m_s")
+    if pv is not None:
+        lines.append(
+            f"Aktueller PV-Wert: {pv} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefährdet)."
+        )
+        lines.append(
+            "Berechne NIEMALS physikalische Werte (wie PV-Werte) selbst aus! Nutze AUSSCHLIESSLICH diesen bereitgestellten PV-Wert."
+        )
+
+    v = tile.get("v_surface_m_s")
+    if v is not None:
+        lines.append(f"Aktuelle Gleitgeschwindigkeit: {v} m/s.")
+
+    lines.append("\n### CONFLICT RESOLUTION (RAG vs. CALCULATION) ###")
+    lines.append(
+        "ACHTUNG: Egal was in den RAG-Dokumenten steht - die Werte und Warnungen im DETERMINISTIC SYSTEM STATE sind unwiderruflich! "
+        "Wenn RAG-Dokumente eine allgemeine Eignung suggerieren, ABER der obige deterministische System State eine Warnung ausgibt, "
+        "hat der System State IMMER Vorrang. "
+        "Wenn das System sagt, NBR ist nicht beständig (z.B. wegen HEES), MUSST du in deinem Werkstoffvergleich NBR massiv abwerten "
+        "und den Nutzer auf diesen System-Konflikt hinweisen. "
+        "Du darfst den PV-Wert nicht selbst berechnen, sondern musst den Wert aus dem System nutzen."
+    )
+
+    return "\n".join(lines)
+
+
 async def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("material_comparison_node", state)
     user_text = latest_user_text(state.get("messages")) or ""
@@ -826,6 +883,15 @@ async def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: A
     else:
         system = "Du bist ein technischer Materialvergleichs-Experte."
         prompt = full_text.strip()
+
+    # DOMINANT INJECTION of Deterministic Constraints
+    constraints = _build_deterministic_constraints(state)
+    wp = _as_dict(getattr(state, "working_profile", None))
+    profile_info = f"PROFIL (Parameter-Snapshot):\n{json.dumps(wp, ensure_ascii=False, indent=2)}" if wp else ""
+    
+    if constraints:
+        system = f"{constraints}\n\n{profile_info}\n\n{system}"
+        logger.info("material_agent.deterministic_constraints_injected", constraints_len=len(constraints))
 
     response = await run_llm_async(
         model=get_model_tier("mini"),
