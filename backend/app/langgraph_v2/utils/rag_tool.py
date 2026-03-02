@@ -2,6 +2,7 @@ from langchain_core.tools import tool
 from app.services.rag.rag_orchestrator import hybrid_retrieve
 from typing import Optional
 import logging
+from app.mcp.knowledge_tool import query_deterministic_norms
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,9 @@ def search_knowledge_base(
     category: Optional[str] = None,
     k: int = 5,
     tenant: Optional[str] = None,
+    material: Optional[str] = None,
+    temp: Optional[float] = None,
+    pressure: Optional[float] = None,
 ) -> str:
     """
     Tool für Agentic RAG: liefert Top-k-contexts aus Qdrant, inklusive Metadata.
@@ -41,6 +45,58 @@ def search_knowledge_base(
     """
     if not tenant:
         raise ValueError("missing tenant_id for RAG retrieval")
+
+    if category == "norms":
+        # Hard block: norm queries NEVER reach Qdrant — SQL only.
+        # Return an actionable error if required params are missing.
+        missing = []
+        if not material:
+            missing.append("Material")
+        if temp is None:
+            missing.append("Temperatur")
+        if pressure is None:
+            missing.append("Druck")
+        if missing:
+            return (
+                f"Normabfrage nicht möglich — fehlende Parameter: {', '.join(missing)}. "
+                f"Bitte ergänzen Sie die fehlenden Angaben."
+            )
+        try:
+            deterministic_payload = query_deterministic_norms(
+                material=material,
+                temp=float(temp),
+                pressure=float(pressure),
+                tenant_id=tenant,
+            )
+        except Exception as exc:
+            logger.error("Deterministic norms query failed: %s", exc)
+            return f"Fehler beim deterministischen Normabgleich: {exc}"
+
+        matches = deterministic_payload.get("matches") if isinstance(deterministic_payload, dict) else {}
+        din_rows = (matches or {}).get("din_norms") or []
+        material_rows = (matches or {}).get("material_limits") or []
+
+        lines = ["**Deterministischer Normabgleich (PostgreSQL/Range-SQL):**"]
+        if din_rows:
+            lines.append("DIN-Normen:")
+            for row in din_rows[:5]:
+                lines.append(
+                    f"- {row.get('norm_code')} | "
+                    f"T={row.get('temperature_min_c')}..{row.get('temperature_max_c')} °C | "
+                    f"P={row.get('pressure_min_bar')}..{row.get('pressure_max_bar')} bar | "
+                    f"Version {row.get('version')} (ab {row.get('effective_date')})"
+                )
+        if material_rows:
+            lines.append("Materialgrenzen:")
+            for row in material_rows[:5]:
+                lines.append(
+                    f"- {row.get('limit_kind')}: {row.get('min_value')}..{row.get('max_value')} "
+                    f"{row.get('unit') or ''} | Version {row.get('version')} (ab {row.get('effective_date')})"
+                )
+        if not din_rows and not material_rows:
+            lines.append("Keine deterministischen Treffer fuer die angegebene Material-/Temperatur-/Druck-Kombination.")
+        return "\n".join(lines)
+
     filters = {"tenant_id": tenant}
     if category:
         filters["category"] = category

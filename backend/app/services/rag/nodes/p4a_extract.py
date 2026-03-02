@@ -7,7 +7,7 @@ P4a validates and transforms the profile into calculation-ready parameters.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import structlog
 from pydantic import ValidationError
@@ -82,6 +82,7 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         run_id=state.run_id,
         thread_id=state.thread_id,
     )
+    existing_extracted_params = dict(state.extracted_params or {})
 
     # Skip if critical fields are missing
     if not recommendation_ready:
@@ -91,7 +92,7 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             run_id=state.run_id,
         )
         return {
-            "extracted_params": {},
+            "extracted_params": existing_extracted_params,
             "phase": PHASE.EXTRACTION,
             "last_node": "node_p4a_extract",
         }
@@ -108,7 +109,7 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             run_id=state.run_id,
         )
         return {
-            "extracted_params": {},
+            "extracted_params": existing_extracted_params,
             "phase": PHASE.EXTRACTION,
             "last_node": "node_p4a_extract",
             "error": "P4a: pressure_max_bar and temperature_max_c required for calculation.",
@@ -126,7 +127,7 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             run_id=state.run_id,
         )
         return {
-            "extracted_params": {},
+            "extracted_params": existing_extracted_params,
             "phase": PHASE.EXTRACTION,
             "last_node": "node_p4a_extract",
             "error": f"P4a validation error: {exc}",
@@ -138,8 +139,11 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         run_id=state.run_id,
     )
 
+    merged_extracted_params = dict(existing_extracted_params)
+    merged_extracted_params.update(validated_dict)
+
     return {
-        "extracted_params": validated_dict,
+        "extracted_params": merged_extracted_params,
         "phase": PHASE.EXTRACTION,
         "last_node": "node_p4a_extract",
     }

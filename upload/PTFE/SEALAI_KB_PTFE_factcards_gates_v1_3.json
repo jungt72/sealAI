@@ -1814,6 +1814,90 @@
       "source": "S19",
       "confidence": "medium_high",
       "do_not_infer": "Do not recommend standard skived/machined PTFE for UHP without specifying surface finishing route, cleaning and particle qualification."
+    },
+    {
+      "id": "PTFE-F-121",
+      "topic": "dynamic_sealing",
+      "property": "dynamic_shaft_runout_limit_above_20mps",
+      "value": "0.05",
+      "units": "mm",
+      "conditions": "For v > 20 m/s, dynamic run-out limit is 0.05 mm; standard RWDR fails above >0.1 mm deflection.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not assume standard RWDR stability when dynamic deflection exceeds 0.1 mm."
+    },
+    {
+      "id": "PTFE-F-122",
+      "topic": "counterface",
+      "property": "iso_21920_surface_spec_for_ptfe_lips",
+      "value": "Ra 0.1-0.4; Rz 1.2-3.0; Rmr 50-70",
+      "units": "um/%",
+      "conditions": "ISO 21920 surface specification for PTFE lips.",
+      "test_method": "ISO 21920",
+      "source_rank": 1,
+      "source_type": "standard_specification",
+      "source": "S21",
+      "confidence": "high",
+      "do_not_infer": "Do not approve a shaft without explicit Ra, Rz and Rmr evidence."
+    },
+    {
+      "id": "PTFE-F-123",
+      "topic": "thermal",
+      "property": "total_thermal_load_arrhenius",
+      "value": "T_total = T_medium + DeltaT_friction; +10K doubles aging rate",
+      "units": null,
+      "conditions": "Thermal load model with Arrhenius aging acceleration.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not rate lifetime from medium temperature alone; include frictional self-heating."
+    },
+    {
+      "id": "PTFE-F-124",
+      "topic": "counterface",
+      "property": "minimum_shaft_hardness_for_ptfe_compounds",
+      "value": ">=58",
+      "units": "HRC",
+      "conditions": "Required due to abrasive filler effects in PTFE compounds.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not recommend filled PTFE compounds on softer shafts."
+    },
+    {
+      "id": "PTFE-F-130",
+      "topic": "dynamic_sealing",
+      "property": "prelonring_bp31_application_window",
+      "value": "Prelonring BP 31: FDA/EU 1935 konform, federlos, bis 6 bar",
+      "units": null,
+      "conditions": "Ideal fuer Teiganwendungen, wenn die Welle mindestens 58 HRC hat.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not recommend BP 31 for dough mixers if shaft hardness is below 58 HRC."
+    },
+    {
+      "id": "PTFE-F-131",
+      "topic": "dynamic_sealing",
+      "property": "rwdr_runout_limit_and_gliding_mechanical_seal_alternative",
+      "value": "Bei hohem Wellenschlag (>0,2 mm) sind RWDR ungeeignet; Empfehlung: Gleitringdichtungen (z.B. EagleBurgmann SeccoMix).",
+      "units": null,
+      "conditions": "Use as fallback when runout exceeds RWDR-stable operation window.",
+      "test_method": null,
+      "source_rank": 2,
+      "source_type": "expert_rule",
+      "source": "S20",
+      "confidence": "high",
+      "do_not_infer": "Do not recommend RWDR/PTFE-lip solutions when shaft runout exceeds 0.2 mm."
     }
   ],
   "gates": [
@@ -2531,53 +2615,59 @@
     },
     {
       "id": "PTFE-G-011",
-      "name": "Dimensional Stability Near 19°C Gate",
+      "name": "Agitator Rotary System Hard-Gate",
       "trigger_patterns": [
-        "maßhaltigkeit",
-        "toleranz",
-        "passung",
-        "19 °C",
-        "temperature swing 10-30",
-        "clearance"
+        "rührwerk",
+        "agitator",
+        "mischer",
+        "mixer"
       ],
       "required_fields": [
-        "tolerance_requirement",
-        "operating_temperature_range",
-        "geometry",
-        "assembly_preload"
+        "dynamic_shaft_runout_mm",
+        "pressure_direction",
+        "medium_consistency",
+        "shaft_misalignment_mm",
+        "shaft_hardness_hrc"
       ],
-      "if_missing_fields": "Warn about ~19°C transition volume change; require temp range; suggest design clearances or stabilization.",
+      "if_missing_fields": "Agitator applications require mandatory run-out, pressure direction, media consistency and shaft misalignment data before any recommendation.",
       "hard_blocks": [
-        "Block claiming micron-level stability across 10–30°C without a stabilization/conditioning plan."
+        "Block any material recommendation for agitator duty when run-out or shaft hardness data is missing."
       ],
       "assistant_actions": [
-        "Explain the ~19°C crystalline transition and potential ~1% volume change.",
-        "Ask for operating temperature window and tolerance requirements."
+        "Interrupt and ask mandatory agitator questions before recommending a material.",
+        "Confirm minimum shaft hardness >=58 HRC for PTFE compounds."
       ],
       "relevant_fact_ids": [
-        "PTFE-F-105",
-        "PTFE-F-112"
+        "PTFE-F-121",
+        "PTFE-F-122",
+        "PTFE-F-123",
+        "PTFE-F-124"
       ],
       "required_fields_schema": [
         {
-          "field": "tolerance_requirement",
-          "type": "string",
-          "description": "tolerance_requirement"
-        },
-        {
-          "field": "operating_temperature_range",
+          "field": "dynamic_shaft_runout_mm",
           "type": "number",
-          "description": "operating_temperature_range"
+          "description": "dynamic_shaft_runout_mm"
         },
         {
-          "field": "geometry",
+          "field": "pressure_direction",
           "type": "string",
-          "description": "geometry"
+          "description": "pressure_direction"
         },
         {
-          "field": "assembly_preload",
+          "field": "medium_consistency",
           "type": "string",
-          "description": "assembly_preload"
+          "description": "medium_consistency"
+        },
+        {
+          "field": "shaft_misalignment_mm",
+          "type": "number",
+          "description": "shaft_misalignment_mm"
+        },
+        {
+          "field": "shaft_hardness_hrc",
+          "type": "string",
+          "description": "shaft_hardness_hrc"
         }
       ],
       "status": "active"

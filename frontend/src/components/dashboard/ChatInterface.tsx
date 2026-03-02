@@ -1,59 +1,110 @@
 "use client";
 
-import { Bot, User, RotateCcw } from "lucide-react";
+import { Bot, ChevronLeft, ChevronRight, RotateCcw, AlertCircle } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import ChatComposer from "./ChatComposer";
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { motion, AnimatePresence } from 'framer-motion';
+import LiveCalcTile, { type LiveCalcTileData } from "./LiveCalcTile";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { motion, AnimatePresence } from "framer-motion";
+import { useSealAIStream } from "@/hooks/useSealAIStream";
 
 type Message = { role: "user" | "assistant"; content: string };
 
 export default function ChatInterface() {
     const { data: session } = useSession();
-    // Empty start = zero state hero
-    const [messages, setMessages] = useState<Message[]>([]);
     const [chatId, setChatId] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
+    const [chatHistoryOffset, setChatHistoryOffset] = useState(0);
+    const [suppressCurrentAiText, setSuppressCurrentAiText] = useState(false);
+    const [authError, setAuthError] = useState<string | null>(null);
+    const [liveCalcTile, setLiveCalcTile] = useState<LiveCalcTileData | null>(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [rfqReady, setRfqReady] = useState(false);
+    const [rfqPdfBase64, setRfqPdfBase64] = useState<string | null>(null);
+    const [rfqHtmlReport, setRfqHtmlReport] = useState<string | null>(null);
 
-    const isZeroState = messages.length === 0;
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const accessToken = (session as any)?.accessToken ?? "";
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE || "";
+    const streamApiEndpoint = apiBase.startsWith("http://backend") || !apiBase
+        ? "/api/v1/langgraph"
+        : `${apiBase}/api/v1/langgraph`;
+
+    const {
+        chatHistory,
+        currentAiText,
+        isThinking,
+        nodeStatus,
+        error: streamError,
+        sendMessage,
+        cancelStream,
+        clearError,
+    } = useSealAIStream(streamApiEndpoint, accessToken);
+
+    const visibleHistory = chatHistory.slice(chatHistoryOffset);
+    const completedMessages: Message[] = visibleHistory.map((message) => ({
+        role: message.role === "ai" ? "assistant" : "user",
+        content: message.text,
+    }));
+
+    let displayedMessages = authError
+        ? [...completedMessages, { role: "assistant" as const, content: authError }]
+        : completedMessages;
+    
+    if (streamError) {
+        displayedMessages = [...displayedMessages, { role: "assistant" as const, content: `⚠️ **Fehler:** ${streamError}` }];
+    }
+
+    const hasTileData = Boolean(liveCalcTile && liveCalcTile.status !== "insufficient_data");
+    const showTile = hasTileData && isSidebarOpen;
+    const shouldShowStreamingBubble = !suppressCurrentAiText && (isThinking || Boolean(currentAiText));
+    const isZeroState = displayedMessages.length === 0 && !shouldShowStreamingBubble;
+
+    const assistantMessageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+    const streamingAssistantRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
-        if (!isZeroState) {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }
-    }, [messages, isZeroState]);
+        if (isZeroState) return;
 
-    const startNewChat = () => {
-        setMessages([]);
-        setChatId(null);
-    };
-
-    const onSendMessage = async (message: string) => {
-        if (!message.trim() || isLoading) return;
-
-        if (!(session as any)?.accessToken) {
-            setMessages(prev => [...prev, {
-                role: "assistant",
-                content: "Error: Keine aktive Sitzung. Bitte melden Sie sich erneut an."
-            }]);
+        if (shouldShowStreamingBubble && streamingAssistantRef.current) {
+            streamingAssistantRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
             return;
         }
 
-        const userText = message;
-        setMessages(prev => [
-            ...prev,
-            { role: "user", content: userText },
-            { role: "assistant", content: "" }
-        ]);
+        for (let i = displayedMessages.length - 1; i >= 0; i -= 1) {
+            if (displayedMessages[i]?.role !== "assistant") continue;
+            const node = assistantMessageRefs.current[i];
+            if (!node) continue;
+            node.scrollIntoView({ behavior: "smooth", block: "start" });
+            break;
+        }
+    }, [displayedMessages, shouldShowStreamingBubble, currentAiText, isZeroState]);
 
-        setIsLoading(true);
+    const startNewChat = () => {
+        cancelStream();
+        clearError();
+        setChatHistoryOffset(chatHistory.length);
+        setChatId(null);
+        setSuppressCurrentAiText(true);
+        setAuthError(null);
+        setLiveCalcTile(null);
+        setIsSidebarOpen(true);
+        assistantMessageRefs.current = {};
+        setRfqReady(false);
+        setRfqPdfBase64(null);
+        setRfqHtmlReport(null);
+    };
 
-        const clientMsgId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-            ? crypto.randomUUID()
-            : `msg-${Date.now()}`;
+    const onSendMessage = async (message: string) => {
+        if (!message.trim() || isThinking) return;
+
+        if (!accessToken) {
+            setAuthError("Error: Keine aktive Sitzung. Bitte melden Sie sich erneut an.");
+            return;
+        }
+
+        setAuthError(null);
+        setSuppressCurrentAiText(false);
 
         let currentChatId = chatId;
         if (!currentChatId) {
@@ -63,105 +114,7 @@ export default function ChatInterface() {
             setChatId(currentChatId);
         }
 
-        const apiBase = process.env.NEXT_PUBLIC_API_BASE || "";
-        const targetUrl = apiBase.startsWith("http://backend") || !apiBase
-            ? "/api/v1/langgraph/chat/v2"
-            : `${apiBase}/api/v1/langgraph/chat/v2`;
-
-        try {
-            const response = await fetch(targetUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${(session as any).accessToken}`
-                },
-                body: JSON.stringify({
-                    input: userText,
-                    chat_id: currentChatId,
-                    client_msg_id: clientMsgId,
-                    metadata: {},
-                    client_context: {},
-                }),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error ${response.status}: ${errorText || "request failed"}`);
-            }
-
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error("No reader available");
-
-            const decoder = new TextDecoder();
-            let sseBuffer = "";
-            let streamDone = false;
-
-            while (true) {
-                const { done, value } = await reader.read();
-                const chunk = decoder.decode(value || new Uint8Array(), { stream: !done });
-                sseBuffer += chunk;
-
-                let boundary = sseBuffer.indexOf("\n\n");
-                while (boundary !== -1) {
-                    const rawEvent = sseBuffer.slice(0, boundary);
-                    sseBuffer = sseBuffer.slice(boundary + 2);
-
-                    const dataLines = rawEvent
-                        .split(/\r?\n/)
-                        .filter(line => line.startsWith("data:"))
-                        .map(line => line.slice(5).trimStart());
-
-                    if (dataLines.length > 0) {
-                        const rawPayload = dataLines.join("\n");
-                        if (rawPayload === "[DONE]") { streamDone = true; break; }
-
-                        let data: any = null;
-                        try {
-                            data = JSON.parse(rawPayload);
-                        } catch (e) {
-                            if (rawPayload.includes("token")) console.error("Error parsing SSE:", e, rawPayload);
-                            boundary = sseBuffer.indexOf("\n\n");
-                            continue;
-                        }
-
-                        if (data?.type === "token" && typeof data.text === "string") {
-                            const tokenText = data.text;
-                            setMessages(prev => {
-                                const newMessages = [...prev];
-                                const lastIndex = newMessages.length - 1;
-                                if (lastIndex >= 0 && newMessages[lastIndex].role === "assistant") {
-                                    newMessages[lastIndex] = {
-                                        ...newMessages[lastIndex],
-                                        content: newMessages[lastIndex].content + tokenText
-                                    };
-                                }
-                                return newMessages;
-                            });
-                        } else if (data?.type === "error") {
-                            throw new Error(data.message || "Streaming error");
-                        } else if (data?.type === "done") {
-                            streamDone = true;
-                        }
-                    }
-                    if (streamDone) break;
-                    boundary = sseBuffer.indexOf("\n\n");
-                }
-                if (done || streamDone) break;
-            }
-        } catch (error) {
-            console.error("Failed to stream message:", error);
-            setMessages(prev => {
-                const next = [...prev];
-                const last = next[next.length - 1];
-                const errorMessage = "⚠️ Verbindung unterbrochen. Bitte versuchen Sie es erneut.";
-                if (last?.role === "assistant") {
-                    return [...next.slice(0, -1), { ...last, content: last.content ? `${last.content}\n\n${errorMessage}` : errorMessage }];
-                }
-                return [...prev, { role: "assistant", content: errorMessage }];
-            });
-        } finally {
-            setIsLoading(false);
-        }
+        await sendMessage(message, currentChatId);
     };
 
     const markdownComponents = {
@@ -185,96 +138,167 @@ export default function ChatInterface() {
             inline
                 ? <code className="bg-[#F0F4F8]/80 text-[#E01E5A] px-1.5 py-0.5 rounded-md text-[13px] font-mono" {...props} />
                 : <code className="block bg-[#F8F9FA] text-[#1D1D1F] p-4 rounded-xl text-[13px] font-mono overflow-x-auto mb-6 border border-gray-100 shadow-inner" {...props} />,
-        blockquote: ({ node, ...props }: any) => <blockquote className="border-l-4 border-[#007AFF]/20 pl-4 italic text-gray-500 my-6 bg-blue-50/20 py-1" {...props} />
+        blockquote: ({ node, ...props }: any) => <blockquote className="border-l-4 border-[#007AFF]/20 pl-4 italic text-gray-500 my-6 bg-blue-50/20 py-1" {...props} />,
     };
 
     return (
-        // Hier passiert die Magie für die absolute Mitte im Zero-State (items-center justify-center)
-        <div className={`relative flex flex-col w-full h-full overflow-hidden bg-white ${isZeroState ? 'items-center justify-center' : ''}`}>
+        <div className="h-full w-full overflow-hidden bg-[#f3f8ff]">
+            <div className="relative mx-auto flex h-full w-full max-w-[1700px] flex-col gap-4 p-4 xl:flex-row">
+                {hasTileData && !isSidebarOpen && (
+                    <button
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="absolute right-0 top-1/2 -translate-y-1/2 z-20 flex h-8 w-8 items-center justify-center rounded-l-full bg-white border border-slate-200 border-r-0 shadow-md hover:bg-slate-50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                        aria-label="Sidebar einblenden"
+                    >
+                        <ChevronLeft className="h-4 w-4 text-slate-600 mr-1" />
+                    </button>
+                )}
+                <div className={`relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all duration-300 ${showTile ? "xl:w-2/3 xl:flex-shrink-0" : "xl:w-full"} ${isZeroState ? "items-center justify-center" : ""}`}>
 
-            {/* New Chat Button (Top Right) */}
-            {!isZeroState && (
-                <button
-                    onClick={startNewChat}
-                    className="absolute top-6 right-6 z-[60] p-2 bg-white/80 hover:bg-white border border-gray-200 rounded-full shadow-sm text-gray-500 hover:text-[#007AFF] transition-all active:scale-95 flex items-center gap-2 px-3 pr-4"
-                    title="Neuer Chat"
-                >
-                    <RotateCcw size={18} />
-                    <span className="text-sm font-medium">Neuer Chat</span>
-                </button>
-            )}
+                    {!isZeroState && (
+                        <div className="absolute top-6 right-6 z-[70] flex items-center gap-2">
+                            <button
+                                onClick={startNewChat}
+                                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white/90 px-3 py-2 text-sm font-medium text-gray-600 shadow-sm transition-all hover:bg-white hover:text-[#007AFF] active:scale-95"
+                                title="Neuer Chat"
+                            >
+                                <RotateCcw size={18} />
+                                <span>Neuer Chat</span>
+                            </button>
+                        </div>
+                    )}
 
-            {/* SCROLL AREA — only visible when messages exist */}
-            {!isZeroState && (
-                <div className="flex-1 overflow-y-auto w-full">
-                    <div className="max-w-3xl mx-auto w-full flex flex-col gap-8 pb-40 pt-16 px-4">
-                        {messages.map((m, i) => (
-                            <div key={i} className={`w-full ${m.role === "user" ? "flex justify-end" : "flex justify-start"}`}>
-                                {m.role === "assistant" ? (
-                                    <div className="flex items-start gap-4 w-full">
-                                        <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 bg-white border border-gray-100 shadow-sm mt-1">
-                                            <Bot size={20} className="text-[#007AFF]" />
-                                        </div>
-                                        <div className="flex-1 text-[16px] leading-relaxed text-[#1D1D1F] py-2">
-                                            <ReactMarkdown remarkPlugins={[remarkGfm]} className="break-words" components={markdownComponents}>
+                    {!isZeroState && (
+                        <div className="flex-1 overflow-y-auto w-full [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                            <div className="max-w-3xl mx-auto w-full flex flex-col gap-8 pb-40 pt-16 px-4">
+                                {displayedMessages.map((m, i) => (
+                                    <div key={i} className={`w-full ${m.role === "user" ? "flex justify-end" : "flex justify-start"}`}>
+                                        {m.role === "assistant" ? (
+                                            <div
+                                                ref={(node) => {
+                                                    assistantMessageRefs.current[i] = node;
+                                                }}
+                                                className="flex items-start gap-4 w-full"
+                                            >
+                                                <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 bg-white border shadow-sm mt-1 ${m.content.includes("⚠️ **Fehler:**") ? "border-red-100" : "border-gray-100"}`}>
+                                                    {m.content.includes("⚠️ **Fehler:**") ? (
+                                                        <AlertCircle size={20} className="text-red-500" />
+                                                    ) : (
+                                                        <Bot size={20} className="text-[#007AFF]" />
+                                                    )}
+                                                </div>
+                                                <div className={`flex-1 text-[16px] leading-relaxed py-2 ${m.content.includes("⚠️ **Fehler:**") ? "text-red-600 font-medium" : "text-[#1D1D1F]"}`}>
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]} className="break-words" components={markdownComponents}>
+                                                        {m.content}
+                                                    </ReactMarkdown>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-[#007AFF] text-white px-5 py-3.5 rounded-3xl rounded-tr-sm max-w-[80%] shadow-sm text-[16px] leading-relaxed">
                                                 {m.content}
-                                            </ReactMarkdown>
-                                            {isLoading && i === messages.length - 1 && !m.content && (
-                                                <span className="inline-block w-2 h-4 bg-[#007AFF]/20 animate-pulse ml-1 align-middle" />
-                                            )}
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="bg-[#007AFF] text-white px-5 py-3.5 rounded-3xl rounded-tr-sm max-w-[80%] shadow-sm text-[16px] leading-relaxed">
-                                        {m.content}
+                                ))}
+
+                                {shouldShowStreamingBubble && (
+                                    <div className="w-full flex justify-start">
+                                        <div ref={streamingAssistantRef} className="flex items-start gap-4 w-full">
+                                            <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 bg-white border border-gray-100 shadow-sm mt-1">
+                                                <Bot size={20} className="text-[#007AFF]" />
+                                            </div>
+                                            <div className="flex-1 text-[16px] leading-relaxed text-[#1D1D1F] py-2">
+                                                <ReactMarkdown remarkPlugins={[remarkGfm]} className="break-words" components={markdownComponents}>
+                                                    {currentAiText}
+                                                </ReactMarkdown>
+                                                {isThinking && (
+                                                    <div className="flex items-center gap-2 mt-2">
+                                                        {!currentAiText && (
+                                                            <span className="text-sm text-gray-400 italic">
+                                                                {nodeStatus === 'research' ? 'Durchsuche Wissensdatenbank...' : 
+                                                                 nodeStatus === 'answer' ? 'Formuliere Antwort...' :
+                                                                 nodeStatus === 'audit' ? 'Prüfe technische Compliance...' :
+                                                                 'SealAI denkt nach...'}
+                                                            </span>
+                                                        )}
+                                                        <div className="flex gap-1">
+                                                            <span className="w-1.5 h-1.5 bg-[#007AFF] rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                                            <span className="w-1.5 h-1.5 bg-[#007AFF] rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                                            <span className="w-1.5 h-1.5 bg-[#007AFF] rounded-full animate-bounce" />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
-                        ))}
-                        <div ref={messagesEndRef} />
-                    </div>
-                </div>
-            )}
+                        </div>
+                    )}
 
-            {/* GROK-STYLE: LOGO & INPUT WRAPPER */}
-            <motion.div
-                layout
-                transition={{ type: "spring", stiffness: 200, damping: 25 }}
-                className={`w-full px-4 z-50 flex flex-col items-center ${
-                    isZeroState
-                        ? "max-w-3xl" // Im Zero-State wird dieser Block durch den Parent perfekt zentriert
-                        : "absolute bottom-8 left-0 right-0 mx-auto max-w-3xl" // Bei aktiven Nachrichten rutscht er an den Boden
-                }`}
-            >
-                {/* Das Logo & Claim (Nur im Zero-State sichtbar) */}
+                    <motion.div
+                        layout
+                        transition={{ type: "spring", stiffness: 200, damping: 25 }}
+                        className={`w-full px-4 z-50 flex flex-col items-center ${
+                            isZeroState
+                                ? "max-w-3xl"
+                                : "absolute bottom-8 left-0 right-0 mx-auto max-w-3xl"
+                        }`}
+                    >
+                        <AnimatePresence>
+                            {isZeroState && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.95, filter: "blur(4px)", transitionEnd: { display: "none" } }}
+                                    transition={{ duration: 0.3 }}
+                                    className="mb-12 flex flex-col items-center"
+                                >
+                                    <img
+                                        src="/images/logo/Logo_sealai_schwebend-removebg-preview.png"
+                                        alt="SealAI Logo"
+                                        className="h-20 w-auto object-contain drop-shadow-sm mb-6"
+                                    />
+                                    <h1 className="text-4xl md:text-5xl font-serif text-[#1D1D1F] tracking-tight text-center">
+                                        Sealing Intelligence
+                                    </h1>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        <div className="w-full max-w-2xl">
+                            <ChatComposer onSend={onSendMessage} isLoading={isThinking} autoFocus={true} />
+                        </div>
+                    </motion.div>
+                </div>
+
                 <AnimatePresence>
-                    {isZeroState && (
+                    {showTile && (
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95, filter: "blur(4px)", transitionEnd: { display: "none" } }}
-                            transition={{ duration: 0.3 }}
-                            className="mb-12 flex flex-col items-center"
+                            key="live-calc-tile"
+                            initial={{ opacity: 0, x: 28 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 28 }}
+                            transition={{ duration: 0.25, ease: "easeOut" }}
+                            className="relative w-full xl:h-full xl:w-1/3 xl:flex-shrink-0"
                         >
-                            {/* Logo */}
-                            <img
-                                src="/images/logo/Logo_sealai_schwebend-removebg-preview.png"
-                                alt="SealAI Logo"
-                                className="h-20 w-auto object-contain drop-shadow-sm mb-6"
+                            <button
+                                onClick={() => setIsSidebarOpen(false)}
+                                className="absolute left-0 top-1/2 z-10 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                                aria-label="Sidebar einklappen"
+                            >
+                                <ChevronRight className="h-4 w-4 text-slate-600" />
+                            </button>
+                            <LiveCalcTile
+                                tile={liveCalcTile}
+                                rfqReady={rfqReady}
+                                rfqPdfBase64={rfqPdfBase64}
+                                rfqHtmlReport={rfqHtmlReport}
                             />
-                            {/* Claim im "Mercedes"-Style: Serifenschrift, groß, elegant */}
-                            <h1 className="text-4xl md:text-5xl font-serif text-[#1D1D1F] tracking-tight text-center">
-                                Sealing Intelligence
-                            </h1>
                         </motion.div>
                     )}
                 </AnimatePresence>
-
-                {/* Eingabefeld */}
-                <div className="w-full max-w-2xl">
-                    <ChatComposer onSend={onSendMessage} isLoading={isLoading} autoFocus={true} />
-                </div>
-            </motion.div>
+            </div>
         </div>
     );
 }

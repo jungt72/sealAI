@@ -132,6 +132,56 @@ async def test_node_draft_answer_hash_is_stable_across_drip_patterns(answer_modu
     assert fake_llm_b.calls[0]["config"] == config
 
 
+@pytest.mark.asyncio
+async def test_node_draft_answer_short_circuits_on_low_quality_rag(answer_modules):
+    state_mod = answer_modules["state"]
+    draft_mod = answer_modules["draft"]
+
+    contract = state_mod.AnswerContract(
+        resolved_parameters={"pressure_bar": 80},
+        calc_results={},
+        selected_fact_ids=["F-1001"],
+        required_disclaimers=[],
+    )
+    state = SimpleNamespace(answer_contract=contract, flags={"rag_low_quality_results": True})
+    fake_llm = _FakeLLM(["Should not be used"])
+
+    with patch.object(draft_mod, "_DRAFT_LLM", fake_llm):
+        patch_result = await draft_mod.node_draft_answer(state, config={"configurable": {"thread_id": "thread-123"}})
+
+    expected_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
+    assert "keinen exakten Treffer gefunden" in patch_result["draft_text"]
+    assert patch_result["final_answer"] == patch_result["draft_text"]
+    assert patch_result["draft_base_hash"] == expected_hash
+    assert patch_result["flags"]["rag_low_quality_results"] is True
+    assert fake_llm.calls == []
+
+
+@pytest.mark.asyncio
+async def test_node_draft_answer_short_circuits_on_empty_contract(answer_modules):
+    state_mod = answer_modules["state"]
+    draft_mod = answer_modules["draft"]
+
+    contract = state_mod.AnswerContract(
+        resolved_parameters={},
+        calc_results={},
+        selected_fact_ids=[],
+        required_disclaimers=[],
+    )
+    state = SimpleNamespace(answer_contract=contract, flags={"rag_low_quality_results": False})
+    fake_llm = _FakeLLM(["Should not be used"])
+
+    with patch.object(draft_mod, "_DRAFT_LLM", fake_llm):
+        patch_result = await draft_mod.node_draft_answer(state, config={"configurable": {"thread_id": "thread-123"}})
+
+    expected_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
+    assert "keinen exakten Treffer gefunden" in patch_result["draft_text"]
+    assert patch_result["final_answer"] == patch_result["draft_text"]
+    assert patch_result["draft_base_hash"] == expected_hash
+    assert patch_result["flags"]["rag_low_quality_results"] is False
+    assert fake_llm.calls == []
+
+
 def test_node_finalize_appends_ai_message_without_dropping_history(answer_modules):
     finalize_mod = answer_modules["finalize"]
     history = [HumanMessage(content="Welche Dichtung passt bei 80 bar?")]

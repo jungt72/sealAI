@@ -203,7 +203,10 @@ class TestMediumCompatibility:
         c = _check_medium_compatibility(_profile(medium="HF"))
         assert c.passed is False
         assert c.severity == "CRITICAL"
-        assert "NICHT verträglich" in c.message
+        assert "nicht verträglich" in c.message.lower()
+        assert c.suggestions
+        assert any("PTFE" in item for item in c.suggestions)
+        assert any("FFKM" in item for item in c.suggestions)
 
     def test_incompatible_flusssaeure_blocks(self):
         c = _check_medium_compatibility(_profile(medium="Flusssäure"))
@@ -215,7 +218,8 @@ class TestMediumCompatibility:
         c = _check_medium_compatibility(_profile(medium="Spezialchemikalie XY"))
         assert c.passed is False
         assert c.severity == "CRITICAL"
-        assert "Manuelle Prüfung" in c.message
+        assert "nicht automatisch bestätigt" in c.message
+        assert c.suggestions
 
     def test_no_medium_skips(self):
         c = _check_medium_compatibility(_profile(medium=None))
@@ -588,6 +592,23 @@ class TestNodeP45QGate:
         assert result["qgate_has_blockers"] is True
         assert "error" in result
         assert "BLOCKER" in result["error"]
+
+    def test_node_blocker_error_contains_suggestions(self):
+        state = _make_state(
+            working_profile=WorkingProfile(
+                medium="HF",
+                pressure_max_bar=40.0,
+                temperature_max_c=300.0,
+            ),
+            calculation_result=_calc_result(),
+            extracted_params=_profile(medium="HF"),
+        )
+
+        result = node_p4_5_qgate(state)
+
+        assert result["qgate_has_blockers"] is True
+        assert "error" in result
+        assert "VORSCHLAEGE:" in result["error"]
 
     def test_node_without_calc_result_skips(self):
         state = _make_state(calculation_result=None)

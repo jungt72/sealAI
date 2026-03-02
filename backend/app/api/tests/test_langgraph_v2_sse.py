@@ -41,3 +41,17 @@ def test_format_sse_frame_is_valid():
     payload = json.loads(payload_line.split(":", 1)[1].strip())
     assert payload["type"] == "token"
     assert payload["text"] == "Hallo"
+
+
+def test_format_sse_multiline_payload_stays_single_data_line():
+    frame = endpoint._format_sse(
+        "token",
+        {"type": "token", "text": "Line 1\nLine 2\nLine 3"},
+        event_id="msg-1:2",
+    )
+    decoded = frame.decode("utf-8")
+    data_lines = [line for line in decoded.splitlines() if line.startswith("data:")]
+    assert len(data_lines) == 1
+    payload = json.loads(data_lines[0].split(":", 1)[1].strip())
+    assert payload["type"] == "token"
+    assert payload["text"] == "Line 1\nLine 2\nLine 3"

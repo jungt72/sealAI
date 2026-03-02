@@ -42,6 +42,29 @@ _VALID_FLANGE_CLASSES = frozenset({150, 300, 600, 900, 1500, 2500})
 
 
 # ---------------------------------------------------------------------------
+# Conflict model
+# ---------------------------------------------------------------------------
+
+
+ConflictSeverity = Literal["BLOCKER", "WARNING", "NOTE"]
+
+
+class ConflictRecord(BaseModel):
+    """Deterministic chemistry/mechanics conflict raised by guard rules."""
+
+    rule_id: str
+    severity: ConflictSeverity
+    title: str
+    condition: str
+    reason: str
+    recommendation: Optional[str] = None
+    handled: bool = False
+    resolved: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# ---------------------------------------------------------------------------
 # WorkingProfile
 # ---------------------------------------------------------------------------
 
@@ -82,7 +105,27 @@ class WorkingProfile(BaseModel):
 
     # Knowledge / Material lookup bypass fields
     material: Optional[str] = None
+    medium_additives: Optional[str] = None
     product_name: Optional[str] = None
+
+    # Dynamic parameters (v6)
+    dp_dt_bar_per_s: Optional[float] = None
+    side_load_kn: Optional[float] = None
+    cycle_rate_hz: Optional[float] = None
+    extrusion_gap_mm: Optional[float] = None
+    fluid_contamination_iso: Optional[str] = None
+    aed_required: Optional[bool] = None
+    surface_hardness_hrc: Optional[float] = None
+    pressure_spike_factor: Optional[float] = None
+    compound_aed_certified: Optional[bool] = None
+
+    # Deterministic termination/safety fields
+    candidate_materials: List[str] = Field(default_factory=list)
+    active_hypothesis: Optional[str] = None
+    knowledge_coverage_check: Dict[str, Any] = Field(default_factory=dict)
+    risk_mitigated: bool = True
+    conflicts_detected: List[ConflictRecord] = Field(default_factory=list)
+    evidence_bundle_key: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +139,18 @@ class WorkingProfile(BaseModel):
     @field_validator("temperature_max_c", "temperature_min_c", mode="before")
     @classmethod
     def _coerce_temperature(cls, value: Any, info: Any) -> Any:
+        return _coerce_float(value, info.field_name)
+
+    @field_validator(
+        "dp_dt_bar_per_s",
+        "side_load_kn",
+        "cycle_rate_hz",
+        "extrusion_gap_mm",
+        "surface_hardness_hrc",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_dynamic_fields(cls, value: Any, info: Any) -> Any:
         return _coerce_float(value, info.field_name)
 
     # -- Individual field constraints --
@@ -242,6 +297,8 @@ class RAGState(TypedDict, total=False):
 
 
 __all__ = [
+    "ConflictSeverity",
+    "ConflictRecord",
     "WorkingProfile",
     "ErrorInfo",
     "RAGState",

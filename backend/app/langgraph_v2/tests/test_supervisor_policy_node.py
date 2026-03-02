@@ -5,6 +5,7 @@ from langgraph.types import Send
 from app.langgraph_v2.nodes.nodes_supervisor import (
     ACTION_FINALIZE,
     ACTION_RUN_COMPARISON,
+    ACTION_RUN_TROUBLESHOOTING,
     supervisor_policy_node,
 )
 from app.langgraph_v2.state import Budget, CalcResults, CandidateItem, Intent, SealAIState, WorkingMemory
@@ -101,4 +102,11 @@ def test_supervisor_policy_comparison_finalizes_without_rag() -> None:
     )
     cmd = supervisor_policy_node(state)
     assert cmd.update["next_action"] == ACTION_RUN_COMPARISON
-    assert cmd.goto == "material_comparison_node"
+    assert cmd.goto == "knowledge_agent_node"
+
+
+def test_supervisor_policy_troubleshooting_routes_to_wizard() -> None:
+    state = SealAIState(intent=Intent(goal="troubleshooting_leakage"), requires_rag=False)
+    cmd = supervisor_policy_node(state)
+    assert cmd.update["next_action"] == ACTION_RUN_TROUBLESHOOTING
+    assert cmd.goto == "troubleshooting_wizard_node"

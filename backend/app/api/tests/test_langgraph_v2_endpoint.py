@@ -236,6 +236,122 @@ class DummyGraphAstreamEventsTokenOnly:
         return gen()
 
 
+class DummyGraphAstreamEventsPatchFinalText:
+    checkpointer = object()
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot(
+            {
+                "messages": [AIMessage(content="PREVIOUS RESPONSE")],
+                "phase": "final",
+                "last_node": "answer_subgraph_node",
+            }
+        )
+
+    def astream_events(self, _input: Any, config: Any = None, **_kwargs: Any):
+        async def gen():
+            yield {
+                "event": "on_chain_stream",
+                "name": "answer_subgraph_node",
+                "data": {
+                    "chunk": {
+                        "chunk_type": "final_answer",
+                        "final_text": "NEW RFQ TEXT",
+                    }
+                },
+            }
+            yield {
+                "event": "on_node_end",
+                "name": "answer_subgraph_node",
+                "data": {"output": {"last_node": "answer_subgraph_node", "phase": "final"}},
+            }
+
+        return gen()
+
+
+class DummyGraphAstreamEventsConversationalSnapshot:
+    checkpointer = object()
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot(
+            {
+                "final_text": "Hallo Welt",
+                "phase": "final",
+                "last_node": "conversational_rag_node",
+            }
+        )
+
+    def astream_events(self, _input: Any, config: Any = None, **_kwargs: Any):
+        async def gen():
+            yield {
+                "event": "on_chat_model_stream",
+                "name": "conversational_rag_node",
+                "data": {"chunk": AIMessageChunk(content="Hallo")},
+            }
+            yield {
+                "event": "on_chat_model_stream",
+                "name": "conversational_rag_node",
+                "data": {"chunk": AIMessageChunk(content=" Welt")},
+            }
+            yield {
+                "event": "on_node_end",
+                "name": "conversational_rag_node",
+                "data": {
+                    "output": {
+                        "final_text": "Hallo Welt",
+                        "phase": "final",
+                        "last_node": "conversational_rag_node",
+                    }
+                },
+            }
+
+        return gen()
+
+
+class DummyGraphStickyLiveCalcTile:
+    checkpointer = object()
+
+    async def get_state(self, _config: Any):
+        return _Snapshot(
+            {
+                "live_calc_tile": {
+                    "status": "warning",
+                    "pv_warning": True,
+                }
+            }
+        )
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot({"final_text": "done", "phase": "final", "last_node": "node_p6_generate_pdf"})
+
+    def astream_events(self, _input: Any, config: Any = None, **_kwargs: Any):
+        async def gen():
+            yield {
+                "event": "on_node_end",
+                "name": "calculator_node",
+                "data": {
+                    "output": {
+                        "parameters": {"temperature_C": 80},
+                        "phase": "aggregation",
+                        "last_node": "calculator_node",
+                    }
+                },
+            }
+            yield {
+                "event": "on_node_end",
+                "name": "node_p6_generate_pdf",
+                "data": {
+                    "output": {
+                        "rfq_ready": True,
+                        "phase": "final",
+                        "last_node": "node_p6_generate_pdf",
+                    }
+                },
+            }
+
+        return gen()
+
+
 class DummyGraphInterrupted:
     checkpointer = object()
 
@@ -426,6 +542,73 @@ def test_event_stream_v2_astream_events_emits_chat_chunk_tokens_only(monkeypatch
     assert "".join(tokens) == "Hallo Welt"
     assert all("SHOULD_NOT_STREAM" not in text for text in tokens)
     assert all("intent_category" not in text for text in tokens)
+
+
+def test_event_stream_v2_prefers_patch_final_text_over_stale_messages(monkeypatch):
+    async def _dummy_graph():
+        return DummyGraphAstreamEventsPatchFinalText()
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
+    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    events = _parse_sse_frames(chunks)
+
+    tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
+    assert "".join(tokens) == "NEW RFQ TEXT"
+    assert all("PREVIOUS RESPONSE" not in text for text in tokens)
+
+
+def test_event_stream_v2_does_not_duplicate_streamed_tokens_from_snapshot_final_text(monkeypatch):
+    async def _dummy_graph():
+        return DummyGraphAstreamEventsConversationalSnapshot()
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
+    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    events = _parse_sse_frames(chunks)
+
+    tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
+    assert tokens == ["Hallo", " Welt"]
+    assert "".join(tokens) == "Hallo Welt"
+
+
+def test_event_stream_v2_emits_terminal_message_from_final_state(monkeypatch):
+    async def _dummy_graph():
+        return DummyGraphNoTokens()
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
+    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    events = _parse_sse_frames(chunks)
+
+    messages = [payload for evt, payload, _ in events if evt == "message"]
+    assert len(messages) == 1
+    assert messages[0]["type"] == "message"
+    assert messages[0]["text"] == "Final Antwort"
+    assert messages[0]["replace"] is True
+
+
+def test_event_stream_v2_injects_sticky_live_calc_tile_into_state_updates(monkeypatch):
+    async def _dummy_graph():
+        return DummyGraphStickyLiveCalcTile()
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
+    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    events = _parse_sse_frames(chunks)
+
+    state_updates = [payload for evt, payload, _ in events if evt == "state_update"]
+    assert state_updates
+    for payload in state_updates:
+        data = payload.get("data", {})
+        tile = data.get("live_calc_tile")
+        assert isinstance(tile, dict)
+        assert tile
+        assert tile.get("status") == "warning"
 
 
 def test_claim_client_msg_id_deduplicates(monkeypatch):

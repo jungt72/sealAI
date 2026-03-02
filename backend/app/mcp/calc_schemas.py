@@ -25,7 +25,9 @@ class CalcInput(BaseModel):
     medium: Optional[str] = None
     cyclic_load: bool = False
 
-    model_config = ConfigDict(extra="forbid")
+    # Ignore additional extraction keys (e.g. rpm/hrc) so P4b stays stable
+    # when upstream nodes enrich `extracted_params` for other phases.
+    model_config = ConfigDict(extra="ignore")
 
     @field_validator("flange_class")
     @classmethod

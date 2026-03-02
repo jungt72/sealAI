@@ -23,8 +23,10 @@ def test_rag_support_node_skips_on_no_hits(monkeypatch):
     state = SealAIState(messages=[HumanMessage(content="Test")], user_id="tenant-1", requires_rag=True)
     patch = rag_support_node(state)
     meta = patch.get("retrieval_meta") or {}
-    assert meta.get("skipped") is True
-    assert meta.get("reason") == "no_hits"
+    narrative = meta.get("narrative") or {}
+    assert narrative.get("skipped") is True
+    assert narrative.get("reason") == "no_hits"
+    assert patch.get("flags", {}).get("rag_low_quality_results") is True
     notes = patch.get("working_memory").comparison_notes or {}
     assert notes.get("rag_context") == ""
 
@@ -46,7 +48,9 @@ def test_rag_support_node_skips_on_low_score(monkeypatch):
     state = SealAIState(messages=[HumanMessage(content="Test")], user_id="tenant-1", requires_rag=True)
     patch = rag_support_node(state)
     meta = patch.get("retrieval_meta") or {}
-    assert meta.get("skipped") is True
-    assert meta.get("reason") == "low_score"
+    narrative = meta.get("narrative") or {}
+    assert narrative.get("skipped") is True
+    assert narrative.get("reason") == "low_score"
+    assert patch.get("flags", {}).get("rag_low_quality_results") is True
     notes = patch.get("working_memory").comparison_notes or {}
     assert notes.get("rag_context") == ""

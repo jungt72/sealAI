@@ -63,7 +63,7 @@ class CompoundDecisionMatrix:
             return
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
-            self._matrix = data.get("matrix") or []
+            self._matrix = data.get("compound_decision_matrix") or data.get("matrix") or []
             self._loaded = True
             log.info("compound_matrix.loaded", extra={"entries": len(self._matrix)})
         except Exception as exc:
@@ -114,7 +114,16 @@ class CompoundDecisionMatrix:
             if self._is_hard_excluded(entry, conditions):
                 continue
 
-            results.append(entry)
+            reason_notes = list(entry.get("forbidden_conditions") or [])
+            custom_blocks = ((entry.get("forbidden_conditions_structured") or {}).get("custom_blocks") or [])
+            enriched = dict(entry)
+            enriched["rationale"] = " | ".join(str(x) for x in [*reason_notes, *custom_blocks] if str(x).strip())
+            enriched["recommended_for"] = [entry.get("recommended_use")] if entry.get("recommended_use") else []
+            enriched["compound_name"] = entry.get("filler_type")
+            enriched["food_grade"] = "FDA" not in str(entry.get("forbidden_conditions_structured", {}).get("forbidden_purity_classes", []))
+            if "score" not in enriched:
+                enriched["score"] = self._default_score(entry)
+            results.append(enriched)
 
         # Sort by score descending
         results.sort(key=lambda e: e.get("score", 0), reverse=True)
@@ -139,7 +148,7 @@ class CompoundDecisionMatrix:
 
     @staticmethod
     def _passes_conditions(entry: Dict[str, Any], conditions: Dict[str, Any]) -> bool:
-        """Check numeric and categorical screening conditions."""
+        """Check optional legacy screening rules if present."""
         screening = entry.get("screening_conditions") or {}
 
         for field, rule in screening.items():
@@ -172,14 +181,55 @@ class CompoundDecisionMatrix:
 
     @staticmethod
     def _is_hard_excluded(entry: Dict[str, Any], conditions: Dict[str, Any]) -> bool:
-        """Return True if any hard exclusion matches."""
+        """Return True if any deterministic forbidden_conditions_structured rule matches."""
+        # Legacy schema compatibility
         hard_excl = entry.get("hard_exclusions") or {}
-        excl_medium_ids: List[str] = hard_excl.get("medium_ids") or []
-        if not excl_medium_ids:
-            return False
+        legacy_medium_ids: List[str] = hard_excl.get("medium_ids") or []
+        if legacy_medium_ids:
+            user_medium_id: Optional[str] = conditions.get("medium_id")
+            if user_medium_id and user_medium_id.lower() in [m.lower() for m in legacy_medium_ids]:
+                return True
 
-        user_medium_id: Optional[str] = conditions.get("medium_id")
-        if user_medium_id and user_medium_id.lower() in [m.lower() for m in excl_medium_ids]:
+        rules = entry.get("forbidden_conditions_structured") or {}
+
+        min_hrc = rules.get("min_counterface_hardness_hrc")
+        user_hrc = conditions.get("counterface_hardness_hrc")
+        if min_hrc is not None:
+            if user_hrc is not None and float(user_hrc) < float(min_hrc):
+                return True
+            counterface_material = str(conditions.get("counterface_material") or "").lower()
+            if any(tok in counterface_material for tok in ("aluminum", "aluminium", "bronze", "messing", "brass", "soft")):
+                return True
+
+        max_pv = rules.get("max_pv_limit_MPa_m_s")
+        if max_pv is not None:
+            pv = conditions.get("pv_mpa_m_s")
+            if pv is not None and float(pv) > float(max_pv):
+                return True
+
+        media_tags = {str(x).strip().lower() for x in (conditions.get("media_tags") or []) if str(x).strip()}
+        forbidden_media = {str(x).strip().lower() for x in (rules.get("forbidden_media_tags") or []) if str(x).strip()}
+        if media_tags and forbidden_media and media_tags.intersection(forbidden_media):
+            return True
+
+        purity_class = str(conditions.get("purity_class") or "").strip()
+        forbidden_purity = {str(x).strip() for x in (rules.get("forbidden_purity_classes") or []) if str(x).strip()}
+        if purity_class and forbidden_purity and purity_class in forbidden_purity:
+            return True
+
+        needs_insulation = bool(conditions.get("requires_electrical_insulation"))
+        if needs_insulation and bool(rules.get("requires_electrical_insulation")):
             return True
 
         return False
+
+    @staticmethod
+    def _default_score(entry: Dict[str, Any]) -> int:
+        wear = str(entry.get("wear_resistance") or "").lower()
+        if "excellent" in wear:
+            return 90
+        if "good" in wear:
+            return 75
+        if "poor" in wear:
+            return 45
+        return 60

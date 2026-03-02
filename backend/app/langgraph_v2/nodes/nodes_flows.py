@@ -23,7 +23,8 @@ from app.langgraph_v2.nodes.nodes_frontdoor import (
     detect_material_or_trade_query,
     extract_trade_name_candidate,
 )
-from app.mcp.knowledge_tool import get_available_filters, search_technical_docs
+from app.mcp.knowledge_tool import get_available_filters, query_deterministic_norms, search_technical_docs
+from app.services.knowledge.factcard_store import is_validated_ptfe_factcard_id
 
 _MATERIAL_DOC_MARKERS = (
     "datenblatt",
@@ -46,6 +47,11 @@ _MATERIAL_DOC_MARKERS = (
     "knowledge-base",
     "knowledge base",
     "trade_name",
+    "rührwerk",
+    "ruehrwerk",
+    "dichtungslösung",
+    "dichtungsloesung",
+    "dichtung loesung",
 )
 _MATERIAL_CODE_PATTERN = re.compile(r"\b([a-z]{2,6}[-_/]?\d{2,4})\b", re.IGNORECASE)
 _TRADE_NAME_PATTERN = re.compile(r"trade_name\s*[:=]?\s*['\"]([^'\"]{2,120})['\"]", re.IGNORECASE)
@@ -66,10 +72,146 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _resolve_norm_material(state: SealAIState) -> str | None:
+    candidates = [
+        (state.material_choice or {}).get("material") if isinstance(state.material_choice, dict) else None,
+        getattr(state.parameters, "elastomer_material", None),
+        getattr(state.parameters, "material", None),
+        getattr(state.working_profile, "material", None) if getattr(state, "working_profile", None) is not None else None,
+    ]
+    for value in candidates:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return None
+
+
+def _resolve_norm_temperature_pressure(state: SealAIState) -> tuple[float | None, float | None]:
+    temp_candidates = [
+        getattr(state.parameters, "temperature_C", None),
+        getattr(state.parameters, "temperature_max", None),
+        getattr(state.parameters, "temp_max", None),
+        getattr(state.working_profile, "temperature_max_c", None) if getattr(state, "working_profile", None) is not None else None,
+    ]
+    pressure_candidates = [
+        getattr(state.parameters, "pressure_bar", None),
+        getattr(state.parameters, "pressure_max", None),
+        getattr(state.parameters, "p_max", None),
+        getattr(state.working_profile, "pressure_max_bar", None) if getattr(state, "working_profile", None) is not None else None,
+    ]
+
+    resolved_temp: float | None = None
+    resolved_pressure: float | None = None
+    for candidate in temp_candidates:
+        resolved_temp = _safe_float(candidate)
+        if resolved_temp is not None:
+            break
+    for candidate in pressure_candidates:
+        resolved_pressure = _safe_float(candidate)
+        if resolved_pressure is not None:
+            break
+    return resolved_temp, resolved_pressure
+
+
+def _render_deterministic_norm_context(payload: Dict[str, Any]) -> str:
+    matches = payload.get("matches") if isinstance(payload, dict) else {}
+    din_rows = (matches or {}).get("din_norms") or []
+    mat_rows = (matches or {}).get("material_limits") or []
+    if not din_rows and not mat_rows:
+        return "Keine deterministischen Norm-/Grenzwerte fuer diese Material-Last-Kombination gefunden."
+    lines: List[str] = ["Deterministischer SQL-Normabgleich:"]
+    for row in din_rows[:5]:
+        lines.append(
+            "- "
+            f"{row.get('norm_code')} "
+            f"(T {row.get('temperature_min_c')}..{row.get('temperature_max_c')} °C, "
+            f"P {row.get('pressure_min_bar')}..{row.get('pressure_max_bar')} bar, "
+            f"v{row.get('version')}, ab {row.get('effective_date')})"
+        )
+    for row in mat_rows[:5]:
+        lines.append(
+            "- "
+            f"{row.get('limit_kind')}: {row.get('min_value')}..{row.get('max_value')} {row.get('unit') or ''} "
+            f"(v{row.get('version')}, ab {row.get('effective_date')})"
+        )
+    return "\n".join(lines)
+
+
 def _merge_flags(state: SealAIState, updates: Dict[str, Any]) -> Dict[str, Any]:
     flags = dict(state.flags or {})
     flags.update(updates)
     return flags
+
+
+def _is_low_quality_retrieval(
+    retrieval_meta: Optional[Dict[str, Any]],
+    *,
+    hits: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
+    if hits:
+        # Validated PTFE master FactCards must never be down-ranked as low quality.
+        for hit in hits:
+            if not isinstance(hit, dict):
+                continue
+            document_id = hit.get("document_id")
+            metadata = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
+            metadata_id = metadata.get("id")
+            if is_validated_ptfe_factcard_id(document_id) or is_validated_ptfe_factcard_id(metadata_id):
+                return False
+
+    if isinstance(retrieval_meta, dict):
+        collection_name = str(retrieval_meta.get("collection") or "").strip().lower()
+        is_technical_docs = collection_name == "technical_docs"
+        relaxed_threshold = 0.02 if is_technical_docs else None
+
+        if bool(retrieval_meta.get("rag_low_quality_results")):
+            if is_technical_docs and (hits is not None and len(hits) > 0):
+                return False
+            return True
+        if bool(retrieval_meta.get("skipped")):
+            if is_technical_docs and (hits is not None and len(hits) > 0):
+                return False
+            return True
+        reason = str(retrieval_meta.get("reason") or "").strip().lower()
+        if reason in {"no_hits", "low_score", "low_quality", "low_quality_results"}:
+            if is_technical_docs and (hits is not None and len(hits) > 0):
+                return False
+            return True
+        try:
+            k_returned = int(retrieval_meta.get("k_returned") or 0)
+            if k_returned == 0:
+                return True
+        except (TypeError, ValueError):
+            k_returned = None
+        threshold = _safe_float(
+            retrieval_meta.get("min_top_score")
+            or retrieval_meta.get("threshold")
+            or retrieval_meta.get("configured_threshold")
+            or os.getenv("MIN_TOP_SCORE")
+        )
+        if threshold is None:
+            threshold = 0.2
+        if relaxed_threshold is not None:
+            threshold = min(threshold, relaxed_threshold)
+        top_scores_raw = retrieval_meta.get("top_scores")
+        top_scores: List[float] = []
+        if isinstance(top_scores_raw, list):
+            for score in top_scores_raw:
+                parsed = _safe_float(score)
+                if parsed is not None:
+                    top_scores.append(parsed)
+        if not top_scores:
+            parsed_top_score = _safe_float(retrieval_meta.get("top_score"))
+            if parsed_top_score is not None:
+                top_scores.append(parsed_top_score)
+        if top_scores and all(score < threshold for score in top_scores):
+            return True
+        if k_returned and hits is not None:
+            hit_scores = [_safe_float(hit.get("score")) for hit in hits if isinstance(hit, dict)]
+            cleaned_hit_scores = [score for score in hit_scores if score is not None]
+            if cleaned_hit_scores and all(score < threshold for score in cleaned_hit_scores):
+                return True
+    return hits is not None and len(hits) == 0
 
 
 def _extend_dict(base: Dict[str, Any] | None, extras: Dict[str, Any]) -> Dict[str, Any]:
@@ -109,11 +251,42 @@ def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     }
 
 
+def _has_sufficient_dynamic_parameters(state: SealAIState) -> bool:
+    DYNAMIC_FIELDS = [
+        "dp_dt_bar_per_s",
+        "side_load_kn",
+        "aed_required",
+        "medium_additives",
+        "fluid_contamination_iso",
+        "surface_hardness_hrc",
+        "pressure_spike_factor",
+    ]
+    profile = getattr(state, "working_profile", None)
+    if profile is None:
+        return False
+    filled = sum(
+        1 for f in DYNAMIC_FIELDS
+        if getattr(profile, f, None) is not None
+    )
+    # Require at least 3 of 7 to be known before Reasoning Core
+    return filled >= 3
+
+
 def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("parameter_check_node", state)
     missing = state.missing_params or []
     complete = not bool(missing)
-    flags = _merge_flags(state, {"parameters_complete_for_profile": complete})
+    
+    # FIX 4: Reasoning Core Gate
+    has_dynamic = _has_sufficient_dynamic_parameters(state)
+    use_reasoning = complete and has_dynamic
+    
+    flags = _merge_flags(state, {
+        "parameters_complete_for_profile": complete,
+        "use_reasoning_core_r3": use_reasoning,
+        "reasoning_core_gated": not has_dynamic if complete else False
+    })
+    
     existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
     design_notes = _extend_dict(existing_design, {"parameter_check": {"missing": missing}})
     wm = _update_working_memory(state, {"design_notes": design_notes})
@@ -121,6 +294,7 @@ def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         "flags": flags,
         "working_memory": wm,
         "analysis_complete": True,
+        "use_reasoning_core_r3": use_reasoning,
         # Noch immer Parameter-Phase
         "phase": PHASE.PREFLIGHT_PARAMETERS,
         "last_node": "parameter_check_node",
@@ -313,14 +487,18 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
                 )
             )
             seen_sources.add(source_label)
+        low_quality_results = _is_low_quality_retrieval(payload.get("retrieval_meta"), hits=hits)
+        flags = _merge_flags(state, {"rag_low_quality_results": low_quality_results})
         return {
             "material_choice": state_material,
             "working_memory": wm,
             "sources": sources,
             "retrieval_meta": payload.get("retrieval_meta"),
+            "flags": flags,
             "context": retrieved_context,
             "phase": PHASE.RAG,
             "last_node": "material_agent_node",
+            "rag_turn_count": int(getattr(state, "rag_turn_count", 0) or 0) + 1,
         }
 
     temp = _safe_float(state.parameters.temperature_C)
@@ -349,9 +527,11 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
         state_material.update({"material": candidates[0]["name"], "details": candidates[0]["rationale"]})
     if needs_input:
         state_material["needs_input"] = needs_input
+    flags = _merge_flags(state, {"rag_low_quality_results": False})
     return {
         "material_choice": state_material,
         "working_memory": wm,
+        "flags": flags,
         # Phase: technischer Consulting-Schritt
         "phase": PHASE.CONSULTING,
         "last_node": "material_agent_node",
@@ -674,36 +854,82 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     from app.langgraph_v2.nodes.nodes_frontdoor import detect_sources_request
 
     if not bool(getattr(state, "requires_rag", False)) and not detect_sources_request(user_text):
+        flags = _merge_flags(state, {"rag_low_quality_results": False})
         return {
+            "flags": flags,
             "phase": PHASE.KNOWLEDGE,
             "last_node": "rag_support_node",
         }
 
     intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
     notes = dict(state.working_memory.comparison_notes if state.working_memory else {})
-    rag_context = search_knowledge_base.invoke({
-        "query": user_text or "Aktuelle technische Frage",
-        "category": "norms",
-        "k": 3,
-        "tenant": state.user_id,
-    })
-    rag_text, retrieval_meta = unpack_rag_payload(rag_context)
+
+    material = _resolve_norm_material(state)
+    temp_value, pressure_value = _resolve_norm_temperature_pressure(state)
+    deterministic_payload: Dict[str, Any] | None = None
+    deterministic_text = ""
+    if material and temp_value is not None and pressure_value is not None:
+        deterministic_payload = query_deterministic_norms(
+            material=material,
+            temp=temp_value,
+            pressure=pressure_value,
+            tenant_id=state.user_id,
+        )
+        deterministic_text = _render_deterministic_norm_context(deterministic_payload)
+        notes["deterministic_norms"] = deterministic_payload
+
+    # Keep Qdrant strictly for narrative context/failure modes and unstructured references.
+    narrative_context = search_knowledge_base.invoke(
+        {
+            "query": user_text or "Aktuelle technische Frage",
+            "category": "troubleshooting",
+            "k": 3,
+            "tenant": state.user_id,
+        }
+    )
+    narrative_text, narrative_meta = unpack_rag_payload(narrative_context)
     min_score = float(os.getenv("MIN_TOP_SCORE", "0.20"))
-    rag_text, retrieval_meta = apply_rag_quality_gate(rag_text, retrieval_meta, min_top_score=min_score)
-    rag_text = wrap_rag_context(rag_text)
+    narrative_text, narrative_meta = apply_rag_quality_gate(
+        narrative_text,
+        narrative_meta,
+        min_top_score=min_score,
+    )
+    narrative_text = wrap_rag_context(narrative_text)
+
+    rag_parts = [part for part in [deterministic_text.strip(), narrative_text.strip()] if part]
+    rag_text = "\n\n".join(rag_parts).strip()
     notes["rag_context"] = rag_text or ""
+    retrieval_meta: Dict[str, Any] = {
+        "deterministic": (
+            deterministic_payload.get("retrieval_meta")
+            if isinstance(deterministic_payload, dict)
+            else None
+        ),
+        "narrative": narrative_meta,
+    }
 
     # Only emit references if the tool output contains citation-like artifacts.
     rag_reference: list[str] = []
-    for line in rag_text.splitlines():
+    for line in narrative_text.splitlines():
         line = line.strip()
         if line.lower().startswith("quelle:"):
             src = line.split(":", 1)[1].strip()
             if src:
                 rag_reference.append(src)
 
-    has_error = rag_text.lower().startswith("fehler beim abrufen") or "rag retrieval failed" in rag_text.lower()
-    has_no_hits = "keine relevanten informationen" in rag_text.lower()
+    if isinstance(deterministic_payload, dict):
+        matches = deterministic_payload.get("matches") if isinstance(deterministic_payload.get("matches"), dict) else {}
+        for row in list(matches.get("din_norms") or []):
+            source_ref = str((row or {}).get("source_ref") or "").strip()
+            if source_ref:
+                rag_reference.append(source_ref)
+        for row in list(matches.get("material_limits") or []):
+            source_ref = str((row or {}).get("source_ref") or "").strip()
+            if source_ref:
+                rag_reference.append(source_ref)
+
+    has_error = narrative_text.lower().startswith("fehler beim abrufen") or "rag retrieval failed" in narrative_text.lower()
+    has_no_hits = "keine relevanten informationen" in narrative_text.lower()
 
     if has_error or has_no_hits or not rag_reference:
         notes["rag_reference"] = None
@@ -733,14 +959,23 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         wm = _update_working_memory(state, {"comparison_notes": notes})
     else:
         wm = _update_working_memory(state, {"comparison_notes": notes, "panel_norms_rag": notes})
+    deterministic_hits = False
+    if isinstance(deterministic_payload, dict):
+        matches = deterministic_payload.get("matches") if isinstance(deterministic_payload.get("matches"), dict) else {}
+        deterministic_hits = bool((matches.get("din_norms") or []) or (matches.get("material_limits") or []))
+
+    low_quality_results = False if deterministic_hits else _is_low_quality_retrieval(narrative_meta)
+    flags = _merge_flags(state, {"rag_low_quality_results": low_quality_results})
 
     return {
         "working_memory": wm,
         "sources": sources,
         "retrieval_meta": retrieval_meta,
+        "flags": flags,
         # Phase: explizit RAG
         "phase": PHASE.RAG,
         "last_node": "rag_support_node",
+        "rag_turn_count": int(getattr(state, "rag_turn_count", 0) or 0) + 1,
     }
 
 

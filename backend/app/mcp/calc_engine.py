@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 import structlog
 
 from app.mcp.calc_schemas import CalcInput, CalcOutput
+from app.mcp.calculations.compliance import is_critical_application as _compliance_is_critical
 
 logger = structlog.get_logger("mcp.calc_engine")
 
@@ -91,14 +92,6 @@ _BOLT_CAPACITY_KN: Dict[str, float] = {
 _MATERIAL_T_MAX_C = 550.0  # Spiral-wound 316L + flexible graphite filler
 _MATERIAL_P_MAX_BAR = 250.0  # Conservative spiral-wound pressure rating
 
-# Critical media set (case-insensitive matching).
-_CRITICAL_MEDIA = frozenset({
-    "h2", "hydrogen", "wasserstoff",
-    "o2", "oxygen", "sauerstoff",
-    "cl2", "chlor", "chlorine",
-    "hf", "flusssaeure", "fluorwasserstoff",
-    "nh3", "ammoniak", "ammonia",
-})
 
 
 # ---------------------------------------------------------------------------
@@ -136,14 +129,6 @@ def _bolt_capacity(bolt_size: Optional[str]) -> Optional[float]:
     if not size.startswith("M"):
         return None
     return _BOLT_CAPACITY_KN.get(size)
-
-
-def _is_critical_medium(medium: Optional[str]) -> bool:
-    """Check if medium is in the critical media set."""
-    if not medium:
-        return False
-    normalized = medium.strip().lower().replace(" ", "")
-    return normalized in _CRITICAL_MEDIA
 
 
 def _gasket_area(inner_d: float, outer_d: float) -> float:
@@ -216,11 +201,10 @@ def mcp_calc_gasket(params: CalcInput) -> CalcOutput:
     pressure_margin_bar = _MATERIAL_P_MAX_BAR - params.pressure_max_bar
 
     # --- Critical application check ---
-    is_critical = (
-        _is_critical_medium(params.medium)
-        or params.pressure_max_bar > 100.0
-        or params.temperature_max_c > 400.0
-        or params.temperature_max_c < -40.0
+    is_critical = _compliance_is_critical(
+        medium=params.medium,
+        temp_c=params.temperature_max_c,
+        pressure_bar=params.pressure_max_bar,
     )
 
     # --- Warnings ---

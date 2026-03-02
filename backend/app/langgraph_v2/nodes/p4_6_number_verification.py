@@ -33,13 +33,17 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
     goal = intent.goal if intent else state.get("goal")
     
     # Überspringe Verifikation, wenn Agent nur Rückfragen stellt oder im Smalltalk ist
-    if not recommendation_ready or goal in ["smalltalk", "ask_missing"]:
+    skip_active = (not recommendation_ready) or goal in ["smalltalk", "ask_missing", "explanation_or_comparison"]
+    if skip_active:
+        flags = dict(state.get("flags") or {})
+        flags["number_verification_skip_active"] = True
         log.debug(
             "number_verification.skip_active", 
             recommendation_ready=recommendation_ready, 
             goal=goal
         )
         return {
+            "flags": flags,
             "verification_passed": True,
             "last_node": "node_p4_6_number_verification"
         }
@@ -52,6 +56,7 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
     if not final_answer:
         log.debug("number_verification.skip_no_answer")
         return {
+            "flags": {"number_verification_skip_active": False},
             "verification_passed": True,
             "last_node": "node_p4_6_number_verification"
         }
@@ -63,6 +68,7 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
     if not answer_numbers:
         log.debug("number_verification.skip_no_numbers")
         return {
+            "flags": {"number_verification_skip_active": False},
             "verification_passed": True,
             "last_node": "node_p4_6_number_verification"
         }
@@ -139,6 +145,7 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
         )
         
         return {
+            "flags": {"number_verification_skip_active": False},
             "verification_passed": False,
             "verification_error": {
                 "type": "UNVERIFIED_NUMBERS",
@@ -154,6 +161,7 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
     # Success
     log.info("number_verification_passed", count=len(answer_numbers))
     return {
+        "flags": {"number_verification_skip_active": False},
         "verification_passed": True,
         "last_node": "node_p4_6_number_verification"
     }

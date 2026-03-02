@@ -299,8 +299,16 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> C
         frontdoor_intent_category == "ENGINEERING_CALCULATION"
         or goal == "design_recommendation"
     )
+    rag_turn_count = int(getattr(state, "rag_turn_count", 0) or 0)
 
     forced_intent = state.intent
+    if requires_rag:
+        # Stop RAG after 3 attempts to prevent infinite recursion
+        if rag_turn_count >= 3:
+            logger.warning("supervisor_policy_node.rag_turn_limit_reached", rag_turn_count=rag_turn_count)
+            requires_rag = False
+            flags["rag_limit_reached"] = True
+        
     if requires_rag:
         if forced_intent is None:
             forced_intent = Intent(
@@ -368,11 +376,11 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> C
 
     if goal == "troubleshooting_leakage":
         update["next_action"] = ACTION_RUN_TROUBLESHOOTING
-        return Command(update=update, goto="leakage_troubleshooting_node")
+        return Command(update=update, goto="troubleshooting_wizard_node")
 
     if goal == "explanation_or_comparison":
         update["next_action"] = ACTION_RUN_COMPARISON
-        return Command(update=update, goto="material_comparison_node")
+        return Command(update=update, goto="knowledge_agent_node")
 
     if any(q.priority == "high" and q.status == "open" for q in questions):
         update["next_action"] = ACTION_ASK_USER

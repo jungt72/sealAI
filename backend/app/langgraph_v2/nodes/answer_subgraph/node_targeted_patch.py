@@ -51,6 +51,10 @@ def node_targeted_patch(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
             continue
         if reason == "missing_number" and expected_value and expected_value not in patched:
             patched = f"{patched.rstrip()}\nValue: {expected_value}".strip()
+        if reason == "chemical_resistance_contradiction" and expected_value:
+            disclaimer = f"\n⚠️ Korrekturhinweis: {expected_value}"
+            if disclaimer.strip() not in patched:
+                patched = f"{patched.rstrip()}{disclaimer}".strip()
 
     flags = deepcopy(state.flags or {})
     attempts = int(flags.get("answer_subgraph_patch_attempts") or 0)

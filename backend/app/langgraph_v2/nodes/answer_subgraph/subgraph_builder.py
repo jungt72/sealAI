@@ -32,6 +32,11 @@ logger = structlog.get_logger("langgraph_v2.answer_subgraph.builder")
 
 MAX_PATCH_ATTEMPTS = 3
 _ANSWER_SUBGRAPH_CACHE: CompiledStateGraph | None = None
+_SIDEKICK_FALLBACK_MESSAGE = (
+    "Dazu habe ich in meinen technischen Datenblaettern gerade keinen exakten Treffer gefunden. "
+    "Wenn du mir spezifische Einsatzbedingungen (wie Medium, Temperatur und Druck) nennst, "
+    "kann ich gezielter fuer dich suchen!"
+)
 
 
 def _extract_langgraph_config(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Any | None:
@@ -78,14 +83,27 @@ def _safe_fallback_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
     Returns:
         State patch with conservative fallback text and verification metadata.
     """
-    fallback_text = str(state.draft_text or "").strip()
-    if not fallback_text:
-        fallback_text = "Unable to produce a verified answer. Please request clarification."
+    report = state.verification_report
+    patch_attempts = int((state.flags or {}).get("answer_subgraph_patch_attempts") or 0)
+    draft_text = str(state.draft_text or "").strip()
+    contract = state.answer_contract
+    has_empty_context = contract is None or (
+        not contract.resolved_parameters
+        and not contract.calc_results
+        and not contract.selected_fact_ids
+    )
+    has_failure_state = report is None or report.status != "pass"
+    use_sidekick_fallback = (
+        patch_attempts >= MAX_PATCH_ATTEMPTS
+        or has_empty_context
+        or has_failure_state
+        or not draft_text
+    )
+    fallback_text = _SIDEKICK_FALLBACK_MESSAGE if use_sidekick_fallback else draft_text
 
     messages: list[BaseMessage] = list(state.messages or [])
     messages.append(AIMessage(content=[{"type": "text", "text": fallback_text}]))
 
-    report = state.verification_report
     if report is None:
         draft_hash = hashlib.sha256(str(state.draft_text or "").encode()).hexdigest()
         report = VerificationReport(
@@ -99,7 +117,8 @@ def _safe_fallback_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
     logger.error(
         "answer_subgraph.safe_fallback",
         failure_type=report.failure_type,
-        patch_attempts=int((state.flags or {}).get("answer_subgraph_patch_attempts") or 0),
+        patch_attempts=patch_attempts,
+        use_sidekick_fallback=use_sidekick_fallback,
     )
     return {
         "messages": messages,
@@ -194,6 +213,12 @@ def _extract_patch(before: SealAIState, after: SealAIState) -> Dict[str, Any]:
         after_val = getattr(after, field, None)
         if after_val != before_val:
             patch[field] = after_val
+    # Ensure terminal answer payload is always available to parent graph/SSE,
+    # even when equality checks accidentally classify it as unchanged.
+    final_text = str(getattr(after, "final_text", None) or getattr(after, "final_answer", None) or "").strip()
+    if final_text:
+        patch.setdefault("final_text", final_text)
+        patch.setdefault("final_answer", final_text)
     return patch
 
 

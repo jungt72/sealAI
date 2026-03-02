@@ -60,7 +60,7 @@ def test_final_prompt_enforces_grounding_on_retrieved_facts() -> None:
     }
     messages = _render_final_prompt_messages(payload)
     system_text = messages[0].content
-    assert "You must base your answer ONLY on the RETRIEVED KNOWLEDGE BASE FACTS." in system_text
-    assert "Ich habe keine Daten dazu gefunden." in system_text
-    assert "Do not guess." in system_text
+    assert "BEANTWORTUNGS-REGELN (Blueprint v4.1)" in system_text
+    assert "Ich habe in der Datenbank derzeit keine spezifischen Details dazu gefunden." in system_text
+    assert "KEINE HALLUZINATIONEN" in system_text
     assert "RETRIEVED KNOWLEDGE BASE FACTS:\nKyrolon 79X ist ein PTFE-basierter Werkstoff." in system_text

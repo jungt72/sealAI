@@ -122,18 +122,24 @@ def node_p3_5_merge(
 
     # --- Retrieval meta from P2 ---
     retrieval_meta: Dict[str, Any] = dict(state.retrieval_meta or {})
+    rag_turn_count = int(getattr(state, "rag_turn_count", 0) or 0)
     for result in worker_results:
         if not isinstance(result, dict):
             continue
         meta = result.get("retrieval_meta")
         if isinstance(meta, dict) and meta:
             retrieval_meta["p2_rag_lookup"] = meta
+        
+        worker_rag_turns = int(result.get("rag_turn_count") or 0)
+        if worker_rag_turns > rag_turn_count:
+            rag_turn_count = worker_rag_turns
 
     # --- Build update ---
     update: Dict[str, Any] = {
         "phase": PHASE.FRONTDOOR,
         "last_node": "node_p3_5_merge",
         "working_memory": merged_wm,
+        "rag_turn_count": rag_turn_count,
     }
 
     if gap_report:

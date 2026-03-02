@@ -3,7 +3,8 @@ from app.langgraph_v2.utils.output_sanitizer import strip_meta_preamble
 
 def test_frontdoor_smalltalk_reply_is_not_a_greeting() -> None:
     # Avoid importing nodes_frontdoor directly to prevent import-time circularities.
-    path = "backend/app/langgraph_v2/nodes/nodes_frontdoor.py"
+    import pathlib
+    path = pathlib.Path(__file__).parent.parent / "nodes" / "nodes_frontdoor.py"
     with open(path, "r", encoding="utf-8") as f:
         content = f.read()
     assert "Hallo! Schön, von dir zu hören" not in content

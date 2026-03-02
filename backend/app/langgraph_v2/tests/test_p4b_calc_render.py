@@ -6,9 +6,7 @@ error handling, and Jinja2 UndefinedError handling.
 
 from unittest.mock import patch
 
-import pytest
-
-from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.state import Intent, SealAIState
 from app.services.rag.state import WorkingProfile
 from app.services.rag.nodes.p4b_calc_render import node_p4b_calc_render
 
@@ -126,6 +124,34 @@ class TestP4bValidCalc:
         assert calc_results.temperature_margin is not None
         assert calc_results.pressure_margin is not None
 
+    def test_extra_extracted_fields_are_ignored(self):
+        """Additional P1/P4 physics fields must not break CalcInput validation."""
+        state = _make_state(
+            working_profile=WorkingProfile(
+                pressure_max_bar=40.0,
+                temperature_max_c=200.0,
+                medium="Dampf",
+            ),
+            extracted_params={
+                "pressure_max_bar": 40.0,
+                "temperature_max_c": 200.0,
+                "medium": "Dampf",
+                "cyclic_load": False,
+                # New physics extraction keys not part of CalcInput:
+                "rpm": 1500.0,
+                "hrc": 55.0,
+                "hrc_value": 55.0,
+                "shaft_d1_mm": 50.0,
+                "clearance_gap_mm": 0.2,
+            },
+        )
+
+        result = node_p4b_calc_render(state)
+
+        assert "error" not in result
+        assert result["calculation_result"] is not None
+        assert result["phase"] == "calculation"
+
 
 class TestP4bEmptyParams:
     """Empty extracted_params -> skip, no error."""
@@ -147,6 +173,35 @@ class TestP4bEmptyParams:
 
         assert "calculation_result" not in result
         assert "error" not in result
+
+    def test_missing_required_fields_are_backfilled_from_working_profile(self):
+        state = _make_state(
+            working_profile=WorkingProfile(
+                pressure_max_bar=25.0,
+                temperature_max_c=180.0,
+                medium="Wasser",
+            ),
+            extracted_params={"medium": "Wasser", "cyclic_load": False},
+        )
+
+        result = node_p4b_calc_render(state)
+
+        assert "error" not in result
+        assert result.get("calculation_result") is not None
+
+    def test_explanation_intent_skips_if_required_inputs_missing(self):
+        state = _make_state(
+            intent=Intent(goal="explanation_or_comparison"),
+            flags={"frontdoor_intent_category": "MATERIAL_RESEARCH"},
+            extracted_params={"medium": "Kyrolon", "cyclic_load": False},
+        )
+
+        result = node_p4b_calc_render(state)
+
+        assert result["phase"] == "calculation"
+        assert result["last_node"] == "node_p4b_calc_render"
+        assert "error" not in result
+        assert "calculation_result" not in result
 
 
 class TestP4bMcpFailure:

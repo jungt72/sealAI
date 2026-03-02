@@ -145,6 +145,37 @@ class TestMetricsEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# Path normalization
+# ---------------------------------------------------------------------------
+
+
+class TestPrometheusPathNormalization:
+    def test_normalize_uuid_segment(self):
+        from fastapi import FastAPI
+        from app.main import _PrometheusMiddleware
+
+        middleware = _PrometheusMiddleware(FastAPI())
+        path = "/api/v1/items/123e4567-e89b-12d3-a456-426614174000/detail"
+        assert middleware._normalize_path(path) == "/api/v1/items/{id}/detail"
+
+    def test_normalize_32_hex_segment_without_partial_replacement(self):
+        from fastapi import FastAPI
+        from app.main import _PrometheusMiddleware
+
+        middleware = _PrometheusMiddleware(FastAPI())
+        path = "/api/v1/rag/documents/0c26f6b46bac4644917fb24cca23ca3d/health-check"
+        assert middleware._normalize_path(path) == "/api/v1/rag/documents/{id}/health-check"
+
+    def test_normalize_numeric_segment_only(self):
+        from fastapi import FastAPI
+        from app.main import _PrometheusMiddleware
+
+        middleware = _PrometheusMiddleware(FastAPI())
+        path = "/api/v1/orders/12345/lines"
+        assert middleware._normalize_path(path) == "/api/v1/orders/{id}/lines"
+
+
+# ---------------------------------------------------------------------------
 # qgate_checks_total via quality gate result dicts
 # ---------------------------------------------------------------------------
 

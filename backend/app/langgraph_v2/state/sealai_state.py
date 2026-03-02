@@ -1,4 +1,5 @@
 # path: backend/app/langgraph_v2/state/sealai_state.py
+# MASTER STATE — rag/state.py ist deprecated, wird in Phase 2 entfernt
 """Strict Pydantic state definition for SealAI LangGraph v2."""
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ try:
 except Exception:
     WorkingProfile = Any  # type: ignore[assignment,misc]
 
+from .audit import EvidenceBundle, SourceRefPayload, ToolCallRecord
 from app.langgraph_v2.io import AskMissingRequest, CoverageAnalysis, ParameterProfile
 from app.langgraph_v2.types import (
     IntentKey,
@@ -100,9 +102,34 @@ class RenderedPrompt(BaseModel):
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
 
 
+def take_last_non_null(left: Any, right: Any) -> Any:
+    """Reducer for concurrent writes: keep newest non-null value."""
+    return right if right is not None else left
+
+
 def resolve_last_node(left: Optional[str], right: Optional[str]) -> Optional[str]:
     """Reducer for concurrent writes to last_node: prefer the newest (right) value."""
     return right if right is not None else left
+
+
+def _deep_merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(left)
+    for key, value in right.items():
+        left_value = merged.get(key)
+        if isinstance(left_value, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge_dicts(left_value, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def merge_dicts(left: Optional[Dict[str, Any]], right: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Reducer for concurrent dict writes: deep-merge right over left."""
+    if right is None:
+        return dict(left or {})
+    if left is None:
+        return dict(right or {})
+    return _deep_merge_dicts(dict(left), dict(right))
 
 
 def _coerce_number(value: Any, field_name: str) -> Any:
@@ -125,6 +152,30 @@ class CalcResults(BaseModel):
     temperature_margin: Optional[float] = None
     pressure_margin: Optional[float] = None
     notes: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LiveCalcTile(BaseModel):
+    v_surface_m_s: Optional[float] = None
+    pv_value_mpa_m_s: Optional[float] = None
+    hrc_value: Optional[float] = None
+    hrc_warning: bool = False
+    runout_warning: bool = False
+    pv_warning: bool = False
+    friction_power_watts: Optional[float] = None
+    dry_running_risk: bool = False
+    clearance_gap_mm: Optional[float] = None
+    extrusion_risk: bool = False
+    requires_backup_ring: bool = False
+    compression_ratio_pct: Optional[float] = None
+    groove_fill_pct: Optional[float] = None
+    stretch_pct: Optional[float] = None
+    geometry_warning: bool = False
+    thermal_expansion_mm: Optional[float] = None
+    shrinkage_risk: bool = False
+    status: Literal["ok", "warning", "critical", "insufficient_data"] = "insufficient_data"
+    parameters: Dict[str, str | int | float] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -293,6 +344,7 @@ class TechnicalParameters(BaseModel):
     lead_pitch: Optional[str] = None
     runout: Optional[float] = None
     eccentricity: Optional[str] = None
+    pressure_spike_factor: Optional[float] = None
     housing_diameter: Optional[float] = None
     bore_diameter: Optional[float] = None
     housing_surface: Optional[str] = None
@@ -341,11 +393,13 @@ class WorkingMemory(BaseModel):
     knowledge_generic: Optional[str] = None
     response_text: Optional[str] = None
     response_kind: Optional[str] = None
+    technical_profile: Dict[str, Any] = Field(default_factory=dict)
 
     frontdoor_reply: Optional[str] = None
     design_notes: Dict[str, Any] = Field(default_factory=dict)
     comparison_notes: Dict[str, Any] = Field(default_factory=dict)
     troubleshooting_notes: Dict[str, Any] = Field(default_factory=dict)
+    diagnostic_data: Dict[str, Any] = Field(default_factory=dict)
 
     panel_calculator: Dict[str, Any] = Field(default_factory=dict)
     panel_material: Dict[str, Any] = Field(default_factory=dict)
@@ -360,6 +414,35 @@ class WorkingMemory(BaseModel):
         return self.model_dump(exclude_none=True)
 
 
+def merge_working_memory(
+    left: Optional["WorkingMemory"] | Dict[str, Any],
+    right: Optional["WorkingMemory"] | Dict[str, Any],
+) -> "WorkingMemory":
+    """Reducer for concurrent WorkingMemory updates in the same graph step."""
+    if right is None:
+        if isinstance(left, WorkingMemory):
+            return left
+        return WorkingMemory.model_validate(left or {})
+
+    if left is None:
+        if isinstance(right, WorkingMemory):
+            return right
+        return WorkingMemory.model_validate(right or {})
+
+    left_dict = (
+        left.model_dump(exclude_defaults=True, exclude_none=True)
+        if isinstance(left, WorkingMemory)
+        else dict(left or {})
+    )
+    right_dict = (
+        right.model_dump(exclude_defaults=True, exclude_none=True)
+        if isinstance(right, WorkingMemory)
+        else dict(right or {})
+    )
+    merged = _deep_merge_dicts(left_dict, right_dict)
+    return WorkingMemory.model_validate(merged)
+
+
 class SealAIState(BaseModel):
     # Core chat state
     messages: Annotated[List[BaseMessage], add_messages] = Field(default_factory=list)
@@ -369,9 +452,13 @@ class SealAIState(BaseModel):
     # Observability – carry run_id into state for logging/metadata
     run_id: Optional[str] = None
     prompt_traces: Annotated[list[RenderedPrompt], operator.add] = Field(default_factory=list)
+    tool_call_records: Annotated[list[ToolCallRecord], operator.add] = Field(default_factory=list)
+    source_ref_payloads: Annotated[list[SourceRefPayload], operator.add] = Field(default_factory=list)
+    evidence_bundle: Optional[EvidenceBundle] = None
+    evidence_bundle_hash: Optional[str] = None
 
     # Orchestrator meta
-    phase: Optional[PhaseLiteral] = None
+    phase: Annotated[Optional[PhaseLiteral], take_last_non_null] = None
     last_node: Annotated[Optional[str], resolve_last_node] = None
     router_classification: Optional[
         Literal["new_case", "follow_up", "clarification", "rfq_trigger", "resume", "ask_user"]
@@ -408,11 +495,18 @@ class SealAIState(BaseModel):
     ask_missing_request: Optional[AskMissingRequest] = None
     ask_missing_scope: Optional[AskMissingScope] = None
     awaiting_user_input: bool = False
+    streaming_complete: bool = False
+    medium: Annotated[Optional[str], take_last_non_null] = None
+    temperature_c: Annotated[Optional[float], take_last_non_null] = None
+    pressure_bar: Annotated[Optional[float], take_last_non_null] = None
 
     # v4.4.0 Sprint 6: P4a/P4b parameter extraction & calculation
     extracted_params: Dict[str, Any] = Field(default_factory=dict)
     calculation_result: Optional[Dict[str, Any]] = None
     is_critical_application: bool = False
+    live_calc_tile: LiveCalcTile = Field(default_factory=LiveCalcTile)
+    tradeoff_options: List[Dict[str, Any]] = Field(default_factory=list)
+    capability_requirements: Dict[str, Any] = Field(default_factory=dict)
 
     # v4.4.0 Sprint 7: P4.5 Quality Gate
     critique_log: List[str] = Field(default_factory=list)
@@ -424,11 +518,29 @@ class SealAIState(BaseModel):
 
     # v4.4.0 Sprint 8: P5 Procurement
     procurement_result: Optional[Dict[str, Any]] = None
+    rfq_payload: Dict[str, Any] = Field(default_factory=dict)
+    rfq_ready: bool = False
+    rfq_pdf_base64: Optional[str] = None
+    rfq_pdf_url: Optional[str] = None
+    rfq_html_report: Optional[str] = None
+    missing_fields: List[str] = Field(default_factory=list)
 
     # v4.4.0 KB Integration: deterministic material decisions from structured knowledge base
     kb_factcard_result: Dict[str, Any] = Field(default_factory=dict)
     compound_filter_results: Dict[str, Any] = Field(default_factory=dict)
+    coverage_disclosure_ready: bool = False
     rfq_pdf_text: Optional[str] = None
+
+    # v8 WorkingProfile fields — dynamic engineering parameters
+    dp_dt_bar_per_s: Optional[float] = None
+    side_load_kn: Optional[float] = None
+    aed_required: Optional[bool] = None
+    medium_additives: Optional[str] = None
+    fluid_contamination_iso: Optional[str] = None
+    surface_hardness_hrc: Optional[float] = None
+    pressure_spike_factor: Optional[float] = None
+    dynamic_type: Optional[str] = None
+    # "rotating" | "oscillating" | "reciprocating" | "static"
 
     analysis_complete: bool = False
     calc_results_ok: bool = False
@@ -436,13 +548,14 @@ class SealAIState(BaseModel):
 
     # Plan / Working Memory
     plan: Dict[str, Any] = Field(default_factory=dict)
-    working_memory: WorkingMemory = Field(default_factory=WorkingMemory)
+    working_memory: Annotated[WorkingMemory, merge_working_memory] = Field(default_factory=WorkingMemory)
 
     # Empfehlung / Empfehlungstext
     recommendation: Optional[Recommendation] = None
 
     # HITL gate
     requires_human_review: bool = False
+    safety_class: Optional[str] = None
 
     # Wissens-/Quellenbezug
     need_sources: bool = False
@@ -455,8 +568,8 @@ class SealAIState(BaseModel):
 
     # Finaler Output / Fehler
     error: Optional[str] = None
-    final_text: Optional[str] = None
-    final_answer: Optional[str] = None  # Alias/Copy of final_text for verification node
+    final_text: Annotated[Optional[str], take_last_non_null] = None
+    final_answer: Annotated[Optional[str], take_last_non_null] = None  # Alias/Copy of final_text for verification node
     final_prompt: Optional[str] = None
     final_prompt_metadata: Dict[str, Any] = Field(default_factory=dict)
     answer_contract: Optional[AnswerContract] = None
@@ -523,6 +636,8 @@ class SealAIState(BaseModel):
             "done": False,
         }
     )
+    diagnostic_data: Annotated[Dict[str, Any], merge_dicts] = Field(default_factory=dict)
+    diagnostic_complete: bool = False
 
     # MAI-DxO supervisor state (feature-flagged)
     open_questions: List[QuestionItem] = Field(default_factory=list)
@@ -532,6 +647,13 @@ class SealAIState(BaseModel):
     budget: Budget = Field(default_factory=Budget)
     confidence: float = 0.0
     round_index: int = 0
+    turn_count: int = 0
+    max_turns: int = 12
+    user_persona: Optional[str] = None  # "erfahrener" | "einsteiger" | "entscheider"
+    knowledge_coverage: str = "limited"  # "full" | "partial" | "limited"
+    output_blocked: bool = False
+    output_blocked_reason: Optional[str] = None
+    rag_turn_count: int = 0
     next_action: Optional[str] = None
 
     # UI-State für Reasoning Status
@@ -544,6 +666,22 @@ class SealAIState(BaseModel):
     def get(self, key: str, default: Any = None) -> Any:
         """Dict-like access helper to ease migration from TypedDict."""
         return getattr(self, key, default)
+
+    def compute_knowledge_coverage(self, intent: str) -> str:
+        """Deterministisch — kein LLM, kein confidence_score."""
+        if intent in ("greeting", "smalltalk", "info"):
+            return "full"
+        critical = [self.medium, self.pressure_bar,
+                    self.temperature_c, self.dynamic_type]
+        if not all(critical):
+            return "limited"
+        if intent in ("complex", "safety_critical"):
+            dynamic = [self.dp_dt_bar_per_s,
+                       self.aed_required,
+                       self.medium_additives]
+            if sum(1 for f in dynamic if f is None) > 1:
+                return "partial"
+        return "full"
 
     @field_validator("knowledge_type", mode="before")
     @classmethod
@@ -559,7 +697,11 @@ __all__ = [
     "SealAIExtractedParameters",
     "SealAIIntentOutput",
     "RenderedPrompt",
+    "ToolCallRecord",
+    "SourceRefPayload",
+    "EvidenceBundle",
     "CalcResults",
+    "LiveCalcTile",
     "Recommendation",
     "Source",
     "AnswerContract",

@@ -78,10 +78,15 @@ def _merge_new_data_from_results(state: SealAIState, results: List[Dict[str, Any
     calc_results_ok = bool(state.calc_results_ok)
     saw_retrieval = False
     requires_human_review = bool(getattr(state, "requires_human_review", False))
+    rag_turn_count = int(getattr(state, "rag_turn_count", 0) or 0)
 
     for result in results:
         if not isinstance(result, dict):
             continue
+
+        worker_rag_turns = int(result.get("rag_turn_count") or 0)
+        if worker_rag_turns > rag_turn_count:
+            rag_turn_count = worker_rag_turns
 
         if result.get("calc_results") is not None:
             calc_results = result.get("calc_results")
@@ -143,6 +148,9 @@ def _merge_new_data_from_results(state: SealAIState, results: List[Dict[str, Any
 
     if material_changed and merged_material_choice != dict(state.material_choice or {}):
         patch["material_choice"] = merged_material_choice
+
+    if rag_turn_count > int(getattr(state, "rag_turn_count", 0) or 0):
+        patch["rag_turn_count"] = rag_turn_count
 
     if saw_retrieval:
         # Retrieval demand has been fulfilled in this map-reduce cycle.

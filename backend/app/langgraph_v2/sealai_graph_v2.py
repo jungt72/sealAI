@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import re
 import uuid
 from typing import Any, Dict, List
@@ -15,8 +16,10 @@ from langgraph.graph import StateGraph, END, START
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
+from langgraph.types import Command
 
 from app.core.memory import get_postgres_store
+from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.utils.checkpointer import make_v2_checkpointer_async
 from app.langgraph_v2.utils.jinja import render_template
@@ -41,8 +44,10 @@ from app.services.rag.nodes.p3_gap_detection import node_p3_gap_detection
 from app.services.rag.nodes.p3_5_merge import node_p3_5_merge
 from app.services.rag.nodes.p4a_extract import node_p4a_extract
 from app.services.rag.nodes.p4b_calc_render import node_p4b_calc_render
+from app.services.rag.nodes.p4_live_calc import node_p4_live_calc
 from app.services.rag.nodes.p4_5_quality_gate import node_p4_5_qgate
 from app.services.rag.nodes.p5_procurement import node_p5_procurement
+from app.services.rag.nodes.p6_generate_pdf import node_p6_generate_pdf
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 from app.langgraph_v2.nodes.nodes_confirm import confirm_checkpoint_node, confirm_recommendation_node
 from app.langgraph_v2.nodes.nodes_supervisor import (
@@ -61,18 +66,27 @@ from app.langgraph_v2.nodes.nodes_resume import (
     confirm_resume_node,
     resume_router_node,
 )
-from app.langgraph_v2.nodes.nodes_error import smalltalk_node
+from app.langgraph_v2.nodes.nodes_error import smalltalk_node, turn_limit_node
 from app.langgraph_v2.nodes.orchestrator import orchestrator_node
 from app.langgraph_v2.nodes.factcard_lookup import node_factcard_lookup
 from app.langgraph_v2.nodes.compound_filter import node_compound_filter
 from app.langgraph_v2.nodes.merge_deterministic import node_merge_deterministic
 from app.langgraph_v2.nodes.route_after_frontdoor import route_after_frontdoor_node
+from app.langgraph_v2.nodes.safety_synonym_guard_node import safety_synonym_guard_node
+from app.langgraph_v2.nodes.combinatorial_chemistry_guard import combinatorial_chemistry_guard_node
+from app.langgraph_v2.nodes.reasoning_core_node import reasoning_core_node
 from app.langgraph_v2.nodes.p4_6_number_verification import node_p4_6_number_verification
 from app.langgraph_v2.nodes.request_clarification import request_clarification_node
+from app.langgraph_v2.nodes.rfq_validator import rfq_validator_node
 from app.langgraph_v2.nodes.answer_subgraph.subgraph_builder import (
     answer_subgraph_node,
     answer_subgraph_node_async,
 )
+from app.langgraph_v2.nodes.conversational_rag import conversational_rag_node
+from app.langgraph_v2.nodes.troubleshooting_wizard import troubleshooting_wizard_node
+from app.langgraph_v2.nodes.hitl_triage_node import hitl_triage_node
+from app.langgraph_v2.nodes.worm_evidence_node import worm_evidence_node
+from app.langgraph_v2.agents.knowledge_agent import KnowledgeAgent
 from app.langgraph_v2.nodes.nodes_flows import (
     build_final_answer_context,
     map_final_answer_to_state,
@@ -119,6 +133,14 @@ TROUBLESHOOTING_TEMPLATE = "final_answer_troubleshooting_v2.j2"
 OUT_OF_SCOPE_TEMPLATE = "final_answer_out_of_scope_v2.j2"
 SAFETY_CHECK_TEMPLATE = "check_1.1.0.j2"
 SAFETY_CHECK_VERSION = "check_1.1.0"
+CONVERSATIONAL_RAG_NODE_KEY = "conversational_rag_node"
+LANGSMITH_RUN_NAME = "sealai_langgraph_v2"
+LANGSMITH_TRACE_TAGS: List[str] = [
+    "sealai",
+    "langgraph_v2",
+    "phase_0_observability",
+    "audit_schema_v1",
+]
 
 
 def _select_final_answer_template(goal: str | None, recommendation_go: bool) -> str:
@@ -150,6 +172,31 @@ def _build_final_answer_template_context(
     is_micro_smalltalk: bool,
 ) -> Dict[str, Any]:
     parameters = state.parameters.as_dict()
+    extracted_params = dict(state.extracted_params or {})
+    if extracted_params:
+        for key, value in extracted_params.items():
+            if value is not None:
+                parameters.setdefault(key, value)
+    if parameters.get("speed_rpm") is None and parameters.get("rpm") is not None:
+        parameters["speed_rpm"] = parameters.get("rpm")
+    if parameters.get("shaft_diameter") is None:
+        shaft_d = parameters.get("shaft_d1_mm") or parameters.get("shaft_d1") or parameters.get("d1")
+        if shaft_d is not None:
+            parameters["shaft_diameter"] = shaft_d
+    if parameters.get("pressure_bar") is None:
+        pressure_bar = parameters.get("pressure_max_bar") or parameters.get("p_max")
+        if pressure_bar is not None:
+            parameters["pressure_bar"] = pressure_bar
+    if parameters.get("temperature_C") is None:
+        temperature_c = parameters.get("temperature_max_c") or parameters.get("temp_max") or parameters.get("temperature_max")
+        if temperature_c is not None:
+            parameters["temperature_C"] = temperature_c
+    profile_snapshot = {}
+    if state.working_profile is not None:
+        profile_snapshot = state.working_profile.model_dump(exclude_none=True)
+    for key, value in parameters.items():
+        if value is not None:
+            profile_snapshot.setdefault(key, value)
     calc_results = state.calc_results.model_dump(exclude_none=True) if state.calc_results else {}
     recommendation = state.recommendation.model_dump(exclude_none=True) if state.recommendation else {}
     working_memory = state.working_memory.model_dump(exclude_none=True) if state.working_memory else {}
@@ -181,6 +228,8 @@ def _build_final_answer_template_context(
             "calc_results": calc_results,
             "intent_high_impact_gaps": getattr(state.intent, "high_impact_gaps", []),
             "parameters": parameters,
+            "profile": profile_snapshot,
+            "extracted_params": extracted_params,
             "flags": state.flags or {},
             "user_context": getattr(state, "user_context", {}) or {}, # INJECTED
             "available_mcp_tools": available_mcp_tools,
@@ -196,6 +245,44 @@ def _normalize_smalltalk_text(text: str | None) -> str:
     normalized = re.sub(r"[!?.]+$", "", normalized)
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.strip()
+
+
+_ROTARY_QUERY_MARKERS = (
+    "rotary",
+    "rotierend",
+    "welle",
+    "wellen",
+    "ruehrwerk",
+    "rührwerk",
+    "agitator",
+    "mischer",
+    "mixer",
+)
+
+
+def _is_rotary_query_text(user_text: str | None) -> bool:
+    text = str(user_text or "").strip().lower()
+    return any(marker in text for marker in _ROTARY_QUERY_MARKERS)
+
+
+def _needs_rotary_insufficient_data_fallback(template_context: Dict[str, Any]) -> bool:
+    if not _is_rotary_query_text(template_context.get("user_text") or template_context.get("latest_user_text")):
+        return False
+
+    recommendation_ready = bool(template_context.get("recommendation_ready"))
+    coverage_score = float(template_context.get("coverage_score") or 0.0)
+    coverage_gaps = [str(item).strip().lower() for item in (template_context.get("coverage_gaps") or []) if str(item).strip()]
+    gap_blob = " ".join(coverage_gaps)
+    parameters = template_context.get("parameters") if isinstance(template_context.get("parameters"), dict) else {}
+
+    has_hardness = bool(parameters.get("shaft_hardness") or parameters.get("hardness"))
+    has_runout = bool(parameters.get("shaft_runout") or parameters.get("runout") or parameters.get("dynamic_runout"))
+
+    if not has_hardness or not has_runout:
+        return True
+    if not recommendation_ready or coverage_score < 0.99:
+        return True
+    return ("hardness" in gap_blob) or ("runout" in gap_blob) or ("wellenschlag" in gap_blob)
 
 
 def _collect_retrieved_facts(template_context: Dict[str, Any]) -> str:
@@ -259,6 +346,16 @@ def _render_final_prompt_package(payload: Dict[str, Any]) -> Dict[str, Any]:
             cleaned = [str(item).strip() for item in raw_system_instructions if str(item).strip()]
             if cleaned:
                 prompt_text = f"{prompt_text}\n\n" + "\n".join(cleaned)
+
+    if _needs_rotary_insufficient_data_fallback(payload.get("template_context") or {}):
+        prompt_text = (
+            f"{prompt_text}\n\n"
+            "ROTARY INSUFFICIENT-DATA FAILSAFE:\n"
+            "- Gib keine Materialempfehlung ab, solange wesentliche Daten fehlen.\n"
+            "- Erklaere explizit: \"Dichtungstechnik SYSTEMTECHNIK ist\".\n"
+            "- Nenne die Umfangsgeschwindigkeit mit Formel: v = (pi * d * n) / 60000 (d in mm, n in rpm, Ergebnis in m/s).\n"
+            "- Fordere zwingend Wellenhaerte (mindestens 58 HRC fuer PTFE-Compounds) und dynamischen Wellenschlag (Run-out) ein."
+        )
 
     state: Dict[str, str] = {}
     retrieved_chunks = _collect_retrieved_facts(payload["template_context"])
@@ -368,7 +465,7 @@ def _build_final_answer_chain() -> Any:
         model="gpt-4.1-mini",
         temperature=0,
         cache=False,
-        max_tokens=800,
+        max_tokens=1000,
         streaming=True,
     )
 
@@ -506,11 +603,183 @@ def _product_router(state: SealAIState) -> str:
     return "include" if wants_products else "skip"
 
 
+def _resolve_coverage_for_material(state: SealAIState) -> Dict[str, Any]:
+    profile = getattr(state, "working_profile", None)
+    raw = getattr(profile, "knowledge_coverage_check", {}) if profile is not None else {}
+    if not isinstance(raw, dict):
+        return {}
+
+    material = str(
+        (getattr(profile, "material", None) if profile is not None else None)
+        or (state.material_choice or {}).get("material")
+        or ""
+    ).strip().upper()
+    if not material:
+        return raw
+
+    material_keys = (material, material.lower(), material.upper())
+    for key in material_keys:
+        value = raw.get(key)
+        if isinstance(value, dict):
+            return value
+
+    by_material = raw.get("by_material")
+    if isinstance(by_material, dict):
+        for key in material_keys:
+            value = by_material.get(key)
+            if isinstance(value, dict):
+                return value
+
+    return raw
+
+
+def _all_mandatory_coverage_true(state: SealAIState) -> bool:
+    coverage = _resolve_coverage_for_material(state)
+    if not coverage:
+        return False
+
+    mandatory_seen = False
+    for key, value in coverage.items():
+        if str(key).startswith("_"):
+            continue
+
+        is_mandatory = True
+        covered = False
+        if isinstance(value, bool):
+            covered = bool(value)
+        elif isinstance(value, dict):
+            is_mandatory = bool(value.get("mandatory", True))
+            covered = bool(
+                value.get("value") is True
+                or value.get("covered") is True
+                or value.get("ok") is True
+            )
+        else:
+            # Unknown shapes are treated as uncovered when mandatory.
+            covered = False
+
+        if not is_mandatory:
+            continue
+        mandatory_seen = True
+        if not covered:
+            return False
+
+    return mandatory_seen
+
+
+def _has_unhandled_blocker_conflicts(state: SealAIState) -> bool:
+    profile = getattr(state, "working_profile", None)
+    conflicts = list(getattr(profile, "conflicts_detected", []) or []) if profile is not None else []
+    for conflict in conflicts:
+        if isinstance(conflict, dict):
+            severity = str(conflict.get("severity") or "").upper()
+            handled = bool(conflict.get("handled") or conflict.get("resolved"))
+        else:
+            severity = str(getattr(conflict, "severity", "") or "").upper()
+            handled = bool(getattr(conflict, "handled", False) or getattr(conflict, "resolved", False))
+        if severity == "BLOCKER" and not handled:
+            return True
+    return False
+
+
+def _reasoning_turn_count(state: SealAIState) -> int:
+    critical_iter = int((state.critical or {}).get("iteration_count") or 0)
+    round_index = int(getattr(state, "round_index", 0) or 0)
+    decision_rounds = len(getattr(state, "decision_log", []) or [])
+    return max(critical_iter, round_index, decision_rounds)
+
+
+def _has_sufficient_dynamic_parameters(state: SealAIState) -> bool:
+    DYNAMIC_FIELDS = [
+        "dp_dt_bar_per_s",
+        "side_load_kn",
+        "aed_required",
+        "medium_additives",
+        "fluid_contamination_iso",
+        "surface_hardness_hrc",
+        "pressure_spike_factor",
+    ]
+    profile = getattr(state, "working_profile", None)
+    if profile is None:
+        return False
+    filled = sum(
+        1 for f in DYNAMIC_FIELDS
+        if getattr(profile, f, None) is not None
+    )
+    # Require at least 3 of 7 to be known before Reasoning Core
+    return filled >= 3
+
+
+def _deterministic_termination_router(state: SealAIState) -> str:
+    log = structlog.get_logger()
+    log.info("termination_router_called", turn=getattr(state, "turn_count", "MISSING"))
+    
+    # FIX 1 & 3: Primary Stop and Blocker Enforcement
+    final_answer = str(getattr(state, "final_answer", "") or "")
+    if "?" in final_answer:
+        return "needs_data"
+
+    if _has_unhandled_blocker_conflicts(state):
+        log.warning("chemistry_blocker_enforced", thread_id=state.thread_id)
+        return "request_clarification_node"
+
+    # FIX 4: Reasoning Core Gate for Missing Mandatory Fields
+    if not _has_sufficient_dynamic_parameters(state):
+        log.info("reasoning_core_gated", reason="insufficient_dynamic_params")
+        return "request_clarification_node"
+
+    profile = getattr(state, "working_profile", None)
+    risk_mitigated = bool(getattr(profile, "risk_mitigated", False)) if profile is not None else False
+    coverage_ok = _all_mandatory_coverage_true(state)
+    has_blockers = _has_unhandled_blocker_conflicts(state)
+    turn_count = _reasoning_turn_count(state)
+    awaiting_user_input = bool(getattr(state, "awaiting_user_input", False))
+    turn = int(getattr(state, "turn_count", 0) or 0)
+    validation = getattr(state, "validation", {}) or {}
+    has_validation_issues = bool(validation.get("issues"))
+
+    # Hard stop to prevent infinite reasoning loops.
+    if turn >= 3:
+        log.warning("loop_breaker_triggered", turn=turn)
+        return "needs_data"
+
+    if turn_count > 3:
+        return "needs_data"
+
+    # If we have gaps or issues after the first turn, stop and ask the user.
+    if turn >= 1 and (awaiting_user_input or not coverage_ok or has_validation_issues):
+        log.info("termination_router_stopping_on_gaps", turn=turn)
+        return "needs_data"
+
+    # If reasoning core just emitted a follow-up question, wait for user input.
+    last_message = (getattr(state, "messages", None) or [None])[-1]
+    last_message_type = str(getattr(last_message, "type", "") or "").lower()
+    last_node = str(getattr(state, "last_node", "") or "")
+    final_answer_text = str(getattr(state, "final_answer", "") or "")
+    if (
+        last_node == "reasoning_core_node"
+        and last_message_type in {"ai", "assistant"}
+        and "?" in final_answer_text
+    ):
+        return "needs_data"
+
+    if coverage_ok and risk_mitigated and not has_blockers and not has_validation_issues:
+        return "contract_first_output_node"
+    if turn_count >= 3:
+        return "human_review_node"
+    if awaiting_user_input or not coverage_ok or has_validation_issues:
+        return "needs_data"
+    return "reasoning_core_node"
+
+
 def _parameter_check_router(state: SealAIState) -> str:
     ready = bool(getattr(state, "recommendation_ready", False))
     go = bool(getattr(state, "recommendation_go", False))
+    goal = getattr(getattr(state, "intent", None), "goal", None)
     if ready and go:
         return "calculator_node"
+    if goal == "design_recommendation" and not ready:
+        return "conversational_rag_node"
     return "supervisor_policy_node"
 
 
@@ -519,6 +788,10 @@ def _supervisor_policy_router(state: SealAIState) -> str:
 
 
 def _node_router_dispatch(state: SealAIState) -> str:
+    turn = int(getattr(state, "turn_count", 0) or 0)
+    if turn >= 3:
+        return "clarification"
+
     classification = getattr(state, "router_classification", None) or "new_case"
     if classification in ("new_case", "follow_up"):
         return "frontdoor"
@@ -528,6 +801,8 @@ def _node_router_dispatch(state: SealAIState) -> str:
         return "clarification"
     if classification == "rfq_trigger":
         return "rfq_trigger"
+    if classification == "turn_limit_exceeded":
+        return "turn_limit_exceeded"
     return "frontdoor"
 
 
@@ -566,6 +841,8 @@ def _frontdoor_router(state: SealAIState) -> str:
 def _reducer_router(state: SealAIState) -> str:
     if bool(getattr(state, "requires_human_review", False)):
         return "human_review"
+    if state.intent and state.intent.goal == "explanation_or_comparison":
+        return "conversational_rag"
     return "standard"
 
 
@@ -575,8 +852,38 @@ def _qgate_router(state: SealAIState) -> str:
     return "no_blockers"
 
 
+def _number_verification_router(state: SealAIState) -> str:
+    s = _ensure_state_model(state)
+    goal = getattr(getattr(s, "intent", None), "goal", None)
+    recommendation_ready = bool(getattr(s, "recommendation_ready", False))
+    verification_passed = bool(getattr(s, "verification_passed", True))
+    if goal == "design_recommendation" and not recommendation_ready:
+        return "fallback_rag"
+    return "pass" if verification_passed else "fail"
+
+
+def _rfq_validator_router(state: SealAIState) -> str:
+    return "ready" if bool(getattr(state, "rfq_ready", False)) else "missing"
+
+
+def _troubleshooting_wizard_router(state: SealAIState) -> str:
+    return "complete" if bool(getattr(state, "diagnostic_complete", False)) else "incomplete"
+
+
 async def _qgate_router_async(state: SealAIState) -> str:
     return _qgate_router(state)
+
+
+async def _rfq_validator_router_async(state: SealAIState) -> str:
+    return _rfq_validator_router(state)
+
+
+async def _number_verification_router_async(state: SealAIState) -> str:
+    return _number_verification_router(state)
+
+
+async def _troubleshooting_wizard_router_async(state: SealAIState) -> str:
+    return _troubleshooting_wizard_router(state)
 
 
 async def _node_router_dispatch_async(state: SealAIState) -> str:
@@ -589,6 +896,10 @@ async def _parameter_check_router_async(state: SealAIState) -> str:
 
 async def _critical_review_router_async(state: SealAIState) -> str:
     return _critical_review_router(state)
+
+
+async def _deterministic_termination_router_async(state: SealAIState) -> str:
+    return _deterministic_termination_router(state)
 
 
 async def _product_router_async(state: SealAIState) -> str:
@@ -607,6 +918,24 @@ async def _frontdoor_router_async(state: SealAIState) -> str:
     return _frontdoor_router(state)
 
 
+_RFQ_OR_LASTENHEFT_PATTERN = re.compile(
+    r"\b("
+    r"rfq"
+    r"|request\s+for\s+quotation"
+    r"|angebot"
+    r"|quote"
+    r"|lastenheft"
+    r"|ausschreibung"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_rfq_or_spec_request(state: SealAIState) -> bool:
+    user_text = latest_user_text(state.messages or []) or ""
+    return bool(_RFQ_OR_LASTENHEFT_PATTERN.search(user_text))
+
+
 def _merge_deterministic_router(state: SealAIState) -> str:
     """Route after parallel deterministic KB worker merge.
 
@@ -614,6 +943,9 @@ def _merge_deterministic_router(state: SealAIState) -> str:
     - otherwise         → supervisor_policy_node
     """
     kb_result = state.kb_factcard_result or {}
+    if _is_rfq_or_spec_request(state):
+        logger.info("merge_deterministic.force_supervisor_for_rfq_context")
+        return "supervisor"
     if kb_result.get("deterministic"):
         return "deterministic"
     return "supervisor"
@@ -652,17 +984,59 @@ async def _reducer_router_async(state: SealAIState) -> str:
     return _reducer_router(state)
 
 
-def human_review_node(state: SealAIState) -> Dict[str, Any]:
-    # This node is used only as HITL breakpoint target (interrupt_before).
-    # If resumed, emit a compact response hint for manual approval flow.
-    return {
-        "phase": PHASE.CONFIRM,
-        "last_node": "human_review_node",
-        "awaiting_user_confirmation": True,
-        "pending_action": "human_review",
-        "confirm_status": "pending",
-        "error": "Human review required before continuing.",
-    }
+def human_review_node(state: SealAIState) -> Command:
+    reviewer_signature = ""
+    if isinstance(state.confirm_edits, dict):
+        reviewer_signature = str(state.confirm_edits.get("reviewer_signature") or "").strip()
+    if not reviewer_signature and isinstance(state.user_context, dict):
+        reviewer_signature = str(state.user_context.get("reviewer_signature") or "").strip()
+
+    requires_signature = str(state.safety_class or "").strip().upper() in {"SEV-1", "SEV-2"} or bool(
+        (state.flags or {}).get("hitl_pause_required")
+    )
+    if requires_signature and not reviewer_signature:
+        return Command(
+            update={
+                "phase": PHASE.CONFIRM,
+                "last_node": "human_review_node",
+                "awaiting_user_confirmation": True,
+                "pending_action": "hitl_signature_required",
+                "confirm_status": "pending",
+                "error": "Reviewer signature required to resume SEV-1/SEV-2 case.",
+            },
+            goto="human_review_node",
+        )
+
+    confirmed_actions = list(state.confirmed_actions or [])
+    if reviewer_signature and "hitl_review_signed" not in confirmed_actions:
+        confirmed_actions.append("hitl_review_signed")
+    flags = dict(state.flags or {})
+    if reviewer_signature:
+        flags["hitl_reviewer_signature"] = reviewer_signature
+
+    return Command(
+        update={
+            "phase": PHASE.CONFIRM,
+            "last_node": "human_review_node",
+            "awaiting_user_confirmation": False,
+            "pending_action": None,
+            "confirm_status": "resolved",
+            "confirm_resolved_at": datetime.now(timezone.utc).isoformat(),
+            "confirmed_actions": confirmed_actions,
+            "flags": flags,
+            "error": None,
+        },
+        goto="worm_evidence_node",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Agent — node wrapper
+# ---------------------------------------------------------------------------
+
+
+async def _knowledge_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    return await KnowledgeAgent().run(state, llm=None)
 
 
 # ---------------------------------------------------------------------------
@@ -678,13 +1052,23 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     supervisor_router = _supervisor_policy_router_async if require_async else _supervisor_policy_router
     parameter_router = _parameter_check_router_async if require_async else _parameter_check_router
     critical_router = _critical_review_router_async if require_async else _critical_review_router
+    deterministic_termination_router = (
+        _deterministic_termination_router_async if require_async else _deterministic_termination_router
+    )
     product_router = _product_router_async if require_async else _product_router
     merge_deterministic_router = _merge_deterministic_router_async if require_async else _merge_deterministic_router
     reducer_router = _reducer_router_async if require_async else _reducer_router
     qgate_router = _qgate_router_async if require_async else _qgate_router
+    number_verification_router = _number_verification_router_async if require_async else _number_verification_router
+    rfq_validator_router = _rfq_validator_router_async if require_async else _rfq_validator_router
+    troubleshooting_wizard_router = (
+        _troubleshooting_wizard_router_async if require_async else _troubleshooting_wizard_router
+    )
 
     # Node registration
     builder.add_node("profile_loader_node", profile_loader_node) # Long-term Memory
+    builder.add_node("safety_synonym_guard_node", safety_synonym_guard_node)  # deterministic pre-router guard
+    builder.add_node("combinatorial_chemistry_guard_node", combinatorial_chemistry_guard_node)  # deterministic profile guard
     builder.add_node("node_router", node_router)          # v4.4.0 Sprint 3: Router Node
     builder.add_node("node_p1_context", node_p1_context)  # v4.4.0 Sprint 4: P1 Context Node
     builder.add_node("node_p2_rag_lookup", node_p2_rag_lookup)    # v4.4.0 Sprint 5: P2 RAG Material-Lookup
@@ -692,10 +1076,13 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("node_p3_5_merge", node_p3_5_merge)          # v4.4.0 Sprint 5: P3.5 Merge
     builder.add_node("node_p4a_extract", node_p4a_extract)       # v4.4.0 Sprint 6: P4a Parameter-Extraction
     builder.add_node("node_p4b_calc_render", node_p4b_calc_render)  # v4.4.0 Sprint 6: P4b MCP Calc + Render
+    builder.add_node("node_p4_live_calc", node_p4_live_calc)    # v5.0 foundation: deterministic live tile
     builder.add_node("node_p4_5_qgate", node_p4_5_qgate)          # v4.4.0 Sprint 7: P4.5 Quality Gate
     builder.add_node("p4_6_number_verification", node_p4_6_number_verification)
     builder.add_node("request_clarification_node", request_clarification_node)
+    builder.add_node("rfq_validator_node", rfq_validator_node)
     builder.add_node("node_p5_procurement", node_p5_procurement)   # v4.4.0 Sprint 8: P5 Procurement Engine
+    builder.add_node("node_p6_generate_pdf", node_p6_generate_pdf)  # v5.0: RFQ HTML/PDF generation
     builder.add_node("resume_router_node", resume_router_node)
     builder.add_node("frontdoor_discovery_node", frontdoor_discovery_node)
     builder.add_node("route_after_frontdoor", route_after_frontdoor_node)
@@ -704,11 +1091,16 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("node_compound_filter_parallel", _node_compound_filter_parallel)    # KB Integration
     builder.add_node("node_merge_deterministic", node_merge_deterministic)
     builder.add_node("smalltalk_node", smalltalk_node)
+    builder.add_node("turn_limit_node", turn_limit_node)
     builder.add_node("supervisor_policy_node", orchestrator_node)
     builder.add_node("supervisor_logic_node", supervisor_policy_node)
     builder.add_node("aggregator_node", aggregator_node)
     builder.add_node("reducer_node", reducer_node)
     builder.add_node("human_review_node", human_review_node)
+    builder.add_node("hitl_triage_node", hitl_triage_node)
+    builder.add_node("worm_evidence_node", worm_evidence_node)
+    builder.add_node(CONVERSATIONAL_RAG_NODE_KEY, conversational_rag_node)
+    builder.add_node("troubleshooting_wizard_node", troubleshooting_wizard_node)
     
     builder.add_node("panel_calculator_node", panel_calculator_node)
     builder.add_node("panel_material_node", panel_material_node)
@@ -716,6 +1108,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("pricing_agent", pricing_agent_node)
     builder.add_node("safety_agent", safety_agent_node)
     builder.add_node("discovery_schema_node", discovery_schema_node)
+    builder.add_node("reasoning_core_node", reasoning_core_node)
     builder.add_node("parameter_check_node", parameter_check_node)
     builder.add_node("calculator_node", calculator_node)
     builder.add_node("material_agent_node", material_agent_node)
@@ -726,6 +1119,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_node("product_match_node", product_match_node)
     builder.add_node("product_explainer_node", product_explainer_node)
     builder.add_node("material_comparison_node", material_comparison_node)
+    builder.add_node("knowledge_agent_node", _knowledge_agent_node)
     builder.add_node("rag_support_node", rag_support_node)
     builder.add_node("leakage_troubleshooting_node", leakage_troubleshooting_node)
     builder.add_node("troubleshooting_pattern_node", troubleshooting_pattern_node)
@@ -738,21 +1132,27 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
         "final_answer_node",
         answer_subgraph_node_async if require_async else answer_subgraph_node,
     )
+    builder.add_node(
+        "contract_first_output_node",
+        answer_subgraph_node_async if require_async else answer_subgraph_node,
+    )
     builder.add_node("response_node", response_node)
 
-    # Entrypoint: START -> profile_loader -> node_router -> [dispatch]
+    # Entrypoint: START -> profile_loader -> safety_synonym_guard -> combinatorial_chemistry_guard -> node_router
     builder.add_edge(START, "profile_loader_node")
-    builder.add_edge("profile_loader_node", "node_router")
+    builder.add_edge("profile_loader_node", "safety_synonym_guard_node")
+    builder.add_edge("combinatorial_chemistry_guard_node", "node_router")
 
     # v4.4.0 Router dispatch (Sprint 3/4)
     builder.add_conditional_edges(
         "node_router",
         node_router_dispatch,
         {
-            "frontdoor": "frontdoor_discovery_node",
-            "resume_router": "resume_router_node",
-            "clarification": "smalltalk_node",
-            "rfq_trigger": "node_p5_procurement",
+            "frontdoor":           "frontdoor_discovery_node",
+            "resume_router":       "resume_router_node",
+            "clarification":       "smalltalk_node",
+            "rfq_trigger":         "rfq_validator_node",
+            "turn_limit_exceeded": "turn_limit_node",
         },
     )
     # Sprint 5: P1 fans out to P2/P3 via Command/Send (no direct edge needed).
@@ -761,25 +1161,36 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_edge("node_p3_gap_detection", "node_p3_5_merge")
     builder.add_edge("node_p3_5_merge", "node_p4a_extract")       # Sprint 6: P3.5 → P4a
     builder.add_edge("node_p4a_extract", "node_p4b_calc_render")  # Sprint 6: P4a → P4b
-    builder.add_edge("node_p4b_calc_render", "node_p4_5_qgate")      # Sprint 7: P4b → Q-Gate
+    builder.add_edge("node_p4b_calc_render", "node_p4_live_calc") # v5.0 foundation: P4b -> live tile
+    builder.add_edge("node_p4_live_calc", "node_p4_5_qgate")      # keep existing Q-Gate behavior
     builder.add_conditional_edges(                                    # Sprint 7: Q-Gate routing
         "node_p4_5_qgate",
         qgate_router,
         {
             "no_blockers": "p4_6_number_verification",
-            "has_blockers": "response_node",
+            "has_blockers": CONVERSATIONAL_RAG_NODE_KEY,
         },
     )
     builder.add_conditional_edges(
         "p4_6_number_verification",
-        lambda state: "pass" if state.get("verification_passed", True) else "fail",
+        number_verification_router,
         {
             "pass": "final_answer_node",
-            "fail": "request_clarification_node"
+            "fail": "request_clarification_node",
+            "fallback_rag": "conversational_rag_node",
         }
     )
     builder.add_edge("request_clarification_node", END)
-    builder.add_edge("node_p5_procurement", "response_node")          # Sprint 8: P5 → response
+    builder.add_conditional_edges(
+        "rfq_validator_node",
+        rfq_validator_router,
+        {
+            "ready": "node_p5_procurement",
+            "missing": END,
+        },
+    )
+    builder.add_edge("node_p5_procurement", "node_p6_generate_pdf")   # v5.0: P5 -> P6
+    builder.add_edge("node_p6_generate_pdf", "response_node")         # v5.0: P6 -> response
 
     builder.add_conditional_edges(
         "resume_router_node",
@@ -820,10 +1231,11 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
         reducer_router,
         {
             "human_review": "human_review_node",
+            "conversational_rag": "conversational_rag_node",
             "standard": "final_answer_node",
         },
     )
-    builder.add_edge("human_review_node", "response_node")
+    builder.add_edge("human_review_node", "worm_evidence_node")
 
     # Back-links
     builder.add_edge("rag_support_node", "supervisor_policy_node")
@@ -837,6 +1249,7 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
         parameter_router,
         {
             "calculator_node": "calculator_node",
+            "conversational_rag_node": "conversational_rag_node",
             "supervisor_policy_node": "supervisor_policy_node",
             "__else__": "supervisor_policy_node",
         },
@@ -846,14 +1259,30 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_edge("profile_agent_node", "validation_agent_node")
     builder.add_edge("validation_agent_node", "critical_review_node")
 
+    # R3 recursive reasoning loop: parameter extraction -> chemistry guard -> reasoning core -> deterministic router
+    builder.add_conditional_edges(
+        "reasoning_core_node",
+        deterministic_termination_router,
+        {
+            "contract_first_output_node": "contract_first_output_node",
+            "reasoning_core_node": "reasoning_core_node",
+            "human_review_node": "human_review_node",
+            "request_clarification_node": "request_clarification_node",
+            "needs_data": END,
+            "__else__": END,
+        },
+    )
+
     builder.add_conditional_edges(
         "critical_review_node",
-        critical_router,
+        deterministic_termination_router,
         {
-            "refine": "discovery_schema_node",
-            "reject": "final_answer_node",
-            "continue": "product_match_node",
-            "__else__": "product_match_node",
+            "contract_first_output_node": "contract_first_output_node",
+            "reasoning_core_node": "reasoning_core_node",
+            "human_review_node": "human_review_node",
+            "request_clarification_node": "request_clarification_node",
+            "needs_data": END,
+            "__else__": "reasoning_core_node",
         },
     )
 
@@ -870,21 +1299,42 @@ def create_sealai_graph_v2(checkpointer: BaseCheckpointSaver, store: BaseStore, 
     builder.add_edge("product_explainer_node", "final_answer_node")
 
     # Troubleshooting flow
-    builder.add_edge("leakage_troubleshooting_node", "troubleshooting_pattern_node")
-    builder.add_edge("troubleshooting_pattern_node", "troubleshooting_explainer_node")
-    builder.add_edge("troubleshooting_explainer_node", "final_answer_node")
+    builder.add_conditional_edges(
+        "troubleshooting_wizard_node",
+        troubleshooting_wizard_router,
+        {
+            "incomplete": END,
+            "complete": "conversational_rag_node",
+        },
+    )
 
-    builder.add_edge("confirm_recommendation_node", END)
-    builder.add_edge("confirm_checkpoint_node", END)
-    builder.add_edge("confirm_reject_node", END)
+    builder.add_edge("confirm_recommendation_node", "hitl_triage_node")
+    builder.add_edge("confirm_checkpoint_node", "hitl_triage_node")
+    builder.add_edge("confirm_reject_node", "hitl_triage_node")
 
-    builder.add_edge("final_answer_node", END)
-    builder.add_edge("response_node", END)
+    builder.add_edge("knowledge_agent_node", "hitl_triage_node")
+    builder.add_edge(CONVERSATIONAL_RAG_NODE_KEY, "hitl_triage_node")
+    builder.add_edge("contract_first_output_node", "hitl_triage_node")
+    builder.add_edge("final_answer_node", "hitl_triage_node")
+    builder.add_edge("response_node", "hitl_triage_node")
+    builder.add_edge("hitl_triage_node", "worm_evidence_node")
+    builder.add_edge("worm_evidence_node", END)
 
-    return builder.compile(
+    compiled = builder.compile(
         checkpointer=checkpointer,
         store=store,
         interrupt_before=["human_review_node"],
+        name=LANGSMITH_RUN_NAME,
+    )
+    return compiled.with_config(
+        {
+            "run_name": LANGSMITH_RUN_NAME,
+            "tags": list(LANGSMITH_TRACE_TAGS),
+            "metadata": {
+                "observability_phase": "phase_0",
+                "audit_schema": "evidence_bundle_v1",
+            },
+        }
     )
 
 
@@ -935,5 +1385,7 @@ def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
     return {
         "configurable": configurable,
         "metadata": metadata,
+        "tags": list(LANGSMITH_TRACE_TAGS),
+        "run_name": LANGSMITH_RUN_NAME,
         "recursion_limit": 80,
     }

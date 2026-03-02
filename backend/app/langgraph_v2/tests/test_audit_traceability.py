@@ -27,7 +27,7 @@ class _ContractEchoLLM:
         contract_text = ""
         if messages:
             content = getattr(messages[-1], "content", "") or ""
-            prefix = "ANSWER CONTRACT:\n"
+            prefix = "VERIFIED FACT SHEET:\n"
             if isinstance(content, str) and content.startswith(prefix):
                 contract_text = content[len(prefix) :]
         yield _Chunk(contract_text)
@@ -175,4 +175,3 @@ def _normalize_number_token(value: str) -> str:
     if parsed.is_integer():
         return str(int(parsed))
     return str(parsed)
-

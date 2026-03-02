@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.langgraph_v2.state import SealAIState
 from app.services.rag.nodes.p1_context import (
@@ -90,6 +90,12 @@ class TestMergeExtraction:
         profile = _merge_extraction_into_profile(existing, extraction)
         assert isinstance(profile, WorkingProfile)
 
+    def test_follow_up_does_not_overwrite_shaft_material_with_seal_material_token(self):
+        existing = WorkingProfile(material="1.4404")
+        extraction = _P1Extraction(material="PTFE")
+        profile = _merge_extraction_into_profile(existing, extraction)
+        assert profile.material == "1.4404"
+
 
 # ---------------------------------------------------------------------------
 # Integration tests: node_p1_context with mocked LLM
@@ -166,6 +172,24 @@ class TestNodeP1Context:
         result = command.update
         wp = result["working_profile"]
         assert wp.material == "Kyrolon"
+
+    def test_seal_material_is_stored_separately_and_shaft_material_is_protected(self):
+        existing = WorkingProfile(material="Edelstahl")
+        state = self._state(
+            "Option A bitte, wir nehmen PTFE",
+            router_classification="follow_up",
+            working_profile=existing,
+        )
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            return_value=_make_mock_extraction(material="PTFE", seal_material="PTFE"),
+        ):
+            command = node_p1_context(state)
+
+        result = command.update
+        wp = result["working_profile"]
+        assert wp.material == "Edelstahl"
+        assert result["extracted_params"].get("seal_material") == "PTFE"
 
     def test_follow_up_merges_onto_existing_profile(self):
         existing = WorkingProfile(medium="water", pressure_max_bar=20.0)
@@ -247,3 +271,51 @@ class TestNodeP1Context:
         # old medium/pressure must be gone (fresh extraction)
         assert wp.medium == "Dampf"
         assert wp.pressure_max_bar == 8.0
+
+    def test_resume_option_acceptance_applies_hrc_override_from_assistant_option(self):
+        state = SealAIState(
+            messages=[
+                AIMessage(
+                    content=(
+                        "Die aktuelle Loesung hat einen Haerte-Blocker.\n"
+                        "Option A: Welle auf 58 HRC haerten und PTFE-Loesung beibehalten.\n"
+                        "Option B: Auf Gleitringdichtung wechseln."
+                    )
+                ),
+                HumanMessage(content="Wir nehmen Option A."),
+            ],
+            router_classification="resume",
+            qgate_has_blockers=True,
+            extracted_params={"hrc_value": 40.0, "hrc": 40.0},
+        )
+
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            return_value=_make_mock_extraction(),
+        ):
+            command = node_p1_context(state)
+
+        result = command.update
+        assert result["extracted_params"]["hrc_value"] == 58.0
+        assert result["extracted_params"]["hrc"] == 58.0
+
+    def test_non_resume_option_a_does_not_force_hrc_override(self):
+        state = SealAIState(
+            messages=[
+                AIMessage(content="Option A: Welle auf 58 HRC haerten."),
+                HumanMessage(content="Option A."),
+            ],
+            router_classification="new_case",
+            qgate_has_blockers=False,
+            extracted_params={"hrc_value": 40.0, "hrc": 40.0},
+        )
+
+        with patch(
+            "app.services.rag.nodes.p1_context.ChatOpenAI",
+            return_value=_make_mock_extraction(),
+        ):
+            command = node_p1_context(state)
+
+        result = command.update
+        assert result["extracted_params"]["hrc_value"] == 40.0
+        assert result["extracted_params"]["hrc"] == 40.0

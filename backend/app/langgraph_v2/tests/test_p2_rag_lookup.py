@@ -34,6 +34,8 @@ class TestBuildRagQuery:
         assert query == "Dichtungswerkstoff"
 
     def test_full_profile(self):
+        # Semantic-only guard: deterministic fields (pressure, temperature,
+        # flange_standard, emission_class) must NOT reach Qdrant.
         profile = WorkingProfile(
             medium="Dampf",
             medium_detail="gesättigter Dampf",
@@ -46,19 +48,23 @@ class TestBuildRagQuery:
             industry_sector="Petrochemie",
         )
         query = _build_rag_query(profile)
+        # semantic fields remain
         assert "Dampf" in query
         assert "gesättigter Dampf" in query
-        assert "150.0 bar" in query
-        assert "400.0°C" in query
-        assert "EN 1092-1 DN100 PN40" in query
-        assert "TA-Luft" in query
         assert "Petrochemie" in query
+        # deterministic fields must be absent → go to SQL only
+        assert "150.0 bar" not in query
+        assert "400.0°C" not in query
+        assert "EN 1092-1" not in query
+        assert "TA-Luft" not in query
 
     def test_partial_profile_pressure_only(self):
+        # pressure_max_bar is a deterministic SQL field — must not appear in Qdrant query
         profile = WorkingProfile(pressure_max_bar=50.0)
         query = _build_rag_query(profile)
-        assert "50.0 bar" in query
+        assert "50.0 bar" not in query
         assert "°C" not in query
+        assert query == "Dichtungswerkstoff"
 
     def test_profile_with_material_and_product(self):
         profile = WorkingProfile(material="Kyrolon", product_name="Gylon")

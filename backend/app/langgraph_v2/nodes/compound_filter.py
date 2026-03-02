@@ -12,6 +12,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, Optional
 
 from app.langgraph_v2.state import SealAIState
@@ -39,6 +40,13 @@ def node_compound_filter(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     # ------------------------------------------------------------------
     parameters = state.parameters
     conditions: Dict[str, Any] = {}
+    query_text = ""
+    for msg in reversed(state.messages or []):
+        role = getattr(msg, "type", None) or getattr(msg, "role", None)
+        if role in ("human", "user"):
+            query_text = str(getattr(msg, "content", "") or "")
+            break
+    query_lower = query_text.lower()
 
     if parameters:
         temp_max = getattr(parameters, "temperature_max", None)
@@ -56,6 +64,33 @@ def node_compound_filter(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
             # Normalize medium to medium_id for hard exclusion check
             medium_id = medium.lower().replace(" ", "_").replace("-", "_")
             conditions["medium_id"] = medium_id
+            tags = []
+            if any(x in medium_id for x in ("hf", "hydrofluoric")):
+                tags.append("HF")
+            if any(x in medium_id for x in ("alkali", "naoh", "koh")):
+                tags.append("strong_alkali")
+            if any(x in medium_id for x in ("oxidizer", "chlorine", "oxygen", "f2")):
+                tags.append("oxidizer")
+            if tags:
+                conditions["media_tags"] = tags
+
+        shaft_hardness = getattr(parameters, "shaft_hardness", None)
+        if shaft_hardness:
+            match = re.search(r"[-+]?\d+(?:[.,]\d+)?", str(shaft_hardness))
+            if match:
+                conditions["counterface_hardness_hrc"] = float(match.group(0).replace(",", "."))
+        shaft_material = getattr(parameters, "shaft_material", None)
+        if shaft_material:
+            conditions["counterface_material"] = str(shaft_material).lower()
+
+    if "aluminum" in query_lower or "aluminium" in query_lower or "soft aluminum" in query_lower:
+        conditions["counterface_material"] = "aluminum_soft"
+    if "brass" in query_lower or "messing" in query_lower:
+        conditions["counterface_material"] = "brass"
+    if "bronze" in query_lower:
+        conditions["counterface_material"] = "bronze"
+    if "soft shaft" in query_lower or "weiche welle" in query_lower:
+        conditions.setdefault("counterface_hardness_hrc", 30.0)
 
     # Application type from intent or flags
     intent = state.intent

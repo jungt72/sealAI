@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
+from app.mcp.calculations.compliance import is_critical_application as _compliance_is_critical
 
 logger = structlog.get_logger("rag.nodes.p4_5_quality_gate")
 
@@ -55,6 +56,7 @@ class QGateCheck(BaseModel):
     severity: Severity
     passed: bool
     message: str
+    suggestions: List[str] = Field(default_factory=list)
     alternatives: List[str] = Field(default_factory=list)
     remediation_steps: List[str] = Field(default_factory=list)
     details: Dict[str, Any] = Field(default_factory=dict)
@@ -169,6 +171,9 @@ def _format_blocker_summary(blockers: List[QGateCheck]) -> str:
     lines: List[str] = []
     for blocker in blockers:
         lines.append(blocker.message)
+        if blocker.suggestions:
+            lines.append("VORSCHLAEGE:")
+            lines.extend(f"  - {item}" for item in blocker.suggestions)
         if blocker.alternatives:
             lines.append("ALTERNATIVEN:")
             lines.extend(f"  - {alt}" for alt in blocker.alternatives)
@@ -287,12 +292,14 @@ def _check_medium_compatibility(
 
     if medium_lower in _INCOMPATIBLE_MEDIA:
         alternatives = _get_alternative_materials_for_medium(str(medium))
+        suggestions = alternatives[:2] if alternatives else ["PTFE", "FFKM"]
         return QGateCheck(
             check_id="medium_compatibility",
             name="Medienverträglichkeit",
             severity="CRITICAL",
             passed=False,
             message=f"BLOCKER: Medium '{medium}' ist mit dem Standard-Dichtungswerkstoff nicht verträglich.",
+            suggestions=suggestions,
             alternatives=alternatives,
             remediation_steps=[
                 f"Wechsel auf ein kompatibles Material: {', '.join(alternatives)}",
@@ -313,6 +320,7 @@ def _check_medium_compatibility(
         )
 
     alternatives = _get_alternative_materials_for_medium(str(medium))
+    suggestions = alternatives[:2] if alternatives else ["PTFE", "FFKM"]
     # Unknown medium — flag as critical because we can't confirm compatibility.
     return QGateCheck(
         check_id="medium_compatibility",
@@ -320,6 +328,7 @@ def _check_medium_compatibility(
         severity="CRITICAL",
         passed=False,
         message=f"BLOCKER: Medium '{medium}' — Verträglichkeit kann nicht automatisch bestätigt werden.",
+        suggestions=suggestions,
         alternatives=alternatives,
         remediation_steps=[
             "Medium spezifizieren (Konzentration, Reinheit, Temperaturbereich)",
@@ -527,29 +536,34 @@ def _check_critical_flag(
 ) -> QGateCheck:
     """Check 8: is_critical Flag (FLAG).
 
-    Sets is_critical_application=True for: H2, O2, >100 bar, >400°C, <-40°C.
+    Delegiert an compliance.is_critical_application — single source of truth.
     """
     is_critical = bool(calc_result.get("is_critical_application", False))
 
-    reasons: List[str] = []
-    medium = str(profile.get("medium") or "").strip().lower()
-    critical_media = {"h2", "hydrogen", "wasserstoff", "o2", "oxygen", "sauerstoff"}
-    if medium in critical_media:
-        reasons.append(f"Kritisches Medium: {profile.get('medium')}")
-
+    medium = profile.get("medium")
     pressure = profile.get("pressure_max_bar")
-    if pressure is not None and float(pressure) > 100.0:
-        reasons.append(f"Hochdruck: {pressure} bar > 100 bar")
-
     temp = profile.get("temperature_max_c")
-    if temp is not None:
-        if float(temp) > 400.0:
-            reasons.append(f"Hochtemperatur: {temp} °C > 400 °C")
-        if float(temp) < -40.0:
-            reasons.append(f"Kryogen: {temp} °C < -40 °C")
 
-    # Ensure flag matches calc_engine result OR own detection
-    effective_critical = is_critical or bool(reasons)
+    profile_critical = _compliance_is_critical(
+        medium=str(medium) if medium else None,
+        pressure_bar=float(pressure) if pressure is not None else None,
+        temp_c=float(temp) if temp is not None else None,
+    )
+
+    # Reasons nur für Nachrichtentext — Entscheidung liegt bei compliance
+    reasons: List[str] = []
+    if profile_critical:
+        if medium and _compliance_is_critical(medium=str(medium)):
+            reasons.append(f"Kritisches Medium: {medium}")
+        if pressure is not None and float(pressure) > 100.0:
+            reasons.append(f"Hochdruck: {pressure} bar > 100 bar")
+        if temp is not None:
+            if float(temp) > 400.0:
+                reasons.append(f"Hochtemperatur: {temp} °C > 400 °C")
+            if float(temp) < -40.0:
+                reasons.append(f"Kryogen: {temp} °C < -40 °C")
+
+    effective_critical = is_critical or profile_critical
 
     return QGateCheck(
         check_id="critical_flag",
@@ -754,6 +768,9 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     if result.has_blockers:
         blockers = [c for c in result.checks if c.severity == "CRITICAL" and not c.passed]
         update["error"] = "Quality Gate BLOCKER:\n" + _format_blocker_summary(blockers)
+        update["awaiting_user_confirmation"] = True
+        update["pending_action"] = "qgate_blockers"
+        update["confirm_status"] = "pending"
 
     return update
 

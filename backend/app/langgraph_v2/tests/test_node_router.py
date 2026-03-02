@@ -6,6 +6,7 @@ All tests are deterministic — no LLM mocking required.
 
 from __future__ import annotations
 
+import pytest
 from langchain_core.messages import HumanMessage
 
 from app.langgraph_v2.nodes.node_router import classify_input, node_router
@@ -96,6 +97,21 @@ def test_rfq_senden_classifies_as_rfq_trigger() -> None:
     assert classify_input(state, "Bitte RFQ senden") == "rfq_trigger"
 
 
+@pytest.mark.parametrize(
+    "user_text",
+    [
+        "Kannst du ein Angebot für FKM erstellen?",
+        "Das ist eine Preisanfrage für 100 Stück.",
+        "Ich brauche ein Angebot für FFKM.",
+        "Quote for 50 pieces, please.",
+        "Bitte um ein Angebot für EPDM.",
+    ],
+)
+def test_natural_language_rfq_intents_classify_as_rfq_trigger(user_text: str) -> None:
+    state = _state_with_message(user_text)
+    assert classify_input(state, user_text) == "rfq_trigger"
+
+
 # ── 9. HITL awaiting confirmation → resume ─────────────────────────────────
 
 
@@ -106,6 +122,20 @@ def test_hitl_awaiting_confirmation_classifies_as_resume() -> None:
         confirm_decision="approve",
     )
     assert classify_input(state, "Ja, freigeben") == "resume"
+
+
+# ── 9b. Pending HITL/QGate without decision must not fall back to new_case ──
+
+
+def test_pending_hitl_without_decision_classifies_as_resume() -> None:
+    state = _state_with_message(
+        "Wie geht es weiter?",
+        awaiting_user_confirmation=True,
+        confirm_decision=None,
+        pending_action="qgate_blockers",
+        qgate_has_blockers=True,
+    )
+    assert classify_input(state, "Wie geht es weiter?") == "resume"
 
 
 # ── 10. Existing params + explicit "neue Anfrage" → new_case ──────────────

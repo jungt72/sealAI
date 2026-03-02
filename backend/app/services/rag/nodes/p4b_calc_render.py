@@ -31,6 +31,63 @@ _TEMPLATE_NAME = "engineering_report.j2"
 # ---------------------------------------------------------------------------
 
 
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        normalized = value.strip().replace(",", ".")
+        if not normalized:
+            return None
+        try:
+            return float(normalized)
+        except ValueError:
+            return None
+    return None
+
+
+def _intent_allows_calc_bypass(state: SealAIState) -> bool:
+    goal = str(getattr(getattr(state, "intent", None), "goal", "") or "").strip().lower()
+    flags = getattr(state, "flags", {}) or {}
+    category = str(
+        getattr(state, "intent_category", None)
+        or flags.get("frontdoor_intent_category")
+        or ""
+    ).strip().upper()
+    return goal == "explanation_or_comparison" or category == "MATERIAL_RESEARCH"
+
+
+def _merge_required_calc_fields(state: SealAIState, extracted_params: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(extracted_params or {})
+
+    pressure = _coerce_float(merged.get("pressure_max_bar"))
+    if pressure is None:
+        pressure = _coerce_float(merged.get("pressure_bar"))
+    if pressure is None:
+        wp = getattr(state, "working_profile", None)
+        pressure = _coerce_float(getattr(wp, "pressure_max_bar", None))
+    if pressure is None:
+        params = getattr(state, "parameters", None)
+        pressure = _coerce_float(getattr(params, "pressure_bar", None))
+    if pressure is not None:
+        merged["pressure_max_bar"] = pressure
+
+    temperature = _coerce_float(merged.get("temperature_max_c"))
+    if temperature is None:
+        temperature = _coerce_float(merged.get("temperature_c"))
+    if temperature is None:
+        wp = getattr(state, "working_profile", None)
+        temperature = _coerce_float(getattr(wp, "temperature_max_c", None))
+    if temperature is None:
+        params = getattr(state, "parameters", None)
+        temperature = _coerce_float(getattr(params, "temperature_C", None))
+    if temperature is not None:
+        merged["temperature_max_c"] = temperature
+
+    return merged
+
+
 def _build_template_context(
     calc_input: CalcInput,
     calc_output: CalcOutput,
@@ -89,7 +146,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
 
     Skips if extracted_params is empty (P4a determined calculation is not possible).
     """
-    extracted_params = state.extracted_params or {}
+    extracted_params = _merge_required_calc_fields(state, state.extracted_params or {})
 
     logger.info(
         "p4b_calc_render_start",
@@ -103,6 +160,21 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         logger.info(
             "p4b_calc_render_skip",
             reason="empty_extracted_params",
+            run_id=state.run_id,
+        )
+        return {
+            "phase": PHASE.CALCULATION,
+            "last_node": "node_p4b_calc_render",
+        }
+
+    has_required_inputs = (
+        extracted_params.get("pressure_max_bar") is not None
+        and extracted_params.get("temperature_max_c") is not None
+    )
+    if _intent_allows_calc_bypass(state) and not has_required_inputs:
+        logger.info(
+            "p4b_calc_render_skip",
+            reason="non_calculation_intent_missing_required_fields",
             run_id=state.run_id,
         )
         return {

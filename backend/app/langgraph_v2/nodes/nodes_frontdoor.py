@@ -22,6 +22,7 @@ from app.langgraph_v2.utils.llm_factory import get_model_tier
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
 from app.langgraph_v2.utils.state_debug import log_state_debug
+from app.langgraph_v2.nodes.persona_detection import update_persona_in_state
 from app.utils.jinja_renderer import render_and_hash
 
 logger = structlog.get_logger("langgraph_v2.nodes_frontdoor")
@@ -421,10 +422,19 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         )
 
     task_intents = _normalize_task_intents(structured.task_intents)
-    intent_category = _category_from_task_intents(task_intents, structured.social_opening)
+    technical_cue_matches = _detect_technical_cue_matches(user_text)
+
+    # Prioritize last human message if it's purely social without technical cues.
+    # This prevents history-bias where LLM still tags "material_research"
+    # for a simple "thank you" after a technical discussion.
+    if structured.social_opening and not technical_cue_matches:
+        task_intents = []
+        intent_category = "CHIT_CHAT"
+    else:
+        intent_category = _category_from_task_intents(task_intents, structured.social_opening)
+
     intent_goal = _intent_goal_from_category(intent_category)
     frontdoor_bypass_supervisor = bool(structured.social_opening and not task_intents)
-    technical_cue_matches = _detect_technical_cue_matches(user_text)
     technical_cue_veto = bool(technical_cue_matches)
     if technical_cue_veto:
         frontdoor_bypass_supervisor = False
@@ -436,6 +446,9 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         )
 
     requires_rag = bool(structured.requires_rag or intent_category == "MATERIAL_RESEARCH")
+    if intent_category == "CHIT_CHAT" and not technical_cue_matches:
+        requires_rag = False
+
     needs_pricing = bool(structured.needs_pricing or intent_category == "COMMERCIAL")
 
     intent = Intent(
@@ -498,6 +511,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         thread_id=state.thread_id,
     )
 
+    persona_patch = update_persona_in_state(state)
     return {
         "intent": intent,
         "working_memory": wm,
@@ -509,6 +523,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         "requires_rag": requires_rag,
         "need_sources": requires_rag,
         "flags": flags,
+        **persona_patch,
     }
 
 
