@@ -21,6 +21,7 @@ import structlog
 
 from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, VerificationReport
 from app.mcp.calculations.chemical_resistance import lookup as _chem_lookup
+from app.mcp.calculations.material_limits import check as _limits_check
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.verify_claims")
 
@@ -55,6 +56,10 @@ _CHEM_NEGATIVE_RE = re.compile(
     r"|not\s+suitable|not\s+compatible",
     re.IGNORECASE,
 )
+
+# ── Material Limits Post-Check ───────────────────────────────────────────────
+_LIMITS_TEMP_RE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*°\s*[Cc]\b")
+_LIMITS_PRESSURE_RE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*bar\b", re.IGNORECASE)
 
 
 def _strip_formatting_numbers(text: str) -> str:
@@ -210,6 +215,62 @@ def _check_resistance_claims(draft_text: str) -> List[Dict[str, str]]:
     return spans
 
 
+def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
+    """Scannt draft_text auf Material × Temperatur/Druck-Kombinationen
+    und prüft deterministisch gegen material_limits.check().
+    Gibt failure spans zurück wenn temp_ok is False oder pressure_ok is False.
+    """
+    spans: List[Dict[str, str]] = []
+    sentences = re.split(r"[.!?\n]+", draft_text or "")
+    for sentence in sentences:
+        materials = [m.group(0) for m in _CHEM_MATERIAL_RE.finditer(sentence)]
+        if not materials:
+            continue
+        temps = [
+            float(m.group(1).replace(",", "."))
+            for m in _LIMITS_TEMP_RE.finditer(sentence)
+        ]
+        pressures = [
+            float(m.group(1).replace(",", "."))
+            for m in _LIMITS_PRESSURE_RE.finditer(sentence)
+        ]
+        if not temps and not pressures:
+            continue
+        for mat in materials:
+            for temp_c in temps:
+                try:
+                    result = _limits_check(mat, temp_c=temp_c)
+                except KeyError:
+                    continue
+                if result.temp_ok is False:
+                    lim = result.limits
+                    spans.append(_build_failure_span(
+                        reason="material_temp_exceeded",
+                        expected_value=(
+                            f"{result.material} max. Dauertemperatur: "
+                            f"{lim.temp_max_c} °C (Peak: {lim.temp_peak_c} °C) "
+                            f"— {lim.norm_ref}"
+                        ),
+                        wrong_span=f"{mat} bei {temp_c} °C",
+                    ))
+            for pressure_bar in pressures:
+                try:
+                    result = _limits_check(mat, pressure_bar=pressure_bar)
+                except KeyError:
+                    continue
+                if result.pressure_ok is False:
+                    lim = result.limits
+                    spans.append(_build_failure_span(
+                        reason="material_pressure_exceeded",
+                        expected_value=(
+                            f"{result.material} max. Druck (statisch): "
+                            f"{lim.pressure_static_max_bar} bar — {lim.norm_ref}"
+                        ),
+                        wrong_span=f"{mat} bei {pressure_bar} bar",
+                    ))
+    return spans
+
+
 def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Validate drafted answer content against the answer contract.
 
@@ -290,6 +351,7 @@ def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
     missing_disclaimers = [text for text in contract.required_disclaimers if text not in draft_text]
     suspicious_unicode_spans = _find_suspicious_unicode_spans(draft_text)
     resistance_spans = _check_resistance_claims(draft_text)
+    limits_spans = _check_limits_claims(draft_text)
 
     failed_claim_spans: List[Dict[str, str]] = []
     for number in missing_numbers:
@@ -307,6 +369,7 @@ def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
             _build_failure_span(reason="suspicious_unicode", expected_value="", wrong_span=span)
         )
     failed_claim_spans.extend(resistance_spans)
+    failed_claim_spans.extend(limits_spans)
 
     status = "pass" if not failed_claim_spans else "fail"
     failure_type = None if status == "pass" else "render_mismatch"
@@ -326,6 +389,7 @@ def node_verify_claims(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         missing_disclaimers=len(missing_disclaimers),
         suspicious_unicode=len(suspicious_unicode_spans),
         resistance_contradictions=len(resistance_spans),
+        limits_contradictions=len(limits_spans),
     )
     return {"verification_report": report, "last_node": "node_verify_claims"}
 
