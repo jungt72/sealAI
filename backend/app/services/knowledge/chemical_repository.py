@@ -59,3 +59,18 @@ class YamlChemicalRepository(AbstractChemicalRepository):
             failure_modes=[],
             evidence_source="SealAI Fallback"
         )
+
+# Global Singleton for the application
+import os
+
+_BASE_DIR = Path(__file__).parent.parent.parent
+_YAML_PATH = _BASE_DIR / "data" / "knowledge" / "chemical_matrix.yaml"
+
+_repository_instance: Optional[YamlChemicalRepository] = None
+
+def get_chemical_repository() -> YamlChemicalRepository:
+    """Provides a global singleton instance of the chemical repository."""
+    global _repository_instance
+    if _repository_instance is None:
+        _repository_instance = YamlChemicalRepository(str(_YAML_PATH))
+    return _repository_instance

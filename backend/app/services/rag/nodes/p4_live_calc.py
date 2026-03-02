@@ -10,6 +10,9 @@ import structlog
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import CalcResults, LiveCalcTile, SealAIState
+from app.services.knowledge.entity_resolver import normalize_entity
+from app.services.knowledge.chemical_repository import get_chemical_repository
+from app.models.chemical_matrix import RatingEnum
 
 logger = structlog.get_logger("rag.nodes.p4_live_calc")
 
@@ -65,10 +68,16 @@ def _first_float(payload: Dict[str, Any], keys: Iterable[str]) -> Optional[float
 
 
 def _collect_parameter_payload(state: SealAIState) -> Dict[str, Any]:
-    """Single source of truth: pull parameters ONLY from working_profile."""
+    """Single source of truth: pull parameters from working_profile, merge with extracted_params."""
+    payload = {}
     if state.working_profile:
-        return _to_dict(state.working_profile)
-    return {}
+        payload = _to_dict(state.working_profile)
+    
+    # Merge extracted_params for any fields not yet in WorkingProfile schema
+    if state.extracted_params:
+        payload.update(state.extracted_params)
+        
+    return payload
 
 
 def _to_dict(value: Any) -> Dict[str, Any]:
@@ -347,36 +356,43 @@ def calc_thermal(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None) -
 
 def calc_chemical_resistance(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Deterministic chemical compatibility check for RWDR (v8 Fast-Path)."""
-    material_raw = str(payload.get("elastomer_material") or payload.get("material") or "").strip().upper()
-    medium_raw = str(payload.get("medium") or "").strip().upper()
+    material_raw = str(payload.get("elastomer_material") or payload.get("material") or "").strip()
+    medium_raw = str(payload.get("medium") or "").strip()
 
     if not material_raw or not medium_raw:
         return {"chem_warning": False, "chem_message": None}
 
-    # Simple proof-of-concept mapping
-    # NBR: Mineral oil (HLP) OK, Bio (HEES) NO, Water (HFA) NO
-    # FKM: HLP OK, HEES OK, HFA/HFC PROB
-    
-    incompatible = False
-    message = f"Material {material_raw} ist beständig gegen Medium {medium_raw}."
+    # Normalize entities
+    mat = normalize_entity("material", material_raw)
+    med = normalize_entity("medium", medium_raw)
 
-    if "NBR" in material_raw:
-        if any(x in medium_raw for x in ["HEES", "HFA", "BIO", "WASSER"]):
-            incompatible = True
-            message = f"NBR ist NICHT beständig gegen {medium_raw} (Schrumpfung/Zersetzung)."
-        elif "HLP" in medium_raw or "ÖL" in medium_raw:
-            incompatible = False
-            message = f"NBR ist beständig gegen {medium_raw}."
-    
-    elif "FKM" in material_raw or "VITON" in material_raw:
-        if any(x in medium_raw for x in ["HFA", "HFC"]):
-            incompatible = True
-            message = f"FKM ist bedingt beständig gegen {medium_raw} (Spezialmischung erforderlich)."
-        else:
-            incompatible = False
-            message = f"FKM ist beständig gegen {medium_raw}."
+    # Repository query
+    repo = get_chemical_repository()
+    comp = repo.get_compatibility(mat, med)
 
-    return {"chem_warning": incompatible, "chem_message": message}
+    warning = False
+    message = ""
+
+    if comp.rating == RatingEnum.A:
+        warning = False
+        message = "Chemisch beständig."
+    elif comp.rating == RatingEnum.B:
+        warning = True
+        msg_parts = ["Bedingt geeignet."]
+        if comp.conditions:
+             msg_parts.append(f"Constraints: {', '.join(comp.conditions)}")
+        message = " ".join(msg_parts)
+    elif comp.rating == RatingEnum.C:
+        warning = True
+        msg_parts = ["Strikt ausgeschlossen."]
+        if comp.failure_modes:
+            msg_parts.append(f"Failure modes: {', '.join(comp.failure_modes)}")
+        message = " ".join(msg_parts)
+    elif comp.rating == RatingEnum.U:
+        warning = True
+        message = "Unzureichende Daten für diese Kombination."
+
+    return {"chem_warning": warning, "chem_message": message}
 
 
 def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
