@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from langchain_core.messages import AIMessage
 
 from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import CalcResults, SealAIState
+from app.langgraph_v2.state import CalcResults, SealAIState, LiveCalcTile
 from app.langgraph_v2.utils.jinja import render_template
 from app.mcp.calc_engine import mcp_calc_gasket
 from app.mcp.calc_schemas import CalcInput, CalcOutput
@@ -108,6 +108,11 @@ def _build_template_context(
     ctx["pressure_max_bar"] = calc_input.pressure_max_bar
     ctx["temperature_max_c"] = calc_input.temperature_max_c
 
+    # Add tech parameters (RWDR/Sprint 8)
+    params = state.extracted_params or {}
+    ctx["shaft_diameter"] = params.get("shaft_diameter") or params.get("d1")
+    ctx["speed_rpm"] = params.get("speed_rpm") or params.get("rpm") or params.get("n") or params.get("n_max")
+
     # Add WorkingProfile fields for template rendering
     wp = state.working_profile
     if wp is not None:
@@ -199,12 +204,9 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         payload.get("d1") or payload.get("diameter") or payload.get("shaft_diameter")
     )
     
-    # Compute tribology if v_surface is missing
-    if not tile or tile.v_surface_m_s is None:
-        tribo = calc_tribology(payload, prev=tile)
-        v_surface = tribo.get("v_surface_m_s")
-    else:
-        v_surface = tile.v_surface_m_s
+    # Compute tribology (always compute to have fresh values for tile)
+    tribo = calc_tribology(payload, prev=tile)
+    v_surface = tribo.get("v_surface_m_s")
 
     # 2. Determine if we have enough to proceed (Fast-Path or Gasket-Calc)
     extracted_params = _merge_required_calc_fields(state, state.extracted_params or {})
@@ -252,7 +254,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
             medium=extracted_params.get("medium"),
         )
         calc_output = CalcOutput(
-            gasket_inner_d_mm=0.0,
+            gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("d1") or 0.0),
             gasket_outer_d_mm=0.0,
             required_gasket_stress_mpa=0.0,
             safety_factor=0.0,
@@ -274,7 +276,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
                     medium=extracted_params.get("medium"),
                 )
                 calc_output = CalcOutput(
-                    gasket_inner_d_mm=0.0,
+                    gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("d1") or 0.0),
                     gasket_outer_d_mm=0.0,
                     required_gasket_stress_mpa=0.0,
                     safety_factor=0.0,
@@ -307,7 +309,8 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
                 # If MCP fails but we have physics, still proceed with partial data
                 if is_fast_path or has_tech_params:
                      calc_output = CalcOutput(
-                        gasket_inner_d_mm=0.0, gasket_outer_d_mm=0.0,
+                        gasket_inner_d_mm=_coerce_float(extracted_params.get("shaft_diameter") or extracted_params.get("d1") or 0.0),
+                        gasket_outer_d_mm=0.0,
                         required_gasket_stress_mpa=0.0, safety_factor=0.0,
                         temperature_margin_c=0.0, pressure_margin_bar=0.0,
                         is_critical_application=False,
@@ -370,6 +373,19 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     calculation_result = calc_output.model_dump()
     calculation_result["rendered_report"] = rendered_report
 
+    # Update tile with latest values and parameters
+    if tile is None:
+        tile = LiveCalcTile()
+    
+    tile.v_surface_m_s = tribo.get("v_surface_m_s")
+    tile.pv_value_mpa_m_s = tribo.get("pv_value_mpa_m_s")
+    tile.friction_power_watts = tribo.get("friction_power_watts")
+    tile.hrc_warning = bool(tribo.get("hrc_warning"))
+    tile.hrc_value = tribo.get("hrc_value")
+    tile.parameters = extracted_params
+    if tile.v_surface_m_s is not None:
+        tile.status = "ok"
+
     logger.info(
         "p4b_calc_render_done",
         safety_factor=calc_output.safety_factor,
@@ -382,6 +398,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     return {
         "calculation_result": calculation_result,
         "calc_results": _calc_output_to_calc_results(calc_output, state),
+        "live_calc_tile": tile.model_dump(),
         "is_critical_application": calc_output.is_critical_application,
         "phase": PHASE.CALCULATION,
         "last_node": "node_p4b_calc_render",
