@@ -96,12 +96,11 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
         return "ENGINEERING PHYSICS REPORT: Keine berechneten Physikdaten verfuegbar.", False
 
     lines: List[str] = [
-        "ENGINEERING PHYSICS REPORT (deterministisch, verbindlich):",
+        "### DETERMINISTIC SYSTEM STATE (INVIOLABLE RULES) ###",
+        "The following parameters and warnings are the result of deterministic physical calculations and material databases. They are absolute truth and override any general knowledge.",
         f"- status: {tile.get('status')}",
     ]
     for key in (
-        "v_surface_m_s",
-        "pv_value_mpa_m_s",
         "friction_power_watts",
         "compression_ratio_pct",
         "groove_fill_pct",
@@ -121,10 +120,23 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
         "requires_backup_ring",
         "geometry_warning",
         "shrinkage_risk",
+        "chem_warning",
     )
     has_risk = any(bool(tile.get(flag)) for flag in risk_flags)
 
-    if tile.get("requires_backup_ring"):
+    if tile.get("pv_value_mpa_m_s") is not None:
+        pv = tile.get("pv_value_mpa_m_s")
+        lines.append(f"Aktueller PV-Wert: {pv} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefährdet).")
+    
+    if tile.get("v_surface_m_s") is not None:
+        v = tile.get("v_surface_m_s")
+        lines.append(f"Aktuelle Gleitgeschwindigkeit: {v} m/s.")
+    
+    if tile.get("chem_warning"):
+        msg = tile.get("chem_message", "Inkompatibilitaet festgestellt.")
+        lines.append(f"CRITICAL WARNING: {msg}. Du darfst dieses Material unter KEINEN UMSTÄNDEN als 'geeignet' oder 'sicher' empfehlen!")
+
+    if tile.get("requires_backup_ring") or tile.get("extrusion_risk"):
         lines.append(
             "CRITICAL PHYSICS RULE: The system calculated an extrusion risk. "
             "You MUST explicitly recommend adding a Back-up Ring (Stuetzring) to the solution."
@@ -140,6 +152,9 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
             "CRITICAL PHYSICS RULE: Cryogenic temperatures detected. "
             "You MUST recommend a spring-energized seal (Elastil) to compensate for thermal shrinkage."
         )
+
+    lines.append("\n### CONFLICT RESOLUTION (RAG vs. CALCULATION) ###")
+    lines.append("Wenn externe Informationen oder RAG-Dokumente eine allgemeine Eignung suggerieren (z.B. 'NBR ist gut für Öl'), ABER der obige deterministische System State eine Warnung ausgibt (z. B. chemische Inkompatibilität oder PV-Limit überschritten), hat der System State IMMER Vorrang. Erkläre dem Nutzer explizit, warum die allgemeine Regel hier wegen der spezifischen Parameter nicht gilt.")
 
     return "\n".join(lines), has_risk
 

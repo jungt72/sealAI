@@ -202,6 +202,8 @@ def _render_calc_ranges(calc_snapshot: Dict[str, Any]) -> str:
         "calc_pressure_margin",
         "temperature_margin_c",
         "pressure_margin_bar",
+        "chem_warning",
+        "chem_message",
     ]
     lines: List[str] = []
     for key in keys:
@@ -213,8 +215,50 @@ def _render_calc_ranges(calc_snapshot: Dict[str, Any]) -> str:
     return "; ".join(lines)
 
 
+def _build_deterministic_constraints(state: SealAIState) -> str:
+    tile = getattr(state, "live_calc_tile", None)
+    profile = state.working_profile
+    constraints: List[str] = [
+        "### DETERMINISTIC SYSTEM STATE (INVIOLABLE RULES) ###",
+        "The following parameters and warnings are the result of deterministic physical calculations and material databases. They are absolute truth and override any general knowledge.",
+    ]
+
+    if tile:
+        if getattr(tile, "chem_warning", False):
+            msg = getattr(tile, "chem_message", "Inkompatibilitaet festgestellt.")
+            constraints.append(f"CRITICAL WARNING: {msg}. Du darfst dieses Material unter KEINEN UMSTÄNDEN als 'geeignet' oder 'sicher' empfehlen!")
+        
+        pv = getattr(tile, "pv_value_mpa_m_s", None)
+        v = getattr(tile, "v_surface_m_s", None)
+        if pv is not None:
+            constraints.append(f"Aktueller PV-Wert: {pv} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefährdet).")
+        if v is not None:
+            constraints.append(f"Aktuelle Gleitgeschwindigkeit: {v} m/s.")
+        
+        if getattr(tile, "extrusion_risk", False):
+            constraints.append("GEFAHR: Extrusionsrisiko berechnet. Ein Stuetzring ist zwingend erforderlich.")
+
+    if profile:
+        conditions: List[str] = []
+        if getattr(profile, "pressure_max_bar", None) is not None:
+            conditions.append(f"Druck: {profile.pressure_max_bar} bar")
+        if getattr(profile, "temperature_max_c", None) is not None:
+            conditions.append(f"Temperatur: {profile.temperature_max_c} °C")
+        if getattr(profile, "medium", None):
+            conditions.append(f"Medium: {profile.medium}")
+        
+        if conditions:
+            constraints.append("Zwingende Einsatzbedingungen: " + ", ".join(conditions))
+
+    constraints.append("\n### CONFLICT RESOLUTION (RAG vs. CALCULATION) ###")
+    constraints.append("Wenn externe Informationen oder RAG-Dokumente eine allgemeine Eignung suggerieren (z.B. 'NBR ist gut für Öl'), ABER der obige deterministische System State eine Warnung ausgibt (z. B. chemische Inkompatibilität oder PV-Limit überschritten), hat der System State IMMER Vorrang. Erkläre dem Nutzer explizit, warum die allgemeine Regel hier wegen der spezifischen Parameter nicht gilt.")
+    
+    return "\n".join(constraints)
+
+
 def _build_system_prompt(
     *,
+    state: SealAIState,
     profile: WorkingProfile,
     unresolved_gaps: List[str],
     warning_notes: List[str],
@@ -223,10 +267,13 @@ def _build_system_prompt(
     core = json.dumps(_compact_profile(profile), ensure_ascii=False, separators=(",", ":"))
     gaps = ", ".join(unresolved_gaps) if unresolved_gaps else "none"
     warnings = " | ".join(warning_notes) if warning_notes else "none"
+    constraints = _build_deterministic_constraints(state)
+    
     return (
         "You are SealAI Reasoning Core (R3). "
         "No tool calls. No hidden calculations. Use only provided deterministic context. "
         "Your task: synthesize, state one current hypothesis, and ask exactly one highest-value next question.\n"
+        f"{constraints}\n\n"
         f"CORE_PROFILE={core}\n"
         f"UNRESOLVED_GAPS={gaps}\n"
         f"WARNINGS_NOTES={warnings}\n"
@@ -327,6 +374,7 @@ async def reasoning_core_node(state: SealAIState, *_args: Any, **_kwargs: Any) -
     calc_ranges = _render_calc_ranges(_calc_snapshot(state))
     user_prompt = (latest_user_text(state.messages or []) or "").strip() or "Bitte leite den naechsten besten Datenerhebungs-Schritt ab."
     system_prompt = _build_system_prompt(
+        state=state,
         profile=profile,
         unresolved_gaps=unresolved_gaps,
         warning_notes=warning_notes,
