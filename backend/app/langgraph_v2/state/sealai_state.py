@@ -651,6 +651,8 @@ class SealAIState(BaseModel):
     max_turns: int = 12
     user_persona: Optional[str] = None  # "erfahrener" | "einsteiger" | "entscheider"
     knowledge_coverage: str = "limited"  # "full" | "partial" | "limited"
+    output_blocked: bool = False
+    output_blocked_reason: Optional[str] = None
     rag_turn_count: int = 0
     next_action: Optional[str] = None
 

@@ -157,9 +157,14 @@ def _is_hitl_pending(state: SealAIState) -> bool:
 def classify_input(state: SealAIState, user_text: str) -> str:
     """Deterministic classifier for the v4.4.0 Router Node.
 
-    Returns one of: "rfq_trigger", "resume", "new_case", "follow_up", "clarification".
+    Returns one of: "turn_limit_exceeded", "rfq_trigger", "resume", "new_case",
+    "follow_up", "clarification".
     """
     text = (user_text or "").strip()
+    block_reason = str(getattr(state, "output_blocked_reason", "") or "").strip().lower()
+
+    if bool(getattr(state, "output_blocked", False)) and block_reason == "turn_limit_exceeded":
+        return "turn_limit_exceeded"
 
     # 1. RFQ trigger (highest priority — explicit commercial action)
     if text and _RFQ_PATTERNS.search(text):
