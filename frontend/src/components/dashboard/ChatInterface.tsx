@@ -37,6 +37,9 @@ export default function ChatInterface() {
         isThinking,
         nodeStatus,
         workingProfile,
+        calcResults,
+        complianceResults,
+        liveCalcTile: hookLiveCalcTile,
         error: streamError,
         sendMessage,
         cancelStream,
@@ -44,20 +47,40 @@ export default function ChatInterface() {
     } = useSealAIStream(streamApiEndpoint, accessToken);
 
     useEffect(() => {
-        if (workingProfile && typeof workingProfile === 'object' && Object.keys(workingProfile).length > 0) {
+        if ((workingProfile && typeof workingProfile === 'object' && Object.keys(workingProfile).length > 0) || calcResults || complianceResults || hookLiveCalcTile) {
             console.log("DEBUG WP:", workingProfile);
-            const { temp_range, candidate_materials, ...rest } = workingProfile as any;
-            setLiveCalcTile({
-                status: (workingProfile as any).knowledge_coverage === 'FULL' ? 'ok' : 'warning',
+            console.log("DEBUG CALC:", calcResults);
+            console.log("DEBUG COMPLIANCE:", complianceResults);
+            console.log("DEBUG LCT:", hookLiveCalcTile);
+            
+            const wp = (workingProfile || {}) as any;
+            const { temp_range, candidate_materials, ...rest } = wp;
+            
+            // Map calcResults directly if they exist
+            // Backend CalcResults usually have safety_factor, temperature_margin, etc.
+            // But LiveCalcTile expects things like groove_fill_pct, v_surface_m_s.
+            // Also check for calc_results INSIDE workingProfile as per instructions
+            const wp_calc = (workingProfile as any)?.calc_results;
+
+            setLiveCalcTile(prev => ({
+                status: wp.knowledge_coverage === 'FULL' ? 'ok' : (prev?.status || 'warning'),
                 parameters: {
                     ...rest,
                     temperature_max_c: temp_range?.[1],
-                    pressure_max_bar: (workingProfile as any).pressure_max_bar || (workingProfile as any).pressure_bar
-                }
-            });
+                    pressure_max_bar: wp.pressure_max_bar || wp.pressure_bar
+                },
+                // Merge in liveCalcTile from hook (authoritative for physics fields)
+                ...hookLiveCalcTile,
+                // Merge in calcResults (e.g. v_surface, groove_fill)
+                ...calcResults,
+                // Merge in calc_results from inside WP
+                ...wp_calc,
+                // Merge in complianceResults
+                compliance: complianceResults || prev?.compliance
+            }));
             setShowTile(true);
         }
-    }, [workingProfile]);
+    }, [workingProfile, calcResults, complianceResults, hookLiveCalcTile]);
 
     const visibleHistory = chatHistory.slice(chatHistoryOffset);
     const completedMessages: Message[] = visibleHistory.map((message) => ({

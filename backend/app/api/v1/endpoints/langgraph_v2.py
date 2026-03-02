@@ -59,6 +59,9 @@ CONVERSATIONAL_STREAM_NODES = frozenset(
         "response_node",
         "conversational_rag_node",
         "contract_first_output_node",
+        "node_finalize",
+        "final_answer_node",
+        "troubleshooting_wizard_node",
     }
 )
 _STREAM_NODE_BLOCKLIST = frozenset()
@@ -67,6 +70,9 @@ SPEAKING_NODES = {
     "response_node",
     "conversational_rag_node",
     "contract_first_output_node",
+    "node_finalize",
+    "final_answer_node",
+    "troubleshooting_wizard_node",
 }
 
 
@@ -491,6 +497,8 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "missing_params": values.get("missing_params"),
         "parameters": parameters if isinstance(parameters, dict) else {},
         "working_profile": values.get("working_profile"),
+        "calc_results": values.get("calc_results"),
+        "compliance_results": values.get("compliance_results"),
         "delta": {"parameters": parameters if isinstance(parameters, dict) else {}},
         "pending_action": values.get("pending_action"),
         "confirm_checkpoint_id": values.get("confirm_checkpoint_id"),
@@ -521,6 +529,9 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "missing_params": data.get("missing_params"),
         "parameters": data.get("parameters"),
         "working_profile": data.get("working_profile"),
+        "live_calc_tile": data.get("live_calc_tile"),
+        "calc_results": data.get("calc_results"),
+        "compliance_results": data.get("compliance_results"),
         "delta": data.get("delta"),
         "pending_action": data.get("pending_action"),
         "confirm_checkpoint_id": data.get("confirm_checkpoint_id"),

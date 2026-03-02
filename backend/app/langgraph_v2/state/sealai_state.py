@@ -545,6 +545,7 @@ class SealAIState(BaseModel):
     analysis_complete: bool = False
     calc_results_ok: bool = False
     calc_results: Optional[CalcResults] = None
+    compliance_results: Optional[Dict[str, Any]] = None
 
     # Plan / Working Memory
     plan: Dict[str, Any] = Field(default_factory=dict)

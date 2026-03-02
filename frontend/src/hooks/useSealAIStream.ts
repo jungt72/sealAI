@@ -21,6 +21,9 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
   const [chatHistory, setChatHistory] = useState<{role: 'user'|'ai', text: string}[]>([]);
   const [currentAiText, setCurrentAiText] = useState('');
   const [workingProfile, setWorkingProfile] = useState<WorkingProfile | null>(null);
+  const [calcResults, setCalcResults] = useState<any | null>(null);
+  const [complianceResults, setComplianceResults] = useState<any | null>(null);
+  const [liveCalcTile, setLiveCalcTile] = useState<any | null>(null);
   const [safetyAlerts, setSafetyAlerts] = useState<Blocker[]>([]);
   const [nodeStatus, setNodeStatus] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
@@ -83,6 +86,18 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
                 const wp = payload.data?.working_profile || payload.working_profile;
                 if (wp) {
                   setWorkingProfile(wp);
+                }
+                const cr = payload.data?.calc_results || payload.calc_results;
+                if (cr) {
+                  setCalcResults(cr);
+                }
+                const cmr = payload.data?.compliance_results || payload.compliance_results;
+                if (cmr) {
+                  setComplianceResults(cmr);
+                }
+                const lct = payload.data?.live_calc_tile || payload.live_calc_tile;
+                if (lct) {
+                  setLiveCalcTile(lct);
                 }
                 break;
               case 'safety_alert':
@@ -148,11 +163,14 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
     setChatHistory([]);
     setCurrentAiText('');
     setWorkingProfile(null);
+    setCalcResults(null);
+    setComplianceResults(null);
+    setLiveCalcTile(null);
     setSafetyAlerts([]);
     setNodeStatus(null);
     setError(null);
     setIsThinking(false);
   }, [cancelStream]);
 
-  return { chatHistory, currentAiText, workingProfile, safetyAlerts, nodeStatus, isThinking, error, sendMessage, cancelStream, reset, clearError };
+  return { chatHistory, currentAiText, workingProfile, calcResults, complianceResults, liveCalcTile, safetyAlerts, nodeStatus, isThinking, error, sendMessage, cancelStream, reset, clearError };
 }
