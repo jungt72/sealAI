@@ -1,4 +1,15 @@
-import { AlertTriangle, Gauge, ShieldAlert, Snowflake } from "lucide-react";
+import { 
+  AlertTriangle, 
+  Gauge, 
+  ShieldAlert, 
+  Snowflake, 
+  Activity, 
+  Beaker, 
+  ShieldCheck, 
+  Settings2,
+  CheckCircle2,
+  AlertCircle 
+} from "lucide-react";
 
 type LiveCalcStatus = "ok" | "warning" | "critical" | "insufficient_data";
 
@@ -9,11 +20,26 @@ export type LiveCalcTileData = {
   hrc_warning?: boolean;
   runout_warning?: boolean;
   pv_warning?: boolean;
-  status?: LiveCalcStatus;
+  friction_power_watts?: number | null;
+  dry_running_risk?: boolean;
+  clearance_gap_mm?: number | null;
   extrusion_risk?: boolean;
   requires_backup_ring?: boolean;
+  compression_ratio_pct?: number | null;
+  groove_fill_pct?: number | null;
+  stretch_pct?: number | null;
+  geometry_warning?: boolean;
+  thermal_expansion_mm?: number | null;
   shrinkage_risk?: boolean;
+  status?: LiveCalcStatus;
   parameters?: Record<string, string | number | null | undefined>;
+  // V8 Compliance & Resistance
+  compliance?: {
+    fda?: boolean;
+    atex?: boolean;
+    bam?: boolean;
+  };
+  resistance_status?: "ok" | "warning" | "critical" | "unknown";
 };
 
 type LiveCalcTileProps = {
@@ -133,24 +159,89 @@ export default function LiveCalcTile(props: LiveCalcTileProps) {
         </span>
       </div>
 
-      <section className="mt-5 rounded-2xl border border-slate-200 bg-white/70 p-4">
+      {/* SECTION 1: Tribologie & Kinematik */}
+      <section className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-4">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <Gauge className="h-4 w-4" />
-          Kinematik
+          <Activity className="h-4 w-4 text-blue-500" />
+          Tribologie & Kinematik
         </div>
-        <dl className="space-y-3 text-sm">
-          <div className="flex items-center justify-between gap-4">
-            <dt className="text-slate-600">Umfangsgeschwindigkeit</dt>
-            <dd className="font-mono text-slate-900">{formatMetric(tile?.v_surface_m_s, "m/s")}</dd>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <dt className="text-slate-600">PV-Wert</dt>
-            <dd className="font-mono text-slate-900">{formatMetric(tile?.pv_value_mpa_m_s, "MPa·m/s")}</dd>
-          </div>
+        <dl className="space-y-2.5 text-sm">
+          {[
+            { label: "Umfangsgeschwindigkeit", value: tile?.v_surface_m_s, unit: "m/s" },
+            { label: "PV-Wert", value: tile?.pv_value_mpa_m_s, unit: "MPa·m/s" },
+            { label: "Reibleistung", value: tile?.friction_power_watts, unit: "W" },
+            { label: "Klarspalt", value: tile?.clearance_gap_mm, unit: "mm" },
+          ].map(item => item.value != null && (
+            <div key={item.label} className="flex items-center justify-between gap-4 border-b border-slate-100 pb-1.5 last:border-0 last:pb-0">
+              <dt className="text-slate-500 text-xs">{item.label}</dt>
+              <dd className="font-mono text-slate-900 font-medium">{formatMetric(item.value, item.unit)}</dd>
+            </div>
+          ))}
         </dl>
         {status === "insufficient_data" && (
           <p className="mt-3 text-xs text-slate-600">Warte auf Systemparameter...</p>
         )}
+      </section>
+
+      {/* SECTION 2: DIN 3770 Geometrie (M2) */}
+      {(tile?.compression_ratio_pct != null || tile?.groove_fill_pct != null) && (
+        <section className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <Settings2 className="h-4 w-4 text-slate-500" />
+            Geometrie (DIN 3770)
+            {tile?.geometry_warning && <AlertCircle className="h-4 w-4 text-amber-500 animate-pulse" />}
+          </div>
+          <dl className="space-y-2.5 text-sm">
+            {[
+              { label: "Verpressung", value: tile?.compression_ratio_pct, unit: "%" },
+              { label: "Nutfüllung", value: tile?.groove_fill_pct, unit: "%" },
+              { label: "Dehnung", value: tile?.stretch_pct, unit: "%" },
+            ].map(item => item.value != null && (
+              <div key={item.label} className="flex items-center justify-between gap-4">
+                <dt className="text-slate-500 text-xs">{item.label}</dt>
+                <dd className="font-mono text-slate-900 font-medium">{formatMetric(item.value, item.unit, 1)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+
+      {/* SECTION 3: Beständigkeit & Compliance (M6/M8) */}
+      <section className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-4">
+        <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-700">
+          <div className="flex items-center gap-2">
+            <Beaker className="h-4 w-4 text-indigo-500" />
+            Beständigkeit
+          </div>
+          {tile?.resistance_status && (
+             <span className={`text-[10px] uppercase font-bold px-1.5 rounded border ${
+               tile.resistance_status === 'ok' ? 'text-emerald-600 border-emerald-200 bg-emerald-50' : 
+               tile.resistance_status === 'warning' ? 'text-amber-600 border-amber-200 bg-amber-50' : 
+               'text-rose-600 border-rose-200 bg-rose-50'
+             }`}>
+               {tile.resistance_status}
+             </span>
+          )}
+        </div>
+        
+        {/* Compliance Badges */}
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {tile?.compliance?.fda && (
+            <span className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200">
+              <ShieldCheck className="h-3 w-3 text-emerald-500" /> FDA
+            </span>
+          )}
+          {tile?.compliance?.atex && (
+            <span className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200">
+              <ShieldCheck className="h-3 w-3 text-amber-500" /> ATEX
+            </span>
+          )}
+          {tile?.compliance?.bam && (
+            <span className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200">
+              <ShieldCheck className="h-3 w-3 text-blue-500" /> BAM
+            </span>
+          )}
+        </div>
       </section>
 
       <section className="mt-5 space-y-3">
