@@ -60,14 +60,19 @@ CONVERSATIONAL_STREAM_NODES = frozenset(
         "out_of_scope_node",
         "conversational_rag_node",
         "troubleshooting_wizard_node",
+        "final_answer_node",
+        "contract_first_output_node",
+        "node_draft_answer",
     }
 )
-_STREAM_NODE_BLOCKLIST = frozenset({"final_answer_node"})
+_STREAM_NODE_BLOCKLIST = frozenset()
 SPEAKING_NODES = {
     "smalltalk_node",
     "response_node",
     "conversational_rag_node",
     "contract_first_output_node",
+    "final_answer_node",
+    "node_draft_answer",
 }
 
 
@@ -808,6 +813,9 @@ _NODE_LABELS: Dict[str, str] = {
     "reasoning_core_node": "Reasoning Core",
     "human_review_node": "Human Review",
     "contract_first_output_node": "Contract Output",
+    "final_answer_node": "Final Answer",
+    "node_draft_answer": "Drafting Answer",
+    "node_finalize": "Finalizing",
     "worm_evidence_node": "WORM Evidence",
 }
 
