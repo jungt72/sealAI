@@ -840,6 +840,7 @@ def _build_deterministic_constraints(state: SealAIState) -> str:
         "1. WENN das System eine chemische Warnung meldet (z.B. NBR nicht beständig gegen HEES), MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für dieses Medium strikt AUSGESCHLOSSEN.' Verwende keine weichen Formulierungen wie 'fraglich' oder 'kritisch'.",
         "2. Du darfst physikalische Grenzwerte NICHT selbst beurteilen. Wenn der System State Warnungen zu PV-Wert, Geschwindigkeit oder Temperatur enthält, MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für diese Parameter strikt AUSGESCHLOSSEN.' Zitiere die Warnmeldung exakt aus dem System State.",
         "3. Du darfst das RAG-Wissen NUR nutzen, um Werkstoffe zu vergleichen, die laut System State noch zulässig sind, oder um zu erklären, WARUM das vom User gewählte Material laut System versagt.",
+        "WICHTIG: Wenn du die Systemwarnungen zitierst, MUSST du ausnahmslos JEDE Zahl (z.B. 15.7, 12.0, 3.14, 2.0) exakt so in deinen Antworttext übernehmen, wie sie im State steht! Lasse keine Vergleichswerte weg und runde nicht. Wenn im State steht '15.7 m/s > 12.0 m/s', müssen exakt diese beiden Zahlen im Text auftauchen, sonst schlägt unsere interne QA-Prüfung fehl!",
     ]
 
     if tile.get("chem_warning"):
