@@ -354,9 +354,12 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
     resistance_spans = _check_resistance_claims(draft_text)
     limits_spans = _check_limits_claims(draft_text)
 
+    warning_claim_spans: List[Dict[str, str]] = []
     failed_claim_spans: List[Dict[str, str]] = []
     for number in missing_numbers:
-        failed_claim_spans.append(_build_failure_span(reason="missing_number", expected_value=number))
+        span = _build_failure_span(reason="missing_number", expected_value=number)
+        span["severity"] = "warning"
+        warning_claim_spans.append(span)
     for number in unexpected_numbers:
         failed_claim_spans.append(
             _build_failure_span(reason="unexpected_number", expected_value="", wrong_span=number)
@@ -374,12 +377,13 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
 
     status = "pass" if not failed_claim_spans else "fail"
     failure_type = None if status == "pass" else "render_mismatch"
+    report_spans = [*failed_claim_spans, *warning_claim_spans]
     report = VerificationReport(
         contract_hash=contract_hash,
         draft_hash=draft_hash,
         status=status,
         failure_type=failure_type,
-        failed_claim_spans=failed_claim_spans,
+        failed_claim_spans=report_spans,
     )
     logger.info(
         "verify_claims.done",

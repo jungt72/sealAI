@@ -50,6 +50,28 @@ def test_verify_claims_detects_missing_required_disclaimer() -> None:
     )
 
 
+def test_verify_claims_treats_missing_numbers_as_warning_only() -> None:
+    contract = AnswerContract(resolved_parameters={"pressure_bar": 80.0})
+    state = SealAIState(
+        answer_contract=contract,
+        draft_base_hash=_contract_hash(contract),
+        draft_text="Das System ist ausgeschlossen.",
+    )
+
+    patch = node_verify_claims(state)
+    report = patch["verification_report"]
+
+    assert report.status == "pass"
+    assert report.failure_type is None
+    assert any(
+        span.get("reason") == "missing_number"
+        and span.get("expected_value") == "80.0"
+        and span.get("severity") == "warning"
+        for span in report.failed_claim_spans
+    )
+    assert not any(span.get("reason") == "unexpected_number" for span in report.failed_claim_spans)
+
+
 def test_targeted_patch_replaces_wrong_number_with_contract_value() -> None:
     report = VerificationReport(
         contract_hash="h",
