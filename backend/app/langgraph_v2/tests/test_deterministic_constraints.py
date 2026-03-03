@@ -41,7 +41,7 @@ def test_conversational_rag_report_with_pv_warning():
     assert "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###" in report
     assert "CRITICAL WARNING: Material A is unsuitable for this chemical." in report
     assert "Aktueller PV-Wert: 2.5 MPa*m/s" in report
-    assert "2. WENN das System einen PV-Wert liefert" in report
+    assert "2. Du darfst physikalische Grenzwerte NICHT selbst beurteilen." in report
 
 def test_reasoning_core_prompt_no_tile():
     state = SealAIState()

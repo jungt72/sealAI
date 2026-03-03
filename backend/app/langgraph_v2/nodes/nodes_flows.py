@@ -838,7 +838,7 @@ def _build_deterministic_constraints(state: SealAIState) -> str:
         "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###",
         "Du hast Zugriff auf den aktuellen Zustand der deterministischen Berechnungsmaschine (System State). Dieser Zustand steht ÜBER allem RAG-Wissen!",
         "1. WENN das System eine chemische Warnung meldet (z.B. NBR nicht beständig gegen HEES), MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für dieses Medium strikt AUSGESCHLOSSEN.' Verwende keine weichen Formulierungen wie 'fraglich' oder 'kritisch'.",
-        "2. WENN das System einen PV-Wert liefert, zitiere ihn. WENN der Wert > 1.5 MPa*m/s ist, betone, dass Standard-Elastomere bei diesem Limit sofort verbrennen und Hochleistungswerkstoffe zwingend erforderlich sind.",
+        "2. Du darfst physikalische Grenzwerte NICHT selbst beurteilen. Wenn der System State Warnungen zu PV-Wert, Geschwindigkeit oder Temperatur enthält, MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für diese Parameter strikt AUSGESCHLOSSEN.' Zitiere die Warnmeldung exakt aus dem System State.",
         "3. Du darfst das RAG-Wissen NUR nutzen, um Werkstoffe zu vergleichen, die laut System State noch zulässig sind, oder um zu erklären, WARUM das vom User gewählte Material laut System versagt.",
     ]
 
@@ -851,7 +851,7 @@ def _build_deterministic_constraints(state: SealAIState) -> str:
     pv = tile.get("pv_value_mpa_m_s")
     if pv is not None:
         lines.append(
-            f"Aktueller PV-Wert: {pv} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefährdet)."
+            f"Aktueller PV-Wert: {pv} MPa*m/s."
         )
         lines.append(
             "Berechne NIEMALS physikalische Werte (wie PV-Werte) selbst aus! Nutze AUSSCHLIESSLICH diesen bereitgestellten PV-Wert."
@@ -860,6 +860,12 @@ def _build_deterministic_constraints(state: SealAIState) -> str:
     v = tile.get("v_surface_m_s")
     if v is not None:
         lines.append(f"Aktuelle Gleitgeschwindigkeit: {v} m/s.")
+
+    calc_results_obj = getattr(state, "calc_results", None)
+    calc_notes = list((getattr(calc_results_obj, "notes", None) or []))
+    if calc_notes:
+        lines.append("SYSTEM WARNMELDUNGEN (WÖRTLICH ZITIEREN):")
+        lines.extend(f"- {note}" for note in calc_notes)
 
     # Conflict Resolution is now integrated into the Zero Tolerance rules above.
     return "\n".join(lines)

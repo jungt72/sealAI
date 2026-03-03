@@ -101,7 +101,7 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
         "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###",
         "Du hast Zugriff auf den aktuellen Zustand der deterministischen Berechnungsmaschine (System State). Dieser Zustand steht ÜBER allem RAG-Wissen!",
         "1. WENN das System eine chemische Warnung meldet (z.B. NBR nicht beständig gegen HEES), MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für dieses Medium strikt AUSGESCHLOSSEN.' Verwende keine weichen Formulierungen wie 'fraglich' oder 'kritisch'.",
-        "2. WENN das System einen PV-Wert liefert, zitiere ihn. WENN der Wert > 1.5 MPa*m/s ist, betone, dass Standard-Elastomere bei diesem Limit sofort verbrennen und Hochleistungswerkstoffe zwingend erforderlich sind.",
+        "2. Du darfst physikalische Grenzwerte NICHT selbst beurteilen. Wenn der System State Warnungen zu PV-Wert, Geschwindigkeit oder Temperatur enthält, MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für diese Parameter strikt AUSGESCHLOSSEN.' Zitiere die Warnmeldung exakt aus dem System State.",
         "3. Du darfst das RAG-Wissen NUR nutzen, um Werkstoffe zu vergleichen, die laut System State noch zulässig sind, oder um zu erklären, WARUM das vom User gewählte Material laut System versagt.",
         f"\n- status: {tile.get('status')}",
     ]
@@ -131,7 +131,7 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
 
     if tile.get("pv_value_mpa_m_s") is not None:
         pv = tile.get("pv_value_mpa_m_s")
-        lines.append(f"Aktueller PV-Wert: {pv} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefährdet).")
+        lines.append(f"Aktueller PV-Wert: {pv} MPa*m/s.")
         lines.append("Berechne NIEMALS physikalische Werte (wie PV-Werte) selbst aus! Nutze AUSSCHLIESSLICH diesen bereitgestellten PV-Wert.")
     
     if tile.get("v_surface_m_s") is not None:
@@ -226,6 +226,10 @@ async def conversational_rag_node(state: SealAIState, *_args: Any, **_kwargs: An
     live_calc_tile = _extract_live_calc_tile(state)
     profile_snapshot = _build_profile_snapshot(state)
     physics_report, has_physics_risk = _build_engineering_physics_report(live_calc_tile)
+    calc_notes = list((state.calc_results.notes if state.calc_results else []) or [])
+    if calc_notes:
+        notes_block = "\n".join(f"- {note}" for note in calc_notes)
+        physics_report = f"{physics_report}\n\nSYSTEM WARNMELDUNGEN (WÖRTLICH ZITIEREN):\n{notes_block}"
     if physics_report:
         logger.info("material_agent.deterministic_constraints_injected", physics_report_len=len(physics_report))
     flags = state.flags or {}
@@ -268,9 +272,6 @@ async def conversational_rag_node(state: SealAIState, *_args: Any, **_kwargs: An
             "'normalerweise nicht empfohlen' bezeichnen. Nutze die exakten Begriffe aus den FactCards. "
             "Beantworte die Frage des Nutzers fliessend und natuerlich basierend auf dem folgenden Kontext. "
             "Antworte immer auf Deutsch, auch wenn Feldnamen, Quellen oder Nutzereingaben teilweise auf Englisch sind. "
-            "Wenn PTFE relevant ist und nach Schmelzpunkt, Volumenänderung oder Permeabilität gefragt wird, "
-            "nenne die exakten Kernwerte: Schmelzpunkt gesintert 327°C, Volumenänderung bei 19°C ~1%, "
-            "Permeabilität HCl (54°C) 466. "
             "Erfinde keine Fakten. "
             "Wenn im PROFIL Parameter vorhanden sind (z. B. rpm, shaft_d1_mm), behandle sie als vorhanden "
             "und behaupte nicht, dass diese fehlen."
