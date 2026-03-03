@@ -71,6 +71,29 @@ def test_tribology_warnings() -> None:
     assert tile.status in {"warning", "critical"}
 
 
+def test_material_profile_limits_from_repository() -> None:
+    # NBR profile from YAML: v_max=12.0, pv_warn=1.5, pv_crit=2.0
+    state = SealAIState(
+        working_profile=WorkingProfile(
+            elastomer_material="nitril",  # synonym -> NBR
+            d1=50,
+            rpm=1500,
+            pressure_max_bar=6,  # PV = 2.356... > 2.0 critical
+            temperature_max_c=120.0,  # above NBR max (100C)
+            surface_hardness_hrc=60,
+        )
+    )
+
+    patch = node_p4_live_calc(state)
+    tile = _tile_from_patch(patch)
+    notes = patch["calc_results"].notes
+
+    assert tile.status == "critical"
+    assert tile.pv_warning is True
+    assert any("PV-Wert" in note and "kritische Limit" in note for note in notes)
+    assert any("überschreitet das Maximum" in note and "NBR" in note for note in notes)
+
+
 def test_insufficient_data_handling() -> None:
     state = SealAIState(working_profile=WorkingProfile(pressure_max_bar=5))
 
