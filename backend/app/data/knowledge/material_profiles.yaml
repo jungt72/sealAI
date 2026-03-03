@@ -1,0 +1,48 @@
+profiles:
+  - material_id: "NBR"
+    pv_limit_warning: 1.5
+    pv_limit_critical: 2.0
+    v_surface_max: 12.0
+    temp_min: -30.0
+    temp_max: 100.0
+    thermal_expansion_coeff: 0.00012
+    hardness_shore_a: 70.0
+    modulus_100: 4.0
+    gap_pressure_matrix:
+      100.0: 0.20
+      200.0: 0.10
+      350.0: 0.05
+    is_standard_elastomer: true
+    requires_spring: false
+
+  - material_id: "FKM"
+    pv_limit_warning: 1.5
+    pv_limit_critical: 2.0
+    v_surface_max: 35.0
+    temp_min: -20.0
+    temp_max: 200.0
+    thermal_expansion_coeff: 0.00012
+    hardness_shore_a: 80.0
+    modulus_100: 7.0
+    gap_pressure_matrix:
+      100.0: 0.20
+      200.0: 0.10
+      350.0: 0.05
+    is_standard_elastomer: true
+    requires_spring: false
+
+  - material_id: "PTFE"
+    pv_limit_warning: 2.0
+    pv_limit_critical: 3.0
+    v_surface_max: 45.0
+    temp_min: -200.0
+    temp_max: 250.0
+    thermal_expansion_coeff: 0.00012
+    hardness_shore_a: null
+    modulus_100: null
+    gap_pressure_matrix:
+      100.0: 0.20
+      200.0: 0.10
+      350.0: 0.05
+    is_standard_elastomer: false
+    requires_spring: true
