@@ -62,13 +62,30 @@ def _first_float(payload: Dict[str, Any], keys: Iterable[str]) -> Optional[float
 
 
 def _collect_parameter_payload(state: SealAIState) -> Dict[str, Any]:
-    """Single source of truth: pull parameters from working_profile, merge with extracted_params."""
-    payload = {}
-    if state.working_profile:
-        payload = _to_dict(state.working_profile)
+    """Single source of truth: pull parameters from working_profile, merge with extracted_params.
+
+    Engineering parameters live in working_profile.engineering_profile (LegacyWorkingProfile).
+    Pillar 2 top-level fields (surface_hardness_hrc, medium, etc.) overlay when set.
+    extracted_params fills any remaining gaps.
+    """
+    # Base: flat engineering parameters from LegacyWorkingProfile
+    payload = _to_dict(state.working_profile.engineering_profile)
+
+    # Overlay: Pillar 2 top-level params that may be set independently of engineering_profile
+    _P2_OVERLAY_FIELDS = (
+        "medium", "pressure_bar", "temperature_c",
+        "surface_hardness_hrc", "dp_dt_bar_per_s", "side_load_kn",
+        "aed_required", "medium_additives", "fluid_contamination_iso",
+        "pressure_spike_factor", "dynamic_type",
+    )
+    for field_name in _P2_OVERLAY_FIELDS:
+        val = getattr(state.working_profile, field_name, None)
+        if val is not None:
+            payload[field_name] = val
+
     # Merge extracted_params for any fields not yet in WorkingProfile schema
-    if state.extracted_params:
-        payload.update(state.extracted_params)
+    if state.working_profile.extracted_params:
+        payload.update(state.working_profile.extracted_params)
     return payload
 
 

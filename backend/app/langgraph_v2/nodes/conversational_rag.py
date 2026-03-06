@@ -191,7 +191,8 @@ async def conversational_rag_node(state: SealAIState, *_args: Any, **_kwargs: An
     live_calc_tile = _extract_live_calc_tile(state)
     profile_snapshot = _build_profile_snapshot(state)
     physics_report, has_physics_risk = _build_engineering_physics_report(live_calc_tile)
-    calc_notes = list((state.calc_results.notes if state.calc_results else []) or [])
+    _calc_results = state.working_profile.calc_results
+    calc_notes = list((_calc_results.notes if _calc_results else []) or [])
     if calc_notes:
         notes_block = "\n".join(f"- {note}" for note in calc_notes)
         physics_report = f"{physics_report}\n\nSYSTEM WARNMELDUNGEN (WÖRTLICH ZITIEREN):\n{notes_block}"

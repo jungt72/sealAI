@@ -122,8 +122,8 @@ def test_full_physics_engine() -> None:
             temperature_max_c=80.0,
         )
     )
-    # Adding fields not in WorkingProfile but used by calc (simulating extraction)
-    state.extracted_params = {
+    # Adding fields not in WorkingProfile schema but used by calc (via extracted_params)
+    state.working_profile.extracted_params = {
         "cross_section_d2": 5.33,
         "groove_depth": 4.5,
         "groove_width": 6.0,

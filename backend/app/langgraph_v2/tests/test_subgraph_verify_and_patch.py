@@ -62,7 +62,7 @@ def test_verify_claims_treats_missing_numbers_as_warning_only() -> None:
     )
 
     patch = node_verify_claims(state)
-    report = patch["verification_report"]
+    report = patch["system"]["verification_report"]
 
     assert report.status == "pass"
     assert report.failure_type is None
