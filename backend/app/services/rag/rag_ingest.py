@@ -43,17 +43,13 @@ try:
 except ImportError:
     HuggingFaceEmbeddings = None
 
-
-def get_embedder() -> Any:
-    raise NotImplementedError("Use IngestPipeline instead of the legacy helper.")
-
 from app.services.rag.rag_schema import ChunkMetadata, Domain, EngineeringProps, MaterialFamily, SourceType, TempRange
 from app.services.rag.document import Document
 from app.services.rag.rag_etl_pipeline import (
-    LLMDocumentExtraction, LLMOperatingPoint, LLMCondition, LLMLimit,
-    Operator, process_document_pipeline, PipelineStatus
+    LLMDocumentExtraction, process_document_pipeline
 )
 from app.services.rag.qdrant_state_machine import transition_to_published_bulletproof
+from app.langgraph_v2.utils.jinja import render_template
 
 log = logging.getLogger(__name__)
 
@@ -618,8 +614,6 @@ def _extract_dynamic_metadata_regex(
 
     if re.search(r"\bpolytetrafluoroethylene\b", haystack, re.IGNORECASE):
         dynamic["polymer_name"] = "Polytetrafluoroethylene"
-    if re.search(r"\bkyrolon\s+79x\b", haystack, re.IGNORECASE):
-        dynamic["trade_name"] = "Kyrolon 79X"
     if re.search(r"\bhydrophob", haystack, re.IGNORECASE):
         dynamic["hydrophobic"] = True
     if re.search(r"\bchemisch inert|chemical inert", haystack, re.IGNORECASE):
@@ -655,13 +649,7 @@ def _extract_dynamic_metadata_llm(
         excerpt = (text or "").strip()[:RAG_DYNAMIC_METADATA_MAX_CHARS]
 
         client = OpenAI(api_key=api_key)
-        system = (
-            "Du bist ein Metadaten-Extraktions-Assistent für Dichtungs-Datenblaetter. "
-            "Antworte ausschliesslich mit einem validen JSON-Objekt (kein Markdown). "
-            "Moegliche Felder: entity (string, Produktname), material_family (string), "
-            "hardness_shore (number), trade_name (string), polymer_name (string). "
-            "Lasse Felder weg, die du nicht mit Sicherheit bestimmen kannst."
-        )
+        system = render_template("rag_metadata_extractor.j2")
         response = client.chat.completions.create(
             model=RAG_DYNAMIC_METADATA_LLM_MODEL,
             response_format={"type": "json_object"},
@@ -706,10 +694,7 @@ def _extract_platinum_structured_llm(
     
     client = OpenAI(api_key=api_key)
     
-    system = (
-        "Du bist ein Senior Sealing Engineer. Extrahiere technische Operating Points aus dem Datenblatt. "
-        "Nutze das bereitgestellte Schema. Sei präzise bei Units und Evidence-Referenzen (Seite/Abschnitt)."
-    )
+    system = render_template("rag_platinum_extractor.j2")
     
     # Wir nutzen hier Pydantic-based response format für maximale Stabilität (Blueprint v4.1)
     try:
@@ -899,8 +884,16 @@ class IngestPipeline:
                 "platinum_etl_success",
                 extra={"status": etl_result.status.value, "points": len(etl_result.extracted_points)},
             )
-            # Baue raw_chunks aus ETL-Points (vector_text, page=None, etl_payload)
-            raw_chunks = [(p["vector_text"], None, p) for p in etl_result.extracted_points]
+            # Baue raw_chunks aus ETL-Points und erhalte Seitennummern, falls
+            # der strukturierte ETL-Pfad sie mitliefert.
+            raw_chunks = [
+                (
+                    p["vector_text"],
+                    p.get("page_number", p.get("page")),
+                    p,
+                )
+                for p in etl_result.extracted_points
+            ]
         else:
             raw_chunks = _chunk_pages(pages, filename=filename)
 

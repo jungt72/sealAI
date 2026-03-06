@@ -1,25 +1,37 @@
 # backend/app/services/chat/rate_limit.py
 from __future__ import annotations
 
-import math
+import os
 import time
-from typing import Optional
 
 from redis.asyncio import Redis  # im requirements vorhanden
-from app.services.chat.ws_config import get_ws_config
+
+from app.core.config import settings
 
 # Token Bucket pro Key (user_id/IP)
 #   capacity = rate_limit_per_min
 #   refill pro Sekunde = capacity / 60
 # Redis Keys: ws:rl:<key> -> {"tokens": float, "ts": float}
 
+_DEFAULT_RATE_LIMIT_PER_MIN = 30
+
+
+def _redis_url() -> str:
+    return os.getenv("REDIS_URL") or os.getenv("redis_url") or settings.redis_url
+
+
+def _rate_limit_per_min() -> int:
+    raw = os.getenv("WS_RATE_LIMIT_PER_MIN") or os.getenv("CHAT_RATE_LIMIT_PER_MIN") or str(_DEFAULT_RATE_LIMIT_PER_MIN)
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return _DEFAULT_RATE_LIMIT_PER_MIN
+
 async def _get_client() -> Redis:
-    cfg = get_ws_config()
-    return Redis.from_url(cfg.redis_url, encoding="utf-8", decode_responses=True)
+    return Redis.from_url(_redis_url(), encoding="utf-8", decode_responses=True)
 
 async def token_bucket_allow(key: str) -> bool:
-    cfg = get_ws_config()
-    capacity = max(1, cfg.rate_limit_per_min)
+    capacity = _rate_limit_per_min()
     refill_per_sec = capacity / 60.0
     now = time.time()
 

@@ -1,8 +1,5 @@
 """node_compound_filter — pre-screen compound candidates via Decision Matrix.
 
-Runs after node_factcard_lookup (non-deterministic path) and before
-supervisor_policy_node.
-
 Responsibilities:
 - Extract operating conditions from state (temp, pressure, medium, application)
 - Screen all PTFE compounds via CompoundDecisionMatrix
@@ -13,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from app.langgraph_v2.state import SealAIState
 
@@ -31,17 +28,19 @@ def node_compound_filter(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     except Exception as exc:
         log.warning("compound_filter.import_failed", extra={"error": str(exc)})
         return {
-            "compound_filter_results": {"error": str(exc), "candidates": []},
-            "last_node": "node_compound_filter",
-        }
+                   "reasoning": {
+                       "compound_filter_results": {"error": str(exc), "candidates": []},
+                       "last_node": "node_compound_filter",
+                   },
+               }
 
     # ------------------------------------------------------------------
     # Build conditions from state parameters
     # ------------------------------------------------------------------
-    parameters = state.parameters
+    parameters = state.working_profile
     conditions: Dict[str, Any] = {}
     query_text = ""
-    for msg in reversed(state.messages or []):
+    for msg in reversed(state.conversation.messages or []):
         role = getattr(msg, "type", None) or getattr(msg, "role", None)
         if role in ("human", "user"):
             query_text = str(getattr(msg, "content", "") or "")
@@ -93,7 +92,7 @@ def node_compound_filter(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         conditions.setdefault("counterface_hardness_hrc", 30.0)
 
     # Application type from intent or flags
-    intent = state.intent
+    intent = state.conversation.intent
     if intent:
         knowledge_type = getattr(intent, "knowledge_type", None)
         if knowledge_type:
@@ -110,7 +109,7 @@ def node_compound_filter(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         extra={
             "total_candidates": len(candidates),
             "conditions_used": list(conditions.keys()),
-            "run_id": state.run_id,
+            "run_id": state.system.run_id,
         },
     )
 
@@ -131,9 +130,11 @@ def node_compound_filter(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
     }
 
     return {
-        "compound_filter_results": compound_filter_results,
-        "last_node": "node_compound_filter",
-    }
+               "reasoning": {
+                   "compound_filter_results": compound_filter_results,
+                   "last_node": "node_compound_filter",
+               },
+           }
 
 
 __all__ = ["node_compound_filter"]

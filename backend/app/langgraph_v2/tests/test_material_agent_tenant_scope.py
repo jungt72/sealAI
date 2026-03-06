@@ -32,15 +32,19 @@ def test_material_agent_node_tries_user_then_shared_tenant(monkeypatch):
     monkeypatch.setattr(nf, "search_technical_docs", _fake_search_technical_docs)
 
     state = SealAIState(
-        user_id="tenant-user",
-        messages=[HumanMessage(content="Please find PTFE datasheet for trade_name 'Kyrolon 79X'.")],
+        conversation={
+            "user_id": "tenant-user",
+            "messages": [HumanMessage(content="Please find PTFE datasheet for trade_name 'Kyrolon 79X'.")],
+        },
     )
     patch = material_agent_node(state)
 
     assert search_calls == ["tenant-user", "sealai"]
-    assert (patch.get("retrieval_meta") or {}).get("allowed_tenants") == ["tenant-user", "sealai"]
-    assert patch.get("working_memory").panel_material.get("technical_docs")
-    assert patch.get("context") == "PTFE datasheet context"
+    assert (patch.get("reasoning", {}).get("retrieval_meta") or {}).get("allowed_tenants") == ["tenant-user", "sealai"]
+    assert patch.get("reasoning", {}).get("working_memory").panel_material.get("technical_docs")
+    assert patch.get("reasoning", {}).get("context") == "PTFE datasheet context"
+    assert patch.get("working_profile", {}).get("material_choice", {}).get("specificity") == "document_hit"
+    assert patch.get("working_profile", {}).get("material_choice", {}).get("governed") is False
 
 
 def test_build_allowed_tenants_always_contains_shared_tenant():
@@ -77,13 +81,15 @@ def test_material_agent_node_sets_low_quality_flag_when_all_scores_below_thresho
     monkeypatch.setattr(nf, "search_technical_docs", _fake_search_technical_docs)
 
     state = SealAIState(
-        user_id="tenant-user",
-        messages=[HumanMessage(content="Please find PTFE datasheet for trade_name 'Kyrolon 79X'.")],
+        conversation={
+            "user_id": "tenant-user",
+            "messages": [HumanMessage(content="Please find PTFE datasheet for trade_name 'Kyrolon 79X'.")],
+        },
     )
     patch = material_agent_node(state)
 
-    assert patch.get("working_memory").panel_material.get("technical_docs")
-    assert patch.get("flags", {}).get("rag_low_quality_results") is False
+    assert patch.get("reasoning", {}).get("working_memory").panel_material.get("technical_docs")
+    assert patch.get("reasoning", {}).get("flags", {}).get("rag_low_quality_results") is False
 
 
 def test_material_agent_node_treats_ptfe_factcards_as_high_quality(monkeypatch):
@@ -113,13 +119,15 @@ def test_material_agent_node_treats_ptfe_factcards_as_high_quality(monkeypatch):
     monkeypatch.setattr(nf, "search_technical_docs", _fake_search_technical_docs)
 
     state = SealAIState(
-        user_id="tenant-user",
-        messages=[HumanMessage(content="Ich benötige eine Dichtungslösung für mein Rührwerk.")],
+        conversation={
+            "user_id": "tenant-user",
+            "messages": [HumanMessage(content="Ich benötige eine Dichtungslösung für mein Rührwerk.")],
+        },
     )
     patch = material_agent_node(state)
 
-    assert patch.get("working_memory").panel_material.get("technical_docs")
-    assert patch.get("flags", {}).get("rag_low_quality_results") is False
+    assert patch.get("reasoning", {}).get("working_memory").panel_material.get("technical_docs")
+    assert patch.get("reasoning", {}).get("flags", {}).get("rag_low_quality_results") is False
 
 
 def test_material_agent_node_detects_german_technical_terms(monkeypatch):
@@ -137,10 +145,13 @@ def test_material_agent_node_detects_german_technical_terms(monkeypatch):
     monkeypatch.setattr(nf, "search_technical_docs", _fake_search_technical_docs)
 
     state = SealAIState(
-        user_id="tenant-user",
-        messages=[HumanMessage(content="Ich benötige eine Dichtungslösung für mein Rührwerk.")],
+        conversation={
+            "user_id": "tenant-user",
+            "messages": [HumanMessage(content="Ich benötige eine Dichtungslösung für mein Rührwerk.")],
+        },
     )
     patch = material_agent_node(state)
 
-    assert patch.get("working_memory").panel_material.get("technical_docs")
-    assert patch.get("context") == "Prelonring"
+    assert patch.get("reasoning", {}).get("working_memory").panel_material.get("technical_docs")
+    assert patch.get("reasoning", {}).get("context") == "Prelonring"
+    assert patch.get("working_profile", {}).get("material_choice", {}).get("specificity") == "document_hit"

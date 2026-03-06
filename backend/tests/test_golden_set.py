@@ -2,7 +2,7 @@ import pytest
 import os
 import json
 from unittest.mock import MagicMock
-from app.langgraph_v2.state import SealAIState, TechnicalParameters
+from app.langgraph_v2.state import SealAIState, WorkingProfile
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 
 # Toggle for Real vs Mocked LLM

@@ -100,25 +100,6 @@ _reranker = None
 _embedding_dim: Optional[int] = None
 _resolved_cache_folder: Optional[str] = EMBEDDINGS_CACHE_FOLDER or None
 
-def _supported_fastembed_models() -> set[str]:
-    try:
-        from fastembed import TextEmbedding  # type: ignore
-    except Exception:
-        return set()
-    models: set[str] = set()
-    for item in TextEmbedding.list_supported_models() or []:
-        if isinstance(item, str):
-            models.add(item)
-        elif isinstance(item, dict):
-            name = item.get("model") or item.get("model_name") or item.get("name")
-            if name:
-                models.add(str(name))
-        else:
-            name = getattr(item, "model", None) or getattr(item, "model_name", None) or getattr(item, "name", None)
-            if name:
-                models.add(str(name))
-    return models
-
 def resolve_embedding_model() -> Tuple[str, int]:
     _, resolved_dim = resolve_embedding_config()
     return EMB_MODEL_NAME, resolved_dim
@@ -384,14 +365,6 @@ def _to_qdrant_sparse_vector(models_module: Any, sparse_query: Any) -> Optional[
         return None
 
     return models_module.SparseVector(indices=indices, values=values)
-
-def _rrf_merge(candidates: List[Tuple[Dict[str, Any], float]], k: int = RRF_K) -> List[Tuple[Dict[str, Any], float]]:
-    """Reciprocal Rank Fusion on already ranked hits (doc, rank_score)."""
-    scored: List[Tuple[Dict[str, Any], float]] = []
-    for idx, (hit, _raw_score) in enumerate(candidates):
-        fused = 1.0 / (k + idx + 1)
-        scored.append((hit, fused))
-    return sorted(scored, key=lambda item: item[1], reverse=True)
 
 def _hit_key(hit: Dict[str, Any]) -> str:
     metadata = hit.get("metadata") or {}
@@ -700,69 +673,6 @@ def _qdrant_search_with_retry(
     }
 
 
-def _qdrant_keyword_scroll_fallback(
-    *,
-    collection: str,
-    metadata_filters: Optional[Dict[str, Any]] = None,
-    keyword: str = "Kyrolon",
-    limit: int = FINAL_K,
-    timeout_s: Optional[float] = None,
-) -> List[Dict[str, Any]]:
-    import httpx
-
-    url = f"{QDRANT_URL}/collections/{collection}/points/scroll"
-    effective_timeout_s = float(timeout_s) if timeout_s is not None else QDRANT_TIMEOUT_S
-    body: Dict[str, Any] = {
-        "limit": max(64, min(512, limit * 20)),
-        "with_payload": True,
-        "with_vector": False,
-    }
-    qdrant_filter = _build_qdrant_filter(metadata_filters)
-    if qdrant_filter:
-        body["filter"] = qdrant_filter
-
-    needle = keyword.lower()
-    out: List[Dict[str, Any]] = []
-    try:
-        with httpx.Client(timeout=effective_timeout_s) as client:
-            offset = None
-            for _ in range(10):
-                req = dict(body)
-                if offset is not None:
-                    req["offset"] = offset
-                r = client.post(url, json=req)
-                if int(getattr(r, "status_code", 0) or 0) >= 400:
-                    break
-                data = r.json()
-                points = (data.get("result") or {}).get("points") or []
-                offset = (data.get("result") or {}).get("next_page_offset")
-                if not points:
-                    break
-                for item in points:
-                    payload = item.get("payload") or {}
-                    text = payload.get("text") or payload.get("chunk") or payload.get("content") or ""
-                    text = str(text)
-                    if needle not in text.lower():
-                        continue
-                    src = payload.get("source") or (payload.get("metadata") or {}).get("source") or payload.get("file") or ""
-                    out.append(
-                        {
-                            "text": text,
-                            "source": src,
-                            "vector_score": 0.0,
-                            "fused_score": 0.0,
-                            "metadata": payload,
-                        }
-                    )
-                    if len(out) >= limit:
-                        return out
-                if offset is None:
-                    break
-    except Exception as exc:
-        _event("keyword_fallback_failed", reason=f"{type(exc).__name__}: {exc}", collection=collection)
-    return out
-
-
 def _apply_threshold(hits: List[Dict[str, Any]], thr: float) -> List[Dict[str, Any]]:
     out = []
     for h in hits:
@@ -830,8 +740,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     q = (query or "").strip()
     if not q:
         return []
-    is_kyrolon_test = "kyrolon" in q.lower()
-    effective_k = max(k, 5) if is_kyrolon_test else k
+    effective_k = k
     effective_threshold = 0.0
 
     # Embed query
@@ -1023,7 +932,6 @@ def _fallback_external_search(query: str, *, tenant: Optional[str] = None, limit
       AGENT_NORMEN_URL    → /v1/search endpoint returning [{text, source, score?, metadata?}]
       AGENT_MATERIAL_URL  → /v1/search endpoint returning [{text, source, score?, metadata?}]
     """
-    import itertools
     bases = []
     n_url = (os.getenv("AGENT_NORMEN_URL") or "").strip().rstrip("/")
     m_url = (os.getenv("AGENT_MATERIAL_URL") or "").strip().rstrip("/")

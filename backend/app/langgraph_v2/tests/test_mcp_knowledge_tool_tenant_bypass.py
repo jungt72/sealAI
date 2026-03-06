@@ -63,7 +63,7 @@ def test_search_technical_docs_renders_table_metadata_in_context(monkeypatch) ->
     assert "| 1.0 | 0.8 |" in payload["context"]
 
 
-def test_search_technical_docs_relaxes_tenant_filter_when_needed(monkeypatch) -> None:
+def test_search_technical_docs_keeps_tenant_filter_when_needed(monkeypatch) -> None:
     monkeypatch.setenv("QDRANT_COLLECTION", "tenant-scoped-docs")
     monkeypatch.setenv("QDRANT_GLOBAL_TECH_COLLECTIONS", "sealai_knowledge_v3,sealai-docs")
     calls: list[dict] = []
@@ -85,15 +85,14 @@ def test_search_technical_docs_relaxes_tenant_filter_when_needed(monkeypatch) ->
         k=3,
     )
 
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert calls[0]["tenant"] == "5781c12a-c285-43f0-93ff-acaee99c9a97"
     assert (calls[0].get("metadata_filters") or {}).get("tenant_id") == [
         "5781c12a-c285-43f0-93ff-acaee99c9a97",
         "sealai",
     ]
-    assert calls[1]["tenant"] is None
-    assert "tenant_id" not in (calls[1].get("metadata_filters") or {})
-    assert payload["retrieval_meta"]["tenant_filter_relaxed"] is True
+    assert payload["hits"] == []
+    assert payload["retrieval_meta"].get("tenant_filter_relaxed") is not True
 
 
 def test_search_technical_docs_filters_zero_score_hits(monkeypatch) -> None:

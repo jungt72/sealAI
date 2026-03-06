@@ -1,6 +1,76 @@
-{# Central response template for supervisor output #}
+{# Response router with explicit smalltalk/engineering persona branches #}
+{%- set intent_goal_norm = (intent_goal if intent_goal is defined and intent_goal else "")|string|lower -%}
+{%- set intent_category_norm = (intent_category if intent_category is defined and intent_category else "")|string|lower -%}
+{%- set response_kind_norm = (response_kind if response_kind is defined and response_kind else "")|string|lower -%}
+{%- set calc = calc_results if calc_results is defined and calc_results is mapping else {} -%}
+{%- set has_calc_results = calc|length > 0 -%}
+{%- set requires_rag_norm = requires_rag if requires_rag is defined else false -%}
+
+{%- set is_smalltalk = (intent_goal_norm == "smalltalk") or (response_kind_norm == "smalltalk") -%}
+{%- set is_tangential_intent = (
+    intent_goal_norm in ["material_research", "explanation_or_comparison"]
+    or intent_category_norm in ["material_research", "explanation_or_comparison"]
+) -%}
+{%- set is_engineering = intent_goal_norm in [
+    "engineering",
+    "engineering_calculation",
+    "design_recommendation",
+    "troubleshooting_leakage"
+] or response_kind_norm in [
+    "engineering",
+    "kb_factcard",
+    "consulting",
+    "preflight_parameters",
+    "material",
+    "profile",
+    "critical_review",
+    "final"
+] -%}
+
+{%- set rag_primary_text = "" -%}
+{%- if response_text %}
+{%- set rag_primary_text = response_text -%}
+{%- elif knowledge_material %}
+{%- set rag_primary_text = knowledge_material -%}
+{%- elif rag_response_text %}
+{%- set rag_primary_text = rag_response_text -%}
+{%- endif %}
+
+{%- if (is_tangential_intent or requires_rag_norm) and rag_primary_text %}
+{{ rag_primary_text }}
 {%- if ask_missing_request %}
+
+Übrigens, um die Berechnung abzuschließen, fehlt uns noch: {{ ask_missing_request.question }}
+{%- endif %}
+{%- elif requires_rag_norm and panel_rag_context and not has_calc_results %}
+{{ panel_rag_context }}
+{%- elif ask_missing_request %}
 {{ ask_missing_request.question }}
+{%- elif is_smalltalk %}
+Hallo! Ich bin dein SealAI-Assistent. Ich unterstütze dich bei der Auslegung deiner Dichtung. Wie kann ich dir heute helfen?
+{%- elif is_engineering %}
+{% set extracted = extracted_params if extracted_params is mapping else {} %}
+{% set profile = engineering_profile if engineering_profile is mapping else {} %}
+{% set pressure_max_bar = extracted.get("pressure_max_bar") %}
+{% if pressure_max_bar is none %}
+{% set pressure_max_bar = profile.get("pressure_max_bar") %}
+{% endif %}
+{% if pressure_max_bar is none %}
+{% set pressure_max_bar = profile.get("pressure_bar") %}
+{% endif %}
+{% set rpm = extracted.get("rpm") %}
+{% if rpm is none %}
+{% set rpm = profile.get("rpm") %}
+{% endif %}
+{% if rpm is none %}
+{% set rpm = profile.get("speed_rpm") %}
+{% endif %}
+{% set v_surface = calc_results.get("v_surface_m_s") if calc_results is mapping else none %}
+Status-Update: Ich habe die Physik-Engine mit deinen Werten ({{ pressure_max_bar if pressure_max_bar is not none else "n/a" }} bar, {{ rpm if rpm is not none else "n/a" }} u/min) gefüttert.
+{% if v_surface is not none %}
+Die Umfangsgeschwindigkeit liegt bei {{ v_surface|round(2) }} m/s.
+{% endif %}
+Schau dir die Details in der Live-Physik-Engine rechts an.
 {%- elif response_text %}
 {{ response_text }}
 {%- elif knowledge_material %}
@@ -12,5 +82,5 @@
 {%- elif error %}
 {{ error }}
 {%- else %}
-Ok.
+Ich bin bereit. Teile mir bitte deine technischen Randbedingungen mit.
 {%- endif %}

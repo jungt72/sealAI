@@ -6,21 +6,28 @@ from typing import Any, Dict
 import structlog
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
-from app.langgraph_v2.state.sealai_state import SealAIState
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.targeted_patch")
 
 
 def node_targeted_patch(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
-    report = state.verification_report
-    draft_text = str(state.draft_text or "")
+    report = state.system.verification_report
+    draft_text = str(state.system.draft_text or "")
 
     if report is None:
         logger.warning("targeted_patch.no_report")
-        return {"last_node": "node_targeted_patch"}
+        return {
+                   "reasoning": {
+                       "last_node": "node_targeted_patch",
+                   },
+               }
     if report.status == "pass":
         logger.info("targeted_patch.skip_already_pass")
-        return {"last_node": "node_targeted_patch"}
+        return {
+                   "reasoning": {
+                       "last_node": "node_targeted_patch",
+                   },
+               }
 
     spans = list(report.failed_claim_spans or [])
     missing_numbers = [
@@ -57,7 +64,7 @@ def node_targeted_patch(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any)
             if disclaimer.strip() not in patched:
                 patched = f"{patched.rstrip()}{disclaimer}".strip()
 
-    flags = deepcopy(state.flags or {})
+    flags = deepcopy(state.reasoning.flags or {})
     attempts = int(flags.get("answer_subgraph_patch_attempts") or 0)
     flags["answer_subgraph_patch_attempts"] = attempts + 1
 
@@ -67,10 +74,14 @@ def node_targeted_patch(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any)
         changed=patched != draft_text,
     )
     return {
-        "draft_text": patched,
-        "flags": flags,
-        "last_node": "node_targeted_patch",
-    }
+               "system": {
+                   "draft_text": patched,
+               },
+               "reasoning": {
+                   "flags": flags,
+                   "last_node": "node_targeted_patch",
+               },
+           }
 
 
 __all__ = ["node_targeted_patch"]

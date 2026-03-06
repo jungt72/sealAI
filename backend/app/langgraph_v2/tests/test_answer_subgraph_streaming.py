@@ -87,7 +87,11 @@ async def test_node_draft_answer_streams_chunks_and_forwards_config(answer_modul
         selected_fact_ids=["F-1001"],
         required_disclaimers=["Nur innerhalb Spezifikation einsetzen."],
     )
-    state = SimpleNamespace(answer_contract=contract, flags={"existing": True})
+    state = state_mod.SealAIState(
+        system={"answer_contract": contract},
+        reasoning={"flags": {"existing": True}},
+        working_profile={"engineering_profile": {}, "calc_results": {}},
+    )
     fake_llm = _FakeLLM(["Hallo", " Welt"])
     config = {"configurable": {"thread_id": "thread-123"}, "callbacks": ["cb"]}
 
@@ -95,9 +99,9 @@ async def test_node_draft_answer_streams_chunks_and_forwards_config(answer_modul
         patch_result = await draft_mod.node_draft_answer(state, config=config)
 
     expected_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
-    assert patch_result["draft_text"] == "Hallo Welt"
-    assert patch_result["draft_base_hash"] == expected_hash
-    assert patch_result["flags"]["answer_contract_hash"] == expected_hash
+    assert patch_result["system"]["draft_text"] == "Hallo Welt"
+    assert patch_result["system"]["draft_base_hash"] == expected_hash
+    assert patch_result["reasoning"]["flags"]["answer_contract_hash"] == expected_hash
     assert fake_llm.calls and fake_llm.calls[0]["config"] == config
 
 
@@ -114,20 +118,28 @@ async def test_node_draft_answer_hash_is_stable_across_drip_patterns(answer_modu
     expected_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
     config = {"configurable": {"run_id": "run-1"}}
 
-    state_a = SimpleNamespace(answer_contract=contract, flags={})
+    state_a = state_mod.SealAIState(
+        system={"answer_contract": contract},
+        reasoning={"flags": {}},
+        working_profile={"engineering_profile": {}, "calc_results": {}},
+    )
     fake_llm_a = _FakeLLM(["Hal", "lo", " ", "Welt"])
     with patch.object(draft_mod, "_DRAFT_LLM", fake_llm_a):
         patch_a = await draft_mod.node_draft_answer(state_a, config=config)
 
-    state_b = SimpleNamespace(answer_contract=contract, flags={})
+    state_b = state_mod.SealAIState(
+        system={"answer_contract": contract},
+        reasoning={"flags": {}},
+        working_profile={"engineering_profile": {}, "calc_results": {}},
+    )
     fake_llm_b = _FakeLLM(["Hallo Welt"])
     with patch.object(draft_mod, "_DRAFT_LLM", fake_llm_b):
         patch_b = await draft_mod.node_draft_answer(state_b, config=config)
 
-    assert patch_a["draft_text"] == "Hallo Welt"
-    assert patch_b["draft_text"] == "Hallo Welt"
-    assert patch_a["draft_base_hash"] == expected_hash
-    assert patch_b["draft_base_hash"] == expected_hash
+    assert patch_a["system"]["draft_text"] == "Hallo Welt"
+    assert patch_b["system"]["draft_text"] == "Hallo Welt"
+    assert patch_a["system"]["draft_base_hash"] == expected_hash
+    assert patch_b["system"]["draft_base_hash"] == expected_hash
     assert fake_llm_a.calls[0]["config"] == config
     assert fake_llm_b.calls[0]["config"] == config
 
@@ -143,17 +155,22 @@ async def test_node_draft_answer_short_circuits_on_low_quality_rag(answer_module
         selected_fact_ids=["F-1001"],
         required_disclaimers=[],
     )
-    state = SimpleNamespace(answer_contract=contract, flags={"rag_low_quality_results": True})
+    state = state_mod.SealAIState(
+        system={"answer_contract": contract},
+        reasoning={"flags": {"rag_low_quality_results": True}},
+        working_profile={"engineering_profile": {}, "calc_results": {}},
+    )
     fake_llm = _FakeLLM(["Should not be used"])
 
     with patch.object(draft_mod, "_DRAFT_LLM", fake_llm):
         patch_result = await draft_mod.node_draft_answer(state, config={"configurable": {"thread_id": "thread-123"}})
 
     expected_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
-    assert "keinen exakten Treffer gefunden" in patch_result["draft_text"]
-    assert patch_result["final_answer"] == patch_result["draft_text"]
-    assert patch_result["draft_base_hash"] == expected_hash
-    assert patch_result["flags"]["rag_low_quality_results"] is True
+    assert "keinen belastbaren Volltreffer gefunden" in patch_result["system"]["draft_text"]
+    assert "belastbare Einordnung" in patch_result["system"]["draft_text"]
+    assert "final_answer" not in patch_result["system"]
+    assert patch_result["system"]["draft_base_hash"] == expected_hash
+    assert patch_result["reasoning"]["flags"]["rag_low_quality_results"] is True
     assert fake_llm.calls == []
 
 
@@ -168,36 +185,62 @@ async def test_node_draft_answer_short_circuits_on_empty_contract(answer_modules
         selected_fact_ids=[],
         required_disclaimers=[],
     )
-    state = SimpleNamespace(answer_contract=contract, flags={"rag_low_quality_results": False})
+    state = state_mod.SealAIState(
+        system={"answer_contract": contract},
+        reasoning={"flags": {"rag_low_quality_results": False}},
+        working_profile={"engineering_profile": {}, "calc_results": {}},
+    )
     fake_llm = _FakeLLM(["Should not be used"])
 
     with patch.object(draft_mod, "_DRAFT_LLM", fake_llm):
         patch_result = await draft_mod.node_draft_answer(state, config={"configurable": {"thread_id": "thread-123"}})
 
     expected_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
-    assert "keinen exakten Treffer gefunden" in patch_result["draft_text"]
-    assert patch_result["final_answer"] == patch_result["draft_text"]
-    assert patch_result["draft_base_hash"] == expected_hash
-    assert patch_result["flags"]["rag_low_quality_results"] is False
+    assert "keinen belastbaren Volltreffer gefunden" in patch_result["system"]["draft_text"]
+    assert "belastbare Einordnung" in patch_result["system"]["draft_text"]
+    assert "final_answer" not in patch_result["system"]
+    assert patch_result["system"]["draft_base_hash"] == expected_hash
+    assert patch_result["reasoning"]["flags"]["rag_low_quality_results"] is False
     assert fake_llm.calls == []
 
 
+def test_build_low_quality_rag_fallback_text_mentions_requested_subject(answer_modules):
+    state_mod = answer_modules["state"]
+    draft_mod = answer_modules["draft"]
+
+    state = state_mod.SealAIState(
+        conversation={"messages": [HumanMessage(content="Was kannst du mir ueber Kyrolon sagen?")]},
+        system={"sources": [{"source": "kyrolon.pdf", "snippet": "Kyrolon ist ein PTFE-Compound fuer verschleisskritische Anwendungen."}]},
+        reasoning={"flags": {"rag_low_quality_results": True}},
+    )
+
+    text = draft_mod.build_low_quality_rag_fallback_text(state)
+
+    assert "Kyrolon" in text
+    assert "PTFE-Compound" in text
+    assert "keinen belastbaren Volltreffer gefunden" in text
+    assert "belastbare technische Einordnung" in text
+
+
 def test_node_finalize_appends_ai_message_without_dropping_history(answer_modules):
+    state_mod = answer_modules["state"]
     finalize_mod = answer_modules["finalize"]
     history = [HumanMessage(content="Welche Dichtung passt bei 80 bar?")]
-    state = SimpleNamespace(
-        draft_text="Empfehlung: PTFE bei 80 bar.",
-        final_text="Empfehlung: PTFE bei 80 bar.",
-        final_answer="",
-        messages=history,
-        phase="consulting",
+    state = state_mod.SealAIState(
+        conversation={"messages": history},
+        reasoning={"phase": "consulting"},
+        system={
+            "draft_text": "Empfehlung: PTFE bei 80 bar.",
+            "final_text": "Empfehlung: PTFE bei 80 bar.",
+            "final_answer": "",
+        },
     )
 
     patch_result = finalize_mod.node_finalize(state)
     messages = patch_result["messages"]
 
     assert len(messages) == 2
-    assert messages[0] is history[0]
+    assert messages[0].content == history[0].content
     assert isinstance(messages[1], AIMessage)
     assert messages[1].content == "Empfehlung: PTFE bei 80 bar."
     assert patch_result["final_text"] == "Empfehlung: PTFE bei 80 bar."

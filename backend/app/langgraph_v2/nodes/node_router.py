@@ -13,13 +13,13 @@ to the correct graph entry point:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import structlog
 from langchain_core.messages import AIMessage
 
 from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import SealAIState, TechnicalParameters, WorkingMemory
+from app.langgraph_v2.state import SealAIState, WorkingMemory
 from app.langgraph_v2.utils.messages import latest_user_text
 
 logger = structlog.get_logger("langgraph_v2.node_router")
@@ -108,10 +108,12 @@ _PARAMETER_CHANGE_PATTERNS = re.compile(
 
 def _has_populated_parameters(state: SealAIState) -> bool:
     """Check if any technical parameter has a non-None value."""
-    params = state.parameters
+    params = state.working_profile.engineering_profile
     if params is None:
         return False
-    if isinstance(params, TechnicalParameters):
+    if hasattr(params, "as_dict"):
+        d = params.as_dict()
+    elif hasattr(params, "model_dump"):
         d = params.model_dump(exclude_none=True)
     elif isinstance(params, dict):
         d = {k: v for k, v in params.items() if v is not None}
@@ -122,15 +124,15 @@ def _has_populated_parameters(state: SealAIState) -> bool:
 
 def _has_prior_response(state: SealAIState) -> bool:
     """Check if the graph has already produced a response in this session."""
-    wm = state.working_memory
+    wm = state.reasoning.working_memory
     if isinstance(wm, WorkingMemory):
         if bool(wm.response_text):
             return True
     elif isinstance(wm, dict) and bool(wm.get("response_text")):
         return True
-    if bool(getattr(state, "final_text", None)):
+    if bool(state.system.governed_output_text or state.system.final_text):
         return True
-    for message in list(getattr(state, "messages", []) or []):
+    for message in list(state.conversation.messages or []):
         if isinstance(message, AIMessage):
             return True
         if isinstance(message, dict):
@@ -143,9 +145,9 @@ def _has_prior_response(state: SealAIState) -> bool:
 def _is_hitl_pending(state: SealAIState) -> bool:
     """Check if state indicates pending HITL/follow-up handling."""
     return bool(
-        state.awaiting_user_confirmation
-        or bool((state.pending_action or "").strip())
-        or bool(getattr(state, "qgate_has_blockers", False))
+        state.system.awaiting_user_confirmation
+        or bool((state.system.pending_action or "").strip())
+        or bool(state.reasoning.qgate_has_blockers)
     )
 
 
@@ -161,9 +163,9 @@ def classify_input(state: SealAIState, user_text: str) -> str:
     "follow_up", "clarification".
     """
     text = (user_text or "").strip()
-    block_reason = str(getattr(state, "output_blocked_reason", "") or "").strip().lower()
+    block_reason = str(state.reasoning.output_blocked_reason or "").strip().lower()
 
-    if bool(getattr(state, "output_blocked", False)) and block_reason == "turn_limit_exceeded":
+    if bool(state.reasoning.output_blocked) and block_reason == "turn_limit_exceeded":
         return "turn_limit_exceeded"
 
     # 1. RFQ trigger (highest priority — explicit commercial action)
@@ -205,7 +207,7 @@ def classify_input(state: SealAIState, user_text: str) -> str:
 
 def node_router(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """SEALAI v4.4.0 Router Node — classifies input and sets routing metadata."""
-    user_text = latest_user_text(state.messages) or ""
+    user_text = latest_user_text(state.conversation.messages) or ""
     classification = classify_input(state, user_text)
 
     logger.info(
@@ -215,14 +217,16 @@ def node_router(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, An
         has_params=_has_populated_parameters(state),
         has_response=_has_prior_response(state),
         is_hitl=_is_hitl_pending(state),
-        run_id=state.run_id,
-        thread_id=state.thread_id,
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
     )
 
     return {
-        "router_classification": classification,
-        "phase": PHASE.ROUTING,
-        "last_node": "node_router",
+        "conversation": {"router_classification": classification},
+        "reasoning": {
+            "phase": PHASE.ROUTING,
+            "last_node": "node_router",
+        },
     }
 
 

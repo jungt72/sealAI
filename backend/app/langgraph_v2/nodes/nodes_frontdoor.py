@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, Literal, Optional
 
 import structlog
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,13 +15,12 @@ from app.langgraph_v2.state import (
     SealAIExtractedParameters,
     SealAIIntentOutput,
     SealAIState,
-    TechnicalParameters,
     WorkingMemory,
 )
 from app.services.rag.state import WorkingProfile
 from app.langgraph_v2.utils.llm_factory import get_model_tier
 from app.langgraph_v2.utils.messages import latest_user_text
-from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_with_provenance
+from app.langgraph_v2.utils.parameter_patch import stage_extracted_parameter_patch
 from app.langgraph_v2.utils.state_debug import log_state_debug
 from app.langgraph_v2.nodes.persona_detection import update_persona_in_state
 from app.utils.jinja_renderer import render_and_hash
@@ -48,7 +47,6 @@ _MATERIAL_OR_TRADE_MARKERS = (
     "ptfe",
     "vmq",
     "ffkm",
-    "kyrolon",
     "qdrant",
     "search_technical_docs",
     "get_available_filters",
@@ -100,7 +98,7 @@ _GENERIC_TRADE_STOPWORDS = frozenset(
 )
 
 _FRONTDOOR_SYSTEM_TEMPLATE = "frontdoor_system_v2.j2"
-_FRONTDOOR_SYSTEM_TEMPLATE_VERSION = "2.0.0"
+_FRONTDOOR_SYSTEM_TEMPLATE_VERSION = "2.1.0"
 _FRONTDOOR_MAX_HISTORY_TURNS = 2
 
 _TECHNICAL_CUE_TERMS = [
@@ -111,12 +109,76 @@ _TECHNICAL_CUE_TERMS = [
     "mm",
     "FKM",
     "NBR",
-    "Kyrolon",
     "datasheet",
     "datenblatt",
     "preis",
     "price",
 ]
+
+_GREETING_PREFIXES = (
+    "guten morgen",
+    "guten abend",
+    "guten tag",
+    "moin moin",
+    "grüß gott",
+    "gruss gott",
+    "hallo",
+    "hello",
+    "servus",
+    "moin",
+    "hey",
+    "hi",
+)
+
+_GREETING_PREFIX_PATTERN = re.compile(
+    r"^\s*(?:"
+    + "|".join(re.escape(prefix) for prefix in sorted(_GREETING_PREFIXES, key=len, reverse=True))
+    + r")\b",
+    re.IGNORECASE,
+)
+
+_GREETING_FOLLOWUP_ALLOWLIST = frozenset(
+    {
+        "wie",
+        "geht",
+        "gehts",
+        "s",
+        "es",
+        "dir",
+        "ihnen",
+        "euch",
+        "denn",
+        "heute",
+        "na",
+        "und",
+        "alles",
+        "klar",
+        "zusammen",
+        "team",
+        "there",
+        "you",
+        "are",
+        "doing",
+        "how",
+        "tag",
+        "morgen",
+        "abend",
+        "hallo",
+        "hello",
+        "servus",
+        "moin",
+        "hey",
+        "hi",
+    }
+)
+
+_GREETING_TECHNICAL_TERM_PATTERN = re.compile(
+    r"\b("
+    r"bar|mm|rpm|material|werkstoff|pressure|temperature|temperatur|psi"
+    r"|ptfe|fkm|nbr|epdm|hnbr|ffkm|datenblatt|datasheet|welle|shaft"
+    r")\b",
+    re.IGNORECASE,
+)
 
 _INTENT_TO_GOAL: Dict[str, str] = {
     "CHIT_CHAT": "smalltalk",
@@ -269,6 +331,87 @@ def _normalize_task_intents(task_intents: list[str]) -> list[str]:
     return normalized
 
 
+def _message_content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                if "text" in part:
+                    parts.append(str(part.get("text", "")))
+                elif "content" in part:
+                    parts.append(str(part.get("content", "")))
+                else:
+                    parts.append(str(part))
+            else:
+                parts.append(str(part))
+        return " ".join(part for part in parts if part).strip()
+    if isinstance(content, dict):
+        if "text" in content:
+            return str(content.get("text", ""))
+        if "content" in content:
+            return str(content.get("content", ""))
+        return str(content)
+    if content is None:
+        return ""
+    return str(content)
+
+
+def _coerce_message_to_base(message: Any) -> Optional[BaseMessage]:
+    if isinstance(message, BaseMessage):
+        content_text = _message_content_to_text(getattr(message, "content", ""))
+        if isinstance(message, SystemMessage):
+            return SystemMessage(content=content_text)
+        if isinstance(message, HumanMessage):
+            return HumanMessage(content=content_text)
+        if isinstance(message, AIMessage):
+            return AIMessage(content=content_text)
+        role = str(getattr(message, "type", "") or "").strip().lower()
+        if role in {"human", "user"}:
+            return HumanMessage(content=content_text)
+        if role in {"ai", "assistant"}:
+            return AIMessage(content=content_text)
+        if role == "system":
+            return SystemMessage(content=content_text)
+        return None
+
+    if isinstance(message, dict):
+        role = str(message.get("role") or message.get("type") or "").strip().lower()
+        content_text = _message_content_to_text(message.get("content"))
+        if not content_text and "text" in message:
+            content_text = str(message.get("text") or "")
+        if role in {"human", "user"}:
+            return HumanMessage(content=content_text)
+        if role in {"ai", "assistant"}:
+            return AIMessage(content=content_text)
+        if role == "system":
+            return SystemMessage(content=content_text)
+
+    return None
+
+
+def _sanitize_frontdoor_history(messages: list[Any]) -> list[BaseMessage]:
+    sanitized: list[BaseMessage] = []
+    for message in messages:
+        coerced = _coerce_message_to_base(message)
+        if coerced is None:
+            continue
+        sanitized.append(coerced)
+    return sanitized
+
+
+def _latest_user_text_with_fallback(messages: list[Any] | None) -> str:
+    direct = latest_user_text(messages) or ""
+    if direct.strip():
+        return direct
+    sanitized = _sanitize_frontdoor_history(list(messages or []))
+    for message in reversed(sanitized):
+        if isinstance(message, HumanMessage):
+            return _message_content_to_text(message.content)
+    return ""
+
+
 def _legacy_category_to_task_intents(intent_category: str) -> list[str]:
     mapping: Dict[str, list[str]] = {
         "CHIT_CHAT": [],
@@ -326,7 +469,7 @@ def _coerce_frontdoor_output(raw: Any) -> FrontdoorRouteAxesOutput:
     return FrontdoorRouteAxesOutput.model_validate(raw)
 
 
-def _truncate_messages_to_last_turns(messages: list[Any], max_turns: int = 2) -> list[Any]:
+def _truncate_messages_to_last_turns(messages: list[BaseMessage], max_turns: int = 2) -> list[BaseMessage]:
     if max_turns <= 0 or not messages:
         return []
     human_turns_seen = 0
@@ -341,7 +484,7 @@ def _truncate_messages_to_last_turns(messages: list[Any], max_turns: int = 2) ->
 
 
 def _get_working_memory(state: SealAIState, updates: Dict[str, Any]) -> WorkingMemory:
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     return wm.model_copy(update=updates)
 
 
@@ -353,12 +496,76 @@ def _render_frontdoor_prompt_trace(state: SealAIState) -> RenderedPrompt:
     )
 
 
-def _build_frontdoor_messages(state: SealAIState, user_text: str) -> list[Any]:
-    history = _truncate_messages_to_last_turns(list(state.messages or []), max_turns=_FRONTDOOR_MAX_HISTORY_TURNS)
+def _build_frontdoor_messages(state: SealAIState, user_text: str) -> list[BaseMessage]:
+    sanitized_history = _sanitize_frontdoor_history(list(state.conversation.messages or []))
+    history = _truncate_messages_to_last_turns(
+        sanitized_history,
+        max_turns=_FRONTDOOR_MAX_HISTORY_TURNS,
+    )
     if not history and user_text.strip():
         history = [HumanMessage(content=user_text)]
     prompt_trace = _render_frontdoor_prompt_trace(state)
     return [SystemMessage(content=prompt_trace.rendered_text), *history]
+
+
+def _normalize_social_text(text: str) -> str:
+    normalized = str(text or "").strip().lower()
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized
+
+
+def _strip_leading_greeting(text: str) -> tuple[bool, str]:
+    normalized = _normalize_social_text(text)
+    match = _GREETING_PREFIX_PATTERN.match(normalized)
+    if not match:
+        return False, normalized
+    remainder = normalized[match.end() :]
+    remainder = re.sub(r"^[\s,;:!?.-]+", "", remainder).strip()
+    return True, remainder
+
+
+def _is_social_followup_text(text: str) -> bool:
+    if not text:
+        return True
+    tokens = re.findall(r"[a-zäöüß]+", text.lower())
+    if not tokens:
+        return True
+    if len(tokens) > 8:
+        return False
+    return all(token in _GREETING_FOLLOWUP_ALLOWLIST for token in tokens)
+
+
+def _is_pure_greeting_smalltalk(text: str) -> bool:
+    source = str(text or "").strip()
+    if not source:
+        return False
+    has_greeting_prefix, remainder = _strip_leading_greeting(source)
+    if not has_greeting_prefix:
+        return False
+    if re.search(r"\d", source):
+        return False
+    if _GREETING_TECHNICAL_TERM_PATTERN.search(source):
+        return False
+    if _detect_technical_cue_matches(source):
+        return False
+    if detect_material_or_trade_query(source):
+        return False
+    if detect_sources_request(source):
+        return False
+    return _is_social_followup_text(remainder)
+
+
+def _deterministic_smalltalk_override(user_text: str) -> Optional[FrontdoorRouteAxesOutput]:
+    if not _is_pure_greeting_smalltalk(user_text):
+        return None
+    return FrontdoorRouteAxesOutput(
+        social_opening=True,
+        task_intents=[],
+        is_safety_critical=False,
+        requires_rag=False,
+        needs_pricing=False,
+        reasoning="Deterministic greeting pre-check classified this turn as smalltalk.",
+    )
 
 
 def _invoke_frontdoor_structured(state: SealAIState, user_text: str) -> FrontdoorRouteAxesOutput:
@@ -369,7 +576,8 @@ def _invoke_frontdoor_structured(state: SealAIState, user_text: str) -> Frontdoo
         method="json_schema",
         strict=True,
     )
-    response = structured_llm.invoke(_build_frontdoor_messages(state, user_text))
+    llm_messages = _build_frontdoor_messages(state, user_text)
+    response = structured_llm.invoke(llm_messages)
     if isinstance(response, FrontdoorRouteAxesOutput):
         return response
     return FrontdoorRouteAxesOutput.model_validate(response)
@@ -411,52 +619,70 @@ def _extract_parameter_patch(structured: FrontdoorRouteAxesOutput) -> Dict[str, 
 
 def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("frontdoor_discovery_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
-    parameters = state.parameters or TechnicalParameters()
-    working_profile = state.working_profile or WorkingProfile()
+    user_text = _latest_user_text_with_fallback(state.conversation.messages)
+    working_profile = state.working_profile.engineering_profile or WorkingProfile()
     prompt_trace = _render_frontdoor_prompt_trace(state)
 
-    try:
-        structured = _coerce_frontdoor_output(_invoke_frontdoor_structured(state, user_text))
-    except Exception as exc:
-        logger.warning(
-            "frontdoor_structured_output_failed",
-            error=str(exc),
+    deterministic_smalltalk = _deterministic_smalltalk_override(user_text)
+    if deterministic_smalltalk is not None:
+        structured = deterministic_smalltalk
+        logger.info(
+            "frontdoor_deterministic_smalltalk_override",
             user_text=user_text,
-            run_id=state.run_id,
-            thread_id=state.thread_id,
+            run_id=state.system.run_id,
+            thread_id=state.conversation.thread_id,
         )
-        structured = FrontdoorRouteAxesOutput(
-            social_opening=False,
-            task_intents=["engineering_calculation"],
-            is_safety_critical=False,
-            requires_rag=False,
-            needs_pricing=False,
-            reasoning="The request is treated as an engineering intake fallback.",
-        )
+    else:
+        try:
+            structured = _coerce_frontdoor_output(_invoke_frontdoor_structured(state, user_text))
+        except Exception as exc:
+            logger.warning(
+                "frontdoor_structured_output_failed",
+                error=str(exc),
+                user_text=user_text,
+                run_id=state.system.run_id,
+                thread_id=state.conversation.thread_id,
+            )
+            fallback_is_material_research = bool(
+                detect_material_or_trade_query(user_text) or detect_sources_request(user_text)
+            )
+            structured = FrontdoorRouteAxesOutput(
+                social_opening=False,
+                task_intents=["material_research"] if fallback_is_material_research else ["engineering_calculation"],
+                is_safety_critical=False,
+                requires_rag=fallback_is_material_research,
+                needs_pricing=False,
+                reasoning=(
+                    "The request is treated as a material research fallback."
+                    if fallback_is_material_research
+                    else "The request is treated as an engineering intake fallback."
+                ),
+            )
 
     task_intents = _normalize_task_intents(structured.task_intents)
     technical_cue_matches = _detect_technical_cue_matches(user_text)
+    ext = structured.extracted_parameters
+    has_new_params = any([ext.shaft_diameter, ext.speed_rpm, ext.pressure_bar, ext.temperature_c, ext.medium])
+    is_domain_query = bool(
+        detect_material_or_trade_query(user_text)
+        or detect_sources_request(user_text)
+        or structured.needs_pricing
+    )
 
     # Prioritize last human message if it's purely social without technical cues.
     # This prevents history-bias where LLM still tags "material_research"
     # for a simple "thank you" after a technical discussion.
-    if structured.social_opening and not technical_cue_matches:
+    if structured.social_opening and not technical_cue_matches and not has_new_params and not is_domain_query:
         task_intents = []
+        intent_category = "CHIT_CHAT"
+    elif not task_intents and not technical_cue_matches and not has_new_params and not is_domain_query:
+        # Deterministic fallback for pure greeting/generic turns with no technical signals.
         intent_category = "CHIT_CHAT"
     else:
         intent_category = _category_from_task_intents(task_intents, structured.social_opening)
 
     # Force engineering calculation if technical parameters are present
-    ext = structured.extracted_parameters
-    has_new_params = any([ext.shaft_diameter, ext.speed_rpm, ext.pressure_bar, ext.temperature_c, ext.medium])
-    
     if has_new_params:
-        intent_category = "ENGINEERING_CALCULATION"
-        if "engineering_calculation" not in task_intents:
-            task_intents.append("engineering_calculation")
-    elif state.working_profile and has_new_params:
-        # State Continuity: Existing profile + any extracted parameter override
         intent_category = "ENGINEERING_CALCULATION"
         if "engineering_calculation" not in task_intents:
             task_intents.append("engineering_calculation")
@@ -469,8 +695,8 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         logger.info(
             "frontdoor_technical_cue_veto",
             matched_terms=technical_cue_matches,
-            run_id=state.run_id,
-            thread_id=state.thread_id,
+            run_id=state.system.run_id,
+            thread_id=state.conversation.thread_id,
         )
 
     requires_rag = bool(structured.requires_rag or intent_category == "MATERIAL_RESEARCH")
@@ -489,28 +715,25 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     )
 
     extracted_patch = _extract_parameter_patch(structured)
-    merged_provenance = state.parameter_provenance
-    merged_extracted_params = dict(state.extracted_params or {})
+    merged_extracted_provenance = dict(state.reasoning.extracted_parameter_provenance or {})
+    merged_extracted_identity = dict(state.reasoning.extracted_parameter_identity or {})
+    merged_extracted_params = dict(state.working_profile.extracted_params or {})
     
     if extracted_patch:
-        merged_params, merged_provenance = apply_parameter_patch_with_provenance(
-            parameters.as_dict(),
+        (
+            merged_extracted_params,
+            merged_extracted_provenance,
+            merged_extracted_identity,
+            _applied_candidate_fields,
+        ) = stage_extracted_parameter_patch(
+            merged_extracted_params,
             extracted_patch,
-            state.parameter_provenance,
-            source="user",
+            merged_extracted_provenance,
+            merged_extracted_identity,
+            source="frontdoor_extracted",
         )
-        parameters = TechnicalParameters.model_validate(merged_params)
-        merged_extracted_params.update(extracted_patch)
-        
-        # Sync to WorkingProfile
-        wp_dict = working_profile.model_dump()
-        wp_fields = set(working_profile.model_fields.keys())
-        for k, v in extracted_patch.items():
-            if k in wp_fields and v is not None:
-                wp_dict[k] = v
-        working_profile = WorkingProfile.model_validate(wp_dict)
 
-    flags = dict(state.flags or {})
+    flags = dict(state.reasoning.flags or {})
 
     flags.update(
         {
@@ -528,7 +751,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     wm_updates = {
         "frontdoor_reply": structured.reasoning,
         "design_notes": {
-            **dict((state.working_memory or WorkingMemory()).design_notes or {}),
+            **dict((state.reasoning.working_memory or WorkingMemory()).design_notes or {}),
             "frontdoor_reasoning": structured.reasoning,
             "requested_quantity": structured.extracted_parameters.quantity,
             "requested_sku": structured.extracted_parameters.sku,
@@ -547,25 +770,36 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         needs_pricing=needs_pricing,
         bypass_supervisor=frontdoor_bypass_supervisor,
         technical_cue_veto=technical_cue_veto,
-        run_id=state.run_id,
-        thread_id=state.thread_id,
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
     )
 
     persona_patch = update_persona_in_state(state)
+    if intent_goal == "smalltalk":
+        # Keep the patch explicit and deterministic for router branching.
+        conversation_patch: Dict[str, Any] = {"intent": "smalltalk"}
+    else:
+        conversation_patch = {"intent": intent}
+    if persona_patch and isinstance(persona_patch.get("conversation"), dict):
+        conversation_patch.update(persona_patch["conversation"])
+
     return {
-        "intent": intent,
-        "working_memory": wm,
-        "working_profile": working_profile,
-        "prompt_traces": [prompt_trace],
-        "phase": PHASE.FRONTDOOR,
-        "last_node": "frontdoor_discovery_node",
-        "parameters": parameters,
-        "parameter_provenance": merged_provenance,
-        "extracted_params": merged_extracted_params,
-        "requires_rag": requires_rag,
-        "need_sources": requires_rag,
-        "flags": flags,
-        **persona_patch,
+        "conversation": conversation_patch,
+        "working_profile": {
+            "engineering_profile": working_profile,
+            "extracted_params": merged_extracted_params,
+        },
+        "reasoning": {
+            "working_memory": wm,
+            "phase": PHASE.FRONTDOOR,
+            "last_node": "frontdoor_discovery_node",
+            "extracted_parameter_provenance": merged_extracted_provenance,
+            "extracted_parameter_identity": merged_extracted_identity,
+            "requires_rag": requires_rag,
+            "need_sources": requires_rag,
+            "flags": flags,
+        },
+        "system": {"prompt_traces": [prompt_trace]},
     }
 
 

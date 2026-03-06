@@ -21,6 +21,7 @@ import structlog
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, VerificationReport
+from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 from app.mcp.calculations.chemical_resistance import lookup as _chem_lookup
 from app.mcp.calculations.material_limits import check as _limits_check
 
@@ -114,7 +115,7 @@ def _expected_numbers_from_user_fields(contract: AnswerContract) -> Set[str]:
 
 
 def _allowed_number_tokens_from_flags(state: SealAIState) -> Set[str]:
-    flags = getattr(state, "flags", {}) or {}
+    flags = getattr(state.reasoning, "flags", {}) or {}
     raw = flags.get("answer_subgraph_allowed_number_tokens")
     if not isinstance(raw, list):
         return set()
@@ -128,26 +129,26 @@ def _allowed_number_tokens_from_flags(state: SealAIState) -> Set[str]:
 
 def _numbers_from_sources(state: SealAIState) -> Set[str]:
     numbers: Set[str] = set()
-    for source in list(getattr(state, "sources", []) or []):
+    for source in list(getattr(state.system, "sources", []) or []):
         snippet = ""
         if isinstance(source, dict):
             snippet = str(source.get("snippet") or source.get("text") or "")
         else:
             snippet = str(getattr(source, "snippet", "") or getattr(source, "text", "") or "")
         numbers |= _numbers_from_text(snippet)
-    numbers |= _numbers_from_text(str(getattr(state, "context", "") or ""))
+    numbers |= _numbers_from_text(str(getattr(state.reasoning, "context", "") or ""))
     return numbers
 
 
 def _skip_strict_number_checks(state: SealAIState) -> bool:
-    flags = getattr(state, "flags", {}) or {}
+    flags = getattr(state.reasoning, "flags", {}) or {}
     if bool(flags.get("number_verification_skip_active")):
         return True
-    goal = str(getattr(getattr(state, "intent", None), "goal", "") or "").strip().lower()
+    goal = str(getattr(getattr(state.conversation, "intent", None), "goal", "") or "").strip().lower()
     if goal == "explanation_or_comparison":
         return True
     category = str(
-        getattr(state, "intent_category", None)
+        getattr(state.reasoning, "intent_category", None)
         or flags.get("frontdoor_intent_category")
         or ""
     ).strip().upper()
@@ -293,14 +294,14 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
     Returns:
         State patch with ``verification_report`` and node marker.
     """
-    draft_text = str(state.draft_text or "")
+    draft_text = str(state.system.draft_text or "")
     draft_hash = hashlib.sha256(draft_text.encode()).hexdigest()
 
     # CRITICAL GUARD
-    if state.answer_contract is None or hashlib.sha256(state.answer_contract.model_dump_json().encode()).hexdigest() != state.draft_base_hash:
+    if state.system.answer_contract is None or hashlib.sha256(state.system.answer_contract.model_dump_json().encode()).hexdigest() != state.system.draft_base_hash:
         contract_hash = (
-            hashlib.sha256(state.answer_contract.model_dump_json().encode()).hexdigest()
-            if state.answer_contract is not None
+            hashlib.sha256(state.system.answer_contract.model_dump_json().encode()).hexdigest()
+            if state.system.answer_contract is not None
             else ""
         )
         report = VerificationReport(
@@ -311,7 +312,7 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
             failed_claim_spans=[
                 _build_failure_span(
                     reason="state_race_condition",
-                    expected_value=state.draft_base_hash or "",
+                    expected_value=state.system.draft_base_hash or "",
                     wrong_span=contract_hash,
                 )
             ],
@@ -319,22 +320,36 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
         logger.error(
             "verify_claims.state_race_condition",
             contract_hash=contract_hash,
-            draft_base_hash=state.draft_base_hash,
+            draft_base_hash=state.system.draft_base_hash,
         )
-        return {"verification_report": report, "last_node": "node_verify_claims"}
+        return stamp_patch_with_assertion_binding(state, {
+                   "system": {
+                       "verification_report": report,
+                   },
+                   "reasoning": {
+                       "last_node": "node_verify_claims",
+                   },
+               })
 
     if not draft_text.strip():
         report = VerificationReport(
-            contract_hash=state.draft_base_hash or "",
+            contract_hash=state.system.draft_base_hash or "",
             draft_hash=draft_hash,
             status="fail",
             failure_type="abort",
             failed_claim_spans=[_build_failure_span(reason="empty_draft", expected_value="non_empty_draft")],
         )
         logger.error("verify_claims.empty_draft")
-        return {"verification_report": report, "last_node": "node_verify_claims"}
+        return stamp_patch_with_assertion_binding(state, {
+                   "system": {
+                       "verification_report": report,
+                   },
+                   "reasoning": {
+                       "last_node": "node_verify_claims",
+                   },
+               })
 
-    contract = state.answer_contract
+    contract = state.system.answer_contract
     contract_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
     expected_numbers = _expected_numbers_from_user_fields(contract)
     allowed_numbers = _allowed_number_tokens_from_flags(state) | _numbers_from_sources(state)
@@ -396,7 +411,14 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
         resistance_contradictions=len(resistance_spans),
         limits_contradictions=len(limits_spans),
     )
-    return {"verification_report": report, "last_node": "node_verify_claims"}
+    return stamp_patch_with_assertion_binding(state, {
+               "system": {
+                   "verification_report": report,
+               },
+               "reasoning": {
+                   "last_node": "node_verify_claims",
+               },
+           })
 
 
 __all__ = ["node_verify_claims"]

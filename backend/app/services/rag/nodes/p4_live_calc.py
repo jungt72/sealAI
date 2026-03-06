@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Dict, Iterable, Literal, Optional
+from typing import Any, Dict, Iterable, List, Literal, Optional
 
 import structlog
 
@@ -14,6 +14,7 @@ from app.services.knowledge.entity_resolver import normalize_entity
 from app.services.knowledge.chemical_repository import get_chemical_repository
 from app.services.knowledge.material_repository import get_material_repository
 from app.models.chemical_matrix import RatingEnum
+from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 
 logger = structlog.get_logger("rag.nodes.p4_live_calc")
 
@@ -65,11 +66,9 @@ def _collect_parameter_payload(state: SealAIState) -> Dict[str, Any]:
     payload = {}
     if state.working_profile:
         payload = _to_dict(state.working_profile)
-    
     # Merge extracted_params for any fields not yet in WorkingProfile schema
     if state.extracted_params:
         payload.update(state.extracted_params)
-        
     return payload
 
 
@@ -107,7 +106,7 @@ def _sanitize_primitive_parameters(payload: Dict[str, Any]) -> Dict[str, str | i
 
 def _collect_captured_parameters(state: SealAIState) -> Dict[str, str | int | float]:
     """Legacy helper for UI, now purely derived from working_profile."""
-    return _sanitize_primitive_parameters(_to_dict(state.working_profile))
+    return _sanitize_primitive_parameters(_to_dict(state.working_profile.engineering_profile))
 
 
 def _get_diameter_mm(payload: Dict[str, Any]) -> Optional[float]:
@@ -133,7 +132,6 @@ def calc_tribology(payload: Dict[str, Any], prev: Optional[LiveCalcTile] = None)
     pressure_bar = _first_float(payload, ("pressure_max_bar", "pressure_bar", "pressure", "p_max"))
     hrc_value = _first_float(payload, ("surface_hardness_hrc", "hrc", "hrc_value", "shaft_hardness", "hardness"))
     runout_mm = _first_float(payload, ("runout_mm", "runout", "shaft_runout", "dynamic_runout"))
-    cross_section_d2 = _first_float(payload, ("cross_section_d2", "d2", "seal_cross_section"))
     temp_max_c = _first_float(payload, ("temperature_max_c", "temp_max_c", "temperature_max", "T_medium_max", "temp_max"))
 
     # Material extraction for RWDR logic
@@ -422,7 +420,7 @@ def calc_chemical_resistance(payload: Dict[str, Any]) -> Dict[str, Any]:
 def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Compute deterministic live-tile values and warnings across physics domains."""
     payload = _collect_parameter_payload(state)
-    prev = state.live_calc_tile
+    prev = state.working_profile.live_calc_tile
 
     tribology = calc_tribology(payload, prev=prev)
     extrusion = calc_extrusion(payload, prev=prev)
@@ -466,7 +464,7 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
 
     captured_parameters = _collect_captured_parameters(state)
 
-    calc_results = state.calc_results or CalcResults()
+    calc_results = state.working_profile.calc_results or CalcResults()
     calc_results.v_surface_m_s = tribology["v_surface_m_s"]
     calc_results.pv_value_mpa_m_s = tribology["pv_value_mpa_m_s"]
     calc_results.friction_power_watts = tribology["friction_power_watts"]
@@ -510,16 +508,20 @@ def node_p4_live_calc(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
         thermal_expansion_mm=tile.thermal_expansion_mm,
         shrinkage_risk=tile.shrinkage_risk,
         status=tile.status,
-        run_id=state.run_id,
-        thread_id=state.thread_id,
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
     )
 
-    return {
-        "calc_results": calc_results,
-        "live_calc_tile": tile,
-        "phase": PHASE.CALCULATION,
-        "last_node": "node_p4_live_calc",
-    }
+    return stamp_patch_with_assertion_binding(state, {
+        "working_profile": {
+            "calc_results": calc_results,
+            "live_calc_tile": tile,
+        },
+        "reasoning": {
+            "phase": PHASE.CALCULATION,
+            "last_node": "node_p4_live_calc",
+        },
+    })
 
 
 __all__ = ["node_p4_live_calc", "calc_tribology", "calc_extrusion", "calc_geometry", "calc_thermal", "_collect_captured_parameters"]

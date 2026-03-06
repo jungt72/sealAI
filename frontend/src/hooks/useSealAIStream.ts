@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
+import { extractRenderableAssistantText } from './useSealAIStreamContract.js';
 
 export interface WorkingProfile {
   medium?: string;
@@ -27,6 +28,9 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
   const [calcResults, setCalcResults] = useState<any | null>(null);
   const [complianceResults, setComplianceResults] = useState<any | null>(null);
   const [liveCalcTile, setLiveCalcTile] = useState<any | null>(null);
+  const [rfqAdmissibility, setRfqAdmissibility] = useState<any | null>(null);
+  const [candidateSemantics, setCandidateSemantics] = useState<any[] | null>(null);
+  const [governanceMetadata, setGovernanceMetadata] = useState<any | null>(null);
   const [safetyAlerts, setSafetyAlerts] = useState<Blocker[]>([]);
   const [nodeStatus, setNodeStatus] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
@@ -88,11 +92,21 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
                 if (payload.working_profile) {
                   setWorkingProfile(payload.working_profile);
                 }
-                if (payload.calc_results) {
-                  setCalcResults(payload.calc_results);
+                const tokenCalcResults =
+                  payload.chunk?.working_profile?.calc_results ??
+                  payload.working_profile?.calc_results ??
+                  payload.chunk?.calc_results ??
+                  payload.calc_results;
+                if (tokenCalcResults) {
+                  setCalcResults(tokenCalcResults);
                 }
-                if (payload.live_calc_tile) {
-                  setLiveCalcTile(payload.live_calc_tile);
+                const tokenLiveCalcTile =
+                  payload.chunk?.working_profile?.live_calc_tile ??
+                  payload.working_profile?.live_calc_tile ??
+                  payload.chunk?.live_calc_tile ??
+                  payload.live_calc_tile;
+                if (tokenLiveCalcTile) {
+                  setLiveCalcTile(tokenLiveCalcTile);
                 }
                 setCurrentAiText(prev => {
                   if (prev.endsWith(payload.text)) return prev;
@@ -101,10 +115,26 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
                 });
                 break;
               case 'message':
-                if (payload.replace) {
-                  setCurrentAiText(payload.text);
-                } else {
-                  setCurrentAiText(prev => prev + payload.text);
+                {
+                  const text = extractRenderableAssistantText(payload);
+                  if (!text) break;
+                  if (payload.replace) {
+                    setCurrentAiText(text);
+                  } else {
+                    setCurrentAiText(prev => prev + text);
+                  }
+                }
+                break;
+              case 'done':
+                {
+                  const text = extractRenderableAssistantText(payload);
+                  if (text) {
+                    setCurrentAiText(prev => (prev === text || prev.length > text.length ? prev : text));
+                  }
+                  if (payload.rfq_admissibility) setRfqAdmissibility(payload.rfq_admissibility);
+                  if (payload.candidate_semantics) setCandidateSemantics(payload.candidate_semantics);
+                  if (payload.governance_metadata) setGovernanceMetadata(payload.governance_metadata);
+                  setIsThinking(false);
                 }
                 break;
               case 'profile_update':
@@ -113,17 +143,56 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
                 }
                 break;
               case 'state_update':
-                const wp = payload.data?.working_profile || payload.working_profile;
+                const stateText = extractRenderableAssistantText(payload);
+                if (stateText) {
+                  setCurrentAiText(prev => (prev === stateText || prev.length > stateText.length ? prev : stateText));
+                }
+                const wp =
+                  payload.data?.working_profile ||
+                  payload.working_profile ||
+                  payload.data?.chunk?.working_profile ||
+                  payload.chunk?.working_profile;
                 if (wp) setWorkingProfile(wp);
 
-                const cr = payload.data?.calc_results || payload.calc_results;
+                const cr =
+                  payload.data?.working_profile?.calc_results ||
+                  payload.working_profile?.calc_results ||
+                  payload.data?.chunk?.working_profile?.calc_results ||
+                  payload.chunk?.working_profile?.calc_results ||
+                  payload.data?.calc_results ||
+                  payload.calc_results ||
+                  payload.data?.chunk?.calc_results ||
+                  payload.chunk?.calc_results;
                 if (cr) setCalcResults(cr);
 
                 const cmr = payload.data?.compliance_results || payload.compliance_results;
                 if (cmr) setComplianceResults(cmr);
 
+                const rfq =
+                  payload.data?.rfq_admissibility ||
+                  payload.rfq_admissibility;
+                if (rfq) setRfqAdmissibility(rfq);
+
+                const semantics =
+                  payload.data?.candidate_semantics ||
+                  payload.candidate_semantics;
+                if (semantics) setCandidateSemantics(semantics);
+
+                const governance =
+                  payload.data?.governance_metadata ||
+                  payload.governance_metadata;
+                if (governance) setGovernanceMetadata(governance);
+
                 // RWDR Fast-Path: Always update live_calc_tile if present to ensure 16.75 m/s is displayed immediately
-                const lct = payload.data?.live_calc_tile || payload.live_calc_tile;
+                const lct =
+                  payload.data?.working_profile?.live_calc_tile ||
+                  payload.working_profile?.live_calc_tile ||
+                  payload.data?.chunk?.working_profile?.live_calc_tile ||
+                  payload.chunk?.working_profile?.live_calc_tile ||
+                  payload.data?.live_calc_tile ||
+                  payload.live_calc_tile ||
+                  payload.data?.chunk?.live_calc_tile ||
+                  payload.chunk?.live_calc_tile;
                 if (lct) setLiveCalcTile(lct);
                 break;
               case 'safety_alert':
@@ -193,11 +262,14 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
     setCalcResults(null);
     setComplianceResults(null);
     setLiveCalcTile(null);
+    setRfqAdmissibility(null);
+    setCandidateSemantics(null);
+    setGovernanceMetadata(null);
     setSafetyAlerts([]);
     setNodeStatus(null);
     setError(null);
     setIsThinking(false);
   }, [cancelStream]);
 
-  return { chatHistory, currentAiText, workingProfile, calcResults, complianceResults, liveCalcTile, safetyAlerts, nodeStatus, isThinking, error, sendMessage, cancelStream, reset, clearError };
+  return { chatHistory, currentAiText, workingProfile, calcResults, complianceResults, liveCalcTile, rfqAdmissibility, candidateSemantics, governanceMetadata, safetyAlerts, nodeStatus, isThinking, error, sendMessage, cancelStream, reset, clearError };
 }

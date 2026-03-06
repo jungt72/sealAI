@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Dict, Literal, Optional
 
-from pydantic import BaseModel, Field, StrictBool, model_validator
+from pydantic import AliasChoices, BaseModel, Field, StrictBool, model_validator
 
 
 class ConfirmGoEdits(BaseModel):
-    parameters: Dict[str, object] = Field(default_factory=dict)
+    working_profile: Dict[str, object] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("working_profile", "parameters"),
+    )
     instructions: Optional[str] = None
 
 

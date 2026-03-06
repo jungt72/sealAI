@@ -34,7 +34,7 @@ def detect_persona(messages: list[str]) -> tuple[str, float]:
 def update_persona_in_state(state: SealAIState) -> dict:
     """Nach jedem Turn aufrufen. Gibt State-Patch zurück."""
     extracted_texts = []
-    for m in (state.messages or []):
+    for m in (state.conversation.messages or []):
         if not hasattr(m, "content") or not m.content:
             continue
 
@@ -56,4 +56,8 @@ def update_persona_in_state(state: SealAIState) -> dict:
     persona, _ = detect_persona(extracted_texts)
     if persona == "unknown":
         return {}
-    return {"user_persona": persona}
+    return {
+               "conversation": {
+                   "user_persona": persona,
+               },
+           }

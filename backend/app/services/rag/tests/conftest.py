@@ -6,6 +6,10 @@ This conftest sets minimal dummy values before any collection happens.
 """
 
 import os
+import sys
+import types
+
+import pytest
 
 _DUMMY_ENV = {
     "POSTGRES_USER": "test",
@@ -29,6 +33,29 @@ _DUMMY_ENV = {
 
 for _key, _val in _DUMMY_ENV.items():
     os.environ.setdefault(_key, _val)
+
+if "pypdf" not in sys.modules:
+    pypdf_stub = types.ModuleType("pypdf")
+
+    class _StubPdfPage:
+        def extract_text(self) -> str:
+            return "Hello PDF"
+
+    class _StubPdfReader:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.is_encrypted = False
+            self.pages = [_StubPdfPage()]
+
+        def decrypt(self, *_args, **_kwargs) -> int:
+            return 1
+
+    pypdf_stub.PdfReader = _StubPdfReader
+    sys.modules["pypdf"] = pypdf_stub
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
 
 # Pre-import to ensure WorkingProfile is available in module namespace
 # (sealai_state.py uses try/except import; running conftest first ensures

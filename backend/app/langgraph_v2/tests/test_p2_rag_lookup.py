@@ -24,12 +24,23 @@ def _make_state(**overrides):
     from app.langgraph_v2.state import SealAIState
 
     defaults = {
-        "messages": [],
-        "user_id": "test-user",
-        "thread_id": "test-thread",
-        "run_id": "test-run",
+        "conversation": {
+            "messages": [],
+            "user_id": "test-user",
+            "thread_id": "test-thread",
+        },
+        "system": {
+            "run_id": "test-run",
+        },
     }
-    defaults.update(overrides)
+
+    for key, value in overrides.items():
+        if isinstance(defaults.get(key), dict) and isinstance(value, dict):
+            merged = dict(defaults[key])
+            merged.update(value)
+            defaults[key] = merged
+        else:
+            defaults[key] = value
     return SealAIState(**defaults)
 
 
@@ -95,10 +106,10 @@ class TestNodeP2RagLookup:
         mock_search.return_value = {"hits": [], "context": "found something", "retrieval_meta": {}}
         profile = WorkingProfile(material="Kyrolon")
         # Coverage is 1/17 ~ 0.058 (well below 0.2)
-        state = _make_state(working_profile=profile)
+        state = _make_state(working_profile={"engineering_profile": profile})
         result = await node_p2_rag_lookup(state)
         mock_search.assert_called_once()
-        assert result["context"] == "found something"
+        assert result["reasoning"]["context"] == "found something"
 
     @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
     async def test_sparse_profile_bypass_with_knowledge_intent(self, mock_search, mock_cache_get):
@@ -106,17 +117,17 @@ class TestNodeP2RagLookup:
         mock_search.return_value = {"hits": [], "context": "found something", "retrieval_meta": {}}
         from app.langgraph_v2.state import Intent
         state = _make_state(
-            working_profile=WorkingProfile(),
-            intent=Intent(goal="explanation_or_comparison")
+            working_profile={"engineering_profile": WorkingProfile()},
+            conversation={"intent": Intent(goal="explanation_or_comparison")}
         )
         result = await node_p2_rag_lookup(state)
         mock_search.assert_called_once()
-        assert result["context"] == "found something"
+        assert result["reasoning"]["context"] == "found something"
 
     async def test_no_profile_skips_rag(self, mock_cache_get):
         state = _make_state(working_profile=None)
         result = await node_p2_rag_lookup(state)
-        assert "context" not in result
+        assert "context" not in result.get("reasoning", {})
 
     @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
     async def test_filled_profile_calls_rag(self, mock_search, mock_cache_get):
@@ -139,17 +150,17 @@ class TestNodeP2RagLookup:
             flange_standard="EN 1092-1",
             flange_dn=50,
         )
-        state = _make_state(working_profile=profile)
+        state = _make_state(working_profile={"engineering_profile": profile})
         result = await node_p2_rag_lookup(state)
 
         mock_search.assert_called_once()
         call_kwargs = mock_search.call_args
         assert call_kwargs.kwargs.get("tenant_id") == "test-user" or call_kwargs[1].get("tenant_id") == "test-user"
 
-        assert len(result["sources"]) == 1
-        assert result["sources"][0].source == "material_catalog.pdf"
-        assert "NBR 70" in result["context"]
-        assert result["working_memory"].panel_material["source"] == "p2_rag_lookup"
+        assert len(result["system"]["sources"]) == 1
+        assert result["system"]["sources"][0].source == "material_catalog.pdf"
+        assert "NBR 70" in result["reasoning"]["context"]
+        assert result["reasoning"]["working_memory"].panel_material["source"] == "p2_rag_lookup"
 
     @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
     async def test_rag_failure_graceful(self, mock_search, mock_cache_get):
@@ -161,7 +172,8 @@ class TestNodeP2RagLookup:
             flange_standard="EN 1092-1",
             flange_dn=50,
         )
-        state = _make_state(working_profile=profile)
+        state = _make_state(working_profile={"engineering_profile": profile})
         result = await node_p2_rag_lookup(state)
 
-        assert "error" in str(result.get("retrieval_meta", {})).lower() or "RuntimeError" in str(result.get("retrieval_meta", {}))
+        retrieval_meta = result.get("reasoning", {}).get("retrieval_meta", {})
+        assert "error" in str(retrieval_meta).lower() or "RuntimeError" in str(retrieval_meta)

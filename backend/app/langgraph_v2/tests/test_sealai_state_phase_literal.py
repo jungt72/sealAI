@@ -9,7 +9,7 @@ from app.langgraph_v2.types import PhaseLiteral
 def test_sealai_state_accepts_all_phase_values() -> None:
     for phase in PHASE_VALUES:
         state = SealAIState(phase=phase)
-        assert state.phase == phase
+        assert state.reasoning.phase == phase
 
 
 def test_phase_literal_matches_phase_constants() -> None:

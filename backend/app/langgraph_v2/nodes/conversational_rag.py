@@ -9,8 +9,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState, WorkingMemory
+from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI, get_model_tier
 from app.langgraph_v2.utils.messages import latest_user_text
+from app.langgraph_v2.utils.prompt_blocks import render_challenger_gate
 
 logger = structlog.get_logger("langgraph_v2.conversational_rag")
 _FALLBACK_TEXT = (
@@ -23,12 +25,12 @@ _RAG_LLM: Any | None = None
 
 def _extract_rag_context(state: SealAIState) -> str:
     panel_material = {}
-    if state.working_memory and isinstance(state.working_memory.panel_material, dict):
-        panel_material = state.working_memory.panel_material
+    if state.reasoning.working_memory and isinstance(state.reasoning.working_memory.panel_material, dict):
+        panel_material = state.reasoning.working_memory.panel_material
     rag_context = str(panel_material.get("rag_context") or "").strip()
     if rag_context:
         return rag_context
-    return str(state.context or "").strip()
+    return str(state.reasoning.context or "").strip()
 
 
 def _extract_langgraph_config(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Any | None:
@@ -43,7 +45,7 @@ def _extract_langgraph_config(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> 
 
 
 def _extract_live_calc_tile(state: SealAIState) -> Dict[str, Any]:
-    raw = getattr(state, "live_calc_tile", None)
+    raw = getattr(state.working_profile, "live_calc_tile", None)
     if raw is None:
         return {}
     if isinstance(raw, dict):
@@ -58,14 +60,14 @@ def _extract_live_calc_tile(state: SealAIState) -> Dict[str, Any]:
 
 def _build_profile_snapshot(state: SealAIState) -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {}
-    working_profile = getattr(state, "working_profile", None)
+    working_profile = getattr(state.working_profile, "engineering_profile", None)
     model_dump = getattr(working_profile, "model_dump", None)
     if callable(model_dump):
         dumped = model_dump(exclude_none=True)
         if isinstance(dumped, dict):
             snapshot.update(dumped)
 
-    params = getattr(state, "parameters", None)
+    params = getattr(state.working_profile, "engineering_profile", None)
     as_dict = getattr(params, "as_dict", None)
     if callable(as_dict):
         for key, value in (as_dict() or {}).items():
@@ -76,7 +78,7 @@ def _build_profile_snapshot(state: SealAIState) -> Dict[str, Any]:
             if value is not None:
                 snapshot.setdefault(key, value)
 
-    extracted = getattr(state, "extracted_params", None)
+    extracted = getattr(state.working_profile, "extracted_params", None)
     if isinstance(extracted, dict):
         for key, value in extracted.items():
             if value is not None:
@@ -97,15 +99,7 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
     if not tile:
         return "ENGINEERING PHYSICS REPORT: Keine berechneten Physikdaten verfuegbar.", False
 
-    lines: List[str] = [
-        "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###",
-        "Du hast Zugriff auf den aktuellen Zustand der deterministischen Berechnungsmaschine (System State). Dieser Zustand steht ÜBER allem RAG-Wissen!",
-        "1. WENN das System eine chemische Warnung meldet (z.B. NBR nicht beständig gegen HEES), MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für dieses Medium strikt AUSGESCHLOSSEN.' Verwende keine weichen Formulierungen wie 'fraglich' oder 'kritisch'.",
-        "2. Du darfst physikalische Grenzwerte NICHT selbst beurteilen. Wenn der System State Warnungen zu PV-Wert, Geschwindigkeit oder Temperatur enthält, MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für diese Parameter strikt AUSGESCHLOSSEN.' Zitiere die Warnmeldung exakt aus dem System State.",
-        "3. Du darfst das RAG-Wissen NUR nutzen, um Werkstoffe zu vergleichen, die laut System State noch zulässig sind, oder um zu erklären, WARUM das vom User gewählte Material laut System versagt.",
-        "WICHTIG: Wenn du die Systemwarnungen zitierst, MUSST du ausnahmslos JEDE Zahl (z.B. 15.7, 12.0, 3.14, 2.0) exakt so in deinen Antworttext übernehmen, wie sie im State steht! Lasse keine Vergleichswerte weg und runde nicht. Wenn im State steht '15.7 m/s > 12.0 m/s', müssen exakt diese beiden Zahlen im Text auftauchen, sonst schlägt unsere interne QA-Prüfung fehl!",
-        f"\n- status: {tile.get('status')}",
-    ]
+    metrics: List[Dict[str, Any]] = [{"key": "status", "value": tile.get("status")}]
     for key in (
         "friction_power_watts",
         "compression_ratio_pct",
@@ -115,7 +109,7 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
         "clearance_gap_mm",
     ):
         if tile.get(key) is not None:
-            lines.append(f"- {key}: {tile.get(key)}")
+            metrics.append({"key": key, "value": tile.get(key)})
 
     risk_flags = (
         "hrc_warning",
@@ -130,38 +124,8 @@ def _build_engineering_physics_report(tile: Dict[str, Any]) -> tuple[str, bool]:
     )
     has_risk = any(bool(tile.get(flag)) for flag in risk_flags)
 
-    if tile.get("pv_value_mpa_m_s") is not None:
-        pv = tile.get("pv_value_mpa_m_s")
-        lines.append(f"Aktueller PV-Wert: {pv} MPa*m/s.")
-        lines.append("Berechne NIEMALS physikalische Werte (wie PV-Werte) selbst aus! Nutze AUSSCHLIESSLICH diesen bereitgestellten PV-Wert.")
-    
-    if tile.get("v_surface_m_s") is not None:
-        v = tile.get("v_surface_m_s")
-        lines.append(f"Aktuelle Gleitgeschwindigkeit: {v} m/s.")
-    
-    if tile.get("chem_warning"):
-        msg = tile.get("chem_message", "Inkompatibilitaet festgestellt.")
-        lines.append(f"CRITICAL WARNING: {msg}. Du darfst dieses Material unter KEINEN UMSTÄNDEN als 'geeignet' oder 'sicher' empfehlen!")
-
-    if tile.get("requires_backup_ring") or tile.get("extrusion_risk"):
-        lines.append(
-            "CRITICAL PHYSICS RULE: The system calculated an extrusion risk. "
-            "You MUST explicitly recommend adding a Back-up Ring (Stuetzring) to the solution."
-        )
-    if tile.get("hrc_warning"):
-        lines.append(
-            "CRITICAL PHYSICS RULE: The shaft is too soft (< 58 HRC). "
-            "You MUST propose a trade-off: Option A (Harden the shaft) vs. "
-            "Option B (Use a mechanical seal instead of a lip seal)."
-        )
-    if tile.get("shrinkage_risk"):
-        lines.append(
-            "CRITICAL PHYSICS RULE: Cryogenic temperatures detected. "
-            "You MUST recommend a spring-energized seal (Elastil) to compensate for thermal shrinkage."
-        )
-
-    # Conflict Resolution is now integrated into the Zero Tolerance rules above.
-    return "\n".join(lines), has_risk
+    report = render_challenger_gate(tile=tile, metrics=metrics)
+    return report, has_risk
 
 
 def _chunk_to_text(chunk: Any) -> str:
@@ -182,7 +146,7 @@ def _chunk_to_text(chunk: Any) -> str:
 
 
 def _extract_shaft_hardness_hrc(state: SealAIState, user_query: str) -> float | None:
-    params = getattr(state, "parameters", None)
+    params = getattr(state.working_profile, "engineering_profile", None)
     for value in (
         getattr(params, "shaft_hardness", None) if params is not None else None,
         getattr(params, "hardness", None) if params is not None else None,
@@ -222,7 +186,7 @@ def _get_rag_llm(model_name: str) -> Any:
 
 
 async def conversational_rag_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
-    user_query = (latest_user_text(state.messages or []) or "").strip()
+    user_query = (latest_user_text(state.conversation.messages or []) or "").strip()
     rag_context = _extract_rag_context(state)
     live_calc_tile = _extract_live_calc_tile(state)
     profile_snapshot = _build_profile_snapshot(state)
@@ -233,9 +197,9 @@ async def conversational_rag_node(state: SealAIState, *_args: Any, **_kwargs: An
         physics_report = f"{physics_report}\n\nSYSTEM WARNMELDUNGEN (WÖRTLICH ZITIEREN):\n{notes_block}"
     if physics_report:
         logger.info("material_agent.deterministic_constraints_injected", physics_report_len=len(physics_report))
-    flags = state.flags or {}
+    flags = state.reasoning.flags or {}
     low_quality = bool(flags.get("rag_low_quality_results"))
-    rag_turn_count = int(getattr(state, "rag_turn_count", 0) or 0)
+    rag_turn_count = int(getattr(state.reasoning, "rag_turn_count", 0) or 0)
     config = _extract_langgraph_config(_args, _kwargs)
 
     if not rag_context or low_quality:
@@ -252,35 +216,17 @@ async def conversational_rag_node(state: SealAIState, *_args: Any, **_kwargs: An
                 f"\nAKUTE WARNUNG: Angegebene Wellenhaerte {hardness_hrc:.1f} HRC liegt unter 58 HRC. "
                 "Warne explizit vor moeglichem Versagen der PTFE-Loesung durch Abrasivitaet."
             )
-        tradeoff_instruction = ""
-        if has_physics_risk:
-            tradeoff_instruction = (
-                "\nRISIKO-MODUS AKTIV: Wenn Risiken/Warnungen bestehen, praesentierst du IMMER 2 "
-                "konkrete Loesungswege (Trade-offs) und erklaerst kurz, warum die berechnete Physik "
-                "(z. B. PV-Wert, Extrusion oder Geometrie) gefaehrlich ist."
-            )
-        system_prompt = (
-            "Du bist ein Solution Architect fuer Dichtungstechnik. "
-            "Nutze die physikalischen Berechnungen aus dem Engineering Physics Report als verbindliche Grundlage. "
-            "Antworte wie ein Senior-Berater: erst kurze Machbarkeits-Einschaetzung, dann konkrete Loesung. "
-            "Knuepfe Empfehlungen explizit an Systemparameter und Berechnungen. "
-            "Wenn Risiken/Warnungen bestehen, präsentiere immer 2 Loesungswege (Trade-offs). "
-            "Erklaere dem User kurz, warum die Berechnung (z. B. PV-Wert oder Extrusion) gefaehrlich ist. "
-            "Erinnere den Kunden daran: Dichtungstechnik ist SYSTEMTECHNIK. "
-            "Wenn FactCards (IDs PTFE-F-xxx) im Kontext vorhanden sind, "
-            "haben diese ABSOLUTE Priorität vor deinem Allgemeinwissen. "
-            "Wenn eine FactCard besagt, dass PTFE kryogen-tauglich ist, darfst du es nicht als "
-            "'normalerweise nicht empfohlen' bezeichnen. Nutze die exakten Begriffe aus den FactCards. "
-            "Beantworte die Frage des Nutzers fliessend und natuerlich basierend auf dem folgenden Kontext. "
-            "Antworte immer auf Deutsch, auch wenn Feldnamen, Quellen oder Nutzereingaben teilweise auf Englisch sind. "
-            "Erfinde keine Fakten. "
-            "Wenn im PROFIL Parameter vorhanden sind (z. B. rpm, shaft_d1_mm), behandle sie als vorhanden "
-            "und behaupte nicht, dass diese fehlen."
-            f"{tradeoff_instruction}"
-            f"{hardness_warning}\n\n"
-            f"{physics_report}\n\n"
-            f"PROFIL (Parameter-Snapshot):\n{json.dumps(profile_snapshot, ensure_ascii=False, indent=2)}\n\n"
-            f"KONTEXT:\n{rag_context}"
+        system_prompt = render_template(
+            "material_scientist_agent.j2",
+            {
+                "agent_mode": "contextual_consulting",
+                "challenger_gate_text": physics_report,
+                "working_profile_json": json.dumps(profile_snapshot, ensure_ascii=False, indent=2),
+                "calculation_results_json": json.dumps(live_calc_tile, ensure_ascii=False, indent=2),
+                "rag_context": rag_context,
+                "has_physics_risk": has_physics_risk,
+                "hardness_warning_text": hardness_warning.strip(),
+            },
         )
         user_prompt = user_query or "Bitte gib eine kurze, hilfreiche technische Erklärung."
         messages = [
@@ -297,19 +243,28 @@ async def conversational_rag_node(state: SealAIState, *_args: Any, **_kwargs: An
         if not final_text:
             final_text = _FALLBACK_TEXT
 
-    messages = list(state.messages or [])
+    messages = list(state.conversation.messages or [])
     messages.append(AIMessage(content=[{"type": "text", "text": final_text}]))
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     wm = wm.model_copy(update={"response_text": final_text})
 
     return {
-        "messages": messages,
-        "working_memory": wm,
-        "final_text": final_text,
-        "final_answer": final_text,
-        "phase": PHASE.KNOWLEDGE,
-        "last_node": "conversational_rag_node",
-    }
+               "conversation": {
+                   "messages": messages,
+               },
+               "reasoning": {
+                   "working_memory": wm,
+                   "phase": PHASE.KNOWLEDGE,
+                   "last_node": "conversational_rag_node",
+               },
+               "system": {
+                   "governed_output_text": final_text,
+                   "governed_output_status": "conversational_rag",
+                   "governed_output_ready": True,
+                   "final_text": final_text,    # legacy mirror
+                   "final_answer": final_text,  # legacy mirror
+               },
+           }
 
 
 __all__ = ["conversational_rag_node"]

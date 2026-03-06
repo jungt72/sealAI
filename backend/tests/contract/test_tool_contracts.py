@@ -5,16 +5,16 @@ from typing import Any, Dict, List
 import pytest
 
 
-def test_set_parameters_returns_parameters_object() -> None:
-    from app.langgraph_v2.state import SealAIState, TechnicalParameters
+def test_set_parameters_returns_working_profile_object() -> None:
+    from app.langgraph_v2.state import SealAIState, WorkingProfile
     from app.langgraph_v2.tools.parameter_tools import set_parameters
 
-    state = SealAIState(parameters=TechnicalParameters(medium="öl", temperature_C=60))
+    state = SealAIState(working_profile=WorkingProfile(medium="öl", temperature_C=60))
     result = set_parameters(temperature_C=80, pressure_bar=5, state=state)  # type: ignore[arg-type]
-    assert "parameters" in result, "set_parameters must return {'parameters': ...}"
-    params = result["parameters"]
-    assert hasattr(params, "model_dump"), "parameters must be a Pydantic model"
-    data = params.model_dump(exclude_none=True)
+    assert "working_profile" in result, "set_parameters must return {'working_profile': ...}"
+    profile = result["working_profile"]
+    assert hasattr(profile, "model_dump"), "working_profile must be a Pydantic model"
+    data = profile.model_dump(exclude_none=True)
     assert data.get("temperature_C") == 80
     assert data.get("pressure_bar") == 5
     assert data.get("medium") == "öl"

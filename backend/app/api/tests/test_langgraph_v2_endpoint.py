@@ -32,10 +32,15 @@ os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
+os.environ.setdefault("nextauth_url", "http://localhost:3000")
+os.environ.setdefault("nextauth_secret", "test-secret")
+os.environ.setdefault("keycloak_issuer", "http://localhost/realms/test")
 os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.json")
+os.environ.setdefault("keycloak_client_id", "test-client")
+os.environ.setdefault("keycloak_client_secret", "test-secret")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.messages.ai import AIMessageChunk
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
@@ -308,21 +313,47 @@ class DummyGraphAstreamEventsConversationalSnapshot:
         return gen()
 
 
+class DummyGraphAstreamEventsFinalTextOnly:
+    checkpointer = object()
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot({})
+
+    def astream_events(self, _input: Any, config: Any = None, **_kwargs: Any):
+        async def gen():
+            yield {
+                "event": "on_node_end",
+                "name": "response_node",
+                "data": {
+                    "output": {
+                        "final_text": "Kyrolon Antwort",
+                        "final_answer": "Kyrolon Antwort",
+                        "phase": "final",
+                        "last_node": "response_node",
+                    }
+                },
+            }
+
+        return gen()
+
+
 class DummyGraphStickyLiveCalcTile:
     checkpointer = object()
 
-    async def get_state(self, _config: Any):
+    async def aget_state(self, _config: Any):
         return _Snapshot(
             {
-                "live_calc_tile": {
-                    "status": "warning",
-                    "pv_warning": True,
-                }
+                "working_profile": {
+                    "live_calc_tile": {
+                        "status": "warning",
+                        "pv_warning": True,
+                    }
+                },
+                "final_text": "done",
+                "phase": "final",
+                "last_node": "node_p6_generate_pdf",
             }
         )
-
-    async def aget_state(self, _config: Any):
-        return _Snapshot({"final_text": "done", "phase": "final", "last_node": "node_p6_generate_pdf"})
 
     def astream_events(self, _input: Any, config: Any = None, **_kwargs: Any):
         async def gen():
@@ -381,11 +412,85 @@ class DummyGraphResume:
 
     async def ainvoke(self, _input: Any, config: Any = None):
         return {
-            "phase": "final",
-            "last_node": "final_answer_node",
-            "final_text": "Resumed",
-            "requires_human_review": False,
+            "reasoning": {
+                "phase": "final",
+                "last_node": "final_answer_node",
+            },
+            "system": {
+                "governed_output_text": "Resumed",
+                "governed_output_ready": True,
+                "requires_human_review": False,
+                "rfq_admissibility": {
+                    "status": "inadmissible",
+                    "reason": "rfq_contract_missing",
+                    "open_points": [],
+                    "blockers": [],
+                    "governed_ready": False,
+                },
+                "governance_metadata": {
+                    "scope_of_validity": ["Nur fuer den aktuellen Assertion-Stand."],
+                    "assumptions_active": [],
+                    "unknowns_release_blocking": [],
+                    "unknowns_manufacturer_validation": [],
+                    "gate_failures": [],
+                    "governance_notes": [],
+                },
+            },
         }
+
+
+class DummyGraphFastBrain:
+    checkpointer = object()
+
+    def __init__(self):
+        self.updates: List[Tuple[Dict[str, Any], Any]] = []
+        self.stream_started = False
+
+    async def aget_state(self, _config: Any):
+        return _Snapshot(
+            {
+                "conversation": {"messages": [AIMessage(content="Vorherige Antwort")]},
+                "working_profile": {"engineering_profile": {"pressure_bar": 7}},
+                "reasoning": {
+                    "parameter_provenance": {"pressure_bar": "user"},
+                    "parameter_versions": {"pressure_bar": 2},
+                    "parameter_updated_at": {"pressure_bar": 1000.0},
+                },
+            }
+        )
+
+    async def aupdate_state(self, _config: Any, updates: Dict[str, Any], as_node: Any = None):
+        self.updates.append((updates, as_node))
+
+    def get_graph(self):
+        return SimpleNamespace(nodes={endpoint.PARAMETERS_PATCH_AS_NODE: object()})
+
+    def astream_events(self, *_args: Any, **_kwargs: Any):
+        self.stream_started = True
+
+        async def gen():
+            raise AssertionError("LangGraph stream must not start on fast-brain chat_continue")
+            yield  # pragma: no cover
+
+        return gen()
+
+
+class _DummyFastBrainRouter:
+    def __init__(self, result: Dict[str, Any]):
+        self.result = result
+        self.calls: List[Tuple[str, List[Any]]] = []
+
+    async def chat(self, user_input: str, history: List[Any]):
+        self.calls.append((user_input, list(history)))
+        return dict(self.result)
+
+
+class _DummyRawRequest:
+    def __init__(self):
+        self.headers: Dict[str, str] = {}
+
+    async def is_disconnected(self) -> bool:
+        return False
 
 
 def test_langgraph_v2_request_coerces_nullable_and_mapping_fields():
@@ -422,6 +527,32 @@ def test_event_stream_v2_streams_tokens_and_done(monkeypatch):
     assert done_events[0]["type"] == "done"
 
 
+def test_event_multiplexer_emits_token_and_done_for_final_text_only_path() -> None:
+    graph = DummyGraphAstreamEventsFinalTextOnly()
+    state_input = endpoint.SealAIState(
+        conversation={"thread_id": "chat-final-only"},
+    )
+    frames = asyncio.run(
+        _collect(
+            endpoint.event_multiplexer(
+                graph,
+                state_input,
+                config={},
+                request=_DummyRawRequest(),
+            )
+        )
+    )
+    events = _parse_sse_frames(frames)
+
+    token_events = [payload for evt, payload, _ in events if evt == "token"]
+    done_events = [payload for evt, payload, _ in events if evt == "done"]
+
+    assert token_events
+    assert token_events[0]["text"] == "Kyrolon Antwort"
+    assert done_events
+    assert done_events[0]["chat_id"] == "chat-final-only"
+
+
 def test_event_stream_v2_includes_event_ids(monkeypatch):
     async def _dummy_graph():
         return DummyGraphTokens()
@@ -452,7 +583,7 @@ def test_event_stream_v2_emits_interrupt_event(monkeypatch):
 
     interrupt_events = [payload for evt, payload, _ in events if evt == "interrupt"]
     assert len(interrupt_events) == 1
-    assert interrupt_events[0]["thread_id"] == "chat-interrupt"
+    assert interrupt_events[0]["thread_id"] == "user-test:chat-interrupt"
     assert interrupt_events[0]["checkpoint_id"] == "chk-hitl-1"
     assert interrupt_events[0]["required_action"] == "approve_specification"
 
@@ -570,8 +701,7 @@ def test_event_stream_v2_does_not_duplicate_streamed_tokens_from_snapshot_final_
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
-    assert tokens == ["Hallo", " Welt"]
-    assert "".join(tokens) == "Hallo Welt"
+    assert tokens == ["Hallo Welt"]
 
 
 def test_event_stream_v2_emits_terminal_message_from_final_state(monkeypatch):
@@ -675,6 +805,150 @@ def test_resume_run_endpoint_uses_command_resume(monkeypatch):
         )
     )
     assert result["ok"] is True
-    assert result["thread_id"] == "thread-1"
+    assert result["thread_id"] == "user-1:thread-1"
     assert result["checkpoint_id"] == "chk-resume-1"
     assert result["action"] == "approve"
+    assert result["governed_output_text"] == "Resumed"
+    assert result["governed_output_ready"] is True
+    assert result["rfq_admissibility"]["status"] == "inadmissible"
+
+
+def test_langgraph_chat_v2_endpoint_fast_brain_chat_continue_streams_and_syncs(monkeypatch):
+    dummy_graph = DummyGraphFastBrain()
+    dummy_router = _DummyFastBrainRouter(
+        {
+            "status": "chat_continue",
+            "content": "Schnelle Antwort",
+            "state_patch": {
+                "parameters": {
+                    "shaft_diameter": 100.0,
+                    "speed_rpm": 3000.0,
+                    "pressure_bar": 12.0,
+                },
+                "working_profile": {
+                    "live_calc_tile": {
+                        "status": "ok",
+                        "v_surface_m_s": 15.71,
+                        "pv_value_mpa_m_s": 188.52,
+                        "parameters": {
+                            "shaft_diameter": 100.0,
+                            "speed_rpm": 3000.0,
+                            "pressure_bar": 12.0,
+                        },
+                    },
+                    "calc_results": {
+                        "v_surface_m_s": 15.71,
+                        "pv_value_mpa_m_s": 188.52,
+                    },
+                },
+            },
+        }
+    )
+    released: List[str] = []
+
+    async def _dummy_build_graph_config(**_kwargs):
+        return dummy_graph, {"configurable": {"thread_id": "user-1:chat-fast"}}
+
+    async def _dummy_claim_thread_lock(*_args: Any, **_kwargs: Any) -> bool:
+        return True
+
+    async def _dummy_release_thread_lock(thread_id: str):
+        released.append(thread_id)
+
+    monkeypatch.setattr(endpoint, "_build_graph_config", _dummy_build_graph_config)
+    monkeypatch.setattr(endpoint, "_get_fast_brain_router", lambda: dummy_router)
+    monkeypatch.setattr(endpoint, "_claim_thread_lock", _dummy_claim_thread_lock)
+    monkeypatch.setattr(endpoint, "_release_thread_lock", _dummy_release_thread_lock)
+    monkeypatch.setattr(endpoint, "event_multiplexer", lambda *_args, **_kwargs: None)
+
+    req = endpoint.LangGraphV2Request(input="100 mm Welle, 3000 rpm, 12 bar", chat_id="chat-fast")
+    raw_request = _DummyRawRequest()
+    user = RequestUser(user_id="user-1", username="user1", sub=None, roles=[], scopes=[], tenant_id="tenant-1")
+
+    response = asyncio.run(endpoint.langgraph_chat_v2_endpoint(req, raw_request, user=user))
+    chunks = asyncio.run(_collect(response.body_iterator))
+    events = _parse_sse_frames(chunks)
+
+    assert [evt for evt, _, _ in events] == ["state_update", "turn_complete", "done"]
+    done_payload = next(payload for evt, payload, _ in events if evt == "done")
+    assert done_payload["final_text"] == "Schnelle Antwort"
+    assert done_payload["final_answer"] == "Schnelle Antwort"
+    assert dummy_graph.stream_started is False
+    assert len(dummy_graph.updates) == 1
+
+    updates, as_node = dummy_graph.updates[0]
+    assert as_node == endpoint.PARAMETERS_PATCH_AS_NODE
+    assert updates["working_profile"]["extracted_params"]["shaft_diameter"] == 100.0
+    assert updates["working_profile"]["extracted_params"]["speed_rpm"] == 3000.0
+    assert updates["working_profile"]["extracted_params"]["pressure_bar"] == 12.0
+    assert updates["working_profile"]["live_calc_tile"]["v_surface_m_s"] == 15.71
+    assert updates["reasoning"]["extracted_parameter_provenance"]["pressure_bar"] == "fast_brain_extracted"
+    messages = updates["conversation"]["messages"]
+    assert isinstance(messages[0], HumanMessage)
+    assert messages[0].content == "100 mm Welle, 3000 rpm, 12 bar"
+    assert isinstance(messages[1], AIMessage)
+    assert messages[1].content == "Schnelle Antwort"
+    assert released == ["user-1:chat-fast"]
+    assert dummy_router.calls[0][0] == "100 mm Welle, 3000 rpm, 12 bar"
+    assert isinstance(dummy_router.calls[0][1][0], AIMessage)
+
+
+def test_langgraph_chat_v2_endpoint_handoff_syncs_then_uses_event_multiplexer(monkeypatch):
+    dummy_graph = DummyGraphFastBrain()
+    dummy_router = _DummyFastBrainRouter(
+        {
+            "status": "handoff_to_langgraph",
+            "content": "IGNORED",
+            "state_patch": {
+                "parameters": {
+                    "shaft_diameter": 80.0,
+                    "speed_rpm": 1500.0,
+                },
+                "working_profile": {
+                    "live_calc_tile": {
+                        "status": "ok",
+                        "v_surface_m_s": 6.28,
+                        "parameters": {
+                            "shaft_diameter": 80.0,
+                            "speed_rpm": 1500.0,
+                        },
+                    }
+                },
+            },
+        }
+    )
+    multiplexer_calls: List[str] = []
+
+    async def _dummy_build_graph_config(**_kwargs):
+        return dummy_graph, {"configurable": {"thread_id": "user-1:chat-handoff"}}
+
+    async def _dummy_claim_thread_lock(*_args: Any, **_kwargs: Any) -> bool:
+        return True
+
+    async def _dummy_event_multiplexer(_graph: Any, _state_input: Any, _config: Any, _request: Any):
+        multiplexer_calls.append("called")
+        yield endpoint._format_sse_text("text_chunk", {"type": "text_chunk", "text": "LangGraph Antwort"})
+        yield endpoint._format_sse_text("turn_complete", {"type": "turn_complete"})
+
+    monkeypatch.setattr(endpoint, "_build_graph_config", _dummy_build_graph_config)
+    monkeypatch.setattr(endpoint, "_get_fast_brain_router", lambda: dummy_router)
+    monkeypatch.setattr(endpoint, "_claim_thread_lock", _dummy_claim_thread_lock)
+    monkeypatch.setattr(endpoint, "event_multiplexer", _dummy_event_multiplexer)
+
+    req = endpoint.LangGraphV2Request(input="Bitte auslegen", chat_id="chat-handoff")
+    raw_request = _DummyRawRequest()
+    user = RequestUser(user_id="user-1", username="user1", sub=None, roles=[], scopes=[], tenant_id="tenant-1")
+
+    response = asyncio.run(endpoint.langgraph_chat_v2_endpoint(req, raw_request, user=user))
+    chunks = asyncio.run(_collect(response.body_iterator))
+    events = _parse_sse_frames(chunks)
+
+    assert [evt for evt, _, _ in events] == ["text_chunk", "turn_complete"]
+    assert events[0][1]["text"] == "LangGraph Antwort"
+    assert multiplexer_calls == ["called"]
+    assert len(dummy_graph.updates) == 1
+    updates, as_node = dummy_graph.updates[0]
+    assert as_node == endpoint.PARAMETERS_PATCH_AS_NODE
+    assert updates["working_profile"]["extracted_params"]["shaft_diameter"] == 80.0
+    assert updates["working_profile"]["extracted_params"]["speed_rpm"] == 1500.0
+    assert "conversation" not in updates

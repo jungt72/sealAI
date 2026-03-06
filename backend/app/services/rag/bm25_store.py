@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import uuid
 from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, Iterable, List, Optional

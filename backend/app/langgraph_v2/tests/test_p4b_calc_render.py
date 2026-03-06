@@ -119,6 +119,26 @@ class TestP4bValidCalc:
 
         result = node_p4b_calc_render(state)
 
+    def test_calc_render_stamps_assertion_binding(self):
+        state = _make_state(
+            working_profile=WorkingProfile(
+                pressure_max_bar=40.0,
+                temperature_max_c=200.0,
+            ),
+            extracted_params={
+                "pressure_max_bar": 40.0,
+                "temperature_max_c": 200.0,
+                "cyclic_load": False,
+            },
+            reasoning={"current_assertion_cycle_id": 5, "asserted_profile_revision": 11},
+        )
+
+        result = node_p4b_calc_render(state)
+
+        assert result["working_profile"]["derived_from_assertion_cycle_id"] == 5
+        assert result["working_profile"]["derived_from_assertion_revision"] == 11
+        assert result["working_profile"]["derived_artifacts_stale"] is False
+
         calc_results = result["calc_results"]
         assert calc_results.safety_factor is not None
         assert calc_results.temperature_margin is not None

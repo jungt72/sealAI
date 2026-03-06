@@ -10,7 +10,8 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from app.langgraph_v2.nodes.node_router import classify_input, node_router
-from app.langgraph_v2.state import SealAIState, TechnicalParameters, WorkingMemory
+from app.langgraph_v2.state import SealAIState, WorkingMemory
+from app.services.rag.state import WorkingProfile
 
 
 def _state_with_message(text: str, **kwargs) -> SealAIState:
@@ -43,7 +44,7 @@ def test_empty_state_technical_question_classifies_as_new_case() -> None:
 def test_existing_params_pressure_change_classifies_as_follow_up() -> None:
     state = _state_with_message(
         "Ändere den Druck auf 150 bar",
-        parameters=TechnicalParameters(pressure_bar=100.0, medium="Hydrauliköl"),
+        working_profile=WorkingProfile(pressure_bar=100.0, medium="Hydrauliköl"),
     )
     assert classify_input(state, "Ändere den Druck auf 150 bar") == "follow_up"
 
@@ -54,7 +55,7 @@ def test_existing_params_pressure_change_classifies_as_follow_up() -> None:
 def test_existing_params_medium_change_classifies_as_follow_up() -> None:
     state = _state_with_message(
         "Stattdessen Dampf als Medium",
-        parameters=TechnicalParameters(pressure_bar=50.0, medium="Wasser"),
+        working_profile=WorkingProfile(pressure_bar=50.0, medium="Wasser"),
     )
     assert classify_input(state, "Stattdessen Dampf als Medium") == "follow_up"
 
@@ -144,7 +145,7 @@ def test_pending_hitl_without_decision_classifies_as_resume() -> None:
 def test_existing_params_neue_anfrage_classifies_as_new_case() -> None:
     state = _state_with_message(
         "Neue Anfrage starten",
-        parameters=TechnicalParameters(pressure_bar=100.0, medium="H2"),
+        working_profile=WorkingProfile(pressure_bar=100.0, medium="H2"),
     )
     assert classify_input(state, "Neue Anfrage starten") == "new_case"
 
@@ -155,6 +156,6 @@ def test_existing_params_neue_anfrage_classifies_as_new_case() -> None:
 def test_node_router_returns_expected_state_keys() -> None:
     state = _state_with_message("Hallo")
     result = node_router(state)
-    assert result["router_classification"] == "new_case"
-    assert result["phase"] == "routing"
-    assert result["last_node"] == "node_router"
+    assert result["conversation"]["router_classification"] == "new_case"
+    assert result["reasoning"]["phase"] == "routing"
+    assert result["reasoning"]["last_node"] == "node_router"

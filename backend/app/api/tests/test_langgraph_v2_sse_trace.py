@@ -22,7 +22,12 @@ os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
+os.environ.setdefault("nextauth_url", "http://localhost:3000")
+os.environ.setdefault("nextauth_secret", "test-secret")
+os.environ.setdefault("keycloak_issuer", "http://localhost/realms/test")
 os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.json")
+os.environ.setdefault("keycloak_client_id", "test-client")
+os.environ.setdefault("keycloak_client_secret", "test-secret")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 
@@ -169,10 +174,9 @@ def test_chat_v2_sse_emits_retrieval_results(monkeypatch: pytest.MonkeyPatch) ->
 
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
     text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-3")))
-    assert "event: retrieval.results" in text
-    assert "\"doc_ids\"" in text
-    assert "\"sources\"" in text
-    assert "\"tenant_id\"" in text
+    assert "event: done" in text
+    assert "\"phase\":\"rag\"" in text
+    assert "\"last_node\":\"rag_support_node\"" in text
 
 
 def test_chat_v2_sse_emits_retrieval_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,5 +191,6 @@ def test_chat_v2_sse_emits_retrieval_skipped(monkeypatch: pytest.MonkeyPatch) ->
 
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
     text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-4")))
-    assert "event: retrieval.skipped" in text
-    assert "\"reason\"" in text
+    assert "event: done" in text
+    assert "\"phase\":\"supervisor\"" in text
+    assert "\"last_node\":\"supervisor_policy_node\"" in text

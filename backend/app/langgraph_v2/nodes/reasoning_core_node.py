@@ -21,8 +21,10 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState, WorkingMemory
+from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.llm_factory import LazyChatOpenAI, get_model_tier, run_llm_async
 from app.langgraph_v2.utils.messages import latest_user_text
+from app.langgraph_v2.utils.prompt_blocks import render_challenger_gate
 from app.services.rag.state import WorkingProfile
 
 logger = structlog.get_logger("langgraph_v2.reasoning_core")
@@ -160,7 +162,7 @@ def _warning_notes(profile: WorkingProfile) -> List[str]:
 
 def _calc_snapshot(state: SealAIState) -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {}
-    live_calc = getattr(state, "live_calc_tile", None)
+    live_calc = getattr(state.working_profile, "live_calc_tile", None)
     if live_calc is not None:
         if isinstance(live_calc, dict):
             snapshot.update({k: v for k, v in live_calc.items() if v is not None})
@@ -170,15 +172,15 @@ def _calc_snapshot(state: SealAIState) -> Dict[str, Any]:
                 data = dump(exclude_none=True)
                 if isinstance(data, dict):
                     snapshot.update(data)
-    calc_results = getattr(state, "calc_results", None)
+    calc_results = getattr(state.working_profile, "calc_results", None)
     if calc_results is not None:
         dump = getattr(calc_results, "model_dump", None)
         if callable(dump):
             data = dump(exclude_none=True)
             if isinstance(data, dict):
                 snapshot.update({f"calc_{k}": v for k, v in data.items() if v is not None})
-    if isinstance(getattr(state, "calculation_result", None), dict):
-        for key, value in state.calculation_result.items():
+    if isinstance(getattr(state.working_profile, "calculation_result", None), dict):
+        for key, value in state.working_profile.calculation_result.items():
             if value is not None and key not in snapshot:
                 snapshot[key] = value
     return snapshot
@@ -216,31 +218,8 @@ def _render_calc_ranges(calc_snapshot: Dict[str, Any]) -> str:
 
 
 def _build_deterministic_constraints(state: SealAIState) -> str:
-    tile = getattr(state, "live_calc_tile", None)
+    tile = getattr(state.working_profile, "live_calc_tile", None)
     profile = state.working_profile
-    constraints: List[str] = [
-        "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###",
-        "Du hast Zugriff auf den aktuellen Zustand der deterministischen Berechnungsmaschine (System State). Dieser Zustand steht ÜBER allem RAG-Wissen!",
-        "1. WENN das System eine chemische Warnung meldet (z.B. NBR nicht beständig gegen HEES), MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für dieses Medium strikt AUSGESCHLOSSEN.' Verwende keine weichen Formulierungen wie 'fraglich' oder 'kritisch'.",
-        "2. WENN das System einen PV-Wert liefert, zitiere ihn. WENN der Wert > 1.5 MPa*m/s ist, betone, dass Standard-Elastomere bei diesem Limit sofort verbrennen und Hochleistungswerkstoffe zwingend erforderlich sind.",
-        "3. Du darfst das RAG-Wissen NUR nutzen, um Werkstoffe zu vergleichen, die laut System State noch zulässig sind, oder um zu erklären, WARUM das vom User gewählte Material laut System versagt.",
-    ]
-
-    if tile:
-        if getattr(tile, "chem_warning", False):
-            msg = getattr(tile, "chem_message", "Inkompatibilitaet festgestellt.")
-            constraints.append(f"CRITICAL WARNING: {msg}. Du darfst dieses Material unter KEINEN UMSTÄNDEN als 'geeignet' oder 'sicher' empfehlen!")
-        
-        pv = getattr(tile, "pv_value_mpa_m_s", None)
-        v = getattr(tile, "v_surface_m_s", None)
-        if pv is not None:
-            constraints.append(f"Aktueller PV-Wert: {pv} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefährdet).")
-        if v is not None:
-            constraints.append(f"Aktuelle Gleitgeschwindigkeit: {v} m/s.")
-        
-        if getattr(tile, "extrusion_risk", False):
-            constraints.append("GEFAHR: Extrusionsrisiko berechnet. Ein Stuetzring ist zwingend erforderlich.")
-
     if profile:
         conditions: List[str] = []
         if getattr(profile, "pressure_max_bar", None) is not None:
@@ -249,12 +228,8 @@ def _build_deterministic_constraints(state: SealAIState) -> str:
             conditions.append(f"Temperatur: {profile.temperature_max_c} °C")
         if getattr(profile, "medium", None):
             conditions.append(f"Medium: {profile.medium}")
-        
-        if conditions:
-            constraints.append("Zwingende Einsatzbedingungen: " + ", ".join(conditions))
-
-    # Conflict Resolution is now integrated into the Zero Tolerance rules above.
-    return "\n".join(constraints)
+        return render_challenger_gate(tile=tile, conditions=conditions)
+    return render_challenger_gate(tile=tile)
 
 
 def _build_system_prompt(
@@ -264,35 +239,21 @@ def _build_system_prompt(
     unresolved_gaps: List[str],
     warning_notes: List[str],
     calc_ranges: str,
+    structured_json_only: bool = False,
 ) -> str:
-    core = json.dumps(_compact_profile(profile), ensure_ascii=False, separators=(",", ":"))
-    gaps = ", ".join(unresolved_gaps) if unresolved_gaps else "none"
-    warnings = " | ".join(warning_notes) if warning_notes else "none"
-    constraints = _build_deterministic_constraints(state)
-    
-    return (
-        "You are SealAI Reasoning Core (R3). "
-        "No tool calls. No hidden calculations. Use only provided deterministic context. "
-        "Your task: synthesize, state one current hypothesis, and ask exactly one highest-value next question.\n"
-        f"{constraints}\n\n"
-        f"CORE_PROFILE={core}\n"
-        f"UNRESOLVED_GAPS={gaps}\n"
-        f"WARNINGS_NOTES={warnings}\n"
-        f"BOUNDING_BOX={calc_ranges}\n"
-        "Response policy:\n"
-        "- German language.\n"
-        "- 3 short sections: Einschaetzung, Hypothese, Naechste Frage.\n"
-        "- If blockers exist, be explicit and cautious.\n"
-        "- Never claim final recommendation unless coverage is complete and risk mitigated.\n"
-    )
-
-
-def _build_structured_system_prompt(base_system_prompt: str) -> str:
-    return (
-        f"{base_system_prompt}\n"
-        "Return JSON only with schema: "
-        '{"active_hypothesis": "string|null", "candidate_materials": ["string"]}. '
-        "Keep max 5 materials, uppercase material tokens if possible."
+    return render_template(
+        "mechanical_design_agent.j2",
+        {
+            "challenger_gate_text": _build_deterministic_constraints(state),
+            "core_profile_json": json.dumps(_compact_profile(profile), ensure_ascii=False, separators=(",", ":")),
+            "working_profile_json": json.dumps(_compact_profile(profile), ensure_ascii=False, separators=(",", ":")),
+            "calculation_results_json": json.dumps(_calc_snapshot(state), ensure_ascii=False, separators=(",", ":")),
+            "unresolved_gaps_text": ", ".join(unresolved_gaps) if unresolved_gaps else "none",
+            "warning_notes_text": " | ".join(warning_notes) if warning_notes else "none",
+            "calc_ranges": calc_ranges,
+            "rag_context": getattr(state.reasoning, "context", "") or "",
+            "structured_json_only": structured_json_only,
+        },
     )
 
 
@@ -373,13 +334,14 @@ async def reasoning_core_node(state: SealAIState, *_args: Any, **_kwargs: Any) -
     unresolved_gaps = _unresolved_coverage_gaps(profile)
     warning_notes = _warning_notes(profile)
     calc_ranges = _render_calc_ranges(_calc_snapshot(state))
-    user_prompt = (latest_user_text(state.messages or []) or "").strip() or "Bitte leite den naechsten besten Datenerhebungs-Schritt ab."
+    user_prompt = (latest_user_text(state.conversation.messages or []) or "").strip() or "Bitte leite den naechsten besten Datenerhebungs-Schritt ab."
     system_prompt = _build_system_prompt(
         state=state,
         profile=profile,
         unresolved_gaps=unresolved_gaps,
         warning_notes=warning_notes,
         calc_ranges=calc_ranges,
+        structured_json_only=False,
     )
     reasoning_system_prompt_hash = _sha256_text(system_prompt)
     model_name = get_model_tier("mini")
@@ -388,7 +350,14 @@ async def reasoning_core_node(state: SealAIState, *_args: Any, **_kwargs: Any) -
         raw = await run_llm_async(
             model=model_name,
             prompt=user_prompt,
-            system=_build_structured_system_prompt(system_prompt),
+            system=_build_system_prompt(
+                state=state,
+                profile=profile,
+                unresolved_gaps=unresolved_gaps,
+                warning_notes=warning_notes,
+                calc_ranges=calc_ranges,
+                structured_json_only=True,
+            ),
             temperature=0.0,
             max_tokens=220,
         )
@@ -435,10 +404,10 @@ async def reasoning_core_node(state: SealAIState, *_args: Any, **_kwargs: Any) -
         }
     )
 
-    messages = list(state.messages or [])
+    messages = list(state.conversation.messages or [])
     messages.append(AIMessage(content=[{"type": "text", "text": llm_text}]))
 
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     diagnostic_data = dict(getattr(wm, "diagnostic_data", {}) or {})
     diagnostic_data.update(
         {
@@ -446,9 +415,14 @@ async def reasoning_core_node(state: SealAIState, *_args: Any, **_kwargs: Any) -
             "reasoning_model_name": model_name,
         }
     )
-    wm = wm.model_copy(update={"response_text": llm_text, "diagnostic_data": diagnostic_data})
+    wm = wm.model_copy(
+        update={
+            "response_text": llm_text,
+            "diagnostic_data": diagnostic_data,
+        }
+    )
 
-    flags = dict(state.flags or {})
+    flags = dict(state.reasoning.flags or {})
     flags.update(
         {
             "reasoning_core_r3_active": True,
@@ -464,23 +438,28 @@ async def reasoning_core_node(state: SealAIState, *_args: Any, **_kwargs: Any) -
         unresolved_gap_count=len(unresolved_gaps),
         warning_count=len(warning_notes),
         candidate_count=len(merged_candidates),
-        run_id=state.run_id,
-        thread_id=state.thread_id,
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
     )
 
     return {
-        "messages": messages,
-        "working_profile": next_profile,
-        "working_memory": wm,
-        "awaiting_user_input": bool(unresolved_gaps),
-        "final_text": llm_text,
-        "final_answer": llm_text,
-        "flags": flags,
-        "phase": PHASE.CONSULTING,
-        "last_node": "reasoning_core_node",
-        "round_index": int(getattr(state, "round_index", 0) or 0) + 1,
-        "turn_count": int(getattr(state, "turn_count", 0) or 0) + 1,
-    }
+               "working_profile": next_profile,
+               "conversation": {
+                   "messages": messages,
+               },
+               "reasoning": {
+                   "working_memory": wm,
+                   "awaiting_user_input": bool(unresolved_gaps),
+                   "flags": flags,
+                   "phase": PHASE.CONSULTING,
+                   "last_node": "reasoning_core_node",
+                   "round_index": int(getattr(state.reasoning, "round_index", 0) or 0) + 1,
+                   "turn_count": int(getattr(state.reasoning, "turn_count", 0) or 0) + 1,
+               },
+               "system": {
+                   "preview_text": llm_text,
+               },
+           }
 
 
 __all__ = ["reasoning_core_node", "ReasoningCoreStructuredUpdate"]

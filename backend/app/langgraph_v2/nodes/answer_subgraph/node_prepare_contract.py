@@ -21,7 +21,9 @@ from typing import Any, Dict, List, Set, Tuple
 import structlog
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
-from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, WorkingMemory
+from app.langgraph_v2.state.sealai_state import AnswerContract, CandidateItem, GovernanceMetadata, SealAIState, WorkingMemory
+from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
+from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
 from app.langgraph_v2.utils.context_manager import build_final_context, dedupe_retrieval_chunks
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.prepare_contract")
@@ -52,6 +54,7 @@ _SEAL_MATERIAL_TOKENS = frozenset(
     }
 )
 _NUMBER_TOKEN_PATTERN = re.compile(r"\b\d+(?:[.,]\d+)?\b")
+_IDENTITY_GUARDED_FIELDS = {"medium", "material", "seal_material", "trade_name", "product", "product_name", "seal_family", "flange_standard"}
 
 
 def _add_number_token_with_variants(token: str, output: Set[str]) -> None:
@@ -81,7 +84,7 @@ def _add_number_token_with_variants(token: str, output: Set[str]) -> None:
 
 
 def _latest_user_text(state: SealAIState) -> str:
-    for msg in reversed(list(state.messages or [])):
+    for msg in reversed(list(state.conversation.messages or [])):
         role = getattr(msg, "type", None) or getattr(msg, "role", None)
         if role in ("human", "user"):
             return str(getattr(msg, "content", "") or "")
@@ -107,6 +110,37 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return {}
 
 
+def _working_profile_to_dict(state: SealAIState) -> Dict[str, Any]:
+    working_profile = getattr(state, "working_profile", None)
+    if working_profile is None:
+        return {}
+    as_dict = getattr(working_profile, "as_dict", None)
+    if callable(as_dict):
+        dumped = as_dict()
+        if isinstance(dumped, dict):
+            return dict(dumped)
+    engineering_profile = _working_profile_get(state, "engineering_profile")
+    if engineering_profile is not None:
+        as_dict = getattr(engineering_profile, "as_dict", None)
+        if callable(as_dict):
+            dumped = as_dict()
+            if isinstance(dumped, dict):
+                return dict(dumped)
+        dumped = _as_dict(engineering_profile)
+        if dumped:
+            return dumped
+    return {}
+
+
+def _working_profile_get(state: SealAIState, field: str, default: Any = None) -> Any:
+    working_profile = getattr(state, "working_profile", None)
+    if working_profile is None:
+        return default
+    if isinstance(working_profile, dict):
+        return working_profile.get(field, default)
+    return getattr(working_profile, field, default)
+
+
 def _normalize_material_token(value: Any) -> str:
     text = str(value or "").strip().lower()
     if not text:
@@ -122,10 +156,11 @@ def _looks_like_seal_material(value: Any) -> bool:
 
 
 def _extract_selected_seal_material(state: SealAIState, resolved: Dict[str, Any]) -> str | None:
+    material_choice = _working_profile_get(state, "material_choice", {}) or {}
     for value in (
         resolved.get("seal_material"),
         resolved.get("selected_seal_material"),
-        (state.material_choice or {}).get("material"),
+        material_choice.get("material") if isinstance(material_choice, dict) else None,
     ):
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -145,7 +180,7 @@ def _extract_selected_fact_ids(state: SealAIState) -> List[str]:
     selected: List[str] = []
     seen: set[str] = set()
 
-    for idx, src in enumerate(list(state.sources or [])):
+    for idx, src in enumerate(list(state.system.sources or [])):
         src_dict = _as_dict(src)
         metadata = _as_dict(src_dict.get("metadata"))
         document_id = (
@@ -161,7 +196,8 @@ def _extract_selected_fact_ids(state: SealAIState) -> List[str]:
         seen.add(value)
         selected.append(value)
 
-    panel_material = _as_dict(_as_dict(state.working_memory).get("panel_material"))
+    reasoning = _as_dict(getattr(state, "reasoning", None))
+    panel_material = _as_dict(_as_dict(reasoning.get("working_memory")).get("panel_material"))
     for idx, hit in enumerate(panel_material.get("technical_docs") or []):
         if not isinstance(hit, dict):
             continue
@@ -207,19 +243,19 @@ def _collect_number_tokens(value: Any, output: Set[str]) -> None:
 
 def _extract_allowed_number_tokens_from_state(state: SealAIState, resolved_parameters: Dict[str, Any]) -> List[str]:
     tokens: Set[str] = set()
-    _collect_number_tokens(getattr(state, "extracted_params", None), tokens)
-    _collect_number_tokens(getattr(state, "parameters", None), tokens)
-    _collect_number_tokens(getattr(state, "working_profile", None), tokens)
-    _collect_number_tokens(getattr(state, "live_calc_tile", None), tokens)
-    _collect_number_tokens(getattr(state, "calculation_result", None), tokens)
-    _collect_number_tokens(getattr(state, "calc_results", None), tokens)
+    _collect_number_tokens(_working_profile_get(state, "extracted_params"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "engineering_profile"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "engineering_profile"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "live_calc_tile"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "calculation_result"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "calc_results"), tokens)
     _collect_number_tokens(resolved_parameters, tokens)
     return sorted(tokens)
 
 
 def _extract_temperature_candidates_c(state: SealAIState) -> List[float]:
     values: List[float] = []
-    params = getattr(state, "parameters", None)
+    params = _working_profile_get(state, "engineering_profile")
     if params is not None:
         for field in (
             "temperature_C",
@@ -230,7 +266,7 @@ def _extract_temperature_candidates_c(state: SealAIState) -> List[float]:
             "T_ambient_min",
             "T_ambient_max",
         ):
-            raw = getattr(params, field, None)
+            raw = params.get(field) if isinstance(params, dict) else getattr(params, field, None)
             if raw is None:
                 continue
             try:
@@ -325,7 +361,7 @@ def _fetch_extreme_temperature_factcards(state: SealAIState) -> List[Dict[str, A
         return []
 
     forced_hits: List[Dict[str, Any]] = []
-    tenant_scope = getattr(state, "tenant_id", None) or getattr(state, "user_id", None)
+    tenant_scope = getattr(state.system, "tenant_id", None) or getattr(state.conversation, "user_id", None)
 
     for factcard_id in _EXTREME_FACTCARD_IDS:
         query = f"FactCard {factcard_id} PTFE"
@@ -382,10 +418,12 @@ def _resolve_calc_results(state: SealAIState) -> Dict[str, Any]:
     Returns:
         A dict with calculation outputs or an empty dict.
     """
-    if state.calc_results is not None:
-        return _as_dict(state.calc_results)
-    if isinstance(state.calculation_result, dict):
-        return dict(state.calculation_result)
+    calc_results = _working_profile_get(state, "calc_results")
+    if calc_results is not None:
+        return _as_dict(calc_results)
+    calculation_result = _working_profile_get(state, "calculation_result")
+    if isinstance(calculation_result, dict):
+        return dict(calculation_result)
     return {}
 
 
@@ -398,18 +436,23 @@ def _has_technical_parameters(state: SealAIState) -> bool:
     Returns:
         ``True`` when technical parameters are present, otherwise ``False``.
     """
-    parameters = getattr(state, "parameters", None)
+    parameters = _working_profile_get(state, "engineering_profile")
     if parameters is not None:
         as_dict = getattr(parameters, "as_dict", None)
         if callable(as_dict) and bool(as_dict()):
             return True
         if isinstance(parameters, dict) and bool(parameters):
             return True
-    extracted = getattr(state, "extracted_params", None)
+    extracted = _working_profile_get(state, "extracted_params")
     if isinstance(extracted, dict) and bool(extracted):
         return True
-    working_profile = getattr(state, "working_profile", None)
+    working_profile = _working_profile_get(state, "engineering_profile")
     if working_profile is not None:
+        as_dict = getattr(working_profile, "as_dict", None)
+        if callable(as_dict):
+            return bool(as_dict())
+        if isinstance(working_profile, dict) and bool(working_profile):
+            return True
         profile_dump = _as_dict(working_profile)
         if bool(profile_dump):
             return True
@@ -418,14 +461,15 @@ def _has_technical_parameters(state: SealAIState) -> bool:
 
 def _extract_retrieval_chunks_for_authority(state: SealAIState) -> List[Dict[str, Any]]:
     chunks: List[Dict[str, Any]] = []
-    panel_material = _as_dict(_as_dict(state.working_memory).get("panel_material"))
+    reasoning = _as_dict(getattr(state, "reasoning", None))
+    panel_material = _as_dict(_as_dict(reasoning.get("working_memory")).get("panel_material"))
     technical_docs = panel_material.get("technical_docs")
     if isinstance(technical_docs, list):
         for item in technical_docs:
             if isinstance(item, dict):
                 chunks.append(dict(item))
 
-    retrieval_meta = _as_dict(getattr(state, "retrieval_meta", {}) or {})
+    retrieval_meta = _as_dict(getattr(state.reasoning, "retrieval_meta", {}) or {})
     for key in ("hits", "documents", "chunks"):
         maybe_hits = retrieval_meta.get(key)
         if not isinstance(maybe_hits, list):
@@ -434,7 +478,7 @@ def _extract_retrieval_chunks_for_authority(state: SealAIState) -> List[Dict[str
             if isinstance(item, dict):
                 chunks.append(dict(item))
 
-    for source in list(state.sources or []):
+    for source in list(state.system.sources or []):
         src_dict = _as_dict(source)
         if not src_dict:
             continue
@@ -473,11 +517,11 @@ def _is_smalltalk_request(state: SealAIState) -> bool:
     Returns:
         ``True`` when current request should be treated as smalltalk.
     """
-    intent_goal = str(getattr(getattr(state, "intent", None), "goal", "") or "").strip().lower()
+    intent_goal = str(getattr(getattr(state.conversation, "intent", None), "goal", "") or "").strip().lower()
     if intent_goal == "smalltalk":
         return True
 
-    flags = _as_dict(getattr(state, "flags", {}) or {})
+    flags = _as_dict(getattr(state.reasoning, "flags", {}) or {})
     intent_category = str(flags.get("frontdoor_intent_category") or "").strip().upper()
     if intent_category == "CHIT_CHAT":
         return True
@@ -493,7 +537,7 @@ def _is_smalltalk_request(state: SealAIState) -> bool:
 
 
 def _is_gate_triggered(state: SealAIState, gate_id: str) -> bool:
-    kb_result = _as_dict(getattr(state, "kb_factcard_result", {}) or {})
+    kb_result = _as_dict(getattr(state.reasoning, "kb_factcard_result", {}) or {})
     triggered = kb_result.get("triggered_pattern_gates")
     if not isinstance(triggered, list):
         return False
@@ -508,17 +552,21 @@ def _is_gate_triggered(state: SealAIState, gate_id: str) -> bool:
 
 
 def _extract_runout_hardness_missing_flags(state: SealAIState) -> tuple[bool, bool]:
-    params = getattr(state, "parameters", None)
+    params = _working_profile_get(state, "engineering_profile")
     runout_value = None
     hardness_value = None
     if params is not None:
-        runout_value = (
-            getattr(params, "shaft_runout", None)
-            or getattr(params, "runout", None)
-            or getattr(params, "dynamic_runout", None)
-        )
-        hardness_value = getattr(params, "shaft_hardness", None) or getattr(params, "hardness", None)
-    extracted = getattr(state, "extracted_params", None)
+        if isinstance(params, dict):
+            runout_value = params.get("shaft_runout") or params.get("runout") or params.get("dynamic_runout")
+            hardness_value = params.get("shaft_hardness") or params.get("hardness")
+        else:
+            runout_value = (
+                getattr(params, "shaft_runout", None)
+                or getattr(params, "runout", None)
+                or getattr(params, "dynamic_runout", None)
+            )
+            hardness_value = getattr(params, "shaft_hardness", None) or getattr(params, "hardness", None)
+    extracted = _working_profile_get(state, "extracted_params")
     if isinstance(extracted, dict):
         if runout_value is None:
             runout_value = extracted.get("runout_mm") or extracted.get("runout") or extracted.get("shaft_runout")
@@ -529,12 +577,27 @@ def _extract_runout_hardness_missing_flags(state: SealAIState) -> tuple[bool, bo
     return missing_runout, missing_hardness
 
 
-def _build_resolved_parameters(state: SealAIState) -> Dict[str, Any]:
-    resolved: Dict[str, Any] = state.parameters.as_dict() if state.parameters else {}
+def _filter_identity_guarded_extracted_params(state: SealAIState, extracted: Dict[str, Any]) -> Dict[str, Any]:
+    identity_map = _as_dict(getattr(state.reasoning, "extracted_parameter_identity", {}) or {})
+    filtered: Dict[str, Any] = {}
+    for key, value in dict(extracted or {}).items():
+        if key not in _IDENTITY_GUARDED_FIELDS:
+            filtered[key] = value
+            continue
+        meta = _as_dict(identity_map.get(key) or {})
+        identity_class = str(meta.get("identity_class") or "unresolved")
+        if identity_class == "confirmed":
+            filtered[key] = value
+    return filtered
 
-    extracted = state.extracted_params or {}
+
+def _build_resolved_parameters(state: SealAIState) -> Dict[str, Any]:
+    resolved: Dict[str, Any] = _working_profile_to_dict(state)
+
+    extracted = _working_profile_get(state, "extracted_params", {}) or {}
     if isinstance(extracted, dict):
-        for key, value in extracted.items():
+        filtered_extracted = _filter_identity_guarded_extracted_params(state, extracted)
+        for key, value in filtered_extracted.items():
             if value is None:
                 continue
             resolved.setdefault(key, value)
@@ -576,6 +639,102 @@ def _build_resolved_parameters(state: SealAIState) -> Dict[str, Any]:
     return resolved
 
 
+def _build_candidate_semantics(state: SealAIState) -> List[Dict[str, Any]]:
+    semantics: List[Dict[str, Any]] = []
+    identity_map = _as_dict(getattr(state.reasoning, "extracted_parameter_identity", {}) or {})
+
+    material_choice = _working_profile_get(state, "material_choice", {}) or {}
+    if isinstance(material_choice, dict):
+        annotated_material_choice = annotate_material_choice(material_choice, identity_map=identity_map)
+        material = str(annotated_material_choice.get("material") or "").strip()
+        if material:
+            semantics.append(
+                CandidateItem(
+                    kind="material",
+                    value=material,
+                    rationale=str(annotated_material_choice.get("details") or ""),
+                    confidence=0.6,
+                    specificity=str(annotated_material_choice.get("specificity") or "unresolved"),
+                    source_kind=str(annotated_material_choice.get("source_kind") or "unknown"),
+                    governed=bool(annotated_material_choice.get("governed")),
+                ).model_dump(exclude_none=True)
+            )
+
+    return semantics
+
+
+def _build_governance_metadata(
+    state: SealAIState,
+    *,
+    candidate_semantics: List[Dict[str, Any]],
+    required_disclaimers: List[str],
+    respond_with_uncertainty: bool,
+    selected_fact_ids: List[str],
+    calc_results: Dict[str, Any],
+    resolved_parameters: Dict[str, Any],
+) -> GovernanceMetadata:
+    scope_of_validity: List[str] = []
+    assumptions_active: List[str] = []
+    unknowns_release_blocking: List[str] = []
+    unknowns_manufacturer_validation: List[str] = []
+    gate_failures: List[str] = []
+    governance_notes: List[str] = []
+
+    if selected_fact_ids or calc_results or resolved_parameters:
+        scope_of_validity.append("Gilt nur fuer den aktuellen Assertion-Stand sowie die in diesem Lauf gebundenen Parameter, Berechnungen und Evidenzen.")
+    if calc_results:
+        scope_of_validity.append("Deterministische Berechnungsergebnisse gelten nur fuer den aktuell erfassten Betriebspunkt.")
+    if any(str(item.get("specificity") or "") != "compound_specific" for item in candidate_semantics):
+        scope_of_validity.append("Kandidaten mit Specificity unter compound_specific sind keine compoundscharfe Freigabe.")
+
+    if respond_with_uncertainty:
+        assumptions_active.append("Antwort basiert auf begrenzter Evidenz- oder Berechnungsabdeckung.")
+    if bool((state.reasoning.flags or {}).get("rag_low_quality_results")):
+        assumptions_active.append("Retrieval-Qualitaet fuer Material-/Dokumentkontext war niedrig.")
+    missing_params = [str(item).strip() for item in list(state.reasoning.missing_params or []) if str(item).strip()]
+    if missing_params:
+        assumptions_active.append(f"Offene Parameterluecken: {', '.join(missing_params)}.")
+
+    missing_critical = resolved_parameters.get("missing_critical_parameters")
+    if isinstance(missing_critical, list):
+        unknowns_release_blocking.extend(str(item).strip() for item in missing_critical if str(item).strip())
+
+    qgate_result = _as_dict(getattr(state.reasoning, "qgate_result", {}) or {})
+    for check in list(qgate_result.get("checks") or []):
+        check_dict = _as_dict(check)
+        if not check_dict or check_dict.get("passed") is True:
+            continue
+        severity = str(check_dict.get("severity") or "").upper()
+        message = str(check_dict.get("message") or check_dict.get("name") or check_dict.get("check_id") or "").strip()
+        if not message:
+            continue
+        gate_failures.append(f"{severity}: {message}")
+        if severity == "CRITICAL":
+            unknowns_release_blocking.append(message)
+
+    for candidate in candidate_semantics:
+        specificity = str(candidate.get("specificity") or "").strip()
+        value = str(candidate.get("value") or "").strip()
+        if specificity and specificity != "compound_specific":
+            label = value or "Kandidat"
+            unknowns_manufacturer_validation.append(
+                f"{label} erfordert Hersteller-/Compound-Validierung (specificity: {specificity})."
+            )
+
+    if bool(getattr(state.system, "requires_human_review", False)):
+        governance_notes.append("Human review required before external release.")
+    governance_notes.extend(str(item).strip() for item in required_disclaimers if str(item).strip())
+
+    return GovernanceMetadata(
+        scope_of_validity=list(dict.fromkeys(scope_of_validity)),
+        assumptions_active=list(dict.fromkeys(assumptions_active)),
+        unknowns_release_blocking=list(dict.fromkeys(unknowns_release_blocking)),
+        unknowns_manufacturer_validation=list(dict.fromkeys(unknowns_manufacturer_validation)),
+        gate_failures=list(dict.fromkeys(gate_failures)),
+        governance_notes=list(dict.fromkeys(governance_notes)),
+    )
+
+
 def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Create an ``AnswerContract`` from state for contract-first answering.
 
@@ -600,7 +759,7 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
         State patch containing contract, prompt context, metadata, and flags.
     """
     max_tokens = 3000
-    user_context = _as_dict(getattr(state, "user_context", {}))
+    user_context = _as_dict(getattr(state.conversation, "user_context", {}))
     raw_budget = user_context.get("context_max_tokens")
     try:
         if raw_budget is not None:
@@ -612,14 +771,18 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
     context_state = state
     forced_factcards = _fetch_extreme_temperature_factcards(state)
     if forced_factcards:
-        wm_dict = _as_dict(getattr(state, "working_memory", None))
+        wm_dict = _as_dict(getattr(state.reasoning, "working_memory", None))
         panel_material = _as_dict(wm_dict.get("panel_material"))
         technical_docs = list(panel_material.get("technical_docs") or [])
         technical_docs.extend(forced_factcards)
         panel_material["technical_docs"] = _dedupe_technical_docs(technical_docs)
         wm_dict["panel_material"] = panel_material
         augmented_wm = WorkingMemory.model_validate(wm_dict)
-        context_state = state.model_copy(update={"working_memory": augmented_wm})
+        context_state = state.model_copy(update={
+                                                    "reasoning": {
+                                                        "working_memory": augmented_wm,
+                                                    },
+                                                })
 
     final_context = build_final_context(context_state, max_tokens=max_tokens)
     is_smalltalk = _is_smalltalk_request(state)
@@ -650,9 +813,9 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
         required_disclaimers = []
         if respond_with_uncertainty:
             required_disclaimers.append("Unsicherheits-Hinweis: Antwort basiert auf begrenzter Evidenz.")
-        if bool(getattr(state, "requires_human_review", False)):
+        if bool(getattr(state.system, "requires_human_review", False)):
             required_disclaimers.append("Human review required before final recommendation.")
-        if bool((state.flags or {}).get("is_safety_critical")):
+        if bool((state.reasoning.flags or {}).get("is_safety_critical")):
             required_disclaimers.append("Sicherheitskritischer Kontext: Ergebnis vor Umsetzung fachlich prüfen.")
         if _is_gate_triggered(state, "PTFE-G-011"):
             missing_runout, missing_hardness = _extract_runout_hardness_missing_flags(state)
@@ -667,16 +830,29 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
                     "Missing Critical Parameters: Wellenschlag und Wellenhärte müssen vor PTFE-Freigabe bestätigt werden."
                 )
 
+    candidate_semantics = _build_candidate_semantics(state)
+    governance_metadata = _build_governance_metadata(
+        state,
+        candidate_semantics=candidate_semantics,
+        required_disclaimers=required_disclaimers,
+        respond_with_uncertainty=respond_with_uncertainty,
+        selected_fact_ids=selected_fact_ids,
+        calc_results=calc_results,
+        resolved_parameters=resolved_parameters,
+    )
+
     contract = AnswerContract(
         resolved_parameters=resolved_parameters,
         calc_results=calc_results,
         selected_fact_ids=selected_fact_ids,
+        candidate_semantics=candidate_semantics,
+        governance_metadata=governance_metadata,
         required_disclaimers=required_disclaimers,
         respond_with_uncertainty=respond_with_uncertainty,
     )
     contract_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
 
-    flags = deepcopy(state.flags or {})
+    flags = deepcopy(state.reasoning.flags or {})
     flags["answer_subgraph_allowed_number_tokens"] = _extract_allowed_number_tokens_from_state(
         state,
         resolved_parameters,
@@ -684,7 +860,7 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
     flags["answer_contract_hash"] = contract_hash
     flags["answer_subgraph_patch_attempts"] = 0
 
-    final_prompt_metadata = dict(state.final_prompt_metadata or {})
+    final_prompt_metadata = dict(state.system.final_prompt_metadata or {})
     final_prompt_metadata.update(
         {
             "contract_hash": contract_hash,
@@ -702,6 +878,17 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
         context_len=len(final_context),
     )
     patch = {
+        "system": {
+            "answer_contract": contract,
+            "final_prompt": final_context,
+            "final_prompt_metadata": final_prompt_metadata,
+        },
+        "reasoning": {
+            "flags": flags,
+            "last_node": "node_prepare_contract",
+        },
+        # Flat aliases kept for direct-call tests and legacy helpers that still
+        # inspect the raw node patch outside LangGraph state reduction.
         "answer_contract": contract,
         "final_prompt": final_context,
         "final_prompt_metadata": final_prompt_metadata,
@@ -709,8 +896,9 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
         "last_node": "node_prepare_contract",
     }
     if augmented_wm is not None:
+        patch["reasoning"]["working_memory"] = augmented_wm
         patch["working_memory"] = augmented_wm
-    return patch
+    return stamp_patch_with_assertion_binding(state, patch)
 
 
 __all__ = ["node_prepare_contract"]

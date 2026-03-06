@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
@@ -37,4 +37,20 @@ def render_template(template_name: str, context: Dict[str, Any] | None = None, /
     return template.render(**data)
 
 
-__all__ = ["PROMPTS_DIR", "render_template"]
+def render_prompt_sections(
+    template_name: str,
+    context: Dict[str, Any] | None = None,
+    /,
+    *,
+    separator: str = "---",
+    **kwargs: Any,
+) -> Tuple[str, str]:
+    """Render a template and split it into ``system`` / ``user`` sections."""
+    rendered = render_template(template_name, context, **kwargs)
+    parts = rendered.split(separator, 1)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return rendered.strip(), ""
+
+
+__all__ = ["PROMPTS_DIR", "render_prompt_sections", "render_template"]

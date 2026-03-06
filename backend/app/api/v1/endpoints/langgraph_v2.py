@@ -1,5 +1,49 @@
 from __future__ import annotations
 
+"""LangGraph v2 chat endpoint implementing the v13 "Two-Speed Architecture".
+
+Blueprint v13 splits request handling into two coordinated execution tiers:
+
+1. Fast Brain
+   A low-latency GPT-4o-mini interceptor that runs before the LangGraph.
+   It handles the majority of conversational turns directly:
+   greetings, short follow-ups, discovery questions, and immediate deterministic
+   calculations via the physics tool. Its primary goal is to keep UX latency in
+   the 1-2 second range and update the live digital twin as soon as new
+   parameters are known.
+
+2. Slow Brain
+   The LangGraph "Expert Council" for heavyweight engineering reasoning. It is
+   activated only when the Fast Brain explicitly hands off, typically once the
+   conversation has enough technical context for deeper analysis or the user
+   requests a full engineering evaluation.
+
+The endpoint therefore has two valid outcomes for the same REST call:
+
+- `chat_continue`: the request is fully answered by the Fast Brain and streamed
+  back immediately as SSE without starting the graph.
+- `handoff_to_langgraph`: the Fast Brain first syncs extracted parameters and
+  deterministic tool outputs into the checkpoint state, then the request
+  continues through the LangGraph event multiplexer.
+
+State is organized as four pillars:
+
+- `conversation`: transcript, thread identity, and user-facing message history.
+- `working_profile`: the digital twin / engineering profile plus deterministic
+  calculator outputs such as `live_calc_tile` and `calc_results`.
+- `reasoning`: orchestration metadata, parameter provenance, versions, and flow
+  control flags used by the graph.
+- `system`: outputs, audit metadata, and operational control state.
+
+The Fast Brain deliberately writes only to the pillars that must survive the
+handoff:
+- `conversation` when a fast-path answer should be persisted in the transcript.
+- `working_profile` for extracted engineering parameters and live physics data.
+- `reasoning` for provenance/version bookkeeping of parameter writes.
+- never directly to `system`, because final graph outputs and control metadata
+  remain the responsibility of the Slow Brain.
+"""
+
 import asyncio
 import contextlib
 import hashlib
@@ -9,6 +53,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -22,24 +67,33 @@ from pydantic.config import ConfigDict
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from langgraph.errors import InvalidUpdateError
 
-from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
-from app.langgraph_v2.state import SealAIState, TechnicalParameters
+from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2, scope_v2_thread_id
+from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.contracts import (
     HITLResumeRequest,
     assert_node_exists,
     error_detail,
     is_dependency_unavailable_error,
 )
-from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
 from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
+from app.langgraph_v2.utils.assertion_cycle import build_assertion_cycle_update
+from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
+from app.langgraph_v2.utils.rfq_admissibility import normalize_rfq_admissibility_contract, rfq_contract_is_ready
 from app.langgraph_v2.utils.parameter_patch import (
     ParametersPatchRequest,
-    apply_parameter_patch_lww,
+    promote_parameter_patch_to_asserted,
     sanitize_v2_parameter_patch,
+    stage_extracted_parameter_patch,
 )
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.chat.conversations import upsert_conversation
+from app.services.fast_brain.router import FastBrainRouter
 from app.services.sse_broadcast import sse_broadcast
+
+try:
+    from sse_starlette.sse import EventSourceResponse as NativeEventSourceResponse
+except Exception:  # pragma: no cover - optional dependency
+    NativeEventSourceResponse = None
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -53,31 +107,7 @@ SSE_SLOW_NOTICE_SEC = float(os.getenv("SEALAI_SSE_SLOW_NOTICE_SEC", "5"))
 REQUIRE_PARAM_SNAPSHOT = os.getenv("SEALAI_REQUIRE_PARAM_SNAPSHOT") == "1"
 WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") == "1"
 DEFAULT_GRAPH_RECURSION_LIMIT = 25
-CONVERSATIONAL_STREAM_NODES = frozenset(
-    {
-        "smalltalk_node",
-        "response_node",
-        "conversational_rag_node",
-        "contract_first_output_node",
-        "node_finalize",
-        "final_answer_node",
-        "node_p4b_calc_render",
-        "p4b_calc_render",
-        "troubleshooting_wizard_node",
-    }
-)
 _STREAM_NODE_BLOCKLIST = frozenset()
-SPEAKING_NODES = {
-    "smalltalk_node",
-    "response_node",
-    "conversational_rag_node",
-    "contract_first_output_node",
-    "node_finalize",
-    "final_answer_node",
-    "node_p4b_calc_render",
-    "p4b_calc_render",
-    "troubleshooting_wizard_node",
-}
 
 
 def _lg_trace_enabled() -> bool:
@@ -95,6 +125,170 @@ def _state_values_to_dict(values: Any) -> Dict[str, Any]:
         return dict(values)
     except Exception:
         return {}
+
+
+def _pillar_dict(values: Dict[str, Any], pillar: str) -> Dict[str, Any]:
+    candidate = values.get(pillar)
+    if hasattr(candidate, "model_dump"):
+        candidate = candidate.model_dump(exclude_none=True)
+    if isinstance(candidate, dict):
+        return dict(candidate)
+    return {}
+
+
+def _conversation_value(values: Dict[str, Any], key: str) -> Any:
+    """Read from pillar 1 (`conversation`) with backward-compatible fallback."""
+    pillar = _pillar_dict(values, "conversation")
+    if key in pillar:
+        return pillar.get(key)
+    return values.get(key)
+
+
+def _reasoning_value(values: Dict[str, Any], key: str) -> Any:
+    """Read from pillar 3 (`reasoning`) with backward-compatible fallback."""
+    pillar = _pillar_dict(values, "reasoning")
+    if key in pillar:
+        return pillar.get(key)
+    return values.get(key)
+
+
+def _system_value(values: Dict[str, Any], key: str) -> Any:
+    """Read from pillar 4 (`system`) with backward-compatible fallback."""
+    pillar = _pillar_dict(values, "system")
+    if key in pillar:
+        return pillar.get(key)
+    return values.get(key)
+
+
+def _working_profile_value(values: Dict[str, Any], key: str) -> Any:
+    """Read from pillar 2 (`working_profile`) with backward-compatible fallback."""
+    pillar = _pillar_dict(values, "working_profile")
+    if key in pillar:
+        return pillar.get(key)
+    return values.get(key)
+
+
+def _rfq_admissibility_value(values: Dict[str, Any]) -> Dict[str, Any]:
+    return normalize_rfq_admissibility_contract(values)
+
+
+def _engineering_profile_payload(values: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the canonical engineering profile stored inside pillar 2.
+
+    `working_profile.engineering_profile` is the long-lived single source of
+    truth for technical parameters that both the Fast Brain and the Slow Brain
+    can share. The helper also tolerates older state layouts where
+    `working_profile` itself was used as the engineering payload.
+    """
+    pillar = _pillar_dict(values, "working_profile")
+    profile = pillar.get("engineering_profile")
+    if hasattr(profile, "model_dump"):
+        profile = profile.model_dump(exclude_none=True)
+    if isinstance(profile, dict):
+        return dict(profile)
+    legacy = values.get("working_profile")
+    if hasattr(legacy, "model_dump"):
+        legacy = legacy.model_dump(exclude_none=True)
+    if isinstance(legacy, dict):
+        return dict(legacy)
+    return {}
+
+
+def _reasoning_working_memory(values: Dict[str, Any]) -> Dict[str, Any]:
+    memory = _reasoning_value(values, "working_memory")
+    if hasattr(memory, "model_dump"):
+        memory = memory.model_dump(exclude_none=True)
+    if isinstance(memory, dict):
+        return dict(memory)
+    return {}
+
+
+def _candidate_semantics_payload(values: Dict[str, Any]) -> list[Dict[str, Any]]:
+    system_candidate_semantics = _system_value(values, "candidate_semantics")
+    if isinstance(system_candidate_semantics, list):
+        return [dict(item) for item in system_candidate_semantics if isinstance(item, dict)]
+
+    contract = _system_value(values, "answer_contract")
+    if hasattr(contract, "model_dump"):
+        contract = contract.model_dump(exclude_none=True)
+    if isinstance(contract, dict):
+        candidate_semantics = contract.get("candidate_semantics")
+        if isinstance(candidate_semantics, list):
+            return [dict(item) for item in candidate_semantics if isinstance(item, dict)]
+
+    pillar = _pillar_dict(values, "working_profile")
+    material_choice = pillar.get("material_choice")
+    if hasattr(material_choice, "model_dump"):
+        material_choice = material_choice.model_dump(exclude_none=True)
+    if isinstance(material_choice, dict):
+        reasoning = _pillar_dict(values, "reasoning")
+        identity_map = reasoning.get("extracted_parameter_identity")
+        if hasattr(identity_map, "model_dump"):
+            identity_map = identity_map.model_dump(exclude_none=True)
+        annotated = annotate_material_choice(material_choice, identity_map=identity_map if isinstance(identity_map, dict) else {})
+        material = str(annotated.get("material") or "").strip()
+        if material:
+            return [
+                {
+                    "kind": "material",
+                    "value": material,
+                    "rationale": str(annotated.get("details") or ""),
+                    "confidence": 0.6,
+                    "specificity": str(annotated.get("specificity") or "unresolved"),
+                    "source_kind": str(annotated.get("source_kind") or "unknown"),
+                    "governed": bool(annotated.get("governed")),
+                }
+            ]
+    return []
+
+
+def _governance_metadata_payload(values: Dict[str, Any]) -> Dict[str, Any]:
+    governance = _system_value(values, "governance_metadata")
+    if hasattr(governance, "model_dump"):
+        governance = governance.model_dump(exclude_none=True)
+    if isinstance(governance, dict):
+        return dict(governance)
+
+    contract = _system_value(values, "answer_contract")
+    if hasattr(contract, "model_dump"):
+        contract = contract.model_dump(exclude_none=True)
+    if isinstance(contract, dict):
+        candidate = contract.get("governance_metadata")
+        if isinstance(candidate, dict):
+            return dict(candidate)
+    return {}
+
+
+def _confirm_action_requires_rfq_ready(action: Any) -> bool:
+    text = str(action or "").strip().lower()
+    if not text:
+        return False
+    return any(token in text for token in ("rfq", "spec", "procurement", "approve_specification"))
+
+
+def _release_blockers_from_state(state_like: SealAIState | Dict[str, Any]) -> list[str]:
+    values = _state_values_to_dict(state_like)
+    governance = _governance_metadata_payload(values)
+    blockers = governance.get("unknowns_release_blocking")
+    if not isinstance(blockers, list):
+        return []
+    return [str(item).strip() for item in blockers if str(item).strip()]
+
+
+def _build_release_response(state_like: SealAIState | Dict[str, Any], *, thread_id: str) -> Dict[str, Any]:
+    values = _state_values_to_dict(state_like)
+    return {
+        "chat_id": thread_id,
+        "final_text": _resolve_final_text(values),
+        "governed_output_text": _system_value(values, "governed_output_text") or _resolve_final_text(values),
+        "governed_output_ready": bool(_system_value(values, "governed_output_ready")),
+        "governance_metadata": _governance_metadata_payload(values),
+        "rfq_admissibility": _rfq_admissibility_value(values),
+        "candidate_semantics": _candidate_semantics_payload(values),
+        "phase": _reasoning_value(values, "phase"),
+        "last_node": _reasoning_value(values, "last_node"),
+        "requires_human_review": bool(_system_value(values, "requires_human_review")),
+    }
 
 
 def _is_meaningful_live_calc_tile(tile: Any) -> bool:
@@ -170,23 +364,14 @@ def _inject_live_calc_tile(payload: Dict[str, Any], *, live_calc_tile: Dict[str,
 
 
 async def _get_graph_state_values_for_stream(graph: Any, config: Any) -> Dict[str, Any]:
+    values: Dict[str, Any] = {}
     try:
-        if hasattr(graph, "aget_state"):
-            snapshot = await graph.aget_state(config)
-            if hasattr(snapshot, "values"):
-                return _state_values_to_dict(snapshot.values)
+        snapshot = await graph.aget_state(config)
+        if hasattr(snapshot, "values"):
+            values = _state_values_to_dict(snapshot.values)
     except Exception:
         logger.exception("langgraph_v2_stream_aget_state_failed")
-    try:
-        if hasattr(graph, "get_state"):
-            snapshot = graph.get_state(config)
-            if asyncio.iscoroutine(snapshot):
-                snapshot = await snapshot
-            if hasattr(snapshot, "values"):
-                return _state_values_to_dict(snapshot.values)
-    except Exception:
-        logger.exception("langgraph_v2_stream_get_state_failed")
-    return {}
+    return values
 
 
 def _short_user_id(user_id: str | None) -> str:
@@ -200,7 +385,7 @@ except Exception:  # pragma: no cover - optional dependency
     Redis = None
 
 CONFIRM_GO_AS_NODE = "confirm_recommendation_node"
-PARAMETERS_PATCH_AS_NODE = "supervisor_logic_node"
+PARAMETERS_PATCH_AS_NODE = "node_p1_context"
 
 
 class LangGraphV2Request(BaseModel):
@@ -275,6 +460,17 @@ class LangGraphV2Request(BaseModel):
         return self
 
 
+def _scope_thread_id_for_user(*, user_id: str, thread_id: str) -> str:
+    """Apply the canonical user-scoped checkpoint key format.
+
+    API callers may send a bare `chat_id`, while the checkpoint layer must
+    always use the user-scoped form. This helper is called at the API boundary
+    so Fast Brain, Slow Brain, thread locks, dedup keys, and checkpoint lookup
+    all address the same namespace.
+    """
+    return scope_v2_thread_id(thread_id=thread_id, user_id=user_id)
+
+
 def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> bytes:
     safe_event = str(event).replace("\r", "").replace("\n", "")
     safe_event_id = str(event_id).replace("\r", "").replace("\n", "") if event_id else None
@@ -287,6 +483,56 @@ def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = N
 
 def _format_sse_text(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> str:
     return _format_sse(event, payload, event_id=event_id).decode("utf-8")
+
+
+class _CompatEventSourceResponse(StreamingResponse):
+    def __init__(self, content: AsyncIterator[Any], **kwargs: Any) -> None:
+        async def _serialize() -> AsyncIterator[bytes]:
+            async for item in content:
+                if isinstance(item, (bytes, bytearray)):
+                    yield bytes(item)
+                    continue
+                if isinstance(item, str):
+                    yield item.encode("utf-8")
+                    continue
+                if isinstance(item, dict):
+                    event_name = str(item.get("event") or "message")
+                    data = item.get("data")
+                    if isinstance(data, (dict, list)):
+                        data = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+                    elif data is None:
+                        data = ""
+                    else:
+                        data = str(data)
+                    event_id = item.get("id")
+                    retry = item.get("retry")
+                    lines: list[str] = []
+                    if retry is not None:
+                        lines.append(f"retry: {int(retry)}")
+                    if event_id is not None:
+                        lines.append(f"id: {str(event_id).replace(chr(10), '').replace(chr(13), '')}")
+                    lines.append(f"event: {event_name.replace(chr(10), '').replace(chr(13), '')}")
+                    for line in data.replace("\r", "\\r").split("\n"):
+                        lines.append(f"data: {line}")
+                    lines.append("")
+                    yield ("\n".join(lines) + "\n").encode("utf-8")
+                    continue
+                yield str(item).encode("utf-8")
+
+        super().__init__(_serialize(), media_type="text/event-stream", **kwargs)
+
+
+EventSourceResponse = NativeEventSourceResponse or _CompatEventSourceResponse
+
+
+def _eventsource_event(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> Dict[str, Any]:
+    event_payload = {
+        "event": event,
+        "data": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+    }
+    if event_id:
+        event_payload["id"] = event_id
+    return event_payload
 
 
 def _chunk_text(text: str, *, max_len: int = 700) -> list[str]:
@@ -329,7 +575,7 @@ def _snapshot_waiting_on_human_review(snapshot: Any) -> bool:
 
 
 def _extract_snapshot_checkpoint_id(snapshot: Any, state_values: Dict[str, Any], *, fallback: str) -> str:
-    from_state = state_values.get("confirm_checkpoint_id")
+    from_state = _system_value(state_values, "confirm_checkpoint_id")
     if isinstance(from_state, str) and from_state.strip():
         return from_state.strip()
 
@@ -423,6 +669,237 @@ async def _build_graph_config(
     return graph, config
 
 
+@lru_cache(maxsize=1)
+def _get_fast_brain_router() -> FastBrainRouter:
+    model = os.getenv("SEALAI_FAST_BRAIN_MODEL", "gpt-4o-mini")
+    try:
+        temperature = float(os.getenv("SEALAI_FAST_BRAIN_TEMPERATURE", "0"))
+    except ValueError:
+        temperature = 0.0
+    return FastBrainRouter(model=model, temperature=temperature)
+
+
+def _extract_fast_brain_history(state_values: Dict[str, Any]) -> list[Any]:
+    history = _conversation_value(state_values, "messages")
+    return list(history) if isinstance(history, list) else []
+
+
+def _normalize_fast_brain_status(result: Dict[str, Any]) -> str:
+    status = str(result.get("status") or "").strip()
+    if status in {"chat_continue", "handoff_to_langgraph"}:
+        return status
+    if result.get("handoff_to_slow_brain"):
+        return "handoff_to_langgraph"
+    return "chat_continue"
+
+
+def _coerce_fast_brain_state_patch(result: Dict[str, Any]) -> Dict[str, Any]:
+    raw_patch = result.get("state_patch")
+    if not isinstance(raw_patch, dict):
+        return {}
+
+    patch: Dict[str, Any] = {}
+    raw_parameters = raw_patch.get("parameters")
+    if isinstance(raw_parameters, dict):
+        try:
+            parameters = sanitize_v2_parameter_patch(raw_parameters)
+        except ValueError:
+            logger.exception("fast_brain_state_patch_invalid_parameters", extra={"parameters": raw_parameters})
+        else:
+            if parameters:
+                patch["parameters"] = parameters
+
+    raw_working_profile = raw_patch.get("working_profile")
+    if isinstance(raw_working_profile, dict):
+        working_profile_patch: Dict[str, Any] = {}
+        live_calc_tile = raw_working_profile.get("live_calc_tile")
+        if isinstance(live_calc_tile, dict):
+            working_profile_patch["live_calc_tile"] = dict(live_calc_tile)
+        calc_results = raw_working_profile.get("calc_results")
+        if isinstance(calc_results, dict):
+            working_profile_patch["calc_results"] = dict(calc_results)
+        if working_profile_patch:
+            patch["working_profile"] = working_profile_patch
+
+    return patch
+
+
+def _fast_brain_profile_mirrors(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    mirrors: Dict[str, Any] = {}
+    if "medium" in parameters:
+        mirrors["medium"] = parameters.get("medium")
+    if "pressure_bar" in parameters:
+        mirrors["pressure_bar"] = parameters.get("pressure_bar")
+    temperature_value = parameters.get("temperature_c")
+    if temperature_value is None:
+        temperature_value = parameters.get("temperature_C")
+    if temperature_value is not None:
+        mirrors["temperature_c"] = temperature_value
+    return mirrors
+
+
+async def _sync_fast_brain_checkpoint_state(
+    *,
+    graph: Any,
+    config: Dict[str, Any],
+    user_input: str,
+    fast_brain_result: Dict[str, Any],
+    request_id: str | None,
+    persist_transcript: bool,
+) -> Dict[str, Any]:
+    """Merge Fast-Brain discoveries into the LangGraph checkpoint before handoff.
+
+    This is the state bridge between the two execution speeds.
+
+    Mapping rules:
+
+    - Fast-Brain extracted parameters are staged into
+      `working_profile.extracted_params` and are not asserted automatically.
+    - Extracted-parameter provenance is written into the `reasoning` pillar so
+      later graph nodes can distinguish staged input from asserted state.
+    - Physics-tool outputs are copied into pillar 2:
+      - `working_profile.live_calc_tile` for the live digital twin / UI stream.
+      - `working_profile.calc_results` for deterministic downstream graph use.
+    - No automatic promotion into `working_profile.engineering_profile` happens
+      in this bridge.
+    - On the pure fast path (`persist_transcript=True`), the user turn and the
+      Fast-Brain assistant answer are appended to pillar 1 (`conversation`) so
+      the chat history remains checkpoint-consistent even though the graph never
+      ran.
+
+    The helper intentionally does not write to pillar 4 (`system`): Fast-Brain
+    interception is a frontdoor optimization, not a replacement for the graph's
+    authoritative final-output pipeline.
+    """
+    state_values = await _get_graph_state_values_for_stream(graph, config)
+    patch = _coerce_fast_brain_state_patch(fast_brain_result)
+    parameter_patch = patch.get("parameters") if isinstance(patch.get("parameters"), dict) else {}
+    existing_extracted = _working_profile_value(state_values, "extracted_params") or {}
+    existing_extracted_provenance = _reasoning_value(state_values, "extracted_parameter_provenance") or {}
+    existing_extracted_identity = _reasoning_value(state_values, "extracted_parameter_identity") or {}
+
+    merged_extracted = dict(existing_extracted)
+    merged_extracted_provenance = dict(existing_extracted_provenance)
+    merged_extracted_identity = dict(existing_extracted_identity)
+    applied_fields: list[str] = []
+    rejected_fields: list[Dict[str, Any]] = []
+
+    if parameter_patch:
+        (
+            merged_extracted,
+            merged_extracted_provenance,
+            merged_extracted_identity,
+            applied_fields,
+        ) = stage_extracted_parameter_patch(
+            existing_extracted,
+            parameter_patch,
+            existing_extracted_provenance,
+            existing_extracted_identity,
+            source="fast_brain_extracted",
+        )
+
+    updates: Dict[str, Any] = {}
+    working_profile_patch = patch.get("working_profile") if isinstance(patch.get("working_profile"), dict) else {}
+    working_profile_update: Dict[str, Any] = {}
+    if parameter_patch:
+        working_profile_update["extracted_params"] = merged_extracted
+    if isinstance(working_profile_patch.get("live_calc_tile"), dict):
+        # `live_calc_tile` is optimized for immediate UI rendering and
+        # conversational access to deterministic tool outputs.
+        working_profile_update["live_calc_tile"] = dict(working_profile_patch["live_calc_tile"])
+    if isinstance(working_profile_patch.get("calc_results"), dict):
+        # `calc_results` is the graph-facing deterministic calculation payload.
+        working_profile_update["calc_results"] = dict(working_profile_patch["calc_results"])
+    if working_profile_update:
+        updates["working_profile"] = working_profile_update
+    if parameter_patch:
+        updates["reasoning"] = {
+            "extracted_parameter_provenance": merged_extracted_provenance,
+            "extracted_parameter_identity": merged_extracted_identity,
+        }
+
+    if persist_transcript:
+        transcript_messages: list[BaseMessage] = []
+        user_text = str(user_input or "").strip()
+        if user_text:
+            transcript_messages.append(HumanMessage(content=user_text))
+        assistant_text = str(fast_brain_result.get("content") or "").strip()
+        if assistant_text:
+            transcript_messages.append(AIMessage(content=assistant_text))
+        if transcript_messages:
+            updates["conversation"] = {"messages": transcript_messages}
+
+    if not updates:
+        return state_values
+
+    assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
+    await graph.aupdate_state(config, updates, as_node=PARAMETERS_PATCH_AS_NODE)
+
+    if parameter_patch and (PARAM_SYNC_DEBUG or SSE_DEBUG):
+        configurable = config.get("configurable") if isinstance(config, dict) else {}
+        logger.info(
+            "fast_brain_checkpoint_sync",
+            extra={
+                "request_id": request_id,
+                "thread_id": configurable.get("thread_id") if isinstance(configurable, dict) else None,
+                "applied_fields": applied_fields,
+                "rejected_fields": rejected_fields,
+            },
+        )
+
+    merged_state = _merge_state_like(state_values, updates)
+    return _state_values_to_dict(merged_state)
+
+
+async def _fast_brain_sse_stream(
+    *,
+    request: Request,
+    thread_id: str,
+    fast_brain_result: Dict[str, Any],
+    state_values: Dict[str, Any],
+) -> AsyncIterator[Dict[str, Any]]:
+    """Stream a completed Fast-Brain answer as SSE without activating LangGraph.
+
+    The event contract mirrors the normal graph stream closely enough that the
+    frontend can treat both paths as one chat API:
+
+    1. optional `state_update` when the Fast Brain produced digital-twin data
+    2. one or more legacy `text_chunk` plus canonical `token` events
+    3. terminal legacy `turn_complete` plus canonical `done`
+    """
+    try:
+        payload = _build_state_update_payload(state_values)
+        payload_data = payload.get("data") if isinstance(payload, dict) else None
+        should_emit_state = False
+        if isinstance(payload_data, dict):
+            should_emit_state = bool(
+                payload_data.get("working_profile")
+                or payload_data.get("live_calc_tile")
+                or payload_data.get("calc_results")
+            )
+        if should_emit_state and not await request.is_disconnected():
+            yield _eventsource_event("state_update", payload)
+
+        text = str(fast_brain_result.get("content") or "").strip()
+        if not await request.is_disconnected():
+            yield _eventsource_event("turn_complete", {"type": "turn_complete"})
+            done_payload = {"type": "done", "chat_id": thread_id}
+            if text:
+                done_payload["final_text"] = text
+                done_payload["final_answer"] = text
+            yield _eventsource_event("done", done_payload)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("fast_brain_sse_stream_failed", extra={"thread_id": thread_id})
+        if not await request.is_disconnected():
+            yield _eventsource_event("error", {"type": "error", "message": "internal_error"})
+            yield _eventsource_event("turn_complete", {"type": "turn_complete"})
+            yield _eventsource_event("done", {"type": "done", "chat_id": thread_id})
+    finally:
+        await _release_thread_lock(thread_id)
+
+
 async def _run_graph_to_state(
     req: LangGraphV2Request,
     *,
@@ -431,18 +908,21 @@ async def _run_graph_to_state(
     auth_scopes: list[str] | None = None,
     tenant_id: str | None = None,
 ) -> SealAIState:
+    scoped_thread_id = _scope_thread_id_for_user(user_id=user_id, thread_id=req.chat_id)
     graph, config = await _build_graph_config(
-        thread_id=req.chat_id,
+        thread_id=scoped_thread_id,
         user_id=user_id,
         username=username,
         auth_scopes=auth_scopes,
     )
     initial_state = SealAIState(
-        user_id=user_id,
-        tenant_id=tenant_id,
-        thread_id=req.chat_id,
-        messages=[HumanMessage(content=req.input)],
-        user_context={"auth_scopes": list(auth_scopes or []), "tenant_id": tenant_id},
+        conversation={
+            "user_id": user_id,
+            "thread_id": scoped_thread_id,
+            "messages": [HumanMessage(content=req.input)],
+            "user_context": {"auth_scopes": list(auth_scopes or []), "tenant_id": tenant_id},
+        },
+        system={"tenant_id": tenant_id},
     )
     result = await graph.ainvoke(initial_state, config=config)
     if isinstance(result, SealAIState):
@@ -453,69 +933,85 @@ async def _run_graph_to_state(
 
 
 def _should_emit_confirm_checkpoint(state: SealAIState) -> bool:
-    if getattr(state, "awaiting_user_confirmation", False):
+    if state.system.awaiting_user_confirmation:
         return True
-    if state.confirm_checkpoint:
+    if state.system.confirm_checkpoint:
         return True
-    if (state.phase or "") == "confirm":
+    if (state.reasoning.phase or "") == "confirm":
         return True
-    if (state.last_node or "") == "confirm_recommendation_node":
+    if (state.reasoning.last_node or "") == "confirm_recommendation_node":
         return True
     return False
 
 
 def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str, Any]:
     values = _state_values_to_dict(state)
-    print(f"DEBUG BACKEND STATE: {values.get('live_calc_tile')}")
-    parameters = values.get("parameters") if isinstance(values, dict) else {}
-    prompt_meta = values.get("final_prompt_metadata") if isinstance(values, dict) else None
-    live_calc_tile = values.get("live_calc_tile") if isinstance(values, dict) else None
+    working_profile = _engineering_profile_payload(values) if isinstance(values, dict) else {}
+    prompt_meta = _system_value(values, "final_prompt_metadata") if isinstance(values, dict) else None
+    live_calc_tile = _working_profile_value(values, "live_calc_tile") if isinstance(values, dict) else None
+    calc_results = _working_profile_value(values, "calc_results") if isinstance(values, dict) else None
     has_live_calc_tile = _is_meaningful_live_calc_tile(live_calc_tile)
     if not has_live_calc_tile and live_calc_tile:
         # User Directive: "Stelle sicher, dass live_calc_tile NICHT gefiltert wird, wenn es vorhanden ist."
         has_live_calc_tile = True
-    if isinstance(state, dict) and "live_calc_tile" not in state and not has_live_calc_tile:
+    if isinstance(state, dict) and "live_calc_tile" not in state and "working_profile" not in state and not has_live_calc_tile:
         has_live_calc_tile = False
-    rfq_pdf_base64 = values.get("rfq_pdf_base64") if isinstance(values, dict) else None
-    rfq_pdf_url = values.get("rfq_pdf_url") if isinstance(values, dict) else None
-    rfq_html_report = values.get("rfq_html_report") if isinstance(values, dict) else None
-    if isinstance(parameters, TechnicalParameters):
-        parameters = parameters.model_dump(exclude_none=True)
+    rfq_pdf_base64 = _system_value(values, "rfq_pdf_base64") if isinstance(values, dict) else None
+    rfq_pdf_url = _system_value(values, "rfq_pdf_url") if isinstance(values, dict) else None
+    rfq_html_report = _system_value(values, "rfq_html_report") if isinstance(values, dict) else None
+    rfq_admissibility = _rfq_admissibility_value(values)
+    candidate_semantics = _candidate_semantics_payload(values)
+    governance_metadata = _governance_metadata_payload(values)
+    if hasattr(working_profile, "model_dump"):
+        working_profile = working_profile.model_dump(exclude_none=True)
     if hasattr(live_calc_tile, "model_dump"):
         live_calc_tile = live_calc_tile.model_dump(exclude_none=True)
+    if hasattr(calc_results, "model_dump"):
+        calc_results = calc_results.model_dump(exclude_none=True)
+    data_working_profile = working_profile if isinstance(working_profile, dict) else {}
+    if calc_results is not None:
+        data_working_profile["calc_results"] = calc_results
+    if has_live_calc_tile and isinstance(live_calc_tile, dict):
+        data_working_profile["live_calc_tile"] = live_calc_tile
     rfq_document = {
-        "ready": bool(values.get("rfq_ready") or rfq_pdf_base64 or rfq_pdf_url or rfq_html_report),
-        "has_pdf_base64": bool(rfq_pdf_base64),
-        "has_pdf_url": bool(rfq_pdf_url),
-        "has_html_report": bool(rfq_html_report),
+        "ready": rfq_contract_is_ready(rfq_admissibility),
+        "has_pdf_base64": bool(isinstance(rfq_pdf_base64, str) and rfq_pdf_base64.strip()),
+        "has_pdf_url": bool(isinstance(rfq_pdf_url, str) and rfq_pdf_url.strip()),
+        "has_html_report": bool(isinstance(rfq_html_report, str) and rfq_html_report.strip()),
     }
 
+    governed_text = _resolve_governed_output_text(values)
     data = {
-        "phase": values.get("phase"),
-        "last_node": values.get("last_node"),
-        "final_text": values.get("final_text"),
-        "final_answer": values.get("final_answer"),
-        "awaiting_user_input": values.get("awaiting_user_input"),
-        "streaming_complete": values.get("streaming_complete"),
-        "awaiting_user_confirmation": values.get("awaiting_user_confirmation"),
-        "recommendation_ready": values.get("recommendation_ready"),
-        "recommendation_go": values.get("recommendation_go"),
-        "coverage_score": values.get("coverage_score"),
-        "coverage_gaps": values.get("coverage_gaps"),
-        "missing_params": values.get("missing_params"),
-        "parameters": parameters if isinstance(parameters, dict) else {},
-        "working_profile": values.get("working_profile"),
-        "calc_results": values.get("calc_results"),
-        "compliance_results": values.get("compliance_results"),
-        "delta": {"parameters": parameters if isinstance(parameters, dict) else {}},
-        "pending_action": values.get("pending_action"),
-        "confirm_checkpoint_id": values.get("confirm_checkpoint_id"),
+        "phase": _reasoning_value(values, "phase"),
+        "last_node": _reasoning_value(values, "last_node"),
+        "preview_text": _system_value(values, "preview_text"),
+        "governed_output_text": _system_value(values, "governed_output_text"),
+        "governed_output_status": _system_value(values, "governed_output_status"),
+        "governed_output_ready": bool(_system_value(values, "governed_output_ready")),
+        "governance_metadata": governance_metadata if governance_metadata else None,
+        "final_text": governed_text or None,
+        "final_answer": governed_text or None,
+        "awaiting_user_input": _reasoning_value(values, "awaiting_user_input"),
+        "streaming_complete": _reasoning_value(values, "streaming_complete"),
+        "awaiting_user_confirmation": _system_value(values, "awaiting_user_confirmation"),
+        "recommendation_ready": _reasoning_value(values, "recommendation_ready"),
+        "recommendation_go": _reasoning_value(values, "recommendation_go"),
+        "coverage_score": _reasoning_value(values, "coverage_score"),
+        "coverage_gaps": _reasoning_value(values, "coverage_gaps"),
+        "missing_params": _reasoning_value(values, "missing_params"),
+        "working_profile": data_working_profile,
+        "calc_results": calc_results,
+        "compliance_results": _working_profile_value(values, "compliance_results"),
+        "delta": {"working_profile": data_working_profile},
+        "pending_action": _system_value(values, "pending_action"),
+        "confirm_checkpoint_id": _system_value(values, "confirm_checkpoint_id"),
         "final_prompt_metadata": prompt_meta if isinstance(prompt_meta, dict) and prompt_meta else None,
-        "rfq_ready": values.get("rfq_ready"),
+        "rfq_admissibility": rfq_admissibility,
+        "rfq_ready": rfq_contract_is_ready(rfq_admissibility),
         "rfq_document": rfq_document,
-        "rfq_pdf_base64": rfq_pdf_base64,
-        "rfq_html_report": rfq_html_report,
     }
+    if candidate_semantics:
+        data["candidate_semantics"] = candidate_semantics
     if has_live_calc_tile and isinstance(live_calc_tile, dict):
         data["live_calc_tile"] = live_calc_tile
     data = {key: value for key, value in data.items() if value is not None}
@@ -525,6 +1021,11 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         # Legacy top-level mirrors kept for compatibility with existing clients.
         "phase": data.get("phase"),
         "last_node": data.get("last_node"),
+        "preview_text": data.get("preview_text"),
+        "governed_output_text": data.get("governed_output_text"),
+        "governed_output_status": data.get("governed_output_status"),
+        "governed_output_ready": data.get("governed_output_ready"),
+        "governance_metadata": data.get("governance_metadata"),
         "final_text": data.get("final_text"),
         "final_answer": data.get("final_answer"),
         "awaiting_user_input": data.get("awaiting_user_input"),
@@ -535,7 +1036,6 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "coverage_score": data.get("coverage_score"),
         "coverage_gaps": data.get("coverage_gaps"),
         "missing_params": data.get("missing_params"),
-        "parameters": data.get("parameters"),
         "working_profile": data.get("working_profile"),
         "live_calc_tile": data.get("live_calc_tile"),
         "calc_results": data.get("calc_results"),
@@ -544,10 +1044,10 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "pending_action": data.get("pending_action"),
         "confirm_checkpoint_id": data.get("confirm_checkpoint_id"),
         "final_prompt_metadata": data.get("final_prompt_metadata"),
+        "rfq_admissibility": data.get("rfq_admissibility"),
+        "candidate_semantics": data.get("candidate_semantics"),
         "rfq_ready": data.get("rfq_ready"),
         "rfq_document": data.get("rfq_document"),
-        "rfq_pdf_base64": data.get("rfq_pdf_base64"),
-        "rfq_html_report": data.get("rfq_html_report"),
     }
     return {key: value for key, value in payload.items() if value is not None}
 
@@ -615,21 +1115,87 @@ def _resolve_stream_node_name(*, node_name: Any = None, meta: Any = None) -> str
     return None
 
 
+_LEGACY_GOVERNED_NODES = {
+    "answer_subgraph_node",
+    "final_answer_node",
+    "response_node",
+    "node_finalize",
+    "node_safe_fallback",
+    "smalltalk_node",
+    "out_of_scope_node",
+    "confirm_recommendation_node",
+}
+
+
+def _resolve_governed_output_text(state: SealAIState | Dict[str, Any]) -> str:
+    values = _state_values_to_dict(state)
+    governed = _system_value(values, "governed_output_text")
+    if isinstance(governed, str) and governed.strip():
+        return governed.strip()
+
+    ready = bool(_system_value(values, "governed_output_ready"))
+    last_node = str(_reasoning_value(values, "last_node") or values.get("last_node") or "").strip()
+    if ready or last_node in _LEGACY_GOVERNED_NODES:
+        legacy = _system_value(values, "final_text")
+        if not isinstance(legacy, str):
+            legacy = _system_value(values, "final_answer")
+        return str(legacy or "").strip()
+    return ""
+
+
 def _is_allowed_stream_source(token: Any, *, stream_node: str | None, state: Any = None) -> bool:
     is_rfq = False
     if state:
         sv = _state_values_to_dict(state)
         # Commercial/RFQ intents often have rfq_ready or procurement phase markers.
-        if sv.get("rfq_ready") or sv.get("phase") == "procurement":
+        if rfq_contract_is_ready(_rfq_admissibility_value(sv)) or _reasoning_value(sv, "rfq_ready") or _reasoning_value(sv, "phase") == "procurement":
             is_rfq = True
 
     if stream_node and stream_node in _STREAM_NODE_BLOCKLIST:
         if not is_rfq:
             return False
-    # Allow streaming for conversational nodes OR final_answer_node/node_finalize if it's an RFQ.
-    if not (stream_node and (stream_node in CONVERSATIONAL_STREAM_NODES or (is_rfq and stream_node in {"final_answer_node", "node_finalize"}))):
+    if not stream_node:
+        return False
+    allowed_nodes = {"response_node", "contract_first_output_node", "node_finalize", "final_answer_node"}
+    if is_rfq:
+        allowed_nodes.update({"node_p4b_calc_render", "p4b_calc_render"})
+    if stream_node not in allowed_nodes:
         return False
     return isinstance(token, (AIMessage, AIMessageChunk))
+
+
+def _is_safe_preview_stream_state(state: Any) -> bool:
+    values = _state_values_to_dict(state)
+    raw_intent = _conversation_value(values, "intent")
+    flags = _reasoning_value(values, "flags") or {}
+    intent_goal = (
+        str(raw_intent or "").strip().lower()
+        if isinstance(raw_intent, str)
+        else str((raw_intent or {}).get("goal") or getattr(raw_intent, "goal", "") or "").strip().lower()
+    )
+    intent_category = (
+        str(
+            (raw_intent or {}).get("intent_category")
+            if isinstance(raw_intent, dict)
+            else getattr(raw_intent, "intent_category", "")
+        ).strip().upper()
+        or str(flags.get("frontdoor_intent_category") or "").strip().upper()
+    )
+    return intent_category == "MATERIAL_RESEARCH" or intent_goal in {"material_research", "explanation_or_comparison"}
+
+
+def _extract_stream_nodes_from_tags(tags: Any) -> set[str]:
+    nodes: set[str] = set()
+    if not isinstance(tags, (list, tuple, set)):
+        return nodes
+    prefix = "langsmith:graph:node:"
+    for tag in tags:
+        if not isinstance(tag, str) or not tag.startswith(prefix):
+            continue
+        node_name = tag[len(prefix):].strip()
+        if node_name:
+            nodes.add(node_name)
+    return nodes
 
 
 def _extract_stream_token_text(token: Any, *, stream_node: str | None = None, state: Any = None) -> str | None:
@@ -739,9 +1305,9 @@ def _extract_trace_node(*, meta: Any = None, data: Any = None, state: Any = None
         if isinstance(node_value, str) and node_value:
             return node_value
     if isinstance(state, SealAIState):
-        return state.last_node
+        return state.reasoning.last_node
     if isinstance(state, dict):
-        node_value = state.get("last_node") or state.get("node") or state.get("name")
+        node_value = _reasoning_value(state, "last_node") or state.get("node") or state.get("name")
         return node_value if isinstance(node_value, str) else None
     return None
 
@@ -751,9 +1317,9 @@ def _extract_trace_phase(*, data: Any = None, state: Any = None) -> str | None:
     if isinstance(phase_value, str) and phase_value:
         return phase_value
     if isinstance(state, SealAIState):
-        return state.phase
+        return state.reasoning.phase
     if isinstance(state, dict):
-        phase_value = state.get("phase")
+        phase_value = _reasoning_value(state, "phase")
         return phase_value if isinstance(phase_value, str) else None
     return None
 
@@ -764,14 +1330,17 @@ def _extract_trace_action(*, data: Any = None, state: Any = None) -> str | None:
         if isinstance(action_value, str) and action_value:
             return action_value
     working_memory = _get_dict_value(data, "working_memory")
+    if not isinstance(working_memory, dict):
+        reasoning_payload = _get_dict_value(data, "reasoning")
+        working_memory = _get_dict_value(reasoning_payload, "working_memory")
     action_value = _get_dict_value(working_memory, "supervisor_decision")
     if isinstance(action_value, str) and action_value:
         return action_value
     if isinstance(state, SealAIState):
-        action_value = getattr(state.working_memory, "supervisor_decision", None)
+        action_value = getattr(state.reasoning.working_memory, "supervisor_decision", None)
         return action_value if isinstance(action_value, str) else None
     if isinstance(state, dict):
-        working_memory = state.get("working_memory")
+        working_memory = _reasoning_working_memory(state)
         action_value = _get_dict_value(working_memory, "supervisor_decision")
         return action_value if isinstance(action_value, str) else None
     return None
@@ -781,13 +1350,17 @@ def _looks_like_state_payload(data: Dict[str, Any]) -> bool:
     if not isinstance(data, dict):
         return False
     expected_keys = {
+        "conversation",
+        "reasoning",
+        "working_profile",
+        "system",
         "phase",
         "last_node",
         "messages",
         "final_text",
         "final_answer",
-        "parameters",
-        "live_calc_tile",
+        "working_profile",
+        "rfq_admissibility",
         "rfq_ready",
         "rfq_document",
         "awaiting_user_input",
@@ -863,10 +1436,8 @@ def _extract_chunk_text_from_stream_event(chunk: Any) -> str:
 
 def _extract_working_profile_payload(state_like: SealAIState | Dict[str, Any] | None) -> Dict[str, Any] | None:
     values = _state_values_to_dict(state_like)
-    raw_profile = values.get("working_profile")
-    if hasattr(raw_profile, "model_dump"):
-        raw_profile = raw_profile.model_dump(exclude_none=True)
-    if isinstance(raw_profile, dict):
+    raw_profile = _engineering_profile_payload(values)
+    if isinstance(raw_profile, dict) and raw_profile:
         return dict(raw_profile)
     return None
 
@@ -915,7 +1486,7 @@ async def event_multiplexer(
     """
     metadata = config.get("metadata") if isinstance(config, dict) else {}
     expected_run_id = metadata.get("run_id") if isinstance(metadata, dict) else None
-    thread_id = state_input.thread_id
+    thread_id = state_input.conversation.thread_id
 
     if not hasattr(graph, "astream_events"):
         yield _format_sse_text(
@@ -938,8 +1509,89 @@ async def event_multiplexer(
                 queue.get_nowait()
         queue.put_nowait(frame)
 
+    async def _queue_done() -> None:
+        final_text = _resolve_final_text(latest_state).strip() if isinstance(latest_state, (SealAIState, dict)) else ""
+        payload = {
+            "type": "done",
+            "chat_id": thread_id,
+        }
+        if final_text:
+            payload["final_text"] = final_text
+            payload["final_answer"] = final_text
+        await _queue_emit(
+            "done",
+            payload,
+        )
+
     async def _producer() -> None:
         nonlocal latest_state, turn_complete_sent
+        state_update_signature: str | None = None
+        token_seen = False
+        emitted_terminal_text: str | None = None
+
+        async def _emit_terminal_token_if_available(source: SealAIState | Dict[str, Any] | None) -> None:
+            nonlocal token_seen, emitted_terminal_text
+            if token_seen or not isinstance(source, (SealAIState, dict)):
+                return
+            final_text = _extract_terminal_text_candidate(source).strip()
+            if not final_text or final_text == emitted_terminal_text:
+                return
+            emitted_terminal_text = final_text
+            token_seen = True
+            await _queue_emit("token", {"type": "token", "text": final_text})
+
+        async def _emit_state_update_if_available() -> None:
+            nonlocal state_update_signature
+            if not isinstance(latest_state, (SealAIState, dict)):
+                return
+            payload = _build_state_update_payload(latest_state)
+            payload_data = payload.get("data")
+            if not isinstance(payload_data, dict):
+                return
+
+            working_profile_payload = payload_data.get("working_profile")
+            if not isinstance(working_profile_payload, dict):
+                working_profile_payload = {}
+                payload_data["working_profile"] = working_profile_payload
+
+            # Ensure v10 nested structure is present for frontend consumers.
+            wp_live_calc_tile = working_profile_payload.get("live_calc_tile")
+            wp_calc_results = working_profile_payload.get("calc_results")
+            if payload_data.get("live_calc_tile") is None and wp_live_calc_tile is not None:
+                payload_data["live_calc_tile"] = wp_live_calc_tile
+            if payload_data.get("calc_results") is None and wp_calc_results is not None:
+                payload_data["calc_results"] = wp_calc_results
+
+            if working_profile_payload.get("live_calc_tile") is None and payload_data.get("live_calc_tile") is not None:
+                working_profile_payload["live_calc_tile"] = payload_data.get("live_calc_tile")
+            if working_profile_payload.get("calc_results") is None and payload_data.get("calc_results") is not None:
+                working_profile_payload["calc_results"] = payload_data.get("calc_results")
+
+            if payload.get("live_calc_tile") is None and payload_data.get("live_calc_tile") is not None:
+                payload["live_calc_tile"] = payload_data.get("live_calc_tile")
+            if payload.get("calc_results") is None and payload_data.get("calc_results") is not None:
+                payload["calc_results"] = payload_data.get("calc_results")
+            if payload.get("working_profile") is None:
+                payload["working_profile"] = working_profile_payload
+
+            signature = json.dumps(
+                {
+                    "phase": payload_data.get("phase"),
+                    "last_node": payload_data.get("last_node"),
+                    "working_profile": payload_data.get("working_profile"),
+                    "live_calc_tile": payload_data.get("live_calc_tile"),
+                    "calc_results": payload_data.get("calc_results"),
+                    "rfq_admissibility": payload_data.get("rfq_admissibility"),
+                    "rfq_document": payload_data.get("rfq_document"),
+                },
+                sort_keys=True,
+                default=str,
+            )
+            if signature == state_update_signature:
+                return
+            state_update_signature = signature
+            await _queue_emit("state_update", payload)
+
         try:
             async for raw_event in graph.astream_events(state_input, config=config, version="v2"):
                 if await request.is_disconnected():
@@ -970,13 +1622,23 @@ async def event_multiplexer(
 
                 if event_name == "on_chat_model_stream":
                     tags = raw_event.get("tags") or []
-                    is_speaking = any(f"langsmith:graph:node:{n}" in tags for n in SPEAKING_NODES) or str(
-                        node_name
-                    ) in SPEAKING_NODES
+                    tagged_nodes = _extract_stream_nodes_from_tags(tags)
+                    speaking_nodes = set(tagged_nodes)
+                    if node_name:
+                        speaking_nodes.add(str(node_name))
+                    allowed_speaking_nodes = {
+                        "response_node",
+                        "contract_first_output_node",
+                        "node_finalize",
+                        "final_answer_node",
+                    }
+                    is_speaking = any(node in allowed_speaking_nodes for node in speaking_nodes)
                     if is_speaking:
                         chunk_text = _extract_chunk_text_from_stream_event(data.get("chunk"))
                         if chunk_text:
+                            token_seen = True
                             await _queue_emit("text_chunk", {"type": "text_chunk", "text": chunk_text})
+                            await _queue_emit("token", {"type": "token", "text": chunk_text})
                     continue
 
                 update_source = _extract_state_update_source(data)
@@ -984,6 +1646,9 @@ async def event_multiplexer(
                     latest_state = _merge_state_like(latest_state, update_source)
 
                 if event_name in {"on_custom_event", "on_node_end", "on_chain_end"}:
+                    await _emit_state_update_if_available()
+                    await _emit_terminal_token_if_available(latest_state)
+
                     profile_payload = _extract_working_profile_payload(latest_state)
                     if profile_payload and (
                         event_name == "on_custom_event"
@@ -1023,6 +1688,7 @@ async def event_multiplexer(
                     event_name == "on_chain_end" and str(node_name or "") == "reasoning_core_node"
                 ):
                     await _queue_emit("turn_complete", {"type": "turn_complete"})
+                    await _queue_done()
                     turn_complete_sent = True
 
         except asyncio.CancelledError:
@@ -1037,10 +1703,12 @@ async def event_multiplexer(
                 },
             )
             await _queue_emit("turn_complete", {"type": "turn_complete"})
+            await _queue_done()
             turn_complete_sent = True
         finally:
             if not turn_complete_sent:
                 await _queue_emit("turn_complete", {"type": "turn_complete"})
+                await _queue_done()
             with contextlib.suppress(asyncio.QueueFull):
                 queue.put_nowait(None)
 
@@ -1061,12 +1729,11 @@ async def event_multiplexer(
                 try:
                     if hasattr(graph, "aget_state"):
                         snapshot = await graph.aget_state(config)
-                        vals = snapshot.values if snapshot else {}
-                        final = str(vals.get("final_answer", "") or "")
+                        vals = _state_values_to_dict(snapshot.values if snapshot else {})
+                        final = str(_resolve_governed_output_text(vals) or "")
                         if final:
                             logger.info("hitl_final_answer_flushed", extra={"length": len(final)})
                             yield _format_sse_text("token", {"type": "token", "text": final})
-                            yield _format_sse_text("turn_complete", {"type": "turn_complete"})
                 except Exception as _flush_err:
                     logger.warning("hitl_flush_error", extra={"error": str(_flush_err)})
                 break
@@ -1089,16 +1756,40 @@ def _merge_state_like(
     current: SealAIState | Dict[str, Any] | None,
     update: SealAIState | Dict[str, Any] | None,
 ) -> SealAIState | Dict[str, Any] | None:
+    def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(base)
+        for key, value in patch.items():
+            current_value = merged.get(key)
+            if isinstance(current_value, dict) and isinstance(value, dict):
+                merged[key] = _deep_merge(current_value, value)
+            else:
+                merged[key] = value
+        return merged
+
     update_dict = _state_values_to_dict(update)
     if not update_dict:
         return current
+    if isinstance(update_dict, dict) and "parameters" in update_dict:
+        raw_parameters = update_dict.pop("parameters")
+        if isinstance(raw_parameters, dict):
+            working_profile_patch = update_dict.get("working_profile")
+            if not isinstance(working_profile_patch, dict):
+                working_profile_patch = {}
+            extracted_patch = working_profile_patch.get("extracted_params")
+            if not isinstance(extracted_patch, dict):
+                extracted_patch = {}
+            extracted_patch.update(dict(raw_parameters))
+            working_profile_patch["extracted_params"] = extracted_patch
+            update_dict["working_profile"] = working_profile_patch
     base = _state_values_to_dict(current)
-    merged = dict(base)
-    merged.update(update_dict)
-    if not _is_meaningful_live_calc_tile(update_dict.get("live_calc_tile")):
-        current_tile = base.get("live_calc_tile")
+    merged = _deep_merge(base, update_dict)
+    update_tile = _working_profile_value(update_dict, "live_calc_tile")
+    if not _is_meaningful_live_calc_tile(update_tile):
+        current_tile = _working_profile_value(base, "live_calc_tile")
         if _is_meaningful_live_calc_tile(current_tile):
-            merged["live_calc_tile"] = current_tile
+            merged.setdefault("working_profile", {})
+            if isinstance(merged["working_profile"], dict):
+                merged["working_profile"]["live_calc_tile"] = current_tile
     return merged
 
 
@@ -1128,31 +1819,15 @@ def _latest_ai_text(messages: Any, *, after_last_human: bool = False) -> str:
 
 
 def _resolve_final_text(state: SealAIState | Dict[str, Any]) -> str:
-    if isinstance(state, SealAIState):
-        text = str(state.final_text or state.final_answer or "").strip()
-        if text:
-            return text
-        return _latest_ai_text(state.messages or [], after_last_human=True)
-    if isinstance(state, dict):
-        value = state.get("final_text")
-        if not isinstance(value, str):
-            value = state.get("final_answer")
-        text = str(value or "").strip()
-        if text:
-            return text
-        return _latest_ai_text(state.get("messages") or [], after_last_human=True)
-    return ""
+    if not isinstance(state, (SealAIState, dict)):
+        return ""
+    return _resolve_governed_output_text(state)
 
 
 def _extract_terminal_text_candidate(state: SealAIState | Dict[str, Any] | None) -> str:
     if not isinstance(state, (SealAIState, dict)):
         return ""
-    values = _state_values_to_dict(state)
-    value = values.get("final_text")
-    if not isinstance(value, str):
-        value = values.get("final_answer")
-    text = str(value or "").strip()
-    return text
+    return _resolve_governed_output_text(state)
 
 
 def _extract_final_text_from_patch(data: Any) -> str:
@@ -1173,10 +1848,13 @@ def _extract_final_text_from_patch(data: Any) -> str:
             stack.append(current.model_dump(exclude_none=True))
             continue
         if isinstance(current, dict):
-            value = current.get("final_text")
+            value = _system_value(current, "governed_output_text")
             if isinstance(value, str) and value.strip():
                 return value.strip()
-            value = current.get("final_answer")
+            value = _system_value(current, "final_text")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            value = _system_value(current, "final_answer")
             if isinstance(value, str) and value.strip():
                 return value.strip()
             chunk_type = current.get("chunk_type")
@@ -1209,7 +1887,7 @@ def _extract_prompt_trace_metadata(*, data: Any = None, state: Any = None) -> tu
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
-        raw_meta = candidate.get("final_prompt_metadata")
+        raw_meta = _system_value(candidate, "final_prompt_metadata")
         meta = raw_meta if isinstance(raw_meta, dict) else {}
         raw_hash = meta.get("prompt_hash") or meta.get("hash")
         prompt_hash = str(raw_hash).strip() if raw_hash else None
@@ -1221,7 +1899,7 @@ def _extract_prompt_trace_metadata(*, data: Any = None, state: Any = None) -> tu
         prompt_version = str(raw_version).strip() if raw_version else None
 
         if not prompt_hash:
-            prompt_text = candidate.get("final_prompt")
+            prompt_text = _system_value(candidate, "final_prompt")
             if isinstance(prompt_text, str) and prompt_text.strip():
                 prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
 
@@ -1322,6 +2000,8 @@ async def _event_stream_v2(
     request_id: str | None = None,
     last_event_id: str | None = None,
 ) -> AsyncIterator[bytes]:
+    if user_id:
+        req.chat_id = _scope_thread_id_for_user(user_id=user_id, thread_id=req.chat_id)
     stream_task: asyncio.Task[None] | None = None
     broadcast_task: asyncio.Task[None] | None = None
     broadcast_queue: asyncio.Queue[tuple[int, str, Dict[str, Any]]] | None = None
@@ -1343,7 +2023,7 @@ async def _event_stream_v2(
         )
         scoped_user_id = _config_user_id(config, resolved_user_id)
         initial_stream_values = await _get_graph_state_values_for_stream(graph, config)
-        sticky_live_calc_tile = _normalize_live_calc_tile(initial_stream_values.get("live_calc_tile"))
+        sticky_live_calc_tile = _normalize_live_calc_tile(_working_profile_value(initial_stream_values, "live_calc_tile"))
 
         async def _enqueue_frame(frame: bytes, *, allow_slow_notice: bool = True) -> None:
             nonlocal last_slow_notice
@@ -1473,9 +2153,7 @@ async def _event_stream_v2(
                 if not state_values and hasattr(graph, "aget_state"):
                     server_snapshot = await graph.aget_state(config)
                     state_values = _state_values_to_dict(server_snapshot.values)
-                server_versions = (
-                    state_values.get("parameter_versions") if isinstance(state_values, dict) else {}
-                )
+                server_versions = _reasoning_value(state_values, "parameter_versions") if isinstance(state_values, dict) else {}
                 stale_count = 0
                 if isinstance(server_versions, dict):
                     for key, snap_value in snapshot_versions.items():
@@ -1507,11 +2185,13 @@ async def _event_stream_v2(
         run_id = metadata.get("run_id") if isinstance(metadata, dict) else None
         prev_parameters: Dict[str, Any] = {}
         initial_state = SealAIState(
-            user_id=scoped_user_id,
-            tenant_id=tenant_id,
-            thread_id=req.chat_id,
-            messages=[HumanMessage(content=req.input)],
-            user_context={"auth_scopes": list(auth_scopes or []), "tenant_id": tenant_id},
+            conversation={
+                "user_id": scoped_user_id,
+                "thread_id": req.chat_id,
+                "messages": [HumanMessage(content=req.input)],
+                "user_context": {"auth_scopes": list(auth_scopes or []), "tenant_id": tenant_id},
+            },
+            system={"tenant_id": tenant_id},
         )
 
         token_count = 0
@@ -1584,7 +2264,7 @@ async def _event_stream_v2(
 
                 source_values = _state_values_to_dict(update_source)
                 payload = _build_state_update_payload(update_source)
-                source_tile = _normalize_live_calc_tile(source_values.get("live_calc_tile"))
+                source_tile = _normalize_live_calc_tile(_working_profile_value(source_values, "live_calc_tile"))
                 if source_tile is not None:
                     sticky_live_calc_tile = source_tile
                 _inject_live_calc_tile(payload, live_calc_tile=sticky_live_calc_tile)
@@ -1602,13 +2282,16 @@ async def _event_stream_v2(
                         live_tile_stream_signature = tile_signature
                         should_emit = True
 
-                has_rfq_document = (
-                    source_values.get("rfq_ready")
-                    or source_values.get("rfq_pdf_base64")
-                    or source_values.get("rfq_pdf_url")
-                    or source_values.get("rfq_html_report")
+                rfq_admissibility = payload_data.get("rfq_admissibility")
+                has_rfq_document = bool(
+                    isinstance(rfq_admissibility, dict)
+                    and (
+                        rfq_admissibility.get("governed_ready")
+                        or rfq_admissibility.get("status")
+                        or rfq_admissibility.get("reason")
+                    )
                 )
-                should_emit_rfq = bool(has_rfq_document) or node_hint == "node_p6_generate_pdf"
+                should_emit_rfq = bool(has_rfq_document)
                 if should_emit_rfq:
                     rfq_document = payload_data.get("rfq_document", {})
                     rfq_signature = json.dumps(rfq_document, sort_keys=True, default=str)
@@ -1762,9 +2445,9 @@ async def _event_stream_v2(
                                 await _emit_trace("values", data=data, state=latest_state)
                                 node_hint = None
                                 if isinstance(data, SealAIState):
-                                    node_hint = data.last_node
+                                    node_hint = data.reasoning.last_node
                                 elif isinstance(data, dict):
-                                    last_node = data.get("last_node")
+                                    last_node = _reasoning_value(data, "last_node")
                                     node_hint = last_node if isinstance(last_node, str) else None
                                 await _emit_state_update_if_changed(update_source=data, node_hint=node_hint)
 
@@ -1801,22 +2484,12 @@ async def _event_stream_v2(
                             snapshot = None
                             final_state = None
                             final_state_values: Dict[str, Any] = {}
-                            if hasattr(graph, "aget_state"):
-                                final_state = await graph.aget_state(config)
-                                snapshot = final_state
-                                if hasattr(final_state, "values"):
-                                    final_state_values = _state_values_to_dict(final_state.values)
-                                    if final_state_values:
-                                        latest_state = _merge_state_like(latest_state, final_state.values)
-                            elif hasattr(graph, "get_state"):
-                                final_state = graph.get_state(config)
-                                if asyncio.iscoroutine(final_state):
-                                    final_state = await final_state
-                                snapshot = final_state
-                                if hasattr(final_state, "values"):
-                                    final_state_values = _state_values_to_dict(final_state.values)
-                                    if final_state_values:
-                                        latest_state = _merge_state_like(latest_state, final_state.values)
+                            final_state = await graph.aget_state(config)
+                            snapshot = final_state
+                            if hasattr(final_state, "values"):
+                                final_state_values = _state_values_to_dict(final_state.values)
+                                if final_state_values:
+                                    latest_state = _merge_state_like(latest_state, final_state.values)
 
                             result_state = (
                                 latest_state
@@ -1826,7 +2499,7 @@ async def _event_stream_v2(
                             state_values = _state_values_to_dict(result_state)
                             await _emit_state_update_if_changed(
                                 update_source=result_state,
-                                node_hint=result_state.last_node,
+                                node_hint=result_state.reasoning.last_node,
                             )
                             interrupted = bool(snapshot is not None and _snapshot_waiting_on_human_review(snapshot))
                             if interrupted:
@@ -1845,11 +2518,11 @@ async def _event_stream_v2(
                                     },
                                 )
                             if _should_emit_confirm_checkpoint(result_state):
-                                checkpoint_payload = result_state.confirm_checkpoint or build_confirm_checkpoint_payload(
-                                    result_state,
-                                    action=str(result_state.pending_action or "human_review"),
-                                    checkpoint_id=result_state.confirm_checkpoint_id,
-                                )
+                                checkpoint_payload = result_state.system.confirm_checkpoint or {
+                                    "checkpoint_id": result_state.system.confirm_checkpoint_id,
+                                    "action": str(result_state.system.pending_action or "human_review"),
+                                    "risk": "med",
+                                }
                                 await _emit_event(
                                     "checkpoint_required",
                                     {
@@ -1861,11 +2534,13 @@ async def _event_stream_v2(
                                 )
                             final_text = ""
                             if final_state_values:
-                                state_final_text = final_state_values.get("final_text") or final_state_values.get("final_answer")
+                                state_final_text = _system_value(final_state_values, "final_text") or _system_value(final_state_values, "final_answer")
                                 if isinstance(state_final_text, str) and state_final_text.strip():
                                     final_text = state_final_text.strip()
+                                elif terminal_final_text or latest_patch_final_text:
+                                    final_text = str(terminal_final_text or latest_patch_final_text).strip()
                                 else:
-                                    snapshot_message_text = _latest_ai_text(final_state_values.get("messages") or []).strip()
+                                    snapshot_message_text = _latest_ai_text(_conversation_value(final_state_values, "messages") or []).strip()
                                     if snapshot_message_text:
                                         final_text = snapshot_message_text
                             if not final_text:
@@ -1896,10 +2571,10 @@ async def _event_stream_v2(
 
                             done_payload.update(
                                 {
-                                    "phase": result_state.phase,
-                                    "last_node": result_state.last_node,
-                                    "awaiting_confirmation": bool(result_state.awaiting_user_confirmation),
-                                    "checkpoint_id": result_state.confirm_checkpoint_id,
+                                    "phase": result_state.reasoning.phase,
+                                    "last_node": result_state.reasoning.last_node,
+                                    "awaiting_confirmation": bool(result_state.system.awaiting_user_confirmation),
+                                    "checkpoint_id": result_state.system.confirm_checkpoint_id,
                                 }
                             )
                         except asyncio.CancelledError:
@@ -2030,6 +2705,35 @@ async def langgraph_chat_v2_endpoint(
     raw_request: Request,
     user: RequestUser = Depends(get_current_request_user),
 ) -> StreamingResponse:
+    """Primary chat endpoint for the v13 two-speed runtime.
+
+    Interception workflow:
+
+    1. Authenticate the request, deduplicate `client_msg_id`, and claim the
+       thread lock exactly as before. Fast-Brain interception must remain
+       invisible to auth and checkpoint semantics.
+    2. Load the current checkpoint state and pass recent conversation history to
+       the Fast Brain.
+    3. Branch on the Fast-Brain status:
+
+       - `chat_continue`
+         The Fast Brain fully answers the turn. We sync any extracted
+         parameters / live physics outputs into the checkpoint, persist the
+         transcript for this turn, and stream the response directly as SSE
+         (`state_update` -> `text_chunk` -> `turn_complete`). The LangGraph is
+         not started.
+
+       - `handoff_to_langgraph`
+         The Fast Brain has gathered enough context to wake the Slow Brain. We
+         first sync its state contributions into the checkpoint so the graph
+         sees the same engineering profile and deterministic tool outputs, then
+         start the existing `event_multiplexer` flow unchanged.
+
+    The practical consequence is intentional: a simple chat request may return
+    instantly without graph execution, while a sufficiently "engineering-heavy"
+    request escalates into the LangGraph Expert Council using the same REST
+    endpoint and thread state.
+    """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     if not request_id:
         request_id = str(uuid.uuid4())
@@ -2042,6 +2746,7 @@ async def langgraph_chat_v2_endpoint(
             detail=error_detail("missing_param_snapshot", request_id=request_id),
         )
     scoped_user_id = canonical_user_id(user)
+    request.chat_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=request.chat_id)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     if request.client_msg_id:
         claimed = await _claim_client_msg_id(
@@ -2125,14 +2830,23 @@ async def langgraph_chat_v2_endpoint(
             legacy_user_id=legacy_user_id,
             request_id=request_id,
         )
-        state_input = SealAIState(
-            user_id=scoped_user_id,
-            tenant_id=user.tenant_id,
-            thread_id=request.chat_id,
-            messages=[HumanMessage(content=request.input)],
-            user_context={"auth_scopes": list(user.scopes or []), "tenant_id": user.tenant_id},
-        )
-        stream = event_multiplexer(graph, state_input, config, raw_request)
+        state_values = await _get_graph_state_values_for_stream(graph, config)
+        fast_brain_result: Dict[str, Any] | None = None
+        try:
+            fast_brain_result = await _get_fast_brain_router().chat(
+                user_input=request.input,
+                history=_extract_fast_brain_history(state_values),
+            )
+        except Exception:
+            logger.exception(
+                "fast_brain_router_failed",
+                extra={
+                    "request_id": request_id,
+                    "chat_id": request.chat_id,
+                    "user_id": scoped_user_id,
+                },
+            )
+
         headers = {
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
@@ -2140,6 +2854,60 @@ async def langgraph_chat_v2_endpoint(
         }
         if request_id:
             headers["X-Request-Id"] = request_id
+
+        if isinstance(fast_brain_result, dict):
+            fast_status = _normalize_fast_brain_status(fast_brain_result)
+            logger.info(
+                "langgraph_v2_fast_brain_route",
+                extra={
+                    "request_id": request_id,
+                    "chat_id": request.chat_id,
+                    "user_id": scoped_user_id,
+                    "status": fast_status,
+                    "has_state_patch": bool(_coerce_fast_brain_state_patch(fast_brain_result)),
+                },
+            )
+            if fast_status == "chat_continue":
+                # Fast path: no graph run. Persist the reply and stream it back
+                # with the SSE contract expected by the frontend.
+                synced_state = await _sync_fast_brain_checkpoint_state(
+                    graph=graph,
+                    config=config,
+                    user_input=request.input,
+                    fast_brain_result=fast_brain_result,
+                    request_id=request_id,
+                    persist_transcript=True,
+                )
+                stream = _fast_brain_sse_stream(
+                    request=raw_request,
+                    thread_id=request.chat_id,
+                    fast_brain_result=fast_brain_result,
+                    state_values=synced_state,
+                )
+                return EventSourceResponse(stream, headers=headers)
+
+            if fast_status == "handoff_to_langgraph":
+                # Handoff path: checkpoint Fast-Brain discoveries first so the
+                # LangGraph starts from the already-enriched digital twin.
+                await _sync_fast_brain_checkpoint_state(
+                    graph=graph,
+                    config=config,
+                    user_input=request.input,
+                    fast_brain_result=fast_brain_result,
+                    request_id=request_id,
+                    persist_transcript=False,
+                )
+
+        state_input = SealAIState(
+            conversation={
+                "user_id": scoped_user_id,
+                "thread_id": request.chat_id,
+                "messages": [HumanMessage(content=request.input)],
+                "user_context": {"auth_scopes": list(user.scopes or []), "tenant_id": user.tenant_id},
+            },
+            system={"tenant_id": user.tenant_id},
+        )
+        stream = event_multiplexer(graph, state_input, config, raw_request)
         return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
     except Exception:
         # If we failed before returning the stream, release the lock immediately.
@@ -2155,6 +2923,7 @@ async def confirm_go(
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
+    body.chat_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=body.chat_id)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
 
     # Concurrency check: Ensure only one active run per thread_id.
@@ -2184,20 +2953,25 @@ async def confirm_go(
         )
         snapshot = await graph.aget_state(config)
         state_values = _state_values_to_dict(snapshot.values)
-        confirm_payload = state_values.get("confirm_checkpoint") if isinstance(state_values, dict) else {}
-        confirm_status = state_values.get("confirm_status") if isinstance(state_values, dict) else None
+        confirm_payload = _system_value(state_values, "confirm_checkpoint") if isinstance(state_values, dict) else {}
+        if not isinstance(confirm_payload, dict):
+            confirm_payload = {}
+        confirm_status = _system_value(state_values, "confirm_status") if isinstance(state_values, dict) else None
         required_sub = ""
-        if isinstance(confirm_payload, dict):
+        if confirm_payload:
             required_sub = str(confirm_payload.get("required_user_sub") or "")
-        pending_action = state_values.get("pending_action") if isinstance(state_values, dict) else None
+        pending_action = _system_value(state_values, "pending_action") if isinstance(state_values, dict) else None
+        checkpoint_id = _system_value(state_values, "confirm_checkpoint_id") if isinstance(state_values, dict) else None
         if confirm_status == "resolved":
             raise HTTPException(
                 status_code=409,
                 detail=error_detail("checkpoint_already_resolved", request_id=request_id),
             )
+        if not confirm_payload and not pending_action and not checkpoint_id:
+            raise HTTPException(status_code=409, detail=error_detail("no_pending_checkpoint", request_id=request_id))
         # Legacy/test graphs may not expose explicit checkpoint payload fields; allow
         # confirm updates to proceed and let graph/update layer decide applicability.
-        if isinstance(confirm_payload, dict):
+        if confirm_payload:
             conversation_id = str(confirm_payload.get("conversation_id") or "")
             if conversation_id != body.chat_id:
                 raise HTTPException(
@@ -2206,16 +2980,41 @@ async def confirm_go(
                 )
         if required_sub and required_sub != scoped_user_id:
             raise HTTPException(status_code=403, detail=error_detail("forbidden", request_id=request_id))
-        checkpoint_id = state_values.get("confirm_checkpoint_id") if isinstance(state_values, dict) else None
         if body.checkpoint_id and checkpoint_id and body.checkpoint_id != checkpoint_id:
             raise HTTPException(status_code=409, detail=error_detail("checkpoint_mismatch", request_id=request_id))
 
+        current_action = str((confirm_payload.get("action") if isinstance(confirm_payload, dict) else None) or pending_action or "").strip()
+        current_release_blockers = _release_blockers_from_state(state_values)
+        if body.decision == "approve" and current_release_blockers:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "release_blocked",
+                    request_id=request_id,
+                    blockers=current_release_blockers,
+                ),
+            )
+        if body.decision == "approve" and _confirm_action_requires_rfq_ready(current_action):
+            rfq_admissibility = _rfq_admissibility_value(state_values)
+            if not rfq_contract_is_ready(rfq_admissibility):
+                raise HTTPException(
+                    status_code=409,
+                    detail=error_detail(
+                        "rfq_not_admissible",
+                        request_id=request_id,
+                        status=rfq_admissibility.get("status"),
+                        reason=rfq_admissibility.get("reason"),
+                    ),
+                )
+
         edits_payload = body.edits.model_dump(exclude_none=True) if body.edits else {}
         edit_parameters = {}
-        if edits_payload.get("parameters"):
-            edit_parameters = sanitize_v2_parameter_patch(edits_payload.get("parameters") or {})
+        if edits_payload.get("working_profile") or edits_payload.get("parameters"):
+            edit_parameters = sanitize_v2_parameter_patch(
+                edits_payload.get("working_profile") or edits_payload.get("parameters") or {}
+            )
         edits = {
-            "parameters": edit_parameters,
+            "working_profile": edit_parameters,
             "instructions": (edits_payload.get("instructions") or "").strip() or None,
         }
 
@@ -2229,6 +3028,11 @@ async def confirm_go(
         await graph.aupdate_state(
             config,
             {
+                "system": {
+                    "confirm_decision": body.decision,
+                    "confirm_edits": edits,
+                },
+                # Backward-compatible mirrors for legacy test doubles/graphs.
                 "confirm_decision": body.decision,
                 "confirm_edits": edits,
             },
@@ -2237,14 +3041,12 @@ async def confirm_go(
 
         result = await graph.ainvoke({}, config=config)
         state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result or {})
-        return {
+        response = {
             "ok": True,
-            "chat_id": body.chat_id,
             "decision": body.decision,
-            "final_text": state.final_text or "",
-            "phase": state.phase,
-            "last_node": state.last_node,
         }
+        response.update(_build_release_response(state, thread_id=body.chat_id))
+        return response
     except HTTPException:
         raise
     except InvalidUpdateError as exc:
@@ -2279,6 +3081,7 @@ async def resume_run(
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
+    thread_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=thread_id)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
 
     # Concurrency check: Ensure only one active run per thread_id.
@@ -2310,7 +3113,7 @@ async def resume_run(
         )
         snapshot = await graph.aget_state(config)
         state_values = _state_values_to_dict(snapshot.values)
-        state_checkpoint_id = state_values.get("confirm_checkpoint_id") if isinstance(state_values, dict) else None
+        state_checkpoint_id = _system_value(state_values, "confirm_checkpoint_id") if isinstance(state_values, dict) else None
         if (
             isinstance(state_checkpoint_id, str)
             and state_checkpoint_id.strip()
@@ -2327,16 +3130,14 @@ async def resume_run(
         }
         result = await graph.ainvoke(Command(resume=resume_payload), config=config)
         state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result or {})
-        return {
+        response = {
             "ok": True,
             "thread_id": thread_id,
             "checkpoint_id": body.checkpoint_id,
             "action": body.command.action,
-            "phase": state.phase,
-            "last_node": state.last_node,
-            "final_text": state.final_text or "",
-            "requires_human_review": bool(getattr(state, "requires_human_review", False)),
         }
+        response.update(_build_release_response(state, thread_id=thread_id))
+        return response
     except HTTPException:
         raise
     except InvalidUpdateError as exc:
@@ -2375,7 +3176,8 @@ async def patch_parameters(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     scoped_user_id = canonical_user_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
-    chat_id = (body.chat_id or "").strip()
+    chat_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=body.chat_id)
+    body.chat_id = chat_id
     patch: Dict[str, Any] = {}
     try:
         if PARAM_SYNC_DEBUG:
@@ -2404,30 +3206,39 @@ async def patch_parameters(
         assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
         snapshot = await graph.aget_state(config)
         state_values = _state_values_to_dict(snapshot.values)
-        existing_params = state_values.get("parameters") if isinstance(state_values, dict) else {}
+        existing_params = _engineering_profile_payload(state_values) if isinstance(state_values, dict) else {}
         existing_provenance = {}
+        existing_extracted = {}
+        existing_extracted_provenance = {}
         existing_versions: Dict[str, int] = {}
         existing_updated_at: Dict[str, float] = {}
         if isinstance(state_values, dict):
-            existing_provenance = state_values.get("parameter_provenance") or {}
-            existing_versions = state_values.get("parameter_versions") or {}
-            existing_updated_at = state_values.get("parameter_updated_at") or {}
+            existing_provenance = _reasoning_value(state_values, "parameter_provenance") or {}
+            existing_extracted = _working_profile_value(state_values, "extracted_params") or {}
+            existing_extracted_provenance = _reasoning_value(state_values, "extracted_parameter_provenance") or {}
+            existing_versions = _reasoning_value(state_values, "parameter_versions") or {}
+            existing_updated_at = _reasoning_value(state_values, "parameter_updated_at") or {}
         (
             merged,
             merged_provenance,
             merged_versions,
             merged_updated_at,
+            remaining_extracted,
+            remaining_extracted_provenance,
             applied_fields,
             rejected_fields,
-        ) = apply_parameter_patch_lww(
+        ) = promote_parameter_patch_to_asserted(
             existing_params,
             patch,
             existing_provenance,
             source="user",
+            existing_extracted=existing_extracted,
+            extracted_provenance=existing_extracted_provenance,
             parameter_versions=existing_versions,
             parameter_updated_at=existing_updated_at,
             base_versions=body.base_versions,
         )
+        cycle_update = build_assertion_cycle_update(state_values, applied_fields=applied_fields)
 
         if PARAM_SYNC_DEBUG:
             patch_keys = sorted(patch.keys())
@@ -2455,14 +3266,24 @@ async def patch_parameters(
                 },
             )
 
-        await graph.aupdate_state(
-            config,
-            {
-                "parameters": merged,
+        updates = {
+            "working_profile": {
+                "engineering_profile": merged,
+                "extracted_params": remaining_extracted,
+            },
+            "reasoning": {
                 "parameter_provenance": merged_provenance,
+                "extracted_parameter_provenance": remaining_extracted_provenance,
                 "parameter_versions": merged_versions,
                 "parameter_updated_at": merged_updated_at,
             },
+        }
+        if cycle_update:
+            updates = _merge_state_like(updates, cycle_update) or updates
+
+        await graph.aupdate_state(
+            config,
+            updates,
             # LangGraph requires `as_node` to be an existing node in the compiled graph.
             # Parameter patches are UI-driven and should not advance the graph; we attach
             # the update to a stable, always-present node.

@@ -20,9 +20,10 @@ def _merge_user_context(
 
 
 def _resolve_user_id(state: SealAIState) -> str:
-    if isinstance(state.user_id, str) and state.user_id.strip():
-        return state.user_id.strip()
-    context = state.user_context if isinstance(state.user_context, dict) else {}
+    conversation = state.conversation
+    if isinstance(conversation.user_id, str) and conversation.user_id.strip():
+        return conversation.user_id.strip()
+    context = conversation.user_context if isinstance(conversation.user_context, dict) else {}
     metadata = context.get("metadata") if isinstance(context.get("metadata"), dict) else {}
     for candidate in (
         context.get("user_id"),
@@ -57,7 +58,11 @@ async def profile_loader_node(state: SealAIState, store: BaseStore) -> Dict[str,
     """Load cross-session user profile from BaseStore and project into state."""
     user_id = _resolve_user_id(state)
     namespace = ("user_prefs", user_id)
-    existing_context = state.user_context if isinstance(state.user_context, dict) else {}
+    existing_context = (
+        state.conversation.user_context
+        if isinstance(state.conversation.user_context, dict)
+        else {}
+    )
 
     try:
         loaded_profile = await _load_technical_context(store, namespace)
@@ -66,7 +71,7 @@ async def profile_loader_node(state: SealAIState, store: BaseStore) -> Dict[str,
 
     merged_context = _merge_user_context(dict(existing_context), loaded_profile)
 
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     design_notes = dict(wm.design_notes or {})
     design_notes["user_profile"] = loaded_profile
     if isinstance(loaded_profile.get("domains"), list):
@@ -79,7 +84,9 @@ async def profile_loader_node(state: SealAIState, store: BaseStore) -> Dict[str,
     wm = wm.model_copy(update={"design_notes": design_notes})
 
     return {
-        "user_context": merged_context,
-        "working_memory": wm,
-        "last_node": "profile_loader_node",
+        "conversation": {"user_context": merged_context},
+        "reasoning": {
+            "working_memory": wm,
+            "last_node": "profile_loader_node",
+        },
     }

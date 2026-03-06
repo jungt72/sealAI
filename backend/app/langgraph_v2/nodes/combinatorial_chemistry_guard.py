@@ -45,11 +45,6 @@ def _contains_blocking_amine(additives: str | None) -> bool:
         return False
     return bool(_FKM_BLOCKING_AMINE_PATTERN.search(text))
 
-
-def _base_risk_mitigated(profile: WorkingProfile) -> bool:
-    return bool(getattr(profile, "risk_mitigated", True))
-
-
 def _dedupe_conflicts(conflicts: List[ConflictRecord]) -> List[ConflictRecord]:
     deduped: List[ConflictRecord] = []
     seen: set[tuple[str, str, str]] = set()
@@ -170,7 +165,7 @@ def evaluate_combinatorial_conflicts(profile: WorkingProfile) -> List[ConflictRe
 
 def combinatorial_chemistry_guard_node(state: SealAIState) -> Command:
     """LangGraph node enforcing deterministic combinatorial safety checks."""
-    current_profile = state.working_profile or WorkingProfile()
+    current_profile = state.working_profile.engineering_profile or WorkingProfile()
     new_conflicts = evaluate_combinatorial_conflicts(current_profile)
     existing_conflicts = list(getattr(current_profile, "conflicts_detected", []) or [])
     merged_conflicts = _dedupe_conflicts([*existing_conflicts, *new_conflicts])
@@ -183,7 +178,7 @@ def combinatorial_chemistry_guard_node(state: SealAIState) -> Command:
         }
     )
 
-    flags: Dict[str, object] = dict(state.flags or {})
+    flags: Dict[str, object] = dict(state.reasoning.flags or {})
     flags.update(
         {
             "combinatorial_chemistry_guard_ran": True,
@@ -197,7 +192,7 @@ def combinatorial_chemistry_guard_node(state: SealAIState) -> Command:
         }
     )
 
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     diagnostic_data = dict(getattr(wm, "diagnostic_data", {}) or {})
     diagnostic_data.update(
         {
@@ -205,13 +200,17 @@ def combinatorial_chemistry_guard_node(state: SealAIState) -> Command:
             "combinatorial_guard_version_hash": _COMBINATORIAL_GUARD_VERSION_HASH,
         }
     )
-    next_working_memory = wm.model_copy(update={"diagnostic_data": diagnostic_data})
+    next_working_memory = wm.model_copy(
+        update={
+            "diagnostic_data": diagnostic_data,
+        }
+    )
 
     if new_conflicts:
         logger.warning(
             "combinatorial_chemistry_guard_conflicts_detected",
-            thread_id=state.thread_id,
-            run_id=state.run_id,
+            thread_id=state.conversation.thread_id,
+            run_id=state.system.run_id,
             has_blocker=has_blocker,
             conflict_count=len(new_conflicts),
             blocker_rules=[conflict.rule_id for conflict in new_conflicts if conflict.severity == "BLOCKER"],
@@ -224,10 +223,12 @@ def combinatorial_chemistry_guard_node(state: SealAIState) -> Command:
 
     return Command(
         update={
-            "last_node": "combinatorial_chemistry_guard_node",
-            "working_profile": next_profile,
-            "working_memory": next_working_memory,
-            "flags": flags,
+            "working_profile": {"engineering_profile": next_profile},
+            "reasoning": {
+                "last_node": "combinatorial_chemistry_guard_node",
+                "working_memory": next_working_memory,
+                "flags": flags,
+            },
         },
         goto=next_node,
     )

@@ -94,7 +94,7 @@ def _minimal_prompt_context() -> Dict[str, Any]:
         ("material_comparison.j2", ["Vergleiche Materialien"]),
         ("leakage_troubleshooting.j2", ["Troubleshooting Spezialist"]),
         ("troubleshooting_explainer.j2", ["Fehlerbild:"]),
-        ("response_router.j2", ["Ok."]),
+        ("response_router.j2", ["Status-Update:", "Live-Physik-Engine"]),
         ("final_answer_router.j2", ["## Annahmen & Randbedingungen", "## Technische Mechanismen"]),
         ("final_answer_discovery_v2.j2", ["Erste Einordnung (vorläufig):", "Top-Rückfragen (priorisiert):"]),
         ("final_answer_recommendation_v2.j2", ["TL;DR:", "Sicherheitsfaktor:"]),

@@ -194,8 +194,31 @@ def _chunk_text(chunk: Mapping[str, Any]) -> str:
     for key in ("text", "snippet", "content", "chunk_text"):
         value = chunk.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return _sanitize_context_text(value)
     return ""
+
+
+def _sanitize_context_text(value: Any) -> str:
+    lines: List[str] = []
+    for raw_line in str(value or "").splitlines():
+        line = _compact(raw_line)
+        if not line:
+            continue
+        lower = line.lower()
+        if lower.startswith("[system/policy]") or lower.startswith("[contract/calc]") or lower.startswith("[rag facts]"):
+            continue
+        if lower.startswith("**gefundene informationen aus der wissensdatenbank:**"):
+            continue
+        if lower.startswith("- dokument:"):
+            continue
+        if lower.startswith("quelle:"):
+            continue
+        if lower.startswith("[authority="):
+            continue
+        if "| abschnitt:" in lower or "| section:" in lower or "| score:" in lower:
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def _chunk_score(chunk: Mapping[str, Any], metadata: Mapping[str, Any]) -> float:
@@ -432,11 +455,11 @@ def _extract_retrieval_chunks(state: Any) -> List[Dict[str, Any]]:
                 }
             )
 
-    context_text = _state_get(state, "context", "")
-    if isinstance(context_text, str) and context_text.strip():
+    context_text = _sanitize_context_text(_state_get(state, "context", ""))
+    if context_text:
         chunks.append(
             {
-                "text": context_text.strip(),
+                "text": context_text,
                 "source": "state.context",
                 "metadata": {"source_type": "internal_context"},
                 "score": 0.0,
@@ -460,12 +483,10 @@ def _render_rag_context_block(ranked_chunks: List[Dict[str, Any]], rag_budget_to
     for chunk in ranked_chunks:
         if remaining <= 0:
             break
-        line = (
-            f"[authority={_numeric(chunk.get('authority_score')):.2f}"
-            f" score={_numeric(chunk.get('retrieval_score')):.3f}"
-            f" source={chunk.get('source')}] "
-            f"{_compact(chunk.get('text'))}"
-        )
+        text = _compact(chunk.get("text"))
+        if not text:
+            continue
+        line = f"- {text}"
         tokens = _TOKEN_COUNTER.count(line)
         if tokens <= remaining:
             lines.append(line)

@@ -14,9 +14,8 @@ def test_knowledge_agent_goal_comparison_routing():
     from app.langgraph_v2.state import SealAIState
 
     ka = KnowledgeAgent()
-    state = SealAIState()
-    state.intent = SimpleNamespace(goal="material_comparison")
-    goal = getattr(state.intent, "goal", "") or ""
+    state = SealAIState(conversation={"intent": {"goal": "explanation_or_comparison"}})
+    goal = getattr(state.conversation.intent, "goal", "") or ""
     assert "comparison" in goal  # Routing würde material_comparison_node wählen
 
 
@@ -26,5 +25,5 @@ def test_knowledge_agent_default_routing():
 
     ka = KnowledgeAgent()
     state = SealAIState()
-    goal = getattr(state.intent, "goal", "") or ""
+    goal = getattr(state.conversation.intent, "goal", "") or ""
     assert "comparison" not in goal  # Routing würde conversational_rag_node wählen

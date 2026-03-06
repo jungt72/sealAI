@@ -43,7 +43,6 @@ def test_supervisor_policy_contradictions_run_norms_panel() -> None:
     assert cmd.update["next_action"] == ACTION_FINALIZE
     assert cmd.goto == "final_answer_node"
 
-
 def test_supervisor_policy_high_confidence_finalizes() -> None:
     state = SealAIState(confidence=0.85)
     cmd = supervisor_policy_node(state)

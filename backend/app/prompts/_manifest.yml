@@ -4,3 +4,39 @@ supervisor:
 check_safety:
   file: "check_1.1.0.j2"
   version: "1.1.0"
+challenger_gate:
+  file: "challenger_gate.j2"
+  version: "1.0.0"
+fast_brain_system:
+  file: "fast_brain_system.j2"
+  version: "1.0.0"
+material_scientist_agent:
+  file: "material_scientist_agent.j2"
+  version: "1.0.0"
+mechanical_design_agent:
+  file: "mechanical_design_agent.j2"
+  version: "1.0.0"
+final_answer_composer:
+  file: "final_answer_composer.j2"
+  version: "1.0.0"
+p1_context_extractor:
+  file: "p1_context_extractor.j2"
+  version: "1.0.0"
+rag_synthesizer:
+  file: "rag_synthesizer.j2"
+  version: "1.0.0"
+response_light_summary:
+  file: "response_light_summary.j2"
+  version: "1.0.0"
+smalltalk_system:
+  file: "smalltalk_system.j2"
+  version: "1.0.0"
+out_of_scope_system:
+  file: "out_of_scope_system.j2"
+  version: "1.0.0"
+rag_metadata_extractor:
+  file: "rag_metadata_extractor.j2"
+  version: "1.0.0"
+rag_platinum_extractor:
+  file: "rag_platinum_extractor.j2"
+  version: "1.0.0"

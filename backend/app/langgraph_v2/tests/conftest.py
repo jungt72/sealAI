@@ -13,13 +13,24 @@ import pytest
 if "app.core.config" not in sys.modules:
     config_stub = types.ModuleType("app.core.config")
     config_stub.settings = SimpleNamespace(
+        postgres_user="test",
+        postgres_password="test",
+        postgres_host="localhost",
+        postgres_port="5432",
+        postgres_db="testdb",
+        database_url="postgresql+asyncpg://test:test@localhost:5432/testdb",
+        debug_sql=False,
         qdrant_collection="test_collection",
         openai_temperature=0.0,
         backend_keycloak_issuer="https://auth.example.test/realms/sealai",
         keycloak_jwks_url="https://auth.example.test/realms/sealai/protocol/openid-connect/certs",
         keycloak_client_id="sealai-backend-api",
         keycloak_expected_azp="sealai-backend-api",
+        nextauth_url="http://localhost:3000",
+        nextauth_secret="test-secret",
         redis_url="redis://localhost:6379",
+        openai_api_key="sk-test",
+        qdrant_url="http://localhost:6333",
     )
     sys.modules["app.core.config"] = config_stub
 

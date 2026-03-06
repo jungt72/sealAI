@@ -98,17 +98,21 @@ def set_parameters(
         food_grade: Food grade requirement (fda, etc.)
         state: Injected current graph state
     """
-    # Get current parameters from state
+    # Get current working profile from state
     current_params = {}
     current_provenance = {}
-    if state and hasattr(state, "parameters"):
-        current_params = state.parameters.as_dict() if hasattr(state.parameters, "as_dict") else dict(state.parameters)
+    if state and hasattr(state, "working_profile"):
+        current_params = (
+            state.working_profile.as_dict()
+            if hasattr(state.working_profile, "as_dict")
+            else dict(state.working_profile)
+        )
         current_provenance = getattr(state, "parameter_provenance", {}) or {}
     
     # Update with new values (only non-None values)
     updates = {}
     locals_ = locals()
-    ignore_keys = ["state", "current_params", "updates", "locals_"]
+    ignore_keys = ["state", "current_params", "current_provenance", "updates", "locals_"]
     
     for key, value in locals_.items():
         if key not in ignore_keys and value is not None:
@@ -128,12 +132,10 @@ def set_parameters(
     
     logger.info("set_parameters_tool_called updates=%s merged_params=%s", updates, merged_params)
     
-    # Return TechnicalParameters object
-    from app.langgraph_v2.state import TechnicalParameters
-    # Ensure ignore extra fields if any mismatch, but TechnicalParameters allows extra via config if set.
-    # But since we updated TechnicalParameters, it should be fine.
+    from app.services.rag.state import WorkingProfile
+
     return {
-        "parameters": TechnicalParameters(**merged_params),
+        "working_profile": WorkingProfile(**merged_params),
         "parameter_provenance": merged_provenance,
     }
 

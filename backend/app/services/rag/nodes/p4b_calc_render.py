@@ -16,14 +16,12 @@ from langchain_core.messages import AIMessage
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import CalcResults, SealAIState, LiveCalcTile
+from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 from app.langgraph_v2.utils.jinja import render_template
 from app.mcp.calc_engine import mcp_calc_gasket
 from app.mcp.calc_schemas import CalcInput, CalcOutput
 from app.services.rag.nodes.p4_live_calc import (
     calc_tribology,
-    calc_extrusion,
-    calc_geometry,
-    calc_thermal,
     calc_chemical_resistance,
     _collect_parameter_payload,
     _collect_captured_parameters,
@@ -56,18 +54,6 @@ def _coerce_float(value: Any) -> float | None:
             return None
     return None
 
-
-def _intent_allows_calc_bypass(state: SealAIState) -> bool:
-    goal = str(getattr(getattr(state, "intent", None), "goal", "") or "").strip().lower()
-    flags = getattr(state, "flags", {}) or {}
-    category = str(
-        getattr(state, "intent_category", None)
-        or flags.get("frontdoor_intent_category")
-        or ""
-    ).strip().upper()
-    return goal == "explanation_or_comparison" or category == "MATERIAL_RESEARCH"
-
-
 def _build_template_context(
     calc_input: CalcInput,
     calc_output: CalcOutput,
@@ -83,7 +69,7 @@ def _build_template_context(
     ctx["temperature_max_c"] = calc_input.temperature_max_c
 
     # Add WorkingProfile fields (Single Source of Truth)
-    wp = state.working_profile
+    wp = state.working_profile.engineering_profile
     wp_data = wp.model_dump(exclude_none=True) if wp is not None else {}
 
     ctx["shaft_diameter"] = wp_data.get("shaft_diameter") or wp_data.get("shaft_d1") or wp_data.get("d1") or calc_output.gasket_inner_d_mm
@@ -132,8 +118,8 @@ def _calc_output_to_calc_results(calc_output: CalcOutput, state: SealAIState | N
     )
     
     # Enrich with physics if available in state
-    if state and state.live_calc_tile:
-        tile = state.live_calc_tile
+    if state and state.working_profile.live_calc_tile:
+        tile = state.working_profile.live_calc_tile
         if tile.v_surface_m_s is not None:
             res.v_surface_m_s = tile.v_surface_m_s
         if tile.pv_value_mpa_m_s is not None:
@@ -154,9 +140,9 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> dic
     
     # 1. FORCE physics and chemistry calculation first
     payload = _collect_parameter_payload(state)
-    tile = state.live_calc_tile
+    tile = state.working_profile.live_calc_tile
 
-    wp_data = state.working_profile.model_dump(exclude_none=True) if state.working_profile else {}
+    wp_data = _collect_parameter_payload(state)
     has_tech_params = bool(
         wp_data.get("speed_rpm") or wp_data.get("rpm") or wp_data.get("n") or
         wp_data.get("shaft_diameter") or wp_data.get("shaft_d1") or wp_data.get("d1")
@@ -171,7 +157,7 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> dic
     extracted_params = wp_data
     is_fast_path = bool(
         v_surface is not None
-        or state.calc_results
+        or state.working_profile.calc_results
         or (tile and tile.status != "insufficient_data")
     )
 
@@ -180,15 +166,19 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> dic
         has_params=bool(extracted_params),
         is_fast_path=is_fast_path,
         has_tech_params=has_tech_params,
-        run_id=state.run_id,
+        run_id=state.system.run_id,
     )
 
     # Only skip if we have absolutely nothing
     if not extracted_params and not is_fast_path and not has_tech_params:
-        logger.info("p4b_calc_render_skip", reason="no_data_at_all", run_id=state.run_id)
+        logger.info("p4b_calc_render_skip", reason="no_data_at_all", run_id=state.system.run_id)
         return {
             "phase": PHASE.CALCULATION,
             "last_node": "node_p4b_calc_render",
+            "reasoning": {
+                "phase": PHASE.CALCULATION,
+                "last_node": "node_p4b_calc_render",
+            },
         }
 
     has_required_inputs = (
@@ -244,6 +234,11 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> dic
                     "phase": PHASE.CALCULATION,
                     "last_node": "node_p4b_calc_render",
                     "error": f"P4b: invalid calc input: {exc}",
+                    "reasoning": {
+                        "phase": PHASE.CALCULATION,
+                        "last_node": "node_p4b_calc_render",
+                    },
+                    "system": {"error": f"P4b: invalid calc input: {exc}"},
                 }
 
         if calc_output is None:
@@ -269,11 +264,18 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> dic
                         notes=[f"Berechnungsfehler: {last_error}. Zeige physikalische Kennwerte."],
                     )
                 else:
-                    logger.error("p4b_calc_failed", error=last_error, run_id=state.run_id)
+                    logger.error("p4b_calc_failed", error=last_error, run_id=state.system.run_id)
                     return {
                         "phase": PHASE.CALCULATION,
                         "last_node": "node_p4b_calc_render",
                         "error": f"P4b: MCP calc engine failed after {_MAX_RETRIES} attempts: {last_error}",
+                        "reasoning": {
+                            "phase": PHASE.CALCULATION,
+                            "last_node": "node_p4b_calc_render",
+                        },
+                        "system": {
+                            "error": f"P4b: MCP calc engine failed after {_MAX_RETRIES} attempts: {last_error}",
+                        },
                     }
 
     # --- Render engineering report via Jinja2 StrictUndefined (R2) ---
@@ -283,23 +285,43 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> dic
     try:
         rendered_report = render_template(_TEMPLATE_NAME, template_context)
     except UndefinedError as exc:
-        logger.error("p4b_jinja_undefined", error=str(exc), template=_TEMPLATE_NAME, run_id=state.run_id)
-        return {
+        logger.error("p4b_jinja_undefined", error=str(exc), template=_TEMPLATE_NAME, run_id=state.system.run_id)
+        calc_results = _calc_output_to_calc_results(calc_output, state)
+        return stamp_patch_with_assertion_binding(state, {
+            "is_critical_application": calc_output.is_critical_application,
+            "calc_results": calc_results,
             "phase": PHASE.CALCULATION,
             "last_node": "node_p4b_calc_render",
             "error": f"P4b: Jinja2 template error: {exc}",
-            "is_critical_application": calc_output.is_critical_application,
-            "calc_results": _calc_output_to_calc_results(calc_output, state),
-        }
+            "working_profile": {
+                "is_critical_application": calc_output.is_critical_application,
+                "calc_results": calc_results,
+            },
+            "reasoning": {
+                "phase": PHASE.CALCULATION,
+                "last_node": "node_p4b_calc_render",
+            },
+            "system": {"error": f"P4b: Jinja2 template error: {exc}"},
+        })
     except FileNotFoundError:
-        logger.error("p4b_template_not_found", template=_TEMPLATE_NAME, run_id=state.run_id)
-        return {
+        logger.error("p4b_template_not_found", template=_TEMPLATE_NAME, run_id=state.system.run_id)
+        calc_results = _calc_output_to_calc_results(calc_output, state)
+        return stamp_patch_with_assertion_binding(state, {
+            "is_critical_application": calc_output.is_critical_application,
+            "calc_results": calc_results,
             "phase": PHASE.CALCULATION,
             "last_node": "node_p4b_calc_render",
             "error": f"P4b: template '{_TEMPLATE_NAME}' not found",
-            "is_critical_application": calc_output.is_critical_application,
-            "calc_results": _calc_output_to_calc_results(calc_output, state),
-        }
+            "working_profile": {
+                "is_critical_application": calc_output.is_critical_application,
+                "calc_results": calc_results,
+            },
+            "reasoning": {
+                "phase": PHASE.CALCULATION,
+                "last_node": "node_p4b_calc_render",
+            },
+            "system": {"error": f"P4b: template '{_TEMPLATE_NAME}' not found"},
+        })
 
     # --- Build Output Result ---
     calculation_result = calc_output.model_dump()
@@ -329,19 +351,34 @@ def node_p4b_calc_render(state: SealAIState, *_args: Any, **_kwargs: Any) -> dic
         is_critical=calc_output.is_critical_application,
         report_len=len(rendered_report) if rendered_report else 0,
         warning_count=len(calc_output.warnings),
-        run_id=state.run_id,
+        run_id=state.system.run_id,
     )
 
-    return {
+    calc_results = _calc_output_to_calc_results(calc_output, state)
+    return stamp_patch_with_assertion_binding(state, {
         "calculation_result": calculation_result,
-        "calc_results": _calc_output_to_calc_results(calc_output, state),
+        "calc_results": calc_results,
         "live_calc_tile": tile,
         "is_critical_application": calc_output.is_critical_application,
         "phase": PHASE.CALCULATION,
         "last_node": "node_p4b_calc_render",
         "final_text": rendered_report,
         "final_answer": rendered_report,
-        "messages": [AIMessage(content=rendered_report)],
-    }
+        "working_profile": {
+            "calculation_result": calculation_result,
+            "calc_results": calc_results,
+            "live_calc_tile": tile,
+            "is_critical_application": calc_output.is_critical_application,
+        },
+        "reasoning": {
+            "phase": PHASE.CALCULATION,
+            "last_node": "node_p4b_calc_render",
+        },
+        "system": {
+            "final_text": rendered_report,
+            "final_answer": rendered_report,
+        },
+        "conversation": {"messages": [AIMessage(content=rendered_report)]},
+    })
 
 __all__ = ["node_p4b_calc_render"]

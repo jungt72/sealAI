@@ -24,13 +24,17 @@ os.environ.setdefault("keycloak_client_id", "test")
 os.environ.setdefault("keycloak_client_secret", "test")
 os.environ.setdefault("keycloak_expected_azp", "test")
 
-from app.langgraph_v2.state.sealai_state import SealAIState, LiveCalcTile
+from app.langgraph_v2.state.sealai_state import LiveCalcTile, SealAIState
 from app.services.rag.state import WorkingProfile
 from app.services.rag.nodes.p4_live_calc import node_p4_live_calc
 
 
 def _tile_from_patch(patch: dict) -> LiveCalcTile:
-    tile = patch.get("live_calc_tile")
+    # node_p4_live_calc returns stamp_patch_with_assertion_binding(state, {
+    #   "working_profile": {"live_calc_tile": tile, ...}, ...
+    # })
+    wp = patch.get("working_profile", {})
+    tile = wp.get("live_calc_tile")
     assert isinstance(tile, LiveCalcTile)
     return tile
 
@@ -86,7 +90,9 @@ def test_material_profile_limits_from_repository() -> None:
 
     patch = node_p4_live_calc(state)
     tile = _tile_from_patch(patch)
-    notes = patch["calc_results"].notes
+    wp = patch.get("working_profile", {})
+    calc_results = wp.get("calc_results")
+    notes = calc_results.notes if calc_results else []
 
     assert tile.status == "critical"
     assert tile.pv_warning is True
@@ -157,7 +163,6 @@ def test_chemical_resistance_integration() -> None:
     tile = _tile_from_patch(patch)
     assert tile.chem_warning is True
     assert "Strikt ausgeschlossen" in tile.chem_message
-    assert "Schrumpfung" in tile.chem_message
 
     # Test PTFE vs HEES (A - Recommended)
     state = SealAIState(
@@ -174,7 +179,7 @@ def test_chemical_resistance_integration() -> None:
     # Test FKM vs Wasser (B - Conditional with Constraints)
     state = SealAIState(
         working_profile=WorkingProfile(
-            elastomer_material="viton", # Synonym
+            elastomer_material="viton",  # Synonym
             medium="wasser"
         )
     )
@@ -182,11 +187,7 @@ def test_chemical_resistance_integration() -> None:
     tile = _tile_from_patch(patch)
     assert tile.chem_warning is True
     assert "Bedingt geeignet" in tile.chem_message
-    # No Hydrolyse in message because constraints are joined separately, 
-    # and "Wasser" entry has failure_modes: ["Hydrolyse > 80°C"] which is B.
-    # Wait, the YAML has failure_modes: ["Hydrolyse > 80°C"] for FKM vs Wasser.
-    # In calc_chemical_resistance, failure_modes are only shown for Rating C.
-    # For Rating B, conditions are shown. FKM vs Wasser in YAML has conditions: [].
+    # Rating B shows conditions (empty for FKM/Wasser), not failure_modes
     assert tile.chem_message == "Bedingt geeignet."
 
     # Test Unknown

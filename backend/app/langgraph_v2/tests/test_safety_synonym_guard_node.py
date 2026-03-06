@@ -18,17 +18,17 @@ def test_safety_synonym_guard_detects_hydrogen_and_routes_to_hitl() -> None:
     command = safety_synonym_guard_node(state)
 
     assert command.goto == "human_review_node"
-    assert command.update["requires_human_review"] is True
-    assert command.update["safety_class"] == "SEV-1"
-    assert command.update["pending_action"] == "human_review"
-    assert command.update["confirm_status"] == "pending"
-    assert "messages" in command.update
-    assert len(command.update["messages"]) == 1
-    assert "⚠️" in command.update["messages"][0].content
-    assert command.update["final_answer"] == command.update["messages"][0].content
-    assert command.update["awaiting_user_input"] is False
-    assert command.update["streaming_complete"] is True
-    categories = command.update["flags"]["safety_synonym_categories"]
+    assert command.update["system"]["requires_human_review"] is True
+    assert command.update["system"]["safety_class"] == "SEV-1"
+    assert command.update["system"]["pending_action"] == "human_review"
+    assert command.update["system"]["confirm_status"] == "pending"
+    assert "messages" in command.update["conversation"]
+    assert len(command.update["conversation"]["messages"]) == 1
+    assert "⚠️" in command.update["conversation"]["messages"][0].content
+    assert command.update["system"]["final_answer"] == command.update["conversation"]["messages"][0].content
+    assert command.update["reasoning"]["awaiting_user_input"] is False
+    assert command.update["reasoning"]["streaming_complete"] is True
+    categories = command.update["reasoning"]["flags"]["safety_synonym_categories"]
     assert "hydrogen_h2" in categories
     assert "aed_rgd_context" in categories
 
@@ -60,4 +60,4 @@ def test_safety_synonym_guard_allows_non_safety_text_to_router() -> None:
     command = safety_synonym_guard_node(state)
 
     assert command.goto == "combinatorial_chemistry_guard_node"
-    assert command.update["flags"]["safety_synonym_guard_triggered"] is False
+    assert command.update["reasoning"]["flags"]["safety_synonym_guard_triggered"] is False

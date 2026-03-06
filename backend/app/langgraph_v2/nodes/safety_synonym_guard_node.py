@@ -118,7 +118,7 @@ def _message_content_to_text(content: Any) -> str:
 
 def _user_message_texts(state: SealAIState) -> List[str]:
     texts: List[str] = []
-    for message in list(state.messages or []):
+    for message in list(state.conversation.messages or []):
         role = (getattr(message, "type", None) or getattr(message, "role", None) or "").strip().lower()
         if role not in {"human", "user"}:
             continue
@@ -174,7 +174,7 @@ def detect_safety_synonym_hits(state: SealAIState) -> Dict[str, List[str]]:
 def safety_synonym_guard_node(state: SealAIState) -> Command:
     """Deterministic safety pre-check before any LLM router execution."""
     hits = detect_safety_synonym_hits(state)
-    flags = dict(state.flags or {})
+    flags = dict(state.reasoning.flags or {})
 
     if hits:
         matched_categories = sorted(hits.keys())
@@ -185,8 +185,8 @@ def safety_synonym_guard_node(state: SealAIState) -> Command:
             "safety_synonym_guard_hitl_bypass_triggered",
             categories=matched_categories,
             hits=hits,
-            thread_id=state.thread_id,
-            run_id=state.run_id,
+            thread_id=state.conversation.thread_id,
+            run_id=state.system.run_id,
         )
 
         hitl_notice = (
@@ -201,22 +201,26 @@ def safety_synonym_guard_node(state: SealAIState) -> Command:
 
         return Command(
             update={
-                "messages": [AIMessage(content=hitl_notice)],
-                "final_answer": hitl_notice,
-                "phase": PHASE.CONFIRM,
-                "last_node": "safety_synonym_guard_node",
-                "requires_human_review": True,
-                "safety_class": "SEV-1",
-                "awaiting_user_confirmation": True,
-                "awaiting_user_input": False,
-                "streaming_complete": True,
-                "pending_action": "human_review",
-                "confirm_status": "pending",
-                "flags": flags,
-                "error": (
-                    "Safety-critical term detected by deterministic synonym guard. "
-                    "Routed directly to human review."
-                ),
+                "conversation": {"messages": [AIMessage(content=hitl_notice)]},
+                "reasoning": {
+                    "phase": PHASE.CONFIRM,
+                    "last_node": "safety_synonym_guard_node",
+                    "awaiting_user_input": False,
+                    "streaming_complete": True,
+                    "flags": flags,
+                },
+                "system": {
+                    "final_answer": hitl_notice,
+                    "requires_human_review": True,
+                    "safety_class": "SEV-1",
+                    "awaiting_user_confirmation": True,
+                    "pending_action": "human_review",
+                    "confirm_status": "pending",
+                    "error": (
+                        "Safety-critical term detected by deterministic synonym guard. "
+                        "Routed directly to human review."
+                    ),
+                },
             },
             goto="human_review_node",
         )
@@ -224,8 +228,10 @@ def safety_synonym_guard_node(state: SealAIState) -> Command:
     flags["safety_synonym_guard_triggered"] = False
     return Command(
         update={
-            "last_node": "safety_synonym_guard_node",
-            "flags": flags,
+            "reasoning": {
+                "last_node": "safety_synonym_guard_node",
+                "flags": flags,
+            },
         },
         goto="combinatorial_chemistry_guard_node",
     )

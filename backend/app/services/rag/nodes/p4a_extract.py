@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
+from app.langgraph_v2.utils.messages import latest_user_text
 from app.mcp.calc_schemas import CalcInput
 
 logger = structlog.get_logger("rag.nodes.p4a_extract")
@@ -29,7 +30,7 @@ def _map_profile_to_calc_input(state: SealAIState) -> Dict[str, Any]:
 
     Direct field mapping — no LLM involved.
     """
-    wp = state.working_profile
+    wp = state.working_profile.engineering_profile
     if wp is None:
         return {}
 
@@ -72,33 +73,40 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     Skips extraction if gap_report indicates critical fields are missing
     (recommendation_ready == False).
     """
-    gap_report = state.gap_report or {}
-    recommendation_ready = gap_report.get("recommendation_ready", state.recommendation_ready)
+    gap_report = state.reasoning.gap_report or {}
+    recommendation_ready = gap_report.get("recommendation_ready", state.reasoning.recommendation_ready)
+    user_text = (latest_user_text(state.conversation.messages) or "").strip()
 
     logger.info(
         "p4a_extract_start",
-        has_working_profile=state.working_profile is not None,
+        has_working_profile=state.working_profile.engineering_profile is not None,
         recommendation_ready=recommendation_ready,
-        run_id=state.run_id,
-        thread_id=state.thread_id,
+        user_text_len=len(user_text),
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
     )
-    existing_extracted_params = dict(state.extracted_params or {})
+    existing_extracted_params = dict(state.working_profile.extracted_params or {})
+    params_dict = _map_profile_to_calc_input(state)
+    merged_extracted_params = dict(existing_extracted_params)
+    merged_extracted_params.update({key: value for key, value in params_dict.items() if value is not None})
 
     # Skip if critical fields are missing
     if not recommendation_ready:
         logger.info(
             "p4a_extract_skip",
             reason="recommendation_not_ready",
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
         return {
-            "extracted_params": existing_extracted_params,
-            "phase": PHASE.EXTRACTION,
-            "last_node": "node_p4a_extract",
+            "working_profile": {
+                "engineering_profile": state.working_profile.engineering_profile,
+                "extracted_params": merged_extracted_params,
+            },
+            "reasoning": {
+                "phase": PHASE.EXTRACTION,
+                "last_node": "node_p4a_extract",
+            },
         }
-
-    # Map WorkingProfile -> CalcInput fields
-    params_dict = _map_profile_to_calc_input(state)
 
     # Check we have the required fields for CalcInput
     if "pressure_max_bar" not in params_dict or "temperature_max_c" not in params_dict:
@@ -106,13 +114,20 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             "p4a_extract_skip",
             reason="missing_required_fields",
             available_keys=sorted(params_dict.keys()),
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
         return {
-            "extracted_params": existing_extracted_params,
-            "phase": PHASE.EXTRACTION,
-            "last_node": "node_p4a_extract",
-            "error": "P4a: pressure_max_bar and temperature_max_c required for calculation.",
+            "working_profile": {
+                "engineering_profile": state.working_profile.engineering_profile,
+                "extracted_params": merged_extracted_params,
+            },
+            "reasoning": {
+                "phase": PHASE.EXTRACTION,
+                "last_node": "node_p4a_extract",
+            },
+            "system": {
+                "error": "P4a: pressure_max_bar and temperature_max_c required for calculation.",
+            },
         }
 
     # Validate via CalcInput Pydantic model
@@ -124,28 +139,37 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             "p4a_extract_validation_error",
             error=str(exc),
             params_keys=sorted(params_dict.keys()),
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
         return {
-            "extracted_params": existing_extracted_params,
-            "phase": PHASE.EXTRACTION,
-            "last_node": "node_p4a_extract",
-            "error": f"P4a validation error: {exc}",
+            "working_profile": {
+                "engineering_profile": state.working_profile.engineering_profile,
+                "extracted_params": merged_extracted_params,
+            },
+            "reasoning": {
+                "phase": PHASE.EXTRACTION,
+                "last_node": "node_p4a_extract",
+            },
+            "system": {"error": f"P4a validation error: {exc}"},
         }
 
     logger.info(
         "p4a_extract_done",
         extracted_keys=sorted(validated_dict.keys()),
-        run_id=state.run_id,
+        run_id=state.system.run_id,
     )
 
-    merged_extracted_params = dict(existing_extracted_params)
     merged_extracted_params.update(validated_dict)
 
     return {
-        "extracted_params": merged_extracted_params,
-        "phase": PHASE.EXTRACTION,
-        "last_node": "node_p4a_extract",
+        "working_profile": {
+            "engineering_profile": state.working_profile.engineering_profile,
+            "extracted_params": merged_extracted_params,
+        },
+        "reasoning": {
+            "phase": PHASE.EXTRACTION,
+            "last_node": "node_p4a_extract",
+        },
     }
 
 

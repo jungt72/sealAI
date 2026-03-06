@@ -6,7 +6,7 @@ Verhindert halluzinierte numerische Werte in finalen Antworten.
 from app.langgraph_v2.state.sealai_state import SealAIState
 import structlog
 import re
-from typing import Set, Tuple, List, Dict, Any
+from typing import Set, Tuple
 
 log = structlog.get_logger(__name__)
 
@@ -28,14 +28,14 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
     Verifiziert alle numerischen Werte in final_answer gegen Sources.
     """
     # 1. Skip-Bedingungen (v4.4.1)
-    recommendation_ready = state.get("recommendation_ready", False)
-    intent = state.get("intent")
-    goal = intent.goal if intent else state.get("goal")
+    recommendation_ready = state.reasoning.recommendation_ready
+    intent = state.conversation.intent
+    goal = intent.goal if intent else None
     
     # Überspringe Verifikation, wenn Agent nur Rückfragen stellt oder im Smalltalk ist
     skip_active = (not recommendation_ready) or goal in ["smalltalk", "ask_missing", "explanation_or_comparison"]
     if skip_active:
-        flags = dict(state.get("flags") or {})
+        flags = dict(state.reasoning.flags or {})
         flags["number_verification_skip_active"] = True
         log.debug(
             "number_verification.skip_active", 
@@ -43,22 +43,26 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
             goal=goal
         )
         return {
-            "flags": flags,
-            "verification_passed": True,
-            "last_node": "node_p4_6_number_verification"
+            "reasoning": {
+                "flags": flags,
+                "last_node": "node_p4_6_number_verification",
+            },
+            "system": {"verification_passed": True},
         }
 
-    final_answer = state.get("final_answer", "")
-    sources = state.get("sources", [])
-    factcards = state.get("factcard_matches", [])
+    final_answer = state.system.final_answer or ""
+    sources = state.system.sources or []
+    factcards = state.working_profile.factcard_matches or []
     
     # Skip wenn keine Antwort
     if not final_answer:
         log.debug("number_verification.skip_no_answer")
         return {
-            "flags": {"number_verification_skip_active": False},
-            "verification_passed": True,
-            "last_node": "node_p4_6_number_verification"
+            "reasoning": {
+                "flags": {"number_verification_skip_active": False},
+                "last_node": "node_p4_6_number_verification",
+            },
+            "system": {"verification_passed": True},
         }
     
     # Extrahiere Zahlen aus Antwort
@@ -68,9 +72,11 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
     if not answer_numbers:
         log.debug("number_verification.skip_no_numbers")
         return {
-            "flags": {"number_verification_skip_active": False},
-            "verification_passed": True,
-            "last_node": "node_p4_6_number_verification"
+            "reasoning": {
+                "flags": {"number_verification_skip_active": False},
+                "last_node": "node_p4_6_number_verification",
+            },
+            "system": {"verification_passed": True},
         }
     
     # Extrahiere Zahlen aus Sources
@@ -78,7 +84,12 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
     
     # A. Aus RAG Chunks
     for chunk in sources:
-        chunk_text = chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
+        if hasattr(chunk, "snippet"):
+            chunk_text = str(getattr(chunk, "snippet", "") or "")
+        elif isinstance(chunk, dict):
+            chunk_text = str(chunk.get("text", "") or chunk.get("snippet", "") or "")
+        else:
+            chunk_text = str(chunk)
         source_numbers.update(extract_numbers_with_units(chunk_text))
     
     # B. Aus FactCards
@@ -145,25 +156,31 @@ async def node_p4_6_number_verification(state: SealAIState) -> dict:
         )
         
         return {
-            "flags": {"number_verification_skip_active": False},
-            "verification_passed": False,
-            "verification_error": {
-                "type": "UNVERIFIED_NUMBERS",
-                "message": (
-                    f"Die Antwort enthält {len(unverified)} Werte, "
-                    "die nicht in den Quellen verifiziert werden konnten."
-                ),
-                "unverified_values": unverified
+            "reasoning": {
+                "flags": {"number_verification_skip_active": False},
+                "last_node": "node_p4_6_number_verification",
             },
-            "last_node": "node_p4_6_number_verification"
+            "system": {
+                "verification_passed": False,
+                "verification_error": {
+                    "type": "UNVERIFIED_NUMBERS",
+                    "message": (
+                        f"Die Antwort enthält {len(unverified)} Werte, "
+                        "die nicht in den Quellen verifiziert werden konnten."
+                    ),
+                    "unverified_values": unverified,
+                },
+            },
         }
     
     # Success
     log.info("number_verification_passed", count=len(answer_numbers))
     return {
-        "flags": {"number_verification_skip_active": False},
-        "verification_passed": True,
-        "last_node": "node_p4_6_number_verification"
+        "reasoning": {
+            "flags": {"number_verification_skip_active": False},
+            "last_node": "node_p4_6_number_verification",
+        },
+        "system": {"verification_passed": True},
     }
 
 
@@ -172,7 +189,7 @@ def extract_numbers_from_params(state: SealAIState) -> Set[Tuple[float, str]]:
     nums = set()
     
     # 1. working_profile
-    wp = state.get("working_profile")
+    wp = state.working_profile.engineering_profile
     if wp:
         data = wp.as_dict() if hasattr(wp, "as_dict") else (wp if isinstance(wp, dict) else {})
         for k, v in data.items():
@@ -188,7 +205,7 @@ def extract_numbers_from_params(state: SealAIState) -> Set[Tuple[float, str]]:
                 nums.add((float(v), "")) # Auch ohne Einheit erlauben
     
     # 2. extracted_params
-    ep = state.get("extracted_params") or {}
+    ep = state.working_profile.extracted_params or {}
     for k, v in ep.items():
         if isinstance(v, (int, float)):
             unit = ""
@@ -198,8 +215,8 @@ def extract_numbers_from_params(state: SealAIState) -> Set[Tuple[float, str]]:
             nums.add((float(v), unit))
             nums.add((float(v), ""))
 
-    # 3. parameters (TechnicalParameters)
-    tp = state.get("parameters")
+    # 3. working_profile (single source of truth)
+    tp = state.working_profile.engineering_profile
     if tp:
         data = tp.as_dict() if hasattr(tp, "as_dict") else (tp if isinstance(tp, dict) else {})
         for k, v in data.items():

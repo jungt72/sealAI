@@ -103,15 +103,15 @@ class TestRequestUserTenantId:
 class TestSealAIStateTenantId:
     def test_state_accepts_tenant_id(self):
         state = SealAIState(
-            messages=[HumanMessage(content="hello")],
+            conversation={"messages": [HumanMessage(content="hello")]},
             tenant_id="test-corp",
         )
-        assert state.tenant_id == "test-corp"
+        assert state.system.tenant_id == "test-corp"
 
     def test_state_tenant_id_defaults_to_none(self):
-        state = SealAIState(messages=[HumanMessage(content="hello")])
-        assert state.tenant_id is None
+        state = SealAIState(conversation={"messages": [HumanMessage(content="hello")]})
+        assert state.system.tenant_id is None
 
     def test_state_tenant_id_is_in_model_fields(self):
-        fields = SealAIState.model_fields
-        assert "tenant_id" in fields
+        system_fields = SealAIState.model_fields["system"].annotation.model_fields
+        assert "tenant_id" in system_fields

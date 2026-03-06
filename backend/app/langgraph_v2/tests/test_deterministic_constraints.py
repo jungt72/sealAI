@@ -5,13 +5,15 @@ from app.langgraph_v2.state import SealAIState, LiveCalcTile
 from app.services.rag.state import WorkingProfile
 
 def test_reasoning_core_prompt_with_chem_warning():
-    state = SealAIState()
-    state.live_calc_tile = LiveCalcTile(
-        chem_warning=True,
-        chem_message="NBR is incompatible with HEES oil at high temperatures."
+    state = SealAIState(
+        working_profile={
+            "live_calc_tile": LiveCalcTile(
+                chem_warning=True,
+                chem_message="NBR is incompatible with HEES oil at high temperatures.",
+            )
+        }
     )
     profile = WorkingProfile(medium="HEES", temperature_max_c=80)
-    state.working_profile = profile
     
     prompt = _build_system_prompt(
         state=state,
@@ -24,7 +26,7 @@ def test_reasoning_core_prompt_with_chem_warning():
     assert "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###" in prompt
     assert "CRITICAL WARNING: NBR is incompatible with HEES oil at high temperatures." in prompt
     assert "1. WENN das System eine chemische Warnung meldet" in prompt
-    assert "Zwingende Einsatzbedingungen: Temperatur: 80.0 °C, Medium: HEES" in prompt
+    assert 'CORE_PROFILE={"medium":"HEES","temperature_max_c":80.0}' in prompt
 
 def test_conversational_rag_report_with_pv_warning():
     tile_dict = {

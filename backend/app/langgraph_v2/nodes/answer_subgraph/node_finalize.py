@@ -16,6 +16,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import SealAIState
+from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.finalize")
 
@@ -38,6 +39,10 @@ _RFQ_OR_LASTENHEFT_PATTERN = re.compile(
     r"|ausschreibung"
     r")\b",
     re.IGNORECASE,
+)
+_PARTIAL_EXPERT_FAILURE_ERROR = "partial_expert_failure"
+_PARTIAL_EXPERT_FAILURE_WARNING = (
+    "Ein Teil der Experten-Analyse ist fehlgeschlagen, bitte Ergebnisse kritisch pruefen."
 )
 
 
@@ -87,11 +92,11 @@ def _with_token_variants(tokens: Set[str]) -> Set[str]:
 def _extract_selected_fact_ids(state: SealAIState) -> Set[str]:
     selected: Set[str] = set()
 
-    state_selected = getattr(state, "selected_fact_ids", None)
+    state_selected = getattr(state.system, "selected_fact_ids", None)
     if isinstance(state_selected, list):
         selected.update(str(item).strip() for item in state_selected if str(item).strip())
 
-    contract = getattr(state, "answer_contract", None)
+    contract = getattr(state.system, "answer_contract", None)
     contract_selected = getattr(contract, "selected_fact_ids", None) if contract is not None else None
     if isinstance(contract_selected, list):
         selected.update(str(item).strip() for item in contract_selected if str(item).strip())
@@ -157,9 +162,18 @@ def _collect_number_tokens(value: Any, output: Set[str]) -> None:
             _collect_number_tokens(dumped, output)
 
 
+def _working_profile_get(state: SealAIState, field: str, default: Any = None) -> Any:
+    working_profile = getattr(state, "working_profile", None)
+    if working_profile is None:
+        return default
+    if isinstance(working_profile, dict):
+        return working_profile.get(field, default)
+    return getattr(working_profile, field, default)
+
+
 def _extract_allowed_state_parameter_tokens(state: SealAIState) -> Set[str]:
     tokens: Set[str] = set()
-    flags = getattr(state, "flags", {}) or {}
+    flags = getattr(state.reasoning, "flags", {}) or {}
     from_prepare_contract = flags.get("answer_subgraph_allowed_number_tokens")
     if isinstance(from_prepare_contract, list):
         for token in from_prepare_contract:
@@ -169,13 +183,13 @@ def _extract_allowed_state_parameter_tokens(state: SealAIState) -> Set[str]:
             if stripped:
                 tokens.add(stripped)
 
-    _collect_number_tokens(getattr(state, "extracted_params", None), tokens)
-    _collect_number_tokens(getattr(state, "parameters", None), tokens)
-    _collect_number_tokens(getattr(state, "working_profile", None), tokens)
-    _collect_number_tokens(getattr(state, "live_calc_tile", None), tokens)
-    _collect_number_tokens(getattr(state, "calculation_result", None), tokens)
-    _collect_number_tokens(getattr(state, "calc_results", None), tokens)
-    contract = getattr(state, "answer_contract", None)
+    _collect_number_tokens(_working_profile_get(state, "extracted_params"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "engineering_profile"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "engineering_profile"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "live_calc_tile"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "calculation_result"), tokens)
+    _collect_number_tokens(_working_profile_get(state, "calc_results"), tokens)
+    contract = getattr(state.system, "answer_contract", None)
     if contract is not None:
         _collect_number_tokens(getattr(contract, "resolved_parameters", None), tokens)
         _collect_number_tokens(getattr(contract, "calc_results", None), tokens)
@@ -183,7 +197,7 @@ def _extract_allowed_state_parameter_tokens(state: SealAIState) -> Set[str]:
 
 
 def _latest_user_text(state: SealAIState) -> str:
-    for msg in reversed(list(state.messages or [])):
+    for msg in reversed(list(state.conversation.messages or [])):
         role = getattr(msg, "type", None) or getattr(msg, "role", None)
         if role in ("human", "user"):
             return str(getattr(msg, "content", "") or "")
@@ -197,12 +211,12 @@ def _normalize_intents(raw: Any) -> Set[str]:
 
 
 def _should_bypass_no_new_numbers_guard(state: SealAIState) -> Tuple[bool, str]:
-    flags = getattr(state, "flags", {}) or {}
+    flags = getattr(state.reasoning, "flags", {}) or {}
     if bool(flags.get("number_verification_skip_active")):
         return True, "number_verification_skip_active"
 
     intent_category = str(
-        getattr(state, "intent_category", None)
+        getattr(state.reasoning, "intent_category", None)
         or flags.get("frontdoor_intent_category")
         or ""
     ).strip().upper()
@@ -212,21 +226,21 @@ def _should_bypass_no_new_numbers_guard(state: SealAIState) -> Tuple[bool, str]:
     if intent_category == "COMMERCIAL":
         return True, "intent_category=COMMERCIAL"
 
-    intent = getattr(state, "intent", None)
+    intent = getattr(state.conversation, "intent", None)
     intent_goal = str(getattr(intent, "goal", "") or "").strip().lower()
     if intent_goal == "explanation_or_comparison":
         return True, "material_research / explanation"
 
-    task_intents = _normalize_intents(getattr(state, "task_intents", None))
+    task_intents = _normalize_intents(getattr(state.reasoning, "task_intents", None))
     task_intents.update(_normalize_intents(flags.get("frontdoor_task_intents")))
     if {"commercial", "rfq"} & task_intents:
         return True, "task_intents contains commercial/rfq"
 
-    router_classification = str(getattr(state, "router_classification", "") or "").strip().lower()
+    router_classification = str(getattr(state.conversation, "router_classification", "") or "").strip().lower()
     if router_classification == "rfq_trigger":
         return True, "router_classification=rfq_trigger"
 
-    working_profile = getattr(state, "working_profile", None)
+    working_profile = _working_profile_get(state, "engineering_profile")
     goal = None
     if working_profile is not None:
         goal = getattr(working_profile, "goal", None)
@@ -260,10 +274,10 @@ def node_finalize(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Di
     Returns:
         State patch containing final answer payload and optional error marker.
     """
-    verified_draft = str(state.draft_text or "").strip()
+    verified_draft = str(state.system.draft_text or "").strip()
     # Use `final_text` from the current subgraph run as the polished candidate;
     # fall back to the verified draft when no polished text is present.
-    candidate_final = str(state.final_text or "").strip() or verified_draft
+    candidate_final = str(state.system.final_text or "").strip() or verified_draft
 
     bypass_number_guard, bypass_reason = _should_bypass_no_new_numbers_guard(state)
     selected_fact_ids: Set[str] = set()
@@ -290,8 +304,15 @@ def node_finalize(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Di
         final_text = verified_draft if blocked else candidate_final
     if not final_text:
         final_text = verified_draft or "Unable to safely finalize response; please provide additional context."
+    if str(state.system.error or "").strip() == _PARTIAL_EXPERT_FAILURE_ERROR:
+        if _PARTIAL_EXPERT_FAILURE_WARNING not in final_text:
+            final_text = (
+                f"{_PARTIAL_EXPERT_FAILURE_WARNING}\n\n{final_text}"
+                if final_text.strip()
+                else _PARTIAL_EXPERT_FAILURE_WARNING
+            )
 
-    messages: list[BaseMessage] = list(state.messages or [])
+    messages: list[BaseMessage] = list(state.conversation.messages or [])
     messages.append(AIMessage(content=final_text))
 
     if blocked:
@@ -310,16 +331,41 @@ def node_finalize(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Di
             selected_fact_ids=sorted(selected_fact_ids),
         )
 
+    governance_metadata = {}
+    contract = getattr(state.system, "answer_contract", None)
+    if contract is not None:
+        raw_governance = getattr(contract, "governance_metadata", None)
+        if hasattr(raw_governance, "model_dump"):
+            governance_metadata = raw_governance.model_dump(exclude_none=True)
+        elif isinstance(raw_governance, dict):
+            governance_metadata = dict(raw_governance)
+    if blocked:
+        notes = list(governance_metadata.get("governance_notes") or [])
+        notes.append("No-New-Numbers guard returned the verified draft instead of the polished candidate.")
+        governance_metadata["governance_notes"] = list(dict.fromkeys(str(item).strip() for item in notes if str(item).strip()))
+
     patch: Dict[str, Any] = {
         "messages": messages,
         "final_text": final_text,
         "final_answer": final_text,
-        "phase": state.phase or "final",
+        "phase": state.reasoning.phase or "final",
         "last_node": "node_finalize",
+        "system": {
+            "governed_output_text": final_text,
+            "governed_output_status": "finalized",
+            "governed_output_ready": True,
+            "governance_metadata": governance_metadata,
+            "final_text": final_text,
+            "final_answer": final_text,
+        },
+        "reasoning": {
+            "phase": state.reasoning.phase or "final",
+            "last_node": "node_finalize",
+        },
     }
     if blocked:
         patch["error"] = "No-New-Numbers guard blocked unvalidated numbers; returning verified draft."
-    return patch
+    return stamp_patch_with_assertion_binding(state, patch)
 
 
 __all__ = ["node_finalize"]

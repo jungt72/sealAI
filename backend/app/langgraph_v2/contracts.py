@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Mapping, Optional, Set
+from typing import Any, Mapping, Optional, Set
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict

@@ -51,28 +51,47 @@ export default function ChatInterface() {
             console.log("FULL SYNC DATA:", { workingProfile, calcResults, hookLiveCalcTile, complianceResults });
             
             const wp = (workingProfile || {}) as any;
-            const { temp_range, candidate_materials, ...rest } = wp;
+            const nestedWp =
+                wp.working_profile && typeof wp.working_profile === "object" ? wp.working_profile : null;
+            const engineeringProfile =
+                (nestedWp?.engineering_profile && typeof nestedWp.engineering_profile === "object")
+                    ? nestedWp.engineering_profile
+                    : (wp.engineering_profile && typeof wp.engineering_profile === "object")
+                        ? wp.engineering_profile
+                        : wp;
+            const { temp_range, candidate_materials, ...rest } = engineeringProfile || {};
             
-            // Extract calc_results from WorkingProfile (M-Modules often write here)
-            const wp_calc = (workingProfile as any)?.calc_results;
+            // Prefer nested v10 state shape: *.working_profile.{calc_results,live_calc_tile}
+            const wp_calc =
+                nestedWp?.calc_results ??
+                (workingProfile as any)?.calc_results;
+            const wp_live_tile =
+                nestedWp?.live_calc_tile ??
+                (workingProfile as any)?.live_calc_tile;
 
             setLiveCalcTile(prev => {
                 const baseTile = {
-                    status: wp.knowledge_coverage === 'FULL' ? 'ok' : (prev?.status || 'warning'),
+                    status: (wp.knowledge_coverage ?? nestedWp?.knowledge_coverage) === 'FULL' ? 'ok' : (prev?.status || 'warning'),
                     parameters: {
                         ...rest,
-                        temperature_max_c: temp_range?.[1] || wp.temperature_max_c,
-                        pressure_max_bar: wp.pressure_max_bar || wp.pressure_bar
+                        temperature_max_c:
+                            temp_range?.[1] || engineeringProfile?.temperature_max_c || wp.temperature_max_c,
+                        pressure_max_bar:
+                            engineeringProfile?.pressure_max_bar ||
+                            engineeringProfile?.pressure_bar ||
+                            wp.pressure_max_bar ||
+                            wp.pressure_bar
                     }
                 };
 
                 // Defensive mapping strategy:
                 // Start with base tile, merge state-level calcResults, then deep WP calc_results,
-                // and finally hookLiveCalcTile as the primary authoritative source.
+                // and finally the latest live_calc_tile payload as authoritative source.
                 const mergedTile = {
                     ...baseTile,
                     ...(calcResults || {}),
                     ...(wp_calc || {}),
+                    ...(wp_live_tile || {}),
                     ...(hookLiveCalcTile || {}),
                     compliance: complianceResults || prev?.compliance
                 };

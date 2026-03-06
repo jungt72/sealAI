@@ -20,7 +20,7 @@ def _run_with_fake_structured(state: SealAIState, fake_output: FrontdoorRouteAxe
 
 
 def test_frontdoor_structured_maps_general_knowledge() -> None:
-    state = SealAIState(messages=[HumanMessage(content="Was ist FKM?")])
+    state = SealAIState(conversation={"messages": [HumanMessage(content="Was ist FKM?")]})
     result = _run_with_fake_structured(
         state,
         FrontdoorRouteAxesOutput(
@@ -33,13 +33,13 @@ def test_frontdoor_structured_maps_general_knowledge() -> None:
         ),
     )
 
-    assert result["intent"].goal == "explanation_or_comparison"
-    assert result["requires_rag"] is False
-    assert result["flags"]["frontdoor_bypass_supervisor"] is False
+    assert result["conversation"]["intent"].goal == "explanation_or_comparison"
+    assert result["reasoning"]["requires_rag"] is False
+    assert result["reasoning"]["flags"]["frontdoor_bypass_supervisor"] is False
 
 
 def test_frontdoor_structured_chitchat_sets_bypass_flag() -> None:
-    state = SealAIState(messages=[HumanMessage(content="Hallo")])
+    state = SealAIState(conversation={"messages": [HumanMessage(content="Hallo")]})
     result = _run_with_fake_structured(
         state,
         FrontdoorRouteAxesOutput(
@@ -52,12 +52,12 @@ def test_frontdoor_structured_chitchat_sets_bypass_flag() -> None:
         ),
     )
 
-    assert result["intent"].goal == "smalltalk"
-    assert result["flags"]["frontdoor_bypass_supervisor"] is True
+    assert result["conversation"]["intent"] == "smalltalk"
+    assert result["reasoning"]["flags"]["frontdoor_bypass_supervisor"] is True
 
 
 def test_frontdoor_structured_material_research_forces_rag() -> None:
-    state = SealAIState(messages=[HumanMessage(content="Was weißt du über Kyrolon?")])
+    state = SealAIState(conversation={"messages": [HumanMessage(content="Was weißt du über Kyrolon?")]})
     result = _run_with_fake_structured(
         state,
         FrontdoorRouteAxesOutput(
@@ -70,13 +70,44 @@ def test_frontdoor_structured_material_research_forces_rag() -> None:
         ),
     )
 
-    assert result["intent"].goal == "explanation_or_comparison"
-    assert result["requires_rag"] is True
-    assert result["need_sources"] is True
+    assert result["conversation"]["intent"].goal == "explanation_or_comparison"
+    assert result["reasoning"]["requires_rag"] is True
+    assert result["reasoning"]["need_sources"] is True
+
+
+def test_frontdoor_fallback_keeps_material_trade_query_on_material_research(monkeypatch) -> None:
+    state = SealAIState(conversation={"messages": [HumanMessage(content="Was kannst du mir ueber Kyrolon sagen?")]})
+
+    def _raise(_state: SealAIState, _user_text: str) -> FrontdoorRouteAxesOutput:
+        raise RuntimeError("structured output unavailable")
+
+    monkeypatch.setattr(nodes_frontdoor, "_invoke_frontdoor_structured", _raise)
+
+    result = nodes_frontdoor.frontdoor_discovery_node(state)
+
+    assert result["conversation"]["intent"].goal == "explanation_or_comparison"
+    assert result["reasoning"]["requires_rag"] is True
+    assert result["reasoning"]["need_sources"] is True
+    assert result["reasoning"]["flags"]["frontdoor_intent_category"] == "MATERIAL_RESEARCH"
+
+
+def test_frontdoor_fallback_keeps_engineering_query_on_engineering_intake(monkeypatch) -> None:
+    state = SealAIState(conversation={"messages": [HumanMessage(content="RWDR 50 mm, 3000 rpm, 5 bar, 120 C")]})
+
+    def _raise(_state: SealAIState, _user_text: str) -> FrontdoorRouteAxesOutput:
+        raise RuntimeError("structured output unavailable")
+
+    monkeypatch.setattr(nodes_frontdoor, "_invoke_frontdoor_structured", _raise)
+
+    result = nodes_frontdoor.frontdoor_discovery_node(state)
+
+    assert result["conversation"]["intent"].goal == "design_recommendation"
+    assert result["reasoning"]["requires_rag"] is False
+    assert result["reasoning"]["flags"]["frontdoor_intent_category"] == "ENGINEERING_CALCULATION"
 
 
 def test_frontdoor_structured_maps_extracted_parameters() -> None:
-    state = SealAIState(messages=[HumanMessage(content="120 bar, 85C, Medium H2")])
+    state = SealAIState(conversation={"messages": [HumanMessage(content="120 bar, 85C, Medium H2")]})
     result = _run_with_fake_structured(
         state,
         FrontdoorRouteAxesOutput(
@@ -90,15 +121,20 @@ def test_frontdoor_structured_maps_extracted_parameters() -> None:
         ),
     )
 
-    params = result["parameters"]
-    assert params.pressure_bar == 120.0
-    assert params.temperature_C == 85.0
-    assert params.medium == "H2"
-    assert result["flags"]["is_safety_critical"] is True
+    params = result["working_profile"]["engineering_profile"]
+    extracted = result["working_profile"]["extracted_params"]
+    assert params.as_dict() == {}
+    assert extracted["pressure_bar"] == 120.0
+    assert extracted["temperature_C"] == 85.0
+    assert extracted["medium"] == "H2"
+    assert result["reasoning"]["extracted_parameter_provenance"]["pressure_bar"] == "frontdoor_extracted"
+    assert result["reasoning"]["extracted_parameter_identity"]["medium"]["identity_class"] == "confirmed"
+    assert result["reasoning"]["extracted_parameter_identity"]["medium"]["normalized_value"] == "hydrogen"
+    assert result["reasoning"]["flags"]["is_safety_critical"] is True
 
 
 def test_frontdoor_social_opening_with_task_intent_does_not_bypass() -> None:
-    state = SealAIState(messages=[HumanMessage(content="Hi, kannst du bitte 120 bar auslegen?")])
+    state = SealAIState(conversation={"messages": [HumanMessage(content="Hi, kannst du bitte 120 bar auslegen?")]})
     result = _run_with_fake_structured(
         state,
         FrontdoorRouteAxesOutput(
@@ -111,13 +147,13 @@ def test_frontdoor_social_opening_with_task_intent_does_not_bypass() -> None:
         ),
     )
 
-    assert result["flags"]["frontdoor_social_opening"] is True
-    assert result["flags"]["frontdoor_task_intents"] == ["engineering_calculation"]
-    assert result["flags"]["frontdoor_bypass_supervisor"] is False
+    assert result["reasoning"]["flags"]["frontdoor_social_opening"] is True
+    assert result["reasoning"]["flags"]["frontdoor_task_intents"] == ["engineering_calculation"]
+    assert result["reasoning"]["flags"]["frontdoor_bypass_supervisor"] is False
 
 
 def test_frontdoor_technical_cue_veto_forces_supervisor() -> None:
-    state = SealAIState(messages=[HumanMessage(content="Hi there, PTFE sounds great.")])
+    state = SealAIState(conversation={"messages": [HumanMessage(content="Hi there, PTFE sounds great.")]})
     result = _run_with_fake_structured(
         state,
         FrontdoorRouteAxesOutput(
@@ -130,24 +166,25 @@ def test_frontdoor_technical_cue_veto_forces_supervisor() -> None:
         ),
     )
 
-    assert result["flags"]["frontdoor_social_opening"] is True
-    assert result["flags"]["frontdoor_bypass_supervisor"] is False
-    assert result["flags"]["frontdoor_technical_cue_veto"] is True
-    assert "PTFE" in result["flags"]["frontdoor_technical_cue_matches"]
+    assert result["reasoning"]["flags"]["frontdoor_social_opening"] is True
+    assert result["reasoning"]["flags"]["frontdoor_bypass_supervisor"] is False
+    assert result["reasoning"]["flags"]["frontdoor_technical_cue_veto"] is True
+    assert "PTFE" in result["reasoning"]["flags"]["frontdoor_technical_cue_matches"]
 
 
 def test_build_frontdoor_messages_truncates_to_last_two_turns() -> None:
     state = SealAIState(
-        messages=[
-            HumanMessage(content="H1"),
-            AIMessage(content="A1"),
-            HumanMessage(content="H2"),
-            AIMessage(content="A2"),
-            HumanMessage(content="H3"),
-        ]
+        conversation={
+            "messages": [
+                HumanMessage(content="H1"),
+                AIMessage(content="A1"),
+                HumanMessage(content="H2"),
+                AIMessage(content="A2"),
+                HumanMessage(content="H3"),
+            ]
+        }
     )
     built_messages = nodes_frontdoor._build_frontdoor_messages(state, "H3")
     history_contents = [msg.content for msg in built_messages[1:]]
 
     assert history_contents == ["H2", "A2", "H3"]
-

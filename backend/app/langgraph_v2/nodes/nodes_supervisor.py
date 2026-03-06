@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Tuple, Literal
+from typing import Any, Dict, List, Tuple
 
 from pydantic import ValidationError
 from langgraph.types import Command, Send
@@ -11,9 +11,7 @@ from langgraph.types import Command, Send
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.utils.state_debug import log_state_debug
 from app.langgraph_v2.state import (
-    Budget,
     CandidateItem,
-    DecisionEntry,
     FactItem,
     Intent,
     QuestionItem,
@@ -22,6 +20,7 @@ from app.langgraph_v2.state import (
     WorkingMemory,
 )
 from app.langgraph_v2.nodes.nodes_frontdoor import detect_material_or_trade_query
+from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
 from app.langgraph_v2.utils.messages import latest_user_text
 
 logger = logging.getLogger(__name__)
@@ -64,8 +63,6 @@ ACTION_RUN_TROUBLESHOOTING = "RUN_TROUBLESHOOTING"
 ACTION_CONFIRM_RECOMMENDATION = "RUN_CONFIRM"
 ACTION_REQUIRE_CONFIRM = "REQUIRE_CONFIRM"
 ACTION_FINALIZE = "FINALIZE"
-
-MAX_SUPERVISOR_ROUNDS = 3
 
 _ACTION_COSTS: Dict[str, int] = {
     ACTION_ASK_USER: 1,
@@ -156,7 +153,7 @@ def _infer_missing_params(state: SealAIState, required: List[str]) -> List[str]:
 def supervisor_logic_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("supervisor_logic_node", state)
     _maybe_set_recommendation_go(state)
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
 
     required = [
         "medium",
@@ -169,15 +166,17 @@ def supervisor_logic_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     coverage_score = _compute_coverage(required, missing)
     recommendation_ready = coverage_score >= _READY_THRESHOLD
     return {
-        "working_memory": wm,
-        "plan": _with_supervisor_qdrant_instruction(state.plan),
-        "phase": PHASE.INTENT,
-        "last_node": "supervisor_logic_node",
-        "missing_params": missing,
-        "coverage_gaps": missing,
-        "coverage_score": coverage_score,
-        "recommendation_ready": recommendation_ready,
-    }
+               "reasoning": {
+                   "working_memory": wm,
+                   "plan": _with_supervisor_qdrant_instruction(state.reasoning.plan),
+                   "phase": PHASE.INTENT,
+                   "last_node": "supervisor_logic_node",
+                   "missing_params": missing,
+                   "coverage_gaps": missing,
+                   "coverage_score": coverage_score,
+                   "recommendation_ready": recommendation_ready,
+               },
+           }
 
 
 def _coerce_questions(items: List[QuestionItem | Dict[str, Any]] | None) -> List[QuestionItem]:
@@ -197,7 +196,7 @@ def _coerce_questions(items: List[QuestionItem | Dict[str, Any]] | None) -> List
 def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
     seen: set[str] = set()
     questions: List[QuestionItem] = []
-    for key in (state.missing_params or []):
+    for key in (state.reasoning.missing_params or []):
         if not key or key in seen:
             continue
         seen.add(key)
@@ -212,7 +211,7 @@ def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
                 source="missing_params",
             )
         )
-    for key in (state.discovery_missing or []):
+    for key in (state.reasoning.discovery_missing or []):
         if not key or key in seen:
             continue
         seen.add(key)
@@ -228,13 +227,6 @@ def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
             )
         )
     return questions
-
-
-def _open_questions_summary(questions: List[QuestionItem]) -> str:
-    total = len(questions)
-    high = sum(1 for q in questions if q.priority == "high" and q.status == "open")
-    answered = sum(1 for q in questions if q.status == "answered")
-    return f"open={total} high={high} answered={answered}"
 
 
 def _detect_candidate_contradictions(candidates: List[CandidateItem]) -> List[str]:
@@ -275,26 +267,26 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> C
     missing = _infer_missing_params(state, _REQUIRED_PARAMS_FOR_READY)
     coverage_score = _compute_coverage(_REQUIRED_PARAMS_FOR_READY, missing)
     recommendation_ready = coverage_score >= _READY_THRESHOLD
-    questions = _coerce_questions(state.open_questions)
+    questions = _coerce_questions(state.reasoning.open_questions)
     derived = False
     if not questions:
         questions = _derive_open_questions(state)
         derived = True
 
-    goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
-    user_text = latest_user_text(state.messages or []) or ""
-    flags = dict(state.flags or {})
+    goal = getattr(state.conversation.intent, "goal", "design_recommendation") if state.conversation.intent else "design_recommendation"
+    user_text = latest_user_text(state.conversation.messages or []) or ""
+    flags = dict(state.reasoning.flags or {})
     frontdoor_intent_category = str(flags.get("frontdoor_intent_category") or "").upper()
 
-    intent_needs_sources = bool(getattr(state.intent, "needs_sources", False) or getattr(state.intent, "need_sources", False)) if state.intent else False
+    intent_needs_sources = bool(getattr(state.conversation.intent, "needs_sources", False) or getattr(state.conversation.intent, "need_sources", False)) if state.conversation.intent else False
     material_trade_query = detect_material_or_trade_query(user_text)
     explicit_knowledge_lookup = _is_explicit_knowledge_lookup(user_text)
     doc_like_query = _looks_like_material_doc_query(user_text)
     has_material_report = _has_material_report(state)
 
     requires_rag = bool(
-        state.requires_rag
-        or state.need_sources
+        state.reasoning.requires_rag
+        or state.reasoning.need_sources
         or intent_needs_sources
         or frontdoor_intent_category == "MATERIAL_RESEARCH"
         or material_trade_query
@@ -307,9 +299,9 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> C
         frontdoor_intent_category == "ENGINEERING_CALCULATION"
         or goal == "design_recommendation"
     )
-    rag_turn_count = int(getattr(state, "rag_turn_count", 0) or 0)
+    rag_turn_count = int(getattr(state.reasoning, "rag_turn_count", 0) or 0)
 
-    forced_intent = state.intent
+    forced_intent = state.conversation.intent
     if requires_rag:
         # Stop RAG after 3 attempts to prevent infinite recursion
         if rag_turn_count >= 3:
@@ -332,14 +324,16 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> C
                 forced_goal = "explanation_or_comparison"
             forced_intent = forced_intent.model_copy(
                 update={
-                    "goal": forced_goal,
-                    "needs_sources": True,
-                    "need_sources": True,
-                }
+                           "goal": forced_goal,
+                           "needs_sources": True,
+                           "reasoning": {
+                               "need_sources": True,
+                           },
+                       }
             )
 
     update: Dict[str, Any] = {
-        "plan": _with_supervisor_qdrant_instruction(state.plan),
+        "plan": _with_supervisor_qdrant_instruction(state.reasoning.plan),
         "phase": PHASE.SUPERVISOR,
         "last_node": "supervisor_policy_node",
         "missing_params": missing,
@@ -375,7 +369,7 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> C
     if needs_pricing:
         _append_action("pricing_agent", state.model_copy(update=update))
 
-    if is_engineering and (state.calc_results is None or not bool(state.calc_results_ok)):
+    if is_engineering and (state.working_profile.calc_results is None or not bool(state.working_profile.calc_results_ok)):
         _append_action("calculator_agent", state.model_copy(update=update))
 
     if actions:
@@ -406,10 +400,12 @@ def _merge_fact(existing: FactItem | None, update: FactItem) -> FactItem:
     merged_refs = list(dict.fromkeys([*existing.evidence_refs, *update.evidence_refs]))
     merged = merged.model_copy(
         update={
-            "source": update.source or existing.source,
-            "confidence": max(existing.confidence, update.confidence),
-            "evidence_refs": merged_refs,
-        }
+                   "source": update.source or existing.source,
+                   "evidence_refs": merged_refs,
+                   "reasoning": {
+                       "confidence": max(existing.confidence, update.confidence),
+                   },
+               }
     )
     return merged
 
@@ -420,10 +416,12 @@ def _merge_candidate(existing: CandidateItem | None, update: CandidateItem) -> C
     merged_refs = list(dict.fromkeys([*existing.evidence_refs, *update.evidence_refs]))
     return existing.model_copy(
         update={
-            "rationale": update.rationale or existing.rationale,
-            "confidence": max(existing.confidence, update.confidence),
-            "evidence_refs": merged_refs,
-        }
+                   "rationale": update.rationale or existing.rationale,
+                   "evidence_refs": merged_refs,
+                   "reasoning": {
+                       "confidence": max(existing.confidence, update.confidence),
+                   },
+               }
     )
 
 
@@ -440,7 +438,7 @@ def _compute_confidence(
 def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("aggregator_node", state)
     facts: Dict[str, FactItem] = {}
-    for key, value in (state.facts or {}).items():
+    for key, value in (state.reasoning.facts or {}).items():
         if isinstance(value, FactItem):
             facts[key] = value
         elif isinstance(value, dict):
@@ -453,10 +451,10 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
                 )
 
     candidates: Dict[Tuple[str, str], CandidateItem] = {}
-    for candidate in _coerce_candidates(state.candidates):
+    for candidate in _coerce_candidates(state.reasoning.candidates):
         candidates[(candidate.kind, candidate.value)] = candidate
 
-    calc = state.calc_results
+    calc = state.working_profile.calc_results
     if calc:
         if calc.safety_factor is not None:
             key = "calc.safety_factor"
@@ -477,7 +475,8 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
                 FactItem(value=calc.pressure_margin, source="panel_calculator", confidence=0.5),
             )
 
-    material_choice = state.material_choice or {}
+    material_identity = getattr(state.reasoning, "extracted_parameter_identity", {}) or {}
+    material_choice = annotate_material_choice(state.working_profile.material_choice or {}, identity_map=material_identity)
     material = material_choice.get("material")
     if material:
         key = ("material", str(material))
@@ -488,10 +487,13 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
                 value=str(material),
                 rationale=str(material_choice.get("details") or ""),
                 confidence=0.6,
+                specificity=str(material_choice.get("specificity") or "unresolved"),
+                source_kind=str(material_choice.get("source_kind") or "unknown"),
+                governed=bool(material_choice.get("governed")),
             ),
         )
 
-    profile_choice = state.profile_choice or {}
+    profile_choice = state.working_profile.profile_choice or {}
     profile = profile_choice.get("profile")
     if profile:
         key = ("profile", str(profile))
@@ -506,14 +508,14 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         )
 
     sources: List[Source] = []
-    for item in (state.sources or []):
+    for item in (state.system.sources or []):
         if isinstance(item, Source):
             sources.append(item)
         elif isinstance(item, dict):
             sources.append(Source.model_validate(item))
     source_ids = [s.source for s in sources if s.source]
 
-    questions = _coerce_questions(state.open_questions)
+    questions = _coerce_questions(state.reasoning.open_questions)
     updated_questions: List[QuestionItem] = []
     wp = state.working_profile
     for question in questions:
@@ -529,17 +531,19 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     contradictions = _detect_candidate_contradictions(list(candidates.values()))
     contradiction_penalty = min(1.0, 0.2 * len(contradictions))
     evidence_bonus = min(1.0, 0.1 * len(source_ids) + 0.05 * len([f for f in facts.values() if f.evidence_refs]))
-    coverage_score = float(getattr(state, "coverage_score", 0.0) or 0.0)
+    coverage_score = float(getattr(state.reasoning, "coverage_score", 0.0) or 0.0)
     confidence = _compute_confidence(coverage_score, evidence_bonus, contradiction_penalty)
 
     return {
-        "facts": facts,
-        "candidates": list(candidates.values()),
-        "open_questions": updated_questions,
-        "confidence": confidence,
-        "phase": PHASE.AGGREGATION,
-        "last_node": "aggregator_node",
-    }
+               "reasoning": {
+                   "facts": facts,
+                   "candidates": list(candidates.values()),
+                   "open_questions": updated_questions,
+                   "confidence": confidence,
+                   "phase": PHASE.AGGREGATION,
+                   "last_node": "aggregator_node",
+               },
+           }
 
 
 def panel_calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
@@ -547,10 +551,10 @@ def panel_calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
     from app.langgraph_v2.nodes.nodes_flows import calculator_node
 
     patch = calculator_node(state, *_args, **_kwargs)
-    wm = patch.get("working_memory") or state.working_memory or WorkingMemory()
+    wm = patch.get("working_memory") or state.reasoning.working_memory or WorkingMemory()
     panel_payload = {
-        "calc_results": (patch.get("calc_results") or state.calc_results).model_dump(exclude_none=True)
-        if (patch.get("calc_results") or state.calc_results)
+        "calc_results": (patch.get("calc_results") or state.working_profile.calc_results).model_dump(exclude_none=True)
+        if (patch.get("calc_results") or state.working_profile.calc_results)
         else {},
     }
     wm = wm.model_copy(update={"panel_calculator": panel_payload})
@@ -563,11 +567,11 @@ def panel_material_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
     from app.langgraph_v2.nodes.nodes_flows import material_agent_node
 
     patch = material_agent_node(state, *_args, **_kwargs)
-    wm = patch.get("working_memory") or state.working_memory or WorkingMemory()
+    wm = patch.get("working_memory") or state.reasoning.working_memory or WorkingMemory()
     panel_payload = dict(wm.panel_material or {})
     panel_payload.update(
         {
-            "material_choice": patch.get("material_choice") or state.material_choice,
+            "material_choice": patch.get("material_choice") or state.working_profile.material_choice,
             "material_candidates": list(wm.material_candidates or []),
         }
     )
@@ -589,7 +593,7 @@ def calculator_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
 
 def safety_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("safety_agent_node", state)
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     design_notes = dict(wm.design_notes or {})
     design_notes.update(
         {
@@ -598,23 +602,28 @@ def safety_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[s
         }
     )
     wm = wm.model_copy(update={"design_notes": design_notes})
-    critical = dict(state.critical or {})
+    critical = dict(state.reasoning.critical or {})
     critical.update({"status": "requires_safety_review", "target": "safety_agent", "severity": 4})
     safety_review = {
         "severity": 4,
         "code": "SAFETY_CRITICAL_H2_APPLICATION",
         "reason": "Safety-critical operating conditions require human validation.",
     }
+    diagnostic_data = dict(state.reasoning.diagnostic_data or {})
+    diagnostic_data["safety_review"] = safety_review
     return {
-        "working_memory": wm,
-        "critical": critical,
-        "safety_review": safety_review,
+        "reasoning": {
+            "working_memory": wm,
+            "critical": critical,
+            "diagnostic_data": diagnostic_data,
+            "last_node": "safety_agent_node",
+        },
     }
 
 
 def pricing_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("pricing_agent_node", state)
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     design_notes = dict(wm.design_notes or {})
     pricing_payload = {
         "needs_pricing": True,
@@ -625,8 +634,10 @@ def pricing_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
     comparison_notes.update({"pricing_request": pricing_payload})
     wm = wm.model_copy(update={"comparison_notes": comparison_notes})
     return {
-        "working_memory": wm,
-    }
+               "reasoning": {
+                   "working_memory": wm,
+               },
+           }
 
 
 def supervisor_route(state: SealAIState) -> str:
@@ -636,17 +647,17 @@ def supervisor_route(state: SealAIState) -> str:
 
 
 def _maybe_set_recommendation_go(state: SealAIState) -> None:
-    if state.recommendation_go:
+    if state.reasoning.recommendation_go:
         return
-    last_message = latest_user_text(state.messages or [])
+    last_message = latest_user_text(state.conversation.messages or [])
     if not last_message:
         return
     normalized = last_message.lower()
     if any(keyword in normalized for keyword in YES_KEYWORDS):
-        state.recommendation_go = True
+        state.reasoning.recommendation_go = True
         return
     if any(keyword in normalized for keyword in NO_KEYWORDS):
-        state.recommendation_go = False
+        state.reasoning.recommendation_go = False
 
 
 def _looks_like_material_doc_query(text: str) -> bool:
@@ -666,7 +677,7 @@ def _is_explicit_knowledge_lookup(text: str) -> bool:
 
 
 def _has_material_report(state: SealAIState) -> bool:
-    panel_material = getattr(state.working_memory, "panel_material", {}) if state.working_memory else {}
+    panel_material = getattr(state.reasoning.working_memory, "panel_material", {}) if state.reasoning.working_memory else {}
     if isinstance(panel_material, dict):
         docs = panel_material.get("technical_docs")
         if isinstance(docs, list) and docs:
@@ -674,7 +685,7 @@ def _has_material_report(state: SealAIState) -> bool:
         rag_context = panel_material.get("rag_context") or panel_material.get("reducer_context")
         if isinstance(rag_context, str) and rag_context.strip():
             return True
-    retrieval_meta = state.retrieval_meta or {}
+    retrieval_meta = state.reasoning.retrieval_meta or {}
     reducer_meta = retrieval_meta.get("reducer") if isinstance(retrieval_meta, dict) else None
     if isinstance(reducer_meta, dict) and int(reducer_meta.get("count") or 0) > 0:
         return True

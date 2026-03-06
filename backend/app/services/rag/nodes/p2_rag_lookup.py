@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional
 import structlog
 
 from app.langgraph_v2.state import SealAIState, Source, WorkingMemory
+from app.langgraph_v2.utils.jinja import render_prompt_sections
+from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm_async
 from app.observability.metrics import track_error, track_rag_retrieval
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.rag_cache import RAGCache
@@ -43,6 +45,15 @@ _WIDE_SEARCH_TERMS = (
     "dichtung loesung",
 )
 _MIN_WIDE_SEARCH_K = 8
+_SYNTHESIS_MAX_SNIPPETS = 5
+_SYNTHESIS_MAX_SNIPPET_CHARS = 280
+_SYNTHESIS_MAX_CONTEXT_CHARS = 2400
+_SYNTHESIS_ERROR_PREFIX = "Entschuldigung, bei der internen Modellabfrage ist ein Fehler aufgetreten."
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_NOISY_LINE_RE = re.compile(
+    r"^\s*(\[\d+\].*\(score\s*[0-9.]+\)|source\s*:|file\s*:|path\s*:)",
+    re.IGNORECASE,
+)
 
 
 def _is_qdrant_error(exc: BaseException) -> bool:
@@ -78,6 +89,129 @@ def _contains_wide_search_term(text: str) -> bool:
         return False
     compact = re.sub(r"\s+", " ", normalized)
     return any(term in compact for term in _WIDE_SEARCH_TERMS)
+
+
+def _normalize_text(text: Any) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _clean_rag_line(text: Any) -> str:
+    line = str(text or "").replace("\r", " ").strip()
+    if not line:
+        return ""
+    if _NOISY_LINE_RE.match(line):
+        return ""
+    line = re.sub(r"\b(?:[A-Za-z]:)?[/\\][\w./\\-]+\.(?:pdf|docx|txt|md)\b", "", line, flags=re.IGNORECASE)
+    return _normalize_text(line)
+
+
+def _collect_synthesis_facts(hits: List[Dict[str, Any]], rag_context: str) -> List[str]:
+    facts: List[str] = []
+    seen: set[str] = set()
+
+    for hit in hits:
+        snippet = _clean_rag_line(hit.get("snippet") or hit.get("text") or "")
+        if not snippet:
+            continue
+        if len(snippet) > _SYNTHESIS_MAX_SNIPPET_CHARS:
+            snippet = snippet[:_SYNTHESIS_MAX_SNIPPET_CHARS].rstrip(" ,;:") + "..."
+        key = snippet.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        facts.append(snippet)
+        if len(facts) >= _SYNTHESIS_MAX_SNIPPETS:
+            return facts
+
+    for line in str(rag_context or "").splitlines():
+        cleaned = _clean_rag_line(line)
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        facts.append(cleaned)
+        if len(facts) >= _SYNTHESIS_MAX_SNIPPETS:
+            break
+
+    return facts
+
+
+def _ensure_sentence(text: str) -> str:
+    cleaned = _normalize_text(text)
+    if not cleaned:
+        return ""
+    if cleaned.endswith((".", "!", "?")):
+        return cleaned
+    return f"{cleaned}."
+
+
+def _to_two_sentences(text: str) -> str:
+    cleaned = _normalize_text(text)
+    if not cleaned:
+        return ""
+    parts = [part.strip() for part in _SENTENCE_SPLIT_RE.split(cleaned) if part.strip()]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        first = _ensure_sentence(parts[0])
+        second = "Wenn du willst, grenze ich das direkt auf deinen Einsatzfall ein."
+        return f"{first} {second}"
+    first = _ensure_sentence(parts[0])
+    second = _ensure_sentence(parts[1])
+    return f"{first} {second}"
+
+
+def _fallback_synthesis(facts: List[str]) -> str:
+    if not facts:
+        return ""
+    first = _ensure_sentence(facts[0])
+    if len(facts) >= 2:
+        second = _ensure_sentence(facts[1])
+    else:
+        second = "Wenn du willst, grenze ich das direkt auf deinen Einsatzfall ein."
+    return f"{first} {second}".strip()
+
+
+async def _synthesize_rag_summary(
+    *,
+    user_question: str,
+    rag_context: str,
+    hits: List[Dict[str, Any]],
+) -> str:
+    facts = _collect_synthesis_facts(hits, rag_context)
+    if not facts:
+        return ""
+
+    facts_block = "\n".join(f"- {fact}" for fact in facts)
+    context_excerpt = _normalize_text(rag_context)[:_SYNTHESIS_MAX_CONTEXT_CHARS]
+
+    system_prompt, prompt = render_prompt_sections(
+        "rag_synthesizer.j2",
+        {
+            "user_question": user_question,
+            "facts_block": facts_block,
+            "context_excerpt": context_excerpt,
+        },
+    )
+
+    candidate = (
+        await run_llm_async(
+            model=get_model_tier("mini"),
+            prompt=prompt,
+            system=system_prompt,
+            temperature=0.0,
+            max_tokens=140,
+        )
+    ).strip()
+    if not candidate or candidate.startswith(_SYNTHESIS_ERROR_PREFIX):
+        return _fallback_synthesis(facts)
+
+    summary = _to_two_sentences(candidate)
+    if summary:
+        return summary
+    return _fallback_synthesis(facts)
 
 
 # ---------------------------------------------------------------------------
@@ -138,31 +272,36 @@ def _resolve_deterministic_norm_inputs(profile: Optional[WorkingProfile]) -> tup
 async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """P2 RAG Material-Lookup — retrieve relevant documents based on WorkingProfile.
 
-    Wired as a parallel worker after node_p1_context (via Send).
-    Feeds into node_p3_5_merge.
+    Wired as a retrieval worker after node_p1_context.
     """
-    profile: Optional[WorkingProfile] = getattr(state, "working_profile", None)
+    profile: Optional[WorkingProfile] = state.working_profile.engineering_profile
     node_start = time.perf_counter()
 
     logger.info(
         "p2_rag_lookup_start",
         has_profile=profile is not None,
         coverage=round(profile.coverage_ratio(), 3) if profile else 0.0,
-        run_id=state.run_id,
-        thread_id=state.thread_id,
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
     )
 
     # Determine if this is a knowledge query that should bypass the sparse profile check
-    intent_goal = getattr(state.intent, "goal", None) if state.intent else None
-    knowledge_type = getattr(state, "knowledge_type", None) or (
-        getattr(state.intent, "knowledge_type", None) if state.intent else None
+    intent_goal = (
+        getattr(state.conversation.intent, "goal", None)
+        if state.conversation.intent
+        else None
     )
-    classification = getattr(state, "router_classification", None)
+    knowledge_type = state.conversation.knowledge_type or (
+        getattr(state.conversation.intent, "knowledge_type", None)
+        if state.conversation.intent
+        else None
+    )
+    classification = state.conversation.router_classification
     intent_category = (
-        getattr(state, "intent_category", None)
-        or (state.flags or {}).get("frontdoor_intent_category")
+        (state.reasoning.flags or {}).get("intent_category")
+        or (state.reasoning.flags or {}).get("frontdoor_intent_category")
     )
-    user_text = latest_user_text(state.messages)
+    user_text = latest_user_text(state.conversation.messages)
     has_wide_search_term = _contains_wide_search_term(user_text or "")
     force_rag_for_intent = intent_category in _FORCED_RAG_INTENT_CATEGORIES
 
@@ -170,7 +309,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         intent_goal == "explanation_or_comparison"
         or knowledge_type in ("material", "lifetime", "norms")
         or classification in ("knowledge_query", "material_info")
-        or state.requires_rag
+        or state.reasoning.requires_rag
         or force_rag_for_intent
     )
 
@@ -187,9 +326,13 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             "p2_rag_lookup_skip",
             reason="profile_too_sparse",
             coverage=round(profile.coverage_ratio(), 3) if profile else 0.0,
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
-        return {"last_node": "node_p2_rag_lookup"}
+        return {
+            "reasoning": {
+                "last_node": "node_p2_rag_lookup",
+            },
+        }
 
     if should_bypass and (profile is None or profile.coverage_ratio() < _MIN_COVERAGE_FOR_RAG):
         logger.info(
@@ -200,7 +343,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             force_rag_for_intent=force_rag_for_intent,
             intent_category=intent_category,
             has_wide_search_term=has_wide_search_term,
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
 
     query = _build_rag_query(profile) if profile else "Dichtungstechnik"
@@ -208,10 +351,10 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     if should_bypass and (not profile or not any(profile.model_dump().values())):
         if user_text:
             query = user_text
-            logger.info("p2_rag_lookup_use_user_text", query=query, run_id=state.run_id)
+            logger.info("p2_rag_lookup_use_user_text", query=query, run_id=state.system.run_id)
 
-    tenant_scope = (state.tenant_id or state.user_id or "global").strip()
-    logger.info("p2_rag_lookup_query", query=query, tenant_id=tenant_scope, run_id=state.run_id)
+    tenant_scope = (state.system.tenant_id or state.conversation.user_id or "global").strip()
+    logger.info("p2_rag_lookup_query", query=query, tenant_id=tenant_scope, run_id=state.system.run_id)
 
     loop = asyncio.get_event_loop()
     deterministic_payload: Dict[str, Any] | None = None
@@ -224,7 +367,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
                     material=det_material,
                     temp=float(det_temp),
                     pressure=float(det_pressure),
-                    tenant_id=state.tenant_id or state.user_id,
+                    tenant_id=state.system.tenant_id or state.conversation.user_id,
                 ),
             )
         except Exception as exc:
@@ -234,7 +377,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
                 temp=det_temp,
                 pressure=det_pressure,
                 error=f"{type(exc).__name__}: {exc}",
-                run_id=state.run_id,
+                run_id=state.system.run_id,
             )
             deterministic_payload = {
                 "status": "error",
@@ -261,7 +404,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             "rag_method": "cache_hit",
             "deterministic_norms": deterministic_payload,
         }
-        wm = state.working_memory or WorkingMemory()
+        wm = state.reasoning.working_memory or WorkingMemory()
         wm = wm.model_copy(update={"panel_material": panel_material})
 
         retrieval_meta = {
@@ -278,7 +421,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             "p2_rag_lookup_cache_hit",
             tenant_id=tenant_scope,
             hit_count=len(cached_hits),
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
         track_rag_retrieval(
             method="cache",
@@ -287,14 +430,18 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             cache_hit=True,
         )
         return {
-            "working_memory": wm,
-            "sources": sources,
-            "context": cached_context,
-            "retrieval_meta": retrieval_meta,
-            "last_node": "node_p2_rag_lookup",
+            "reasoning": {
+                "working_memory": wm,
+                "context": cached_context,
+                "retrieval_meta": retrieval_meta,
+                "last_node": "node_p2_rag_lookup",
+            },
+            "system": {
+                "sources": sources,
+            },
         }
 
-    logger.info("p2_rag_lookup_cache_miss", tenant_id=tenant_scope, run_id=state.run_id)
+    logger.info("p2_rag_lookup_cache_miss", tenant_id=tenant_scope, run_id=state.system.run_id)
     track_rag_retrieval(method="cache", tier=0, latency_seconds=0.0, cache_hit=False)
 
     # ------------------------------------------------------------------
@@ -310,7 +457,11 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         tier_start = time.perf_counter()
         payload = await loop.run_in_executor(
             None,
-            lambda: search_technical_docs(query=query, tenant_id=state.tenant_id or state.user_id, k=requested_k),
+            lambda: search_technical_docs(
+                query=query,
+                tenant_id=state.system.tenant_id or state.conversation.user_id,
+                k=requested_k,
+            ),
         )
         hits = payload.get("hits") or []
         retrieval_meta = dict(payload.get("retrieval_meta") or {})
@@ -330,14 +481,14 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             latency_seconds=time.perf_counter() - tier_start,
             cache_hit=False,
         )
-        logger.info("p2_rag_lookup_tier1_ok", hit_count=len(hits), run_id=state.run_id)
+        logger.info("p2_rag_lookup_tier1_ok", hit_count=len(hits), run_id=state.system.run_id)
 
     except Exception as exc:
         track_error("rag", type(exc).__name__)
         logger.warning(
             "p2_rag_lookup_tier1_failed",
             error=str(exc),
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
         retrieval_meta = {"tier1_error": f"{type(exc).__name__}: {exc}"}
 
@@ -372,7 +523,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
                 logger.info(
                     "p2_rag_lookup_tier2_bm25_ok",
                     hit_count=len(hits),
-                    run_id=state.run_id,
+                    run_id=state.system.run_id,
                 )
             except Exception as bm25_exc:
                 track_error("rag", type(bm25_exc).__name__)
@@ -385,11 +536,13 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
                 logger.error(
                     "p2_rag_lookup_tier2_bm25_failed",
                     error=str(bm25_exc),
-                    run_id=state.run_id,
+                    run_id=state.system.run_id,
                 )
                 return {
-                    "retrieval_meta": retrieval_meta,
-                    "last_node": "node_p2_rag_lookup",
+                    "reasoning": {
+                        "retrieval_meta": retrieval_meta,
+                        "last_node": "node_p2_rag_lookup",
+                    },
                 }
         else:
             # Non-Qdrant error — return error meta, don't crash graph
@@ -398,11 +551,13 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             logger.error(
                 "p2_rag_lookup_non_qdrant_error",
                 error=str(exc),
-                run_id=state.run_id,
+                run_id=state.system.run_id,
             )
             return {
-                "retrieval_meta": retrieval_meta,
-                "last_node": "node_p2_rag_lookup",
+                "reasoning": {
+                    "retrieval_meta": retrieval_meta,
+                    "last_node": "node_p2_rag_lookup",
+                },
             }
 
     # Build sources from whichever tier succeeded
@@ -418,7 +573,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         "deterministic_norms": deterministic_payload,
     }
 
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     wm = wm.model_copy(update={"panel_material": panel_material})
 
     logger.info(
@@ -431,7 +586,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             if isinstance(deterministic_payload, dict)
             else None
         ),
-        run_id=state.run_id,
+        run_id=state.system.run_id,
     )
 
     retrieval_meta["rag_method"] = rag_method
@@ -441,13 +596,72 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         else None
     )
     return {
-        "working_memory": wm,
-        "sources": sources,
-        "context": rag_context,
-        "retrieval_meta": retrieval_meta,
-        "last_node": "node_p2_rag_lookup",
-        "rag_turn_count": int(getattr(state, "rag_turn_count", 0) or 0) + 1,
+        "reasoning": {
+            "working_memory": wm,
+            "context": rag_context,
+            "retrieval_meta": retrieval_meta,
+            "last_node": "node_p2_rag_lookup",
+            "rag_turn_count": int(state.reasoning.rag_turn_count or 0) + 1,
+        },
+        "system": {
+            "sources": sources,
+        },
     }
 
 
-__all__ = ["node_p2_rag_lookup", "_build_rag_query"]
+async def node_p2_rag_synthesize(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    """Synthesize raw RAG hits/context into user-facing conversational text."""
+    wm = state.reasoning.working_memory or WorkingMemory()
+    panel_material: Dict[str, Any] = dict(wm.panel_material or {})
+    rag_context = str(panel_material.get("rag_context") or state.reasoning.context or "").strip()
+    technical_docs = panel_material.get("technical_docs")
+    hits = list(technical_docs) if isinstance(technical_docs, list) else []
+    user_question = (latest_user_text(state.conversation.messages or []) or "").strip()
+
+    if not rag_context and not hits:
+        return {
+            "reasoning": {
+                "last_node": "node_p2_rag_synthesize",
+            },
+        }
+
+    summary = await _synthesize_rag_summary(
+        user_question=user_question,
+        rag_context=rag_context,
+        hits=hits,
+    )
+    if not summary:
+        return {
+            "reasoning": {
+                "last_node": "node_p2_rag_synthesize",
+            },
+        }
+
+    panel_material["rag_synthesized"] = summary
+    wm_patch: Dict[str, Any] = {
+        "panel_material": panel_material,
+        "response_text": summary,
+        "knowledge_material": summary,
+    }
+    wm = wm.model_copy(update=wm_patch)
+
+    retrieval_meta = dict(state.reasoning.retrieval_meta or {})
+    retrieval_meta["rag_synthesized"] = True
+
+    logger.info(
+        "p2_rag_synthesize_done",
+        summary_len=len(summary),
+        has_hits=bool(hits),
+        context_len=len(rag_context),
+        run_id=state.system.run_id,
+    )
+    return {
+        "reasoning": {
+            "working_memory": wm,
+            "retrieval_meta": retrieval_meta,
+            "last_node": "node_p2_rag_synthesize",
+        },
+    }
+
+
+__all__ = ["node_p2_rag_lookup", "node_p2_rag_synthesize", "_build_rag_query"]

@@ -11,9 +11,7 @@ Features:
 - Graceful Fallback zu MemorySaver
 """
 
-import asyncio
 import os
-from typing import Optional
 
 import structlog
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -98,12 +96,3 @@ async def make_v2_checkpointer_async(
         namespace=namespace,
     )
     return MemorySaver()
-
-
-def make_v2_checkpointer(
-    require_async: bool = True,
-    namespace: str = CHECKPOINTER_NAMESPACE_V2,
-) -> BaseCheckpointSaver:
-    return asyncio.run(
-        make_v2_checkpointer_async(require_async=require_async, namespace=namespace)
-    )

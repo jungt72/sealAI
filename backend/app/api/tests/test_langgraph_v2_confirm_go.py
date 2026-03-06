@@ -24,7 +24,12 @@ os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
+os.environ.setdefault("nextauth_url", "http://localhost:3000")
+os.environ.setdefault("nextauth_secret", "test-secret")
+os.environ.setdefault("keycloak_issuer", "http://localhost/realms/test")
 os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.json")
+os.environ.setdefault("keycloak_client_id", "test-client")
+os.environ.setdefault("keycloak_client_secret", "test-secret")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
@@ -59,20 +64,84 @@ class DummyGraph:
     async def ainvoke(self, _input, config=None):
         decision = self.state.get("confirm_decision")
         if decision == "reject":
-            return {"final_text": "Abgebrochen", "phase": "confirm", "last_node": "confirm_reject_node"}
+            return {
+                "system": {
+                    "governed_output_text": "Abgebrochen",
+                    "governed_output_ready": True,
+                    "governance_metadata": {"governance_notes": ["Manuell abgebrochen"]},
+                },
+                "reasoning": {"phase": "confirm", "last_node": "confirm_reject_node"},
+            }
         if decision in {"approve", "edit"}:
-            edits = (self.state.get("confirm_edits") or {}).get("parameters") or {}
+            edits_blob = self.state.get("confirm_edits") or {}
+            edits = edits_blob.get("working_profile") or edits_blob.get("parameters") or {}
             if edits:
-                current = self.state.get("parameters") or {}
+                current = self.state.get("working_profile") or {}
                 current.update(edits)
-                self.state["parameters"] = current
-            return {"final_text": "Weiter", "phase": "final", "last_node": "final_answer_node"}
-        return {"final_text": "", "phase": "final", "last_node": "final_answer_node"}
+                self.state["working_profile"] = current
+            return {
+                "system": {
+                    "governed_output_text": "Weiter",
+                    "governed_output_ready": True,
+                    "rfq_admissibility": {
+                        "status": "inadmissible",
+                        "reason": "rfq_contract_missing",
+                        "open_points": [],
+                        "blockers": [],
+                        "governed_ready": False,
+                    },
+                    "governance_metadata": {
+                        "scope_of_validity": ["Nur fuer den aktuellen Assertion-Stand."],
+                        "assumptions_active": [],
+                        "unknowns_release_blocking": [],
+                        "unknowns_manufacturer_validation": ["PTFE erfordert Herstellerfreigabe."],
+                        "gate_failures": [],
+                        "governance_notes": [],
+                    },
+                    "answer_contract": {
+                        "resolved_parameters": {},
+                        "calc_results": {},
+                        "selected_fact_ids": [],
+                        "candidate_semantics": [
+                            {
+                                "kind": "material",
+                                "value": "PTFE",
+                                "specificity": "family_level",
+                                "source_kind": "heuristic",
+                                "governed": False,
+                                "confidence": 0.6,
+                            }
+                        ],
+                        "governance_metadata": {
+                            "scope_of_validity": ["Nur fuer den aktuellen Assertion-Stand."],
+                            "assumptions_active": [],
+                            "unknowns_release_blocking": [],
+                            "unknowns_manufacturer_validation": ["PTFE erfordert Herstellerfreigabe."],
+                            "gate_failures": [],
+                            "governance_notes": [],
+                        },
+                        "required_disclaimers": [],
+                        "respond_with_uncertainty": False,
+                    },
+                },
+                "reasoning": {"phase": "final", "last_node": "final_answer_node"},
+            }
+        return {
+            "system": {"governed_output_text": ""},
+            "reasoning": {"phase": "final", "last_node": "final_answer_node"},
+        }
 
 
-def _make_state():
+def _make_state(*, conversation_id: str = "user-1:chat-1", required_user_sub: str = "user-1"):
     return {
-        "confirm_checkpoint": {"required_user_sub": "user-1", "conversation_id": "chat-1"},
+        "system": {
+            "confirm_checkpoint": {
+                "required_user_sub": required_user_sub,
+                "conversation_id": conversation_id,
+            },
+            "confirm_checkpoint_id": "chk-1",
+            "pending_action": "RUN_PANEL_NORMS_RAG",
+        },
         "confirm_checkpoint_id": "chk-1",
         "pending_action": "RUN_PANEL_NORMS_RAG",
         "awaiting_user_confirmation": True,
@@ -93,6 +162,10 @@ def test_confirm_go_approve_resumes(monkeypatch):
     body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert response["final_text"] == "Weiter"
+    assert response["governed_output_text"] == "Weiter"
+    assert response["governed_output_ready"] is True
+    assert response["candidate_semantics"][0]["specificity"] == "family_level"
+    assert response["governance_metadata"]["unknowns_manufacturer_validation"] == ["PTFE erfordert Herstellerfreigabe."]
 
 
 def test_confirm_go_reject_returns_cancellation(monkeypatch):
@@ -109,6 +182,7 @@ def test_confirm_go_reject_returns_cancellation(monkeypatch):
     body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="reject")
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert "Abgebrochen" in response["final_text"]
+    assert response["governed_output_text"] == "Abgebrochen"
 
 
 def test_confirm_go_edit_applies_parameters(monkeypatch):
@@ -126,16 +200,16 @@ def test_confirm_go_edit_applies_parameters(monkeypatch):
         chat_id="chat-1",
         checkpoint_id="chk-1",
         decision="edit",
-        edits={"parameters": {"pressure_bar": 7}, "instructions": "Bitte korrigieren"},
+        edits={"working_profile": {"pressure_bar": 7}, "instructions": "Bitte korrigieren"},
     )
     response = asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert response["final_text"] == "Weiter"
-    assert dummy.state.get("parameters", {}).get("pressure_bar") == 7
+    assert dummy.state.get("working_profile", {}).get("pressure_bar") == 7
 
 
 def test_confirm_go_conversation_mismatch(monkeypatch):
     state = _make_state()
-    state["confirm_checkpoint"]["conversation_id"] = "chat-2"
+    state["system"]["confirm_checkpoint"]["conversation_id"] = "user-1:chat-2"
     dummy = DummyGraph(state)
 
     async def _dummy_graph():
@@ -189,7 +263,7 @@ def test_confirm_go_double_submit(monkeypatch):
 
 
 def test_confirm_go_wrong_user(monkeypatch):
-    state = _make_state()
+    state = _make_state(conversation_id="user-2:chat-1", required_user_sub="user-1")
     dummy = DummyGraph(state)
 
     async def _dummy_graph():
@@ -204,3 +278,24 @@ def test_confirm_go_wrong_user(monkeypatch):
         asyncio.run(endpoint.confirm_go(body, request, user=user))
     assert getattr(excinfo.value, "status_code", None) == 403
     assert excinfo.value.detail["code"] == "forbidden"
+
+
+def test_confirm_go_blocks_release_when_governance_has_blockers(monkeypatch):
+    state = _make_state()
+    state["system"]["governance_metadata"] = {
+        "unknowns_release_blocking": ["Druckstufe ungeklaert"],
+    }
+    dummy = DummyGraph(state)
+
+    async def _dummy_graph():
+        return dummy
+
+    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
+
+    request = _request()
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[])
+    body = ConfirmGoRequest(chat_id="chat-1", checkpoint_id="chk-1", decision="approve")
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(endpoint.confirm_go(body, request, user=user))
+    assert getattr(excinfo.value, "status_code", None) == 409
+    assert excinfo.value.detail["code"] == "release_blocked"

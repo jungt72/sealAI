@@ -15,6 +15,8 @@ Use multi-axis classification:
 Rules:
 - If there is any technical or business task, include it in task_intents even when social_opening=true.
 - For pure social chat with no task, set task_intents to [].
+- If the user provides NO technical parameters (medium, pressure, geometry) and is just greeting or asking generic questions, the intent MUST be 'smalltalk' (set social_opening=true and task_intents=[]).
+- Do not infer engineering intent from prior turns when the latest user message is purely social or generic.
 
 Safety rules:
 - Set is_safety_critical=true if the user mentions high pressure, Hydrogen/H2, Oxygen/O2, acids, or extreme temperatures.

@@ -24,7 +24,7 @@ Checks:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal
 
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
@@ -585,7 +585,7 @@ def _check_critical_flag(
 def _check_unit_consistency(state: SealAIState) -> List[str]:
     """Check for mixed engineering units in generated answer text."""
     errors: List[str] = []
-    text = str(state.get("final_answer", "") or state.get("final_text", "") or "").lower()
+    text = str(state.system.final_answer or state.system.final_text or "").lower()
 
     if not text:
         return errors
@@ -601,7 +601,7 @@ def _check_unit_consistency(state: SealAIState) -> List[str]:
 def _check_physics_plausibility(state: SealAIState) -> List[str]:
     """Check for obvious physics violations in generated answer text."""
     errors: List[str] = []
-    text = str(state.get("final_answer", "") or state.get("final_text", "") or "")
+    text = str(state.system.final_answer or state.system.final_text or "")
 
     if not text:
         return errors
@@ -686,7 +686,7 @@ def run_quality_gate(
 
     # Add hrc_warning to critique log if it was added to warnings but not in checks
     if any(w.check_id == "hrc_warning" for w in warnings):
-        critique_log.append(f"[WARNING] Wellenhärte: WARNUNG: Wellenhärte unter Limit!")
+        critique_log.append("[WARNING] Wellenhärte: WARNUNG: Wellenhärte unter Limit!")
 
     return QGateResult(
         checks=checks,
@@ -709,17 +709,17 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     Reads calculation_result and working_profile from state.
     Routes to resume_router (no blockers) or blocker notification (has blockers).
     """
-    calc_result = state.calculation_result or {}
-    wp = state.working_profile
+    calc_result = state.working_profile.calculation_result or {}
+    wp = state.working_profile.engineering_profile
     profile = wp.model_dump() if wp is not None else {}
     
     # Fast-Path Flag detection
     is_fast_path = False
-    if state.flags and state.flags.get("force_instant_calc"):
+    if state.reasoning.flags and state.reasoning.flags.get("force_instant_calc"):
         is_fast_path = True
 
     # Merge extracted_params as fallback for profile fields
-    extracted = state.extracted_params or {}
+    extracted = state.working_profile.extracted_params or {}
     for key, value in extracted.items():
         if key not in profile or profile[key] is None:
             profile[key] = value
@@ -729,29 +729,38 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         has_calc_result=bool(calc_result),
         has_profile=bool(profile),
         is_fast_path=is_fast_path,
-        run_id=state.run_id,
-        thread_id=state.thread_id,
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
     )
 
     # If no calculation result, skip quality gate (P4b was skipped)
     # UNLESS we have physics data (v_surface_m_s) in live_calc_tile (Fast-Path)
     # Synchronized check (Sprint 8): calc_results or non-empty tile count as physics
     has_physics = bool(
-        (state.live_calc_tile and state.live_calc_tile.v_surface_m_s is not None)
-        or state.calc_results
-        or (state.live_calc_tile and state.live_calc_tile.status != "insufficient_data")
+        (
+            state.working_profile.live_calc_tile
+            and state.working_profile.live_calc_tile.v_surface_m_s is not None
+        )
+        or state.working_profile.calc_results
+        or (
+            state.working_profile.live_calc_tile
+            and state.working_profile.live_calc_tile.status != "insufficient_data"
+        )
     )
     if not calc_result and not has_physics:
         logger.info(
             "p4_5_qgate_skip",
             reason="no_calculation_result_no_physics",
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
         return {
-            "phase": PHASE.QUALITY_GATE,
-            "last_node": "node_p4_5_qgate",
-            "critique_log": [],
-            "qgate_has_blockers": False,
+            "reasoning": {
+                "phase": PHASE.QUALITY_GATE,
+                "last_node": "node_p4_5_qgate",
+                "critique_log": [],
+                "qgate_has_blockers": False,
+                "output_blocked": False,
+            },
         }
 
     result = run_quality_gate(calc_result, profile, force_instant_calc=is_fast_path)
@@ -798,24 +807,31 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
         flag_count=result.flag_count,
         is_critical=is_critical,
         critique_log_count=len(result.critique_log),
-        run_id=state.run_id,
+        run_id=state.system.run_id,
     )
 
     update: Dict[str, Any] = {
-        "phase": PHASE.QUALITY_GATE,
-        "last_node": "node_p4_5_qgate",
-        "critique_log": result.critique_log,
-        "qgate_has_blockers": result.has_blockers,
-        "qgate_result": result.model_dump(),
-        "is_critical_application": is_critical or state.is_critical_application,
+        "working_profile": {
+            "is_critical_application": is_critical or state.working_profile.is_critical_application,
+        },
+        "reasoning": {
+            "phase": PHASE.QUALITY_GATE,
+            "last_node": "node_p4_5_qgate",
+            "critique_log": result.critique_log,
+            "qgate_has_blockers": result.has_blockers,
+            "qgate_result": result.model_dump(),
+            "output_blocked": result.has_blockers,
+        },
     }
 
     if result.has_blockers:
         blockers = [c for c in result.checks if c.severity == "CRITICAL" and not c.passed]
-        update["error"] = "Quality Gate BLOCKER:\n" + _format_blocker_summary(blockers)
-        update["awaiting_user_confirmation"] = True
-        update["pending_action"] = "qgate_blockers"
-        update["confirm_status"] = "pending"
+        update["system"] = {
+            "error": "Quality Gate BLOCKER:\n" + _format_blocker_summary(blockers),
+            "awaiting_user_confirmation": True,
+            "pending_action": "qgate_blockers",
+            "confirm_status": "pending",
+        }
 
     return update
 

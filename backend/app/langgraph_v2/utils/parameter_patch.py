@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Callable, Dict, Mapping, MutableMapping, Tuple
 
 from pydantic import BaseModel, Field
 
-from app.langgraph_v2.state import TechnicalParameters
+from app.services.rag.state import WorkingProfile
 
 
 def _build_allowed_keys() -> set[str]:
     keys: set[str] = set()
-    for name, field in TechnicalParameters.model_fields.items():
+    for name, field in WorkingProfile.model_fields.items():
         keys.add(name)
         alias = getattr(field, "alias", None)
         if isinstance(alias, str) and alias:
@@ -19,6 +20,69 @@ def _build_allowed_keys() -> set[str]:
 
 
 ALLOWED_V2_PARAMETER_KEYS = _build_allowed_keys()
+IDENTITY_CLASS_VALUES = ("confirmed", "probable", "family_only", "unresolved")
+_GENERIC_IDENTITY_VALUES = {
+    "material",
+    "werkstoff",
+    "produkt",
+    "product",
+    "compound",
+    "family",
+    "familie",
+    "medium",
+    "fluid",
+}
+_MATERIAL_FAMILY_CODES = {
+    "PTFE",
+    "TFM",
+    "FKM",
+    "FFKM",
+    "NBR",
+    "HNBR",
+    "EPDM",
+    "VMQ",
+    "MVQ",
+    "PU",
+    "PUR",
+    "PEEK",
+    "POM",
+    "PA",
+    "UHMWPE",
+    "ETFE",
+    "PCTFE",
+}
+_MEDIUM_EXACT_ALIASES = {
+    "water": "water",
+    "wasser": "water",
+    "steam": "steam",
+    "dampf": "steam",
+    "oil": "oil",
+    "öl": "oil",
+    "oel": "oil",
+    "hydraulikoel": "oil",
+    "hydrauliköl": "oil",
+    "gas": "gas",
+    "air": "air",
+    "luft": "air",
+    "oxygen": "oxygen",
+    "sauerstoff": "oxygen",
+    "hydrogen": "hydrogen",
+    "wasserstoff": "hydrogen",
+    "h2": "hydrogen",
+    "chemical": "chemical",
+    "chemikalie": "chemical",
+}
+_MEDIUM_FAMILY_MARKERS = {
+    "water": ("water", "wasser"),
+    "steam": ("steam", "dampf"),
+    "oil": ("oil", "öl", "oel", "hydraulik"),
+    "gas": ("gas",),
+    "air": ("air", "luft"),
+    "oxygen": ("oxygen", "sauerstoff"),
+    "hydrogen": ("hydrogen", "wasserstoff", "h2"),
+    "chemical": ("chemical", "chem", "chemikal"),
+}
+_NORM_PATTERN = re.compile(r"^(?:DIN|EN|ISO|ASTM|ASME|API|ANSI)\b[\w .:/+-]*$", re.IGNORECASE)
 
 
 class ParametersPatchRequest(BaseModel):
@@ -30,6 +94,97 @@ class ParametersPatchRequest(BaseModel):
 
 def _is_primitive(value: Any) -> bool:
     return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _normalize_identity_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", str(value).strip())
+
+
+def _build_identity_record(key: str, value: Any, *, source: str) -> Dict[str, Any]:
+    raw_text = _normalize_identity_text(value)
+    lowered = raw_text.lower()
+    normalized_value: Any = raw_text
+    identity_class = "unresolved"
+    notes: list[str] = []
+
+    if key == "medium":
+        if lowered in _MEDIUM_EXACT_ALIASES:
+            normalized_value = _MEDIUM_EXACT_ALIASES[lowered]
+            identity_class = "confirmed"
+            notes.append("canonical_medium_match")
+        else:
+            for canonical, markers in _MEDIUM_FAMILY_MARKERS.items():
+                if any(marker in lowered for marker in markers):
+                    normalized_value = canonical
+                    identity_class = "family_only"
+                    notes.append("medium_family_match_only")
+                    break
+            if not raw_text:
+                notes.append("empty_medium")
+            elif identity_class == "unresolved":
+                notes.append("medium_not_in_canonical_set")
+    elif key in {"material", "seal_material", "seal_family"}:
+        if not raw_text or lowered in _GENERIC_IDENTITY_VALUES:
+            notes.append("generic_material_identity")
+        elif raw_text.upper() in _MATERIAL_FAMILY_CODES:
+            normalized_value = raw_text.upper()
+            identity_class = "family_only"
+            notes.append("material_family_only")
+        elif any(code in raw_text.upper() for code in _MATERIAL_FAMILY_CODES):
+            identity_class = "family_only"
+            notes.append("material_family_embedded")
+        else:
+            identity_class = "probable"
+            notes.append("material_identity_needs_lookup_confirmation")
+    elif key in {"trade_name", "product", "product_name"}:
+        if not raw_text or lowered in _GENERIC_IDENTITY_VALUES:
+            notes.append("generic_product_identity")
+        else:
+            identity_class = "probable"
+            notes.append("product_identity_needs_lookup_confirmation")
+    elif key == "flange_standard":
+        if raw_text and _NORM_PATTERN.match(raw_text):
+            normalized_value = raw_text.upper()
+            identity_class = "confirmed"
+            notes.append("norm_pattern_match")
+        elif raw_text:
+            identity_class = "probable"
+            notes.append("norm_identity_needs_confirmation")
+        else:
+            notes.append("empty_norm_identity")
+    else:
+        identity_class = "confirmed"
+        notes.append("non_identity_guarded_parameter")
+
+    lookup_allowed = identity_class == "confirmed"
+    promotion_allowed = identity_class == "confirmed"
+    return {
+        "raw_value": value,
+        "normalized_value": normalized_value,
+        "identity_class": identity_class,
+        "normalization_notes": notes,
+        "normalization_source": source,
+        "lookup_allowed": lookup_allowed,
+        "promotion_allowed": promotion_allowed,
+    }
+
+
+def stage_parameter_identity_metadata(
+    existing_identity: Mapping[str, Any] | None,
+    patch: Mapping[str, Any],
+    *,
+    source: str,
+    applied_fields: list[str] | None = None,
+) -> Dict[str, Any]:
+    updated_identity: Dict[str, Any] = dict(existing_identity or {})
+    target_fields = applied_fields if applied_fields is not None else list(dict(patch or {}).keys())
+    for key in target_fields:
+        if key not in patch:
+            continue
+        updated_identity[key] = _build_identity_record(key, patch.get(key), source=source)
+    return updated_identity
 
 
 def sanitize_v2_parameter_patch(patch: Mapping[str, Any]) -> Dict[str, Any]:
@@ -103,6 +258,34 @@ def apply_parameter_patch_with_provenance(
         merged[key] = value
         updated_provenance[key] = source
     return merged, dict(updated_provenance)
+
+
+def stage_extracted_parameter_patch(
+    existing: Any,
+    patch: Mapping[str, Any],
+    provenance: Mapping[str, str] | None,
+    identity: Mapping[str, Any] | None = None,
+    *,
+    source: str,
+    allow_user_override: bool = False,
+) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, Any], list[str]]:
+    """Stage extracted parameters without promoting them into asserted state."""
+    merged_before = merge_parameters(existing, {})
+    merged, updated_provenance = apply_parameter_patch_with_provenance(
+        existing,
+        patch,
+        provenance,
+        source=source,
+        allow_user_override=allow_user_override,
+    )
+    applied_fields = [key for key in dict(patch or {}) if merged_before.get(key) != merged.get(key)]
+    updated_identity = stage_parameter_identity_metadata(
+        identity,
+        patch,
+        source=source,
+        applied_fields=applied_fields,
+    )
+    return merged, updated_provenance, updated_identity, applied_fields
 
 
 def _parse_number(value: Any) -> float | None:
@@ -367,11 +550,67 @@ def apply_parameter_patch_lww(
     )
 
 
+def promote_parameter_patch_to_asserted(
+    existing_asserted: Any,
+    patch: Mapping[str, Any],
+    asserted_provenance: Mapping[str, str] | None,
+    *,
+    source: str,
+    existing_extracted: Any = None,
+    extracted_provenance: Mapping[str, str] | None = None,
+    allow_user_override: bool = False,
+    parameter_versions: Mapping[str, int] | None = None,
+    parameter_updated_at: Mapping[str, float] | None = None,
+    base_versions: Mapping[str, int] | None = None,
+    now: Callable[[], float] | None = None,
+) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, int], Dict[str, float], Dict[str, Any], Dict[str, str], list[str], list[Dict[str, Any]]]:
+    """Promote a sanitized patch into asserted parameters and clear staged copies."""
+    (
+        merged_asserted,
+        merged_asserted_provenance,
+        merged_versions,
+        merged_updated_at,
+        applied_fields,
+        rejected_fields,
+    ) = apply_parameter_patch_lww(
+        existing_asserted,
+        patch,
+        asserted_provenance,
+        source=source,
+        allow_user_override=allow_user_override,
+        parameter_versions=parameter_versions,
+        parameter_updated_at=parameter_updated_at,
+        base_versions=base_versions,
+        now=now,
+    )
+
+    remaining_extracted = merge_parameters(existing_extracted, {})
+    remaining_extracted_provenance: Dict[str, str] = dict(extracted_provenance or {})
+    for key in applied_fields:
+        remaining_extracted.pop(key, None)
+        remaining_extracted_provenance.pop(key, None)
+
+    return (
+        merged_asserted,
+        merged_asserted_provenance,
+        merged_versions,
+        merged_updated_at,
+        remaining_extracted,
+        remaining_extracted_provenance,
+        applied_fields,
+        rejected_fields,
+    )
+
+
 __all__ = [
     "ALLOWED_V2_PARAMETER_KEYS",
+    "IDENTITY_CLASS_VALUES",
     "ParametersPatchRequest",
     "sanitize_v2_parameter_patch",
     "merge_parameters",
     "apply_parameter_patch_with_provenance",
+    "stage_extracted_parameter_patch",
+    "stage_parameter_identity_metadata",
     "apply_parameter_patch_lww",
+    "promote_parameter_patch_to_asserted",
 ]

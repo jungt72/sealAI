@@ -35,14 +35,13 @@ def test_worm_evidence_node_writes_bundle_and_sets_profile_key(monkeypatch, tmp_
 
     patch = worm_evidence_node(state)
 
-    bundle_key = patch["working_profile"].evidence_bundle_key
+    bundle_key = patch["working_profile"]["engineering_profile"].evidence_bundle_key
     assert isinstance(bundle_key, str) and bundle_key.startswith("worm://sealai/")
-    assert patch["evidence_bundle_hash"] == patch["evidence_bundle"].bundle_hash_sha256
+    assert patch["system"]["evidence_bundle_hash"] == patch["system"]["evidence_bundle"].bundle_hash_sha256
 
     relative = bundle_key.replace("worm://sealai/", "")
     stored = tmp_path / relative
     assert stored.exists()
     payload = json.loads(stored.read_text(encoding="utf-8"))
-    assert payload["bundle_hash_sha256"] == patch["evidence_bundle_hash"]
+    assert payload["bundle_hash_sha256"] == patch["system"]["evidence_bundle_hash"]
     assert payload["working_profile_snapshot"]["material"] == "FKM"
-

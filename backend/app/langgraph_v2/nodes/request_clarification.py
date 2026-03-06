@@ -10,8 +10,13 @@ async def request_clarification_node(state: SealAIState) -> dict:
     """
     Informiert User über unverified values und bietet Optionen.
     """
-    error = state.get("verification_error", {})
-    unverified = error.get("unverified_values", [])
+    verification_error_obj = getattr(state.system, "verification_error", None)
+    generic_error_obj = getattr(state.system, "error", None)
+    error_obj = verification_error_obj if isinstance(verification_error_obj, dict) else generic_error_obj
+
+    unverified = []
+    if isinstance(error_obj, dict):
+        unverified = error_obj.get("unverified_values", []) or []
     
     clarification = (
         "⚠️ **Hinweis zur Datenqualität**\n\n"
@@ -20,7 +25,11 @@ async def request_clarification_node(state: SealAIState) -> dict:
     )
     
     for val in unverified:
-        clarification += f"- **{val['formatted']}**\n"
+        if isinstance(val, dict):
+            formatted_value = val.get("formatted") or str(val.get("value") or val)
+        else:
+            formatted_value = str(val)
+        clarification += f"- **{formatted_value}**\n"
     
     clarification += (
         "\n**Empfehlung:**\n"
@@ -32,12 +41,16 @@ async def request_clarification_node(state: SealAIState) -> dict:
     log.warning(
         "clarification_requested",
         unverified_count=len(unverified),
-        tenant_id=state.get("tenant_id")
+        tenant_id=state.system.tenant_id
     )
     
     return {
-        "final_answer": clarification,
-        "requires_user_input": True,
-        "verification_status": "FAILED_REQUIRES_CLARIFICATION",
-        "last_node": "request_clarification_node"
-    }
+               "requires_user_input": True,
+               "verification_status": "FAILED_REQUIRES_CLARIFICATION",
+               "system": {
+                   "final_answer": clarification,
+               },
+               "reasoning": {
+                   "last_node": "request_clarification_node",
+               },
+           }

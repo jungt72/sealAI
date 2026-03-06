@@ -16,7 +16,7 @@ def test_combinatorial_chemistry_guard_allows_generic_fkm_amines_terms() -> None
     )
 
     command = combinatorial_chemistry_guard_node(state)
-    profile = command.update["working_profile"]
+    profile = command.update["working_profile"]["engineering_profile"]
 
     assert command.goto == "node_router"
     assert profile.risk_mitigated is True
@@ -33,7 +33,7 @@ def test_combinatorial_chemistry_guard_sets_blocker_for_fkm_specific_amines() ->
     )
 
     command = combinatorial_chemistry_guard_node(state)
-    profile = command.update["working_profile"]
+    profile = command.update["working_profile"]["engineering_profile"]
 
     assert command.goto == "request_clarification_node"
     assert profile.risk_mitigated is False
@@ -51,7 +51,7 @@ def test_combinatorial_chemistry_guard_sets_blocker_for_aed_without_certificatio
     )
 
     command = combinatorial_chemistry_guard_node(state)
-    profile = command.update["working_profile"]
+    profile = command.update["working_profile"]["engineering_profile"]
 
     assert profile.risk_mitigated is False
     assert any(item.rule_id == "CHEM_FKM_AED_CERT_BLOCKER" for item in profile.conflicts_detected)
@@ -76,7 +76,7 @@ def test_combinatorial_chemistry_guard_appends_conflicts_and_keeps_non_blocker_r
     )
 
     command = combinatorial_chemistry_guard_node(state)
-    profile = command.update["working_profile"]
+    profile = command.update["working_profile"]["engineering_profile"]
 
     assert any(item.rule_id == "EXISTING_NOTE" for item in profile.conflicts_detected)
     assert any(item.rule_id == "MECH_HIGH_PRESSURE_GAP_BLOCKER" for item in profile.conflicts_detected)

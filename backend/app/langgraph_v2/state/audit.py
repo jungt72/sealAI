@@ -170,7 +170,7 @@ def append_tool_call_to_state(state: Any, record: ToolCallRecord) -> None:
         if isinstance(records, list):
             records.append(payload)
         return
-    records = getattr(state, "tool_call_records", None)
+    records = getattr(state.system, "tool_call_records", None)
     if isinstance(records, list):
         records.append(record)
 

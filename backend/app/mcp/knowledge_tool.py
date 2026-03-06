@@ -15,6 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.langgraph_v2.state.audit import (
@@ -65,7 +66,7 @@ SEARCH_TECHNICAL_DOCS_SPEC: Dict[str, Any] = {
                 "type": "object",
                 "description": (
                     "Optional metadata filter map discovered via get_available_filters "
-                    "(e.g. {'additional_metadata.trade_name': 'Kyrolon 79X'})."
+                    "(e.g. {'additional_metadata.trade_name': 'PTFE-Compound'})."
                 ),
                 "additionalProperties": {"type": "string"},
             },
@@ -591,6 +592,154 @@ def _serialize_material_limit_row(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_DIN_NORMS_SQL = text(
+    """
+    SELECT
+        tenant_id,
+        norm_code,
+        material,
+        medium,
+        pressure_min_bar,
+        pressure_max_bar,
+        temperature_min_c,
+        temperature_max_c,
+        payload_json,
+        source_ref,
+        revision,
+        version,
+        effective_date,
+        valid_until
+    FROM deterministic_din_norms
+    WHERE lower(material) = :material
+      AND is_active = TRUE
+      AND effective_date <= :today
+      AND (valid_until IS NULL OR valid_until >= :today)
+      AND (temperature_min_c IS NULL OR temperature_min_c <= :temp)
+      AND (temperature_max_c IS NULL OR temperature_max_c >= :temp)
+      AND (pressure_min_bar IS NULL OR pressure_min_bar <= :pressure)
+      AND (pressure_max_bar IS NULL OR pressure_max_bar >= :pressure)
+      AND (
+            :tenant_id IS NULL
+            OR tenant_id IS NULL
+            OR tenant_id = :tenant_id
+            OR tenant_id = :global_tenant
+      )
+    ORDER BY effective_date DESC, version DESC
+    LIMIT 25
+    """
+)
+
+_MATERIAL_LIMITS_SQL = text(
+    """
+    SELECT
+        tenant_id,
+        material,
+        medium,
+        limit_kind,
+        min_value,
+        max_value,
+        unit,
+        conditions_json,
+        source_ref,
+        revision,
+        version,
+        effective_date,
+        valid_until
+    FROM deterministic_material_limits
+    WHERE lower(material) = :material
+      AND is_active = TRUE
+      AND effective_date <= :today
+      AND (valid_until IS NULL OR valid_until >= :today)
+      AND (
+            :tenant_id IS NULL
+            OR tenant_id IS NULL
+            OR tenant_id = :tenant_id
+            OR tenant_id = :global_tenant
+      )
+      AND (
+            limit_kind NOT IN ('temperature', 'pressure')
+            OR (
+                limit_kind = 'temperature'
+                AND (min_value IS NULL OR min_value <= :temp)
+                AND (max_value IS NULL OR max_value >= :temp)
+            )
+            OR (
+                limit_kind = 'pressure'
+                AND (min_value IS NULL OR min_value <= :pressure)
+                AND (max_value IS NULL OR max_value >= :pressure)
+            )
+      )
+    ORDER BY effective_date DESC, version DESC
+    LIMIT 50
+    """
+)
+
+
+def _deterministic_norms_query_params(
+    *,
+    material_norm: str,
+    temp_value: float,
+    pressure_value: float,
+    today: date,
+    normalized_tenant_id: Optional[str],
+) -> Dict[str, Any]:
+    return {
+        "material": material_norm,
+        "temp": temp_value,
+        "pressure": pressure_value,
+        "today": today,
+        "tenant_id": normalized_tenant_id,
+        "global_tenant": GLOBAL_SHARED_TENANT,
+    }
+
+
+def _deterministic_norms_no_match_message() -> str:
+    return "Ich finde keine spezifischen Normwerte in der Datenbank für dieses Material."
+
+
+def _build_deterministic_norms_payload(
+    *,
+    material: str,
+    temp_value: float,
+    pressure_value: float,
+    tenant_scope: List[str],
+    norm_rows: List[Dict[str, Any]],
+    limit_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    norm_matches = [_serialize_din_norm_row(row) for row in norm_rows]
+    limit_matches = [_serialize_material_limit_row(row) for row in limit_rows]
+
+    status = "ok" if norm_matches or limit_matches else "no_match"
+    if status == "ok":
+        summary = (
+            f"Deterministic limits matched: {len(norm_matches)} DIN norm rows, "
+            f"{len(limit_matches)} material limit rows."
+        )
+    else:
+        summary = _deterministic_norms_no_match_message()
+
+    return {
+        "tool": QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
+        "material": material,
+        "temp": temp_value,
+        "pressure": pressure_value,
+        "status": status,
+        "matches": {
+            "din_norms": norm_matches,
+            "material_limits": limit_matches,
+        },
+        "context": summary,
+        "retrieval_meta": {
+            "source": "postgresql",
+            "mode": "exact_range_sql",
+            "tenant_scope": tenant_scope,
+            "din_match_count": len(norm_matches),
+            "material_limit_match_count": len(limit_matches),
+            "database_message": None if status == "ok" else summary,
+        },
+    }
+
+
 def query_deterministic_norms(
     material: str,
     temp: float,
@@ -614,107 +763,16 @@ def query_deterministic_norms(
 
     try:
         engine = _get_sync_engine()
+        params = _deterministic_norms_query_params(
+            material_norm=material_norm,
+            temp_value=temp_value,
+            pressure_value=pressure_value,
+            today=today,
+            normalized_tenant_id=normalized_tenant_id,
+        )
         with Session(engine) as session:
-            norm_result = session.execute(
-                text(
-                    """
-                    SELECT
-                        tenant_id,
-                        norm_code,
-                        material,
-                        medium,
-                        pressure_min_bar,
-                        pressure_max_bar,
-                        temperature_min_c,
-                        temperature_max_c,
-                        payload_json,
-                        source_ref,
-                        revision,
-                        version,
-                        effective_date,
-                        valid_until
-                    FROM deterministic_din_norms
-                    WHERE lower(material) = :material
-                      AND is_active = TRUE
-                      AND effective_date <= :today
-                      AND (valid_until IS NULL OR valid_until >= :today)
-                      AND (temperature_min_c IS NULL OR temperature_min_c <= :temp)
-                      AND (temperature_max_c IS NULL OR temperature_max_c >= :temp)
-                      AND (pressure_min_bar IS NULL OR pressure_min_bar <= :pressure)
-                      AND (pressure_max_bar IS NULL OR pressure_max_bar >= :pressure)
-                      AND (
-                            :tenant_id IS NULL
-                            OR tenant_id IS NULL
-                            OR tenant_id = :tenant_id
-                            OR tenant_id = :global_tenant
-                      )
-                    ORDER BY effective_date DESC, version DESC
-                    LIMIT 25
-                    """
-                ),
-                {
-                    "material": material_norm,
-                    "temp": temp_value,
-                    "pressure": pressure_value,
-                    "today": today,
-                    "tenant_id": normalized_tenant_id,
-                    "global_tenant": GLOBAL_SHARED_TENANT,
-                },
-            )
-            limit_result = session.execute(
-                text(
-                    """
-                    SELECT
-                        tenant_id,
-                        material,
-                        medium,
-                        limit_kind,
-                        min_value,
-                        max_value,
-                        unit,
-                        conditions_json,
-                        source_ref,
-                        revision,
-                        version,
-                        effective_date,
-                        valid_until
-                    FROM deterministic_material_limits
-                    WHERE lower(material) = :material
-                      AND is_active = TRUE
-                      AND effective_date <= :today
-                      AND (valid_until IS NULL OR valid_until >= :today)
-                      AND (
-                            :tenant_id IS NULL
-                            OR tenant_id IS NULL
-                            OR tenant_id = :tenant_id
-                            OR tenant_id = :global_tenant
-                      )
-                      AND (
-                            limit_kind NOT IN ('temperature', 'pressure')
-                            OR (
-                                limit_kind = 'temperature'
-                                AND (min_value IS NULL OR min_value <= :temp)
-                                AND (max_value IS NULL OR max_value >= :temp)
-                            )
-                            OR (
-                                limit_kind = 'pressure'
-                                AND (min_value IS NULL OR min_value <= :pressure)
-                                AND (max_value IS NULL OR max_value >= :pressure)
-                            )
-                      )
-                    ORDER BY effective_date DESC, version DESC
-                    LIMIT 50
-                    """
-                ),
-                {
-                    "material": material_norm,
-                    "temp": temp_value,
-                    "pressure": pressure_value,
-                    "today": today,
-                    "tenant_id": normalized_tenant_id,
-                    "global_tenant": GLOBAL_SHARED_TENANT,
-                },
-            )
+            norm_result = session.execute(_DIN_NORMS_SQL, params)
+            limit_result = session.execute(_MATERIAL_LIMITS_SQL, params)
             norm_rows = [dict(row._mapping) for row in norm_result]
             limit_rows = [dict(row._mapping) for row in limit_result]
     except SQLAlchemyError as exc:
@@ -740,40 +798,91 @@ def query_deterministic_norms(
                 "source": "postgresql",
                 "mode": "exact_range_sql",
                 "error": f"{type(exc).__name__}: {exc}",
+                "tenant_scope": tenant_scope,
             },
         }
+    return _build_deterministic_norms_payload(
+        material=material,
+        temp_value=temp_value,
+        pressure_value=pressure_value,
+        tenant_scope=tenant_scope,
+        norm_rows=norm_rows,
+        limit_rows=limit_rows,
+    )
 
-    norm_matches = [_serialize_din_norm_row(row) for row in norm_rows]
-    limit_matches = [_serialize_material_limit_row(row) for row in limit_rows]
 
-    status = "ok" if norm_matches or limit_matches else "no_match"
-    if status == "ok":
-        summary = (
-            f"Deterministic limits matched: {len(norm_matches)} DIN norm rows, "
-            f"{len(limit_matches)} material limit rows."
+async def aquery_deterministic_norms(
+    material: str,
+    temp: float,
+    pressure: float,
+    *,
+    tenant_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Async deterministic SQL query for numeric norms/material limits."""
+    from app.database import AsyncSessionLocal
+
+    material_norm = _normalize_material(material)
+    if not material_norm:
+        raise ValueError("material is required")
+    try:
+        temp_value = float(temp)
+        pressure_value = float(pressure)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("temp and pressure must be numeric") from exc
+
+    today = date.today()
+    tenant_scope = _normalize_tenant_scope(tenant_id)
+    normalized_tenant_id = str(tenant_id or "").strip() or None
+
+    try:
+        async with AsyncSessionLocal() as session:
+            if not isinstance(session, AsyncSession):
+                raise TypeError("AsyncSessionLocal must return an AsyncSession for aquery_deterministic_norms.")
+            params = _deterministic_norms_query_params(
+                material_norm=material_norm,
+                temp_value=temp_value,
+                pressure_value=pressure_value,
+                today=today,
+                normalized_tenant_id=normalized_tenant_id,
+            )
+            norm_result = await session.execute(_DIN_NORMS_SQL, params)
+            limit_result = await session.execute(_MATERIAL_LIMITS_SQL, params)
+            norm_rows = [dict(row._mapping) for row in norm_result]
+            limit_rows = [dict(row._mapping) for row in limit_result]
+    except (SQLAlchemyError, TypeError) as exc:
+        logger.warning(
+            "query_deterministic_norms_sql_error",
+            extra={
+                "material": material,
+                "temp": temp_value,
+                "pressure": pressure_value,
+                "tenant_id": tenant_id,
+                "error": f"{type(exc).__name__}: {exc}",
+            },
         )
-    else:
-        summary = "No deterministic norm/material limit rows matched the input range."
-
-    return {
-        "tool": QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
-        "material": material,
-        "temp": temp_value,
-        "pressure": pressure_value,
-        "status": status,
-        "matches": {
-            "din_norms": norm_matches,
-            "material_limits": limit_matches,
-        },
-        "context": summary,
-        "retrieval_meta": {
-            "source": "postgresql",
-            "mode": "exact_range_sql",
-            "tenant_scope": tenant_scope,
-            "din_match_count": len(norm_matches),
-            "material_limit_match_count": len(limit_matches),
-        },
-    }
+        return {
+            "tool": QUERY_DETERMINISTIC_NORMS_TOOL_NAME,
+            "material": material,
+            "temp": temp_value,
+            "pressure": pressure_value,
+            "status": "error",
+            "matches": {"din_norms": [], "material_limits": []},
+            "context": "Deterministic norms query failed.",
+            "retrieval_meta": {
+                "source": "postgresql",
+                "mode": "exact_range_sql",
+                "error": f"{type(exc).__name__}: {exc}",
+                "tenant_scope": tenant_scope,
+            },
+        }
+    return _build_deterministic_norms_payload(
+        material=material,
+        temp_value=temp_value,
+        pressure_value=pressure_value,
+        tenant_scope=tenant_scope,
+        norm_rows=norm_rows,
+        limit_rows=limit_rows,
+    )
 
 
 def _extract_tables_from_metadata(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1001,12 +1110,6 @@ def search_technical_docs(
         active_filters.pop("material_code", None)
         retrieved, metrics = _retrieve(active_filters)
         metrics["material_code_filter_relaxed"] = True
-    # If tenant scoping yields no hits, retry without tenant filter.
-    if tenant_id and "tenant_id" in active_filters and not retrieved:
-        active_filters.pop("tenant_id", None)
-        retrieved, metrics = _retrieve(active_filters)
-        metrics["tenant_filter_relaxed"] = True
-
     filtered = list(retrieved or [])
     filtered = [hit for hit in filtered if isinstance(hit, dict) and _is_relevant_hit(hit)]
     if material_code_norm:
@@ -1276,6 +1379,7 @@ __all__ = [
     "execute_tool_call",
     "get_permitted_tools",
     "get_permitted_tool_specs",
+    "aquery_deterministic_norms",
     "get_available_filters",
     "has_knowledge_scope",
     "query_deterministic_norms",

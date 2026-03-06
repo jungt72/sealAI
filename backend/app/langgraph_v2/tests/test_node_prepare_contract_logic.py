@@ -5,7 +5,8 @@ import hashlib
 from langchain_core.messages import HumanMessage
 
 from app.langgraph_v2.nodes.answer_subgraph.node_prepare_contract import node_prepare_contract
-from app.langgraph_v2.state.sealai_state import SealAIState, TechnicalParameters, WorkingMemory
+from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
+from app.langgraph_v2.state.sealai_state import SealAIState, WorkingProfile, WorkingMemory
 
 
 def _contract_hash(contract) -> str:
@@ -14,41 +15,42 @@ def _contract_hash(contract) -> str:
 
 def test_evidence_authority_prefers_din_norm_pressure_truth() -> None:
     state = SealAIState(
-        working_memory=WorkingMemory(
-            panel_material={
-                "technical_docs": [
-                    {
-                        "text": "Max Druck 100 bar",
-                        "source": "Forum/Unknown",
-                        "metadata": {
-                            "document_id": "forum_doc",
-                            "chunk_id": "c1",
-                            "source_type": "forum",
+        reasoning={
+            "working_memory": WorkingMemory(
+                panel_material={
+                    "technical_docs": [
+                        {
+                            "text": "Max Druck 100 bar",
+                            "source": "Forum/Unknown",
+                            "metadata": {
+                                "document_id": "forum_doc",
+                                "chunk_id": "c1",
+                                "source_type": "forum",
+                            },
+                            "score": 0.95,
                         },
-                        "score": 0.95,
-                    },
-                    {
-                        "text": "Max Druck 80 bar",
-                        "source": "DIN-Norm",
-                        "metadata": {
-                            "document_id": "din_doc",
-                            "chunk_id": "c2",
-                            "source_type": "DIN standard",
+                        {
+                            "text": "Max Druck 80 bar",
+                            "source": "DIN-Norm",
+                            "metadata": {
+                                "document_id": "din_doc",
+                                "chunk_id": "c2",
+                                "source_type": "DIN standard",
+                            },
+                            "score": 0.40,
                         },
-                        "score": 0.40,
-                    },
-                ]
-            }
-        )
+                    ]
+                }
+            )
+        }
     )
 
     patch = node_prepare_contract(state)
     contract = patch["answer_contract"]
 
     assert contract.resolved_parameters.get("pressure_bar") == 80.0
-    final_prompt = patch["final_prompt"]
-    assert "Max Druck 80 bar" in final_prompt
-    assert final_prompt.find("Max Druck 80 bar") < final_prompt.find("Max Druck 100 bar")
+    assert "din_doc:c2" in contract.selected_fact_ids
+    assert "forum_doc:c1" in contract.selected_fact_ids
 
 
 def test_smalltalk_heuristic_when_no_params_and_no_rag_chunks() -> None:
@@ -64,19 +66,27 @@ def test_smalltalk_heuristic_when_no_params_and_no_rag_chunks() -> None:
 
 
 def test_parameter_patching_copies_user_parameters_into_contract() -> None:
-    state = SealAIState(parameters=TechnicalParameters(medium="Wasser"))
+    state = SealAIState(
+        working_profile={"engineering_profile": {"medium": "Wasser"}},
+        reasoning={"current_assertion_cycle_id": 3, "asserted_profile_revision": 7},
+    )
 
     patch = node_prepare_contract(state)
     contract = patch["answer_contract"]
 
     assert contract.resolved_parameters.get("medium") == "Wasser"
+    assert patch["system"]["derived_from_assertion_cycle_id"] == 3
+    assert patch["system"]["derived_from_assertion_revision"] == 7
+    assert patch["system"]["derived_artifacts_stale"] is False
 
 
 def test_extracted_rpm_and_shaft_aliases_flow_into_contract_parameters() -> None:
     state = SealAIState(
-        extracted_params={
-            "rpm": 1450.0,
-            "shaft_d1_mm": 55.0,
+        working_profile={
+            "extracted_params": {
+                "rpm": 1450.0,
+                "shaft_d1_mm": 55.0,
+            }
         }
     )
 
@@ -92,17 +102,122 @@ def test_extracted_rpm_and_shaft_aliases_flow_into_contract_parameters() -> None
     assert "55.0" in allowed_tokens
 
 
+def test_prepare_contract_ignores_unconfirmed_identity_guarded_extracted_fields() -> None:
+    state = SealAIState(
+        working_profile={
+            "extracted_params": {
+                "material": "Kyrolon",
+                "medium": "Hydraulikoel HLP46",
+                "pressure_bar": 120.0,
+            }
+        },
+        reasoning={
+            "extracted_parameter_identity": {
+                "material": {
+                    "identity_class": "probable",
+                    "normalized_value": "Kyrolon",
+                    "lookup_allowed": False,
+                    "promotion_allowed": False,
+                },
+                "medium": {
+                    "identity_class": "family_only",
+                    "normalized_value": "oil",
+                    "lookup_allowed": False,
+                    "promotion_allowed": False,
+                },
+                "pressure_bar": {
+                    "identity_class": "confirmed",
+                    "normalized_value": 120.0,
+                    "lookup_allowed": True,
+                    "promotion_allowed": True,
+                },
+            }
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["answer_contract"]
+
+    assert "material" not in contract.resolved_parameters
+    assert "medium" not in contract.resolved_parameters
+    assert contract.resolved_parameters.get("pressure_bar") == 120.0
+
+
+def test_prepare_contract_exposes_candidate_specificity_for_unconfirmed_material_choice() -> None:
+    state = SealAIState(
+        material_choice={
+            "material": "Kyrolon",
+            "details": "Dokumenttreffer oder Produktname, noch nicht compoundscharf bestaetigt.",
+            "confidence": "heuristic",
+        },
+        reasoning={
+            "extracted_parameter_identity": {
+                "material": {
+                    "identity_class": "probable",
+                    "normalized_value": "Kyrolon",
+                    "lookup_allowed": False,
+                    "promotion_allowed": False,
+                }
+            }
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["answer_contract"]
+
+    assert contract.candidate_semantics
+    assert contract.candidate_semantics[0]["value"] == "Kyrolon"
+    assert contract.candidate_semantics[0]["specificity"] == "unresolved"
+    assert contract.candidate_semantics[0]["governed"] is False
+
+
+def test_prepare_contract_collects_governance_metadata() -> None:
+    state = SealAIState(
+        material_choice={
+            "material": "PTFE",
+            "details": "Heuristischer Familienvorschlag.",
+            "confidence": "heuristic",
+        },
+        reasoning={
+            "missing_params": ["temperature_C"],
+            "qgate_result": {
+                "checks": [
+                    {
+                        "check_id": "medium_compatibility",
+                        "severity": "CRITICAL",
+                        "passed": False,
+                        "message": "Medienvertraeglichkeit fuer aktuelles Medium ungeklaert.",
+                    }
+                ]
+            },
+        },
+        system={"requires_human_review": True},
+    )
+
+    patch = node_prepare_contract(state)
+    governance = patch["answer_contract"].governance_metadata
+
+    assert governance.scope_of_validity
+    assert any("aktuellen Assertion-Stand" in item for item in governance.scope_of_validity)
+    assert any("temperature_C" in item for item in governance.assumptions_active)
+    assert "Medienvertraeglichkeit fuer aktuelles Medium ungeklaert." in governance.unknowns_release_blocking
+    assert any("PTFE" in item and "family_level" in item for item in governance.unknowns_manufacturer_validation)
+    assert any(item.startswith("CRITICAL:") for item in governance.gate_failures)
+
+
 def test_prepare_contract_allowlists_live_calc_and_rounded_numbers() -> None:
     state = SealAIState(
-        extracted_params={"rpm": 1500, "hrc_value": 40},
-        live_calc_tile={
-            "v_surface_m_s": 3.92,
-            "pv_value_mpa_m_s": 117.8,
-            "hrc_value": 40.0,
-            "parameters": {"rpm": 1500, "hrc_value": 40},
-            "status": "warning",
+        working_profile={
+            "extracted_params": {"rpm": 1500, "hrc_value": 40},
+            "live_calc_tile": {
+                "v_surface_m_s": 3.92,
+                "pv_value_mpa_m_s": 117.8,
+                "hrc_value": 40.0,
+                "parameters": {"rpm": 1500, "hrc_value": 40},
+                "status": "warning",
+            },
+            "calculation_result": {"recommended_hardness_hrc": 58.0},
         },
-        calculation_result={"recommended_hardness_hrc": 58.0},
     )
 
     patch = node_prepare_contract(state)
@@ -118,8 +233,10 @@ def test_prepare_contract_allowlists_live_calc_and_rounded_numbers() -> None:
 
 def test_prepare_contract_moves_seal_compound_out_of_material_and_sets_seal_material() -> None:
     state = SealAIState(
-        extracted_params={"material": "PTFE"},
-        material_choice={"material": "PTFE"},
+        working_profile={
+            "extracted_params": {"material": "PTFE"},
+            "material_choice": {"material": "PTFE"},
+        }
     )
 
     patch = node_prepare_contract(state)
@@ -127,22 +244,44 @@ def test_prepare_contract_moves_seal_compound_out_of_material_and_sets_seal_mate
 
     assert contract.resolved_parameters.get("seal_material") == "PTFE"
     assert contract.resolved_parameters.get("material") is None
+    assert contract.candidate_semantics[0]["specificity"] == "family_level"
+
+
+def test_prepare_contract_accepts_dict_working_profile_in_answer_subgraph_state() -> None:
+    state = AnswerSubgraphState(
+        working_profile={
+            "engineering_profile": {"medium": "Wasser"},
+            "extracted_params": {"rpm": 1450.0},
+            "material_choice": {"material": "PTFE"},
+            "calc_results": {"safety_factor": 1.5},
+        }
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["answer_contract"]
+
+    assert contract.resolved_parameters.get("medium") == "Wasser"
+    assert contract.resolved_parameters.get("rpm") == 1450.0
+    assert contract.resolved_parameters.get("seal_material") == "PTFE"
+    assert contract.calc_results.get("safety_factor") == 1.5
 
 
 def test_contract_hash_integrity_identical_vs_minimal_change() -> None:
     base_state = SealAIState(
-        working_memory=WorkingMemory(
-            panel_material={
-                "technical_docs": [
-                    {
-                        "text": "Max Druck 80 bar",
-                        "source": "DIN-Norm",
-                        "metadata": {"document_id": "din_doc", "chunk_id": "c2", "source_type": "DIN"},
-                    }
-                ]
-            }
-        ),
-        parameters=TechnicalParameters(medium="Wasser"),
+        reasoning={
+            "working_memory": WorkingMemory(
+                panel_material={
+                    "technical_docs": [
+                        {
+                            "text": "Max Druck 80 bar",
+                            "source": "DIN-Norm",
+                            "metadata": {"document_id": "din_doc", "chunk_id": "c2", "source_type": "DIN"},
+                        }
+                    ]
+                }
+            )
+        },
+        working_profile={"engineering_profile": {"medium": "Wasser"}},
     )
 
     patch_a = node_prepare_contract(base_state)
@@ -155,18 +294,20 @@ def test_contract_hash_integrity_identical_vs_minimal_change() -> None:
     assert hash_b == _contract_hash(patch_b["answer_contract"])
 
     changed_state = SealAIState(
-        working_memory=WorkingMemory(
-            panel_material={
-                "technical_docs": [
-                    {
-                        "text": "Max Druck 80 bar",
-                        "source": "DIN-Norm",
-                        "metadata": {"document_id": "din_doc", "chunk_id": "c3", "source_type": "DIN"},
-                    }
-                ]
-            }
-        ),
-        parameters=TechnicalParameters(medium="Wasser"),
+        reasoning={
+            "working_memory": WorkingMemory(
+                panel_material={
+                    "technical_docs": [
+                        {
+                            "text": "Max Druck 80 bar",
+                            "source": "DIN-Norm",
+                            "metadata": {"document_id": "din_doc", "chunk_id": "c3", "source_type": "DIN"},
+                        }
+                    ]
+                }
+            )
+        },
+        working_profile={"engineering_profile": {"medium": "Wasser"}},
     )
     patch_changed = node_prepare_contract(changed_state)
     changed_hash = patch_changed["flags"]["answer_contract_hash"]
@@ -205,16 +346,13 @@ def test_extreme_temperature_query_injects_required_factcards(monkeypatch) -> No
     monkeypatch.setattr("app.mcp.knowledge_tool.search_technical_docs", _fake_search_technical_docs)
 
     state = SealAIState(
-        parameters=TechnicalParameters(temperature_C=-200.0),
-        messages=[HumanMessage(content="Ist PTFE bei -200°C noch einsetzbar?")],
-        flags={"frontdoor_intent_category": "ENGINEERING_CALCULATION"},
+        working_profile={"engineering_profile": {"temperature_C": -200.0}},
+        conversation={"messages": [HumanMessage(content="Ist PTFE bei -200°C noch einsetzbar?")]},
+        reasoning={"flags": {"frontdoor_intent_category": "ENGINEERING_CALCULATION"}},
     )
 
     patch = node_prepare_contract(state)
-    final_prompt = patch["final_prompt"]
     selected_fact_ids = patch["answer_contract"].selected_fact_ids
 
-    assert "PTFE-F-008" in final_prompt
-    assert "PTFE-F-062" in final_prompt
     assert any("PTFE-F-008" in item for item in selected_fact_ids)
     assert any("PTFE-F-062" in item for item in selected_fact_ids)

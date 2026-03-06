@@ -17,9 +17,9 @@ def test_turn_limit_node_returns_reply():
     from app.langgraph_v2.nodes.nodes_error import turn_limit_node
 
     patch = turn_limit_node(state)
-    assert "12 Runden" in patch["final_text"]
-    assert "medium" in patch["final_text"]
-    assert patch["last_node"] == "turn_limit_node"
+    assert "12 Runden" in patch["system"]["final_text"]
+    assert "medium" in patch["system"]["final_text"]
+    assert patch["reasoning"]["last_node"] == "turn_limit_node"
 
 
 def test_turn_limit_node_partial_missing():
@@ -34,7 +34,7 @@ def test_turn_limit_node_partial_missing():
     from app.langgraph_v2.nodes.nodes_error import turn_limit_node
 
     patch = turn_limit_node(state)
-    text = patch["final_text"]
+    text = patch["system"]["final_text"]
     assert "pressure_bar" in text
     assert "temperature_c" in text
     assert "medium" not in text
@@ -53,7 +53,7 @@ def test_turn_limit_node_all_filled():
     from app.langgraph_v2.nodes.nodes_error import turn_limit_node
 
     patch = turn_limit_node(state)
-    assert "–" in patch["final_text"]
+    assert "–" in patch["system"]["final_text"]
 
 
 def test_turn_limit_node_final_answer_set():
@@ -62,5 +62,5 @@ def test_turn_limit_node_final_answer_set():
     from app.langgraph_v2.nodes.nodes_error import turn_limit_node
 
     patch = turn_limit_node(state)
-    assert patch["final_answer"] == patch["final_text"]
-    assert "5 Runden" in patch["final_text"]
+    assert patch["system"]["final_answer"] == patch["system"]["final_text"]
+    assert "5 Runden" in patch["system"]["final_text"]

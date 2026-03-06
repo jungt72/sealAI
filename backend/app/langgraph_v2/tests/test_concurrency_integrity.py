@@ -12,25 +12,41 @@ import pytest
 from app.langgraph_v2.nodes.answer_subgraph.node_finalize import node_finalize
 from app.langgraph_v2.nodes.answer_subgraph.node_prepare_contract import node_prepare_contract
 from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import node_verify_claims
-from app.langgraph_v2.state.sealai_state import SealAIState, Source, TechnicalParameters
+from app.langgraph_v2.state.sealai_state import SealAIState, Source, WorkingProfile
 
 
 def _contract_hash(contract: Any) -> str:
     return hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
 
 
+def _merge_patch(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in patch.items():
+        if isinstance(merged.get(key), dict) and isinstance(value, dict):
+            merged[key] = _merge_patch(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def _state_for_pressure(pressure_bar: float, *, thread_id: str = "thread-race") -> SealAIState:
     return SealAIState(
-        thread_id=thread_id,
-        parameters=TechnicalParameters(medium="Kyrolon", pressure_bar=pressure_bar),
-        sources=[
-            Source(
-                snippet=f"Kyrolon ist fuer {pressure_bar} bar freigegeben.",
-                source="DIN",
-                metadata={"document_id": "din_norm", "chunk_id": "cidA"},
-            )
-        ],
-        flags={"applied_patch_ids": []},
+        conversation={"thread_id": thread_id},
+        working_profile=WorkingProfile(
+            engineering_profile={"medium": "Kyrolon", "pressure_bar": pressure_bar},
+            medium="Kyrolon",
+            pressure_bar=pressure_bar,
+        ),
+        system={
+            "sources": [
+                Source(
+                    snippet=f"Kyrolon ist fuer {pressure_bar} bar freigegeben.",
+                    source="DIN",
+                    metadata={"document_id": "din_norm", "chunk_id": "cidA"},
+                )
+            ]
+        },
+        reasoning={"flags": {"applied_patch_ids": []}},
     )
 
 
@@ -64,13 +80,15 @@ async def test_state_drift_collision_rejected_by_state_race_guard() -> None:
     assert contract_2.resolved_parameters["pressure_bar"] == 120.0
 
     drifted_state = SealAIState(
-        thread_id="thread-shared",
-        answer_contract=contract_2,
-        draft_base_hash=_contract_hash(contract_1),
-        draft_text="Kyrolon 80.0 bar.",
+        conversation={"thread_id": "thread-shared"},
+        system={
+            "answer_contract": contract_2,
+            "draft_base_hash": _contract_hash(contract_1),
+            "draft_text": "Kyrolon 80.0 bar.",
+        },
     )
     verify_patch = node_verify_claims(drifted_state)
-    report = verify_patch["verification_report"]
+    report = verify_patch["system"]["verification_report"]
 
     assert report.status == "fail"
     assert report.failure_type == "state_race_condition"
@@ -92,14 +110,14 @@ async def test_parallel_subgraph_invokes_keep_flags_and_reports_isolated() -> No
 
     assert len(results) == 10
     for result in results:
-        report = result.get("verification_report")
+        report = result.get("system", {}).get("verification_report")
         assert report is not None
         assert report.status == "pass"
         assert result.get("error") in (None, "")
-        assert result["flags"]["answer_subgraph_patch_attempts"] == 0
-        assert result["flags"].get("applied_patch_ids") == []
+        assert result["reasoning"]["flags"]["answer_subgraph_patch_attempts"] == 0
+        assert result["reasoning"]["flags"].get("applied_patch_ids") == []
     # nested list isolation: each run gets its own list object
-    assert len({id(result["flags"]["applied_patch_ids"]) for result in results}) == 10
+    assert len({id(result["reasoning"]["flags"]["applied_patch_ids"]) for result in results}) == 10
 
 
 @dataclass
@@ -124,32 +142,19 @@ class _MockDelayedCheckpointer:
 async def _subgraph_like_invoke(state: SealAIState, *, config: dict[str, Any]) -> dict[str, Any]:
     prepare_patch = node_prepare_contract(state)
     prepared_state = SealAIState.model_validate(
-        {
-            **state.model_dump(exclude_none=False),
-            **prepare_patch,
-        }
+        _merge_patch(state.model_dump(exclude_none=False), prepare_patch)
     )
     draft_patch = await draft_node_module.node_draft_answer(prepared_state, config=config)
     drafted_state = SealAIState.model_validate(
-        {
-            **prepared_state.model_dump(exclude_none=False),
-            **draft_patch,
-        }
+        _merge_patch(prepared_state.model_dump(exclude_none=False), draft_patch)
     )
     verify_patch = node_verify_claims(drafted_state)
     verified_state = SealAIState.model_validate(
-        {
-            **drafted_state.model_dump(exclude_none=False),
-            **verify_patch,
-        }
+        _merge_patch(drafted_state.model_dump(exclude_none=False), verify_patch)
     )
-    patch_payload = {
-        **prepare_patch,
-        **draft_patch,
-        **verify_patch,
-    }
-    if verify_patch["verification_report"].status == "pass":
-        patch_payload.update(node_finalize(verified_state))
+    patch_payload = _merge_patch(_merge_patch(prepare_patch, draft_patch), verify_patch)
+    if verify_patch["system"]["verification_report"].status == "pass":
+        patch_payload = _merge_patch(patch_payload, node_finalize(verified_state))
     return patch_payload
 
 
@@ -160,9 +165,9 @@ async def _run_subgraph_and_checkpoint(
     try:
         patch_payload = await _subgraph_like_invoke(
             state,
-            config={"configurable": {"thread_id": state.thread_id or "thread-cp", "run_id": "checkpoint-run"}},
+            config={"configurable": {"thread_id": state.conversation.thread_id or "thread-cp", "run_id": "checkpoint-run"}},
         )
-        await saver.aput({"thread_id": state.thread_id}, patch_payload)
+        await saver.aput({"thread_id": state.conversation.thread_id}, patch_payload)
         return {"success": True, "state_corrupt": False, "patch": patch_payload}
     except Exception as exc:
         return {"success": False, "state_corrupt": False, "error": str(exc)}
@@ -181,7 +186,7 @@ async def test_delayed_checkpointer_put_never_marks_partial_success() -> None:
 
     assert ok_result["success"] is True
     assert ok_result["state_corrupt"] is False
-    assert ok_result["patch"]["verification_report"].status == "pass"
+    assert ok_result["patch"]["system"]["verification_report"].status == "pass"
     assert len(ok_saver.writes or []) == 1
 
     assert fail_result["success"] is False

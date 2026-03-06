@@ -6,8 +6,8 @@ supervisor_policy_node into a dedicated, clearly bounded node.
 Responsibilities:
 - Extract WorkingProfile fields from user messages via LLM structured output
 - Support two modes via router_classification:
-    new_case   → fresh extraction, creates a new WorkingProfile
-    follow_up  → merges extracted fields onto the existing working_profile
+    new_case   → emits fresh WorkingProfile patch
+    follow_up  → emits partial WorkingProfile patch for reducer merge
 - No RAG, no material/type research (those are P2/P3)
 - Tolerates LLM failure gracefully (keeps existing profile, sets error hint)
 """
@@ -19,15 +19,21 @@ import re
 from typing import Any, Dict, List, Optional
 
 import structlog
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from langgraph.types import Command, Send
+from langgraph.types import Command
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.utils.messages import latest_user_text
+from app.langgraph_v2.utils.messages import (
+    flatten_message_content,
+    latest_user_text,
+    sanitize_message_history,
+)
+from app.langgraph_v2.utils.parameter_patch import stage_extracted_parameter_patch
+from app.langgraph_v2.utils.jinja import render_template
 from app.services.rag.state import WorkingProfile
 from app.langgraph_v2.nodes.persona_detection import update_persona_in_state
 
@@ -106,60 +112,6 @@ def _looks_like_seal_material(value: Any) -> bool:
     return token in _SEAL_MATERIAL_TOKENS
 
 # ---------------------------------------------------------------------------
-# Prompt
-# ---------------------------------------------------------------------------
-
-_SYSTEM_PROMPT = """\
-Du bist ein technischer Datenextraktionsassistent für Flanschdichtungsanwendungen.
-
-Analysiere die Benutzeranfrage und extrahiere alle genannten technischen Parameter.
-Gib NUR Felder zurück, die explizit oder klar implizit im Text genannt werden.
-Fehlende Felder bleiben null.
-
-CRITICAL INSTRUCTION: You are a strict data extractor. If the user mentions ANY numbers related to diameter
-(e.g., "50mm Welle"), speed ("1500 U/min"), pressure ("300 bar"), temperature, or hardness ("40 HRC"),
-you MUST extract them IMMEDIATELY into the schema on this very first turn.
-Do NOT wait for a follow-up confirmation to extract data that is already present in the text.
-
-Bei aktiven Resume/HITL-Dialogen gilt zusaetzlich:
-- Wenn der User eine zuvor vom Assistenten angebotene Option annimmt ("Option A/B"), werte das als verbindliche Parameterentscheidung.
-- Übernimm die daraus resultierenden technischen Werte in die Extraktion (z. B. "Option A = 58 HRC" => hrc_value=58).
-- Ein explizites "Wir nehmen Option A" ist ausreichend, auch wenn der Wert nur in der vorherigen Assistenten-Nachricht stand.
-
-Felder:
-- medium: Prozessmedium (z.B. "Dampf", "Erdgas", "H2SO4")
-- medium_detail: Genauere Spezifikation (z.B. "gesättigter Dampf", "H2 99,9%")
-- pressure_max_bar: Maximaler Betriebsdruck in bar (Zahl, kein Einheitensuffix)
-- pressure_min_bar: Minimaler Betriebsdruck in bar
-- temperature_max_c: Maximale Betriebstemperatur in °C
-- temperature_min_c: Minimale Betriebstemperatur in °C
-- flange_standard: Flanschnorm (z.B. "EN 1092-1", "ASME B16.5", "JIS B2220")
-- flange_dn: Nennweite DN als Ganzzahl (z.B. 100 für DN100)
-- flange_pn: Nenndruck PN als Ganzzahl (z.B. 40 für PN40)
-- flange_class: ASME-Class als Ganzzahl (150, 300, 600, 900, 1500 oder 2500)
-- bolt_count: Anzahl Schrauben als gerade Ganzzahl
-- bolt_size: Schraubengröße (z.B. "M20", "3/4\"")
-- cyclic_load: true wenn zyklische/schwellende Belastung erwähnt wird, sonst false
-- emission_class: Emissionsklasse (z.B. "TA-Luft", "VDI 2440", "EPA Method 21")
-- industry_sector: Branche (z.B. "Petrochemie", "Pharma", "Kraftwerk")
-- material: Material der Welle/Gegenlauffläche (z.B. "Stahl", "Edelstahl", "1.4404"); niemals Dichtungswerkstoff
-- seal_material: Dichtungswerkstoff (z.B. "PTFE", "NBR", "FKM")
-- product_name: Produkt- oder Handelsname (z.B. "Gylon", "Sigraflex")
-- shaft_d1_mm: Wellendurchmesser d1 in mm (Zahl)
-- shaft_diameter: Wellendurchmesser in mm (Zahl)
-- rpm: Drehzahl in U/min (Zahl)
-- speed_rpm: Drehzahl in U/min (Zahl)
-- n: Drehzahl in U/min (Zahl)
-- d1: Wellendurchmesser in mm (Zahl)
-- elastomer_material: Elastomerwerkstoff (z.B. "NBR", "FKM")
-- hrc_value: Härtewert in HRC (Zahl)
-- clearance_gap_mm: Spaltmaß in mm (Zahl)
-
-Antworte ausschließlich mit dem JSON-Objekt. Keine Erklärungen.
-"""
-
-
-# ---------------------------------------------------------------------------
 # Extraction schema (lenient — accepts nulls freely)
 # ---------------------------------------------------------------------------
 
@@ -211,55 +163,49 @@ class _P1Extraction(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _build_messages(user_text: str, history: List[Any]) -> List[Any]:
-    """Build LLM message list from user text and optional prior messages."""
-    msgs: List[Any] = [SystemMessage(content=_SYSTEM_PROMPT)]
+def _build_messages(user_text: str, history: List[Any]) -> List[BaseMessage]:
+    """Build a sanitized LLM message list from user text and prior history."""
+    system_prompt = render_template(
+        "p1_context_extractor.j2",
+        {"include_resume_rules": True},
+    )
+    msgs: List[BaseMessage] = [SystemMessage(content=system_prompt)]
+    sanitized_history = sanitize_message_history(history, include_system=False)
+
     # Include at most the last 4 history messages for context (avoid token bloat)
-    for msg in list(history or [])[-4:]:
-        msgs.append(msg)
-    if not history or not isinstance(history[-1], HumanMessage):
-        if user_text.strip():
-            msgs.append(HumanMessage(content=user_text.strip()))
+    msgs.extend(sanitized_history[-4:])
+
+    text = user_text.strip()
+    if text:
+        last_msg = sanitized_history[-1] if sanitized_history else None
+        last_is_same_user = isinstance(last_msg, HumanMessage) and (
+            flatten_message_content(getattr(last_msg, "content", "")).strip() == text
+        )
+        if not last_is_same_user:
+            msgs.append(HumanMessage(content=text))
     return msgs
 
 
 def _message_to_text(msg: Any) -> str:
-    content = getattr(msg, "content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: List[str] = []
-        for part in content:
-            if isinstance(part, dict):
-                text = part.get("text")
-                if text is not None:
-                    parts.append(str(text))
-            elif isinstance(part, str):
-                parts.append(part)
-        return "".join(parts)
-    return str(content or "")
+    return flatten_message_content(getattr(msg, "content", ""))
 
 
 def _latest_assistant_text(history: List[Any]) -> str:
-    for msg in reversed(list(history or [])):
+    for msg in reversed(sanitize_message_history(history, include_system=False)):
         if isinstance(msg, AIMessage):
             return _message_to_text(msg).strip()
-        if isinstance(msg, dict):
-            role = str(msg.get("role") or msg.get("type") or "").strip().lower()
-            if role in {"assistant", "ai"}:
-                return str(msg.get("content") or "").strip()
     return ""
 
 
 def _is_active_resume_session(state: SealAIState) -> bool:
-    classification = str(getattr(state, "router_classification", "") or "").strip().lower()
+    classification = str(state.conversation.router_classification or "").strip().lower()
     if classification == "resume":
         return True
-    if bool(getattr(state, "awaiting_user_confirmation", False)):
+    if bool(state.system.awaiting_user_confirmation):
         return True
-    if bool((getattr(state, "pending_action", "") or "").strip()):
+    if bool((state.system.pending_action or "").strip()):
         return True
-    return bool(getattr(state, "qgate_has_blockers", False))
+    return bool(state.reasoning.qgate_has_blockers)
 
 
 def _detect_selected_option(user_text: str) -> str:
@@ -345,13 +291,8 @@ def _merge_extraction_into_profile(
     existing: Optional[WorkingProfile],
     extracted: _P1Extraction,
 ) -> WorkingProfile:
-    """Merge non-None extracted fields onto an existing WorkingProfile.
-
-    For `new_case`: `existing` is None → create fresh.
-    For `follow_up`: `existing` is not None → update only provided fields.
-    """
-    base: Dict[str, Any] = existing.model_dump() if existing else {}
-
+    """Compatibility helper for tests; production flow now uses reducer patches."""
+    base: Dict[str, Any] = existing.model_dump(exclude_none=True) if existing else {}
     profile_fields = set(getattr(WorkingProfile, "model_fields", {}).keys())
     for field_name, value in extracted.model_dump().items():
         if field_name == "material" and _looks_like_seal_material(value):
@@ -377,30 +318,95 @@ def _merge_extraction_into_profile(
             return existing or WorkingProfile()
 
 
+def _deep_merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(left)
+    for key, value in right.items():
+        left_value = merged.get(key)
+        if isinstance(left_value, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge_dicts(left_value, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _build_working_profile_patch(extracted: _P1Extraction) -> WorkingProfile:
+    """Build partial WorkingProfile patch; reducer handles merge with state."""
+    payload = extracted.model_dump(exclude_none=True)
+    if _looks_like_seal_material(payload.get("material")):
+        raw = str(payload.get("material") or "").strip()
+        payload.pop("material", None)
+        if raw:
+            payload.setdefault("seal_material", raw)
+    return WorkingProfile.model_validate(payload)
+
+
 def _merge_extraction_into_extracted_params(
     existing: Optional[Dict[str, Any]],
     extracted: _P1Extraction,
 ) -> Dict[str, Any]:
-    """Merge P1 extraction into state.extracted_params with physics-friendly aliases."""
+    """Merge P1 extraction into working_profile.extracted_params with physics-friendly aliases."""
     merged: Dict[str, Any] = dict(existing or {})
     payload = extracted.model_dump(exclude_none=True)
 
-    # Direct values that downstream deterministic nodes consume.
-    for key in ("pressure_max_bar", "temperature_max_c", "rpm", "hrc_value", "clearance_gap_mm"):
+    numeric_fields = {
+        "pressure_max_bar",
+        "pressure_min_bar",
+        "temperature_max_c",
+        "temperature_min_c",
+        "rpm",
+        "speed_rpm",
+        "n",
+        "shaft_d1_mm",
+        "shaft_diameter",
+        "d1",
+        "hrc_value",
+        "clearance_gap_mm",
+    }
+
+    # Generic deep merge keeps prior values and only overlays new non-null fields.
+    # Skip numeric fields (handled with normalization below).
+    generic_payload: Dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in numeric_fields:
+            continue
+        if key == "material" and _looks_like_seal_material(value):
+            # Prevent seal-material spillover into shaft/counterface material.
+            continue
+        generic_payload[key] = value
+    if generic_payload:
+        merged = _deep_merge_dicts(merged, generic_payload)
+
+    # Numeric values that downstream deterministic nodes consume.
+    for key in numeric_fields:
         if key in payload:
             numeric_value = _to_float_or_none(payload.get(key))
             if numeric_value is not None:
                 merged[key] = numeric_value
 
     # Diameter aliases for robust lookup in node_p4_live_calc.
-    shaft_d1_mm = _to_float_or_none(payload.get("shaft_d1_mm"))
+    shaft_d1_mm = (
+        _to_float_or_none(payload.get("shaft_d1_mm"))
+        or _to_float_or_none(payload.get("shaft_diameter"))
+        or _to_float_or_none(payload.get("d1"))
+    )
     if shaft_d1_mm is not None:
         merged["shaft_d1_mm"] = shaft_d1_mm
         merged["shaft_d1"] = shaft_d1_mm
         merged["d1"] = shaft_d1_mm
 
+    # Speed aliases for robust lookup across legacy and v2 nodes.
+    rpm_value = (
+        _to_float_or_none(payload.get("rpm"))
+        or _to_float_or_none(payload.get("speed_rpm"))
+        or _to_float_or_none(payload.get("n"))
+    )
+    if rpm_value is not None:
+        merged["rpm"] = rpm_value
+        merged["speed_rpm"] = rpm_value
+        merged["n"] = rpm_value
+
     # Hardness alias for existing consumers that read "hrc".
-    if "hrc_value" in payload and "hrc_value" in merged:
+    if "hrc_value" in merged:
         merged["hrc"] = merged["hrc_value"]
 
     # Keep selected seal material explicitly separate from shaft material.
@@ -425,27 +431,47 @@ def _merge_extraction_into_extracted_params(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_intent_route(state: SealAIState) -> str:
+    raw_intent = getattr(state.conversation, "intent", None)
+    if isinstance(raw_intent, str):
+        normalized = re.sub(r"[^a-z0-9]+", "_", raw_intent.strip().lower()).strip("_")
+        if normalized in {"smalltalk", "chit_chat", "chitchat", "greeting"}:
+            return "smalltalk"
+        return "engineering"
+
+    goal = str(getattr(raw_intent, "goal", "") or "").strip().lower()
+    routing_hint = str(getattr(raw_intent, "routing_hint", "") or "").strip().lower()
+    if goal == "smalltalk" or routing_hint in {"smalltalk", "chit_chat"}:
+        return "smalltalk"
+    return "engineering"
+
+
 def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
     """P1 Context Node — extract/update WorkingProfile from user messages.
 
     Wired after node_router for 'new_case' and 'follow_up' paths.
-    Fans out to P2 (RAG Material-Lookup) and P3 (Gap-Detection) in parallel.
+    Routes to deterministic engineering extraction only when intent is engineering.
+    Emits WorkingProfile PATCH objects; reducer merges them into canonical state.
     Does NOT touch RAG retrieval, material research, or intent classification.
     """
-    user_text = latest_user_text(state.messages) or ""
-    classification = getattr(state, "router_classification", None) or "new_case"
-    existing_profile = getattr(state, "working_profile", None)
+    history = sanitize_message_history(state.conversation.messages, include_system=False)
+    user_text = (latest_user_text(state.conversation.messages) or latest_user_text(history) or "").strip()
+    classification = state.conversation.router_classification or "new_case"
+    is_new_case = str(classification).strip().lower() == "new_case"
+    # Hard reset for new cases: never bleed prior thread/profile state into a
+    # fresh extraction turn.
+    existing_profile = None if is_new_case else state.working_profile.engineering_profile
+    existing_extracted_params = {} if is_new_case else dict(state.working_profile.extracted_params or {})
 
     logger.info(
         "p1_context_start",
         classification=classification,
-        has_existing_profile=existing_profile is not None,
+        has_existing_profile=bool(existing_profile),
         user_text_len=len(user_text),
-        run_id=state.run_id,
-        thread_id=state.thread_id,
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
     )
 
-    history = list(state.messages or [])
     extracted: Optional[_P1Extraction] = None
     error_hint: Optional[str] = None
 
@@ -457,7 +483,7 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
             "p1_context_llm_failed",
             error=str(exc),
             classification=classification,
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
 
     resume_overrides = _derive_resume_overrides(state, user_text, history)
@@ -471,65 +497,99 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
             "p1_context_resume_overrides_applied",
             overrides=resume_overrides,
             classification=classification,
-            run_id=state.run_id,
+            run_id=state.system.run_id,
         )
 
+    profile_patch: Optional[WorkingProfile] = None
+    merged_profile = existing_profile or WorkingProfile()
     if extracted is not None:
-        merged_profile = _merge_extraction_into_profile(
-            existing_profile if classification == "follow_up" else None,
-            extracted,
-        )
-    else:
-        # LLM failed — preserve existing profile unchanged
-        merged_profile = existing_profile or WorkingProfile()
+        try:
+            profile_patch = _build_working_profile_patch(extracted)
+        except ValidationError as exc:
+            error_hint = error_hint or f"p1_profile_patch_invalid: {exc}"
+            logger.warning(
+                "p1_context_profile_patch_invalid",
+                error=str(exc),
+                run_id=state.system.run_id,
+            )
+        merged_profile = _merge_extraction_into_profile(existing_profile, extracted)
 
-    coverage = merged_profile.coverage_ratio()
+    effective_profile = merged_profile
+    coverage = effective_profile.coverage_ratio()
 
     logger.info(
         "p1_context_done",
         classification=classification,
         profile_coverage=round(coverage, 3),
+        profile_patch_fields=list((profile_patch.model_dump(exclude_none=True) if profile_patch else {}).keys()),
         extracted_fields=(
             [k for k, v in extracted.model_dump().items() if v is not None]
             if extracted
             else []
         ),
-        run_id=state.run_id,
+        run_id=state.system.run_id,
     )
 
-    merged_extracted_params = (
-        _merge_extraction_into_extracted_params(state.extracted_params, extracted)
-        if extracted is not None
-        else dict(state.extracted_params or {})
-    )
+    merged_extracted_params = dict(existing_extracted_params)
+    merged_extracted_provenance = dict(state.reasoning.extracted_parameter_provenance or {})
+    merged_extracted_identity = dict(state.reasoning.extracted_parameter_identity or {})
+    if extracted is not None:
+        extracted_patch = _merge_extraction_into_extracted_params({}, extracted)
+        (
+            merged_extracted_params,
+            merged_extracted_provenance,
+            merged_extracted_identity,
+            _applied_candidate_fields,
+        ) = stage_extracted_parameter_patch(
+            merged_extracted_params,
+            extracted_patch,
+            merged_extracted_provenance,
+            merged_extracted_identity,
+            source="p1_context_extracted",
+        )
+
+    working_profile_update: Dict[str, Any] = {"extracted_params": merged_extracted_params}
+    if is_new_case:
+        working_profile_update["engineering_profile"] = WorkingProfile()
 
     result: Dict[str, Any] = {
-        "working_profile": merged_profile,
-        "extracted_params": merged_extracted_params,
-        "phase": PHASE.FRONTDOOR,  # reuse existing FRONTDOOR phase; P1 is pre-frontdoor in v4
-        "last_node": "node_p1_context",
-        "turn_count": int(getattr(state, "turn_count", 0) or 0) + 1,
+        "working_profile": working_profile_update,
+        "reasoning": {
+            "phase": PHASE.FRONTDOOR,  # reuse existing FRONTDOOR phase; P1 is pre-frontdoor in v4
+            "last_node": "node_p1_context",
+            "turn_count": int(state.reasoning.turn_count or 0) + 1,
+            "extracted_parameter_provenance": merged_extracted_provenance,
+            "extracted_parameter_identity": merged_extracted_identity,
+        },
     }
     persona_patch = update_persona_in_state(state)
     result.update(persona_patch)
 
     if error_hint:
-        result["error"] = error_hint
+        result.setdefault("system", {})
+        result["system"]["error"] = error_hint
 
-    if bool((state.flags or {}).get("use_reasoning_core_r3")):
+    intent_route = _resolve_intent_route(state)
+    if intent_route == "smalltalk":
+        logger.info(
+            "p1_context_smalltalk_bypass_engineering",
+            classification=classification,
+            run_id=state.system.run_id,
+            thread_id=state.conversation.thread_id,
+        )
+        return Command(
+            update=result,
+            goto="response_node",
+        )
+
+    if bool((state.reasoning.flags or {}).get("use_reasoning_core_r3")):
         return Command(
             update=result,
             goto="combinatorial_chemistry_guard_node",
         )
 
-    # Fan out to P2 (RAG Material-Lookup) and P3 (Gap-Detection) in parallel
-    updated_state = state.model_copy(update=result)
     return Command(
         update=result,
-        goto=[
-            Send("node_p2_rag_lookup", updated_state),
-            Send("node_p3_gap_detection", updated_state),
-        ],
     )
 
 

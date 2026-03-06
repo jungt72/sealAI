@@ -75,14 +75,14 @@ def confirm_recommendation_node(state: SealAIState, *_args, **_kwargs) -> Dict[s
     """
     Abnahme-Checkpoint: GO/NO-GO basierend auf Coverage + Kernfeldern.
     """
-    parameters = state.parameters.as_dict()
+    parameters = state.working_profile.as_dict()
     param_lines = [
         f"{PARAMETER_LABELS.get(key, key.replace('_', ' ').capitalize())}: {value}"
         for key, value in parameters.items()
         if value not in (None, "", [])
     ]
-    coverage = max(0.0, min(1.0, float(getattr(state, "coverage_score", 0.0) or 0.0)))
-    coverage_gaps = list(state.coverage_gaps or [])
+    coverage = max(0.0, min(1.0, float(getattr(state.reasoning, "coverage_score", 0.0) or 0.0)))
+    coverage_gaps = list(state.reasoning.coverage_gaps or [])
     missing_core = _missing_core_fields(parameters, coverage_gaps)
 
     go = bool(coverage >= _READY_THRESHOLD and not missing_core)
@@ -138,30 +138,38 @@ def confirm_recommendation_node(state: SealAIState, *_args, **_kwargs) -> Dict[s
     final_text = "\n".join(lines).strip()
 
     return {
-        "final_text": final_text,
-        "recommendation_go": go,
-        "phase": PHASE.CONFIRM,
-        "last_node": "confirm_recommendation_node",
-    }
+               "system": {
+                   "final_text": final_text,
+               },
+               "reasoning": {
+                   "recommendation_go": go,
+                   "phase": PHASE.CONFIRM,
+                   "last_node": "confirm_recommendation_node",
+               },
+           }
 
 
 def confirm_checkpoint_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
     """
     Generic HITL checkpoint for high-impact actions.
     """
-    action = state.pending_action or state.next_action or "FINALIZE"
+    action = state.system.pending_action or state.reasoning.next_action or "FINALIZE"
     risk = _ACTION_RISK.get(action, "med")
     payload = build_confirm_checkpoint_payload(state, action=action, risk=risk)
     return {
-        "confirm_checkpoint": payload,
-        "confirm_checkpoint_id": payload["checkpoint_id"],
-        "confirm_status": "pending",
-        "confirm_resolved_at": None,
-        "awaiting_user_confirmation": True,
-        "pending_action": action,
-        "phase": PHASE.CONFIRM,
-        "last_node": "confirm_checkpoint_node",
-    }
+               "system": {
+                   "confirm_checkpoint": payload,
+                   "confirm_checkpoint_id": payload["checkpoint_id"],
+                   "confirm_status": "pending",
+                   "confirm_resolved_at": None,
+                   "awaiting_user_confirmation": True,
+                   "pending_action": action,
+               },
+               "reasoning": {
+                   "phase": PHASE.CONFIRM,
+                   "last_node": "confirm_checkpoint_node",
+               },
+           }
 
 
 __all__ = ["confirm_recommendation_node", "confirm_checkpoint_node"]

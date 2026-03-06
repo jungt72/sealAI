@@ -13,6 +13,7 @@ allowed after verification failures. ``MAX_PATCH_ATTEMPTS`` prevents infinite
 repair loops and guarantees termination.
 """
 
+import asyncio
 import hashlib
 from typing import Any, Dict
 
@@ -21,23 +22,22 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.langgraph_v2.nodes.answer_subgraph.node_draft_answer import node_draft_answer
+from app.langgraph_v2.nodes.answer_subgraph.node_draft_answer import (
+    build_low_quality_rag_fallback_text,
+    node_draft_answer,
+)
 from app.langgraph_v2.nodes.answer_subgraph.node_finalize import node_finalize
 from app.langgraph_v2.nodes.answer_subgraph.node_prepare_contract import node_prepare_contract
 from app.langgraph_v2.nodes.answer_subgraph.node_targeted_patch import node_targeted_patch
 from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import node_verify_claims
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import SealAIState, VerificationReport
+from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.builder")
 
 MAX_PATCH_ATTEMPTS = 3
 _ANSWER_SUBGRAPH_CACHE: CompiledStateGraph | None = None
-_SIDEKICK_FALLBACK_MESSAGE = (
-    "Dazu habe ich in meinen technischen Datenblaettern gerade keinen exakten Treffer gefunden. "
-    "Wenn du mir spezifische Einsatzbedingungen (wie Medium, Temperatur und Druck) nennst, "
-    "kann ich gezielter fuer dich suchen!"
-)
 
 
 def _extract_langgraph_config(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Any | None:
@@ -60,14 +60,14 @@ def _verification_router(state: AnswerSubgraphState) -> str:
     Returns:
         Route key: ``pass``, ``render_mismatch``, or ``abort``.
     """
-    report = state.verification_report
+    report = state.system.verification_report
     if report is None:
         return "abort"
     if report.status == "pass":
         return "pass"
     failure_type = str(report.failure_type or "").lower()
     if failure_type == "render_mismatch":
-        attempts = int((state.flags or {}).get("answer_subgraph_patch_attempts") or 0)
+        attempts = int((state.reasoning.flags or {}).get("answer_subgraph_patch_attempts") or 0)
         if attempts < MAX_PATCH_ATTEMPTS:
             return "render_mismatch"
     return "abort"
@@ -84,10 +84,10 @@ def _safe_fallback_node(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any)
     Returns:
         State patch with conservative fallback text and verification metadata.
     """
-    report = state.verification_report
-    patch_attempts = int((state.flags or {}).get("answer_subgraph_patch_attempts") or 0)
-    draft_text = str(state.draft_text or "").strip()
-    contract = state.answer_contract
+    report = state.system.verification_report
+    patch_attempts = int((state.reasoning.flags or {}).get("answer_subgraph_patch_attempts") or 0)
+    draft_text = str(state.system.draft_text or "").strip()
+    contract = state.system.answer_contract
     has_empty_context = contract is None or (
         not contract.resolved_parameters
         and not contract.calc_results
@@ -100,15 +100,15 @@ def _safe_fallback_node(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any)
         or has_failure_state
         or not draft_text
     )
-    fallback_text = _SIDEKICK_FALLBACK_MESSAGE if use_sidekick_fallback else draft_text
+    fallback_text = build_low_quality_rag_fallback_text(state) if use_sidekick_fallback else draft_text
 
-    messages: list[BaseMessage] = list(state.messages or [])
+    messages: list[BaseMessage] = list(state.conversation.messages or [])
     messages.append(AIMessage(content=[{"type": "text", "text": fallback_text}]))
 
     if report is None:
-        draft_hash = hashlib.sha256(str(state.draft_text or "").encode()).hexdigest()
+        draft_hash = hashlib.sha256(str(state.system.draft_text or "").encode()).hexdigest()
         report = VerificationReport(
-            contract_hash=str((state.flags or {}).get("answer_contract_hash") or ""),
+            contract_hash=str((state.reasoning.flags or {}).get("answer_contract_hash") or ""),
             draft_hash=draft_hash,
             status="fail",
             failure_type="abort",
@@ -121,14 +121,23 @@ def _safe_fallback_node(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any)
         patch_attempts=patch_attempts,
         use_sidekick_fallback=use_sidekick_fallback,
     )
-    return {
-        "messages": messages,
-        "final_text": fallback_text,
-        "final_answer": fallback_text,
-        "verification_report": report,
-        "error": "Answer subgraph safe fallback activated.",
-        "last_node": "node_safe_fallback",
-    }
+    return stamp_patch_with_assertion_binding(state, {
+               "conversation": {
+                   "messages": messages,
+               },
+               "system": {
+                   "governed_output_text": fallback_text,
+                   "governed_output_status": "fallback",
+                   "governed_output_ready": True,
+                   "final_text": fallback_text,
+                   "final_answer": fallback_text,
+                   "verification_report": report,
+                   "error": "Answer subgraph safe fallback activated.",
+               },
+               "reasoning": {
+                   "last_node": "node_safe_fallback",
+               },
+           })
 
 
 def build_answer_subgraph() -> CompiledStateGraph:
@@ -198,6 +207,9 @@ def _extract_patch(before: SealAIState, after: SealAIState) -> Dict[str, Any]:
         "draft_text",
         "draft_base_hash",
         "verification_report",
+        "governed_output_text",
+        "governed_output_status",
+        "governed_output_ready",
         "final_text",
         "final_answer",
         "final_prompt",
@@ -209,18 +221,117 @@ def _extract_patch(before: SealAIState, after: SealAIState) -> Dict[str, Any]:
         "last_node",
     ]
     patch: Dict[str, Any] = {}
+    def _field_value(state: Any, field: str) -> Any:
+        if isinstance(state, SealAIState):
+            if field in {"answer_contract", "draft_text", "draft_base_hash", "verification_report", "governed_output_text", "governed_output_status", "governed_output_ready", "final_text", "final_answer", "final_prompt", "final_prompt_metadata", "error"}:
+                return getattr(state.system, field, None)
+            if field in {"flags", "phase", "last_node"}:
+                return getattr(state.reasoning, field, None)
+            if field == "messages":
+                return getattr(state.conversation, field, None)
+        return getattr(state, field, None)
+
     for field in tracked_fields:
-        before_val = getattr(before, field, None)
-        after_val = getattr(after, field, None)
+        before_val = _field_value(before, field)
+        after_val = _field_value(after, field)
         if after_val != before_val:
             patch[field] = after_val
     # Ensure terminal answer payload is always available to parent graph/SSE,
     # even when equality checks accidentally classify it as unchanged.
-    final_text = str(getattr(after, "final_text", None) or getattr(after, "final_answer", None) or "").strip()
+    final_text = str(_field_value(after, "final_text") or _field_value(after, "final_answer") or "").strip()
     if final_text:
         patch.setdefault("final_text", final_text)
         patch.setdefault("final_answer", final_text)
     return patch
+
+
+def _deep_merge_patch(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(left)
+    for key, value in right.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge_patch(current, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _merge_state_patch(state: SealAIState, patch: Dict[str, Any]) -> SealAIState:
+    merged = _deep_merge_patch(state.model_dump(exclude_none=False), patch)
+    return _as_state(merged)
+
+
+def _resolve_live_calc_tile(state: SealAIState) -> Any | None:
+    """Read ``live_calc_tile`` from the current nested state contract first."""
+    working_profile = getattr(state, "working_profile", None)
+    tile = getattr(working_profile, "live_calc_tile", None)
+    if tile is not None:
+        return tile
+    return getattr(state, "live_calc_tile", None)
+
+
+def _build_subgraph_state_input(before: SealAIState) -> AnswerSubgraphState:
+    subgraph_input = before.model_dump(exclude_none=False)
+    live_calc_tile = _resolve_live_calc_tile(before)
+    if live_calc_tile is not None:
+        subgraph_input["live_calc_tile"] = live_calc_tile
+    subgraph_input["working_profile"] = before.working_profile
+    return AnswerSubgraphState.model_validate(subgraph_input)
+
+
+def _run_answer_subgraph_sync(initial_state: AnswerSubgraphState, config: Any | None) -> SealAIState:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("answer_subgraph_node cannot run synchronously inside an active event loop")
+
+    state = _as_state(initial_state)
+    state = _merge_state_patch(state, node_prepare_contract(state))
+    state = _merge_state_patch(state, asyncio.run(node_draft_answer(state, config=config)))
+
+    while True:
+        state = _merge_state_patch(state, node_verify_claims(state))
+        route = _verification_router(AnswerSubgraphState.model_validate(state.model_dump(exclude_none=False)))
+        logger.info(
+            "answer_subgraph.route_selected",
+            route=route,
+            verification_status=getattr(state.system.verification_report, "status", None),
+            failure_type=getattr(state.system.verification_report, "failure_type", None),
+        )
+        if route == "pass":
+            state = _merge_state_patch(state, node_finalize(state))
+            return state
+        if route == "render_mismatch":
+            state = _merge_state_patch(state, node_targeted_patch(state))
+            continue
+        state = _merge_state_patch(state, _safe_fallback_node(state))
+        return state
+
+
+async def _run_answer_subgraph_async(initial_state: AnswerSubgraphState, config: Any | None) -> SealAIState:
+    state = _as_state(initial_state)
+    state = _merge_state_patch(state, node_prepare_contract(state))
+    state = _merge_state_patch(state, await node_draft_answer(state, config=config))
+
+    while True:
+        state = _merge_state_patch(state, node_verify_claims(state))
+        route = _verification_router(AnswerSubgraphState.model_validate(state.model_dump(exclude_none=False)))
+        logger.info(
+            "answer_subgraph.route_selected",
+            route=route,
+            verification_status=getattr(state.system.verification_report, "status", None),
+            failure_type=getattr(state.system.verification_report, "failure_type", None),
+        )
+        if route == "pass":
+            state = _merge_state_patch(state, node_finalize(state))
+            return state
+        if route == "render_mismatch":
+            state = _merge_state_patch(state, node_targeted_patch(state))
+            continue
+        state = _merge_state_patch(state, _safe_fallback_node(state))
+        return state
 
 
 def answer_subgraph_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
@@ -235,19 +346,11 @@ def answer_subgraph_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         Patch with changed output fields from subgraph execution.
     """
     before = _as_state(state)
-    subgraph = build_answer_subgraph()
     config = _extract_langgraph_config(_args, _kwargs)
-    
-    # Force explicit field mapping to ensure isolation doesn't drop critical state
-    subgraph_input = before.model_dump(exclude_none=False)
-    # Ensure live_calc_tile and working_profile are correctly present
-    subgraph_input["live_calc_tile"] = before.live_calc_tile
-    subgraph_input["working_profile"] = before.working_profile
-    
-    result = subgraph.invoke(subgraph_input, config=config)
-    after = _as_state(result)
+    logger.info("answer_subgraph_node.start", initial_last_node=before.reasoning.last_node)
+    after = _run_answer_subgraph_sync(_build_subgraph_state_input(before), config)
     patch = _extract_patch(before, after)
-    patch.setdefault("last_node", "answer_subgraph_node")
+    patch["last_node"] = "answer_subgraph_node"
     logger.info("answer_subgraph_node.completed", patch_keys=sorted(patch.keys()))
     return patch
 
@@ -264,19 +367,11 @@ async def answer_subgraph_node_async(state: SealAIState, *_args: Any, **_kwargs:
         Patch with changed output fields from async subgraph execution.
     """
     before = _as_state(state)
-    subgraph = build_answer_subgraph()
     config = _extract_langgraph_config(_args, _kwargs)
-    
-    # Force explicit field mapping to ensure isolation doesn't drop critical state
-    subgraph_input = before.model_dump(exclude_none=False)
-    # Ensure live_calc_tile and working_profile are correctly present
-    subgraph_input["live_calc_tile"] = before.live_calc_tile
-    subgraph_input["working_profile"] = before.working_profile
-    
-    result = await subgraph.ainvoke(subgraph_input, config=config)
-    after = _as_state(result)
+    logger.info("answer_subgraph_node_async.start", initial_last_node=before.reasoning.last_node)
+    after = await _run_answer_subgraph_async(_build_subgraph_state_input(before), config)
     patch = _extract_patch(before, after)
-    patch.setdefault("last_node", "answer_subgraph_node")
+    patch["last_node"] = "answer_subgraph_node"
     logger.info("answer_subgraph_node_async.completed", patch_keys=sorted(patch.keys()))
     return patch
 

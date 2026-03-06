@@ -8,18 +8,20 @@ import re
 from typing import Any, Dict, List, Optional
 
 import structlog
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.utils.state_debug import log_state_debug
 from app.langgraph_v2.state import CalcResults, SealAIState, Source, WorkingMemory
-from app.langgraph_v2.utils.jinja import render_template
-from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm, run_llm_async
+from app.langgraph_v2.utils.jinja import render_prompt_sections, render_template
+from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm_async
 from app.langgraph_v2.utils.messages import latest_user_text
 from app.langgraph_v2.utils.output_sanitizer import strip_meta_preamble
+from app.langgraph_v2.utils.prompt_blocks import render_challenger_gate
 from app.langgraph_v2.utils.rag import apply_rag_quality_gate, unpack_rag_payload
 from app.langgraph_v2.utils.rag_safety import wrap_rag_context
 from app.langgraph_v2.utils.rag_tool import search_knowledge_base
+from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
 from app.langgraph_v2.nodes.nodes_frontdoor import (
     detect_material_or_trade_query,
     extract_trade_name_candidate,
@@ -41,7 +43,6 @@ _MATERIAL_DOC_MARKERS = (
     "ptfe",
     "vmq",
     "ffkm",
-    "kyrolon",
     "search_technical_docs",
     "get_available_filters",
     "qdrant",
@@ -62,7 +63,7 @@ logger = structlog.get_logger("langgraph_v2.nodes_flows")
 
 
 def _update_working_memory(state: SealAIState, updates: Dict[str, Any]) -> WorkingMemory:
-    wm = state.working_memory or WorkingMemory()
+    wm = state.reasoning.working_memory or WorkingMemory()
     return wm.model_copy(update=updates)
 
 
@@ -76,9 +77,9 @@ def _safe_float(value: Any) -> float | None:
 def _resolve_norm_material(state: SealAIState) -> str | None:
     wp = state.working_profile
     candidates = [
-        (state.material_choice or {}).get("material") if isinstance(state.material_choice, dict) else None,
-        wp.elastomer_material if wp else None,
-        wp.material if wp else None,
+        (state.working_profile.material_choice or {}).get("material") if isinstance(state.working_profile.material_choice, dict) else None,
+        getattr(wp, "elastomer_material", None) if wp else None,
+        getattr(wp, "material", None) if wp else None,
     ]
     for value in candidates:
         text = str(value or "").strip()
@@ -90,12 +91,12 @@ def _resolve_norm_material(state: SealAIState) -> str | None:
 def _resolve_norm_temperature_pressure(state: SealAIState) -> tuple[float | None, float | None]:
     wp = state.working_profile
     temp_candidates = [
-        wp.temperature_max_c if wp else None,
-        wp.temperature_C if wp else None,
+        getattr(wp, "temperature_max_c", None) if wp else None,
+        getattr(wp, "temperature_C", None) if wp else None,
     ]
     pressure_candidates = [
-        wp.pressure_max_bar if wp else None,
-        wp.pressure_bar if wp else None,
+        getattr(wp, "pressure_max_bar", None) if wp else None,
+        getattr(wp, "pressure_bar", None) if wp else None,
     ]
 
     resolved_temp: float | None = None
@@ -136,7 +137,7 @@ def _render_deterministic_norm_context(payload: Dict[str, Any]) -> str:
 
 
 def _merge_flags(state: SealAIState, updates: Dict[str, Any]) -> Dict[str, Any]:
-    flags = dict(state.flags or {})
+    flags = dict(state.reasoning.flags or {})
     flags.update(updates)
     return flags
 
@@ -220,7 +221,7 @@ def _extend_dict(base: Dict[str, Any] | None, extras: Dict[str, Any]) -> Dict[st
 
 def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("discovery_schema_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
+    user_text = latest_user_text(state.conversation.messages) or ""
     required = [
         "medium",
         "pressure_max_bar",
@@ -236,18 +237,19 @@ def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
         "user_input": user_text,
         "prompt": "Bitte teile Brenn- und Bewegungsdaten oder Geometrien mit.",
     }
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = getattr(state.reasoning.working_memory, "design_notes", None) if state.reasoning.working_memory else {}
     design_notes = _extend_dict(existing_design, {"schema": schema_notes})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     flags = _merge_flags(state, {"parameters_complete_for_material": not bool(missing)})
     return {
-        "missing_params": missing,
-        "working_memory": wm,
-        "flags": flags,
-        # Phase: Parameter-Vorbereitung
-        "phase": PHASE.PREFLIGHT_PARAMETERS,
-        "last_node": "discovery_schema_node",
-    }
+               "reasoning": {
+                   "missing_params": missing,
+                   "working_memory": wm,
+                   "flags": flags,
+                   "phase": PHASE.PREFLIGHT_PARAMETERS,
+                   "last_node": "discovery_schema_node",
+               },
+           }
 
 
 def _has_sufficient_dynamic_parameters(state: SealAIState) -> bool:
@@ -260,7 +262,7 @@ def _has_sufficient_dynamic_parameters(state: SealAIState) -> bool:
         "surface_hardness_hrc",
         "pressure_spike_factor",
     ]
-    profile = getattr(state, "working_profile", None)
+    profile = getattr(state.working_profile, "engineering_profile", None)
     if profile is None:
         return False
     filled = sum(
@@ -273,7 +275,7 @@ def _has_sufficient_dynamic_parameters(state: SealAIState) -> bool:
 
 def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("parameter_check_node", state)
-    missing = state.missing_params or []
+    missing = state.reasoning.missing_params or []
     complete = not bool(missing)
     
     # FIX 4: Reasoning Core Gate
@@ -286,18 +288,21 @@ def parameter_check_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
         "reasoning_core_gated": not has_dynamic if complete else False
     })
     
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = getattr(state.reasoning.working_memory, "design_notes", None) if state.reasoning.working_memory else {}
     design_notes = _extend_dict(existing_design, {"parameter_check": {"missing": missing}})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
-        "flags": flags,
-        "working_memory": wm,
-        "analysis_complete": True,
-        "use_reasoning_core_r3": use_reasoning,
-        # Noch immer Parameter-Phase
-        "phase": PHASE.PREFLIGHT_PARAMETERS,
-        "last_node": "parameter_check_node",
-    }
+               "use_reasoning_core_r3": use_reasoning,
+               "reasoning": {
+                   "flags": flags,
+                   "working_memory": wm,
+                   "phase": PHASE.PREFLIGHT_PARAMETERS,
+                   "last_node": "parameter_check_node",
+               },
+               "working_profile": {
+                   "analysis_complete": True,
+               },
+           }
 
 
 def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
@@ -338,27 +343,30 @@ def calculator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
             notes=notes,
         )
         calculations = {"surface_speed_m_per_min": surface_speed_m_per_min}
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = getattr(state.reasoning.working_memory, "design_notes", None) if state.reasoning.working_memory else {}
     design_notes = _extend_dict(existing_design, {"calculations": calculations})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
-        "calc_results": calc,
-        "live_calc_tile": getattr(state, "live_calc_tile", None),
-        "calc_results_ok": True,
-        "working_memory": wm,
-        # Phase: Berechnung
-        "phase": PHASE.CALCULATION,
-        "last_node": "calculator_node",
-    }
+               "working_profile": {
+                   "calc_results": calc,
+                   "live_calc_tile": getattr(state.working_profile, "live_calc_tile", None),
+                   "calc_results_ok": True,
+               },
+               "reasoning": {
+                   "working_memory": wm,
+                   "phase": PHASE.CALCULATION,
+                   "last_node": "calculator_node",
+               },
+           }
 
 
 def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("material_agent_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
+    user_text = latest_user_text(state.conversation.messages) or ""
     material_code = _extract_material_code(user_text)
     if _looks_like_material_doc_query(user_text):
         trade_name = _extract_trade_name(user_text)
-        allowed_tenants = _build_allowed_tenants(state.user_id)
+        allowed_tenants = _build_allowed_tenants(state.conversation.user_id)
         metadata_filters: Dict[str, Any] = {}
         available_filter_keys: List[str] = []
         if trade_name:
@@ -452,7 +460,12 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
             "details": "Kontext aus technischer Dokumentensuche.",
             "material_code": material_code,
         }
-        existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+        state_material = annotate_material_choice(state_material)
+        existing_design = (
+            getattr(state.reasoning.working_memory, "design_notes", None)
+            if state.reasoning.working_memory
+            else {}
+        )
         design_notes = _extend_dict(
             existing_design,
             {
@@ -468,7 +481,7 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
                 "design_notes": design_notes,
             },
         )
-        sources = list(state.sources or [])
+        sources = list(state.system.sources or [])
         seen_sources = {src.source for src in sources if getattr(src, "source", None)}
         for hit in hits:
             source_label = hit.get("source") or hit.get("filename") or hit.get("document_id")
@@ -490,18 +503,20 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
         low_quality_results = _is_low_quality_retrieval(payload.get("retrieval_meta"), hits=hits)
         flags = _merge_flags(state, {"rag_low_quality_results": low_quality_results})
         return {
-            "material_choice": state_material,
-            "working_memory": wm,
-            "sources": sources,
-            "retrieval_meta": payload.get("retrieval_meta"),
-            "flags": flags,
-            "context": retrieved_context,
-            "phase": PHASE.RAG,
-            "last_node": "material_agent_node",
-            "rag_turn_count": int(getattr(state, "rag_turn_count", 0) or 0) + 1,
+            "working_profile": {"material_choice": state_material},
+            "reasoning": {
+                "working_memory": wm,
+                "retrieval_meta": payload.get("retrieval_meta"),
+                "flags": flags,
+                "context": retrieved_context,
+                "phase": PHASE.RAG,
+                "last_node": "material_agent_node",
+                "rag_turn_count": int(state.reasoning.rag_turn_count or 0) + 1,
+            },
+            "system": {"sources": sources},
         }
 
-    wp = state.working_profile
+    wp = state.working_profile.engineering_profile
     temp = _safe_float(getattr(wp, "temperature_max_c", None))
     medium_raw = (getattr(wp, "medium", "") or "").strip()
     medium = medium_raw.lower()
@@ -520,7 +535,11 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
             candidates.append({"name": "NBR", "rationale": "Robuster Standardwerkstoff (heuristisch, bitte validieren)."})
             candidates.append({"name": "FKM", "rationale": "Gute chemische Beständigkeit (heuristisch, bitte validieren)."})
     summary = f"Materialkandidaten: {', '.join(c['name'] for c in candidates)}"
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = (
+        getattr(state.reasoning.working_memory, "design_notes", None)
+        if state.reasoning.working_memory
+        else {}
+    )
     design_notes = _extend_dict(existing_design, {"material_selection": summary})
     wm = _update_working_memory(state, {"material_candidates": candidates, "design_notes": design_notes})
     state_material: Dict[str, Any] = {"confidence": "heuristic"}
@@ -528,14 +547,17 @@ def material_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict
         state_material.update({"material": candidates[0]["name"], "details": candidates[0]["rationale"]})
     if needs_input:
         state_material["needs_input"] = needs_input
+    state_material = annotate_material_choice(state_material)
     flags = _merge_flags(state, {"rag_low_quality_results": False})
     return {
-        "material_choice": state_material,
-        "working_memory": wm,
-        "flags": flags,
-        # Phase: technischer Consulting-Schritt
-        "phase": PHASE.CONSULTING,
-        "last_node": "material_agent_node",
+        "working_profile": {"material_choice": state_material},
+        "reasoning": {
+            "working_memory": wm,
+            "flags": flags,
+            # Phase: technischer Consulting-Schritt
+            "phase": PHASE.CONSULTING,
+            "last_node": "material_agent_node",
+        },
     }
 
 
@@ -602,20 +624,40 @@ def _build_material_retrieved_context(payload: Dict[str, Any], hits: List[Dict[s
     context = str(payload.get("context") or "").strip()
     snippets: List[str] = []
     table_blocks: List[str] = []
+
+    def _sanitize_fragment(value: str) -> str:
+        cleaned_lines: List[str] = []
+        for raw_line in str(value or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            lower = line.lower()
+            if lower.startswith("- dokument:"):
+                continue
+            if lower.startswith("quelle:"):
+                continue
+            if lower.startswith("[authority="):
+                continue
+            if "| abschnitt:" in lower or "| section:" in lower or "| score:" in lower:
+                continue
+            cleaned_lines.append(line)
+        return "\n".join(cleaned_lines).strip()
+
     for hit in hits:
         if not isinstance(hit, dict):
             continue
-        snippet = str(hit.get("snippet") or "").strip()
+        snippet = _sanitize_fragment(str(hit.get("snippet") or "").strip())
         if snippet:
             snippets.append(snippet)
         table_markdown = _extract_hit_tables(hit)
         if table_markdown:
             table_blocks.append(table_markdown)
     parts: List[str] = []
-    if context:
-        parts.append(context)
+    sanitized_context = _sanitize_fragment(context)
     if snippets:
         parts.append("\n\n".join(snippets[:4]).strip())
+    elif sanitized_context:
+        parts.append(sanitized_context)
     if table_blocks:
         parts.append("\n\n".join(table_blocks[:3]).strip())
     merged_parts: List[str] = []
@@ -705,42 +747,49 @@ def profile_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         "rationale": "Heuristischer Kandidat; finale Auswahl hängt von Einbauraum, Druck-/Δp und Gegenlauffläche ab.",
         "confidence": "heuristic",
     }
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = (
+        getattr(state.reasoning.working_memory, "design_notes", None)
+        if state.reasoning.working_memory
+        else {}
+    )
     design_notes = _extend_dict(existing_design, {"profile": profile})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
-        "profile_choice": profile,
-        "working_memory": wm,
-        # Phase: weiterhin Consulting
-        "phase": PHASE.CONSULTING,
-        "last_node": "profile_agent_node",
+        "working_profile": {"profile_choice": profile},
+        "reasoning": {
+            "working_memory": wm,
+            # Phase: weiterhin Consulting
+            "phase": PHASE.CONSULTING,
+            "last_node": "profile_agent_node",
+        },
     }
 
 
 def validation_agent_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("validation_agent_node", state)
     issues: List[str] = []
-    if not state.flags.get("parameters_complete_for_profile"):
+    if not state.reasoning.flags.get("parameters_complete_for_profile"):
         issues.append("Einige Profilparameter fehlen noch.")
     status = "warning" if issues else "ok"
     validation = {"status": status, "issues": issues}
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = getattr(state.reasoning.working_memory, "design_notes", None) if state.reasoning.working_memory else {}
     design_notes = _extend_dict(existing_design, {"validation": validation})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
-        "validation": validation,
-        "working_memory": wm,
-        # Phase: Validierung
-        "phase": PHASE.VALIDATION,
-        "last_node": "validation_agent_node",
-    }
+               "reasoning": {
+                   "validation": validation,
+                   "working_memory": wm,
+                   "phase": PHASE.VALIDATION,
+                   "last_node": "validation_agent_node",
+               },
+           }
 
 
 def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("critical_review_node", state)
-    validation = state.validation or {}
+    validation = state.reasoning.validation or {}
     issues = validation.get("issues") or []
-    critical = dict(state.critical or {})
+    critical = dict(state.reasoning.critical or {})
     iteration = int(critical.get("iteration_count") or 0)
     iteration += 1
     target = "final"
@@ -759,21 +808,22 @@ def critical_review_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dic
             "iteration_count": iteration,
         }
     )
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = getattr(state.reasoning.working_memory, "design_notes", None) if state.reasoning.working_memory else {}
     design_notes = _extend_dict(existing_design, {"critical_review": critical})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
-        "critical": critical,
-        "working_memory": wm,
-        # Phase: ich ordne Critical Review unter Validierung ein
-        "phase": PHASE.VALIDATION,
-        "last_node": "critical_review_node",
-    }
+               "reasoning": {
+                   "critical": critical,
+                   "working_memory": wm,
+                   "phase": PHASE.VALIDATION,
+                   "last_node": "critical_review_node",
+               },
+           }
 
 
 def product_match_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("product_match_node", state)
-    want_products = bool(state.plan.get("want_product_recommendation"))
+    want_products = bool(state.reasoning.plan.get("want_product_recommendation"))
     catalog_connected = bool(str(os.getenv("PRODUCT_CATALOG_URL", "")).strip())
     matches: List[Dict[str, Any]] = []
     products = {
@@ -783,36 +833,38 @@ def product_match_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         "matches": matches,
         "match_quality": "high" if matches else None,
     }
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = getattr(state.reasoning.working_memory, "design_notes", None) if state.reasoning.working_memory else {}
     design_notes = _extend_dict(existing_design, {"product_match": matches})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
-        "products": products,
-        "working_memory": wm,
-        # Phase: Consulting (Produkt-Mapping)
-        "phase": PHASE.CONSULTING,
-        "last_node": "product_match_node",
-    }
+               "reasoning": {
+                   "products": products,
+                   "working_memory": wm,
+                   "phase": PHASE.CONSULTING,
+                   "last_node": "product_match_node",
+               },
+           }
 
 
 def product_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("product_explainer_node", state)
-    products = state.products or {}
+    products = state.reasoning.products or {}
     matches = products.get("matches") or []
     explanation = (
         "Produktbegründung: Die erste Empfehlung deckt Geometrie und Temperaturniveau ab."
         if matches
         else "Keine spezielle Produktempfehlung gewünscht."
     )
-    existing_design = getattr(state.working_memory, "design_notes", None) if state.working_memory else {}
+    existing_design = getattr(state.reasoning.working_memory, "design_notes", None) if state.reasoning.working_memory else {}
     design_notes = _extend_dict(existing_design, {"product_explainer": explanation})
     wm = _update_working_memory(state, {"design_notes": design_notes})
     return {
-        "working_memory": wm,
-        # Phase: immer noch Consulting
-        "phase": PHASE.CONSULTING,
-        "last_node": "product_explainer_node",
-    }
+               "reasoning": {
+                   "working_memory": wm,
+                   "phase": PHASE.CONSULTING,
+                   "last_node": "product_explainer_node",
+               },
+           }
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -827,67 +879,23 @@ def _as_dict(value: Any) -> Dict[str, Any]:
 
 
 def _build_deterministic_constraints(state: SealAIState) -> str:
-    tile_obj = getattr(state, "live_calc_tile", None)
+    tile_obj = getattr(state.working_profile, "live_calc_tile", None)
     if tile_obj is None:
         return ""
-    tile = _as_dict(tile_obj)
-    if not tile:
+    if not _as_dict(tile_obj):
         return ""
-
-    lines: List[str] = [
-        "### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###",
-        "Du hast Zugriff auf den aktuellen Zustand der deterministischen Berechnungsmaschine (System State). Dieser Zustand steht ÜBER allem RAG-Wissen!",
-        "1. WENN das System eine chemische Warnung meldet (z.B. NBR nicht beständig gegen HEES), MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für dieses Medium strikt AUSGESCHLOSSEN.' Verwende keine weichen Formulierungen wie 'fraglich' oder 'kritisch'.",
-        "2. Du darfst physikalische Grenzwerte NICHT selbst beurteilen. Wenn der System State Warnungen zu PV-Wert, Geschwindigkeit oder Temperatur enthält, MUSS deine Empfehlung lauten: 'Aufgrund der Systemprüfung ist Werkstoff X für diese Parameter strikt AUSGESCHLOSSEN.' Zitiere die Warnmeldung exakt aus dem System State.",
-        "3. Du darfst das RAG-Wissen NUR nutzen, um Werkstoffe zu vergleichen, die laut System State noch zulässig sind, oder um zu erklären, WARUM das vom User gewählte Material laut System versagt.",
-        "WICHTIG: Wenn du die Systemwarnungen zitierst, MUSST du ausnahmslos JEDE Zahl (z.B. 15.7, 12.0, 3.14, 2.0) exakt so in deinen Antworttext übernehmen, wie sie im State steht! Lasse keine Vergleichswerte weg und runde nicht. Wenn im State steht '15.7 m/s > 12.0 m/s', müssen exakt diese beiden Zahlen im Text auftauchen, sonst schlägt unsere interne QA-Prüfung fehl!",
-    ]
-
-    if tile.get("chem_warning"):
-        msg = tile.get("chem_message", "Inkompatibilitaet festgestellt.")
-        lines.append(
-            f"CRITICAL WARNING: {msg}. Du darfst dieses Material unter KEINEN UMSTÄNDEN als 'geeignet' oder 'sicher' empfehlen!"
-        )
-
-    pv = tile.get("pv_value_mpa_m_s")
-    if pv is not None:
-        lines.append(
-            f"Aktueller PV-Wert: {pv} MPa*m/s."
-        )
-        lines.append(
-            "Berechne NIEMALS physikalische Werte (wie PV-Werte) selbst aus! Nutze AUSSCHLIESSLICH diesen bereitgestellten PV-Wert."
-        )
-
-    v = tile.get("v_surface_m_s")
-    if v is not None:
-        lines.append(f"Aktuelle Gleitgeschwindigkeit: {v} m/s.")
-
-    calc_results_obj = getattr(state, "calc_results", None)
-    calc_notes = list((getattr(calc_results_obj, "notes", None) or []))
-    if calc_notes:
-        lines.append("SYSTEM WARNMELDUNGEN (WÖRTLICH ZITIEREN):")
-        lines.extend(f"- {note}" for note in calc_notes)
-
-    # Conflict Resolution is now integrated into the Zero Tolerance rules above.
-    return "\n".join(lines)
+    return render_challenger_gate(tile=tile_obj)
 
 
 async def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("material_comparison_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
+    user_text = latest_user_text(state.conversation.messages) or ""
 
-    full_text = render_template("material_comparison.j2", {"user_text": user_text})
-    parts = full_text.split("---", 1)
-    if len(parts) == 2:
-        system = parts[0].strip()
-        prompt = parts[1].strip()
-    else:
-        system = "Du bist ein technischer Materialvergleichs-Experte."
-        prompt = full_text.strip()
+    system, prompt = render_prompt_sections("material_comparison.j2", {"user_text": user_text})
 
     # DOMINANT INJECTION of Deterministic Constraints
     constraints = _build_deterministic_constraints(state)
-    wp = _as_dict(getattr(state, "working_profile", None))
+    wp = _as_dict(getattr(state.working_profile, "engineering_profile", None))
     profile_info = f"PROFIL (Parameter-Snapshot):\n{json.dumps(wp, ensure_ascii=False, indent=2)}" if wp else ""
     
     if constraints:
@@ -902,34 +910,37 @@ async def material_comparison_node(state: SealAIState, *_args: Any, **_kwargs: A
         max_tokens=320,
         metadata={"node": "material_comparison_node"},
     )
-    existing_notes = getattr(state.working_memory, "comparison_notes", None) if state.working_memory else {}
+    existing_notes = getattr(state.reasoning.working_memory, "comparison_notes", None) if state.reasoning.working_memory else {}
     notes = _extend_dict(existing_notes, {"comparison_text": response.strip()})
     wm = _update_working_memory(state, {"comparison_notes": notes})
     force_rag = str(os.getenv("RAG_FORCE_COMPARISON", "")).strip().lower() in {"1", "true", "yes", "on"}
     return {
-        "working_memory": wm,
-        # Phase: Wissens-/Vergleichs-Flow
-        "phase": PHASE.KNOWLEDGE,
-        "last_node": "material_comparison_node",
-        "requires_rag": bool(getattr(state, "requires_rag", False) or force_rag),
-    }
+               "reasoning": {
+                   "working_memory": wm,
+                   "phase": PHASE.KNOWLEDGE,
+                   "last_node": "material_comparison_node",
+                   "requires_rag": bool(getattr(state.reasoning, "requires_rag", False) or force_rag),
+               },
+           }
 
 
 def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("rag_support_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
+    user_text = latest_user_text(state.conversation.messages) or ""
     from app.langgraph_v2.nodes.nodes_frontdoor import detect_sources_request
 
-    if not bool(getattr(state, "requires_rag", False)) and not detect_sources_request(user_text):
+    if not bool(getattr(state.reasoning, "requires_rag", False)) and not detect_sources_request(user_text):
         flags = _merge_flags(state, {"rag_low_quality_results": False})
         return {
-            "flags": flags,
-            "phase": PHASE.KNOWLEDGE,
-            "last_node": "rag_support_node",
-        }
+                   "reasoning": {
+                       "flags": flags,
+                       "phase": PHASE.KNOWLEDGE,
+                       "last_node": "rag_support_node",
+                   },
+               }
 
-    intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
-    notes = dict(state.working_memory.comparison_notes if state.working_memory else {})
+    intent_goal = getattr(state.conversation.intent, "goal", "design_recommendation") if state.conversation.intent else "design_recommendation"
+    notes = dict(state.reasoning.working_memory.comparison_notes if state.reasoning.working_memory else {})
 
     material = _resolve_norm_material(state)
     temp_value, pressure_value = _resolve_norm_temperature_pressure(state)
@@ -940,7 +951,7 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             material=material,
             temp=temp_value,
             pressure=pressure_value,
-            tenant_id=state.user_id,
+            tenant_id=state.conversation.user_id,
         )
         deterministic_text = _render_deterministic_norm_context(deterministic_payload)
         notes["deterministic_norms"] = deterministic_payload
@@ -951,7 +962,7 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             "query": user_text or "Aktuelle technische Frage",
             "category": "troubleshooting",
             "k": 3,
-            "tenant": state.user_id,
+            "tenant": state.conversation.user_id,
         }
     )
     narrative_text, narrative_meta = unpack_rag_payload(narrative_context)
@@ -1013,7 +1024,7 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
             deduped.append(src)
         notes["rag_reference"] = deduped
 
-    sources = list(state.sources or [])
+    sources = list(state.system.sources or [])
     seen_sources = {src.source for src in sources if getattr(src, "source", None)}
     if notes.get("rag_reference"):
         for src in notes.get("rag_reference") or []:
@@ -1035,29 +1046,25 @@ def rag_support_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     flags = _merge_flags(state, {"rag_low_quality_results": low_quality_results})
 
     return {
-        "working_memory": wm,
-        "sources": sources,
-        "retrieval_meta": retrieval_meta,
-        "flags": flags,
-        # Phase: explizit RAG
-        "phase": PHASE.RAG,
-        "last_node": "rag_support_node",
-        "rag_turn_count": int(getattr(state, "rag_turn_count", 0) or 0) + 1,
-    }
+               "reasoning": {
+                   "working_memory": wm,
+                   "retrieval_meta": retrieval_meta,
+                   "flags": flags,
+                   "phase": PHASE.RAG,
+                   "last_node": "rag_support_node",
+                   "rag_turn_count": int(getattr(state.reasoning, "rag_turn_count", 0) or 0) + 1,
+               },
+               "system": {
+                   "sources": sources,
+               },
+           }
 
 
 async def leakage_troubleshooting_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("leakage_troubleshooting_node", state)
-    user_text = latest_user_text(state.get("messages")) or ""
+    user_text = latest_user_text(state.conversation.messages) or ""
 
-    full_text = render_template("leakage_troubleshooting.j2", {"user_text": user_text})
-    parts = full_text.split("---", 1)
-    if len(parts) == 2:
-        system = parts[0].strip()
-        prompt = parts[1].strip()
-    else:
-        system = "Du bist ein Troubleshooting Spezialist."
-        prompt = full_text.strip()
+    system, prompt = render_prompt_sections("leakage_troubleshooting.j2", {"user_text": user_text})
 
     response = await run_llm_async(
         model=get_model_tier("mini"),
@@ -1072,24 +1079,25 @@ async def leakage_troubleshooting_node(state: SealAIState, *_args: Any, **_kwarg
         "hypotheses": ["Überdruck", "Montagefehler"],
         "notes": response.strip(),
     }
-    existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
+    existing_notes = getattr(state.reasoning.working_memory, "troubleshooting_notes", None) if state.reasoning.working_memory else {}
     merged_notes = _extend_dict(existing_notes, troubleshooting)
     wm = _update_working_memory(state, {"troubleshooting_notes": merged_notes})
-    updated = dict(state.troubleshooting or {})
+    updated = dict(state.reasoning.troubleshooting or {})
     updated.update(troubleshooting)
     updated["done"] = False
     return {
-        "troubleshooting": updated,
-        "working_memory": wm,
-        # Phase: Consulting-Flow für Troubleshooting
-        "phase": PHASE.CONSULTING,
-        "last_node": "leakage_troubleshooting_node",
-    }
+               "reasoning": {
+                   "troubleshooting": updated,
+                   "working_memory": wm,
+                   "phase": PHASE.CONSULTING,
+                   "last_node": "leakage_troubleshooting_node",
+               },
+           }
 
 
 def troubleshooting_pattern_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("troubleshooting_pattern_node", state)
-    text = latest_user_text(state.get("messages")) or ""
+    text = latest_user_text(state.conversation.messages) or ""
     patterns = [
         ("undercompression", ["leck", "druck", "unter"]),
         ("overcompression", ["zu stark", "deformiert"]),
@@ -1100,34 +1108,31 @@ def troubleshooting_pattern_node(state: SealAIState, *_args: Any, **_kwargs: Any
         if any(marker in text.lower() for marker in markers):
             pattern = name
             break
-    updated = dict(state.troubleshooting or {})
+    updated = dict(state.reasoning.troubleshooting or {})
     updated["pattern_match"] = pattern
     updated.setdefault("hypotheses", []).append(pattern)
-    existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
+    existing_notes = getattr(state.reasoning.working_memory, "troubleshooting_notes", None) if state.reasoning.working_memory else {}
     notes = _extend_dict(existing_notes, {"pattern": pattern})
     wm = _update_working_memory(state, {"troubleshooting_notes": notes})
     return {
-        "troubleshooting": updated,
-        "working_memory": wm,
-        # Phase: weiterhin Troubleshooting-Consulting
-        "phase": PHASE.CONSULTING,
-        "last_node": "troubleshooting_pattern_node",
-    }
+               "reasoning": {
+                   "troubleshooting": updated,
+                   "working_memory": wm,
+                   "phase": PHASE.CONSULTING,
+                   "last_node": "troubleshooting_pattern_node",
+               },
+           }
 
 
 async def troubleshooting_explainer_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("troubleshooting_explainer_node", state)
-    pattern = (state.troubleshooting or {}).get("pattern_match") or "assembly_error"
-    symptoms = ", ".join(state.troubleshooting.get('symptoms', []))
+    pattern = (state.reasoning.troubleshooting or {}).get("pattern_match") or "assembly_error"
+    symptoms = ", ".join(state.reasoning.troubleshooting.get('symptoms', []))
 
-    full_text = render_template("troubleshooting_explainer.j2", {"pattern": pattern, "symptoms": symptoms})
-    parts = full_text.split("---", 1)
-    if len(parts) == 2:
-        system = parts[0].strip()
-        prompt = parts[1].strip()
-    else:
-        system = "Du gibst eine pragmatische Fehleranalyse."
-        prompt = full_text.strip()
+    system, prompt = render_prompt_sections(
+        "troubleshooting_explainer.j2",
+        {"pattern": pattern, "symptoms": symptoms},
+    )
 
     response = await run_llm_async(
         model=get_model_tier("mini"),
@@ -1137,26 +1142,27 @@ async def troubleshooting_explainer_node(state: SealAIState, *_args: Any, **_kwa
         max_tokens=320,
         metadata={"node": "troubleshooting_explainer_node"},
     )
-    updated = dict(state.troubleshooting or {})
+    updated = dict(state.reasoning.troubleshooting or {})
     updated["explanation_text"] = response.strip()
     updated["done"] = True
-    existing_notes = getattr(state.working_memory, "troubleshooting_notes", None) if state.working_memory else {}
+    existing_notes = getattr(state.reasoning.working_memory, "troubleshooting_notes", None) if state.reasoning.working_memory else {}
     notes = _extend_dict(existing_notes, {"explanation": response.strip()})
     wm = _update_working_memory(state, {"troubleshooting_notes": notes})
     return {
-        "troubleshooting": updated,
-        "working_memory": wm,
-        # Phase: weiterhin Consulting
-        "phase": PHASE.CONSULTING,
-        "last_node": "troubleshooting_explainer_node",
-    }
+               "reasoning": {
+                   "troubleshooting": updated,
+                   "working_memory": wm,
+                   "phase": PHASE.CONSULTING,
+                   "last_node": "troubleshooting_explainer_node",
+               },
+           }
 
 
 def build_final_answer_context(state: SealAIState) -> Dict[str, Any]:
-    wm = state.working_memory or WorkingMemory()
-    intent_goal = getattr(state.intent, "goal", "design_recommendation") if state.intent else "design_recommendation"
-    parameters = state.parameters.as_dict()
-    calc_results = state.calc_results.model_dump(exclude_none=True) if state.calc_results else {}
+    wm = state.reasoning.working_memory or WorkingMemory()
+    intent_goal = getattr(state.conversation.intent, "goal", "design_recommendation") if state.conversation.intent else "design_recommendation"
+    parameters = state.working_profile.as_dict()
+    calc_results = state.working_profile.calc_results.model_dump(exclude_none=True) if state.working_profile.calc_results else {}
     panel_material = getattr(wm, "panel_material", {}) or {}
     design_notes = getattr(wm, "design_notes", {}) or {}
     retrieved_blocks: List[str] = []
@@ -1174,27 +1180,31 @@ def build_final_answer_context(state: SealAIState) -> Dict[str, Any]:
         _append_context(panel_material.get("reducer_context"))
     if isinstance(design_notes, dict):
         _append_context(design_notes.get("material_docs_context"))
-    _append_context(state.get("context"))
+    _append_context(state.reasoning.context)
     material_retrieved_context = "\n\n".join(retrieved_blocks).strip()
 
     return {
-        "intent_goal": intent_goal,
-        "frontdoor_reply": getattr(wm, "frontdoor_reply", None),
-        "parameters": parameters,
-        "calc_results": calc_results,
-        "material_choice": state.material_choice or {},
-        "profile_choice": state.profile_choice or {},
-        "validation": state.validation or {},
-        "critical": state.critical or {},
-        "products": state.products or {},
-        "comparison_notes": getattr(wm, "comparison_notes", {}),
-        "requires_rag": bool(getattr(state, "requires_rag", False)),
-        "troubleshooting": state.troubleshooting or {},
-        "response_text": getattr(wm, "response_text", None),
-        "material_retrieved_context": material_retrieved_context,
-        "context": material_retrieved_context,
-        "phase": state.phase or "final",
-    }
+               "intent_goal": intent_goal,
+               "frontdoor_reply": getattr(wm, "frontdoor_reply", None),
+               "parameters": parameters,
+               "comparison_notes": getattr(wm, "comparison_notes", {}),
+               "response_text": getattr(wm, "response_text", None),
+               "material_retrieved_context": material_retrieved_context,
+               "working_profile": {
+                   "calc_results": calc_results,
+                   "material_choice": state.working_profile.material_choice or {},
+                   "profile_choice": state.working_profile.profile_choice or {},
+               },
+               "reasoning": {
+                   "validation": state.reasoning.validation or {},
+                   "critical": state.reasoning.critical or {},
+                   "products": state.reasoning.products or {},
+                   "requires_rag": bool(getattr(state.reasoning, "requires_rag", False)),
+                   "troubleshooting": state.reasoning.troubleshooting or {},
+                   "context": material_retrieved_context,
+                   "phase": state.reasoning.phase or "final",
+               },
+           }
 
 
 def render_final_answer_draft(context: Dict[str, Any]) -> str:
@@ -1210,16 +1220,16 @@ def map_final_answer_to_state(
     final_prompt_metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     clean_text = strip_meta_preamble((final_text or "").strip())
-    messages: List[BaseMessage] = list(state.messages or [])
+    messages: List[BaseMessage] = list(state.conversation.messages or [])
     if clean_text:
         messages.append(AIMessage(content=[{"type": "text", "text": clean_text}]))
 
     patch: Dict[str, Any] = {
         "messages": messages,
-        "final_text": clean_text,
+        "preview_text": clean_text,
         "final_prompt": (final_prompt or "").strip() or None,
         "final_prompt_metadata": dict(final_prompt_metadata or {}),
-        "phase": state.phase or "final",
+        "phase": state.reasoning.phase or "final",
         "last_node": "final_answer_node",
     }
     return patch
@@ -1236,7 +1246,7 @@ def prepare_final_answer_llm_payload(
     # Platinum Blueprint v4.1: Removed hardcoded ignorance blockers.
     # Accuracy is managed by RAG quality gates and prompt instructions, not static string matches.
     user_query = (latest_user_text(user_messages) or latest_user_text(rendered_messages) or "").strip()
-    context_text = str(getattr(state, "context", None) or "").strip()
+    context_text = str(getattr(state.reasoning, "context", None) or "").strip()
     forced_text: str | None = None
     prepared_messages: List[BaseMessage] = list(rendered_messages or [])
 
@@ -1246,15 +1256,17 @@ def prepare_final_answer_llm_payload(
         context_len=len(context_text),
     )
 
-    # We keep the messages structure but remove the forced_text manipulation logic
-    # that existed here for 'kyrolon' specific masking.
+    # We keep the messages structure but remove the earlier material-specific
+    # forced_text manipulation logic.
     
     return {
-        "messages": prepared_messages,
-        "prompt_text": system_prompt,
-        "prompt_metadata": dict(prompt_metadata or {}),
-        "forced_text": forced_text,
-    }
+               "prompt_text": system_prompt,
+               "prompt_metadata": dict(prompt_metadata or {}),
+               "forced_text": forced_text,
+               "conversation": {
+                   "messages": prepared_messages,
+               },
+           }
 
 
 __all__ = [

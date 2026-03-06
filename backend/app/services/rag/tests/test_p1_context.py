@@ -148,13 +148,20 @@ class TestNodeP1Context:
             command = node_p1_context(state)
 
         result = command.update
-        wp = result["working_profile"]
+        pillar = result["working_profile"]
+        wp = pillar["engineering_profile"]
         assert isinstance(wp, WorkingProfile)
-        assert wp.medium == "Dampf"
-        assert wp.pressure_max_bar == 16.0
-        assert wp.temperature_max_c == 180.0
-        assert wp.flange_dn == 100
-        assert result["last_node"] == "node_p1_context"
+        assert wp.medium is None
+        assert wp.pressure_max_bar is None
+        assert wp.temperature_max_c is None
+        assert wp.flange_dn is None
+        assert pillar["extracted_params"]["medium"] == "Dampf"
+        assert pillar["extracted_params"]["pressure_max_bar"] == 16.0
+        assert pillar["extracted_params"]["temperature_max_c"] == 180.0
+        assert pillar["extracted_params"]["flange_dn"] == 100
+        assert result["reasoning"]["extracted_parameter_provenance"]["pressure_max_bar"] == "p1_context_extracted"
+        assert result["reasoning"]["extracted_parameter_identity"]["medium"]["identity_class"] == "confirmed"
+        assert result["reasoning"]["last_node"] == "node_p1_context"
 
     def test_new_case_extracts_material_and_product(self):
         state = self._state(
@@ -170,8 +177,10 @@ class TestNodeP1Context:
             command = node_p1_context(state)
 
         result = command.update
-        wp = result["working_profile"]
-        assert wp.material == "Kyrolon"
+        wp = result["working_profile"]["engineering_profile"]
+        assert wp.material is None
+        assert result["working_profile"]["extracted_params"]["material"] == "Kyrolon"
+        assert result["reasoning"]["extracted_parameter_identity"]["material"]["identity_class"] == "probable"
 
     def test_seal_material_is_stored_separately_and_shaft_material_is_protected(self):
         existing = WorkingProfile(material="Edelstahl")
@@ -187,9 +196,8 @@ class TestNodeP1Context:
             command = node_p1_context(state)
 
         result = command.update
-        wp = result["working_profile"]
-        assert wp.material == "Edelstahl"
-        assert result["extracted_params"].get("seal_material") == "PTFE"
+        assert "engineering_profile" not in result["working_profile"]
+        assert result["working_profile"]["extracted_params"].get("seal_material") == "PTFE"
 
     def test_follow_up_merges_onto_existing_profile(self):
         existing = WorkingProfile(medium="water", pressure_max_bar=20.0)
@@ -205,11 +213,10 @@ class TestNodeP1Context:
             command = node_p1_context(state)
 
         result = command.update
-        wp = result["working_profile"]
-        assert wp.medium == "water"       # preserved
-        assert wp.pressure_max_bar == 40.0  # updated
+        assert "engineering_profile" not in result["working_profile"]
+        assert result["working_profile"]["extracted_params"]["pressure_max_bar"] == 40.0
 
-    def test_llm_failure_preserves_existing_profile(self):
+    def test_llm_failure_new_case_resets_existing_profile(self):
         existing = WorkingProfile(medium="H2", pressure_max_bar=200.0)
         state = self._state(
             "Neue Anfrage",
@@ -222,11 +229,12 @@ class TestNodeP1Context:
         ):
             command = node_p1_context(state)
 
-        # Falls back to existing profile (or empty if none)
         result = command.update
-        wp = result["working_profile"]
+        wp = result["working_profile"]["engineering_profile"]
         assert isinstance(wp, WorkingProfile)
-        assert "error" in result
+        assert wp.medium is None
+        assert wp.pressure_max_bar is None
+        assert "error" in result["system"]
 
     def test_llm_failure_with_no_prior_profile_returns_empty(self):
         state = self._state("Hallo", router_classification="new_case")
@@ -237,10 +245,10 @@ class TestNodeP1Context:
             command = node_p1_context(state)
 
         result = command.update
-        wp = result["working_profile"]
+        wp = result["working_profile"]["engineering_profile"]
         assert isinstance(wp, WorkingProfile)
         assert wp.medium is None
-        assert "error" in result
+        assert "error" in result["system"]
 
     def test_phase_set_correctly(self):
         state = self._state("test", router_classification="new_case")
@@ -250,7 +258,7 @@ class TestNodeP1Context:
         ):
             command = node_p1_context(state)
         result = command.update
-        assert result["phase"] == "frontdoor"
+        assert result["reasoning"]["phase"] == "frontdoor"
 
     def test_new_case_does_not_use_existing_profile(self):
         """new_case must always start fresh, ignoring existing working_profile."""
@@ -267,10 +275,12 @@ class TestNodeP1Context:
             command = node_p1_context(state)
 
         result = command.update
-        wp = result["working_profile"]
+        wp = result["working_profile"]["engineering_profile"]
         # old medium/pressure must be gone (fresh extraction)
-        assert wp.medium == "Dampf"
-        assert wp.pressure_max_bar == 8.0
+        assert wp.medium is None
+        assert wp.pressure_max_bar is None
+        assert result["working_profile"]["extracted_params"]["medium"] == "Dampf"
+        assert result["working_profile"]["extracted_params"]["pressure_max_bar"] == 8.0
 
     def test_resume_option_acceptance_applies_hrc_override_from_assistant_option(self):
         state = SealAIState(
@@ -296,8 +306,8 @@ class TestNodeP1Context:
             command = node_p1_context(state)
 
         result = command.update
-        assert result["extracted_params"]["hrc_value"] == 58.0
-        assert result["extracted_params"]["hrc"] == 58.0
+        assert result["working_profile"]["extracted_params"]["hrc_value"] == 58.0
+        assert result["working_profile"]["extracted_params"]["hrc"] == 58.0
 
     def test_non_resume_option_a_does_not_force_hrc_override(self):
         state = SealAIState(
@@ -317,5 +327,4 @@ class TestNodeP1Context:
             command = node_p1_context(state)
 
         result = command.update
-        assert result["extracted_params"]["hrc_value"] == 40.0
-        assert result["extracted_params"]["hrc"] == 40.0
+        assert result["working_profile"]["extracted_params"] == {}

@@ -2,7 +2,7 @@ import re
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from jinja2 import Environment, StrictUndefined
 
 # ============================================================================

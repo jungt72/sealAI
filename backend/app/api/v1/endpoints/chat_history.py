@@ -224,7 +224,10 @@ async def get_conversation_history(
     graph, config = await _build_state_config_with_checkpointer(thread_id=conversation_id, user_id=owner_id)
     snapshot = await graph.aget_state(config)
     state_values = _state_to_dict(snapshot.values)
-    raw_messages = state_values.get("messages") or []
+    conversation = state_values.get("conversation") if isinstance(state_values, dict) else {}
+    raw_messages = []
+    if isinstance(conversation, dict):
+        raw_messages = conversation.get("messages") or []
     messages = [_serialize_message(raw, idx) for idx, raw in enumerate(raw_messages or [])]
 
     return {

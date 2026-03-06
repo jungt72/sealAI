@@ -55,14 +55,17 @@ def _extract_hash(value: Any) -> str:
 
 def _extract_audit_hashes(state: SealAIState) -> tuple[str, str]:
     wm_diag: Dict[str, Any] = {}
-    if state.working_memory is not None and isinstance(getattr(state.working_memory, "diagnostic_data", None), dict):
-        wm_diag = dict(state.working_memory.diagnostic_data or {})
+    if state.reasoning.working_memory is not None and isinstance(
+        getattr(state.reasoning.working_memory, "diagnostic_data", None),
+        dict,
+    ):
+        wm_diag = dict(state.reasoning.working_memory.diagnostic_data or {})
 
-    flags = dict(state.flags or {})
+    flags = dict(state.reasoning.flags or {})
     prompt_hash = _extract_hash(
         wm_diag.get("reasoning_system_prompt_hash")
         or flags.get("reasoning_system_prompt_hash")
-        or (state.final_prompt_metadata or {}).get("prompt_hash")
+        or (state.system.final_prompt_metadata or {}).get("prompt_hash")
     )
     guard_hash = _extract_hash(
         wm_diag.get("combinatorial_guard_version_hash")
@@ -92,24 +95,24 @@ def _write_immutable_bundle(bundle: EvidenceBundle) -> str:
 
 
 def worm_evidence_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
-    profile = state.working_profile or WorkingProfile()
+    profile = state.working_profile.engineering_profile or WorkingProfile()
     reasoning_system_prompt_hash, combinatorial_guard_version_hash = _extract_audit_hashes(state)
     bundle = EvidenceBundle.from_components(
         working_profile=profile,
-        tool_calls=_to_tool_call_records(list(state.tool_call_records or [])),
-        source_ref_payloads=_to_source_ref_payloads(list(state.source_ref_payloads or [])),
-        run_id=state.run_id,
-        thread_id=state.thread_id,
-        user_id=state.user_id,
-        tenant_id=state.tenant_id,
+        tool_calls=_to_tool_call_records(list(state.system.tool_call_records or [])),
+        source_ref_payloads=_to_source_ref_payloads(list(state.system.source_ref_payloads or [])),
+        run_id=state.system.run_id,
+        thread_id=state.conversation.thread_id,
+        user_id=state.conversation.user_id,
+        tenant_id=state.system.tenant_id,
         reasoning_system_prompt_hash=reasoning_system_prompt_hash,
         combinatorial_guard_version_hash=combinatorial_guard_version_hash,
         metadata={
-            "phase": state.phase,
-            "last_node": state.last_node,
-            "final_text_present": bool((state.final_text or "").strip()),
-            "final_answer_present": bool((state.final_answer or "").strip()),
-            "final_prompt_metadata": dict(state.final_prompt_metadata or {}),
+            "phase": state.reasoning.phase,
+            "last_node": state.reasoning.last_node,
+            "final_text_present": bool((state.system.final_text or "").strip()),
+            "final_answer_present": bool((state.system.final_answer or "").strip()),
+            "final_prompt_metadata": dict(state.system.final_prompt_metadata or {}),
             "reasoning_system_prompt_hash_present": bool(reasoning_system_prompt_hash),
             "combinatorial_guard_version_hash_present": bool(combinatorial_guard_version_hash),
         },
@@ -118,7 +121,7 @@ def worm_evidence_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
     bundle_key = _write_immutable_bundle(bundle)
 
     next_profile = profile.model_copy(update={"evidence_bundle_key": bundle_key})
-    flags = dict(state.flags or {})
+    flags = dict(state.reasoning.flags or {})
     flags.update(
         {
             "worm_bundle_written": True,
@@ -132,16 +135,20 @@ def worm_evidence_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
         bundle_id=bundle.bundle_id,
         bundle_key=bundle_key,
         bundle_hash=digest,
-        thread_id=state.thread_id,
-        run_id=state.run_id,
+        thread_id=state.conversation.thread_id,
+        run_id=state.system.run_id,
     )
 
     return {
-        "last_node": "worm_evidence_node",
-        "working_profile": next_profile,
-        "evidence_bundle": bundle,
-        "evidence_bundle_hash": digest,
-        "flags": flags,
+        "working_profile": {"engineering_profile": next_profile},
+        "reasoning": {
+            "last_node": "worm_evidence_node",
+            "flags": flags,
+        },
+        "system": {
+            "evidence_bundle": bundle,
+            "evidence_bundle_hash": digest,
+        },
     }
 
 

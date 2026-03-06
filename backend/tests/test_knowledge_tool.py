@@ -5,7 +5,7 @@ from typing import Any, Dict
 from app.mcp import knowledge_tool
 
 
-def test_search_technical_docs_relaxes_tenant_filter_when_empty(monkeypatch) -> None:
+def test_search_technical_docs_keeps_tenant_filter_when_empty(monkeypatch) -> None:
     calls: list[Dict[str, Any] | None] = []
 
     def _fake_hybrid_retrieve(
@@ -21,21 +21,7 @@ def test_search_technical_docs_relaxes_tenant_filter_when_empty(monkeypatch) -> 
         calls.append(dict(metadata_filters or {}))
         if metadata_filters and metadata_filters.get("tenant_id") == "user-tenant":
             return [], {"k_returned": 0}
-        return (
-            [
-                {
-                    "text": "Kyrolon 79X technical data",
-                    "source": "kyrolon.pdf",
-                    "fused_score": 0.77,
-                    "metadata": {
-                        "document_id": "doc-kyrolon",
-                        "source": "kyrolon.pdf",
-                        "additional_metadata": {"trade_name": "Kyrolon 79X"},
-                    },
-                }
-            ],
-            {"k_returned": 1, "top_scores": [0.77]},
-        )
+        return [], {"k_returned": 0}
 
     monkeypatch.setattr(knowledge_tool, "hybrid_retrieve", _fake_hybrid_retrieve)
 
@@ -46,12 +32,11 @@ def test_search_technical_docs_relaxes_tenant_filter_when_empty(monkeypatch) -> 
         k=5,
     )
 
-    assert len(payload["hits"]) == 1
-    assert payload["hits"][0]["document_id"] == "doc-kyrolon"
-    assert payload["retrieval_meta"]["tenant_filter_relaxed"] is True
-    assert calls[0]["tenant_id"] == "user-tenant"
+    assert payload["hits"] == []
+    assert payload["retrieval_meta"].get("tenant_filter_relaxed") is not True
+    assert calls[0]["tenant_id"] == ["user-tenant", "sealai"]
     assert calls[0]["additional_metadata.trade_name"] == "Kyrolon 79X"
-    assert "tenant_id" not in calls[-1]
+    assert len(calls) == 1
 
 
 def test_execute_tool_call_forwards_metadata_filters(monkeypatch) -> None:

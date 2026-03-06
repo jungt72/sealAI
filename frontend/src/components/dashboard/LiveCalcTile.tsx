@@ -81,12 +81,13 @@ const LABEL_MAP: Record<string, string> = {
   cyclic_load: "Zyklische Last",
 };
 
-function formatValue(value: number | null | undefined, digits = 2): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "N/A";
-  return value.toFixed(digits);
+function formatValue(value: number | string | null | undefined, digits = 2): string {
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (numeric === null || numeric === undefined || Number.isNaN(numeric)) return "N/A";
+  return Number(numeric).toFixed(digits);
 }
 
-function formatMetric(value: number | null | undefined, unit: string, digits = 2): string {
+function formatMetric(value: number | string | null | undefined, unit: string, digits = 2): string {
   const formatted = formatValue(value, digits);
   return formatted === "N/A" ? formatted : `${formatted} ${unit}`;
 }
@@ -94,11 +95,17 @@ function formatMetric(value: number | null | undefined, unit: string, digits = 2
 export default function LiveCalcTile(props: LiveCalcTileProps) {
   console.log("RENDERED LIVECALCTILE WITH PROPS:", props);
   const {
-    tile,
+    tile: rawTile,
     rfqReady = false,
     rfqPdfBase64 = null,
     rfqHtmlReport = null,
   } = props;
+  const tile =
+    rawTile && typeof (rawTile as any).working_profile?.live_calc_tile === "object"
+      ? ((rawTile as any).working_profile.live_calc_tile as LiveCalcTileData)
+      : rawTile && typeof (rawTile as any).live_calc_tile === "object"
+      ? ((rawTile as any).live_calc_tile as LiveCalcTileData)
+      : rawTile;
   const status: LiveCalcStatus = tile?.status ?? "insufficient_data";
   const capturedParams = new Map<string, string | number>();
   Object.entries(tile?.parameters ?? {}).forEach(([key, value]) => {

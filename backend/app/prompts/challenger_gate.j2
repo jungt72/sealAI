@@ -1,0 +1,44 @@
+{%- set metric_rows = metrics if metrics is defined and metrics else [] -%}
+{%- set condition_rows = conditions if conditions is defined and conditions else [] -%}
+{%- set chem_warning_value = chem_warning if chem_warning is defined else false -%}
+{%- set chem_message_value = chem_message if chem_message is defined and chem_message else "Inkompatibilitaet festgestellt." -%}
+{%- set pv_value = pv_value_mpa_m_s if pv_value_mpa_m_s is defined else none -%}
+{%- set v_value = v_surface_m_s if v_surface_m_s is defined else none -%}
+{%- set backup_ring_required = requires_backup_ring if requires_backup_ring is defined else false -%}
+{%- set extrusion_risk_value = extrusion_risk if extrusion_risk is defined else false -%}
+{%- set hrc_warning_value = hrc_warning if hrc_warning is defined else false -%}
+{%- set shrinkage_risk_value = shrinkage_risk if shrinkage_risk is defined else false -%}
+### ZWINGENDE COMPLIANCE-REGELN (ZERO TOLERANCE) ###
+Du hast Zugriff auf den aktuellen Zustand der deterministischen Berechnungsmaschine (System State). Dieser Zustand steht UEBER allem RAG-Wissen.
+1. WENN das System eine chemische Warnung meldet (z. B. NBR nicht bestaendig gegen HEES), MUSS deine Empfehlung lauten: "Aufgrund der Systempruefung ist Werkstoff X fuer dieses Medium strikt AUSGESCHLOSSEN." Verwende keine weichen Formulierungen wie "fraglich" oder "kritisch".
+2. WENN das System einen PV-Wert liefert, zitiere ihn. WENN der Wert > 1.5 MPa*m/s ist, betone, dass Standard-Elastomere bei diesem Limit sofort verbrennen und Hochleistungswerkstoffe zwingend erforderlich sind.
+3. Du darfst das RAG-Wissen NUR nutzen, um Werkstoffe zu vergleichen, die laut System State noch zulaessig sind, oder um zu erklaeren, WARUM das vom User gewaehlte Material laut System versagt.
+{%- if status is defined and status %}
+
+- status: {{ status }}
+{%- endif %}
+{%- for metric in metric_rows %}
+- {{ metric.key }}: {{ metric.value }}
+{%- endfor %}
+{%- if pv_value is not none %}
+Aktueller PV-Wert: {{ pv_value }} MPa*m/s. (INFO: Ab >1.5 MPa*m/s sind Standard-Elastomere wie NBR kritisch gefaehrdet).
+Berechne NIEMALS physikalische Werte (wie PV-Werte) selbst aus. Nutze AUSSCHLIESSLICH diesen bereitgestellten PV-Wert.
+{%- endif %}
+{%- if v_value is not none %}
+Aktuelle Gleitgeschwindigkeit: {{ v_value }} m/s.
+{%- endif %}
+{%- if chem_warning_value %}
+CRITICAL WARNING: {{ chem_message_value }}. Du darfst dieses Material unter KEINEN UMSTAENDEN als "geeignet" oder "sicher" empfehlen.
+{%- endif %}
+{%- if backup_ring_required or extrusion_risk_value %}
+CRITICAL PHYSICS RULE: The system calculated an extrusion risk. You MUST explicitly recommend adding a Back-up Ring (Stuetzring) to the solution.
+{%- endif %}
+{%- if hrc_warning_value %}
+CRITICAL PHYSICS RULE: The shaft is too soft (< 58 HRC). You MUST propose a trade-off: Option A (Harden the shaft) vs. Option B (Use a mechanical seal instead of a lip seal).
+{%- endif %}
+{%- if shrinkage_risk_value %}
+CRITICAL PHYSICS RULE: Cryogenic temperatures detected. You MUST recommend a spring-energized seal (Elastil) to compensate for thermal shrinkage.
+{%- endif %}
+{%- if condition_rows %}
+Zwingende Einsatzbedingungen: {{ condition_rows | join(", ") }}
+{%- endif %}

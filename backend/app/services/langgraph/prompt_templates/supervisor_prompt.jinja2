@@ -24,12 +24,12 @@ Antworte **ausschließlich** mit einem **validen JSON-Objekt in EINER Zeile**.
 3) **Deterministische RAG-Policy** setzen:
    - `should_query_rag = true`, **außer** Intent ist klar `smalltalk`/`greeting`/`thanks`.
    - Insbesondere **true**, wenn einer der folgenden Hinweise vorliegt:
-     • Marken/Materiale: PTFE, FKM/Viton, NBR, EPDM, PU, PEEK, Graphit, Kyrolon 79X, etc.
+     • Marken/Materiale: PTFE, FKM/Viton, NBR, EPDM, PU, PEEK, Graphit, Werkstoffcode/Handelsname, etc.
      • Produkt-/Domänenterme: RWDR, BA/BASL/B1/B2, U-Ring, T-Seal, Gleitring, DIN/ISO/FDA.
      • Mess-/Betriebsdaten: Muster wie `\d+x\d+x\d+`, °C, bar, rpm/U/min, m/s, μm.
 4) Kompakte **rag_query** erzeugen (keine Prosa):
    - Schema: `[Domain|RWDR/Hydraulik] + Maße + Medium + Tmax °C + Druck bar + rpm/m/s + markante Keywords/Marken`.
-   - Beispiel: `RWDR 45x62x7, Öl, Tmax 90°C, 1 bar, 1500 U/min, Kyrolon 79X`.
+   - Beispiel: `RWDR 45x62x7, Öl, Tmax 90°C, 1 bar, 1500 U/min, PTFE-Compound`.
 5) **Plan** minimal halten:
    - Wenn `should_query_rag=true`: Schritt 1=rag; danach nur nötige Agenten (`material`, `normen`, `konstruktion`, `produkt`, `safety`) mit kurzem `goal`.
    - Wenn Pflichtparameter fehlen: Plan zuerst auf **Rückfragen** (ask_missing) ausrichten.
@@ -47,9 +47,9 @@ Antworte **ausschließlich** mit einem **validen JSON-Objekt in EINER Zeile**.
 # Mini-Beispiele
 
 ## A) Fachfrage mit Marke
-INPUT: "RWDR 45x62x7, Öl, 90 °C, 1 bar, 1500 U/min. Kyrolon 79X?"
+INPUT: "RWDR 45x62x7, Öl, 90 °C, 1 bar, 1500 U/min. PTFE-Compound?"
 OUTPUT:
-{"intent":"materialvergleich","missing_params":[],"should_query_rag":true,"rag_query":"RWDR 45x62x7, Öl, Tmax 90°C, 1 bar, 1500 U/min, Kyrolon 79X","plan":[{"step":1,"agent":"rag","goal":"Kontext+Quellen abrufen","parallel_group":"null"},{"step":2,"agent":"material","goal":"Werkstoffwahl/Temp-Grenzen","parallel_group":"A"},{"step":3,"agent":"normen","goal":"Grenzen/Regeln prüfen","parallel_group":"A"}]}
+{"intent":"materialvergleich","missing_params":[],"should_query_rag":true,"rag_query":"RWDR 45x62x7, Öl, Tmax 90°C, 1 bar, 1500 U/min, PTFE-Compound","plan":[{"step":1,"agent":"rag","goal":"Kontext+Quellen abrufen","parallel_group":"null"},{"step":2,"agent":"material","goal":"Werkstoffwahl/Temp-Grenzen","parallel_group":"A"},{"step":3,"agent":"normen","goal":"Grenzen/Regeln prüfen","parallel_group":"A"}]}
 
 ## B) Unklar, Pflichtdaten fehlen
 INPUT: "Brauche Dichtung für Hydraulikzylinder."

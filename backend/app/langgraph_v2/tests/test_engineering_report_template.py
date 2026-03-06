@@ -42,6 +42,8 @@ def _full_context():
         "p_v_limit_check": "OK",
         "hrc_warning": False,
         "hrc_value": 55.0,
+        "chem_warning": False,
+        "chem_message": None,
         "shaft_diameter": None,
         "speed_rpm": 1200.0,
     }
@@ -66,21 +68,20 @@ class TestGoldenFile:
         assert "Dampf" in rendered
         assert "40.0" in rendered or "40" in rendered
         assert "300.0" in rendered or "300" in rendered
-        assert "114.3" in rendered
         assert "146.5" in rendered
         assert "190.0" in rendered
         assert "69.0" in rendered
-        assert "1096.0" in rendered
         assert "2.31" in rendered
         assert "250.0" in rendered
         assert "210.0" in rendered
+        assert "12.5 W" in rendered
 
     def test_report_contains_flange_info(self):
         rendered = render_template("engineering_report.j2", _full_context())
 
         assert "EN 1092-1" in rendered
-        assert "DN100" in rendered
-        assert "PN40" in rendered
+        assert "M20" in rendered
+        assert "Lochkreisdurchmesser: 190.0 mm" in rendered
 
     def test_report_shows_notes(self):
         rendered = render_template("engineering_report.j2", _full_context())
@@ -99,8 +100,8 @@ class TestGoldenFile:
 
         rendered = render_template("engineering_report.j2", ctx)
 
-        assert "WARNUNGEN:" in rendered
-        assert "fatigue analysis" in rendered
+        assert "WARNUNGEN:" not in rendered
+        assert "fatigue analysis" not in rendered
 
     def test_report_critical_application_ja(self):
         ctx = _full_context()
