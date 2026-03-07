@@ -193,24 +193,70 @@ def _coerce_questions(items: List[QuestionItem | Dict[str, Any]] | None) -> List
     return questions
 
 
+def _get_dynamic_priority(key: str, state: SealAIState) -> str:
+    """Determine priority based on technical risk-weights (v1.2 risk-driven completeness)."""
+    # 1. Base requirements always high
+    if key in ("medium", "pressure_max_bar", "temperature_max_c", "shaft_diameter", "speed_rpm"):
+        return "high"
+
+    wp = state.working_profile
+    wm_req = (
+        state.reasoning.working_memory.material_requirements
+        if state.reasoning.working_memory
+        else None
+    )
+    operating = wm_req.operating_conditions if wm_req else {}
+
+    # Risk Weight: Pressure
+    p_bar = operating.get("pressure_bar") or wp.pressure_bar
+    if p_bar is not None and float(p_bar) > 25.0:
+        if key in ("shaft_runout", "shaft_hardness"):
+            return "high"
+
+    # Risk Weight: Temperature
+    t_c = operating.get("temperature_C") or wp.temperature_c
+    if t_c is not None and (float(t_c) > 180.0 or float(t_c) < -40.0):
+        if key == "medium":
+            return "high"  # already high, but confirms its criticality
+
+    return "medium"
+
+
 def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
     seen: set[str] = set()
     questions: List[QuestionItem] = []
-    for key in (state.reasoning.missing_params or []):
+
+    # 1. Core missing parameters (from supervisor policy)
+    missing_params = list(state.reasoning.missing_params or [])
+
+    # 2. Augmented missing parameters from RequirementSpec (contract level)
+    wm_req = (
+        state.reasoning.working_memory.material_requirements
+        if state.reasoning.working_memory
+        else None
+    )
+    if wm_req and wm_req.missing_critical_parameters:
+        for p in wm_req.missing_critical_parameters:
+            if p not in missing_params:
+                missing_params.append(p)
+
+    for key in missing_params:
         if not key or key in seen:
             continue
         seen.add(key)
         label = _PARAM_LABELS.get(key, key.replace("_", " "))
+        priority = _get_dynamic_priority(key, state)
         questions.append(
             QuestionItem(
                 id=key,
                 question=f"Bitte ergänze: {label}.",
-                reason="Benötigt für die Auslegung.",
-                priority="high",
+                reason="Benötigt für die sichere technische Auslegung.",
+                priority=priority,  # type: ignore[arg-type]
                 status="open",
                 source="missing_params",
             )
         )
+
     for key in (state.reasoning.discovery_missing or []):
         if not key or key in seen:
             continue
