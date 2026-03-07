@@ -653,16 +653,28 @@ def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
 def _apply_resolution_status(
     new_conflicts: List[ConflictRecord], old_conflicts: List[ConflictRecord]
 ) -> List[ConflictRecord]:
-    """Sync resolution status from old conflicts to new ones based on summary/type match.
+    """Sync resolution status from old conflicts to new ones based on a stable fingerprint.
 
-    Acts as a minimal state persistence for conflict dismissals across patching cycles.
+    The fingerprint normalizes summaries by removing specific numbers, content in quotes,
+    and list brackets to ensure status persistence even if the LLM slightly rephrases
+    the conflict-triggering statement.
     """
-    old_map = {(c.conflict_type, c.summary): c.resolution_status for c in old_conflicts}
+
+    def _get_fingerprint(c: ConflictRecord) -> Tuple[str, str]:
+        # Normalize summary: remove numbers, content in quotes, and list brackets
+        norm_summary = c.summary.lower()
+        norm_summary = re.sub(r"\d+(?:\.\d+)?", "#", norm_summary)  # Numbers -> #
+        norm_summary = re.sub(r"'.*?'", "'#'", norm_summary)  # Quoted content -> '#'
+        norm_summary = re.sub(r"\[.*?\]", "[#]", norm_summary)  # List content -> [#]
+        norm_summary = re.sub(r"\s+", "", norm_summary)  # Whitespace removal
+        return (c.conflict_type, norm_summary)
+
+    old_map = {_get_fingerprint(c): c.resolution_status for c in old_conflicts}
 
     updated = []
     for nc in new_conflicts:
-        # Use existing status if found, otherwise default to OPEN
-        status = old_map.get((nc.conflict_type, nc.summary), "OPEN")
+        # Use existing status if found via fingerprint, otherwise default to OPEN
+        status = old_map.get(_get_fingerprint(nc), "OPEN")
 
         # Technical Rule: FALSE_CONFLICT type always acts as DISMISSED
         if nc.conflict_type == "FALSE_CONFLICT":

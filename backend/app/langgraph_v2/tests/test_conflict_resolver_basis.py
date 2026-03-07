@@ -611,3 +611,80 @@ def test_scope_conflict_detects_vague_language() -> None:
     assert len(conflicts) == 1
     assert conflicts[0].conflict_type == "SCOPE_CONFLICT"
     assert "vague suitability claim" in conflicts[0].summary.lower()
+
+
+# --- Robust Sync Regression Tests ---
+
+def test_apply_resolution_status_is_robust_to_numeric_variation() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _apply_resolution_status
+    from app.langgraph_v2.state.sealai_state import ConflictRecord
+
+    # Previous conflict had 20.0 bar
+    old_conflicts = [
+        ConflictRecord(
+            conflict_type="PARAMETER_CONFLICT",
+            summary="Draft pressure values [20.0] bar differ from contract authority: 10.0 bar.",
+            resolution_status="DISMISSED"
+        )
+    ]
+    # New conflict has 21.0 bar
+    new_conflicts = [
+        ConflictRecord(
+            conflict_type="PARAMETER_CONFLICT",
+            summary="Draft pressure values [21.0] bar differ from contract authority: 10.0 bar.",
+            resolution_status="OPEN"
+        )
+    ]
+
+    synced = _apply_resolution_status(new_conflicts, old_conflicts)
+    assert synced[0].resolution_status == "DISMISSED", "Sync should survive numeric variation"
+
+
+def test_apply_resolution_status_is_robust_to_vague_wording_variation() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _apply_resolution_status
+    from app.langgraph_v2.state.sealai_state import ConflictRecord
+
+    # Previous: 'typischerweise'
+    old_conflicts = [
+        ConflictRecord(
+            conflict_type="SCOPE_CONFLICT",
+            summary="Vague suitability claim detected: 'typischerweise'.",
+            resolution_status="RESOLVED"
+        )
+    ]
+    # New: 'oft'
+    new_conflicts = [
+        ConflictRecord(
+            conflict_type="SCOPE_CONFLICT",
+            summary="Vague suitability claim detected: 'oft'.",
+            resolution_status="OPEN"
+        )
+    ]
+
+    synced = _apply_resolution_status(new_conflicts, old_conflicts)
+    assert synced[0].resolution_status == "RESOLVED", "Sync should survive wording variation in quotes"
+
+
+def test_apply_resolution_status_is_robust_to_condition_list_variation() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _apply_resolution_status
+    from app.langgraph_v2.state.sealai_state import ConflictRecord
+
+    # Previous: ['Wellenschlag']
+    old_conflicts = [
+        ConflictRecord(
+            conflict_type="CONDITION_CONFLICT",
+            summary="Technical suitability claimed but critical conditions ['Wellenschlag'] are missing.",
+            resolution_status="DISMISSED"
+        )
+    ]
+    # New: ['Wellenschlag', 'Wellenhärte']
+    new_conflicts = [
+        ConflictRecord(
+            conflict_type="CONDITION_CONFLICT",
+            summary="Technical suitability claimed but critical conditions ['Wellenschlag', 'Wellenhärte'] are missing.",
+            resolution_status="OPEN"
+        )
+    ]
+
+    synced = _apply_resolution_status(new_conflicts, old_conflicts)
+    assert synced[0].resolution_status == "DISMISSED", "Sync should survive condition list expansion"
