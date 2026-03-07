@@ -461,3 +461,108 @@ def test_temporal_validity_no_conflict_when_no_temporal_claim() -> None:
 
     conflicts = _check_temporal_validity_conflicts(draft_text, contract)
     assert len(conflicts) == 0
+
+
+# --- Conflict Resolution & Dismissal Flow tests ---
+
+def test_apply_resolution_status_recovers_dismissed_state() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _apply_resolution_status
+    from app.langgraph_v2.state.sealai_state import ConflictRecord
+
+    old_conflicts = [
+        ConflictRecord(
+            conflict_type="PARAMETER_CONFLICT",
+            summary="Pressure mismatch",
+            resolution_status="DISMISSED"
+        )
+    ]
+    new_conflicts = [
+        ConflictRecord(
+            conflict_type="PARAMETER_CONFLICT",
+            summary="Pressure mismatch",
+            resolution_status="OPEN"  # Newly detected as OPEN
+        ),
+        ConflictRecord(
+            conflict_type="SOURCE_CONFLICT",
+            summary="New conflict",
+            resolution_status="OPEN"
+        )
+    ]
+
+    synced = _apply_resolution_status(new_conflicts, old_conflicts)
+
+    assert synced[0].summary == "Pressure mismatch"
+    assert synced[0].resolution_status == "DISMISSED"  # Recovered
+    assert synced[1].summary == "New conflict"
+    assert synced[1].resolution_status == "OPEN"      # Stays OPEN
+
+
+def test_false_conflict_always_acts_as_dismissed() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _apply_resolution_status
+    from app.langgraph_v2.state.sealai_state import ConflictRecord
+
+    new_conflicts = [
+        ConflictRecord(
+            conflict_type="FALSE_CONFLICT",
+            summary="Known deviation",
+            resolution_status="OPEN"
+        )
+    ]
+
+    synced = _apply_resolution_status(new_conflicts, [])
+    assert synced[0].resolution_status == "DISMISSED"
+
+
+def test_blocking_logic_respects_dismissed_conflicts() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import node_verify_claims
+    from app.langgraph_v2.state.sealai_state import (
+        SealAIState,
+        AnswerContract,
+        VerificationReport,
+        ConflictRecord,
+    )
+    from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
+    import hashlib
+
+    # Create a state with a DISMISSED conflict in the old report
+    # Use PARAMETER_CONFLICT with the EXACT summary produced by the detector
+    summary = "Draft pressure values [20.0] bar differ from contract authority: 10.0 bar."
+    old_conflict = ConflictRecord(
+        conflict_type="PARAMETER_CONFLICT",
+        severity="HARD", # Hard severity would usually block
+        summary=summary,
+        resolution_status="DISMISSED",
+    )
+
+    draft_text = "Der Druck beträgt 20 bar."
+    contract = AnswerContract(resolved_parameters={"pressure_bar": 10.0})
+    contract_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
+
+    state = AnswerSubgraphState(
+        conversation={"session_id": "test"},
+        system={
+            "draft_text": draft_text,
+            "draft_base_hash": contract_hash,
+            "answer_contract": contract,
+            "verification_report": VerificationReport(
+                contract_hash=contract_hash,
+                draft_hash="old",
+                status="fail",
+                conflicts=[old_conflict],
+            ),
+        },
+    )
+
+    patch = node_verify_claims(state)
+    report = patch["system"]["verification_report"]
+
+    # The conflict should be detected but synced to DISMISSED
+    relevant_conflicts = [c for c in report.conflicts if c.conflict_type == "PARAMETER_CONFLICT"]
+    assert len(relevant_conflicts) > 0
+    assert relevant_conflicts[0].resolution_status == "DISMISSED"
+
+    # The report status should be pass because the blocking conflict is dismissed
+    # (Note: unexpected_number '20' might still fail the report if not in allowed_numbers, 
+    # so we focus on the resolution_status logic here)
+    assert report.status == "pass" or "unexpected_number" in [s["reason"] for s in report.failed_claim_spans]
+

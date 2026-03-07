@@ -537,13 +537,9 @@ def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
         materials = [m.group(0) for m in _CHEM_MATERIAL_RE.finditer(sentence)]
         if not materials:
             continue
-        temps = [
-            float(m.group(1).replace(",", "."))
-            for m in _LIMITS_TEMP_RE.finditer(sentence)
-        ]
+        temps = [float(m.group(1).replace(",", ".")) for m in _LIMITS_TEMP_RE.finditer(sentence)]
         pressures = [
-            float(m.group(1).replace(",", "."))
-            for m in _LIMITS_PRESSURE_RE.finditer(sentence)
+            float(m.group(1).replace(",", ".")) for m in _LIMITS_PRESSURE_RE.finditer(sentence)
         ]
         if not temps and not pressures:
             continue
@@ -555,15 +551,17 @@ def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
                     continue
                 if result.temp_ok is False:
                     lim = result.limits
-                    spans.append(_build_failure_span(
-                        reason="material_temp_exceeded",
-                        expected_value=(
-                            f"{result.material} max. Dauertemperatur: "
-                            f"{lim.temp_max_c} °C (Peak: {lim.temp_peak_c} °C) "
-                            f"— {lim.norm_ref}"
-                        ),
-                        wrong_span=f"{mat} bei {temp_c} °C",
-                    ))
+                    spans.append(
+                        _build_failure_span(
+                            reason="material_temp_exceeded",
+                            expected_value=(
+                                f"{result.material} max. Dauertemperatur: "
+                                f"{lim.temp_max_c} °C (Peak: {lim.temp_peak_c} °C) "
+                                f"— {lim.norm_ref}"
+                            ),
+                            wrong_span=f"{mat} bei {temp_c} °C",
+                        )
+                    )
             for pressure_bar in pressures:
                 try:
                     result = _limits_check(mat, pressure_bar=pressure_bar)
@@ -571,15 +569,39 @@ def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
                     continue
                 if result.pressure_ok is False:
                     lim = result.limits
-                    spans.append(_build_failure_span(
-                        reason="material_pressure_exceeded",
-                        expected_value=(
-                            f"{result.material} max. Druck (statisch): "
-                            f"{lim.pressure_static_max_bar} bar — {lim.norm_ref}"
-                        ),
-                        wrong_span=f"{mat} bei {pressure_bar} bar",
-                    ))
+                    spans.append(
+                        _build_failure_span(
+                            reason="material_pressure_exceeded",
+                            expected_value=(
+                                f"{result.material} max. Druck (statisch): "
+                                f"{lim.pressure_static_max_bar} bar — {lim.norm_ref}"
+                            ),
+                            wrong_span=f"{mat} bei {pressure_bar} bar",
+                        )
+                    )
     return spans
+
+
+def _apply_resolution_status(
+    new_conflicts: List[ConflictRecord], old_conflicts: List[ConflictRecord]
+) -> List[ConflictRecord]:
+    """Sync resolution status from old conflicts to new ones based on summary/type match.
+
+    Acts as a minimal state persistence for conflict dismissals across patching cycles.
+    """
+    old_map = {(c.conflict_type, c.summary): c.resolution_status for c in old_conflicts}
+
+    updated = []
+    for nc in new_conflicts:
+        # Use existing status if found, otherwise default to OPEN
+        status = old_map.get((nc.conflict_type, nc.summary), "OPEN")
+
+        # Technical Rule: FALSE_CONFLICT type always acts as DISMISSED
+        if nc.conflict_type == "FALSE_CONFLICT":
+            status = "DISMISSED"
+
+        updated.append(nc.model_copy(update={"resolution_status": status}))
+    return updated
 
 
 def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
@@ -757,7 +779,21 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
     # TEMPORAL_VALIDITY_CONFLICT: unlimited validity suggestions vs. snapshot evidence
     conflicts.extend(_check_temporal_validity_conflicts(draft_text, contract))
 
-    status = "pass" if not failed_claim_spans else "fail"
+    # FINAL RESOLUTION SYNC
+    # Recover previous resolution statuses (e.g. from a previous patch attempt in this turn)
+    old_report = getattr(state.system, "verification_report", None)
+    old_conflicts = old_report.conflicts if isinstance(old_report, VerificationReport) else []
+    conflicts = _apply_resolution_status(conflicts, old_conflicts)
+
+    # BLOCKING LOGIC
+    # Only OPEN conflicts with HARD+ severity force a verification failure.
+    has_blocking_conflicts = any(
+        c.resolution_status == "OPEN"
+        and c.severity in ("HARD", "CRITICAL", "BLOCKING_UNKNOWN", "RESOLUTION_REQUIRES_MANUFACTURER_SCOPE")
+        for c in conflicts
+    )
+
+    status = "pass" if (not failed_claim_spans and not has_blocking_conflicts) else "fail"
     failure_type = None if status == "pass" else "render_mismatch"
     report_spans = [*failed_claim_spans, *warning_claim_spans]
     report = VerificationReport(
