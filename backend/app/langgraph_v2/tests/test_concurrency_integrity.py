@@ -73,8 +73,8 @@ async def test_state_drift_collision_rejected_by_state_race_guard() -> None:
 
     patch_1 = node_prepare_contract(request_1_state)
     patch_2 = node_prepare_contract(request_2_state)
-    contract_1 = patch_1["answer_contract"]
-    contract_2 = patch_2["answer_contract"]
+    contract_1 = patch_1["system"]["answer_contract"]
+    contract_2 = patch_2["system"]["answer_contract"]
 
     assert contract_1.resolved_parameters["pressure_bar"] == 80.0
     assert contract_2.resolved_parameters["pressure_bar"] == 120.0

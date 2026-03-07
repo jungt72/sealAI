@@ -170,5 +170,5 @@ def test_authority_spoofing_low_source_class_is_downgraded() -> None:
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
     assert contract.resolved_parameters.get("pressure_bar") == 80.0

@@ -93,12 +93,12 @@ async def test_contract_to_log_persistence_contains_digital_twin() -> None:
     with patch.object(draft_node_module, "_DRAFT_LLM", _ContractEchoLLM()):
         patch_payload = await _run_subgraph_like(state)
 
-    contract = patch_payload["answer_contract"]
+    contract = patch_payload["system"]["answer_contract"]
     contract_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
 
     assert contract.selected_fact_ids
-    assert patch_payload["final_prompt_metadata"]["contract_hash"] == contract_hash
-    assert patch_payload["final_prompt_metadata"]["contract_first"] is True
+    assert patch_payload["system"]["final_prompt_metadata"]["contract_hash"] == contract_hash
+    assert patch_payload["system"]["final_prompt_metadata"]["contract_first"] is True
     assert patch_payload["messages"][-1].content == patch_payload["final_text"]
 
 
@@ -162,7 +162,7 @@ async def test_source_attribution_integrity_for_final_numbers() -> None:
     with patch.object(draft_node_module, "_DRAFT_LLM", _ContractEchoLLM()):
         patch_payload = await _run_subgraph_like(state)
 
-    contract = patch_payload["answer_contract"]
+    contract = patch_payload["system"]["answer_contract"]
     selected_ids = set(contract.selected_fact_ids)
     id_to_snippet = {
         f"{src.metadata.get('document_id')}:{src.metadata.get('chunk_id')}": str(src.snippet or "")
