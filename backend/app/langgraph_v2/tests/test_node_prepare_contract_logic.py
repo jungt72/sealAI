@@ -46,7 +46,7 @@ def test_evidence_authority_prefers_din_norm_pressure_truth() -> None:
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.resolved_parameters.get("pressure_bar") == 80.0
     assert "din_doc:c2" in contract.selected_fact_ids
@@ -57,7 +57,7 @@ def test_smalltalk_heuristic_when_no_params_and_no_rag_chunks() -> None:
     state = SealAIState()
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.resolved_parameters.get("response_style") == "friendly_greeting"
     assert contract.calc_results.get("message_type") == "smalltalk"
@@ -72,7 +72,7 @@ def test_parameter_patching_copies_user_parameters_into_contract() -> None:
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.resolved_parameters.get("medium") == "Wasser"
     assert patch["system"]["derived_from_assertion_cycle_id"] == 3
@@ -91,8 +91,8 @@ def test_extracted_rpm_and_shaft_aliases_flow_into_contract_parameters() -> None
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
-    allowed_tokens = set(patch["flags"].get("answer_subgraph_allowed_number_tokens") or [])
+    contract = patch["system"]["answer_contract"]
+    allowed_tokens = set(patch["reasoning"]["flags"].get("answer_subgraph_allowed_number_tokens") or [])
 
     assert contract.resolved_parameters.get("rpm") == 1450.0
     assert contract.resolved_parameters.get("shaft_d1_mm") == 55.0
@@ -136,7 +136,7 @@ def test_prepare_contract_ignores_unconfirmed_identity_guarded_extracted_fields(
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert "material" not in contract.resolved_parameters
     assert "medium" not in contract.resolved_parameters
@@ -163,7 +163,7 @@ def test_prepare_contract_exposes_candidate_specificity_for_unconfirmed_material
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.candidate_semantics
     assert contract.candidate_semantics[0]["value"] == "Kyrolon"
@@ -195,7 +195,7 @@ def test_prepare_contract_collects_governance_metadata() -> None:
     )
 
     patch = node_prepare_contract(state)
-    governance = patch["answer_contract"].governance_metadata
+    governance = patch["system"]["answer_contract"].governance_metadata
 
     assert governance.scope_of_validity
     assert any("aktuellen Assertion-Stand" in item for item in governance.scope_of_validity)
@@ -221,7 +221,7 @@ def test_prepare_contract_allowlists_live_calc_and_rounded_numbers() -> None:
     )
 
     patch = node_prepare_contract(state)
-    allowed_tokens = set(patch["flags"].get("answer_subgraph_allowed_number_tokens") or [])
+    allowed_tokens = set(patch["reasoning"]["flags"].get("answer_subgraph_allowed_number_tokens") or [])
 
     assert "1500" in allowed_tokens
     assert "40" in allowed_tokens
@@ -240,7 +240,7 @@ def test_prepare_contract_moves_seal_compound_out_of_material_and_sets_seal_mate
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.resolved_parameters.get("seal_material") == "PTFE"
     assert contract.resolved_parameters.get("material") is None
@@ -258,7 +258,7 @@ def test_prepare_contract_accepts_dict_working_profile_in_answer_subgraph_state(
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.resolved_parameters.get("medium") == "Wasser"
     assert contract.resolved_parameters.get("rpm") == 1450.0
@@ -287,11 +287,11 @@ def test_contract_hash_integrity_identical_vs_minimal_change() -> None:
     patch_a = node_prepare_contract(base_state)
     patch_b = node_prepare_contract(base_state)
 
-    hash_a = patch_a["flags"]["answer_contract_hash"]
-    hash_b = patch_b["flags"]["answer_contract_hash"]
+    hash_a = patch_a["reasoning"]["flags"]["answer_contract_hash"]
+    hash_b = patch_b["reasoning"]["flags"]["answer_contract_hash"]
     assert hash_a == hash_b
-    assert hash_a == _contract_hash(patch_a["answer_contract"])
-    assert hash_b == _contract_hash(patch_b["answer_contract"])
+    assert hash_a == _contract_hash(patch_a["system"]["answer_contract"])
+    assert hash_b == _contract_hash(patch_b["system"]["answer_contract"])
 
     changed_state = SealAIState(
         reasoning={
@@ -310,7 +310,7 @@ def test_contract_hash_integrity_identical_vs_minimal_change() -> None:
         working_profile={"engineering_profile": {"medium": "Wasser"}},
     )
     patch_changed = node_prepare_contract(changed_state)
-    changed_hash = patch_changed["flags"]["answer_contract_hash"]
+    changed_hash = patch_changed["reasoning"]["flags"]["answer_contract_hash"]
 
     assert changed_hash != hash_a
 
@@ -328,7 +328,7 @@ def test_upstream_blocker_flag_sets_excluded_by_gate_on_candidate() -> None:
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.candidate_semantics[0]["excluded_by_gate"] == "gate:CHEM_FKM_AMINE_BLOCKER"
     assert contract.candidate_clusters["inadmissible_or_excluded"][0]["value"] == "FKM"
@@ -348,7 +348,7 @@ def test_upstream_blocker_flag_does_not_exclude_unrelated_material() -> None:
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.candidate_semantics[0]["excluded_by_gate"] is None
     assert contract.candidate_clusters["inadmissible_or_excluded"] == []
@@ -367,7 +367,7 @@ def test_mech_blocker_flag_excludes_any_material() -> None:
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.candidate_semantics[0]["excluded_by_gate"] == "gate:MECH_HIGH_PRESSURE_GAP_BLOCKER"
     assert contract.candidate_clusters["inadmissible_or_excluded"][0]["value"] == "PTFE"
@@ -386,7 +386,7 @@ def test_no_blocker_flag_leaves_candidate_unexcluded() -> None:
     )
 
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
 
     assert contract.candidate_semantics[0]["excluded_by_gate"] is None
     assert contract.candidate_clusters["inadmissible_or_excluded"] == []
@@ -429,7 +429,7 @@ def test_extreme_temperature_query_injects_required_factcards(monkeypatch) -> No
     )
 
     patch = node_prepare_contract(state)
-    selected_fact_ids = patch["answer_contract"].selected_fact_ids
+    selected_fact_ids = patch["system"]["answer_contract"].selected_fact_ids
 
     assert any("PTFE-F-008" in item for item in selected_fact_ids)
     assert any("PTFE-F-062" in item for item in selected_fact_ids)
@@ -447,7 +447,7 @@ def test_requirement_spec_is_populated_with_technical_conditions() -> None:
     )
     # Inject missing_critical_parameters manually if needed, but here we test base extraction
     patch = node_prepare_contract(state)
-    contract = patch["answer_contract"]
+    contract = patch["system"]["answer_contract"]
     spec = contract.requirement_spec
 
     assert spec is not None
@@ -456,5 +456,5 @@ def test_requirement_spec_is_populated_with_technical_conditions() -> None:
     assert spec.operating_conditions["temperature_C"] == 120.0
 
     # Verify it also exists in the state patch for working_profile
-    assert patch["working_profile"]["material_requirements"] == spec
+    assert patch["reasoning"]["working_memory"]["material_requirements"] == spec
 

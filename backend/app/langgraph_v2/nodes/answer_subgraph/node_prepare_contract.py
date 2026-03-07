@@ -958,25 +958,17 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
             "final_prompt": final_context,
             "final_prompt_metadata": final_prompt_metadata,
         },
-        "working_profile": {
-            "material_requirements": requirement_spec,
-        },
         "reasoning": {
             "flags": flags,
             "last_node": "node_prepare_contract",
+            "working_memory": {
+                "material_requirements": requirement_spec,
+            },
         },
-        # Flat aliases kept for direct-call tests and legacy helpers that still
-        # inspect the raw node patch outside LangGraph state reduction.
-        "answer_contract": contract,
-        "final_prompt": final_context,
-        "final_prompt_metadata": final_prompt_metadata,
-        "flags": flags,
-        "last_node": "node_prepare_contract",
-        "material_requirements": requirement_spec,
     }
     if augmented_wm is not None:
-        patch["reasoning"]["working_memory"] = augmented_wm
-        patch["working_memory"] = augmented_wm
+        # Merge augmented working memory if it was built (e.g. during material panel enrichment)
+        patch["reasoning"]["working_memory"].update(augmented_wm.model_dump(exclude_none=True))
     return stamp_patch_with_assertion_binding(state, patch)
 
 

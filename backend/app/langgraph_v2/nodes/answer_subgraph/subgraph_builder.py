@@ -88,7 +88,7 @@ def _safe_fallback_node(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any)
     patch_attempts = int((state.reasoning.flags or {}).get("answer_subgraph_patch_attempts") or 0)
     draft_text = str(state.system.draft_text or "").strip()
     contract = state.system.answer_contract
-    has_empty_context = contract is None or (
+    has_empty_context = contract is None or contract.obsolete or (
         not contract.resolved_parameters
         and not contract.calc_results
         and not contract.selected_fact_ids
