@@ -262,8 +262,8 @@ class GovernanceMetadata(BaseModel):
 
 class RequirementSpec(BaseModel):
     """Neutral requirement space for technical constraints and operational window.
-    
-    This model decouples technical needs from candidate choices or LLM-resolved 
+
+    This model decouples technical needs from candidate choices or LLM-resolved
     parameters, acting as the 'Source of Truth' for what the application requires.
     """
     operating_conditions: Dict[str, Any] = Field(default_factory=dict)
@@ -274,10 +274,82 @@ class RequirementSpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class SealingRequirementSpec(BaseModel):
+    """Blueprint v1.2 — herstellerneutrale Anforderungsspezifikation.
+
+    Beschreibt den neutralen technischen Anforderungsraum, nicht die
+    Materialentscheidung. Eine konkrete Werkstoffnennung darf nur mit
+    Verbindlichkeit gefuehrt werden wenn deren specificity_level dies traegt.
+    """
+    spec_id: str = ""
+    operating_envelope: Dict[str, Any] = Field(default_factory=dict)
+    dimensional_requirements: Dict[str, Any] = Field(default_factory=dict)
+    normative_references: List[str] = Field(default_factory=list)
+    material_family_candidates: List[Dict[str, Any]] = Field(default_factory=list)
+    material_specificity_required: str = "family_only"
+    construction_requirements: Dict[str, Any] = Field(default_factory=dict)
+    manufacturer_validation_scope: List[str] = Field(default_factory=list)
+    assumption_boundaries: List[str] = Field(default_factory=list)
+    invalid_if: List[str] = Field(default_factory=list)
+    open_points_visible: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Bridge to legacy RequirementSpec fields
+    operating_conditions: Dict[str, Any] = Field(default_factory=dict)
+    missing_critical_parameters: List[str] = Field(default_factory=list)
+    exclusion_criteria: List[str] = Field(default_factory=list)
+    unknowns_release_blocking: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class RFQDraft(BaseModel):
+    """Blueprint v1.2 — RFQ-Draft vor Nutzer-Freigabe.
+
+    Der RFQ wird erst nach expliziter rfq_confirmation an Hersteller
+    weitergeleitet. Bis dahin ist er ein internes Governance-Objekt.
+    """
+    rfq_id: str = ""
+    rfq_basis_status: str = "inadmissible"
+    sealing_requirement_spec: Optional[SealingRequirementSpec] = None
+    operating_context_redacted: Dict[str, Any] = Field(default_factory=dict)
+    manufacturer_questions_mandatory: List[str] = Field(default_factory=list)
+    conflicts_visible: List[Dict[str, Any]] = Field(default_factory=list)
+    buyer_assumptions_acknowledged: List[str] = Field(default_factory=list)
+    feedback_expected: List[str] = Field(default_factory=list)
+    buyer_contact: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RFQAdmissibilityContract(BaseModel):
+    status: Literal["inadmissible", "provisional", "ready"] = "inadmissible"
+    # Blueprint-konformer 4-Wert Release-Status — additiv zu status, nicht als Ersatz.
+    release_status: ReleaseStatusLiteral = "inadmissible"
+    reason: Optional[str] = "rfq_contract_missing"
+    open_points: List[str] = Field(default_factory=list)
+    blockers: List[str] = Field(default_factory=list)
+    manufacturer_validation_items: List[str] = Field(default_factory=list)
+    governed_ready: bool = False
+    derived_from_assertion_cycle_id: Optional[int] = None
+    derived_from_assertion_revision: Optional[int] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class AnswerContract(BaseModel):
+    # Blueprint v1.2 — Mandatory Contract ID: contract-c{cycle}-r{revision}
+    contract_id: str = ""
     # Cycle binding — set to "cycle_{session_id}_{cycle_id}" when the contract is built.
     # Used to detect staleness when the assertion cycle advances.
     analysis_cycle_id: Optional[str] = None
+    # Snapshot binding — reference to the asserted_profile_revision this contract was built against.
+    snapshot_parent_revision: Optional[int] = None
+
+    # Blueprint v1.2 — 4-value release status derived from rfq_admissibility.
+    release_status: ReleaseStatusLiteral = "inadmissible"
+    # Detailed admissibility breakdown linked to this contract instance.
+    rfq_admissibility: RFQAdmissibilityContract = Field(default_factory=RFQAdmissibilityContract)
+
     resolved_parameters: Dict[str, Any] = Field(default_factory=dict)
     requirement_spec: Optional[RequirementSpec] = None
     calc_results: Dict[str, Any] = Field(default_factory=dict)
@@ -289,6 +361,8 @@ class AnswerContract(BaseModel):
     governance_metadata: GovernanceMetadata = Field(default_factory=GovernanceMetadata)
     required_disclaimers: List[str] = Field(default_factory=list)
     respond_with_uncertainty: bool = False
+    # Blueprint v1.2 — Structured Evidence Claims
+    claims: List[FactItem] = Field(default_factory=list)
 
     # Obsolescence — set to True when a new assertion cycle invalidates this contract.
     obsolete: bool = False
@@ -299,36 +373,53 @@ class AnswerContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+from app.langgraph_v2.state.governance_types import (
+    ClaimTypeLiteral,
+    CompletenessCategoryLiteral,
+    CompletenessDepthLiteral,
+    ConflictSeverity,
+    ConflictSeverityLiteral,
+    ConflictType,
+    ConflictTypeLiteral,
+    IdentityClass,
+    IdentityClassLiteral,
+    ReleaseStatusLiteral,
+    SpecificityLevel,
+    SpecificityLevelLiteral,
+)
+
+
 class ConflictRecord(BaseModel):
     # Blueprint v1.2 — 9 conflict types
-    conflict_type: Literal[
-        "FALSE_CONFLICT",
-        "SOURCE_CONFLICT",
-        "SCOPE_CONFLICT",
-        "CONDITION_CONFLICT",
-        "COMPOUND_SPECIFICITY_CONFLICT",
-        "ASSUMPTION_CONFLICT",
-        "TEMPORAL_VALIDITY_CONFLICT",
-        "PARAMETER_CONFLICT",
-        "UNKNOWN",
-    ] = "UNKNOWN"
-    # Blueprint v1.2 — 6 severity levels
-    # BLOCKING_UNKNOWN / RESOLUTION_REQUIRES_MANUFACTURER_SCOPE are governance-level severities
-    # that signal incompleteness requiring external validation, not necessarily a hard failure.
-    severity: Literal[
-        "INFO",
-        "WARNING",
-        "HARD",
-        "CRITICAL",
-        "BLOCKING_UNKNOWN",
-        "RESOLUTION_REQUIRES_MANUFACTURER_SCOPE",
-    ] = "WARNING"
+    conflict_type: ConflictTypeLiteral = "UNKNOWN"
+    # Blueprint v1.2 — 7 severity levels
+    severity: ConflictSeverityLiteral = "HARD"
     summary: str = ""
     sources_involved: List[str] = Field(default_factory=list)
     scope_note: str = ""
     resolution_status: Literal["OPEN", "RESOLVED", "DISMISSED"] = "OPEN"
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def _normalize_conflict_severity(cls, value: Any) -> Any:
+        if not value or not isinstance(value, str):
+            return value
+        v = value.strip().upper()
+        if v == "WARNING":
+            return "HARD"
+        # Let other values pass through to Literal validation
+        return v
+
+    @field_validator("conflict_type", mode="before")
+    @classmethod
+    def _normalize_conflict_type(cls, value: Any) -> Any:
+        if not value or not isinstance(value, str):
+            return value
+        v = value.strip().upper()
+        # Let it pass through to Literal validation
+        return v
 
 
 class VerificationReport(BaseModel):
@@ -342,41 +433,21 @@ class VerificationReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class RFQAdmissibilityContract(BaseModel):
-    status: Literal["inadmissible", "provisional", "ready"] = "inadmissible"
-    # Blueprint-konformer 4-Wert Release-Status — additiv zu status, nicht als Ersatz.
-    # Wird deterministisch aus Governance-Signalen abgeleitet:
-    #   inadmissible                   — blockers nicht leer
-    #   precheck_only                  — open_points nicht leer oder requires_human_review, keine Blocker
-    #   manufacturer_validation_required — unknowns_manufacturer_validation nicht leer, keine Blocker
-    #   rfq_ready                      — governed_ready=True, status=="ready", blockers leer
-    release_status: Literal[
-        "inadmissible",
-        "precheck_only",
-        "manufacturer_validation_required",
-        "rfq_ready",
-    ] = "inadmissible"
-    reason: Optional[str] = "rfq_contract_missing"
-    open_points: List[str] = Field(default_factory=list)
-    blockers: List[str] = Field(default_factory=list)
-    manufacturer_validation_items: List[str] = Field(default_factory=list)
-    governed_ready: bool = False
-    derived_from_assertion_cycle_id: Optional[int] = None
-    derived_from_assertion_revision: Optional[int] = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class ParameterIdentityRecord(BaseModel):
     raw_value: Any = None
     normalized_value: Any = None
-    identity_class: Literal["confirmed", "probable", "family_only", "unresolved"] = "unresolved"
+    identity_class: IdentityClassLiteral = "identity_unresolved"
     normalization_notes: List[str] = Field(default_factory=list)
     normalization_source: Optional[str] = None
     lookup_allowed: bool = False
     promotion_allowed: bool = False
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("identity_class", mode="before")
+    @classmethod
+    def _normalize_identity_class(cls, value: Any) -> Any:
+        return IdentityClass.normalize(value).value
 
 
 class QuestionItem(BaseModel):
@@ -386,6 +457,7 @@ class QuestionItem(BaseModel):
     priority: Literal["high", "medium", "low"] = "medium"
     status: Literal["open", "answered", "deferred"] = "open"
     source: str = "derived"
+    category: CompletenessCategoryLiteral = "clarification_gap"
 
     model_config = ConfigDict(extra="forbid")
 
@@ -395,6 +467,8 @@ class FactItem(BaseModel):
     source: str = "panel"
     confidence: float = 0.0
     evidence_refs: List[str] = Field(default_factory=list)
+    claim_type: ClaimTypeLiteral = "evidence_based_assertion"
+    claim_origin: Literal["deterministic", "evidence", "heuristic", "expert"] = "evidence"
 
     model_config = ConfigDict(extra="forbid")
 
@@ -405,7 +479,7 @@ class CandidateItem(BaseModel):
     rationale: str = ""
     evidence_refs: List[str] = Field(default_factory=list)
     confidence: float = 0.0
-    specificity: Literal["compound_specific", "family_level", "material_class", "document_hit", "unresolved"] = "unresolved"
+    specificity: SpecificityLevelLiteral = "family_only"
     source_kind: str = "unknown"
     governed: bool = False
     # Deterministic gate exclusion — set by chemical_resistance or material_limits checks.
@@ -413,6 +487,11 @@ class CandidateItem(BaseModel):
     excluded_by_gate: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("specificity", mode="before")
+    @classmethod
+    def _normalize_specificity(cls, value: Any) -> Any:
+        return SpecificityLevel.normalize(value).value
 
 
 class DecisionEntry(BaseModel):
@@ -561,12 +640,15 @@ class WorkingProfile(BaseModel):
     """Pillar 2: digital twin for deterministic engineering parameters and results."""
 
     engineering_profile: Annotated[LegacyWorkingProfile, merge_working_profile] = Field(default_factory=LegacyWorkingProfile)
+    normalized_profile: Dict[str, Any] = Field(default_factory=dict)
     profile: Optional[LegacyWorkingProfile] = None  # legacy RAGState profile mirror
 
     parameter_profile: Optional[ParameterProfile] = None
     medium: Annotated[Optional[str], take_last_non_null] = None
     temperature_c: Annotated[Optional[float], take_last_non_null] = None
     pressure_bar: Annotated[Optional[float], take_last_non_null] = None
+    shaft_diameter: Annotated[Optional[float], take_last_non_null] = None
+    speed_rpm: Annotated[Optional[float], take_last_non_null] = None
 
     extracted_params: Dict[str, Any] = Field(default_factory=dict)
     derived_from_assertion_cycle_id: Optional[int] = None
@@ -626,9 +708,15 @@ class ReasoningState(BaseModel):
     discovery_missing: List[str] = Field(default_factory=list)
     coverage_score: float = 0.0
     coverage_gaps: List[str] = Field(default_factory=list)
+    completeness_depth: CompletenessDepthLiteral = "precheck"
     recommendation_ready: bool = False
+    claims: List[FactItem] = Field(default_factory=list)
     recommendation_go: bool = False
     gap_report: Dict[str, Any] = Field(default_factory=dict)
+
+    # Blueprint v1.2: Rohe Nutzereingaben, niemals ueberschrieben.
+    # Schluessel = Feldname, Wert = {"raw": <original>, "source": "user"|"llm", "turn": int}
+    observed_inputs: Dict[str, Any] = Field(default_factory=dict)
 
     parameter_provenance: Dict[str, str] = Field(default_factory=dict)
     extracted_parameter_provenance: Dict[str, str] = Field(default_factory=dict)
@@ -736,6 +824,8 @@ class SystemState(BaseModel):
     prompt_traces: Annotated[List[RenderedPrompt], operator.add] = Field(default_factory=list)
     tool_call_records: Annotated[List[ToolCallRecord], operator.add] = Field(default_factory=list)
     source_ref_payloads: Annotated[List[SourceRefPayload], operator.add] = Field(default_factory=list)
+    # Blueprint v1.2 — Audit View: Immutable snapshot of all evidence components used.
+    # Note: Primary technical claims for governance decisions are in ReasoningState.claims.
     evidence_bundle: Optional[EvidenceBundle] = None
     evidence_bundle_hash: Optional[str] = None
 
@@ -753,6 +843,9 @@ class SystemState(BaseModel):
 
     error: Optional[str] = None
     rfq_admissibility: RFQAdmissibilityContract = Field(default_factory=RFQAdmissibilityContract)
+    sealing_requirement_spec: Optional[SealingRequirementSpec] = None
+    rfq_draft: Optional[RFQDraft] = None
+    rfq_confirmed: bool = False
     preview_text: Optional[str] = None
     governed_output_text: Optional[str] = None
     governed_output_status: Optional[str] = None
@@ -781,6 +874,8 @@ class SystemState(BaseModel):
     confirm_checkpoint: Dict[str, Any] = Field(default_factory=dict)
     confirm_status: Optional[Literal["pending", "resolved"]] = None
     confirm_resolved_at: Optional[str] = None
+    confirmed_spec_id: Optional[str] = None
+    confirmed_rfq_id: Optional[str] = None
     confirm_decision: Optional[str] = None
     confirm_edits: Dict[str, Any] = Field(default_factory=dict)
 
@@ -817,6 +912,9 @@ _WORKING_PROFILE_FIELDS = {
     "medium",
     "temperature_c",
     "pressure_bar",
+    "shaft_diameter",
+    "speed_rpm",
+    "normalized_profile",
     "extracted_params",
     "calculation_result",
     "is_critical_application",
@@ -853,11 +951,19 @@ _REASONING_FIELDS = {
     "recommendation_ready",
     "recommendation_go",
     "gap_report",
+    "observed_inputs",
     "parameter_provenance",
     "extracted_parameter_provenance",
     "extracted_parameter_identity",
     "parameter_versions",
     "parameter_updated_at",
+    "current_assertion_cycle_id",
+    "state_revision",
+    "asserted_profile_revision",
+    "snapshot_parent_revision",
+    "last_assertion_changed_at",
+    "derived_artifacts_stale",
+    "derived_artifacts_stale_reason",
     "missing_params",
     "coverage_analysis",
     "ask_missing_request",
@@ -921,10 +1027,14 @@ _SYSTEM_FIELDS = {
     "sources",
     "error",
     "rfq_admissibility",
+    "sealing_requirement_spec",
+    "rfq_draft",
+    "rfq_confirmed",
     "preview_text",
     "governed_output_text",
     "governed_output_status",
     "governed_output_ready",
+    "governance_metadata",
     "final_text",
     "final_answer",
     "final_prompt",
@@ -935,6 +1045,10 @@ _SYSTEM_FIELDS = {
     "verification_report",
     "verification_passed",
     "verification_error",
+    "derived_from_assertion_cycle_id",
+    "derived_from_assertion_revision",
+    "derived_artifacts_stale",
+    "derived_artifacts_stale_reason",
     "pending_action",
     "confirmed_actions",
     "awaiting_user_confirmation",
@@ -942,6 +1056,7 @@ _SYSTEM_FIELDS = {
     "confirm_checkpoint",
     "confirm_status",
     "confirm_resolved_at",
+    "confirmed_spec_id",
     "confirm_decision",
     "confirm_edits",
     "errors",
@@ -979,6 +1094,7 @@ def _looks_like_new_working_profile_payload(value: Any) -> bool:
         return False
     marker_keys = {
         "engineering_profile",
+        "normalized_profile",
         "parameter_profile",
         "extracted_params",
         "live_calc_tile",
@@ -1027,7 +1143,12 @@ class SealAIState(BaseModel):
         for key, raw in sanitized_value.items():
             if key in ("conversation", "working_profile", "reasoning", "system"):
                 if key == "working_profile" and not _looks_like_new_working_profile_payload(raw):
-                    nested_payload["working_profile"]["engineering_profile"] = raw
+                    staged_profile = _value_to_dict(raw)
+                    if staged_profile:
+                        # Legacy flat working_profile payloads are staged first and
+                        # must not hydrate asserted state implicitly.
+                        nested_payload["working_profile"]["normalized_profile"] = staged_profile
+                        nested_payload["working_profile"]["extracted_params"] = staged_profile
                     consumed_flat = True
                 continue
 
@@ -1095,8 +1216,12 @@ __all__ = [
     "LiveCalcTile",
     "Recommendation",
     "Source",
+    "GovernanceMetadata",
     "AnswerContract",
     "RequirementSpec",
+    "SealingRequirementSpec",
+    "RFQDraft",
+    "RFQAdmissibilityContract",
     "ConflictRecord",
     "VerificationReport",
     "QuestionItem",

@@ -12,10 +12,11 @@ def _as_dict(value: Any) -> Dict[str, Any]:
         return dict(value)
     model_dump = getattr(value, "model_dump", None)
     if callable(model_dump):
-        dumped = model_dump(exclude_none=False)
+        dumped = model_dump()
         if isinstance(dumped, dict):
             return dumped
     return {}
+
 
 
 def derive_release_status(
@@ -103,7 +104,7 @@ def normalize_rfq_admissibility_contract(state: Any) -> Dict[str, Any]:
         str(c.get("summary") or c.get("scope_note") or "Blocking unknown").strip()
         for item in report_conflicts
         for c in [_as_dict(item)]
-        if c.get("severity") == "BLOCKING_UNKNOWN"
+        if c.get("severity") in ("BLOCKING_UNKNOWN", "CRITICAL")
     ]
 
     active_blockers = list(dict.fromkeys(

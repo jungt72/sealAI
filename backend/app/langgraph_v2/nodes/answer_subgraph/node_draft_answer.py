@@ -13,6 +13,7 @@ from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState
 from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.prompt_blocks import render_challenger_gate
+from app.langgraph_v2.utils.redaction import redact_operating_context
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.draft_answer")
 _DRAFT_LLM: Any | None = None
@@ -36,10 +37,12 @@ def _render_block(title: str, entries: List[str]) -> List[str]:
 
 def _render_fact_sheet(contract: AnswerContract) -> str:
     lines: List[str] = []
+    # Redact resolved parameters for text generation consistency
+    redacted_params = redact_operating_context(contract.resolved_parameters)
     lines.extend(
         _render_block(
             "Resolved Parameters:",
-            [f"- {key}: {value}" for key, value in sorted(contract.resolved_parameters.items())],
+            [f"- {key}: {value}" for key, value in sorted(redacted_params.items())],
         )
     )
     lines.append("")
@@ -312,7 +315,7 @@ async def node_draft_answer(state: AnswerSubgraphState, *_args: Any, **_kwargs: 
         "final_answer_composer.j2",
         {
             "challenger_gate_text": constraints,
-            "working_profile_json": json.dumps(_as_dict(_working_profile_get(state, "engineering_profile")), ensure_ascii=False),
+            "working_profile_json": json.dumps(redact_operating_context(_as_dict(_working_profile_get(state, "engineering_profile"))), ensure_ascii=False),
             "calculation_results_json": json.dumps(_as_dict(_working_profile_get(state, "calc_results")), ensure_ascii=False),
             "rag_context": getattr(state.reasoning, "context", "") or "",
             "detached_knowledge_mode": _should_use_detached_knowledge_instruction(state),

@@ -115,6 +115,8 @@ def worm_evidence_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[
             "final_prompt_metadata": dict(state.system.final_prompt_metadata or {}),
             "reasoning_system_prompt_hash_present": bool(reasoning_system_prompt_hash),
             "combinatorial_guard_version_hash_present": bool(combinatorial_guard_version_hash),
+            # Blueprint v1.2: Sync governance claims into the audit bundle
+            "governance_claims": [c.model_dump(mode="json", exclude_none=True) for c in (state.reasoning.claims or [])],
         },
     )
     digest = bundle.seal()

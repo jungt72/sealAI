@@ -39,6 +39,20 @@ def get_assertion_binding(state: Any) -> Tuple[int, int]:
     return cycle_id, revision
 
 
+def is_artifact_stale(state: SealAIState | Dict[str, Any]) -> bool:
+    """Return True if any pillar indicates that derived artifacts are stale."""
+    if isinstance(state, dict):
+        wp_stale = bool(state.get("working_profile", {}).get("derived_artifacts_stale"))
+        re_stale = bool(state.get("reasoning", {}).get("derived_artifacts_stale"))
+        sys_stale = bool(state.get("system", {}).get("derived_artifacts_stale"))
+    else:
+        wp_stale = bool(getattr(state.working_profile, "derived_artifacts_stale", False))
+        re_stale = bool(getattr(state.reasoning, "derived_artifacts_stale", False))
+        sys_stale = bool(getattr(state.system, "derived_artifacts_stale", False))
+    
+    return wp_stale or re_stale or sys_stale
+
+
 def build_assertion_cycle_update(
     state: Any,
     *,
@@ -94,6 +108,9 @@ def build_assertion_cycle_update(
                 revision=next_revision,
                 reason=reason,
             ),
+            "sealing_requirement_spec": None,
+            "rfq_draft": None,
+            "rfq_confirmed": False,
             "rfq_pdf_base64": None,
             "rfq_pdf_url": None,
             "rfq_html_report": None,
@@ -125,16 +142,7 @@ def stamp_patch_with_assertion_binding(state: Any, patch: Dict[str, Any]) -> Dic
     if cycle_id <= 0 or revision <= 0:
         return stamped
 
-    working_profile_patch = stamped.get("working_profile")
-    if isinstance(working_profile_patch, dict) and any(
-        key in working_profile_patch
-        for key in ("calc_results", "live_calc_tile", "calculation_result")
-    ):
-        working_profile_patch.setdefault("derived_from_assertion_cycle_id", cycle_id)
-        working_profile_patch.setdefault("derived_from_assertion_revision", revision)
-        working_profile_patch["derived_artifacts_stale"] = False
-        working_profile_patch["derived_artifacts_stale_reason"] = None
-
+    # Detect if this patch contains fresh analysis or system results
     system_patch = stamped.get("system")
     system_candidate_keys = {
         "answer_contract",
@@ -145,32 +153,48 @@ def stamp_patch_with_assertion_binding(state: Any, patch: Dict[str, Any]) -> Dic
         "draft_text",
         "draft_base_hash",
         "final_prompt",
+        "sealing_requirement_spec",
+        "rfq_draft",
     }
     has_system_derivation = any(key in stamped for key in ("final_text", "final_answer", "answer_contract"))
     if isinstance(system_patch, dict) and any(key in system_patch for key in system_candidate_keys):
         has_system_derivation = True
-    if has_system_derivation:
+
+    working_profile_patch = stamped.get("working_profile")
+    has_analysis_derivation = isinstance(working_profile_patch, dict) and any(
+        key in working_profile_patch
+        for key in ("calc_results", "live_calc_tile", "calculation_result", "material_choice", "profile_choice")
+    )
+
+    # If we have ANY fresh derivation, we clear staleness across the board
+    if has_system_derivation or has_analysis_derivation:
+        # Reasoning Pillar
+        reasoning_patch = stamped.setdefault("reasoning", {})
+        reasoning_patch["derived_artifacts_stale"] = False
+        reasoning_patch["derived_artifacts_stale_reason"] = None
+
+        # System Pillar
         if not isinstance(system_patch, dict):
-            system_patch = {}
-            stamped["system"] = system_patch
+            system_patch = stamped.setdefault("system", {})
+        
+        # Pull up top-level keys into system pillar if needed
         for key in ("final_text", "final_answer", "answer_contract"):
             if key in stamped and key not in system_patch:
                 system_patch[key] = stamped[key]
+        
         system_patch.setdefault("derived_from_assertion_cycle_id", cycle_id)
         system_patch.setdefault("derived_from_assertion_revision", revision)
         system_patch["derived_artifacts_stale"] = False
         system_patch["derived_artifacts_stale_reason"] = None
 
-    reasoning_patch = stamped.get("reasoning")
-    if has_system_derivation or (
-        isinstance(working_profile_patch, dict)
-        and any(key in working_profile_patch for key in ("calc_results", "live_calc_tile", "calculation_result"))
-    ):
-        if not isinstance(reasoning_patch, dict):
-            reasoning_patch = {}
-            stamped["reasoning"] = reasoning_patch
-        reasoning_patch["derived_artifacts_stale"] = False
-        reasoning_patch["derived_artifacts_stale_reason"] = None
+        # Working Profile Pillar
+        if not isinstance(working_profile_patch, dict):
+            working_profile_patch = stamped.setdefault("working_profile", {})
+        
+        working_profile_patch.setdefault("derived_from_assertion_cycle_id", cycle_id)
+        working_profile_patch.setdefault("derived_from_assertion_revision", revision)
+        working_profile_patch["derived_artifacts_stale"] = False
+        working_profile_patch["derived_artifacts_stale_reason"] = None
 
     return stamped
 
@@ -178,5 +202,6 @@ def stamp_patch_with_assertion_binding(state: Any, patch: Dict[str, Any]) -> Dic
 __all__ = [
     "build_assertion_cycle_update",
     "get_assertion_binding",
+    "is_artifact_stale",
     "stamp_patch_with_assertion_binding",
 ]

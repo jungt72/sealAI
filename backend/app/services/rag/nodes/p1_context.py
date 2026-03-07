@@ -461,7 +461,15 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
     # Hard reset for new cases: never bleed prior thread/profile state into a
     # fresh extraction turn.
     existing_profile = None if is_new_case else state.working_profile.engineering_profile
-    existing_extracted_params = {} if is_new_case else dict(state.working_profile.extracted_params or {})
+    existing_normalized_params = (
+        {}
+        if is_new_case
+        else dict(
+            state.working_profile.normalized_profile
+            or state.working_profile.extracted_params
+            or {}
+        )
+    )
 
     logger.info(
         "p1_context_start",
@@ -530,9 +538,10 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
         run_id=state.system.run_id,
     )
 
-    merged_extracted_params = dict(existing_extracted_params)
+    merged_extracted_params = dict(existing_normalized_params)
     merged_extracted_provenance = dict(state.reasoning.extracted_parameter_provenance or {})
     merged_extracted_identity = dict(state.reasoning.extracted_parameter_identity or {})
+    merged_observed_inputs = dict(state.reasoning.observed_inputs or {})
     if extracted is not None:
         extracted_patch = _merge_extraction_into_extracted_params({}, extracted)
         (
@@ -540,15 +549,21 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
             merged_extracted_provenance,
             merged_extracted_identity,
             _applied_candidate_fields,
+            merged_observed_inputs,
         ) = stage_extracted_parameter_patch(
             merged_extracted_params,
             extracted_patch,
             merged_extracted_provenance,
             merged_extracted_identity,
             source="p1_context_extracted",
+            existing_observed_inputs=merged_observed_inputs,
         )
 
-    working_profile_update: Dict[str, Any] = {"extracted_params": merged_extracted_params}
+    working_profile_update: Dict[str, Any] = {
+        "normalized_profile": merged_extracted_params,
+        # Keep legacy consumers on the staging payload until they are migrated.
+        "extracted_params": merged_extracted_params,
+    }
     if is_new_case:
         working_profile_update["engineering_profile"] = WorkingProfile()
 
@@ -560,6 +575,7 @@ def node_p1_context(state: SealAIState, *_args: Any, **_kwargs: Any) -> Command:
             "turn_count": int(state.reasoning.turn_count or 0) + 1,
             "extracted_parameter_provenance": merged_extracted_provenance,
             "extracted_parameter_identity": merged_extracted_identity,
+            "observed_inputs": merged_observed_inputs,
         },
     }
     persona_patch = update_persona_in_state(state)

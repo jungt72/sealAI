@@ -114,19 +114,19 @@ def test_prepare_contract_ignores_unconfirmed_identity_guarded_extracted_fields(
         reasoning={
             "extracted_parameter_identity": {
                 "material": {
-                    "identity_class": "probable",
+                    "identity_class": "identity_probable",
                     "normalized_value": "Kyrolon",
                     "lookup_allowed": False,
                     "promotion_allowed": False,
                 },
                 "medium": {
-                    "identity_class": "family_only",
+                    "identity_class": "identity_family_only",
                     "normalized_value": "oil",
                     "lookup_allowed": False,
                     "promotion_allowed": False,
                 },
                 "pressure_bar": {
-                    "identity_class": "confirmed",
+                    "identity_class": "identity_confirmed",
                     "normalized_value": 120.0,
                     "lookup_allowed": True,
                     "promotion_allowed": True,
@@ -153,7 +153,7 @@ def test_prepare_contract_exposes_candidate_specificity_for_unconfirmed_material
         reasoning={
             "extracted_parameter_identity": {
                 "material": {
-                    "identity_class": "probable",
+                    "identity_class": "identity_probable",
                     "normalized_value": "Kyrolon",
                     "lookup_allowed": False,
                     "promotion_allowed": False,
@@ -167,7 +167,7 @@ def test_prepare_contract_exposes_candidate_specificity_for_unconfirmed_material
 
     assert contract.candidate_semantics
     assert contract.candidate_semantics[0]["value"] == "Kyrolon"
-    assert contract.candidate_semantics[0]["specificity"] == "unresolved"
+    assert contract.candidate_semantics[0]["specificity"] == "family_only"
     assert contract.candidate_semantics[0]["governed"] is False
 
 
@@ -201,7 +201,7 @@ def test_prepare_contract_collects_governance_metadata() -> None:
     assert any("aktuellen Assertion-Stand" in item for item in governance.scope_of_validity)
     assert any("temperature_C" in item for item in governance.assumptions_active)
     assert "Medienvertraeglichkeit fuer aktuelles Medium ungeklaert." in governance.unknowns_release_blocking
-    assert any("PTFE" in item and "family_level" in item for item in governance.unknowns_manufacturer_validation)
+    assert any("PTFE" in item and "family_only" in item for item in governance.unknowns_manufacturer_validation)
     assert any(item.startswith("CRITICAL:") for item in governance.gate_failures)
 
 
@@ -244,7 +244,7 @@ def test_prepare_contract_moves_seal_compound_out_of_material_and_sets_seal_mate
 
     assert contract.resolved_parameters.get("seal_material") == "PTFE"
     assert contract.resolved_parameters.get("material") is None
-    assert contract.candidate_semantics[0]["specificity"] == "family_level"
+    assert contract.candidate_semantics[0]["specificity"] == "family_only"
 
 
 def test_prepare_contract_accepts_dict_working_profile_in_answer_subgraph_state() -> None:
@@ -458,3 +458,238 @@ def test_requirement_spec_is_populated_with_technical_conditions() -> None:
     # Verify it also exists in the state patch for working_profile
     assert patch["reasoning"]["working_memory"]["material_requirements"] == spec
 
+
+def test_prepare_contract_builds_sealing_requirement_spec_from_existing_sot() -> None:
+    state = SealAIState(
+        working_profile={
+            "engineering_profile": {
+                "medium": "Hydraulikoel HLP46",
+                "pressure_bar": 250.0,
+                "temperature_C": 120.0,
+                "shaft_diameter": 55.0,
+                "dynamic_type": "rotary",
+            },
+            "material_choice": {
+                "material": "PTFE",
+                "confidence": "heuristic",
+                "details": "Familienvorschlag aus bestehender Governance.",
+            },
+        },
+        reasoning={
+            "current_assertion_cycle_id": 3,
+            "asserted_profile_revision": 7,
+            "missing_params": ["surface_finish"],
+            "kb_factcard_result": {
+                "triggered_pattern_gates": [{"gate_id": "PTFE-G-011"}],
+            },
+            "qgate_result": {
+                "checks": [
+                    {
+                        "check_id": "medium_compatibility",
+                        "severity": "CRITICAL",
+                        "passed": False,
+                        "message": "Medienvertraeglichkeit fuer aktuelles Medium ungeklaert.",
+                    }
+                ]
+            },
+            "working_memory": WorkingMemory(
+                panel_material={
+                    "technical_docs": [
+                        {
+                            "text": "DIN 3760 beschreibt Anforderungen an Radial-Wellendichtringe.",
+                            "source": "DIN 3760",
+                            "metadata": {
+                                "document_id": "DIN 3760",
+                                "chunk_id": "c1",
+                                "source_type": "DIN standard",
+                            },
+                        }
+                    ]
+                }
+            ),
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    spec = patch["system"]["sealing_requirement_spec"]
+
+    assert spec.spec_id == "srs-c3-r7"
+    assert spec.operating_envelope["medium"] == "Hydraulikoel HLP46"
+    assert spec.operating_envelope["pressure_bar"] == 250.0
+    assert spec.dimensional_requirements == {"shaft_diameter": 55.0}
+    assert spec.construction_requirements == {"dynamic_type": "rotary"}
+    assert spec.normative_references == ["DIN 3760"]
+    assert spec.manufacturer_validation_scope
+    assert any("PTFE" in item for item in spec.manufacturer_validation_scope)
+    assert any("surface_finish" in item for item in spec.assumption_boundaries)
+    assert spec.invalid_if == []
+    assert "Wellenschlag" in spec.missing_critical_parameters
+    assert any(item.startswith("Wellenh") for item in spec.missing_critical_parameters)
+    assert "Medienvertraeglichkeit fuer aktuelles Medium ungeklaert." in spec.unknowns_release_blocking
+    assert "Wellenschlag" in spec.unknowns_release_blocking
+    assert spec.material_family_candidates == [
+        {
+            "material_family": "PTFE",
+            "specificity": "family_only",
+            "source_kind": "heuristic",
+            "governed": False,
+        }
+    ]
+    assert {"kind": "missing_critical_parameter", "value": "Wellenschlag", "source": "requirement_spec"} in spec.open_points_visible
+    assert {"kind": "release_blocker", "value": "Medienvertraeglichkeit fuer aktuelles Medium ungeklaert.", "source": "governance_metadata"} in spec.open_points_visible
+
+
+def test_prepare_contract_keeps_optional_srs_fields_conservative_when_sources_are_missing() -> None:
+    state = SealAIState(
+        working_profile={
+            "engineering_profile": {
+                "pressure_bar": 10.0,
+            }
+        }
+    )
+
+    patch = node_prepare_contract(state)
+    spec = patch["system"]["sealing_requirement_spec"]
+
+    assert spec.normative_references == []
+    assert spec.material_family_candidates == []
+    assert spec.manufacturer_validation_scope == []
+    assert spec.invalid_if == []
+    assert spec.open_points_visible == []
+
+
+# ---------------------------------------------------------------------------
+# Regression: identity gate on engineering_profile fields
+# ---------------------------------------------------------------------------
+
+
+def test_engineering_profile_identity_family_only_medium_is_excluded_from_resolved() -> None:
+    """A medium with identity_family_only identity in engineering_profile must not
+    appear in resolved_parameters — the contract-level gate must strip it."""
+    state = SealAIState(
+        working_profile={
+            "engineering_profile": {
+                "medium": "irgendein Oel",
+                "pressure_bar": 250.0,
+            },
+        },
+        reasoning={
+            "extracted_parameter_identity": {
+                "medium": {
+                    "identity_class": "identity_family_only",
+                    "normalized_value": "oil",
+                    "lookup_allowed": False,
+                    "promotion_allowed": False,
+                },
+            }
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["system"]["answer_contract"]
+
+    assert contract.resolved_parameters.get("medium") is None
+    assert contract.resolved_parameters.get("pressure_bar") == 250.0
+
+
+def test_engineering_profile_identity_confirmed_medium_passes_through() -> None:
+    """A medium with identity_confirmed identity must survive the gate unchanged."""
+    state = SealAIState(
+        working_profile={
+            "engineering_profile": {
+                "medium": "Wasser",
+                "pressure_bar": 10.0,
+            },
+        },
+        reasoning={
+            "extracted_parameter_identity": {
+                "medium": {
+                    "identity_class": "identity_confirmed",
+                    "normalized_value": "water",
+                    "lookup_allowed": True,
+                    "promotion_allowed": True,
+                },
+            }
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["system"]["answer_contract"]
+
+    assert contract.resolved_parameters.get("medium") == "Wasser"
+
+
+def test_engineering_profile_no_identity_record_passes_through() -> None:
+    """Fields without any identity record must pass through unfiltered
+    (backwards-compatible: no identity = no gate)."""
+    state = SealAIState(
+        working_profile={
+            "engineering_profile": {
+                "medium": "Wasser",
+                "pressure_bar": 10.0,
+            },
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["system"]["answer_contract"]
+
+    assert contract.resolved_parameters.get("medium") == "Wasser"
+    assert contract.resolved_parameters.get("pressure_bar") == 10.0
+
+
+# ---------------------------------------------------------------------------
+# Regression: material_specificity_required derives from candidate clusters
+# ---------------------------------------------------------------------------
+
+
+def test_srs_material_specificity_reflects_family_only_candidate() -> None:
+    """SRS.material_specificity_required must reflect the best candidate specificity,
+    not stay at the default 'family_only'."""
+    state = SealAIState(
+        working_profile={
+            "engineering_profile": {"medium": "Wasser", "pressure_bar": 10.0},
+            "material_choice": {"material": "PTFE", "confidence": "heuristic"},
+        },
+    )
+    patch = node_prepare_contract(state)
+    spec = patch["system"]["sealing_requirement_spec"]
+    # PTFE heuristic → family_only specificity → viable_only cluster
+    assert spec.material_specificity_required == "family_only"
+
+
+def test_srs_material_specificity_reflects_compound_required_candidate() -> None:
+    """When a governed compound_required candidate exists, SRS must show compound_required."""
+    state = SealAIState(
+        working_profile={
+            "engineering_profile": {"medium": "Wasser", "pressure_bar": 10.0},
+            "material_choice": {
+                "material": "FKM 75 Shore A",
+                "confidence": "user",
+                "source_kind": "user",
+                "identity_class": "identity_confirmed",
+            },
+        },
+        reasoning={
+            "extracted_parameter_identity": {
+                "material": {
+                    "identity_class": "identity_confirmed",
+                    "lookup_allowed": True,
+                    "promotion_allowed": True,
+                },
+            },
+        },
+    )
+    patch = node_prepare_contract(state)
+    spec = patch["system"]["sealing_requirement_spec"]
+    assert spec.material_specificity_required == "compound_required"
+
+
+def test_srs_material_specificity_stays_default_without_candidates() -> None:
+    """Without any material candidate, SRS defaults to family_only."""
+    state = SealAIState(
+        working_profile={"engineering_profile": {"pressure_bar": 10.0}},
+    )
+    patch = node_prepare_contract(state)
+    spec = patch["system"]["sealing_requirement_spec"]
+    assert spec.material_specificity_required == "family_only"

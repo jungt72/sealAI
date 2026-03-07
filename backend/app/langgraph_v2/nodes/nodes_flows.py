@@ -22,6 +22,7 @@ from app.langgraph_v2.utils.rag import apply_rag_quality_gate, unpack_rag_payloa
 from app.langgraph_v2.utils.rag_safety import wrap_rag_context
 from app.langgraph_v2.utils.rag_tool import search_knowledge_base
 from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
+from app.langgraph_v2.utils.completeness import compute_risk_driven_completeness
 from app.langgraph_v2.nodes.nodes_frontdoor import (
     detect_material_or_trade_query,
     extract_trade_name_candidate,
@@ -222,25 +223,20 @@ def _extend_dict(base: Dict[str, Any] | None, extras: Dict[str, Any]) -> Dict[st
 def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("discovery_schema_node", state)
     user_text = latest_user_text(state.conversation.messages) or ""
-    required = [
-        "medium",
-        "pressure_max_bar",
-        "temperature_max_c",
-        "shaft_diameter",
-        "speed_rpm",
-    ]
-    wp = state.working_profile
-    missing = [key for key in required if not getattr(wp, key, None)]
+    
+    completeness = compute_risk_driven_completeness(state)
+    missing = completeness["missing_technical"] + completeness["missing_qualification"]
+    
     schema_notes = {
         "missing": missing,
-        "required": required,
+        "required": ["medium", "pressure_bar", "temperature_c", "shaft_diameter", "speed_rpm"],
         "user_input": user_text,
         "prompt": "Bitte teile Brenn- und Bewegungsdaten oder Geometrien mit.",
     }
     existing_design = getattr(state.reasoning.working_memory, "design_notes", None) if state.reasoning.working_memory else {}
     design_notes = _extend_dict(existing_design, {"schema": schema_notes})
     wm = _update_working_memory(state, {"design_notes": design_notes})
-    flags = _merge_flags(state, {"parameters_complete_for_material": not bool(missing)})
+    flags = _merge_flags(state, {"parameters_complete_for_material": not bool(completeness["missing_technical"])})
     return {
                "reasoning": {
                    "missing_params": missing,
@@ -248,6 +244,8 @@ def discovery_schema_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Di
                    "flags": flags,
                    "phase": PHASE.PREFLIGHT_PARAMETERS,
                    "last_node": "discovery_schema_node",
+                   "coverage_score": completeness["coverage_score"],
+                   "completeness_depth": completeness["completeness_depth"],
                },
            }
 

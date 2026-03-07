@@ -128,7 +128,7 @@ def test_frontdoor_structured_maps_extracted_parameters() -> None:
     assert extracted["temperature_C"] == 85.0
     assert extracted["medium"] == "H2"
     assert result["reasoning"]["extracted_parameter_provenance"]["pressure_bar"] == "frontdoor_extracted"
-    assert result["reasoning"]["extracted_parameter_identity"]["medium"]["identity_class"] == "confirmed"
+    assert result["reasoning"]["extracted_parameter_identity"]["medium"]["identity_class"] == "identity_confirmed"
     assert result["reasoning"]["extracted_parameter_identity"]["medium"]["normalized_value"] == "hydrogen"
     assert result["reasoning"]["flags"]["is_safety_critical"] is True
 

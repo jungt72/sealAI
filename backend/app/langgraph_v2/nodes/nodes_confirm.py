@@ -172,4 +172,25 @@ def confirm_checkpoint_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, 
            }
 
 
-__all__ = ["confirm_recommendation_node", "confirm_checkpoint_node"]
+def snapshot_confirmation_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
+    """Resume-Target for snapshot_confirmation."""
+    return {"reasoning": {"last_node": "snapshot_confirmation_node"}}
+
+
+def rfq_confirmation_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
+    """Resume-Target for rfq_confirmation."""
+    return {"reasoning": {"last_node": "rfq_confirmation_node"}}
+
+
+def draft_conflict_resolution_node(state: SealAIState, *_args, **_kwargs) -> Dict[str, object]:
+    """Resume-Target for draft_conflict_resolution."""
+    return {"reasoning": {"last_node": "draft_conflict_resolution_node"}}
+
+
+__all__ = [
+    "confirm_recommendation_node",
+    "confirm_checkpoint_node",
+    "snapshot_confirmation_node",
+    "rfq_confirmation_node",
+    "draft_conflict_resolution_node",
+]

@@ -81,7 +81,7 @@ from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
 from app.langgraph_v2.utils.rfq_admissibility import normalize_rfq_admissibility_contract, rfq_contract_is_ready
 from app.langgraph_v2.utils.parameter_patch import (
     ParametersPatchRequest,
-    promote_parameter_patch_to_asserted,
+    apply_parameter_patch_to_state_layers,
     sanitize_v2_parameter_patch,
     stage_extracted_parameter_patch,
 )
@@ -172,6 +172,20 @@ def _rfq_admissibility_value(values: Dict[str, Any]) -> Dict[str, Any]:
     return normalize_rfq_admissibility_contract(values)
 
 
+def _looks_like_nested_working_profile_payload(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    marker_keys = {
+        "engineering_profile",
+        "normalized_profile",
+        "parameter_profile",
+        "extracted_params",
+        "live_calc_tile",
+        "recommendation",
+    }
+    return bool(marker_keys & set(value.keys()))
+
+
 def _engineering_profile_payload(values: Dict[str, Any]) -> Dict[str, Any]:
     """Return the canonical engineering profile stored inside pillar 2.
 
@@ -187,6 +201,8 @@ def _engineering_profile_payload(values: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(profile, dict):
         return dict(profile)
     legacy = values.get("working_profile")
+    if _looks_like_nested_working_profile_payload(legacy):
+        return {}
     if hasattr(legacy, "model_dump"):
         legacy = legacy.model_dump(exclude_none=True)
     if isinstance(legacy, dict):
@@ -256,6 +272,15 @@ def _governance_metadata_payload(values: Dict[str, Any]) -> Dict[str, Any]:
         candidate = contract.get("governance_metadata")
         if isinstance(candidate, dict):
             return dict(candidate)
+    return {}
+
+
+def _system_model_payload(values: Dict[str, Any], key: str) -> Dict[str, Any]:
+    payload = _system_value(values, key)
+    if hasattr(payload, "model_dump"):
+        payload = payload.model_dump(exclude_none=True)
+    if isinstance(payload, dict):
+        return dict(payload)
     return {}
 
 
@@ -384,7 +409,7 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     Redis = None
 
-CONFIRM_GO_AS_NODE = "confirm_recommendation_node"
+CONFIRM_GO_AS_NODE = "confirm_checkpoint_node"
 PARAMETERS_PATCH_AS_NODE = "node_p1_context"
 
 
@@ -774,13 +799,19 @@ async def _sync_fast_brain_checkpoint_state(
     state_values = await _get_graph_state_values_for_stream(graph, config)
     patch = _coerce_fast_brain_state_patch(fast_brain_result)
     parameter_patch = patch.get("parameters") if isinstance(patch.get("parameters"), dict) else {}
-    existing_extracted = _working_profile_value(state_values, "extracted_params") or {}
+    existing_extracted = (
+        _working_profile_value(state_values, "normalized_profile")
+        or _working_profile_value(state_values, "extracted_params")
+        or {}
+    )
     existing_extracted_provenance = _reasoning_value(state_values, "extracted_parameter_provenance") or {}
     existing_extracted_identity = _reasoning_value(state_values, "extracted_parameter_identity") or {}
+    existing_observed_inputs = _reasoning_value(state_values, "observed_inputs") or {}
 
     merged_extracted = dict(existing_extracted)
     merged_extracted_provenance = dict(existing_extracted_provenance)
     merged_extracted_identity = dict(existing_extracted_identity)
+    merged_observed_inputs = dict(existing_observed_inputs)
     applied_fields: list[str] = []
     rejected_fields: list[Dict[str, Any]] = []
 
@@ -790,18 +821,21 @@ async def _sync_fast_brain_checkpoint_state(
             merged_extracted_provenance,
             merged_extracted_identity,
             applied_fields,
+            merged_observed_inputs,
         ) = stage_extracted_parameter_patch(
             existing_extracted,
             parameter_patch,
             existing_extracted_provenance,
             existing_extracted_identity,
             source="fast_brain_extracted",
+            existing_observed_inputs=existing_observed_inputs,
         )
 
     updates: Dict[str, Any] = {}
     working_profile_patch = patch.get("working_profile") if isinstance(patch.get("working_profile"), dict) else {}
     working_profile_update: Dict[str, Any] = {}
     if parameter_patch:
+        working_profile_update["normalized_profile"] = merged_extracted
         working_profile_update["extracted_params"] = merged_extracted
     if isinstance(working_profile_patch.get("live_calc_tile"), dict):
         # `live_calc_tile` is optimized for immediate UI rendering and
@@ -816,6 +850,7 @@ async def _sync_fast_brain_checkpoint_state(
         updates["reasoning"] = {
             "extracted_parameter_provenance": merged_extracted_provenance,
             "extracted_parameter_identity": merged_extracted_identity,
+            "observed_inputs": merged_observed_inputs,
         }
 
     if persist_transcript:
@@ -960,6 +995,8 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
     rfq_pdf_url = _system_value(values, "rfq_pdf_url") if isinstance(values, dict) else None
     rfq_html_report = _system_value(values, "rfq_html_report") if isinstance(values, dict) else None
     rfq_admissibility = _rfq_admissibility_value(values)
+    sealing_requirement_spec = _system_model_payload(values, "sealing_requirement_spec")
+    rfq_draft = _system_model_payload(values, "rfq_draft")
     candidate_semantics = _candidate_semantics_payload(values)
     governance_metadata = _governance_metadata_payload(values)
     if hasattr(working_profile, "model_dump"):
@@ -1008,8 +1045,13 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "final_prompt_metadata": prompt_meta if isinstance(prompt_meta, dict) and prompt_meta else None,
         "rfq_admissibility": rfq_admissibility,
         "rfq_ready": rfq_contract_is_ready(rfq_admissibility),
+        "rfq_confirmed": bool(_system_value(values, "rfq_confirmed")),
         "rfq_document": rfq_document,
     }
+    if sealing_requirement_spec:
+        data["sealing_requirement_spec"] = sealing_requirement_spec
+    if rfq_draft:
+        data["rfq_draft"] = rfq_draft
     if candidate_semantics:
         data["candidate_semantics"] = candidate_semantics
     if has_live_calc_tile and isinstance(live_calc_tile, dict):
@@ -1047,7 +1089,10 @@ def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str
         "rfq_admissibility": data.get("rfq_admissibility"),
         "candidate_semantics": data.get("candidate_semantics"),
         "rfq_ready": data.get("rfq_ready"),
+        "rfq_confirmed": data.get("rfq_confirmed"),
         "rfq_document": data.get("rfq_document"),
+        "sealing_requirement_spec": data.get("sealing_requirement_spec"),
+        "rfq_draft": data.get("rfq_draft"),
     }
     return {key: value for key, value in payload.items() if value is not None}
 
@@ -1775,10 +1820,15 @@ def _merge_state_like(
             working_profile_patch = update_dict.get("working_profile")
             if not isinstance(working_profile_patch, dict):
                 working_profile_patch = {}
+            normalized_patch = working_profile_patch.get("normalized_profile")
+            if not isinstance(normalized_patch, dict):
+                normalized_patch = {}
+            normalized_patch.update(dict(raw_parameters))
             extracted_patch = working_profile_patch.get("extracted_params")
             if not isinstance(extracted_patch, dict):
                 extracted_patch = {}
             extracted_patch.update(dict(raw_parameters))
+            working_profile_patch["normalized_profile"] = normalized_patch
             working_profile_patch["extracted_params"] = extracted_patch
             update_dict["working_profile"] = working_profile_patch
     base = _state_values_to_dict(current)
@@ -3018,9 +3068,12 @@ async def confirm_go(
             "instructions": (edits_payload.get("instructions") or "").strip() or None,
         }
 
+        as_node_candidate = str(_reasoning_value(state_values, "last_node") or CONFIRM_GO_AS_NODE).strip()
+        as_node = pick_existing_node(graph, as_node_candidate, fallback=CONFIRM_GO_AS_NODE)
+
         assert_node_exists(
             graph,
-            CONFIRM_GO_AS_NODE,
+            as_node,
             request_id=request_id,
             status_code=500,
             code="server_misconfigured",
@@ -3036,7 +3089,7 @@ async def confirm_go(
                 "confirm_decision": body.decision,
                 "confirm_edits": edits,
             },
-            as_node=CONFIRM_GO_AS_NODE,
+            as_node=as_node,
         )
 
         result = await graph.ainvoke({}, config=config)
@@ -3208,14 +3261,22 @@ async def patch_parameters(
         state_values = _state_values_to_dict(snapshot.values)
         existing_params = _engineering_profile_payload(state_values) if isinstance(state_values, dict) else {}
         existing_provenance = {}
-        existing_extracted = {}
-        existing_extracted_provenance = {}
+        existing_normalized = {}
+        existing_normalized_provenance = {}
+        existing_identity = {}
+        existing_observed_inputs = {}
         existing_versions: Dict[str, int] = {}
         existing_updated_at: Dict[str, float] = {}
         if isinstance(state_values, dict):
             existing_provenance = _reasoning_value(state_values, "parameter_provenance") or {}
-            existing_extracted = _working_profile_value(state_values, "extracted_params") or {}
-            existing_extracted_provenance = _reasoning_value(state_values, "extracted_parameter_provenance") or {}
+            existing_normalized = (
+                _working_profile_value(state_values, "normalized_profile")
+                or _working_profile_value(state_values, "extracted_params")
+                or {}
+            )
+            existing_normalized_provenance = _reasoning_value(state_values, "extracted_parameter_provenance") or {}
+            existing_identity = _reasoning_value(state_values, "extracted_parameter_identity") or {}
+            existing_observed_inputs = _reasoning_value(state_values, "observed_inputs") or {}
             existing_versions = _reasoning_value(state_values, "parameter_versions") or {}
             existing_updated_at = _reasoning_value(state_values, "parameter_updated_at") or {}
         (
@@ -3223,22 +3284,27 @@ async def patch_parameters(
             merged_provenance,
             merged_versions,
             merged_updated_at,
-            remaining_extracted,
-            remaining_extracted_provenance,
-            applied_fields,
+            merged_normalized,
+            merged_normalized_provenance,
+            merged_identity,
+            merged_observed_inputs,
+            staged_fields,
+            asserted_fields,
             rejected_fields,
-        ) = promote_parameter_patch_to_asserted(
+        ) = apply_parameter_patch_to_state_layers(
             existing_params,
+            existing_normalized,
             patch,
             existing_provenance,
+            existing_normalized_provenance,
+            existing_identity,
+            existing_observed_inputs,
             source="user",
-            existing_extracted=existing_extracted,
-            extracted_provenance=existing_extracted_provenance,
             parameter_versions=existing_versions,
             parameter_updated_at=existing_updated_at,
             base_versions=body.base_versions,
         )
-        cycle_update = build_assertion_cycle_update(state_values, applied_fields=applied_fields)
+        cycle_update = build_assertion_cycle_update(state_values, applied_fields=asserted_fields)
 
         if PARAM_SYNC_DEBUG:
             patch_keys = sorted(patch.keys())
@@ -3268,12 +3334,15 @@ async def patch_parameters(
 
         updates = {
             "working_profile": {
+                "normalized_profile": merged_normalized,
                 "engineering_profile": merged,
-                "extracted_params": remaining_extracted,
+                "extracted_params": merged_normalized,
             },
             "reasoning": {
                 "parameter_provenance": merged_provenance,
-                "extracted_parameter_provenance": remaining_extracted_provenance,
+                "extracted_parameter_provenance": merged_normalized_provenance,
+                "extracted_parameter_identity": merged_identity,
+                "observed_inputs": merged_observed_inputs,
                 "parameter_versions": merged_versions,
                 "parameter_updated_at": merged_updated_at,
             },
@@ -3293,7 +3362,8 @@ async def patch_parameters(
         response_payload = {
             "ok": True,
             "chat_id": body.chat_id,
-            "applied_fields": applied_fields,
+            "applied_fields": staged_fields,
+            "asserted_fields": asserted_fields,
             "rejected_fields": rejected_fields,
             "versions": {field: merged_versions.get(field, 0) for field in response_fields},
             "updated_at": {field: merged_updated_at.get(field) for field in response_fields},
@@ -3301,7 +3371,8 @@ async def patch_parameters(
         ack_payload = {
             "chat_id": body.chat_id,
             "patch": patch,
-            "applied_fields": applied_fields,
+            "applied_fields": staged_fields,
+            "asserted_fields": asserted_fields,
             "rejected_fields": rejected_fields,
             "versions": response_payload["versions"],
             "updated_at": response_payload["updated_at"],

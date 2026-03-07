@@ -43,7 +43,7 @@ def test_material_agent_node_tries_user_then_shared_tenant(monkeypatch):
     assert (patch.get("reasoning", {}).get("retrieval_meta") or {}).get("allowed_tenants") == ["tenant-user", "sealai"]
     assert patch.get("reasoning", {}).get("working_memory").panel_material.get("technical_docs")
     assert patch.get("reasoning", {}).get("context") == "PTFE datasheet context"
-    assert patch.get("working_profile", {}).get("material_choice", {}).get("specificity") == "document_hit"
+    assert patch.get("working_profile", {}).get("material_choice", {}).get("specificity") == "family_only"
     assert patch.get("working_profile", {}).get("material_choice", {}).get("governed") is False
 
 
@@ -154,4 +154,4 @@ def test_material_agent_node_detects_german_technical_terms(monkeypatch):
 
     assert patch.get("reasoning", {}).get("working_memory").panel_material.get("technical_docs")
     assert patch.get("reasoning", {}).get("context") == "Prelonring"
-    assert patch.get("working_profile", {}).get("material_choice", {}).get("specificity") == "document_hit"
+    assert patch.get("working_profile", {}).get("material_choice", {}).get("specificity") == "family_only"

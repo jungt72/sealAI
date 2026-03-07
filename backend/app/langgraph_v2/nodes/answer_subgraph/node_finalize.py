@@ -9,14 +9,16 @@ hallucinated quantitative claims.
 """
 
 import re
-from typing import Any, Dict, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
-from app.langgraph_v2.state.sealai_state import SealAIState
-from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
+from app.langgraph_v2.state.sealai_state import RFQDraft, SealAIState
+from app.langgraph_v2.utils.assertion_cycle import is_artifact_stale, stamp_patch_with_assertion_binding
+from app.langgraph_v2.utils.redaction import redact_operating_context
+from app.langgraph_v2.utils.rfq_admissibility import normalize_rfq_admissibility_contract
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.finalize")
 
@@ -44,6 +46,27 @@ _PARTIAL_EXPERT_FAILURE_ERROR = "partial_expert_failure"
 _PARTIAL_EXPERT_FAILURE_WARNING = (
     "Ein Teil der Experten-Analyse ist fehlgeschlagen, bitte Ergebnisse kritisch pruefen."
 )
+
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump(exclude_none=True)
+        if isinstance(dumped, dict):
+            return dict(dumped)
+    return {}
+
+
+def _artifact_id(prefix: str, state: SealAIState) -> str:
+    cycle_id = int(getattr(state.reasoning, "current_assertion_cycle_id", 0) or 0)
+    revision = int(getattr(state.reasoning, "asserted_profile_revision", 0) or 0)
+    if cycle_id <= 0 or revision <= 0:
+        return ""
+    return f"{prefix}-c{cycle_id}-r{revision}"
 
 
 def _strip_formatting_numbers(text: str) -> str:
@@ -261,6 +284,123 @@ def _should_bypass_no_new_numbers_guard(state: SealAIState) -> Tuple[bool, str]:
     return False, ""
 
 
+def _serialize_conflicts_visible(state: SealAIState) -> List[Dict[str, Any]]:
+    visible: List[Dict[str, Any]] = []
+
+    report = getattr(state.system, "verification_report", None)
+    report_conflicts = getattr(report, "conflicts", None)
+    if isinstance(report_conflicts, list):
+        for item in report_conflicts:
+            conflict = _as_dict(item)
+            if not conflict:
+                continue
+            if str(conflict.get("resolution_status") or "OPEN").upper() == "DISMISSED":
+                continue
+            summary = str(conflict.get("summary") or conflict.get("scope_note") or "").strip()
+            if not summary:
+                continue
+            visible.append(
+                {
+                    "conflict_type": str(conflict.get("conflict_type") or "UNKNOWN"),
+                    "severity": str(conflict.get("severity") or "WARNING"),
+                    "summary": summary,
+                    "resolution_status": str(conflict.get("resolution_status") or "OPEN"),
+                }
+            )
+
+    contract = getattr(state.system, "answer_contract", None)
+    governance = _as_dict(getattr(contract, "governance_metadata", None))
+    for entry in list(governance.get("gate_failures") or []):
+        text = str(entry).strip()
+        if not text:
+            continue
+        severity = "WARNING"
+        summary = text
+        if ":" in text:
+            maybe_severity, maybe_summary = text.split(":", 1)
+            normalized = maybe_severity.strip().upper()
+            if normalized in {"INFO", "WARNING", "HARD", "CRITICAL"}:
+                severity = normalized
+                summary = maybe_summary.strip() or text
+        visible.append(
+            {
+                "conflict_type": "GATE_FAILURE",
+                "severity": severity,
+                "summary": summary,
+                "resolution_status": "OPEN",
+            }
+        )
+
+    deduped: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in visible:
+        key = (
+            str(item.get("conflict_type") or ""),
+            str(item.get("severity") or ""),
+            str(item.get("summary") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _build_manufacturer_questions(
+    *,
+    rfq_admissibility: Dict[str, Any],
+    sealing_requirement_spec: Dict[str, Any],
+) -> List[str]:
+    questions: List[str] = []
+    for value in list(rfq_admissibility.get("blockers") or []):
+        text = str(value).strip()
+        if text:
+            questions.append(text)
+    for value in list(rfq_admissibility.get("open_points") or []):
+        text = str(value).strip()
+        if text:
+            questions.append(text)
+    for value in list(sealing_requirement_spec.get("manufacturer_validation_scope") or []):
+        text = str(value).strip()
+        if text:
+            questions.append(text)
+    for item in list(sealing_requirement_spec.get("open_points_visible") or []):
+        point = _as_dict(item)
+        text = str(point.get("value") or point.get("summary") or "").strip()
+        if text:
+            questions.append(text)
+    return list(dict.fromkeys(questions))
+
+
+def _build_rfq_draft(state: SealAIState) -> RFQDraft:
+    rfq_admissibility = normalize_rfq_admissibility_contract(state.model_dump(exclude_none=False))
+    sealing_requirement_spec = _as_dict(getattr(state.system, "sealing_requirement_spec", None))
+    
+    # Redaction: Only technical core context passes the hard gate.
+    raw_context = dict(sealing_requirement_spec.get("operating_envelope") or {})
+    redacted_context = redact_operating_context(raw_context)
+    
+    manufacturer_questions = _build_manufacturer_questions(
+        rfq_admissibility=rfq_admissibility,
+        sealing_requirement_spec=sealing_requirement_spec,
+    )
+    
+    # Buyer Contact: Use user_id as a stable identifier for now.
+    buyer_contact = {"buyer_id": str(state.conversation.user_id or "anonymous")}
+    
+    return RFQDraft(
+        rfq_id=_artifact_id("rfq-draft", state),
+        rfq_basis_status=str(rfq_admissibility.get("release_status") or "inadmissible"),
+        sealing_requirement_spec=getattr(state.system, "sealing_requirement_spec", None),
+        operating_context_redacted=redacted_context,
+        manufacturer_questions_mandatory=manufacturer_questions,
+        conflicts_visible=_serialize_conflicts_visible(state),
+        buyer_assumptions_acknowledged=list(sealing_requirement_spec.get("assumption_boundaries") or []),
+        feedback_expected=[],
+        buyer_contact=buyer_contact,
+    )
+
+
 def node_finalize(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     """Produce the user-visible final answer for the subgraph.
 
@@ -277,6 +417,17 @@ def node_finalize(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Di
     Returns:
         State patch containing final answer payload and optional error marker.
     """
+    if is_artifact_stale(state):
+        logger.warning("finalize.aborted_due_to_staleness")
+        return {
+            "system": {
+                "error": "finalize_aborted_stale",
+            },
+            "reasoning": {
+                "last_node": "node_finalize",
+            },
+        }
+
     verified_draft = str(state.system.draft_text or "").strip()
     # Use `final_text` from the current subgraph run as the polished candidate;
     # fall back to the verified draft when no polished text is present.
@@ -334,18 +485,38 @@ def node_finalize(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Di
             selected_fact_ids=sorted(selected_fact_ids),
         )
 
-    governance_metadata = {}
+    # Blueprint v1.2: Implementation of the RFQ Hard Gate.
+    # Inadmissible states (technical blockers, missing critical params) MUST NOT
+    # generate an outward-facing RFQ Draft artifact.
     contract = getattr(state.system, "answer_contract", None)
+    release_status = "inadmissible"
+    if contract is not None:
+        release_status = str(getattr(contract, "release_status", "inadmissible"))
+    else:
+        # Fallback to re-normalization if contract is missing (should not happen in Answer Subgraph)
+        admissibility = normalize_rfq_admissibility_contract(state.model_dump(exclude_none=False))
+        release_status = str(admissibility.get("release_status", "inadmissible"))
+
+    rfq_draft = None
+    if release_status != "inadmissible":
+        rfq_draft = _build_rfq_draft(state)
+        # Ensure rfq_basis_status is synced with contract's release_status
+        if rfq_draft is not None:
+            rfq_draft.rfq_basis_status = release_status
+    else:
+        logger.info("finalize.rfq_draft_skipped", reason="release_status is inadmissible")
+
+    governance_metadata_dict = {}
     if contract is not None:
         raw_governance = getattr(contract, "governance_metadata", None)
         if hasattr(raw_governance, "model_dump"):
-            governance_metadata = raw_governance.model_dump(exclude_none=True)
+            governance_metadata_dict = raw_governance.model_dump(exclude_none=True)
         elif isinstance(raw_governance, dict):
-            governance_metadata = dict(raw_governance)
+            governance_metadata_dict = dict(raw_governance)
     if blocked:
-        notes = list(governance_metadata.get("governance_notes") or [])
+        notes = list(governance_metadata_dict.get("governance_notes") or [])
         notes.append("No-New-Numbers guard returned the verified draft instead of the polished candidate.")
-        governance_metadata["governance_notes"] = list(dict.fromkeys(str(item).strip() for item in notes if str(item).strip()))
+        governance_metadata_dict["governance_notes"] = list(dict.fromkeys(str(item).strip() for item in notes if str(item).strip()))
 
     patch: Dict[str, Any] = {
         "messages": messages,
@@ -357,9 +528,10 @@ def node_finalize(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Di
             "governed_output_text": final_text,
             "governed_output_status": "finalized",
             "governed_output_ready": True,
-            "governance_metadata": governance_metadata,
+            "governance_metadata": governance_metadata_dict,
             "final_text": final_text,
             "final_answer": final_text,
+            "rfq_draft": rfq_draft,
         },
         "reasoning": {
             "phase": state.reasoning.phase or "final",

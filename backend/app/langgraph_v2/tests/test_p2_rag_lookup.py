@@ -14,6 +14,7 @@ def anyio_backend():
 
 from app.services.rag.nodes.p2_rag_lookup import (
     _build_rag_query,
+    _strip_unconfirmed_identity_fields,
     node_p2_rag_lookup,
 )
 from app.services.rag.state import WorkingProfile
@@ -177,3 +178,126 @@ class TestNodeP2RagLookup:
 
         retrieval_meta = result.get("reasoning", {}).get("retrieval_meta", {})
         assert "error" in str(retrieval_meta).lower() or "RuntimeError" in str(retrieval_meta)
+
+
+# ---------------------------------------------------------------------------
+# Pre-RAG identity gate — _strip_unconfirmed_identity_fields
+# ---------------------------------------------------------------------------
+
+
+class TestStripUnconfirmedIdentityFields:
+    """Identity-guarded fields with non-confirmed identity_class must be blanked."""
+
+    def test_confirmed_medium_passes_through(self):
+        profile = WorkingProfile(medium="Dampf", pressure_max_bar=10.0)
+        identity_map = {"medium": {"identity_class": "identity_confirmed", "lookup_allowed": True}}
+        safe = _strip_unconfirmed_identity_fields(profile, identity_map)
+        assert safe.medium == "Dampf"
+        assert safe.pressure_max_bar == 10.0
+
+    def test_family_only_material_stripped(self):
+        profile = WorkingProfile(material="PTFE", medium="Wasser")
+        identity_map = {
+            "material": {"identity_class": "identity_family_only", "lookup_allowed": False},
+            "medium": {"identity_class": "identity_confirmed", "lookup_allowed": True},
+        }
+        safe = _strip_unconfirmed_identity_fields(profile, identity_map)
+        assert safe.material is None, "family_only material must be stripped"
+        assert safe.medium == "Wasser", "confirmed medium must survive"
+
+    def test_probable_product_name_stripped(self):
+        profile = WorkingProfile(product_name="Kyrolon")
+        identity_map = {"product_name": {"identity_class": "identity_probable"}}
+        safe = _strip_unconfirmed_identity_fields(profile, identity_map)
+        assert safe.product_name is None
+
+    def test_unresolved_trade_name_stripped(self):
+        profile = WorkingProfile(material="FKM")
+        identity_map = {"material": {"identity_class": "identity_unresolved"}}
+        safe = _strip_unconfirmed_identity_fields(profile, identity_map)
+        assert safe.material is None
+
+    def test_numeric_fields_unaffected(self):
+        """Non-identity fields (pressure, temperature) must never be stripped."""
+        profile = WorkingProfile(pressure_max_bar=250.0, temperature_max_c=400.0, material="NBR")
+        identity_map = {"material": {"identity_class": "identity_family_only"}}
+        safe = _strip_unconfirmed_identity_fields(profile, identity_map)
+        assert safe.pressure_max_bar == 250.0
+        assert safe.temperature_max_c == 400.0
+        assert safe.material is None
+
+    def test_no_identity_map_passes_all(self):
+        """When no identity map exists (legacy path), all fields pass through."""
+        profile = WorkingProfile(medium="Dampf", material="FKM")
+        safe = _strip_unconfirmed_identity_fields(profile, None)
+        assert safe.medium == "Dampf"
+        assert safe.material == "FKM"
+
+    def test_missing_identity_record_passes_field(self):
+        """Field present in profile but absent from identity_map → passes through (legacy safe)."""
+        profile = WorkingProfile(medium="Dampf", material="NBR")
+        identity_map = {"medium": {"identity_class": "identity_confirmed"}}
+        safe = _strip_unconfirmed_identity_fields(profile, identity_map)
+        assert safe.medium == "Dampf"
+        assert safe.material == "NBR", "no identity record → field must pass"
+
+
+class TestIdentityGateInQueryBuilder:
+    """Verify stripped fields don't leak into _build_rag_query output."""
+
+    def test_family_only_material_absent_from_query(self):
+        profile = WorkingProfile(material="PTFE", medium="Wasser")
+        identity_map = {
+            "material": {"identity_class": "identity_family_only"},
+            "medium": {"identity_class": "identity_confirmed"},
+        }
+        safe = _strip_unconfirmed_identity_fields(profile, identity_map)
+        query = _build_rag_query(safe)
+        assert "PTFE" not in query, "family_only material must not reach query"
+        assert "Wasser" in query, "confirmed medium must be in query"
+
+    def test_probable_product_absent_from_query(self):
+        profile = WorkingProfile(product_name="Kyrolon", medium="Dampf")
+        identity_map = {
+            "product_name": {"identity_class": "identity_probable"},
+            "medium": {"identity_class": "identity_confirmed"},
+        }
+        safe = _strip_unconfirmed_identity_fields(profile, identity_map)
+        query = _build_rag_query(safe)
+        assert "Kyrolon" not in query
+        assert "Dampf" in query
+
+
+@pytest.mark.anyio
+@patch("app.services.rag.nodes.p2_rag_lookup.rag_cache.get", return_value=None)
+class TestIdentityGateIntegration:
+    """End-to-end: unconfirmed fields must not trigger has_high_signal bypass."""
+
+    async def test_family_only_material_no_bypass(self, mock_cache_get):
+        """Profile with only family_only material should NOT bypass sparse check."""
+        profile = WorkingProfile(material="PTFE")
+        state = _make_state(
+            working_profile={"engineering_profile": profile},
+            reasoning={"extracted_parameter_identity": {
+                "material": {"identity_class": "identity_family_only", "lookup_allowed": False},
+            }},
+        )
+        result = await node_p2_rag_lookup(state)
+        # With only a family_only material and nothing else, coverage < 0.2
+        # and has_high_signal_fields is False → should skip RAG
+        assert "context" not in result.get("reasoning", {})
+
+    @patch("app.services.rag.nodes.p2_rag_lookup.search_technical_docs")
+    async def test_confirmed_medium_triggers_bypass(self, mock_search, mock_cache_get):
+        """Profile with confirmed medium should bypass sparse check and call RAG."""
+        mock_search.return_value = {"hits": [], "context": "result", "retrieval_meta": {}}
+        profile = WorkingProfile(medium="Dampf")
+        state = _make_state(
+            working_profile={"engineering_profile": profile},
+            reasoning={"extracted_parameter_identity": {
+                "medium": {"identity_class": "identity_confirmed", "lookup_allowed": True},
+            }},
+        )
+        result = await node_p2_rag_lookup(state)
+        mock_search.assert_called_once()
+        assert result["reasoning"]["context"] == "result"

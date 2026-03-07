@@ -17,7 +17,7 @@ from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v
 from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
 from app.langgraph_v2.utils.assertion_cycle import build_assertion_cycle_update
-from app.langgraph_v2.utils.parameter_patch import promote_parameter_patch_to_asserted
+from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_to_state_layers
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.rag.state import WorkingProfile
 
@@ -344,8 +344,15 @@ async def update_state(
 
         existing_profile = _state_field(state_values, "working_profile", "engineering_profile") if isinstance(state_values, dict) else {}
         existing_provenance = _state_field(state_values, "reasoning", "parameter_provenance") if isinstance(state_values, dict) else {}
-        existing_extracted = _state_field(state_values, "working_profile", "extracted_params") if isinstance(state_values, dict) else {}
-        existing_extracted_provenance = _state_field(state_values, "reasoning", "extracted_parameter_provenance") if isinstance(state_values, dict) else {}
+        existing_normalized = (
+            _state_field(state_values, "working_profile", "normalized_profile")
+            or _state_field(state_values, "working_profile", "extracted_params")
+            if isinstance(state_values, dict)
+            else {}
+        )
+        existing_normalized_provenance = _state_field(state_values, "reasoning", "extracted_parameter_provenance") if isinstance(state_values, dict) else {}
+        existing_identity = _state_field(state_values, "reasoning", "extracted_parameter_identity") if isinstance(state_values, dict) else {}
+        existing_observed_inputs = _state_field(state_values, "reasoning", "observed_inputs") if isinstance(state_values, dict) else {}
         existing_versions = _state_field(state_values, "reasoning", "parameter_versions") if isinstance(state_values, dict) else {}
         existing_updated_at = _state_field(state_values, "reasoning", "parameter_updated_at") if isinstance(state_values, dict) else {}
         (
@@ -353,30 +360,38 @@ async def update_state(
             merged_provenance,
             merged_versions,
             merged_updated_at,
-            remaining_extracted,
-            remaining_extracted_provenance,
-            _applied_fields,
+            merged_normalized,
+            merged_normalized_provenance,
+            merged_identity,
+            merged_observed_inputs,
+            _staged_fields,
+            _asserted_fields,
             _rejected_fields,
-        ) = promote_parameter_patch_to_asserted(
+        ) = apply_parameter_patch_to_state_layers(
             existing_profile,
+            existing_normalized,
             sanitized_working_profile,
             existing_provenance,
+            existing_normalized_provenance,
+            existing_identity,
+            existing_observed_inputs,
             source="user",
-            existing_extracted=existing_extracted,
-            extracted_provenance=existing_extracted_provenance,
             parameter_versions=existing_versions,
             parameter_updated_at=existing_updated_at,
         )
-        cycle_update = build_assertion_cycle_update(state_values, applied_fields=_applied_fields)
+        cycle_update = build_assertion_cycle_update(state_values, applied_fields=_asserted_fields)
 
         updates = {
             "working_profile": {
+                "normalized_profile": merged_normalized,
                 "engineering_profile": merged_profile,
-                "extracted_params": remaining_extracted,
+                "extracted_params": merged_normalized,
             },
             "reasoning": {
                 "parameter_provenance": merged_provenance,
-                "extracted_parameter_provenance": remaining_extracted_provenance,
+                "extracted_parameter_provenance": merged_normalized_provenance,
+                "extracted_parameter_identity": merged_identity,
+                "observed_inputs": merged_observed_inputs,
                 "parameter_versions": merged_versions,
                 "parameter_updated_at": merged_updated_at,
             },

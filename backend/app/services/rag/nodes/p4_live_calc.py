@@ -62,11 +62,12 @@ def _first_float(payload: Dict[str, Any], keys: Iterable[str]) -> Optional[float
 
 
 def _collect_parameter_payload(state: SealAIState) -> Dict[str, Any]:
-    """Single source of truth: pull parameters from working_profile, merge with extracted_params.
+    """Single source of truth: pull parameters from asserted state plus staged normalized inputs.
 
     Engineering parameters live in working_profile.engineering_profile (LegacyWorkingProfile).
     Pillar 2 top-level fields (surface_hardness_hrc, medium, etc.) overlay when set.
-    extracted_params fills any remaining gaps.
+    normalized_profile fills any remaining gaps; extracted_params is only a
+    legacy mirror fallback while old readers are migrated.
     """
     # Base: flat engineering parameters from LegacyWorkingProfile
     payload = _to_dict(state.working_profile.engineering_profile)
@@ -83,9 +84,14 @@ def _collect_parameter_payload(state: SealAIState) -> Dict[str, Any]:
         if val is not None:
             payload[field_name] = val
 
-    # Merge extracted_params for any fields not yet in WorkingProfile schema
-    if state.working_profile.extracted_params:
-        payload.update(state.working_profile.extracted_params)
+    # Merge staged normalized parameters for any fields not yet in WorkingProfile schema.
+    staged_payload = (
+        state.working_profile.normalized_profile
+        or state.working_profile.extracted_params
+        or {}
+    )
+    if staged_payload:
+        payload.update(staged_payload)
     return payload
 
 

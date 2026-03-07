@@ -9,6 +9,16 @@ from pydantic import BaseModel, Field
 from app.langgraph_v2.state import SealAIState
 
 
+def _model_like_to_dict(value: Any) -> Dict[str, Any]:
+    if hasattr(value, "model_dump"):
+        dumped = value.model_dump(exclude_none=True)
+        if isinstance(dumped, dict):
+            return dumped
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
 class ConfirmCheckpointPayload(BaseModel):
     checkpoint_id: str
     required_user_sub: str
@@ -50,12 +60,9 @@ def build_confirm_checkpoint_payload(
         if isinstance(raw_candidates, list):
             candidate_semantics = [dict(item) if isinstance(item, dict) else item.model_dump(exclude_none=True) for item in raw_candidates]
 
-    rfq_admissibility = {}
-    raw_rfq = getattr(state.system, "rfq_admissibility", None)
-    if hasattr(raw_rfq, "model_dump"):
-        rfq_admissibility = raw_rfq.model_dump(exclude_none=True)
-    elif isinstance(raw_rfq, dict):
-        rfq_admissibility = dict(raw_rfq)
+    rfq_admissibility = _model_like_to_dict(getattr(state.system, "rfq_admissibility", None))
+    sealing_requirement_spec = _model_like_to_dict(getattr(state.system, "sealing_requirement_spec", None))
+    rfq_draft = _model_like_to_dict(getattr(state.system, "rfq_draft", None))
 
     preview = {
         "text": state.system.governed_output_text or state.system.final_text or state.system.final_answer or "",
@@ -65,6 +72,9 @@ def build_confirm_checkpoint_payload(
         "coverage_gaps": list(state.reasoning.coverage_gaps or []),
         "governance_metadata": governance_metadata,
         "rfq_admissibility": rfq_admissibility,
+        "sealing_requirement_spec": sealing_requirement_spec,
+        "rfq_draft": rfq_draft,
+        "rfq_confirmed": bool(getattr(state.system, "rfq_confirmed", False)),
         "candidate_semantics": candidate_semantics,
     }
     payload = ConfirmCheckpointPayload(

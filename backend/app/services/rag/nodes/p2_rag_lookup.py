@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 
-from app.langgraph_v2.state import SealAIState, Source, WorkingMemory
+from app.langgraph_v2.state import SealAIState, Source, WorkingMemory, FactItem
 from app.langgraph_v2.utils.jinja import render_prompt_sections
 from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm_async
 from app.observability.metrics import track_error, track_rag_retrieval
@@ -33,6 +33,58 @@ from app.services.rag.state import WorkingProfile
 
 logger = structlog.get_logger("rag.nodes.p2_rag_lookup")
 rag_cache = RAGCache()
+
+# Identity-guarded fields — must have identity_class == "confirmed" to be
+# trusted as RAG query signals.  Fields not in this set pass through unchanged.
+_IDENTITY_GUARDED_FIELDS = frozenset({
+    "medium", "material", "seal_material", "trade_name",
+    "product", "product_name", "seal_family", "flange_standard",
+})
+
+
+from app.langgraph_v2.state.governance_types import IdentityClass
+
+
+def _strip_unconfirmed_identity_fields(
+    profile: WorkingProfile,
+    identity_map: Dict[str, Any] | None,
+) -> WorkingProfile:
+    """Return a profile copy with identity-guarded fields blanked when not confirmed.
+
+    Fields whose ``identity_class`` is anything other than ``"identity_confirmed"``
+    (or missing entirely) are set to ``None`` so they cannot silently act as
+    reliable query signals in ``_build_rag_query`` or ``_resolve_deterministic_norm_inputs``.
+    """
+    if not identity_map:
+        return profile
+
+    overrides: Dict[str, None] = {}
+    for field in _IDENTITY_GUARDED_FIELDS:
+        value = getattr(profile, field, None)
+        if value is None:
+            continue
+        meta = identity_map.get(field)
+        if meta is None:
+            continue  # no identity record → field passes through (legacy safe)
+        # Support both plain dicts and ParameterIdentityRecord pydantic models
+        if isinstance(meta, dict):
+            identity_class = str(meta.get("identity_class") or "")
+        else:
+            identity_class = str(getattr(meta, "identity_class", "") or "")
+        
+        # Use central normalization to support both legacy "confirmed" and new "identity_confirmed"
+        if identity_class and IdentityClass.normalize(identity_class) != IdentityClass.CONFIRMED:
+            overrides[field] = None
+            logger.debug(
+                "p2_identity_gate_stripped",
+                field=field,
+                identity_class=identity_class,
+            )
+
+    if not overrides:
+        return profile
+    return profile.model_copy(update=overrides)
+
 
 # Minimum coverage to justify a RAG call (below this, profile is too sparse)
 _MIN_COVERAGE_FOR_RAG = 0.2
@@ -54,6 +106,61 @@ _NOISY_LINE_RE = re.compile(
     r"^\s*(\[\d+\].*\(score\s*[0-9.]+\)|source\s*:|file\s*:|path\s*:)",
     re.IGNORECASE,
 )
+
+
+def _extract_claims_from_hits(hits: List[Dict[str, Any]]) -> List[FactItem]:
+    claims: List[FactItem] = []
+    for hit in hits:
+        metadata = hit.get("metadata") or {}
+        doc_id = metadata.get("document_id") or metadata.get("id") or hit.get("source") or "unknown"
+        chunk_id = metadata.get("chunk_id") or "0"
+        ref = f"{doc_id}:{chunk_id}"
+        
+        claims.append(
+            FactItem(
+                value=hit.get("snippet") or hit.get("text"),
+                source=str(hit.get("source") or doc_id),
+                confidence=float(hit.get("score") or 0.5),
+                evidence_refs=[ref],
+                claim_type="heuristic_hint",
+                claim_origin="heuristic"
+            )
+        )
+    return claims
+
+
+def _extract_claims_from_deterministic(payload: Dict[str, Any] | None) -> List[FactItem]:
+    if not payload or not isinstance(payload, dict):
+        return []
+    claims: List[FactItem] = []
+    matches = payload.get("matches") or {}
+    
+    # 1. DIN Norms
+    for row in matches.get("din_norms") or []:
+        claims.append(
+            FactItem(
+                value=f"DIN Norm {row.get('norm_code')}: {row.get('material')} for {row.get('medium')}",
+                source="postgresql:din_norms",
+                confidence=1.0,
+                evidence_refs=[f"sql:din_norm:{row.get('norm_code')}"],
+                claim_type="deterministic_fact",
+                claim_origin="deterministic"
+            )
+        )
+    
+    # 2. Material Limits
+    for row in matches.get("material_limits") or []:
+        claims.append(
+            FactItem(
+                value=f"Limit {row.get('limit_kind')}: {row.get('max_value')} {row.get('unit')} for {row.get('material')}",
+                source="postgresql:material_limits",
+                confidence=1.0,
+                evidence_refs=[f"sql:material_limit:{row.get('material')}:{row.get('limit_kind')}"],
+                claim_type="manufacturer_limit",
+                claim_origin="deterministic"
+            )
+        )
+    return claims
 
 
 def _is_qdrant_error(exc: BaseException) -> bool:
@@ -277,6 +384,16 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     profile: Optional[WorkingProfile] = state.working_profile.engineering_profile
     node_start = time.perf_counter()
 
+    # --- Pre-RAG identity gate: strip unconfirmed identity-guarded fields ---
+    identity_map: Dict[str, Any] = (
+        getattr(state.reasoning, "extracted_parameter_identity", None) or {}
+    )
+    safe_profile: Optional[WorkingProfile] = (
+        _strip_unconfirmed_identity_fields(profile, identity_map)
+        if profile is not None
+        else None
+    )
+
     logger.info(
         "p2_rag_lookup_start",
         has_profile=profile is not None,
@@ -314,8 +431,9 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     )
 
     # Bypass if knowledge intent OR specific fields are present (even if coverage is low)
+    # NOTE: uses safe_profile so unconfirmed identity fields don't trigger bypass
     has_high_signal_fields = bool(
-        profile and (profile.medium or profile.material or profile.product_name)
+        safe_profile and (safe_profile.medium or safe_profile.material or safe_profile.product_name)
     )
 
     should_bypass = is_knowledge_intent or has_high_signal_fields or has_wide_search_term
@@ -346,9 +464,9 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             run_id=state.system.run_id,
         )
 
-    query = _build_rag_query(profile) if profile else "Dichtungstechnik"
+    query = _build_rag_query(safe_profile) if safe_profile else "Dichtungstechnik"
     # If the profile is very sparse but we bypass, ensure we have a decent query
-    if should_bypass and (not profile or not any(profile.model_dump().values())):
+    if should_bypass and (not safe_profile or not any(safe_profile.model_dump().values())):
         if user_text:
             query = user_text
             logger.info("p2_rag_lookup_use_user_text", query=query, run_id=state.system.run_id)
@@ -358,7 +476,7 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
 
     loop = asyncio.get_event_loop()
     deterministic_payload: Dict[str, Any] | None = None
-    det_material, det_temp, det_pressure = _resolve_deterministic_norm_inputs(profile)
+    det_material, det_temp, det_pressure = _resolve_deterministic_norm_inputs(safe_profile)
     if det_material and det_temp is not None and det_pressure is not None:
         try:
             deterministic_payload = await loop.run_in_executor(
@@ -429,11 +547,15 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             latency_seconds=time.perf_counter() - node_start,
             cache_hit=True,
         )
+        claims = _extract_claims_from_hits(cached_hits)
+        claims.extend(_extract_claims_from_deterministic(deterministic_payload))
+
         return {
             "reasoning": {
                 "working_memory": wm,
                 "context": cached_context,
                 "retrieval_meta": retrieval_meta,
+                "claims": claims,
                 "last_node": "node_p2_rag_lookup",
             },
             "system": {
@@ -595,11 +717,16 @@ async def node_p2_rag_lookup(state: SealAIState, *_args: Any, **_kwargs: Any) ->
         if isinstance(deterministic_payload, dict)
         else None
     )
+    
+    claims = _extract_claims_from_hits(hits)
+    claims.extend(_extract_claims_from_deterministic(deterministic_payload))
+
     return {
         "reasoning": {
             "working_memory": wm,
             "context": rag_context,
             "retrieval_meta": retrieval_meta,
+            "claims": claims,
             "last_node": "node_p2_rag_lookup",
             "rag_turn_count": int(state.reasoning.rag_turn_count or 0) + 1,
         },
@@ -664,4 +791,4 @@ async def node_p2_rag_synthesize(state: SealAIState, *_args: Any, **_kwargs: Any
     }
 
 
-__all__ = ["node_p2_rag_lookup", "node_p2_rag_synthesize", "_build_rag_query"]
+__all__ = ["node_p2_rag_lookup", "node_p2_rag_synthesize", "_build_rag_query", "_strip_unconfirmed_identity_fields"]

@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Mapping, MutableMapping, Tuple
 from pydantic import BaseModel, Field
 
 from app.services.rag.state import WorkingProfile
+from app.langgraph_v2.state.governance_types import IdentityClass
 
 
 def _build_allowed_keys() -> set[str]:
@@ -20,7 +21,12 @@ def _build_allowed_keys() -> set[str]:
 
 
 ALLOWED_V2_PARAMETER_KEYS = _build_allowed_keys()
-IDENTITY_CLASS_VALUES = ("confirmed", "probable", "family_only", "unresolved")
+IDENTITY_CLASS_VALUES = (
+    IdentityClass.CONFIRMED.value,
+    IdentityClass.PROBABLE.value,
+    IdentityClass.FAMILY_ONLY.value,
+    IdentityClass.UNRESOLVED.value,
+)
 _GENERIC_IDENTITY_VALUES = {
     "material",
     "werkstoff",
@@ -83,6 +89,18 @@ _MEDIUM_FAMILY_MARKERS = {
     "chemical": ("chemical", "chem", "chemikal"),
 }
 _NORM_PATTERN = re.compile(r"^(?:DIN|EN|ISO|ASTM|ASME|API|ANSI)\b[\w .:/+-]*$", re.IGNORECASE)
+_IDENTITY_GUARDED_FIELDS = frozenset(
+    {
+        "medium",
+        "material",
+        "seal_material",
+        "trade_name",
+        "product",
+        "product_name",
+        "seal_family",
+        "flange_standard",
+    }
+)
 
 
 class ParametersPatchRequest(BaseModel):
@@ -106,60 +124,60 @@ def _build_identity_record(key: str, value: Any, *, source: str) -> Dict[str, An
     raw_text = _normalize_identity_text(value)
     lowered = raw_text.lower()
     normalized_value: Any = raw_text
-    identity_class = "unresolved"
+    identity_class = IdentityClass.UNRESOLVED.value
     notes: list[str] = []
 
     if key == "medium":
         if lowered in _MEDIUM_EXACT_ALIASES:
             normalized_value = _MEDIUM_EXACT_ALIASES[lowered]
-            identity_class = "confirmed"
+            identity_class = IdentityClass.CONFIRMED.value
             notes.append("canonical_medium_match")
         else:
             for canonical, markers in _MEDIUM_FAMILY_MARKERS.items():
                 if any(marker in lowered for marker in markers):
                     normalized_value = canonical
-                    identity_class = "family_only"
+                    identity_class = IdentityClass.FAMILY_ONLY.value
                     notes.append("medium_family_match_only")
                     break
             if not raw_text:
                 notes.append("empty_medium")
-            elif identity_class == "unresolved":
+            elif identity_class == IdentityClass.UNRESOLVED.value:
                 notes.append("medium_not_in_canonical_set")
     elif key in {"material", "seal_material", "seal_family"}:
         if not raw_text or lowered in _GENERIC_IDENTITY_VALUES:
             notes.append("generic_material_identity")
         elif raw_text.upper() in _MATERIAL_FAMILY_CODES:
             normalized_value = raw_text.upper()
-            identity_class = "family_only"
+            identity_class = IdentityClass.FAMILY_ONLY.value
             notes.append("material_family_only")
         elif any(code in raw_text.upper() for code in _MATERIAL_FAMILY_CODES):
-            identity_class = "family_only"
+            identity_class = IdentityClass.FAMILY_ONLY.value
             notes.append("material_family_embedded")
         else:
-            identity_class = "probable"
+            identity_class = IdentityClass.PROBABLE.value
             notes.append("material_identity_needs_lookup_confirmation")
     elif key in {"trade_name", "product", "product_name"}:
         if not raw_text or lowered in _GENERIC_IDENTITY_VALUES:
             notes.append("generic_product_identity")
         else:
-            identity_class = "probable"
+            identity_class = IdentityClass.PROBABLE.value
             notes.append("product_identity_needs_lookup_confirmation")
     elif key == "flange_standard":
         if raw_text and _NORM_PATTERN.match(raw_text):
             normalized_value = raw_text.upper()
-            identity_class = "confirmed"
+            identity_class = IdentityClass.CONFIRMED.value
             notes.append("norm_pattern_match")
         elif raw_text:
-            identity_class = "probable"
+            identity_class = IdentityClass.PROBABLE.value
             notes.append("norm_identity_needs_confirmation")
         else:
             notes.append("empty_norm_identity")
     else:
-        identity_class = "confirmed"
+        identity_class = IdentityClass.CONFIRMED.value
         notes.append("non_identity_guarded_parameter")
 
-    lookup_allowed = identity_class == "confirmed"
-    promotion_allowed = identity_class == "confirmed"
+    lookup_allowed = identity_class == IdentityClass.CONFIRMED.value
+    promotion_allowed = identity_class == IdentityClass.CONFIRMED.value
     return {
         "raw_value": value,
         "normalized_value": normalized_value,
@@ -260,6 +278,44 @@ def apply_parameter_patch_with_provenance(
     return merged, dict(updated_provenance)
 
 
+def _build_observed_inputs(
+    patch: Mapping[str, Any],
+    applied_fields: list[str],
+    identity: Dict[str, Any],
+    *,
+    source: str,
+    existing_observed: Mapping[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Capture raw user/LLM values before any normalization or promotion.
+
+    Each entry records the original value as received, the extraction source,
+    and the identity classification assigned at staging time.  Values are
+    append-only: an earlier observation is never overwritten by a later one
+    for the same field.
+    """
+    observed: Dict[str, Any] = dict(existing_observed or {})
+    for key in applied_fields:
+        if key in observed:
+            continue
+        raw_value = patch.get(key)
+        if raw_value is None:
+            continue
+        identity_record = identity.get(key)
+        identity_class_raw = "identity_unresolved"
+        if isinstance(identity_record, dict):
+            identity_class_raw = str(identity_record.get("identity_class") or "identity_unresolved")
+        elif hasattr(identity_record, "identity_class"):
+            identity_class_raw = str(getattr(identity_record, "identity_class", "identity_unresolved"))
+        
+        identity_class = IdentityClass.normalize(identity_class_raw).value
+        observed[key] = {
+            "raw": raw_value,
+            "source": source,
+            "identity_class_at_capture": identity_class,
+        }
+    return observed
+
+
 def stage_extracted_parameter_patch(
     existing: Any,
     patch: Mapping[str, Any],
@@ -268,8 +324,14 @@ def stage_extracted_parameter_patch(
     *,
     source: str,
     allow_user_override: bool = False,
-) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, Any], list[str]]:
-    """Stage extracted parameters without promoting them into asserted state."""
+    existing_observed_inputs: Mapping[str, Any] | None = None,
+) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, Any], list[str], Dict[str, Any]]:
+    """Stage extracted parameters without promoting them into asserted state.
+
+    Returns a 5-tuple: (merged_params, provenance, identity, applied_fields,
+    observed_inputs).  The ``observed_inputs`` dict captures the raw value as
+    received before any normalization — append-only, never overwritten.
+    """
     merged_before = merge_parameters(existing, {})
     merged, updated_provenance = apply_parameter_patch_with_provenance(
         existing,
@@ -285,7 +347,60 @@ def stage_extracted_parameter_patch(
         source=source,
         applied_fields=applied_fields,
     )
-    return merged, updated_provenance, updated_identity, applied_fields
+    observed = _build_observed_inputs(
+        patch,
+        applied_fields,
+        updated_identity,
+        source=source,
+        existing_observed=existing_observed_inputs,
+    )
+    return merged, updated_provenance, updated_identity, applied_fields, observed
+
+
+def build_normalized_parameter_patch(
+    patch: Mapping[str, Any],
+    identity: Mapping[str, Any] | None,
+    *,
+    applied_fields: list[str] | None = None,
+) -> Dict[str, Any]:
+    """Build the explicit normalized layer from raw/staged patch data.
+
+    Identity-guarded fields use their deterministic ``normalized_value`` when
+    present. Non-identity-guarded fields keep the sanitized input value.
+    """
+    normalized: Dict[str, Any] = {}
+    target_fields = applied_fields if applied_fields is not None else list(dict(patch or {}).keys())
+    for key in target_fields:
+        if key not in patch:
+            continue
+        value = patch.get(key)
+        normalized_value = value
+        if key in _IDENTITY_GUARDED_FIELDS:
+            meta = dict((identity or {}).get(key) or {})
+            normalized_value = meta.get("normalized_value", value)
+        normalized[key] = normalized_value
+    return normalized
+
+
+def build_asserted_parameter_patch_from_normalized(
+    normalized_patch: Mapping[str, Any],
+    identity: Mapping[str, Any] | None,
+    *,
+    applied_fields: list[str] | None = None,
+) -> Dict[str, Any]:
+    """Promote only deterministic/allowed normalized values into asserted state."""
+    asserted: Dict[str, Any] = {}
+    target_fields = applied_fields if applied_fields is not None else list(dict(normalized_patch or {}).keys())
+    for key in target_fields:
+        if key not in normalized_patch:
+            continue
+        if key in _IDENTITY_GUARDED_FIELDS:
+            meta = dict((identity or {}).get(key) or {})
+            identity_class = str(meta.get("identity_class") or "")
+            if identity_class and IdentityClass.normalize(identity_class) != IdentityClass.CONFIRMED:
+                continue
+        asserted[key] = normalized_patch.get(key)
+    return asserted
 
 
 def _parse_number(value: Any) -> float | None:
@@ -564,17 +679,85 @@ def promote_parameter_patch_to_asserted(
     base_versions: Mapping[str, int] | None = None,
     now: Callable[[], float] | None = None,
 ) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, int], Dict[str, float], Dict[str, Any], Dict[str, str], list[str], list[Dict[str, Any]]]:
-    """Promote a sanitized patch into asserted parameters and clear staged copies."""
+    """Deprecated direct path: raw patches must pass through the normalized layer."""
+    raise ValueError(
+        "Direct raw patch promotion into asserted state is disabled; "
+        "use apply_parameter_patch_to_state_layers()."
+    )
+
+
+def apply_parameter_patch_to_state_layers(
+    existing_asserted: Any,
+    existing_normalized: Any,
+    patch: Mapping[str, Any],
+    asserted_provenance: Mapping[str, str] | None,
+    normalized_provenance: Mapping[str, str] | None,
+    identity: Mapping[str, Any] | None,
+    observed_inputs: Mapping[str, Any] | None,
+    *,
+    source: str,
+    allow_user_override: bool = False,
+    parameter_versions: Mapping[str, int] | None = None,
+    parameter_updated_at: Mapping[str, float] | None = None,
+    base_versions: Mapping[str, int] | None = None,
+    now: Callable[[], float] | None = None,
+) -> Tuple[
+    Dict[str, Any],
+    Dict[str, str],
+    Dict[str, int],
+    Dict[str, float],
+    Dict[str, Any],
+    Dict[str, str],
+    Dict[str, Any],
+    Dict[str, Any],
+    list[str],
+    list[str],
+    list[Dict[str, Any]],
+]:
+    """Apply a raw user patch via observed -> normalized -> asserted layers."""
+    patch_fields = list(dict(patch or {}).keys())
+    (
+        merged_normalized,
+        merged_normalized_provenance,
+        merged_identity,
+        _staged_fields,
+        merged_observed_inputs,
+    ) = stage_extracted_parameter_patch(
+        existing_normalized,
+        patch,
+        normalized_provenance,
+        identity,
+        source=source,
+        allow_user_override=allow_user_override,
+        existing_observed_inputs=observed_inputs,
+    )
+
+    normalized_patch = build_normalized_parameter_patch(
+        patch,
+        merged_identity,
+        applied_fields=patch_fields,
+    )
+    normalized_state = merge_parameters(existing_normalized, normalized_patch)
+    accepted_stage_fields = list(patch_fields)
+    existing_asserted_state = merge_parameters(existing_asserted, {})
+    assertion_candidate_fields = [
+        key for key in accepted_stage_fields if existing_asserted_state.get(key) != normalized_patch.get(key)
+    ]
+    asserted_patch = build_asserted_parameter_patch_from_normalized(
+        normalized_patch,
+        merged_identity,
+        applied_fields=assertion_candidate_fields,
+    )
     (
         merged_asserted,
         merged_asserted_provenance,
         merged_versions,
         merged_updated_at,
-        applied_fields,
+        asserted_fields,
         rejected_fields,
     ) = apply_parameter_patch_lww(
         existing_asserted,
-        patch,
+        asserted_patch,
         asserted_provenance,
         source=source,
         allow_user_override=allow_user_override,
@@ -584,20 +767,17 @@ def promote_parameter_patch_to_asserted(
         now=now,
     )
 
-    remaining_extracted = merge_parameters(existing_extracted, {})
-    remaining_extracted_provenance: Dict[str, str] = dict(extracted_provenance or {})
-    for key in applied_fields:
-        remaining_extracted.pop(key, None)
-        remaining_extracted_provenance.pop(key, None)
-
     return (
         merged_asserted,
         merged_asserted_provenance,
         merged_versions,
         merged_updated_at,
-        remaining_extracted,
-        remaining_extracted_provenance,
-        applied_fields,
+        normalized_state,
+        merged_normalized_provenance,
+        merged_identity,
+        merged_observed_inputs,
+        accepted_stage_fields,
+        asserted_fields,
         rejected_fields,
     )
 
@@ -610,7 +790,11 @@ __all__ = [
     "merge_parameters",
     "apply_parameter_patch_with_provenance",
     "stage_extracted_parameter_patch",
+    "build_normalized_parameter_patch",
+    "build_asserted_parameter_patch_from_normalized",
+    "_build_observed_inputs",
     "stage_parameter_identity_metadata",
     "apply_parameter_patch_lww",
+    "apply_parameter_patch_to_state_layers",
     "promote_parameter_patch_to_asserted",
 ]

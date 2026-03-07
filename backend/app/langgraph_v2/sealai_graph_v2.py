@@ -32,6 +32,11 @@ from app.langgraph_v2.nodes.nodes_flows import (
     rag_support_node,
 )
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
+from app.langgraph_v2.nodes.nodes_confirm import (
+    snapshot_confirmation_node,
+    rfq_confirmation_node,
+    draft_conflict_resolution_node,
+)
 from app.langgraph_v2.nodes.nodes_supervisor import (
     aggregator_node,
     calculator_agent_node,
@@ -69,7 +74,7 @@ def _merge_nested_dict(base: Dict[str, Any] | None, patch: Dict[str, Any] | None
     merged = dict(base or {})
     for key, value in dict(patch or {}).items():
         current = merged.get(key)
-        if isinstance(current, dict) and isinstance(value, dict):
+        if isinstance(current, dict) and isinstance(value, dict) and value:
             merged[key] = _merge_nested_dict(current, value)
         else:
             merged[key] = value
@@ -351,6 +356,9 @@ def create_sealai_graph_v2(
     )
     builder.add_node("response_node", response_node)
     builder.add_node("worm_evidence_node", worm_evidence_node)
+    builder.add_node("snapshot_confirmation_node", snapshot_confirmation_node)
+    builder.add_node("rfq_confirmation_node", rfq_confirmation_node)
+    builder.add_node("draft_conflict_resolution_node", draft_conflict_resolution_node)
 
     builder.add_edge(START, "profile_loader_node")
     builder.add_edge("profile_loader_node", "safety_synonym_guard_node")
@@ -400,6 +408,9 @@ def create_sealai_graph_v2(
     builder.add_edge("node_p4a_extract", "final_answer_node")
 
     builder.add_edge("final_answer_node", "response_node")
+    builder.add_edge("snapshot_confirmation_node", "final_answer_node")
+    builder.add_edge("rfq_confirmation_node", "final_answer_node")
+    builder.add_edge("draft_conflict_resolution_node", "final_answer_node")
     builder.add_edge("response_node", "worm_evidence_node")
     builder.add_edge("worm_evidence_node", END)
 

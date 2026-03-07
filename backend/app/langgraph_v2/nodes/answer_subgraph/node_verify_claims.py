@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Set
 import structlog
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
+from app.langgraph_v2.state.governance_types import SpecificityLevel, ConflictType, ConflictSeverity
 from app.langgraph_v2.state.sealai_state import AnswerContract, ConflictRecord, SealAIState, VerificationReport
 from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 from app.mcp.calculations.chemical_resistance import lookup as _chem_lookup
@@ -280,10 +281,10 @@ def _check_parameter_conflicts(
         ):
             conflicts.append(ConflictRecord(
                 conflict_type="PARAMETER_CONFLICT",
-                severity="WARNING",
+                severity="CRITICAL",
                 summary=(
-                    f"Draft pressure values {[round(p, 1) for p in draft_pressures]} bar "
-                    f"differ from contract authority: {contract_pressure} bar."
+                    f"Technical mismatch: Draft pressure {[round(p, 1) for p in draft_pressures]} bar "
+                    f"contradicts contract: {contract_pressure} bar."
                 ),
                 sources_involved=["draft", "contract.resolved_parameters"],
                 scope_note=(
@@ -306,10 +307,10 @@ def _check_parameter_conflicts(
         ):
             conflicts.append(ConflictRecord(
                 conflict_type="PARAMETER_CONFLICT",
-                severity="WARNING",
+                severity="CRITICAL",
                 summary=(
-                    f"Draft temperature values {[round(t, 1) for t in draft_temps]} °C "
-                    f"differ from contract authority: {contract_temp} °C."
+                    f"Technical mismatch: Draft temperature {[round(t, 1) for t in draft_temps]} °C "
+                    f"contradicts contract: {contract_temp} °C."
                 ),
                 sources_involved=["draft", "contract.resolved_parameters"],
                 scope_note=(
@@ -337,7 +338,7 @@ def _check_blocking_unknowns(
     if _as_numeric(params.get("pressure_bar")) is None:
         if _LIMITS_PRESSURE_RE.search(draft_text):
             conflicts.append(ConflictRecord(
-                conflict_type="PARAMETER_CONFLICT",
+                conflict_type="UNKNOWN",
                 severity="BLOCKING_UNKNOWN",
                 summary="Draft mentions pressure values but contract has no authoritative pressure.",
                 sources_involved=["draft", "contract.resolved_parameters"],
@@ -352,7 +353,7 @@ def _check_blocking_unknowns(
     if _as_numeric(params.get("temperature_C") or params.get("temperature_c")) is None:
         if _LIMITS_TEMP_RE.search(draft_text):
             conflicts.append(ConflictRecord(
-                conflict_type="PARAMETER_CONFLICT",
+                conflict_type="UNKNOWN",
                 severity="BLOCKING_UNKNOWN",
                 summary="Draft mentions temperature values but contract has no authoritative temperature.",
                 sources_involved=["draft", "contract.resolved_parameters"],
@@ -376,7 +377,7 @@ def _check_specificity_conflicts(
 
     # Check if we have ANY compound-specific candidate in the contract
     has_compound_specific = any(
-        str(c.get("specificity") or "") == "compound_specific"
+        str(c.get("specificity") or "") == SpecificityLevel.COMPOUND_REQUIRED.value
         for c in contract.candidate_semantics
     )
 
@@ -442,8 +443,8 @@ def _check_condition_conflicts(draft_text: str, contract: AnswerContract) -> Lis
             if not mentions_conditions:
                 conflicts.append(
                     ConflictRecord(
-                        conflict_type="CONDITION_CONFLICT",
-                        severity="HARD",
+                        conflict_type="PARAMETER_CONFLICT",
+                        severity="CRITICAL",
                         summary=(
                             f"Technical suitability claimed but critical conditions {missing} "
                             "are missing and not conditioned in draft."
@@ -501,7 +502,7 @@ def _check_assumption_conflicts(draft_text: str, contract: AnswerContract) -> Li
             conflicts.append(
                 ConflictRecord(
                     conflict_type="ASSUMPTION_CONFLICT",
-                    severity="WARNING",
+                    severity="CRITICAL",
                     summary=(
                         "Draft presents definitive recommendation while contract is based on "
                         "limited evidence assumptions."
@@ -528,7 +529,7 @@ def _check_scope_conflicts(draft_text: str, contract: AnswerContract) -> List[Co
             conflicts.append(
                 ConflictRecord(
                     conflict_type="SCOPE_CONFLICT",
-                    severity="WARNING",
+                    severity="CRITICAL",
                     summary=f"Vague suitability claim detected: '{vague_match.group(0)}'.",
                     sources_involved=["draft"],
                     scope_note="The draft uses gray-zone language which might mask a missing technical confirmation.",
@@ -544,7 +545,7 @@ def _check_scope_conflicts(draft_text: str, contract: AnswerContract) -> List[Co
             conflicts.append(
                 ConflictRecord(
                     conflict_type="SCOPE_CONFLICT",
-                    severity="WARNING",
+                    severity="CRITICAL",
                     summary=f"Conditional / restricted suitability wording: '{cond_match.group(0)}'.",
                     sources_involved=["draft"],
                     scope_note="Text contains contradictory suitability statements that may depend on unclarified scope.",
@@ -578,7 +579,7 @@ def _check_temporal_validity_conflicts(draft_text: str, contract: AnswerContract
             conflicts.append(
                 ConflictRecord(
                     conflict_type="TEMPORAL_VALIDITY_CONFLICT",
-                    severity="WARNING",
+                    severity="CRITICAL",
                     summary=(
                         f"Draft suggests long-term or permanent validity ('{has_temporal_claim.group(0)}') "
                         "while contract authority is restricted to current snapshot or uncertain."
@@ -682,6 +683,47 @@ def _apply_resolution_status(
 
         updated.append(nc.model_copy(update={"resolution_status": status}))
     return updated
+
+
+def _check_evidence_contradictions(contract: AnswerContract) -> List[ConflictRecord]:
+    """Check for internal contradictions within the contract's evidence authority.
+    
+    Example: A heuristic RAG hint suggests compatibility while a deterministic 
+    manufacturer limit or DIN norm explicitly denies it.
+    """
+    conflicts: List[ConflictRecord] = []
+    claims = contract.claims
+    if not claims:
+        return conflicts
+        
+    deterministic_claims = [c for c in claims if c.claim_origin == "deterministic"]
+    heuristic_claims = [c for c in claims if c.claim_origin == "heuristic"]
+    
+    if not deterministic_claims or not heuristic_claims:
+        return conflicts
+        
+    # Example logic: if we have a hard limit (deterministic) and a heuristic hint
+    # that seems to bypass it, flag it. (Simplified for 6A core implementation)
+    for hc in heuristic_claims:
+        h_text = str(hc.value or "").lower()
+        if not h_text:
+            continue
+            
+        # Very basic heuristic for internal evidence conflict:
+        # If heuristic says "resistant" but we have a deterministic blocker somewhere.
+        # This is a placeholder for more advanced semantic matching in future patches.
+        if "beständig" in h_text or "geeignet" in h_text:
+            for dc in deterministic_claims:
+                if dc.claim_type == "manufacturer_limit" and "nicht beständig" in str(dc.value or "").lower():
+                    conflicts.append(ConflictRecord(
+                        conflict_type="SOURCE_CONFLICT",
+                        severity="CRITICAL",
+                        summary="Internal evidence contradiction: heuristic hit contradicts deterministic limit.",
+                        sources_involved=list(set(hc.evidence_refs + dc.evidence_refs)),
+                        scope_note="Retrieval suggested compatibility but manufacturer limits explicitly deny it.",
+                        resolution_status="OPEN",
+                    ))
+    return conflicts
 
 
 def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
@@ -791,26 +833,59 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
     
     for number in missing_numbers:
         span = _build_failure_span(reason="missing_number", expected_value=number)
-        span["severity"] = "warning"
+        span["severity"] = "HARD"
         warning_claim_spans.append(span)
+        conflicts.append(ConflictRecord(
+            conflict_type="PARAMETER_CONFLICT",
+            severity="HARD",
+            summary=f"Missing numeric claim: {number}",
+
+            sources_involved=["draft", "contract.evidence"],
+            scope_note="The draft is missing a numeric value required by the contract authority.",
+            resolution_status="OPEN",
+        ))
+
     for number in unexpected_numbers:
-        failed_claim_spans.append(
-            _build_failure_span(reason="unexpected_number", expected_value="", wrong_span=number)
-        )
+        span = _build_failure_span(reason="unexpected_number", expected_value="", wrong_span=number)
+        failed_claim_spans.append(span)
+        conflicts.append(ConflictRecord(
+            conflict_type="PARAMETER_CONFLICT",
+            severity="HARD",
+            summary=f"Unexpected numeric claim: {number}",
+            sources_involved=["draft"],
+            scope_note="The draft contains a numeric value not supported by contract evidence.",
+            resolution_status="OPEN",
+        ))
+
     for disclaimer in missing_disclaimers:
-        failed_claim_spans.append(
-            _build_failure_span(reason="missing_disclaimer", expected_value=disclaimer)
-        )
-    for span in suspicious_unicode_spans:
-        failed_claim_spans.append(
-            _build_failure_span(reason="suspicious_unicode", expected_value="", wrong_span=span)
-        )
+        span = _build_failure_span(reason="missing_disclaimer", expected_value=disclaimer)
+        failed_claim_spans.append(span)
+        conflicts.append(ConflictRecord(
+            conflict_type="CONDITION_CONFLICT",
+            severity="HARD",
+            summary=f"Missing mandatory disclaimer: {disclaimer[:50]}...",
+            sources_involved=["draft", "contract.required_disclaimers"],
+            scope_note="A mandatory technical disclaimer was omitted from the draft.",
+            resolution_status="OPEN",
+        ))
+
+    for span_text in suspicious_unicode_spans:
+        span = _build_failure_span(reason="suspicious_unicode", expected_value="", wrong_span=span_text)
+        failed_claim_spans.append(span)
+        conflicts.append(ConflictRecord(
+            conflict_type="SCOPE_CONFLICT",
+            severity="SOFT",
+            summary=f"Suspicious unicode/formatting: {span_text}",
+            sources_involved=["draft"],
+            scope_note="Non-standard characters detected which might lead to misinterpretation.",
+            resolution_status="OPEN",
+        ))
         
     for span in resistance_spans:
         failed_claim_spans.append(span)
         conflicts.append(ConflictRecord(
             conflict_type="SOURCE_CONFLICT",
-            severity="HARD",
+            severity="CRITICAL",
             summary=f"Chemical resistance contradiction detected: {span['expected_value']}",
             sources_involved=["draft", "chemical_resistance_lookup"],
             scope_note="Draft claims compatibility while lookup denies it.",
@@ -821,7 +896,7 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
         failed_claim_spans.append(span)
         conflicts.append(ConflictRecord(
             conflict_type="SOURCE_CONFLICT",
-            severity="HARD",
+            severity="CRITICAL",
             summary=f"Material limit contradiction detected: {span['wrong_span']}",
             sources_involved=["draft", "material_limits_lookup"],
             scope_note="Draft claims viability beyond defined operational limits.",
@@ -848,6 +923,9 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
 
     # TEMPORAL_VALIDITY_CONFLICT: unlimited validity suggestions vs. snapshot evidence
     conflicts.extend(_check_temporal_validity_conflicts(draft_text, contract))
+
+    # INTERNAL EVIDENCE CONTRADICTIONS: heuristic vs deterministic
+    conflicts.extend(_check_evidence_contradictions(contract))
 
     # FINAL RESOLUTION SYNC
     # Recover previous resolution statuses (e.g. from a previous patch attempt in this turn)

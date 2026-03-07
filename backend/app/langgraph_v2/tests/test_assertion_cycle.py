@@ -35,6 +35,9 @@ def test_build_assertion_cycle_update_marks_obsolete_instead_of_none() -> None:
     assert updated_contract["obsolete"] is True
     assert "pressure_bar" in updated_contract["obsolete_reason"]
     assert updated_contract["superseded_by_cycle"] == "cycle_test_sess_123_2"
+    assert patch["system"]["sealing_requirement_spec"] is None
+    assert patch["system"]["rfq_draft"] is None
+    assert patch["system"]["rfq_confirmed"] is False
 
 
 def test_build_assertion_cycle_update_no_contract() -> None:
@@ -46,5 +49,33 @@ def test_build_assertion_cycle_update_no_contract() -> None:
     )
 
     patch = build_assertion_cycle_update(state, applied_fields=["pressure_bar"])
-    
+
     assert patch["system"]["answer_contract"] is None
+
+
+def test_root_state_flat_payload_routes_assertion_and_rfq_fields_into_pillars() -> None:
+    state = SealAIState(
+        current_assertion_cycle_id=3,
+        asserted_profile_revision=8,
+        state_revision=8,
+        snapshot_parent_revision=7,
+        governance_metadata={"scope_of_validity": ["Nur fuer den aktuellen Assertion-Stand."]},
+        derived_from_assertion_cycle_id=3,
+        derived_from_assertion_revision=8,
+        sealing_requirement_spec={"spec_id": "SRS-1"},
+        rfq_draft={"rfq_id": "RFQ-1"},
+        rfq_confirmed=True,
+    )
+
+    assert state.reasoning.current_assertion_cycle_id == 3
+    assert state.reasoning.asserted_profile_revision == 8
+    assert state.reasoning.state_revision == 8
+    assert state.reasoning.snapshot_parent_revision == 7
+    assert state.system.governance_metadata.scope_of_validity == ["Nur fuer den aktuellen Assertion-Stand."]
+    assert state.system.derived_from_assertion_cycle_id == 3
+    assert state.system.derived_from_assertion_revision == 8
+    assert state.system.sealing_requirement_spec is not None
+    assert state.system.sealing_requirement_spec.spec_id == "SRS-1"
+    assert state.system.rfq_draft is not None
+    assert state.system.rfq_draft.rfq_id == "RFQ-1"
+    assert state.system.rfq_confirmed is True

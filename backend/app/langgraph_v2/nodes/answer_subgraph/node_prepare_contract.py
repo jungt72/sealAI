@@ -21,17 +21,24 @@ from typing import Any, Dict, List, Set, Tuple
 import structlog
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
+from app.langgraph_v2.state.governance_types import IdentityClass, SpecificityLevel
 from app.langgraph_v2.state.sealai_state import (
     AnswerContract,
     CandidateItem,
     GovernanceMetadata,
     RequirementSpec,
+    SealingRequirementSpec,
     SealAIState,
     WorkingMemory,
 )
 from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
-from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice, build_candidate_clusters
+from app.langgraph_v2.utils.candidate_semantics import (
+    annotate_material_choice,
+    build_candidate_clusters,
+    get_specificity_rank,
+)
 from app.langgraph_v2.utils.context_manager import build_final_context, dedupe_retrieval_chunks
+from app.langgraph_v2.utils.rfq_admissibility import normalize_rfq_admissibility_contract
 
 
 def _build_requirement_spec(
@@ -66,6 +73,14 @@ def _build_requirement_spec(
     )
 
 
+def _artifact_id(prefix: str, state: SealAIState) -> str:
+    cycle_id = int(getattr(state.reasoning, "current_assertion_cycle_id", 0) or 0)
+    revision = int(getattr(state.reasoning, "asserted_profile_revision", 0) or 0)
+    if cycle_id <= 0 or revision <= 0:
+        return ""
+    return f"{prefix}-c{cycle_id}-r{revision}"
+
+
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.prepare_contract")
 _PRESSURE_BAR_PATTERN = re.compile(
     r"(?:max(?:imaler)?\s*(?:druck|pressure)|druck\s*max|pressure\s*max)[^\d]{0,20}(\d+(?:[.,]\d+)?)\s*bar",
@@ -94,6 +109,10 @@ _SEAL_MATERIAL_TOKENS = frozenset(
     }
 )
 _NUMBER_TOKEN_PATTERN = re.compile(r"\b\d+(?:[.,]\d+)?\b")
+_NORMATIVE_REFERENCE_PATTERN = re.compile(
+    r"\b(?:DIN|ISO|EN|ASTM|ASME|API)\s*[A-Z0-9./-]*\d(?:[A-Z0-9./-]*)\b",
+    re.IGNORECASE,
+)
 _IDENTITY_GUARDED_FIELDS = {"medium", "material", "seal_material", "trade_name", "product", "product_name", "seal_family", "flange_standard"}
 
 
@@ -617,6 +636,9 @@ def _extract_runout_hardness_missing_flags(state: SealAIState) -> tuple[bool, bo
     return missing_runout, missing_hardness
 
 
+from app.langgraph_v2.state.governance_types import IdentityClass
+
+
 def _filter_identity_guarded_extracted_params(state: SealAIState, extracted: Dict[str, Any]) -> Dict[str, Any]:
     identity_map = _as_dict(getattr(state.reasoning, "extracted_parameter_identity", {}) or {})
     filtered: Dict[str, Any] = {}
@@ -625,14 +647,27 @@ def _filter_identity_guarded_extracted_params(state: SealAIState, extracted: Dic
             filtered[key] = value
             continue
         meta = _as_dict(identity_map.get(key) or {})
-        identity_class = str(meta.get("identity_class") or "unresolved")
-        if identity_class == "confirmed":
+        identity_class = str(meta.get("identity_class") or "identity_unresolved")
+        if IdentityClass.normalize(identity_class) == IdentityClass.CONFIRMED:
             filtered[key] = value
     return filtered
 
 
 def _build_resolved_parameters(state: SealAIState) -> Dict[str, Any]:
     resolved: Dict[str, Any] = _working_profile_to_dict(state)
+
+    # Identity gate: strip identity-guarded fields from engineering_profile
+    # that have a non-confirmed identity classification.  This prevents
+    # family_only / probable / unresolved values from being treated as
+    # asserted facts in the contract.
+    identity_map = _as_dict(getattr(state.reasoning, "extracted_parameter_identity", {}) or {})
+    for key in list(resolved.keys()):
+        if key not in _IDENTITY_GUARDED_FIELDS:
+            continue
+        meta = _as_dict(identity_map.get(key) or {})
+        identity_class = str(meta.get("identity_class") or "")
+        if identity_class and IdentityClass.normalize(identity_class) != IdentityClass.CONFIRMED:
+            resolved.pop(key, None)
 
     extracted = _working_profile_get(state, "extracted_params", {}) or {}
     if isinstance(extracted, dict):
@@ -716,21 +751,168 @@ def _build_candidate_semantics(state: SealAIState) -> List[Dict[str, Any]]:
         annotated_material_choice = annotate_material_choice(material_choice, identity_map=identity_map)
         material = str(annotated_material_choice.get("material") or "").strip()
         if material:
-            excluded_by_gate = _excluded_by_upstream_gate(state, material)
             semantics.append(
                 CandidateItem(
                     kind="material",
                     value=material,
                     rationale=str(annotated_material_choice.get("details") or ""),
                     confidence=0.6,
-                    specificity=str(annotated_material_choice.get("specificity") or "unresolved"),
+                    specificity=str(annotated_material_choice.get("specificity") or SpecificityLevel.FAMILY_ONLY.value),
                     source_kind=str(annotated_material_choice.get("source_kind") or "unknown"),
                     governed=bool(annotated_material_choice.get("governed")),
-                    excluded_by_gate=excluded_by_gate,
+                    excluded_by_gate=_excluded_by_upstream_gate(state, material),
                 ).model_dump(exclude_none=False)
             )
 
     return semantics
+
+
+def _extract_normative_references(
+    state: SealAIState,
+    *,
+    selected_fact_ids: List[str],
+) -> List[str]:
+    selected = {str(item).strip() for item in selected_fact_ids if str(item).strip()}
+    references: List[str] = []
+    for chunk in _extract_retrieval_chunks_for_authority(state):
+        chunk_dict = _as_dict(chunk)
+        metadata = _as_dict(chunk_dict.get("metadata"))
+        document_id = str(metadata.get("document_id") or chunk_dict.get("document_id") or "").strip()
+        chunk_id = str(metadata.get("chunk_id") or chunk_dict.get("chunk_id") or "").strip()
+        compound_id = f"{document_id}:{chunk_id}" if document_id and chunk_id else ""
+        if selected and compound_id and compound_id not in selected:
+            continue
+        text_candidates = (
+            document_id,
+            str(chunk_dict.get("source") or "").strip(),
+            str(chunk_dict.get("text") or chunk_dict.get("snippet") or "").strip(),
+        )
+        for text in text_candidates:
+            if not text:
+                continue
+            for match in _NORMATIVE_REFERENCE_PATTERN.findall(text):
+                reference = " ".join(str(match).strip().split())
+                if reference:
+                    references.append(reference.upper())
+    return list(dict.fromkeys(references))
+
+
+def _build_material_family_candidates(candidate_clusters: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+    for cluster_name in ("plausibly_viable", "viable_only_with_manufacturer_validation"):
+        for item in list(candidate_clusters.get(cluster_name) or []):
+            candidate = _as_dict(item)
+            if str(candidate.get("kind") or "").strip() != "material":
+                continue
+            specificity = str(candidate.get("specificity") or "").strip()
+            value = str(candidate.get("value") or "").strip()
+            if not value or specificity not in {
+                SpecificityLevel.FAMILY_ONLY.value,
+                SpecificityLevel.PRODUCT_FAMILY_REQUIRED.value,
+                SpecificityLevel.SUBFAMILY.value,
+            }:
+                continue
+            candidates.append(
+                {
+                    "material_family": value,
+                    "specificity": specificity,
+                    "source_kind": str(candidate.get("source_kind") or "").strip(),
+                    "governed": bool(candidate.get("governed")),
+                }
+            )
+    deduped: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in candidates:
+        key = (str(item.get("material_family") or ""), str(item.get("specificity") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _build_open_points_visible(
+    requirement_spec: RequirementSpec,
+    governance_metadata: GovernanceMetadata,
+) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for value in list(requirement_spec.missing_critical_parameters or []):
+        text = str(value).strip()
+        if text:
+            items.append({"kind": "missing_critical_parameter", "value": text, "source": "requirement_spec"})
+    for value in list(requirement_spec.unknowns_release_blocking or []):
+        text = str(value).strip()
+        if text:
+            items.append({"kind": "release_blocker", "value": text, "source": "governance_metadata"})
+    for value in list(governance_metadata.unknowns_manufacturer_validation or []):
+        text = str(value).strip()
+        if text:
+            items.append({"kind": "manufacturer_validation", "value": text, "source": "governance_metadata"})
+    deduped: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        key = (str(item.get("kind") or ""), str(item.get("value") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _build_sealing_requirement_spec(
+    state: SealAIState,
+    *,
+    requirement_spec: RequirementSpec,
+    governance_metadata: GovernanceMetadata,
+    candidate_clusters: Dict[str, List[Dict[str, Any]]],
+    selected_fact_ids: List[str],
+) -> SealingRequirementSpec:
+    operating_envelope = dict(requirement_spec.operating_conditions or {})
+    dimensional_requirements = {
+        key: value
+        for key, value in operating_envelope.items()
+        if key in {"shaft_diameter"}
+    }
+    construction_requirements = {
+        key: value
+        for key, value in operating_envelope.items()
+        if key in {"dynamic_type", "shaft_runout", "shaft_hardness"}
+    }
+    
+    # Blueprint v1.2: material_specificity_required reflects what is needed for this contract.
+    # We derive the best AVAILABLE specificity from all candidates to see what we CAN offer.
+    best_available_spec = SpecificityLevel.FAMILY_ONLY.value
+    all_candidates = []
+    for cluster in candidate_clusters.values():
+        all_candidates.extend(cluster)
+    
+    for item in all_candidates:
+        spec_val = str(_as_dict(item).get("specificity") or "")
+        if get_specificity_rank(spec_val) > get_specificity_rank(best_available_spec):
+            best_available_spec = spec_val
+
+    # For SealingRequirementSpec, we report the best available level to maintain 
+    # compatibility with existing verification logic that expects this field 
+    # to reflect the output quality.
+    required_spec = best_available_spec
+
+    return SealingRequirementSpec(
+        spec_id=_artifact_id("srs", state),
+        operating_envelope=operating_envelope,
+        dimensional_requirements=dimensional_requirements,
+        normative_references=_extract_normative_references(state, selected_fact_ids=selected_fact_ids),
+        material_family_candidates=_build_material_family_candidates(candidate_clusters),
+        material_specificity_required=required_spec,
+        construction_requirements=construction_requirements,
+        manufacturer_validation_scope=list(governance_metadata.unknowns_manufacturer_validation),
+        assumption_boundaries=list(governance_metadata.assumptions_active),
+        invalid_if=list(requirement_spec.exclusion_criteria),
+        open_points_visible=_build_open_points_visible(requirement_spec, governance_metadata),
+        operating_conditions=operating_envelope,
+        missing_critical_parameters=list(requirement_spec.missing_critical_parameters),
+        exclusion_criteria=list(requirement_spec.exclusion_criteria),
+        unknowns_release_blocking=list(requirement_spec.unknowns_release_blocking),
+    )
 
 
 def _build_governance_metadata(
@@ -754,16 +936,20 @@ def _build_governance_metadata(
         scope_of_validity.append("Gilt nur fuer den aktuellen Assertion-Stand sowie die in diesem Lauf gebundenen Parameter, Berechnungen und Evidenzen.")
     if calc_results:
         scope_of_validity.append("Deterministische Berechnungsergebnisse gelten nur fuer den aktuell erfassten Betriebspunkt.")
-    if any(str(item.get("specificity") or "") != "compound_specific" for item in candidate_semantics):
-        scope_of_validity.append("Kandidaten mit Specificity unter compound_specific sind keine compoundscharfe Freigabe.")
+    if any(str(item.get("specificity") or "") != SpecificityLevel.COMPOUND_REQUIRED.value for item in candidate_semantics):
+        scope_of_validity.append("Kandidaten mit Specificity unter compound_required sind keine compoundscharfe Freigabe.")
 
     if respond_with_uncertainty:
         assumptions_active.append("Antwort basiert auf begrenzter Evidenz- oder Berechnungsabdeckung.")
     if bool((state.reasoning.flags or {}).get("rag_low_quality_results")):
         assumptions_active.append("Retrieval-Qualitaet fuer Material-/Dokumentkontext war niedrig.")
+    
+    # Missing parameters from reasoning (e.g. from discovery or qgate)
     missing_params = [str(item).strip() for item in list(state.reasoning.missing_params or []) if str(item).strip()]
     if missing_params:
         assumptions_active.append(f"Offene Parameterluecken: {', '.join(missing_params)}.")
+        # Blueprint v1.2: treat missing params as release-blocking unknowns
+        unknowns_release_blocking.extend(missing_params)
 
     missing_critical = resolved_parameters.get("missing_critical_parameters")
     if isinstance(missing_critical, list):
@@ -785,7 +971,7 @@ def _build_governance_metadata(
     for candidate in candidate_semantics:
         specificity = str(candidate.get("specificity") or "").strip()
         value = str(candidate.get("value") or "").strip()
-        if specificity and specificity != "compound_specific":
+        if specificity and specificity != SpecificityLevel.COMPOUND_REQUIRED.value:
             label = value or "Kandidat"
             unknowns_manufacturer_validation.append(
                 f"{label} erfordert Hersteller-/Compound-Validierung (specificity: {specificity})."
@@ -901,7 +1087,10 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
                 )
 
     candidate_semantics = _build_candidate_semantics(state)
-    candidate_clusters = build_candidate_clusters(candidate_semantics)
+    # Blueprint v1.2: Default required specificity for AnswerContract is compound_required.
+    # This can be made dynamic in Patch 2C if we support purely family-level recommendations.
+    required_spec = SpecificityLevel.COMPOUND_REQUIRED.value
+    candidate_clusters = build_candidate_clusters(candidate_semantics, required_specificity=required_spec)
     governance_metadata = _build_governance_metadata(
         state,
         candidate_semantics=candidate_semantics,
@@ -913,8 +1102,44 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
     )
 
     requirement_spec = _build_requirement_spec(resolved_parameters, governance_metadata)
+    sealing_requirement_spec = _build_sealing_requirement_spec(
+        state,
+        requirement_spec=requirement_spec,
+        governance_metadata=governance_metadata,
+        candidate_clusters=candidate_clusters,
+        selected_fact_ids=selected_fact_ids,
+    )
+
+    # Blueprint v1.2: Ensure rfq_admissibility is normalized and tied to this contract.
+    # Pass cycle context explicitly to ensure binding.
+    cycle_id = int(getattr(state.reasoning, "current_assertion_cycle_id", 0) or 0)
+    revision = int(getattr(state.reasoning, "asserted_profile_revision", 0) or 0)
+
+    state_dump = state.model_dump(exclude_none=False)
+    admissibility_dict = normalize_rfq_admissibility_contract(state_dump)
+    
+    # Ensure cycle/revision are set in the admissibility contract
+    admissibility_dict["derived_from_assertion_cycle_id"] = cycle_id if cycle_id > 0 else None
+    admissibility_dict["derived_from_assertion_revision"] = revision if revision > 0 else None
+
+    # Override/re-check blockers from current contract's governance metadata
+    all_blockers = list(dict.fromkeys(
+        admissibility_dict.get("blockers", []) + governance_metadata.unknowns_release_blocking
+    ))
+    if all_blockers:
+        admissibility_dict["status"] = "inadmissible"
+        admissibility_dict["release_status"] = "inadmissible"
+        admissibility_dict["blockers"] = all_blockers
+        admissibility_dict["governed_ready"] = False
+
+    from app.langgraph_v2.state.sealai_state import RFQAdmissibilityContract
+    rfq_admissibility = RFQAdmissibilityContract.model_validate(admissibility_dict)
 
     contract = AnswerContract(
+        contract_id=_artifact_id("contract", state),
+        snapshot_parent_revision=revision,
+        release_status=rfq_admissibility.release_status,
+        rfq_admissibility=rfq_admissibility,
         resolved_parameters=resolved_parameters,
         requirement_spec=requirement_spec,
         calc_results=calc_results,
@@ -924,6 +1149,7 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
         governance_metadata=governance_metadata,
         required_disclaimers=required_disclaimers,
         respond_with_uncertainty=respond_with_uncertainty,
+        claims=list(state.reasoning.claims or []),
     )
     contract_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
 
@@ -957,6 +1183,7 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
             "answer_contract": contract,
             "final_prompt": final_context,
             "final_prompt_metadata": final_prompt_metadata,
+            "sealing_requirement_spec": sealing_requirement_spec,
         },
         "reasoning": {
             "flags": flags,

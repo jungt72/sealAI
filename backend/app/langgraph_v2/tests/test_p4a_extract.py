@@ -45,14 +45,14 @@ class TestP4aFullProfile:
 
         result = node_p4a_extract(state)
 
-        assert result["extracted_params"]["pressure_max_bar"] == 40.0
-        assert result["extracted_params"]["temperature_max_c"] == 300.0
-        assert result["extracted_params"]["flange_standard"] == "EN 1092-1"
-        assert result["extracted_params"]["flange_dn"] == 100
-        assert result["extracted_params"]["bolt_count"] == 8
-        assert result["extracted_params"]["bolt_size"] == "M20"
-        assert result["extracted_params"]["medium"] == "Dampf"
-        assert result["extracted_params"]["cyclic_load"] is True
+        assert result["working_profile"]["extracted_params"]["pressure_max_bar"] == 40.0
+        assert result["working_profile"]["extracted_params"]["temperature_max_c"] == 300.0
+        assert result["working_profile"]["extracted_params"]["flange_standard"] == "EN 1092-1"
+        assert result["working_profile"]["extracted_params"]["flange_dn"] == 100
+        assert result["working_profile"]["extracted_params"]["bolt_count"] == 8
+        assert result["working_profile"]["extracted_params"]["bolt_size"] == "M20"
+        assert result["working_profile"]["extracted_params"]["medium"] == "Dampf"
+        assert result["working_profile"]["extracted_params"]["cyclic_load"] is True
         assert result["phase"] == "extraction"
         assert result["last_node"] == "node_p4a_extract"
 
@@ -69,8 +69,8 @@ class TestP4aFullProfile:
 
         result = node_p4a_extract(state)
 
-        assert result["extracted_params"]["pressure_max_bar"] == 10.0
-        assert result["extracted_params"]["temperature_max_c"] == 100.0
+        assert result["working_profile"]["extracted_params"]["pressure_max_bar"] == 10.0
+        assert result["working_profile"]["extracted_params"]["temperature_max_c"] == 100.0
         assert "error" not in result
 
 
@@ -87,7 +87,7 @@ class TestP4aSparseProfile:
 
         result = node_p4a_extract(state)
 
-        assert result["extracted_params"] == {}
+        assert result["working_profile"]["extracted_params"] == {}
         assert result["phase"] == "extraction"
 
     def test_gap_report_overrides_state_flag(self):
@@ -101,7 +101,7 @@ class TestP4aSparseProfile:
 
         result = node_p4a_extract(state)
 
-        assert result["extracted_params"] == {}
+        assert result["working_profile"]["extracted_params"] == {}
 
     def test_no_working_profile_skips(self):
         state = _make_state(
@@ -112,7 +112,7 @@ class TestP4aSparseProfile:
         result = node_p4a_extract(state)
 
         # No working_profile -> no pressure/temp -> returns empty with error
-        assert result["extracted_params"] == {}
+        assert result["working_profile"]["extracted_params"] == {}
 
     def test_missing_pressure_returns_empty(self):
         wp = WorkingProfile(temperature_max_c=100.0)
@@ -124,7 +124,7 @@ class TestP4aSparseProfile:
 
         result = node_p4a_extract(state)
 
-        assert result["extracted_params"] == {}
+        assert result["working_profile"]["extracted_params"] == {}
         assert "error" in result
 
     def test_missing_temperature_returns_empty(self):
@@ -137,7 +137,7 @@ class TestP4aSparseProfile:
 
         result = node_p4a_extract(state)
 
-        assert result["extracted_params"] == {}
+        assert result["working_profile"]["extracted_params"] == {}
         assert "error" in result
 
 
@@ -159,7 +159,7 @@ class TestP4aValidationError:
 
         result = node_p4a_extract(state)
 
-        assert result["extracted_params"]["flange_class"] == 300
+        assert result["working_profile"]["extracted_params"]["flange_class"] == 300
         assert "error" not in result
 
     def test_invalid_flange_class_rejected_at_working_profile(self):

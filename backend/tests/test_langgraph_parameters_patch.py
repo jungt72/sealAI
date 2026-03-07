@@ -108,13 +108,17 @@ def test_patch_works_with_stable_node_returns_200(monkeypatch: pytest.MonkeyPatc
     assert body["ok"] is True
     assert body["chat_id"] == "default"
     assert body["applied_fields"] == ["medium"]
+    assert body["asserted_fields"] == ["medium"]
     assert body["rejected_fields"] == []
     assert body["versions"]["medium"] == 1
     assert isinstance(body["updated_at"]["medium"], float)
 
     assert len(fake_graph.calls) == 1
     assert fake_graph.calls[0]["as_node"] == "supervisor_logic_node"
-    assert fake_graph.calls[0]["patch"]["parameters"]["medium"] == "oil"
+    patch = fake_graph.calls[0]["patch"]
+    assert patch["working_profile"]["normalized_profile"]["medium"] == "oil"
+    assert patch["working_profile"]["engineering_profile"]["medium"] == "oil"
+    assert patch["reasoning"]["observed_inputs"]["medium"]["raw"] == "oil"
 
 
 def test_patch_missing_chat_id_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:

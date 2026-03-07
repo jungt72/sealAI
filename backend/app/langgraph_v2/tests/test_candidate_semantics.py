@@ -9,7 +9,7 @@ def test_annotate_material_choice_marks_retrieval_hits_as_document_level() -> No
         }
     )
 
-    assert annotated["specificity"] == "document_hit"
+    assert annotated["specificity"] == "family_only"
     assert annotated["governed"] is False
 
 
@@ -21,7 +21,7 @@ def test_annotate_material_choice_keeps_family_codes_at_family_level() -> None:
         }
     )
 
-    assert annotated["specificity"] == "family_level"
+    assert annotated["specificity"] == "family_only"
     assert annotated["governed"] is False
 
 
@@ -31,11 +31,11 @@ def test_annotate_material_choice_does_not_upgrade_probable_identity_to_compound
             "material": "Kyrolon",
             "confidence": "heuristic",
         },
-        identity_map={"material": {"identity_class": "probable"}},
+        identity_map={"material": {"identity_class": "identity_probable"}},
     )
 
-    assert annotated["identity_class"] == "probable"
-    assert annotated["specificity"] == "unresolved"
+    assert annotated["identity_class"] == "identity_probable"
+    assert annotated["specificity"] == "family_only"
     assert annotated["governed"] is False
 
 
@@ -44,14 +44,14 @@ def test_build_candidate_clusters_routes_gate_excluded_to_inadmissible() -> None
         {
             "kind": "material",
             "value": "NBR",
-            "specificity": "family_level",
+            "specificity": "family_only",
             "governed": False,
             "excluded_by_gate": "chemical_resistance:C:NBR×Schwefelsäure",
         },
         {
             "kind": "material",
             "value": "FKM",
-            "specificity": "family_level",
+            "specificity": "family_only",
             "governed": False,
             "excluded_by_gate": None,
         },
@@ -71,7 +71,7 @@ def test_build_candidate_clusters_governed_compound_specific_is_plausibly_viable
         {
             "kind": "material",
             "value": "FKM-A75",
-            "specificity": "compound_specific",
+            "specificity": "compound_required",
             "governed": True,
             "excluded_by_gate": None,
         },
@@ -99,7 +99,7 @@ def test_build_candidate_clusters_gate_exclusion_overrides_governed_flag() -> No
         {
             "kind": "material",
             "value": "NBR",
-            "specificity": "compound_specific",
+            "specificity": "compound_required",
             "governed": True,
             "excluded_by_gate": "chemical_resistance:C:NBR×Aceton",
         },

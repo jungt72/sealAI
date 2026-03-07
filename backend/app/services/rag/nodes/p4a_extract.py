@@ -85,9 +85,13 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         run_id=state.system.run_id,
         thread_id=state.conversation.thread_id,
     )
-    existing_extracted_params = dict(state.working_profile.extracted_params or {})
+    existing_normalized_params = dict(
+        state.working_profile.normalized_profile
+        or state.working_profile.extracted_params
+        or {}
+    )
     params_dict = _map_profile_to_calc_input(state)
-    merged_extracted_params = dict(existing_extracted_params)
+    merged_extracted_params = dict(existing_normalized_params)
     merged_extracted_params.update({key: value for key, value in params_dict.items() if value is not None})
 
     # Skip if critical fields are missing
@@ -100,6 +104,7 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         return {
             "working_profile": {
                 "engineering_profile": state.working_profile.engineering_profile,
+                "normalized_profile": merged_extracted_params,
                 "extracted_params": merged_extracted_params,
             },
             "reasoning": {
@@ -119,6 +124,7 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         return {
             "working_profile": {
                 "engineering_profile": state.working_profile.engineering_profile,
+                "normalized_profile": merged_extracted_params,
                 "extracted_params": merged_extracted_params,
             },
             "reasoning": {
@@ -144,6 +150,7 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
         return {
             "working_profile": {
                 "engineering_profile": state.working_profile.engineering_profile,
+                "normalized_profile": merged_extracted_params,
                 "extracted_params": merged_extracted_params,
             },
             "reasoning": {
@@ -164,6 +171,7 @@ def node_p4a_extract(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[st
     return {
         "working_profile": {
             "engineering_profile": state.working_profile.engineering_profile,
+            "normalized_profile": merged_extracted_params,
             "extracted_params": merged_extracted_params,
         },
         "reasoning": {

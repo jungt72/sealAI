@@ -3,6 +3,7 @@ from __future__ import annotations
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.api.v1.endpoints.langgraph_v2 import (
+    _engineering_profile_payload,
     _build_state_update_payload,
     _event_belongs_to_current_run,
     _merge_state_like,
@@ -37,8 +38,49 @@ def test_merge_state_like_routes_legacy_parameters_into_extracted_params() -> No
     merged = _merge_state_like(base, {"parameters": {"pressure_bar": 42.0}})
 
     assert isinstance(merged, dict)
+    assert merged["working_profile"]["normalized_profile"]["pressure_bar"] == 42.0
     assert merged["working_profile"]["extracted_params"]["pressure_bar"] == 42.0
     assert "pressure_bar" not in merged["working_profile"]["engineering_profile"]
+
+
+def test_flat_working_profile_payload_is_staged_not_asserted() -> None:
+    state = SealAIState(working_profile={"pressure_bar": 42.0, "medium": "steam"})
+
+    assert state.working_profile.normalized_profile["pressure_bar"] == 42.0
+    assert state.working_profile.extracted_params["medium"] == "steam"
+    assert state.working_profile.engineering_profile.pressure_bar is None
+
+
+def test_engineering_profile_payload_ignores_nested_staging_only_payload() -> None:
+    payload = _engineering_profile_payload(
+        {
+            "working_profile": {
+                "normalized_profile": {"pressure_bar": 42.0},
+                "extracted_params": {"pressure_bar": 42.0},
+            }
+        }
+    )
+
+    assert payload == {}
+
+
+def test_extracted_params_patch_does_not_mutate_asserted_profile() -> None:
+    base = SealAIState(working_profile={"engineering_profile": {"pressure_bar": 5.0}})
+
+    merged = _merge_state_like(
+        base,
+        {
+            "working_profile": {
+                "normalized_profile": {"pressure_bar": 42.0},
+                "extracted_params": {"pressure_bar": 42.0},
+            }
+        },
+    )
+
+    assert isinstance(merged, dict)
+    assert merged["working_profile"]["engineering_profile"]["pressure_bar"] == 5.0
+    assert merged["working_profile"]["normalized_profile"]["pressure_bar"] == 42.0
+    assert merged["working_profile"]["extracted_params"]["pressure_bar"] == 42.0
 
 
 def test_build_state_update_payload_omits_live_calc_tile_for_partial_patch() -> None:
@@ -116,7 +158,7 @@ def test_build_state_update_payload_exposes_candidate_specificity_from_contract(
                         {
                             "kind": "material",
                             "value": "Technical datasheet",
-                            "specificity": "document_hit",
+                            "specificity": "family_only",
                             "source_kind": "retrieval",
                             "governed": False,
                             "confidence": 0.6,
@@ -130,7 +172,7 @@ def test_build_state_update_payload_exposes_candidate_specificity_from_contract(
     )
 
     assert payload["data"]["candidate_semantics"][0]["value"] == "Technical datasheet"
-    assert payload["data"]["candidate_semantics"][0]["specificity"] == "document_hit"
+    assert payload["data"]["candidate_semantics"][0]["specificity"] == "family_only"
     assert payload["data"]["candidate_semantics"][0]["governed"] is False
 
 
@@ -155,6 +197,32 @@ def test_build_state_update_payload_exposes_governance_metadata() -> None:
     assert payload["data"]["governance_metadata"]["scope_of_validity"] == ["Nur fuer den aktuellen Assertion-Stand."]
     assert payload["data"]["governance_metadata"]["unknowns_release_blocking"] == ["Druckstufe ungeklaert"]
     assert payload["governance_metadata"]["gate_failures"] == ["CRITICAL: Druckstufe ungeklaert"]
+
+
+def test_build_state_update_payload_exposes_rfq_projection_objects() -> None:
+    payload = _build_state_update_payload(
+        {
+            "system": {
+                "sealing_requirement_spec": {
+                    "spec_id": "SRS-1",
+                    "material_specificity_required": "family_only",
+                    "operating_envelope": {"pressure_bar": 10},
+                },
+                "rfq_draft": {
+                    "rfq_id": "RFQ-1",
+                    "rfq_basis_status": "provisional",
+                    "buyer_contact": {"company": "SealAI Test GmbH"},
+                },
+                "rfq_confirmed": True,
+            }
+        }
+    )
+
+    assert payload["data"]["sealing_requirement_spec"]["spec_id"] == "SRS-1"
+    assert payload["data"]["rfq_draft"]["rfq_id"] == "RFQ-1"
+    assert payload["data"]["rfq_confirmed"] is True
+    assert payload["sealing_requirement_spec"]["operating_envelope"]["pressure_bar"] == 10
+    assert payload["rfq_draft"]["buyer_contact"]["company"] == "SealAI Test GmbH"
 
 
 def test_resolve_final_text_does_not_promote_latest_ai_message_without_governance() -> None:

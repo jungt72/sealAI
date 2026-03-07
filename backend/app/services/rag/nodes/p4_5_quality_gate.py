@@ -718,9 +718,13 @@ def node_p4_5_qgate(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
     if state.reasoning.flags and state.reasoning.flags.get("force_instant_calc"):
         is_fast_path = True
 
-    # Merge extracted_params as fallback for profile fields
-    extracted = state.working_profile.extracted_params or {}
-    for key, value in extracted.items():
+    # Merge staged normalized parameters as a fallback for profile fields.
+    staged_profile = (
+        state.working_profile.normalized_profile
+        or state.working_profile.extracted_params
+        or {}
+    )
+    for key, value in staged_profile.items():
         if key not in profile or profile[key] is None:
             profile[key] = value
 

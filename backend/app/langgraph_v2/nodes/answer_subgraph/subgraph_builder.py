@@ -31,8 +31,9 @@ from app.langgraph_v2.nodes.answer_subgraph.node_prepare_contract import node_pr
 from app.langgraph_v2.nodes.answer_subgraph.node_targeted_patch import node_targeted_patch
 from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import node_verify_claims
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
-from app.langgraph_v2.state.sealai_state import SealAIState, VerificationReport
-from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
+from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, VerificationReport
+from app.langgraph_v2.utils.assertion_cycle import is_artifact_stale, stamp_patch_with_assertion_binding
+from app.langgraph_v2.utils.confirm_checkpoint import build_confirm_checkpoint_payload
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.builder")
 
@@ -249,7 +250,7 @@ def _deep_merge_patch(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, 
     merged = dict(left)
     for key, value in right.items():
         current = merged.get(key)
-        if isinstance(current, dict) and isinstance(value, dict):
+        if isinstance(current, dict) and isinstance(value, dict) and value:
             merged[key] = _deep_merge_patch(current, value)
         else:
             merged[key] = value
@@ -279,6 +280,67 @@ def _build_subgraph_state_input(before: SealAIState) -> AnswerSubgraphState:
     return AnswerSubgraphState.model_validate(subgraph_input)
 
 
+def _handle_checkpoint(state: SealAIState, action: str, node_name: str) -> Dict[str, Any]:
+    payload = build_confirm_checkpoint_payload(state, action=action, risk="med")
+    return {
+        "system": {
+            "confirm_checkpoint": payload,
+            "confirm_checkpoint_id": payload["checkpoint_id"],
+            "confirm_status": "pending",
+            "awaiting_user_confirmation": True,
+            "pending_action": action,
+        },
+        "reasoning": {
+            "last_node": node_name,
+            "phase": "confirm",
+        }
+    }
+
+
+def _consume_decision(state: SealAIState, action: str) -> bool:
+    pending_action = str(getattr(state.system, "pending_action", "") or "").strip()
+    decision = str(getattr(state.system, "confirm_decision", "") or "").strip().lower()
+    return pending_action == action and decision in {"approve", "go", "ok", "edit"}
+
+
+def _clear_checkpoint() -> Dict[str, Any]:
+    return {
+        "system": {
+            "confirm_decision": None,
+            "confirm_status": "resolved",
+            "awaiting_user_confirmation": False,
+            "pending_action": None,
+            "confirm_checkpoint": {},
+            "confirm_checkpoint_id": None,
+        },
+        "reasoning": {
+            "phase": "final",
+            "last_node": "answer_subgraph_node",
+        }
+    }
+
+
+def _resolve_open_conflicts(state: SealAIState) -> Dict[str, Any]:
+    """Mark all OPEN conflicts in the current verification_report as RESOLVED.
+
+    Called after the user approves draft_conflict_resolution so that
+    ``_apply_resolution_status`` in the next ``node_verify_claims`` run
+    picks up the RESOLVED status via fingerprint and does not re-trigger.
+    """
+    report = getattr(state.system, "verification_report", None)
+    if not isinstance(report, VerificationReport) or not report.conflicts:
+        return {}
+    updated = [
+        c.model_copy(update={"resolution_status": "RESOLVED"})
+        if c.resolution_status == "OPEN"
+        else c
+        for c in report.conflicts
+    ]
+    if all(c.resolution_status == oc.resolution_status for c, oc in zip(updated, report.conflicts)):
+        return {}  # nothing changed
+    return {"system": {"verification_report": report.model_copy(update={"conflicts": updated})}}
+
+
 def _run_answer_subgraph_sync(initial_state: AnswerSubgraphState, config: Any | None) -> SealAIState:
     try:
         asyncio.get_running_loop()
@@ -289,6 +351,19 @@ def _run_answer_subgraph_sync(initial_state: AnswerSubgraphState, config: Any | 
 
     state = _as_state(initial_state)
     state = _merge_state_patch(state, node_prepare_contract(state))
+    
+    spec = getattr(state.system, "sealing_requirement_spec", None)
+    if spec and getattr(spec, "spec_id", ""):
+        spec_id = getattr(spec, "spec_id", "")
+        confirmed_spec_id = getattr(state.system, "confirmed_spec_id", "")
+        if spec_id != confirmed_spec_id:
+            if _consume_decision(state, "snapshot_confirmation"):
+                patch = _clear_checkpoint()
+                patch["system"]["confirmed_spec_id"] = spec_id
+                state = _merge_state_patch(state, patch)
+            elif getattr(state.system, "pending_action", "") != "snapshot_confirmation" or getattr(state.system, "confirm_status", "") != "resolved":
+                return _merge_state_patch(state, _handle_checkpoint(state, "snapshot_confirmation", "snapshot_confirmation_node"))
+
     state = _merge_state_patch(state, asyncio.run(node_draft_answer(state, config=config)))
 
     while True:
@@ -302,17 +377,68 @@ def _run_answer_subgraph_sync(initial_state: AnswerSubgraphState, config: Any | 
         )
         if route == "pass":
             state = _merge_state_patch(state, node_finalize(state))
+            
+            rfq_draft = getattr(state.system, "rfq_draft", None)
+            rfq_admissibility = getattr(state.system, "rfq_admissibility", None)
+            is_rfq_confirmed = getattr(state.system, "rfq_confirmed", False)
+            if rfq_draft and rfq_admissibility and not is_rfq_confirmed:
+                if _consume_decision(state, "rfq_confirmation"):
+                    patch = _clear_checkpoint()
+                    patch["system"]["rfq_confirmed"] = True
+                    state = _merge_state_patch(state, patch)
+                else:
+                    return _merge_state_patch(state, _handle_checkpoint(state, "rfq_confirmation", "rfq_confirmation_node"))
+                    
             return state
         if route == "render_mismatch":
             state = _merge_state_patch(state, node_targeted_patch(state))
             continue
+            
+        if route == "abort":
+            report = getattr(state.system, "verification_report", None)
+            has_open_conflicts = False
+            if report and getattr(report, "conflicts", None):
+                has_open_conflicts = any(getattr(c, "resolution_status", "") == "OPEN" for c in report.conflicts)
+                
+            if has_open_conflicts:
+                if _consume_decision(state, "draft_conflict_resolution"):
+                    state = _merge_state_patch(state, _resolve_open_conflicts(state))
+                    state = _merge_state_patch(state, _clear_checkpoint())
+                else:
+                    return _merge_state_patch(state, _handle_checkpoint(state, "draft_conflict_resolution", "draft_conflict_resolution_node"))
+
         state = _merge_state_patch(state, _safe_fallback_node(state))
         return state
 
 
 async def _run_answer_subgraph_async(initial_state: AnswerSubgraphState, config: Any | None) -> SealAIState:
     state = _as_state(initial_state)
+    
+    # Blueprint v1.2 — Staleness Protection:
+    # If the state is stale (e.g. parameters changed via API during a checkpoint),
+    # we MUST NOT blindly resume a pending confirmation. 
+    # Instead, we clear the checkpoint and force re-analysis.
+    if is_artifact_stale(state):
+        logger.info("answer_subgraph.staleness_detected_at_entry", reason=getattr(state.reasoning, "derived_artifacts_stale_reason", "unknown"))
+        # Only clear if we actually have a pending confirmation
+        if getattr(state.system, "pending_action", None):
+            patch = _clear_checkpoint()
+            state = _merge_state_patch(state, patch)
+
     state = _merge_state_patch(state, node_prepare_contract(state))
+
+    spec = getattr(state.system, "sealing_requirement_spec", None)
+    if spec and getattr(spec, "spec_id", ""):
+        spec_id = getattr(spec, "spec_id", "")
+        confirmed_spec_id = getattr(state.system, "confirmed_spec_id", "")
+        if spec_id != confirmed_spec_id:
+            if _consume_decision(state, "snapshot_confirmation"):
+                patch = _clear_checkpoint()
+                patch["system"]["confirmed_spec_id"] = spec_id
+                state = _merge_state_patch(state, patch)
+            elif getattr(state.system, "pending_action", "") != "snapshot_confirmation" or getattr(state.system, "confirm_status", "") != "resolved":
+                return _merge_state_patch(state, _handle_checkpoint(state, "snapshot_confirmation", "snapshot_confirmation_node"))
+
     state = _merge_state_patch(state, await node_draft_answer(state, config=config))
 
     while True:
@@ -326,10 +452,43 @@ async def _run_answer_subgraph_async(initial_state: AnswerSubgraphState, config:
         )
         if route == "pass":
             state = _merge_state_patch(state, node_finalize(state))
+
+            rfq_draft = getattr(state.system, "rfq_draft", None)
+            rfq_admissibility = getattr(state.system, "rfq_admissibility", None)
+            
+            if rfq_draft and rfq_admissibility:
+                rfq_id = getattr(rfq_draft, "rfq_id", "")
+                confirmed_rfq_id = getattr(state.system, "confirmed_rfq_id", "")
+                
+                # Blueprint v1.2: Hard gate for RFQ confirmation.
+                # If rfq_id has changed (due to cycle increment), re-trigger confirmation.
+                if rfq_id and rfq_id != confirmed_rfq_id:
+                    if _consume_decision(state, "rfq_confirmation"):
+                        patch = _clear_checkpoint()
+                        patch["system"]["confirmed_rfq_id"] = rfq_id
+                        patch["system"]["rfq_confirmed"] = True
+                        state = _merge_state_patch(state, patch)
+                    elif getattr(state.system, "pending_action", "") != "rfq_confirmation" or getattr(state.system, "confirm_status", "") != "resolved":
+                        return _merge_state_patch(state, _handle_checkpoint(state, "rfq_confirmation", "rfq_confirmation_node"))
+
             return state
         if route == "render_mismatch":
             state = _merge_state_patch(state, node_targeted_patch(state))
             continue
+            
+        if route == "abort":
+            report = getattr(state.system, "verification_report", None)
+            has_open_conflicts = False
+            if report and getattr(report, "conflicts", None):
+                has_open_conflicts = any(getattr(c, "resolution_status", "") == "OPEN" for c in report.conflicts)
+                
+            if has_open_conflicts:
+                if _consume_decision(state, "draft_conflict_resolution"):
+                    state = _merge_state_patch(state, _resolve_open_conflicts(state))
+                    state = _merge_state_patch(state, _clear_checkpoint())
+                else:
+                    return _merge_state_patch(state, _handle_checkpoint(state, "draft_conflict_resolution", "draft_conflict_resolution_node"))
+
         state = _merge_state_patch(state, _safe_fallback_node(state))
         return state
 

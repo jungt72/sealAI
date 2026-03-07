@@ -29,7 +29,7 @@ def test_scope_conflict_detection_heuristic() -> None:
 
     # Should detect SCOPE_CONFLICT
     assert any(c.conflict_type == "SCOPE_CONFLICT" for c in report.conflicts)
-    assert any(c.severity == "WARNING" for c in report.conflicts)
+    assert any(c.severity == "CRITICAL" for c in report.conflicts)
 
 
 def test_source_conflict_detection() -> None:
@@ -45,7 +45,7 @@ def test_source_conflict_detection() -> None:
     for span in spans:
         conflicts.append(ConflictRecord(
             conflict_type="SOURCE_CONFLICT",
-            severity="HARD",
+            severity="CRITICAL",
             summary=f"Chemical resistance contradiction detected: {span['expected_value']}",
             sources_involved=["draft", "chemical_resistance_lookup"],
             scope_note="Draft claims compatibility while lookup denies it.",
@@ -54,7 +54,7 @@ def test_source_conflict_detection() -> None:
 
     assert len(conflicts) > 0
     assert conflicts[0].conflict_type == "SOURCE_CONFLICT"
-    assert conflicts[0].severity == "HARD"
+    assert conflicts[0].severity == "CRITICAL"
 
 
 # --- Blueprint v1.2 schema acceptance tests ---
@@ -78,10 +78,11 @@ def test_conflict_record_accepts_all_v12_conflict_types() -> None:
 
 def test_conflict_record_accepts_all_v12_severity_levels() -> None:
     v12_severities = [
+        "SOFT",
         "INFO",
-        "WARNING",
         "HARD",
         "CRITICAL",
+        "FALSE_CONFLICT",
         "BLOCKING_UNKNOWN",
         "RESOLUTION_REQUIRES_MANUFACTURER_SCOPE",
     ]
@@ -120,7 +121,7 @@ def test_conflict_record_resolution_requires_manufacturer_scope() -> None:
 def test_conflict_record_defaults_are_backward_compatible() -> None:
     record = ConflictRecord()
     assert record.conflict_type == "UNKNOWN"
-    assert record.severity == "WARNING"
+    assert record.severity == "HARD"
     assert record.resolution_status == "OPEN"
     assert record.sources_involved == []
 
@@ -152,7 +153,7 @@ def test_parameter_conflict_pressure_mismatch_generates_conflict() -> None:
 
     assert len(conflicts) == 1
     assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
-    assert conflicts[0].severity == "WARNING"
+    assert conflicts[0].severity == "CRITICAL"
     assert "12.0" in conflicts[0].summary
     assert "8.0" in conflicts[0].summary
 
@@ -168,6 +169,7 @@ def test_parameter_conflict_temperature_mismatch_generates_conflict() -> None:
 
     assert len(conflicts) == 1
     assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
+    assert conflicts[0].severity == "CRITICAL"
     assert "200.0" in conflicts[0].summary
     assert "150.0" in conflicts[0].summary
 
@@ -236,10 +238,15 @@ def test_parameter_conflict_does_not_set_failed_claim_span() -> None:
 
     # Should have PARAMETER_CONFLICT in conflicts
     assert any(c.conflict_type == "PARAMETER_CONFLICT" for c in report.conflicts)
-    # But the unexpected_number check may flag "15" — verify report status is separate concern.
-    # The PARAMETER_CONFLICT itself must not independently cause a hard fail.
-    param_conflicts = [c for c in report.conflicts if c.conflict_type == "PARAMETER_CONFLICT"]
-    assert all(c.severity == "WARNING" for c in param_conflicts)
+    
+    # Technical mismatch should be CRITICAL, but token-level mismatches stay HARD
+    tech_conflicts = [c for c in report.conflicts if "Technical mismatch" in c.summary]
+    assert len(tech_conflicts) == 1
+    assert tech_conflicts[0].severity == "CRITICAL"
+    
+    token_conflicts = [c for c in report.conflicts if "numeric claim" in c.summary]
+    assert len(token_conflicts) >= 1
+    assert all(c.severity == "HARD" for c in token_conflicts)
 
 
 # --- BLOCKING_UNKNOWN detection tests ---
@@ -256,7 +263,7 @@ def test_blocking_unknown_pressure_missing_in_contract_but_claimed_in_draft() ->
     conflicts = _check_blocking_unknowns(draft_text, contract)
 
     assert len(conflicts) == 1
-    assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
+    assert conflicts[0].conflict_type == "UNKNOWN"
     assert conflicts[0].severity == "BLOCKING_UNKNOWN"
     assert "pressure" in conflicts[0].summary.lower()
 
@@ -273,7 +280,7 @@ def test_blocking_unknown_temperature_missing_in_contract_but_claimed_in_draft()
     conflicts = _check_blocking_unknowns(draft_text, contract)
 
     assert len(conflicts) == 1
-    assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
+    assert conflicts[0].conflict_type == "UNKNOWN"
     assert conflicts[0].severity == "BLOCKING_UNKNOWN"
     assert "temperature" in conflicts[0].summary.lower()
 
@@ -317,7 +324,7 @@ def test_compound_specificity_conflict_grade_jump_generates_conflict() -> None:
     # Contract only has family_level NBR
     contract = AnswerContract(candidate_semantics=[{
         "value": "NBR",
-        "specificity": "family_level"
+        "specificity": "family_only"
     }])
     # Draft claims a specific grade "NBR 70"
     draft_text = "Wir empfehlen NBR 70 für diese Anwendung."
@@ -337,7 +344,7 @@ def test_compound_specificity_conflict_brand_jump_generates_conflict() -> None:
     # Contract only has family_level FFKM
     contract = AnswerContract(candidate_semantics=[{
         "value": "FFKM",
-        "specificity": "family_level"
+        "specificity": "family_only"
     }])
     # Draft claims a specific brand "Kalrez"
     draft_text = "Kalrez ist hier die beste Wahl."
@@ -356,7 +363,7 @@ def test_compound_specificity_no_conflict_when_already_compound_specific() -> No
     # Contract already has compound_specific evidence
     contract = AnswerContract(candidate_semantics=[{
         "value": "NBR 70",
-        "specificity": "compound_specific"
+        "specificity": "compound_required"
     }])
     draft_text = "NBR 70 ist geeignet."
 
@@ -372,7 +379,7 @@ def test_compound_specificity_no_conflict_when_no_material_jump() -> None:
     # Contract has family-level evidence, draft also stays at family-level
     contract = AnswerContract(candidate_semantics=[{
         "value": "FKM",
-        "specificity": "family_level"
+        "specificity": "family_only"
     }])
     draft_text = "FKM ist beständig gegen Hydrauliköl."
 
@@ -393,8 +400,8 @@ def test_condition_conflict_detection_missing_parameters() -> None:
 
     conflicts = _check_condition_conflicts(draft_text, contract)
     assert len(conflicts) == 1
-    assert conflicts[0].conflict_type == "CONDITION_CONFLICT"
-    assert conflicts[0].severity == "HARD"
+    assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
+    assert conflicts[0].severity == "CRITICAL"
 
 
 def test_condition_no_conflict_when_mentions_missing_params() -> None:
@@ -424,7 +431,7 @@ def test_assumption_conflict_detection_limited_evidence() -> None:
     conflicts = _check_assumption_conflicts(draft_text, contract)
     assert len(conflicts) == 1
     assert conflicts[0].conflict_type == "ASSUMPTION_CONFLICT"
-    assert conflicts[0].severity == "WARNING"
+    assert conflicts[0].severity == "CRITICAL"
 
 
 # --- TEMPORAL_VALIDITY_CONFLICT active detection tests ---
@@ -445,6 +452,7 @@ def test_temporal_validity_conflict_detection() -> None:
     conflicts = _check_temporal_validity_conflicts(draft_text, contract)
     assert len(conflicts) == 1
     assert conflicts[0].conflict_type == "TEMPORAL_VALIDITY_CONFLICT"
+    assert conflicts[0].severity == "CRITICAL"
     assert "dauerhaft" in conflicts[0].summary
 
 
@@ -526,10 +534,10 @@ def test_blocking_logic_respects_dismissed_conflicts() -> None:
 
     # Create a state with a DISMISSED conflict in the old report
     # Use PARAMETER_CONFLICT with the EXACT summary produced by the detector
-    summary = "Draft pressure values [20.0] bar differ from contract authority: 10.0 bar."
+    summary = "Technical mismatch: Draft pressure [20.0] bar contradicts contract: 10.0 bar."
     old_conflict = ConflictRecord(
         conflict_type="PARAMETER_CONFLICT",
-        severity="HARD", # Hard severity would usually block
+        severity="CRITICAL", # Critical severity would usually block
         summary=summary,
         resolution_status="DISMISSED",
     )
@@ -556,9 +564,9 @@ def test_blocking_logic_respects_dismissed_conflicts() -> None:
     patch = node_verify_claims(state)
     report = patch["system"]["verification_report"]
 
-    # The conflict should be detected but synced to DISMISSED
-    relevant_conflicts = [c for c in report.conflicts if c.conflict_type == "PARAMETER_CONFLICT"]
-    assert len(relevant_conflicts) > 0
+    # The technical mismatch conflict should be detected and synced to DISMISSED
+    relevant_conflicts = [c for c in report.conflicts if "Technical mismatch" in c.summary]
+    assert len(relevant_conflicts) == 1
     assert relevant_conflicts[0].resolution_status == "DISMISSED"
 
     # The report status should be pass because the blocking conflict is dismissed
@@ -580,7 +588,7 @@ def test_ptfe_synonym_teflon_triggers_protection() -> None:
 
     conflicts = _check_condition_conflicts(draft_text, contract)
     assert len(conflicts) == 1
-    assert conflicts[0].conflict_type == "CONDITION_CONFLICT"
+    assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
     assert "Teflon" in draft_text
 
 
@@ -623,7 +631,7 @@ def test_apply_resolution_status_is_robust_to_numeric_variation() -> None:
     old_conflicts = [
         ConflictRecord(
             conflict_type="PARAMETER_CONFLICT",
-            summary="Draft pressure values [20.0] bar differ from contract authority: 10.0 bar.",
+            summary="Technical mismatch: Draft pressure [20.0] bar contradicts contract: 10.0 bar.",
             resolution_status="DISMISSED"
         )
     ]
@@ -631,7 +639,7 @@ def test_apply_resolution_status_is_robust_to_numeric_variation() -> None:
     new_conflicts = [
         ConflictRecord(
             conflict_type="PARAMETER_CONFLICT",
-            summary="Draft pressure values [21.0] bar differ from contract authority: 10.0 bar.",
+            summary="Technical mismatch: Draft pressure [21.0] bar contradicts contract: 10.0 bar.",
             resolution_status="OPEN"
         )
     ]
@@ -672,7 +680,7 @@ def test_apply_resolution_status_is_robust_to_condition_list_variation() -> None
     # Previous: ['Wellenschlag']
     old_conflicts = [
         ConflictRecord(
-            conflict_type="CONDITION_CONFLICT",
+            conflict_type="PARAMETER_CONFLICT",
             summary="Technical suitability claimed but critical conditions ['Wellenschlag'] are missing.",
             resolution_status="DISMISSED"
         )
@@ -680,7 +688,7 @@ def test_apply_resolution_status_is_robust_to_condition_list_variation() -> None
     # New: ['Wellenschlag', 'Wellenhärte']
     new_conflicts = [
         ConflictRecord(
-            conflict_type="CONDITION_CONFLICT",
+            conflict_type="PARAMETER_CONFLICT",
             summary="Technical suitability claimed but critical conditions ['Wellenschlag', 'Wellenhärte'] are missing.",
             resolution_status="OPEN"
         )

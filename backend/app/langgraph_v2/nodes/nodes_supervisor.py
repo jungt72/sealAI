@@ -10,6 +10,11 @@ from langgraph.types import Command, Send
 
 from app.langgraph_v2.phase import PHASE
 from app.langgraph_v2.utils.state_debug import log_state_debug
+from app.langgraph_v2.state.governance_types import (
+    CompletenessCategory,
+    CompletenessDepth,
+    SpecificityLevel,
+)
 from app.langgraph_v2.state import (
     CandidateItem,
     FactItem,
@@ -19,6 +24,7 @@ from app.langgraph_v2.state import (
     Source,
     WorkingMemory,
 )
+from app.langgraph_v2.utils.completeness import compute_risk_driven_completeness
 from app.langgraph_v2.nodes.nodes_frontdoor import detect_material_or_trade_query
 from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
 from app.langgraph_v2.utils.messages import latest_user_text
@@ -133,48 +139,25 @@ def _with_supervisor_qdrant_instruction(plan: Dict[str, Any] | None) -> Dict[str
     return next_plan
 
 
-def _compute_coverage(required: List[str], missing: List[str]) -> float:
-    if not required:
-        return 1.0
-    score = (len(required) - len(missing)) / len(required)
-    return max(0.0, min(1.0, score))
-
-
-def _infer_missing_params(state: SealAIState, required: List[str]) -> List[str]:
-    wp = state.working_profile
-    missing: List[str] = []
-    for key in required:
-        value = getattr(wp, key, None)
-        if value is None or value == "":
-            missing.append(key)
-    return missing
-
-
 def supervisor_logic_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
     log_state_debug("supervisor_logic_node", state)
     _maybe_set_recommendation_go(state)
     wm = state.reasoning.working_memory or WorkingMemory()
 
-    required = [
-        "medium",
-        "pressure_max_bar",
-        "temperature_max_c",
-        "shaft_diameter",
-        "speed_rpm",
-    ]
-    missing = _infer_missing_params(state, required)
-    coverage_score = _compute_coverage(required, missing)
-    recommendation_ready = coverage_score >= _READY_THRESHOLD
+    completeness = compute_risk_driven_completeness(state)
+    all_missing = completeness["missing_technical"] + completeness["missing_qualification"]
+
     return {
                "reasoning": {
                    "working_memory": wm,
                    "plan": _with_supervisor_qdrant_instruction(state.reasoning.plan),
                    "phase": PHASE.INTENT,
                    "last_node": "supervisor_logic_node",
-                   "missing_params": missing,
-                   "coverage_gaps": missing,
-                   "coverage_score": coverage_score,
-                   "recommendation_ready": recommendation_ready,
+                   "missing_params": all_missing,
+                   "coverage_gaps": all_missing,
+                   "coverage_score": completeness["coverage_score"],
+                   "completeness_depth": completeness["completeness_depth"],
+                   "recommendation_ready": completeness["recommendation_ready"],
                },
            }
 
@@ -193,12 +176,17 @@ def _coerce_questions(items: List[QuestionItem | Dict[str, Any]] | None) -> List
     return questions
 
 
-def _get_dynamic_priority(key: str, state: SealAIState) -> str:
-    """Determine priority based on technical risk-weights (v1.2 risk-driven completeness)."""
-    # 1. Base requirements always high
-    if key in ("medium", "pressure_max_bar", "temperature_max_c", "shaft_diameter", "speed_rpm"):
-        return "high"
+def _get_dynamic_priority(key: str, state: SealAIState) -> Tuple[str, str]:
+    """Determine (priority, category) based on technical risk-weights (v1.2 risk-driven completeness)."""
+    # 1. Highest Risk: Technical Unknowns that block release
+    if key in ("medium", "pressure_bar", "temperature_c"):
+        return "high", CompletenessCategory.RELEASE_BLOCKING_TECHNICAL_UNKNOWN.value
 
+    # 2. Medium Risk: Qualification Gaps
+    if key in ("shaft_diameter", "speed_rpm"):
+        return "high", CompletenessCategory.QUALIFICATION_GAP.value
+
+    ep = state.engineering_profile
     wp = state.working_profile
     wm_req = (
         state.reasoning.working_memory.material_requirements
@@ -207,19 +195,19 @@ def _get_dynamic_priority(key: str, state: SealAIState) -> str:
     )
     operating = wm_req.operating_conditions if wm_req else {}
 
-    # Risk Weight: Pressure
-    p_bar = operating.get("pressure_bar") or wp.pressure_bar
+    # Risk Weight: Pressure escalation
+    p_bar = operating.get("pressure_bar") or wp.pressure_bar or ep.pressure_bar or ep.pressure_max_bar
     if p_bar is not None and float(p_bar) > 25.0:
         if key in ("shaft_runout", "shaft_hardness"):
-            return "high"
+            return "high", CompletenessCategory.QUALIFICATION_GAP.value
 
-    # Risk Weight: Temperature
-    t_c = operating.get("temperature_C") or wp.temperature_c
+    # Risk Weight: Temperature escalation
+    t_c = operating.get("temperature_C") or wp.temperature_c or ep.temperature_c or ep.temperature_max_c
     if t_c is not None and (float(t_c) > 180.0 or float(t_c) < -40.0):
-        if key == "medium":
-            return "high"  # already high, but confirms its criticality
+        if key == "medium_additives":
+            return "medium", CompletenessCategory.CLARIFICATION_GAP.value
 
-    return "medium"
+    return "medium", CompletenessCategory.CLARIFICATION_GAP.value
 
 
 def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
@@ -227,6 +215,8 @@ def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
     questions: List[QuestionItem] = []
 
     # 1. Core missing parameters (from supervisor policy)
+    # Note: supervisor_policy_node still uses the flat list for compatibility,
+    # but we enrich it here.
     missing_params = list(state.reasoning.missing_params or [])
 
     # 2. Augmented missing parameters from RequirementSpec (contract level)
@@ -245,13 +235,14 @@ def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
             continue
         seen.add(key)
         label = _PARAM_LABELS.get(key, key.replace("_", " "))
-        priority = _get_dynamic_priority(key, state)
+        priority, category = _get_dynamic_priority(key, state)
         questions.append(
             QuestionItem(
                 id=key,
                 question=f"Bitte ergänze: {label}.",
                 reason="Benötigt für die sichere technische Auslegung.",
                 priority=priority,  # type: ignore[arg-type]
+                category=category,  # type: ignore[arg-type]
                 status="open",
                 source="missing_params",
             )
@@ -268,10 +259,24 @@ def _derive_open_questions(state: SealAIState) -> List[QuestionItem]:
                 question=f"Kannst du Details zu {label} ergänzen?",
                 reason="Fehlt in der Discovery.",
                 priority="medium",
+                category=CompletenessCategory.CLARIFICATION_GAP.value,
                 status="open",
                 source="discovery_missing",
             )
         )
+    
+    # Prioritize questions: technical blockers first
+    def _rank(q: QuestionItem) -> int:
+        ranks = {
+            CompletenessCategory.RELEASE_BLOCKING_TECHNICAL_UNKNOWN.value: 0,
+            CompletenessCategory.QUALIFICATION_GAP.value: 1,
+            CompletenessCategory.MANUFACTURER_VALIDATION_UNKNOWN.value: 2,
+            CompletenessCategory.CLARIFICATION_GAP.value: 3,
+            CompletenessCategory.OPTIONAL_OPTIMIZATION_GAP.value: 4,
+        }
+        return ranks.get(q.category, 5)
+
+    questions.sort(key=_rank)
     return questions
 
 
@@ -310,9 +315,11 @@ def supervisor_policy_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> C
     log_state_debug("supervisor_policy_node", state)
     _maybe_set_recommendation_go(state)
 
-    missing = _infer_missing_params(state, _REQUIRED_PARAMS_FOR_READY)
-    coverage_score = _compute_coverage(_REQUIRED_PARAMS_FOR_READY, missing)
-    recommendation_ready = coverage_score >= _READY_THRESHOLD
+    completeness = compute_risk_driven_completeness(state)
+    missing = completeness["missing_technical"] + completeness["missing_qualification"]
+    coverage_score = completeness["coverage_score"]
+    recommendation_ready = completeness["recommendation_ready"]
+    
     questions = _coerce_questions(state.reasoning.open_questions)
     derived = False
     if not questions:
@@ -533,7 +540,8 @@ def aggregator_node(state: SealAIState, *_args: Any, **_kwargs: Any) -> Dict[str
                 value=str(material),
                 rationale=str(material_choice.get("details") or ""),
                 confidence=0.6,
-                specificity=str(material_choice.get("specificity") or "unresolved"),
+                specificity=str(material_choice.get("specificity") or SpecificityLevel.FAMILY_ONLY.value),
+
                 source_kind=str(material_choice.get("source_kind") or "unknown"),
                 governed=bool(material_choice.get("governed")),
             ),

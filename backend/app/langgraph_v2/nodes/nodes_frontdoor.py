@@ -718,19 +718,22 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
     merged_extracted_provenance = dict(state.reasoning.extracted_parameter_provenance or {})
     merged_extracted_identity = dict(state.reasoning.extracted_parameter_identity or {})
     merged_extracted_params = dict(state.working_profile.extracted_params or {})
-    
+    merged_observed_inputs = dict(state.reasoning.observed_inputs or {})
+
     if extracted_patch:
         (
             merged_extracted_params,
             merged_extracted_provenance,
             merged_extracted_identity,
             _applied_candidate_fields,
+            merged_observed_inputs,
         ) = stage_extracted_parameter_patch(
             merged_extracted_params,
             extracted_patch,
             merged_extracted_provenance,
             merged_extracted_identity,
             source="frontdoor_extracted",
+            existing_observed_inputs=merged_observed_inputs,
         )
 
     flags = dict(state.reasoning.flags or {})
@@ -795,6 +798,7 @@ def frontdoor_discovery_node(state: SealAIState, *_args: Any, **_kwargs: Any) ->
             "last_node": "frontdoor_discovery_node",
             "extracted_parameter_provenance": merged_extracted_provenance,
             "extracted_parameter_identity": merged_extracted_identity,
+            "observed_inputs": merged_observed_inputs,
             "requires_rag": requires_rag,
             "need_sources": requires_rag,
             "flags": flags,
