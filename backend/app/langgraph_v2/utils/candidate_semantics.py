@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, List, Mapping
 
 
 CANDIDATE_SPECIFICITY_VALUES = (
@@ -146,8 +146,47 @@ def annotate_material_choice(
     return annotated
 
 
+def build_candidate_clusters(
+    candidates: List[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Classify candidates into the three Blueprint clusters deterministically.
+
+    Primary signal: ``excluded_by_gate`` field set by chemical_resistance or
+    material_limits deterministic checks — no keyword matching on rationale text.
+
+    Secondary signal (for non-excluded candidates): ``governed`` + ``specificity``
+    determine whether a candidate is ready to present or still needs manufacturer
+    validation.
+
+    Returns:
+        Dict with keys:
+        - ``plausibly_viable``: governed=True and specificity==compound_specific
+        - ``viable_only_with_manufacturer_validation``: present but not compound-confirmed
+        - ``inadmissible_or_excluded``: deterministically excluded by a gate check
+    """
+    plausibly_viable: List[Dict[str, Any]] = []
+    viable_only: List[Dict[str, Any]] = []
+    inadmissible: List[Dict[str, Any]] = []
+
+    for candidate in candidates:
+        if candidate.get("excluded_by_gate"):
+            inadmissible.append(candidate)
+            continue
+        if bool(candidate.get("governed")) and str(candidate.get("specificity") or "") == "compound_specific":
+            plausibly_viable.append(candidate)
+        else:
+            viable_only.append(candidate)
+
+    return {
+        "plausibly_viable": plausibly_viable,
+        "viable_only_with_manufacturer_validation": viable_only,
+        "inadmissible_or_excluded": inadmissible,
+    }
+
+
 __all__ = [
     "CANDIDATE_SPECIFICITY_VALUES",
     "annotate_material_choice",
+    "build_candidate_clusters",
     "infer_candidate_specificity",
 ]

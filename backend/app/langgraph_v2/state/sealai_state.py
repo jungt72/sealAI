@@ -261,13 +261,30 @@ class GovernanceMetadata(BaseModel):
 
 
 class AnswerContract(BaseModel):
+    # Cycle binding — set to "cycle_{session_id}_{cycle_id}" when the contract is built.
+    # Used to detect staleness when the assertion cycle advances.
+    analysis_cycle_id: Optional[str] = None
     resolved_parameters: Dict[str, Any] = Field(default_factory=dict)
     calc_results: Dict[str, Any] = Field(default_factory=dict)
     selected_fact_ids: List[str] = Field(default_factory=list)
     candidate_semantics: List[Dict[str, Any]] = Field(default_factory=list)
+    # Three-cluster grouping derived deterministically from candidate_semantics.
+    # Keys: plausibly_viable, viable_only_with_manufacturer_validation, inadmissible_or_excluded.
+    candidate_clusters: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     governance_metadata: GovernanceMetadata = Field(default_factory=GovernanceMetadata)
     required_disclaimers: List[str] = Field(default_factory=list)
     respond_with_uncertainty: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ConflictRecord(BaseModel):
+    conflict_type: Literal["FALSE_CONFLICT", "SOURCE_CONFLICT", "SCOPE_CONFLICT", "UNKNOWN"] = "UNKNOWN"
+    severity: Literal["HARD", "WARNING", "INFO"] = "WARNING"
+    summary: str = ""
+    sources_involved: List[str] = Field(default_factory=list)
+    scope_note: str = ""
+    resolution_status: Literal["OPEN", "RESOLVED", "DISMISSED"] = "OPEN"
 
     model_config = ConfigDict(extra="forbid")
 
@@ -278,12 +295,25 @@ class VerificationReport(BaseModel):
     status: Literal["pass", "fail"]
     failure_type: Optional[str] = None
     failed_claim_spans: List[Dict[str, Any]] = Field(default_factory=list)
+    conflicts: List[ConflictRecord] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
 
 class RFQAdmissibilityContract(BaseModel):
     status: Literal["inadmissible", "provisional", "ready"] = "inadmissible"
+    # Blueprint-konformer 4-Wert Release-Status — additiv zu status, nicht als Ersatz.
+    # Wird deterministisch aus Governance-Signalen abgeleitet:
+    #   inadmissible                   — blockers nicht leer
+    #   precheck_only                  — open_points nicht leer oder requires_human_review, keine Blocker
+    #   manufacturer_validation_required — unknowns_manufacturer_validation nicht leer, keine Blocker
+    #   rfq_ready                      — governed_ready=True, status=="ready", blockers leer
+    release_status: Literal[
+        "inadmissible",
+        "precheck_only",
+        "manufacturer_validation_required",
+        "rfq_ready",
+    ] = "inadmissible"
     reason: Optional[str] = "rfq_contract_missing"
     open_points: List[str] = Field(default_factory=list)
     blockers: List[str] = Field(default_factory=list)
@@ -335,6 +365,9 @@ class CandidateItem(BaseModel):
     specificity: Literal["compound_specific", "family_level", "material_class", "document_hit", "unresolved"] = "unresolved"
     source_kind: str = "unknown"
     governed: bool = False
+    # Deterministic gate exclusion — set by chemical_resistance or material_limits checks.
+    # A non-None value routes this candidate to inadmissible_or_excluded cluster.
+    excluded_by_gate: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1018,6 +1051,7 @@ __all__ = [
     "Recommendation",
     "Source",
     "AnswerContract",
+    "ConflictRecord",
     "VerificationReport",
     "QuestionItem",
     "FactItem",

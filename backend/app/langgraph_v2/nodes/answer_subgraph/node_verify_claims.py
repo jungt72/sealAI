@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Set
 import structlog
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
-from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState, VerificationReport
+from app.langgraph_v2.state.sealai_state import AnswerContract, ConflictRecord, SealAIState, VerificationReport
 from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 from app.mcp.calculations.chemical_resistance import lookup as _chem_lookup
 from app.mcp.calculations.material_limits import check as _limits_check
@@ -371,6 +371,8 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
 
     warning_claim_spans: List[Dict[str, str]] = []
     failed_claim_spans: List[Dict[str, str]] = []
+    conflicts: List[ConflictRecord] = []
+    
     for number in missing_numbers:
         span = _build_failure_span(reason="missing_number", expected_value=number)
         span["severity"] = "warning"
@@ -387,8 +389,41 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
         failed_claim_spans.append(
             _build_failure_span(reason="suspicious_unicode", expected_value="", wrong_span=span)
         )
-    failed_claim_spans.extend(resistance_spans)
-    failed_claim_spans.extend(limits_spans)
+        
+    for span in resistance_spans:
+        failed_claim_spans.append(span)
+        conflicts.append(ConflictRecord(
+            conflict_type="SOURCE_CONFLICT",
+            severity="HARD",
+            summary=f"Chemical resistance contradiction detected: {span['expected_value']}",
+            sources_involved=["draft", "chemical_resistance_lookup"],
+            scope_note="Draft claims compatibility while lookup denies it.",
+            resolution_status="OPEN",
+        ))
+
+    for span in limits_spans:
+        failed_claim_spans.append(span)
+        conflicts.append(ConflictRecord(
+            conflict_type="SOURCE_CONFLICT",
+            severity="HARD",
+            summary=f"Material limit contradiction detected: {span['wrong_span']}",
+            sources_involved=["draft", "material_limits_lookup"],
+            scope_note="Draft claims viability beyond defined operational limits.",
+            resolution_status="OPEN",
+        ))
+
+    # Basic SCOPE_CONFLICT heuristic: check if draft makes a claim that is conditionally true
+    if "aber" in draft_text.lower() or "jedoch" in draft_text.lower() or "nur bedingt" in draft_text.lower():
+        # Minimal extraction of conditional clauses indicating potential scope mismatch
+        if any("geeignet" in s.lower() and "nicht" in s.lower() for s in re.split(r"[.!?\n]+", draft_text)):
+             conflicts.append(ConflictRecord(
+                conflict_type="SCOPE_CONFLICT",
+                severity="WARNING",
+                summary="Potential scope conflict or conditional viability detected in text.",
+                sources_involved=["draft"],
+                scope_note="Text contains contradictory suitability statements that may depend on unclarified scope.",
+                resolution_status="OPEN",
+            ))
 
     status = "pass" if not failed_claim_spans else "fail"
     failure_type = None if status == "pass" else "render_mismatch"
@@ -399,6 +434,7 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
         status=status,
         failure_type=failure_type,
         failed_claim_spans=report_spans,
+        conflicts=conflicts,
     )
     logger.info(
         "verify_claims.done",
@@ -410,6 +446,7 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
         suspicious_unicode=len(suspicious_unicode_spans),
         resistance_contradictions=len(resistance_spans),
         limits_contradictions=len(limits_spans),
+        conflict_count=len(conflicts),
     )
     return stamp_patch_with_assertion_binding(state, {
                "system": {

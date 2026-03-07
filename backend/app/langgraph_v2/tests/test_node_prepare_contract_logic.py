@@ -315,6 +315,83 @@ def test_contract_hash_integrity_identical_vs_minimal_change() -> None:
     assert changed_hash != hash_a
 
 
+def test_upstream_blocker_flag_sets_excluded_by_gate_on_candidate() -> None:
+    """excluded_by_gate derives from reasoning.flags set by combinatorial_chemistry_guard — no new lookup."""
+    state = SealAIState(
+        material_choice={"material": "FKM"},
+        reasoning={
+            "flags": {
+                "combinatorial_chemistry_has_blocker": True,
+                "combinatorial_chemistry_blocker_rule_ids": ["CHEM_FKM_AMINE_BLOCKER"],
+            }
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["answer_contract"]
+
+    assert contract.candidate_semantics[0]["excluded_by_gate"] == "gate:CHEM_FKM_AMINE_BLOCKER"
+    assert contract.candidate_clusters["inadmissible_or_excluded"][0]["value"] == "FKM"
+    assert contract.candidate_clusters["plausibly_viable"] == []
+
+
+def test_upstream_blocker_flag_does_not_exclude_unrelated_material() -> None:
+    """A CHEM_FKM blocker must not exclude an NBR candidate."""
+    state = SealAIState(
+        material_choice={"material": "NBR"},
+        reasoning={
+            "flags": {
+                "combinatorial_chemistry_has_blocker": True,
+                "combinatorial_chemistry_blocker_rule_ids": ["CHEM_FKM_AMINE_BLOCKER"],
+            }
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["answer_contract"]
+
+    assert contract.candidate_semantics[0]["excluded_by_gate"] is None
+    assert contract.candidate_clusters["inadmissible_or_excluded"] == []
+
+
+def test_mech_blocker_flag_excludes_any_material() -> None:
+    """MECH_ blockers are geometry constraints — they exclude all materials."""
+    state = SealAIState(
+        material_choice={"material": "PTFE"},
+        reasoning={
+            "flags": {
+                "combinatorial_chemistry_has_blocker": True,
+                "combinatorial_chemistry_blocker_rule_ids": ["MECH_HIGH_PRESSURE_GAP_BLOCKER"],
+            }
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["answer_contract"]
+
+    assert contract.candidate_semantics[0]["excluded_by_gate"] == "gate:MECH_HIGH_PRESSURE_GAP_BLOCKER"
+    assert contract.candidate_clusters["inadmissible_or_excluded"][0]["value"] == "PTFE"
+
+
+def test_no_blocker_flag_leaves_candidate_unexcluded() -> None:
+    """When the guard ran but found no blocker, excluded_by_gate must be None."""
+    state = SealAIState(
+        material_choice={"material": "FKM"},
+        reasoning={
+            "flags": {
+                "combinatorial_chemistry_has_blocker": False,
+                "combinatorial_chemistry_blocker_rule_ids": [],
+            }
+        },
+    )
+
+    patch = node_prepare_contract(state)
+    contract = patch["answer_contract"]
+
+    assert contract.candidate_semantics[0]["excluded_by_gate"] is None
+    assert contract.candidate_clusters["inadmissible_or_excluded"] == []
+
+
 def test_extreme_temperature_query_injects_required_factcards(monkeypatch) -> None:
     def _fake_search_technical_docs(query, material_code=None, *, tenant_id=None, k=5, metadata_filters=None):  # noqa: ARG001
         if "PTFE-F-008" in query:

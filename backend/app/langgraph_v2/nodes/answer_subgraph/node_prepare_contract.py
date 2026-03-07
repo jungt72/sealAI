@@ -23,7 +23,7 @@ import structlog
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
 from app.langgraph_v2.state.sealai_state import AnswerContract, CandidateItem, GovernanceMetadata, SealAIState, WorkingMemory
 from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
-from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
+from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice, build_candidate_clusters
 from app.langgraph_v2.utils.context_manager import build_final_context, dedupe_retrieval_chunks
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.prepare_contract")
@@ -639,6 +639,34 @@ def _build_resolved_parameters(state: SealAIState) -> Dict[str, Any]:
     return resolved
 
 
+def _excluded_by_upstream_gate(state: SealAIState, material: str) -> str | None:
+    """Derive gate-exclusion reason from upstream deterministic guard results already in State.
+
+    Reads ``reasoning.flags.combinatorial_chemistry_blocker_rule_ids`` — no new lookup.
+    Coverage: the 4 BLOCKER rules of combinatorial_chemistry_guard (FKM+amine,
+    NBR+aromatics, FKM+AED, pressure+extrusion-gap). Rating-C cases beyond those
+    rules are intentionally NOT checked here; they are handled by node_verify_claims.
+
+    Material matching: CHEM_ rule IDs embed the material name (e.g. CHEM_FKM_AMINE_BLOCKER).
+    MECH_ rule IDs are geometry constraints that exclude all materials equally.
+    """
+    flags = _as_dict(getattr(state.reasoning, "flags", {}) or {})
+    if not flags.get("combinatorial_chemistry_has_blocker"):
+        return None
+    blocker_rule_ids: list = list(flags.get("combinatorial_chemistry_blocker_rule_ids") or [])
+    if not blocker_rule_ids:
+        return None
+    material_upper = str(material or "").upper()
+    for rule_id in blocker_rule_ids:
+        rule_str = str(rule_id or "").upper()
+        if rule_str.startswith("MECH_"):
+            # Geometry/mechanical blockers apply regardless of material
+            return f"gate:{rule_id}"
+        if rule_str.startswith("CHEM_") and material_upper in rule_str:
+            return f"gate:{rule_id}"
+    return None
+
+
 def _build_candidate_semantics(state: SealAIState) -> List[Dict[str, Any]]:
     semantics: List[Dict[str, Any]] = []
     identity_map = _as_dict(getattr(state.reasoning, "extracted_parameter_identity", {}) or {})
@@ -648,6 +676,7 @@ def _build_candidate_semantics(state: SealAIState) -> List[Dict[str, Any]]:
         annotated_material_choice = annotate_material_choice(material_choice, identity_map=identity_map)
         material = str(annotated_material_choice.get("material") or "").strip()
         if material:
+            excluded_by_gate = _excluded_by_upstream_gate(state, material)
             semantics.append(
                 CandidateItem(
                     kind="material",
@@ -657,7 +686,8 @@ def _build_candidate_semantics(state: SealAIState) -> List[Dict[str, Any]]:
                     specificity=str(annotated_material_choice.get("specificity") or "unresolved"),
                     source_kind=str(annotated_material_choice.get("source_kind") or "unknown"),
                     governed=bool(annotated_material_choice.get("governed")),
-                ).model_dump(exclude_none=True)
+                    excluded_by_gate=excluded_by_gate,
+                ).model_dump(exclude_none=False)
             )
 
     return semantics
@@ -831,6 +861,7 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
                 )
 
     candidate_semantics = _build_candidate_semantics(state)
+    candidate_clusters = build_candidate_clusters(candidate_semantics)
     governance_metadata = _build_governance_metadata(
         state,
         candidate_semantics=candidate_semantics,
@@ -846,6 +877,7 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
         calc_results=calc_results,
         selected_fact_ids=selected_fact_ids,
         candidate_semantics=candidate_semantics,
+        candidate_clusters=candidate_clusters,
         governance_metadata=governance_metadata,
         required_disclaimers=required_disclaimers,
         respond_with_uncertainty=respond_with_uncertainty,
