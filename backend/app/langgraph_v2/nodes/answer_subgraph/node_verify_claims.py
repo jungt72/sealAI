@@ -408,6 +408,80 @@ def _check_specificity_conflicts(
     return conflicts
 
 
+def _check_condition_conflicts(draft_text: str, contract: AnswerContract) -> List[ConflictRecord]:
+    """Identify cases where the draft claims suitability but mandatory
+    operational conditions are missing or unconfirmed in RequirementSpec.
+    """
+    conflicts: List[ConflictRecord] = []
+    spec = contract.requirement_spec
+    if not spec:
+        return conflicts
+
+    # Rule: Positive claim + missing critical parameters (e.g. Shaft Runout for PTFE)
+    if _CHEM_POSITIVE_RE.search(draft_text):
+        missing = spec.missing_critical_parameters
+        if missing:
+            # Check if the draft at least mentions the missing parameters as a condition
+            mentions_conditions = any(str(p).lower() in draft_text.lower() for p in missing)
+            if not mentions_conditions:
+                conflicts.append(
+                    ConflictRecord(
+                        conflict_type="CONDITION_CONFLICT",
+                        severity="HARD",
+                        summary=(
+                            f"Technical suitability claimed but critical conditions {missing} "
+                            "are missing and not conditioned in draft."
+                        ),
+                        sources_involved=["draft", "requirement_spec.missing_critical_parameters"],
+                        scope_note=(
+                            "High-performance seals require confirmed shaft runout/hardness "
+                            "which are currently unknown."
+                        ),
+                        resolution_status="OPEN",
+                    )
+                )
+    return conflicts
+
+
+def _check_assumption_conflicts(draft_text: str, contract: AnswerContract) -> List[ConflictRecord]:
+    """Identify cases where the draft makes definitive claims based on
+    unconfirmed assumptions flagged in GovernanceMetadata.
+    """
+    conflicts: List[ConflictRecord] = []
+    gov = contract.governance_metadata
+
+    # Rule: Definitive claim in draft vs. "Antwort basiert auf begrenzter Evidenz" in assumptions_active
+    has_limited_evidence_assumption = any(
+        "begrenzter Evidenz" in a or "Unsicherheits-Hinweis" in a for a in gov.assumptions_active
+    )
+
+    if has_limited_evidence_assumption:
+        # If draft does NOT contain uncertainty markers but contract says it's based on assumptions
+        uncertainty_markers = [
+            "vorausgesetzt",
+            "angenommen",
+            "unsicher",
+            "begrenzte",
+            "uncertain",
+            "assuming",
+        ]
+        if not any(m in draft_text.lower() for m in uncertainty_markers):
+            conflicts.append(
+                ConflictRecord(
+                    conflict_type="ASSUMPTION_CONFLICT",
+                    severity="WARNING",
+                    summary=(
+                        "Draft presents definitive recommendation while contract is based on "
+                        "limited evidence assumptions."
+                    ),
+                    sources_involved=["draft", "governance_metadata.assumptions_active"],
+                    scope_note="The system flagged this as an uncertain case, but the draft sounds too certain.",
+                    resolution_status="OPEN",
+                )
+            )
+    return conflicts
+
+
 def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
     """Scannt draft_text auf Material × Temperatur/Druck-Kombinationen
     und prüft deterministisch gegen material_limits.check().
@@ -624,6 +698,12 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
 
     # COMPOUND_SPECIFICITY_CONFLICT: draft-stated specific grades vs. contract-authoritative generic evidence
     conflicts.extend(_check_specificity_conflicts(draft_text, contract))
+
+    # CONDITION_CONFLICT: missing technical conditions in RequirementSpec
+    conflicts.extend(_check_condition_conflicts(draft_text, contract))
+
+    # ASSUMPTION_CONFLICT: definitive claims vs. active governance assumptions
+    conflicts.extend(_check_assumption_conflicts(draft_text, contract))
 
     status = "pass" if not failed_claim_spans else "fail"
     failure_type = None if status == "pass" else "render_mismatch"

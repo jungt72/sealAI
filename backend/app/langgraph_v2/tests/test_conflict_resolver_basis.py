@@ -379,3 +379,49 @@ def test_compound_specificity_no_conflict_when_no_material_jump() -> None:
     conflicts = _check_specificity_conflicts(draft_text, contract)
 
     assert conflicts == []
+
+
+# --- CONDITION_CONFLICT and ASSUMPTION_CONFLICT active detection tests ---
+
+def test_condition_conflict_detection_missing_parameters() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_condition_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract, RequirementSpec
+
+    draft_text = "Die PTFE-Dichtung ist für die Anwendung geeignet."
+    # Contract says shaft runout is missing
+    contract = AnswerContract(requirement_spec=RequirementSpec(missing_critical_parameters=["Wellenschlag"]))
+
+    conflicts = _check_condition_conflicts(draft_text, contract)
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "CONDITION_CONFLICT"
+    assert conflicts[0].severity == "HARD"
+
+
+def test_condition_no_conflict_when_mentions_missing_params() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_condition_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract, RequirementSpec
+
+    # Draft mentions the missing parameter as a condition
+    draft_text = "PTFE ist geeignet, vorausgesetzt der Wellenschlag liegt innerhalb der Toleranz."
+    contract = AnswerContract(requirement_spec=RequirementSpec(missing_critical_parameters=["Wellenschlag"]))
+
+    conflicts = _check_condition_conflicts(draft_text, contract)
+    assert len(conflicts) == 0
+
+
+def test_assumption_conflict_detection_limited_evidence() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_assumption_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract, GovernanceMetadata
+
+    draft_text = "Diese Dichtung wird definitiv funktionieren."
+    # Governance says it's based on limited evidence
+    contract = AnswerContract(
+        governance_metadata=GovernanceMetadata(
+            assumptions_active=["Antwort basiert auf begrenzter Evidenz."]
+        )
+    )
+
+    conflicts = _check_assumption_conflicts(draft_text, contract)
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "ASSUMPTION_CONFLICT"
+    assert conflicts[0].severity == "WARNING"
