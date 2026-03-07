@@ -615,7 +615,9 @@ class ReasoningState(BaseModel):
     parameter_versions: Dict[str, int] = Field(default_factory=dict)
     parameter_updated_at: Dict[str, float] = Field(default_factory=dict)
     current_assertion_cycle_id: int = 0
+    state_revision: int = 0
     asserted_profile_revision: int = 0
+    snapshot_parent_revision: int = 0
     last_assertion_changed_at: Optional[float] = None
     derived_artifacts_stale: bool = False
     derived_artifacts_stale_reason: Optional[str] = None

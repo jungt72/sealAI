@@ -69,7 +69,9 @@ def build_assertion_cycle_update(
         },
         "reasoning": {
             "current_assertion_cycle_id": next_cycle_id,
+            "state_revision": next_revision,
             "asserted_profile_revision": next_revision,
+            "snapshot_parent_revision": current_revision,
             "last_assertion_changed_at": changed_at,
             "derived_artifacts_stale": True,
             "derived_artifacts_stale_reason": reason,
