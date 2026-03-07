@@ -566,3 +566,48 @@ def test_blocking_logic_respects_dismissed_conflicts() -> None:
     # so we focus on the resolution_status logic here)
     assert report.status == "pass" or "unexpected_number" in [s["reason"] for s in report.failed_claim_spans]
 
+
+# --- RW2 Hygiene Patch tests ---
+
+def test_ptfe_synonym_teflon_triggers_protection() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_condition_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract, RequirementSpec
+
+    draft_text = "Teflon-Lippendichtungen sind hier optimal."
+    contract = AnswerContract(
+        requirement_spec=RequirementSpec(missing_critical_parameters=["Wellenschlag"])
+    )
+
+    conflicts = _check_condition_conflicts(draft_text, contract)
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "CONDITION_CONFLICT"
+    assert "Teflon" in draft_text
+
+
+def test_assumption_conflict_detects_strong_certainty() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_assumption_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract, GovernanceMetadata
+
+    # Draft sounds very certain despite limited evidence
+    draft_text = "Wir sind uns sicher, dass diese Lösung problemlos funktioniert."
+    contract = AnswerContract(
+        governance_metadata=GovernanceMetadata(
+            assumptions_active=["Antwort basiert auf begrenzter Evidenz."]
+        )
+    )
+
+    conflicts = _check_assumption_conflicts(draft_text, contract)
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "ASSUMPTION_CONFLICT"
+
+
+def test_scope_conflict_detects_vague_language() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_scope_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    draft_text = "In vielen Fällen ist FKM als Werkstoff bewährt und geeignet."
+    conflicts = _check_scope_conflicts(draft_text, AnswerContract())
+
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "SCOPE_CONFLICT"
+    assert "vague suitability claim" in conflicts[0].summary.lower()

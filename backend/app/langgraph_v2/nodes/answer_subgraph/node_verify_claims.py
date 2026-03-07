@@ -39,7 +39,7 @@ _SUSPICIOUS_DEGREE_PATTERN = re.compile(r"\b\d+(?:[.,]\d+)?\s*˚\s*[cC]\b")
 
 # ── Chemical Resistance Post-Check ──────────────────────────────────────────
 _CHEM_MATERIAL_RE = re.compile(
-    r"\b(NBR|FKM|EPDM|PTFE|HNBR|FFKM|CR|VMQ|Viton|Kalrez|Neopren)\b",
+    r"\b(NBR|FKM|EPDM|PTFE|Teflon|HNBR|FFKM|CR|VMQ|Viton|Kalrez|Neopren)\b",
     re.IGNORECASE,
 )
 _CHEM_MEDIUM_RE = re.compile(
@@ -49,13 +49,23 @@ _CHEM_MEDIUM_RE = re.compile(
     re.IGNORECASE,
 )
 _CHEM_POSITIVE_RE = re.compile(
-    r"\b(geeignet|beständig|empfohlen|einsetzbar|verwendbar|kompatibel"
-    r"|suitable|resistant|compatible|recommended)\b",
+    r"\b(geeignet|beständig|empfohlen|einsetzbar|verwendbar|kompatibel|optimal|ideal|hervorragend"
+    r"|suitable|resistant|compatible|recommended|optimal|ideal)\b",
     re.IGNORECASE,
 )
 _CHEM_NEGATIVE_RE = re.compile(
     r"nicht\s+geeignet|ungeeignet|nicht\s+beständig|nicht\s+empfohlen"
     r"|not\s+suitable|not\s+compatible",
+    re.IGNORECASE,
+)
+
+# ── Vague / Gray-zone Language Post-Check ────────────────────────────────────
+_CONDITIONAL_MARKER_RE = re.compile(
+    r"\b(jedoch|aber|bedingt|eingeschränkt|however|but|limited|restricted)\b",
+    re.IGNORECASE,
+)
+_VAGUE_CLAIM_RE = re.compile(
+    r"\b(typischerweise|oft|bewährt|üblich|in vielen fällen|in der regel|meistens|frequently|commonly|standardly)\b",
     re.IGNORECASE,
 )
 
@@ -462,6 +472,20 @@ def _check_assumption_conflicts(draft_text: str, contract: AnswerContract) -> Li
     )
 
     if has_limited_evidence_assumption:
+        # Check for certainty markers that conflict with limited evidence
+        certainty_markers = [
+            "sicher",
+            "garantiert",
+            "funktioniert",
+            "wird funktionieren",
+            "problemlos",
+            "definitiv",
+            "certainly",
+            "guaranteed",
+            "will work",
+        ]
+        has_certainty = any(m in draft_text.lower() for m in certainty_markers)
+
         # If draft does NOT contain uncertainty markers but contract says it's based on assumptions
         uncertainty_markers = [
             "vorausgesetzt",
@@ -471,7 +495,9 @@ def _check_assumption_conflicts(draft_text: str, contract: AnswerContract) -> Li
             "uncertain",
             "assuming",
         ]
-        if not any(m in draft_text.lower() for m in uncertainty_markers):
+        has_uncertainty = any(m in draft_text.lower() for m in uncertainty_markers)
+
+        if has_certainty or not has_uncertainty:
             conflicts.append(
                 ConflictRecord(
                     conflict_type="ASSUMPTION_CONFLICT",
@@ -485,6 +511,48 @@ def _check_assumption_conflicts(draft_text: str, contract: AnswerContract) -> Li
                     resolution_status="OPEN",
                 )
             )
+    return conflicts
+
+
+def _check_scope_conflicts(draft_text: str, contract: AnswerContract) -> List[ConflictRecord]:
+    """Identify cases where the draft uses vague or weakly qualified suitability
+    claims ("typically", "often") or conditional markers that may mask technical uncertainty.
+    """
+    conflicts: List[ConflictRecord] = []
+
+    # Check for vague qualifiers combined with suitability keywords
+    sentences = re.split(r"[.!?\n]+", draft_text or "")
+    for sentence in sentences:
+        vague_match = _VAGUE_CLAIM_RE.search(sentence)
+        if vague_match and _CHEM_POSITIVE_RE.search(sentence):
+            conflicts.append(
+                ConflictRecord(
+                    conflict_type="SCOPE_CONFLICT",
+                    severity="WARNING",
+                    summary=f"Vague suitability claim detected: '{vague_match.group(0)}'.",
+                    sources_involved=["draft"],
+                    scope_note="The draft uses gray-zone language which might mask a missing technical confirmation.",
+                    resolution_status="OPEN",
+                )
+            )
+            break  # One per draft is enough
+
+    # Check for structural conditional markers combined with suitability keywords
+    for sentence in sentences:
+        cond_match = _CONDITIONAL_MARKER_RE.search(sentence)
+        if cond_match and _CHEM_POSITIVE_RE.search(sentence):
+            conflicts.append(
+                ConflictRecord(
+                    conflict_type="SCOPE_CONFLICT",
+                    severity="WARNING",
+                    summary=f"Conditional / restricted suitability wording: '{cond_match.group(0)}'.",
+                    sources_involved=["draft"],
+                    scope_note="Text contains contradictory suitability statements that may depend on unclarified scope.",
+                    resolution_status="OPEN",
+                )
+            )
+            break  # One per draft is enough
+
     return conflicts
 
 
@@ -748,18 +816,8 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
             resolution_status="OPEN",
         ))
 
-    # Basic SCOPE_CONFLICT heuristic: check if draft makes a claim that is conditionally true
-    if "aber" in draft_text.lower() or "jedoch" in draft_text.lower() or "nur bedingt" in draft_text.lower():
-        # Minimal extraction of conditional clauses indicating potential scope mismatch
-        if any("geeignet" in s.lower() and "nicht" in s.lower() for s in re.split(r"[.!?\n]+", draft_text)):
-             conflicts.append(ConflictRecord(
-                conflict_type="SCOPE_CONFLICT",
-                severity="WARNING",
-                summary="Potential scope conflict or conditional viability detected in text.",
-                sources_involved=["draft"],
-                scope_note="Text contains contradictory suitability statements that may depend on unclarified scope.",
-                resolution_status="OPEN",
-            ))
+    # SCOPE_CONFLICT: vague suitability claims or conditional statements
+    conflicts.extend(_check_scope_conflicts(draft_text, contract))
 
     # BLOCKING_UNKNOWN: draft-stated technical parameters vs. missing contract authority
     conflicts.extend(_check_blocking_unknowns(draft_text, contract))
