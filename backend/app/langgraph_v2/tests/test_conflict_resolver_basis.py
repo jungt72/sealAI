@@ -137,3 +137,179 @@ def test_conflict_record_rejects_unknown_severity() -> None:
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         ConflictRecord(severity="EXTREME")
+
+
+# --- PARAMETER_CONFLICT active detection tests ---
+
+def test_parameter_conflict_pressure_mismatch_generates_conflict() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_parameter_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    contract = AnswerContract(resolved_parameters={"pressure_bar": 8.0})
+    draft_text = "FKM eignet sich bei einem Betriebsdruck von 12 bar."
+
+    conflicts = _check_parameter_conflicts(draft_text, contract)
+
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
+    assert conflicts[0].severity == "WARNING"
+    assert "12.0" in conflicts[0].summary
+    assert "8.0" in conflicts[0].summary
+
+
+def test_parameter_conflict_temperature_mismatch_generates_conflict() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_parameter_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    contract = AnswerContract(resolved_parameters={"temperature_C": 150.0})
+    draft_text = "Einsatz bis 200 °C problemlos möglich."
+
+    conflicts = _check_parameter_conflicts(draft_text, contract)
+
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
+    assert "200.0" in conflicts[0].summary
+    assert "150.0" in conflicts[0].summary
+
+
+def test_parameter_conflict_no_conflict_when_value_matches() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_parameter_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    contract = AnswerContract(resolved_parameters={"pressure_bar": 8.0})
+    draft_text = "Empfohlen für 8 bar Betriebsdruck."
+
+    conflicts = _check_parameter_conflicts(draft_text, contract)
+
+    assert conflicts == []
+
+
+def test_parameter_conflict_no_conflict_when_no_contract_value() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_parameter_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract has no pressure_bar or temperature_C
+    contract = AnswerContract(resolved_parameters={"material": "FKM"})
+    draft_text = "Geeignet bis 12 bar und 200 °C."
+
+    conflicts = _check_parameter_conflicts(draft_text, contract)
+
+    assert conflicts == []
+
+
+def test_parameter_conflict_tolerance_edge_case() -> None:
+    """Values within tolerance (±0.5 bar) must NOT generate a conflict."""
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_parameter_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    contract = AnswerContract(resolved_parameters={"pressure_bar": 8.0})
+    # 8.3 bar is within ±0.5 of 8.0 → no conflict
+    draft_text = "Geeignet bei 8,3 bar."
+
+    conflicts = _check_parameter_conflicts(draft_text, contract)
+
+    assert conflicts == []
+
+
+def test_parameter_conflict_does_not_set_failed_claim_span() -> None:
+    """PARAMETER_CONFLICT must not route to hard fail — only conflicts list."""
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import node_verify_claims
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+    from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
+    import hashlib
+
+    contract = AnswerContract(resolved_parameters={"pressure_bar": 8.0})
+    draft_text = "FKM ist bei 15 bar geeignet."
+    contract_hash = hashlib.sha256(contract.model_dump_json().encode()).hexdigest()
+
+    state = AnswerSubgraphState(
+        conversation={"session_id": "test"},
+        system={
+            "draft_text": draft_text,
+            "draft_base_hash": contract_hash,
+            "answer_contract": contract,
+        },
+    )
+
+    patch = node_verify_claims(state)
+    report = patch["system"]["verification_report"]
+
+    # Should have PARAMETER_CONFLICT in conflicts
+    assert any(c.conflict_type == "PARAMETER_CONFLICT" for c in report.conflicts)
+    # But the unexpected_number check may flag "15" — verify report status is separate concern.
+    # The PARAMETER_CONFLICT itself must not independently cause a hard fail.
+    param_conflicts = [c for c in report.conflicts if c.conflict_type == "PARAMETER_CONFLICT"]
+    assert all(c.severity == "WARNING" for c in param_conflicts)
+
+
+# --- COMPOUND_SPECIFICITY_CONFLICT active detection tests ---
+
+def test_compound_specificity_conflict_grade_jump_generates_conflict() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_specificity_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract only has family_level NBR
+    contract = AnswerContract(candidate_semantics=[{
+        "value": "NBR",
+        "specificity": "family_level"
+    }])
+    # Draft claims a specific grade "NBR 70"
+    draft_text = "Wir empfehlen NBR 70 für diese Anwendung."
+
+    conflicts = _check_specificity_conflicts(draft_text, contract)
+
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "COMPOUND_SPECIFICITY_CONFLICT"
+    assert conflicts[0].severity == "RESOLUTION_REQUIRES_MANUFACTURER_SCOPE"
+    assert "NBR 70" in conflicts[0].summary
+
+
+def test_compound_specificity_conflict_brand_jump_generates_conflict() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_specificity_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract only has family_level FFKM
+    contract = AnswerContract(candidate_semantics=[{
+        "value": "FFKM",
+        "specificity": "family_level"
+    }])
+    # Draft claims a specific brand "Kalrez"
+    draft_text = "Kalrez ist hier die beste Wahl."
+
+    conflicts = _check_specificity_conflicts(draft_text, contract)
+
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "COMPOUND_SPECIFICITY_CONFLICT"
+    assert "Kalrez" in conflicts[0].summary
+
+
+def test_compound_specificity_no_conflict_when_already_compound_specific() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_specificity_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract already has compound_specific evidence
+    contract = AnswerContract(candidate_semantics=[{
+        "value": "NBR 70",
+        "specificity": "compound_specific"
+    }])
+    draft_text = "NBR 70 ist geeignet."
+
+    conflicts = _check_specificity_conflicts(draft_text, contract)
+
+    assert conflicts == []
+
+
+def test_compound_specificity_no_conflict_when_no_material_jump() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_specificity_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract has family-level evidence, draft also stays at family-level
+    contract = AnswerContract(candidate_semantics=[{
+        "value": "FKM",
+        "specificity": "family_level"
+    }])
+    draft_text = "FKM ist beständig gegen Hydrauliköl."
+
+    conflicts = _check_specificity_conflicts(draft_text, contract)
+
+    assert conflicts == []

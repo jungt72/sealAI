@@ -15,7 +15,7 @@ safe fallback paths.
 import hashlib
 import json
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 import structlog
 
@@ -62,6 +62,18 @@ _CHEM_NEGATIVE_RE = re.compile(
 # ── Material Limits Post-Check ───────────────────────────────────────────────
 _LIMITS_TEMP_RE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*°\s*[Cc]\b")
 _LIMITS_PRESSURE_RE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*bar\b", re.IGNORECASE)
+
+# ── Compound Specificity Post-Check ──────────────────────────────────────────
+# Detects material family + numeric grade (e.g., NBR 70, FKM 75)
+_COMPOUND_INDICATOR_RE = re.compile(
+    r"\b(NBR|FKM|EPDM|PTFE|HNBR|FFKM|CR|VMQ|Viton|Kalrez|Neopren)\s+[0-9]{2,}\b",
+    re.IGNORECASE,
+)
+# Detects specific brand names that imply compound-level specificity
+_SPECIFIC_BRAND_INDICATOR_RE = re.compile(
+    r"\b(Kalrez|Chemraz|Simriz|Zalak|Simrit|Garlock)\b",
+    re.IGNORECASE,
+)
 
 
 def _strip_formatting_numbers(text: str) -> str:
@@ -215,6 +227,141 @@ def _check_resistance_claims(draft_text: str) -> List[Dict[str, str]]:
                     wrong_span="",  # Kein Replace — Disclaimer via targeted_patch Pass 2
                 ))
     return spans
+
+
+def _as_numeric(value: Any) -> "Optional[float]":
+    """Convert value to float, return None if not convertible."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _check_parameter_conflicts(
+    draft_text: str, contract: AnswerContract
+) -> List[ConflictRecord]:
+    """Compare draft-stated parameter values against contract-authoritative values.
+
+    Raises PARAMETER_CONFLICT/WARNING when draft mentions a numeric value for
+    pressure_bar or temperature_C that does not match the contract authority.
+    Tolerates minor rounding differences (±0.5 bar, ±1.0 °C).
+
+    Only fires when the contract has an authoritative value AND the draft
+    mentions the same parameter with a different value. Never adds to
+    failed_claim_spans — severity WARNING only, no hard routing impact.
+    """
+    conflicts: List[ConflictRecord] = []
+    params = contract.resolved_parameters
+
+    contract_pressure = _as_numeric(params.get("pressure_bar"))
+    if contract_pressure is not None:
+        draft_pressures = [
+            float(m.group(1).replace(",", "."))
+            for m in _LIMITS_PRESSURE_RE.finditer(draft_text)
+        ]
+        if draft_pressures and not any(
+            abs(dp - contract_pressure) < 0.5 for dp in draft_pressures
+        ):
+            conflicts.append(ConflictRecord(
+                conflict_type="PARAMETER_CONFLICT",
+                severity="WARNING",
+                summary=(
+                    f"Draft pressure values {[round(p, 1) for p in draft_pressures]} bar "
+                    f"differ from contract authority: {contract_pressure} bar."
+                ),
+                sources_involved=["draft", "contract.resolved_parameters"],
+                scope_note=(
+                    "Mismatch between draft-stated pressure and contract-authoritative value. "
+                    "Verify which value is correct."
+                ),
+                resolution_status="OPEN",
+            ))
+
+    contract_temp = _as_numeric(
+        params.get("temperature_C") or params.get("temperature_c")
+    )
+    if contract_temp is not None:
+        draft_temps = [
+            float(m.group(1).replace(",", "."))
+            for m in _LIMITS_TEMP_RE.finditer(draft_text)
+        ]
+        if draft_temps and not any(
+            abs(dt - contract_temp) < 1.0 for dt in draft_temps
+        ):
+            conflicts.append(ConflictRecord(
+                conflict_type="PARAMETER_CONFLICT",
+                severity="WARNING",
+                summary=(
+                    f"Draft temperature values {[round(t, 1) for t in draft_temps]} °C "
+                    f"differ from contract authority: {contract_temp} °C."
+                ),
+                sources_involved=["draft", "contract.resolved_parameters"],
+                scope_note=(
+                    "Mismatch between draft-stated temperature and contract-authoritative value. "
+                    "Verify which value is correct."
+                ),
+                resolution_status="OPEN",
+            ))
+
+    return conflicts
+
+
+def _check_specificity_conflicts(
+    draft_text: str, contract: AnswerContract
+) -> List[ConflictRecord]:
+    """Identify cases where the draft makes compound-specific claims but the
+    contract only provides family-level evidence.
+    """
+    conflicts: List[ConflictRecord] = []
+
+    # Check if we have ANY compound-specific candidate in the contract
+    has_compound_specific = any(
+        str(c.get("specificity") or "") == "compound_specific"
+        for c in contract.candidate_semantics
+    )
+
+    if not has_compound_specific:
+        # 1. Family + numeric grade (e.g. NBR 70)
+        compound_match = _COMPOUND_INDICATOR_RE.search(draft_text)
+        if compound_match:
+            conflicts.append(ConflictRecord(
+                conflict_type="COMPOUND_SPECIFICITY_CONFLICT",
+                severity="RESOLUTION_REQUIRES_MANUFACTURER_SCOPE",
+                summary=(
+                    f"Draft mentions specific grade '{compound_match.group(0)}' "
+                    "but contract only carries family-level evidence."
+                ),
+                sources_involved=["draft", "contract.candidate_semantics"],
+                scope_note=(
+                    "The draft makes a compound-specific grade claim. Since the contract "
+                    "only contains family data, manufacturer validation is required."
+                ),
+                resolution_status="OPEN",
+            ))
+            return conflicts  # Avoid duplicate specificity conflicts
+
+        # 2. Specific brand names not explicitly in contract as compound_specific
+        brand_match = _SPECIFIC_BRAND_INDICATOR_RE.search(draft_text)
+        if brand_match:
+            brand_name = brand_match.group(0).lower()
+            # If the brand name isn't already a value in the contract, it's a specificity jump
+            if not any(brand_name in str(c.get("value") or "").lower() for c in contract.candidate_semantics):
+                conflicts.append(ConflictRecord(
+                    conflict_type="COMPOUND_SPECIFICITY_CONFLICT",
+                    severity="RESOLUTION_REQUIRES_MANUFACTURER_SCOPE",
+                    summary=(
+                        f"Draft mentions specific brand '{brand_match.group(0)}' "
+                        "but contract only carries generic family evidence."
+                    ),
+                    sources_involved=["draft", "contract.candidate_semantics"],
+                    scope_note=(
+                        "Manufacturer-specific products require direct confirmation; "
+                        "generic family suitability is insufficient for brand-level claims."
+                    ),
+                    resolution_status="OPEN",
+                ))
+
+    return conflicts
 
 
 def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
@@ -424,6 +571,12 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
                 scope_note="Text contains contradictory suitability statements that may depend on unclarified scope.",
                 resolution_status="OPEN",
             ))
+
+    # PARAMETER_CONFLICT: draft-stated values vs. contract-authoritative values
+    conflicts.extend(_check_parameter_conflicts(draft_text, contract))
+
+    # COMPOUND_SPECIFICITY_CONFLICT: draft-stated specific grades vs. contract-authoritative generic evidence
+    conflicts.extend(_check_specificity_conflicts(draft_text, contract))
 
     status = "pass" if not failed_claim_spans else "fail"
     failure_type = None if status == "pass" else "render_mismatch"
