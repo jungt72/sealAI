@@ -306,6 +306,50 @@ def _check_parameter_conflicts(
     return conflicts
 
 
+def _check_blocking_unknowns(
+    draft_text: str, contract: AnswerContract
+) -> List[ConflictRecord]:
+    """Identify cases where the draft makes technical claims (pressure/temp)
+    but the contract has no authoritative value for these parameters.
+
+    This is a governance-level conflict with severity BLOCKING_UNKNOWN.
+    """
+    conflicts: List[ConflictRecord] = []
+    params = contract.resolved_parameters
+
+    # Check for missing pressure while draft claims pressure
+    if _as_numeric(params.get("pressure_bar")) is None:
+        if _LIMITS_PRESSURE_RE.search(draft_text):
+            conflicts.append(ConflictRecord(
+                conflict_type="PARAMETER_CONFLICT",
+                severity="BLOCKING_UNKNOWN",
+                summary="Draft mentions pressure values but contract has no authoritative pressure.",
+                sources_involved=["draft", "contract.resolved_parameters"],
+                scope_note=(
+                    "Technical release blocked: pressure is unknown in contract authority "
+                    "but specified in draft. Manufacturer validation or user input required."
+                ),
+                resolution_status="OPEN",
+            ))
+
+    # Check for missing temperature while draft claims temperature
+    if _as_numeric(params.get("temperature_C") or params.get("temperature_c")) is None:
+        if _LIMITS_TEMP_RE.search(draft_text):
+            conflicts.append(ConflictRecord(
+                conflict_type="PARAMETER_CONFLICT",
+                severity="BLOCKING_UNKNOWN",
+                summary="Draft mentions temperature values but contract has no authoritative temperature.",
+                sources_involved=["draft", "contract.resolved_parameters"],
+                scope_note=(
+                    "Technical release blocked: temperature is unknown in contract authority "
+                    "but specified in draft. Manufacturer validation or user input required."
+                ),
+                resolution_status="OPEN",
+            ))
+
+    return conflicts
+
+
 def _check_specificity_conflicts(
     draft_text: str, contract: AnswerContract
 ) -> List[ConflictRecord]:
@@ -571,6 +615,9 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
                 scope_note="Text contains contradictory suitability statements that may depend on unclarified scope.",
                 resolution_status="OPEN",
             ))
+
+    # BLOCKING_UNKNOWN: draft-stated technical parameters vs. missing contract authority
+    conflicts.extend(_check_blocking_unknowns(draft_text, contract))
 
     # PARAMETER_CONFLICT: draft-stated values vs. contract-authoritative values
     conflicts.extend(_check_parameter_conflicts(draft_text, contract))

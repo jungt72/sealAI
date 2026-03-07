@@ -242,6 +242,72 @@ def test_parameter_conflict_does_not_set_failed_claim_span() -> None:
     assert all(c.severity == "WARNING" for c in param_conflicts)
 
 
+# --- BLOCKING_UNKNOWN detection tests ---
+
+def test_blocking_unknown_pressure_missing_in_contract_but_claimed_in_draft() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_blocking_unknowns
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract has no pressure_bar
+    contract = AnswerContract(resolved_parameters={"temperature_C": 100.0})
+    # Draft mentions a pressure of 10 bar
+    draft_text = "Das Material ist bis 10 bar beständig."
+
+    conflicts = _check_blocking_unknowns(draft_text, contract)
+
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
+    assert conflicts[0].severity == "BLOCKING_UNKNOWN"
+    assert "pressure" in conflicts[0].summary.lower()
+
+
+def test_blocking_unknown_temperature_missing_in_contract_but_claimed_in_draft() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_blocking_unknowns
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract has no temperature_C
+    contract = AnswerContract(resolved_parameters={"pressure_bar": 5.0})
+    # Draft mentions a temperature of 200 °C
+    draft_text = "Einsatztemperatur bis 200 °C ist zulässig."
+
+    conflicts = _check_blocking_unknowns(draft_text, contract)
+
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "PARAMETER_CONFLICT"
+    assert conflicts[0].severity == "BLOCKING_UNKNOWN"
+    assert "temperature" in conflicts[0].summary.lower()
+
+
+def test_blocking_unknown_no_conflict_when_parameters_present_in_contract() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_blocking_unknowns
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract has authoritative values
+    contract = AnswerContract(resolved_parameters={
+        "pressure_bar": 10.0,
+        "temperature_C": 200.0
+    })
+    draft_text = "Beständig bei 10 bar und 200 °C."
+
+    conflicts = _check_blocking_unknowns(draft_text, contract)
+
+    assert conflicts == []
+
+
+def test_blocking_unknown_no_conflict_when_no_technical_claims_in_draft() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_blocking_unknowns
+    from app.langgraph_v2.state.sealai_state import AnswerContract
+
+    # Contract is empty
+    contract = AnswerContract()
+    # Draft contains no pressure or temperature mentions
+    draft_text = "Das Material NBR ist allgemein gut verfügbar."
+
+    conflicts = _check_blocking_unknowns(draft_text, contract)
+
+    assert conflicts == []
+
+
 # --- COMPOUND_SPECIFICITY_CONFLICT active detection tests ---
 
 def test_compound_specificity_conflict_grade_jump_generates_conflict() -> None:
