@@ -55,6 +55,18 @@ def build_assertion_cycle_update(
     changed_at = float((now or time.time)())
     reason = f"assertion_revision_changed:{','.join(fields)}"
 
+    # Soft Obsolescence: Retain the current contract but mark it as obsolete
+    current_contract = _pillar_get(state, "system", "answer_contract")
+    obsolete_contract = None
+    if current_contract is not None:
+        contract_dict = _as_dict(current_contract)
+        if contract_dict:
+            session_id = _pillar_get(state, "conversation", "session_id", "default")
+            contract_dict["obsolete"] = True
+            contract_dict["obsolete_reason"] = reason
+            contract_dict["superseded_by_cycle"] = f"cycle_{session_id}_{next_cycle_id}"
+            obsolete_contract = contract_dict
+
     return {
         "working_profile": {
             "calc_results": CalcResults().model_dump(exclude_none=False),
@@ -94,7 +106,7 @@ def build_assertion_cycle_update(
             "final_text": None,
             "final_answer": None,
             "final_prompt": None,
-            "answer_contract": None,
+            "answer_contract": obsolete_contract,
             "draft_text": None,
             "draft_base_hash": None,
             "verification_report": None,

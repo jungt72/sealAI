@@ -290,6 +290,12 @@ class AnswerContract(BaseModel):
     required_disclaimers: List[str] = Field(default_factory=list)
     respond_with_uncertainty: bool = False
 
+    # Obsolescence — set to True when a new assertion cycle invalidates this contract.
+    obsolete: bool = False
+    obsolete_reason: Optional[str] = None
+    # Reference to the cycle_id that superseded this contract.
+    superseded_by_cycle: Optional[str] = None
+
     model_config = ConfigDict(extra="forbid")
 
 

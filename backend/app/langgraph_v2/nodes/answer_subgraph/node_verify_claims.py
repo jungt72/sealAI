@@ -563,7 +563,12 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
     draft_hash = hashlib.sha256(draft_text.encode()).hexdigest()
 
     # CRITICAL GUARD
-    if state.system.answer_contract is None or hashlib.sha256(state.system.answer_contract.model_dump_json().encode()).hexdigest() != state.system.draft_base_hash:
+    if (
+        state.system.answer_contract is None
+        or state.system.answer_contract.obsolete
+        or hashlib.sha256(state.system.answer_contract.model_dump_json().encode()).hexdigest()
+        != state.system.draft_base_hash
+    ):
         contract_hash = (
             hashlib.sha256(state.system.answer_contract.model_dump_json().encode()).hexdigest()
             if state.system.answer_contract is not None

@@ -2,8 +2,8 @@ from app.langgraph_v2.state.sealai_state import AnswerContract, SealAIState
 from app.langgraph_v2.utils.assertion_cycle import build_assertion_cycle_update
 
 
-def test_build_assertion_cycle_update_tracks_revision_parent() -> None:
-    """Test that bumping the cycle tracks the snapshot_parent_revision correctly."""
+def test_build_assertion_cycle_update_marks_obsolete_instead_of_none() -> None:
+    """Test that bumping the cycle marks an existing AnswerContract as obsolete but retains it."""
     state = SealAIState(
         conversation={"session_id": "test_sess_123"},
         reasoning={
@@ -29,13 +29,12 @@ def test_build_assertion_cycle_update_tracks_revision_parent() -> None:
     # Verify the snapshot_parent_revision is correctly set to the previous revision
     assert reasoning["snapshot_parent_revision"] == 5
     
-    # Verify obsolescence markers
-    assert reasoning["derived_artifacts_stale"] is True
-    assert "pressure_bar" in reasoning["derived_artifacts_stale_reason"]
-    
-    # In the current implementation, answer_contract is reset to None on bump 
-    # to prevent stale authority from being used.
-    assert patch["system"]["answer_contract"] is None
+    # Verify obsolescence markers in the retained contract
+    updated_contract = patch["system"]["answer_contract"]
+    assert updated_contract is not None
+    assert updated_contract["obsolete"] is True
+    assert "pressure_bar" in updated_contract["obsolete_reason"]
+    assert updated_contract["superseded_by_cycle"] == "cycle_test_sess_123_2"
 
 
 def test_build_assertion_cycle_update_no_contract() -> None:
