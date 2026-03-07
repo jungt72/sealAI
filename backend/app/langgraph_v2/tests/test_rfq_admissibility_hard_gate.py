@@ -176,3 +176,64 @@ def test_normalize_sets_release_status_manufacturer_validation_from_governance()
 
     assert normalized["release_status"] == "manufacturer_validation_required"
     assert normalized["status"] == "inadmissible"  # status bleibt kompatibel
+
+
+def test_normalize_rfq_admissibility_blocks_on_verification_conflict() -> None:
+    """Test that BLOCKING_UNKNOWN conflicts in verification_report force inadmissible status."""
+    state = {
+        "system": {
+            "rfq_admissibility": {
+                "status": "ready",
+                "governed_ready": True,
+                "blockers": [],
+            },
+            "verification_report": {
+                "conflicts": [
+                    {
+                        "conflict_type": "PARAMETER_CONFLICT",
+                        "severity": "BLOCKING_UNKNOWN",
+                        "summary": "Draft mentions pressure values but contract has no authoritative pressure.",
+                        "resolution_status": "OPEN",
+                    }
+                ]
+            }
+        },
+        "reasoning": {},
+    }
+
+    normalized = normalize_rfq_admissibility_contract(state)
+
+    assert normalized["status"] == "inadmissible"
+    assert normalized["governed_ready"] is False
+    assert normalized["reason"] == "blocking_unknowns"
+    assert any("no authoritative pressure" in b for b in normalized["blockers"])
+    assert normalized["release_status"] == "inadmissible"
+
+
+def test_normalize_rfq_admissibility_sets_mfr_validation_on_verification_conflict() -> None:
+    """Test that RESOLUTION_REQUIRES_MANUFACTURER_SCOPE conflicts force manufacturer_validation_required status."""
+    state = {
+        "system": {
+            "rfq_admissibility": {
+                "status": "inadmissible",
+                "governed_ready": False,
+                "blockers": [],
+            },
+            "verification_report": {
+                "conflicts": [
+                    {
+                        "conflict_type": "COMPOUND_SPECIFICITY_CONFLICT",
+                        "severity": "RESOLUTION_REQUIRES_MANUFACTURER_SCOPE",
+                        "summary": "Draft mentions specific grade but contract only carries family-level evidence.",
+                        "resolution_status": "OPEN",
+                    }
+                ]
+            }
+        },
+        "reasoning": {},
+    }
+
+    normalized = normalize_rfq_admissibility_contract(state)
+
+    assert normalized["release_status"] == "manufacturer_validation_required"
+    assert any("specific grade" in item for item in normalized["manufacturer_validation_items"])

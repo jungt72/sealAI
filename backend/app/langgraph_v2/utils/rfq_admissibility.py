@@ -76,6 +76,7 @@ def default_rfq_admissibility_contract(
         reason=reason,
         open_points=resolved_open_points,
         blockers=resolved_blockers,
+        manufacturer_validation_items=list(manufacturer_validation_items or []),
         governed_ready=governed,
         derived_from_assertion_cycle_id=cycle_id,
         derived_from_assertion_revision=revision,
@@ -94,15 +95,34 @@ def normalize_rfq_admissibility_contract(state: Any) -> Dict[str, Any]:
     ans_contract = _as_dict(system.get("answer_contract"))
     ans_gov = _as_dict(ans_contract.get("governance_metadata"))
     ans_blockers = list(ans_gov.get("unknowns_release_blocking") or [])
+
+    # Collect BLOCKING_UNKNOWN conflicts from verification_report (post-check results).
+    verify_report = _as_dict(system.get("verification_report"))
+    report_conflicts = list(verify_report.get("conflicts") or [])
+    conflict_blockers = [
+        str(c.get("summary") or c.get("scope_note") or "Blocking unknown").strip()
+        for item in report_conflicts
+        for c in [_as_dict(item)]
+        if c.get("severity") == "BLOCKING_UNKNOWN"
+    ]
+
     active_blockers = list(dict.fromkeys(
-        str(b).strip() for b in (sys_blockers + ans_blockers) if str(b).strip()
+        str(b).strip() for b in (sys_blockers + ans_blockers + conflict_blockers) if str(b).strip()
     ))
 
     # Collect manufacturer-validation items from governance metadata.
+    mfr_conflict_items = [
+        str(c.get("summary") or c.get("scope_note") or "Manufacturer validation required").strip()
+        for item in report_conflicts
+        for c in [_as_dict(item)]
+        if c.get("severity") == "RESOLUTION_REQUIRES_MANUFACTURER_SCOPE"
+    ]
+
     mfr_items = list(dict.fromkeys(
         str(item).strip()
         for item in list(ans_gov.get("unknowns_manufacturer_validation") or [])
         + list(sys_gov.get("unknowns_manufacturer_validation") or [])
+        + mfr_conflict_items
         if str(item).strip()
     ))
 

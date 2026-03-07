@@ -338,6 +338,7 @@ class RFQAdmissibilityContract(BaseModel):
     reason: Optional[str] = "rfq_contract_missing"
     open_points: List[str] = Field(default_factory=list)
     blockers: List[str] = Field(default_factory=list)
+    manufacturer_validation_items: List[str] = Field(default_factory=list)
     governed_ready: bool = False
     derived_from_assertion_cycle_id: Optional[int] = None
     derived_from_assertion_revision: Optional[int] = None
