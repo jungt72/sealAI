@@ -259,13 +259,13 @@ async def node_draft_answer(state: AnswerSubgraphState, *_args: Any, **_kwargs: 
         logger.warning("DRAFT_ANSWER_BLIND_SPOT: working_profile is missing in subgraph state!")
 
     contract = state.system.answer_contract
-    if contract is None:
-        logger.error("draft_answer.missing_contract")
+    if contract is None or contract.obsolete:
+        logger.error("draft_answer.missing_or_obsolete_contract")
         return {
                    "system": {
                        "draft_text": "",
                        "draft_base_hash": None,
-                       "error": "AnswerContract missing in node_draft_answer",
+                       "error": "AnswerContract missing or obsolete in node_draft_answer",
                    },
                    "reasoning": {
                        "last_node": "node_draft_answer",

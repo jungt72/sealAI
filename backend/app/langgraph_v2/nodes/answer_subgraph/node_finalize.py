@@ -97,6 +97,9 @@ def _extract_selected_fact_ids(state: SealAIState) -> Set[str]:
         selected.update(str(item).strip() for item in state_selected if str(item).strip())
 
     contract = getattr(state.system, "answer_contract", None)
+    if contract is not None and getattr(contract, "obsolete", False):
+        contract = None
+
     contract_selected = getattr(contract, "selected_fact_ids", None) if contract is not None else None
     if isinstance(contract_selected, list):
         selected.update(str(item).strip() for item in contract_selected if str(item).strip())

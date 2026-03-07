@@ -75,6 +75,12 @@ _SPECIFIC_BRAND_INDICATOR_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── Temporal Validity Post-Check ─────────────────────────────────────────────
+_TEMPORAL_CLAIM_RE = re.compile(
+    r"\b(dauerhaft|langfristig|wartungsfrei|lebensdauer|standzeit|unbegrenzt|permanent|always|forever|lifetime)\b",
+    re.IGNORECASE,
+)
+
 
 def _strip_formatting_numbers(text: str) -> str:
     """Remove formatting-only number markers from free text.
@@ -482,6 +488,44 @@ def _check_assumption_conflicts(draft_text: str, contract: AnswerContract) -> Li
     return conflicts
 
 
+def _check_temporal_validity_conflicts(draft_text: str, contract: AnswerContract) -> List[ConflictRecord]:
+    """Identify cases where the draft suggests unlimited or long-term validity
+    while the evidence is restricted to a specific snapshot or uncertain.
+    """
+    conflicts: List[ConflictRecord] = []
+    gov = contract.governance_metadata
+
+    # Check if draft makes strong temporal claims
+    has_temporal_claim = _TEMPORAL_CLAIM_RE.search(draft_text)
+
+    if has_temporal_claim:
+        # Check for restrictive scope signals
+        is_uncertain = contract.respond_with_uncertainty
+        is_snapshot_restricted = any(
+            "aktuell erfassten Betriebspunkt" in s or "aktuellen Assertion-Stand" in s
+            for s in gov.scope_of_validity
+        )
+
+        if is_uncertain or is_snapshot_restricted:
+            conflicts.append(
+                ConflictRecord(
+                    conflict_type="TEMPORAL_VALIDITY_CONFLICT",
+                    severity="WARNING",
+                    summary=(
+                        f"Draft suggests long-term or permanent validity ('{has_temporal_claim.group(0)}') "
+                        "while contract authority is restricted to current snapshot or uncertain."
+                    ),
+                    sources_involved=["draft", "governance_metadata.scope_of_validity"],
+                    scope_note=(
+                        "The technical evidence only covers the defined operating point; "
+                        "long-term durability cannot be guaranteed."
+                    ),
+                    resolution_status="OPEN",
+                )
+            )
+    return conflicts
+
+
 def _check_limits_claims(draft_text: str) -> List[Dict[str, str]]:
     """Scannt draft_text auf Material × Temperatur/Druck-Kombinationen
     und prüft deterministisch gegen material_limits.check().
@@ -709,6 +753,9 @@ def node_verify_claims(state: AnswerSubgraphState, *_args: Any, **_kwargs: Any) 
 
     # ASSUMPTION_CONFLICT: definitive claims vs. active governance assumptions
     conflicts.extend(_check_assumption_conflicts(draft_text, contract))
+
+    # TEMPORAL_VALIDITY_CONFLICT: unlimited validity suggestions vs. snapshot evidence
+    conflicts.extend(_check_temporal_validity_conflicts(draft_text, contract))
 
     status = "pass" if not failed_claim_spans else "fail"
     failure_type = None if status == "pass" else "render_mismatch"

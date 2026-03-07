@@ -287,7 +287,7 @@ def test_blocking_unknown_no_conflict_when_parameters_present_in_contract() -> N
         "pressure_bar": 10.0,
         "temperature_C": 200.0
     })
-    draft_text = "Beständig bei 10 bar und 200 °C."
+    draft_text = "Beständig bei 10 bar and 200 °C."
 
     conflicts = _check_blocking_unknowns(draft_text, contract)
 
@@ -425,3 +425,39 @@ def test_assumption_conflict_detection_limited_evidence() -> None:
     assert len(conflicts) == 1
     assert conflicts[0].conflict_type == "ASSUMPTION_CONFLICT"
     assert conflicts[0].severity == "WARNING"
+
+
+# --- TEMPORAL_VALIDITY_CONFLICT active detection tests ---
+
+def test_temporal_validity_conflict_detection() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_temporal_validity_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract, GovernanceMetadata
+
+    # Draft suggests permanent suitability
+    draft_text = "Die Dichtung ist dauerhaft beständig gegen das Medium."
+    # Contract is restricted to snapshot
+    contract = AnswerContract(
+        governance_metadata=GovernanceMetadata(
+            scope_of_validity=["Deterministische Berechnungsergebnisse gelten nur fuer den aktuell erfassten Betriebspunkt."]
+        )
+    )
+
+    conflicts = _check_temporal_validity_conflicts(draft_text, contract)
+    assert len(conflicts) == 1
+    assert conflicts[0].conflict_type == "TEMPORAL_VALIDITY_CONFLICT"
+    assert "dauerhaft" in conflicts[0].summary
+
+
+def test_temporal_validity_no_conflict_when_no_temporal_claim() -> None:
+    from app.langgraph_v2.nodes.answer_subgraph.node_verify_claims import _check_temporal_validity_conflicts
+    from app.langgraph_v2.state.sealai_state import AnswerContract, GovernanceMetadata
+
+    draft_text = "Die Dichtung ist für den Betriebspunkt geeignet."
+    contract = AnswerContract(
+        governance_metadata=GovernanceMetadata(
+            scope_of_validity=["Nur fuer den aktuellen Betriebspunkt."]
+        )
+    )
+
+    conflicts = _check_temporal_validity_conflicts(draft_text, contract)
+    assert len(conflicts) == 0
