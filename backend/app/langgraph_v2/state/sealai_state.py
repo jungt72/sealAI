@@ -279,8 +279,29 @@ class AnswerContract(BaseModel):
 
 
 class ConflictRecord(BaseModel):
-    conflict_type: Literal["FALSE_CONFLICT", "SOURCE_CONFLICT", "SCOPE_CONFLICT", "UNKNOWN"] = "UNKNOWN"
-    severity: Literal["HARD", "WARNING", "INFO"] = "WARNING"
+    # Blueprint v1.2 — 9 conflict types
+    conflict_type: Literal[
+        "FALSE_CONFLICT",
+        "SOURCE_CONFLICT",
+        "SCOPE_CONFLICT",
+        "CONDITION_CONFLICT",
+        "COMPOUND_SPECIFICITY_CONFLICT",
+        "ASSUMPTION_CONFLICT",
+        "TEMPORAL_VALIDITY_CONFLICT",
+        "PARAMETER_CONFLICT",
+        "UNKNOWN",
+    ] = "UNKNOWN"
+    # Blueprint v1.2 — 6 severity levels
+    # BLOCKING_UNKNOWN / RESOLUTION_REQUIRES_MANUFACTURER_SCOPE are governance-level severities
+    # that signal incompleteness requiring external validation, not necessarily a hard failure.
+    severity: Literal[
+        "INFO",
+        "WARNING",
+        "HARD",
+        "CRITICAL",
+        "BLOCKING_UNKNOWN",
+        "RESOLUTION_REQUIRES_MANUFACTURER_SCOPE",
+    ] = "WARNING"
     summary: str = ""
     sources_involved: List[str] = Field(default_factory=list)
     scope_note: str = ""
