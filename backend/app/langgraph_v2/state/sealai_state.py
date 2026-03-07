@@ -260,11 +260,26 @@ class GovernanceMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RequirementSpec(BaseModel):
+    """Neutral requirement space for technical constraints and operational window.
+    
+    This model decouples technical needs from candidate choices or LLM-resolved 
+    parameters, acting as the 'Source of Truth' for what the application requires.
+    """
+    operating_conditions: Dict[str, Any] = Field(default_factory=dict)
+    missing_critical_parameters: List[str] = Field(default_factory=list)
+    exclusion_criteria: List[str] = Field(default_factory=list)
+    unknowns_release_blocking: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class AnswerContract(BaseModel):
     # Cycle binding — set to "cycle_{session_id}_{cycle_id}" when the contract is built.
     # Used to detect staleness when the assertion cycle advances.
     analysis_cycle_id: Optional[str] = None
     resolved_parameters: Dict[str, Any] = Field(default_factory=dict)
+    requirement_spec: Optional[RequirementSpec] = None
     calc_results: Dict[str, Any] = Field(default_factory=dict)
     selected_fact_ids: List[str] = Field(default_factory=list)
     candidate_semantics: List[Dict[str, Any]] = Field(default_factory=list)
@@ -416,7 +431,7 @@ class WorkingMemory(BaseModel):
     supervisor_decision: Optional[str] = None
     retries: int = 0
     material_candidates: List[Dict[str, Any]] = Field(default_factory=list)
-    material_requirements: Dict[str, Any] = Field(default_factory=dict)
+    material_requirements: RequirementSpec = Field(default_factory=RequirementSpec)
     material_recommendation: Dict[str, Any] = Field(default_factory=dict)
     knowledge_material: Optional[str] = None
     knowledge_lifetime: Optional[str] = None
@@ -1075,6 +1090,7 @@ __all__ = [
     "Recommendation",
     "Source",
     "AnswerContract",
+    "RequirementSpec",
     "ConflictRecord",
     "VerificationReport",
     "QuestionItem",

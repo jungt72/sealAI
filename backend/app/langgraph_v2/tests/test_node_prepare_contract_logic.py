@@ -433,3 +433,28 @@ def test_extreme_temperature_query_injects_required_factcards(monkeypatch) -> No
 
     assert any("PTFE-F-008" in item for item in selected_fact_ids)
     assert any("PTFE-F-062" in item for item in selected_fact_ids)
+
+
+def test_requirement_spec_is_populated_with_technical_conditions() -> None:
+    state = SealAIState(
+        working_profile={
+            "engineering_profile": {
+                "medium": "Hydrauliköl",
+                "pressure_bar": 250.0,
+                "temperature_C": 120.0,
+            }
+        }
+    )
+    # Inject missing_critical_parameters manually if needed, but here we test base extraction
+    patch = node_prepare_contract(state)
+    contract = patch["answer_contract"]
+    spec = contract.requirement_spec
+
+    assert spec is not None
+    assert spec.operating_conditions["medium"] == "Hydrauliköl"
+    assert spec.operating_conditions["pressure_bar"] == 250.0
+    assert spec.operating_conditions["temperature_C"] == 120.0
+
+    # Verify it also exists in the state patch for working_profile
+    assert patch["working_profile"]["material_requirements"] == spec
+

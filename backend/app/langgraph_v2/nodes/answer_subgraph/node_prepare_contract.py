@@ -21,10 +21,50 @@ from typing import Any, Dict, List, Set, Tuple
 import structlog
 
 from app.langgraph_v2.nodes.answer_subgraph.state import AnswerSubgraphState
-from app.langgraph_v2.state.sealai_state import AnswerContract, CandidateItem, GovernanceMetadata, SealAIState, WorkingMemory
+from app.langgraph_v2.state.sealai_state import (
+    AnswerContract,
+    CandidateItem,
+    GovernanceMetadata,
+    RequirementSpec,
+    SealAIState,
+    WorkingMemory,
+)
 from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice, build_candidate_clusters
 from app.langgraph_v2.utils.context_manager import build_final_context, dedupe_retrieval_chunks
+
+
+def _build_requirement_spec(
+    resolved_parameters: Dict[str, Any],
+    governance_metadata: GovernanceMetadata,
+) -> RequirementSpec:
+    """Extract technical requirements into a neutral specification.
+
+    Filters operational window parameters and captures missing critical fields
+    from the current analysis stage.
+    """
+    technical_keys = {
+        "medium",
+        "pressure_bar",
+        "temperature_C",
+        "shaft_diameter",
+        "speed_rpm",
+        "shaft_runout",
+        "shaft_hardness",
+        "dynamic_type",
+    }
+    operating_conditions = {
+        k: v for k, v in resolved_parameters.items() if k in technical_keys and v is not None
+    }
+
+    missing_params = resolved_parameters.get("missing_critical_parameters", [])
+
+    return RequirementSpec(
+        operating_conditions=operating_conditions,
+        missing_critical_parameters=list(missing_params) if isinstance(missing_params, list) else [],
+        unknowns_release_blocking=list(governance_metadata.unknowns_release_blocking),
+    )
+
 
 logger = structlog.get_logger("langgraph_v2.answer_subgraph.prepare_contract")
 _PRESSURE_BAR_PATTERN = re.compile(
@@ -872,8 +912,11 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
         resolved_parameters=resolved_parameters,
     )
 
+    requirement_spec = _build_requirement_spec(resolved_parameters, governance_metadata)
+
     contract = AnswerContract(
         resolved_parameters=resolved_parameters,
+        requirement_spec=requirement_spec,
         calc_results=calc_results,
         selected_fact_ids=selected_fact_ids,
         candidate_semantics=candidate_semantics,
@@ -915,6 +958,9 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
             "final_prompt": final_context,
             "final_prompt_metadata": final_prompt_metadata,
         },
+        "working_profile": {
+            "material_requirements": requirement_spec,
+        },
         "reasoning": {
             "flags": flags,
             "last_node": "node_prepare_contract",
@@ -926,6 +972,7 @@ def node_prepare_contract(state: AnswerSubgraphState, *_args: Any, **_kwargs: An
         "final_prompt_metadata": final_prompt_metadata,
         "flags": flags,
         "last_node": "node_prepare_contract",
+        "material_requirements": requirement_spec,
     }
     if augmented_wm is not None:
         patch["reasoning"]["working_memory"] = augmented_wm
