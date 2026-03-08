@@ -19,6 +19,7 @@ os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.js
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint
+from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
 from app.services.auth.dependencies import RequestUser
 
 
@@ -74,7 +75,7 @@ def test_warns_on_stale_snapshot(monkeypatch, caplog):
     )
 
     async def _collect():
-        async for _ in endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1"):
+        async for _ in _event_stream_v2(req, user_id="user-test", request_id="req-1"):
             break
 
     with caplog.at_level("WARNING"):

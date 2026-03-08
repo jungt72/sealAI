@@ -477,7 +477,7 @@ def build_v2_config(*, thread_id: str, user_id: str) -> Dict[str, Any]:
         "configurable": {
             "thread_id": scoped_thread_id,
             "user_id": user_id,
-            "checkpoint_ns": scoped_thread_id,
+            "checkpoint_ns": "",
         },
         "metadata": {
             "thread_id": thread_id,

@@ -44,6 +44,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.messages.ai import AIMessageChunk
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
+from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2  # noqa: E402
 from app.services.auth.dependencies import RequestUser  # noqa: E402
 
 
@@ -516,7 +517,7 @@ def test_event_stream_v2_streams_tokens_and_done(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -560,7 +561,7 @@ def test_event_stream_v2_includes_event_ids(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test", client_msg_id="msg-1")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     token_ids = [event_id for evt, _, event_id in events if evt == "token"]
@@ -578,7 +579,7 @@ def test_event_stream_v2_emits_interrupt_event(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-interrupt")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-int")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-int")))
     events = _parse_sse_frames(chunks)
 
     interrupt_events = [payload for evt, payload, _ in events if evt == "interrupt"]
@@ -595,7 +596,7 @@ def test_event_stream_v2_fallback_chunks_final_text(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -610,7 +611,7 @@ def test_event_stream_v2_emits_error_then_done(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     assert [evt for evt, _, _ in events].count("error") == 1
@@ -624,7 +625,7 @@ def test_event_stream_v2_ignores_full_message_after_chunks(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -638,7 +639,7 @@ def test_event_stream_v2_filters_structured_payloads_in_astream(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -653,7 +654,7 @@ def test_event_stream_v2_emits_checkpoint_required(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     assert any(evt == "checkpoint_required" for evt, _, _ in events)
@@ -666,7 +667,7 @@ def test_event_stream_v2_astream_events_emits_chat_chunk_tokens_only(monkeypatch
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -682,7 +683,7 @@ def test_event_stream_v2_prefers_patch_final_text_over_stale_messages(monkeypatc
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -697,7 +698,7 @@ def test_event_stream_v2_does_not_duplicate_streamed_tokens_from_snapshot_final_
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     tokens = [payload["text"] for evt, payload, _ in events if evt == "token"]
@@ -711,7 +712,7 @@ def test_event_stream_v2_emits_terminal_message_from_final_state(monkeypatch):
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     messages = [payload for evt, payload, _ in events if evt == "message"]
@@ -728,7 +729,7 @@ def test_event_stream_v2_injects_sticky_live_calc_tile_into_state_updates(monkey
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _dummy_graph)
 
     req = endpoint.LangGraphV2Request(input="Hi", chat_id="chat-test")
-    chunks = asyncio.run(_collect(endpoint._event_stream_v2(req, user_id="user-test", request_id="req-1")))
+    chunks = asyncio.run(_collect(_event_stream_v2(req, user_id="user-test", request_id="req-1")))
     events = _parse_sse_frames(chunks)
 
     state_updates = [payload for evt, payload, _ in events if evt == "state_update"]

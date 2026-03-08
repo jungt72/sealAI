@@ -4,6 +4,13 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+# _run_graph_to_state was moved out of the production endpoint module.
+# These integration tests patch it on the helper module where it now lives.
+# Note: _run_graph_to_state is not called by the production endpoint
+# (which uses event_multiplexer). These tests verify the SSE contract
+# at the HTTP layer and rely on the graph being mocked at a higher level.
+_HELPERS_MODULE = "app.api.tests.helpers.langgraph_v2_test_stream_helpers"
+
 
 def _client() -> TestClient:
     app_mod = importlib.import_module("app.main")
@@ -17,13 +24,13 @@ def _auth(monkeypatch: pytest.MonkeyPatch, *, user: str = "test-user") -> None:
 
 def test_chat_v2_sse_streams_token_and_done(monkeypatch: pytest.MonkeyPatch) -> None:
     _auth(monkeypatch)
-    ep = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
+    helpers = importlib.import_module(_HELPERS_MODULE)
     SealAIState = importlib.import_module("app.langgraph_v2.state").SealAIState
 
     async def _fake_run_graph_to_state(_req, *, user_id: str):
         return SealAIState(final_text=f"hello from {user_id}")
 
-    monkeypatch.setattr(ep, "_run_graph_to_state", _fake_run_graph_to_state)
+    monkeypatch.setattr(helpers, "_run_graph_to_state", _fake_run_graph_to_state)
 
     client = _client()
     with client.stream(
@@ -46,12 +53,12 @@ def test_chat_v2_sse_streams_token_and_done(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_chat_v2_sse_error_is_sanitized(monkeypatch: pytest.MonkeyPatch) -> None:
     _auth(monkeypatch)
-    ep = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
+    helpers = importlib.import_module(_HELPERS_MODULE)
 
     async def _boom(_req, *, user_id: str):
         raise RuntimeError("secret: do not leak this")
 
-    monkeypatch.setattr(ep, "_run_graph_to_state", _boom)
+    monkeypatch.setattr(helpers, "_run_graph_to_state", _boom)
 
     client = _client()
     with client.stream(

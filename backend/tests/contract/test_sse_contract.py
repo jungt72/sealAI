@@ -84,6 +84,7 @@ async def _collect_async(gen: AsyncGenerator[str, None]) -> List[str]:
 def test_sse_stream_emits_done_once_and_is_last_for_normal_run(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_minimal_settings_env(monkeypatch)
     from app.api.v1.endpoints import langgraph_v2 as endpoint
+    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
 
     dummy_events = [
         {
@@ -116,7 +117,7 @@ def test_sse_stream_emits_done_once_and_is_last_for_normal_run(monkeypatch: pyte
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
 
     request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(endpoint._event_stream_v2(request)))
+    frames = asyncio.run(_collect_async(_event_stream_v2(request)))
 
     events = _parse_sse_frames(frames)
     assert events, "SSE produced no frames"
@@ -141,6 +142,7 @@ def test_sse_stream_emits_done_once_and_is_last_for_normal_run(monkeypatch: pyte
 def test_sse_stream_emits_error_then_done_and_stops(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_minimal_settings_env(monkeypatch)
     from app.api.v1.endpoints import langgraph_v2 as endpoint
+    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
 
     async def _error_events() -> AsyncGenerator[Dict[str, Any], None]:
         yield {"event": "on_error", "name": "final_answer_node", "data": {"error": "boom"}}
@@ -159,7 +161,7 @@ def test_sse_stream_emits_error_then_done_and_stops(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
 
     request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(endpoint._event_stream_v2(request)))
+    frames = asyncio.run(_collect_async(_event_stream_v2(request)))
 
     events = _parse_sse_frames(frames)
     event_names = [name for name, _ in events]
@@ -170,6 +172,7 @@ def test_sse_stream_emits_error_then_done_and_stops(monkeypatch: pytest.MonkeyPa
 def test_sse_does_not_emit_duplicate_parameter_deltas(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_minimal_settings_env(monkeypatch)
     from app.api.v1.endpoints import langgraph_v2 as endpoint
+    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
 
     dummy_events = [
         {
@@ -188,7 +191,7 @@ def test_sse_does_not_emit_duplicate_parameter_deltas(monkeypatch: pytest.Monkey
     monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
 
     request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(endpoint._event_stream_v2(request)))
+    frames = asyncio.run(_collect_async(_event_stream_v2(request)))
     events = _parse_sse_frames(frames)
 
     param_updates = [payload for evt, payload in events if evt == "parameter_update"]

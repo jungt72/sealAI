@@ -140,8 +140,9 @@ def test_chat_v2_sse_trace_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
+    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
-    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-1")))
+    text = asyncio.run(_collect(_event_stream_v2(req, user_id="user-1", request_id="trace-1")))
     assert "event: trace" in text
 
 
@@ -157,8 +158,9 @@ def test_chat_v2_sse_trace_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
+    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
-    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-2")))
+    text = asyncio.run(_collect(_event_stream_v2(req, user_id="user-1", request_id="trace-2")))
     assert "event: trace" not in text
 
 
@@ -172,8 +174,9 @@ def test_chat_v2_sse_emits_retrieval_results(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
+    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
-    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-3")))
+    text = asyncio.run(_collect(_event_stream_v2(req, user_id="user-1", request_id="trace-3")))
     assert "event: done" in text
     assert "\"phase\":\"rag\"" in text
     assert "\"last_node\":\"rag_support_node\"" in text
@@ -189,8 +192,9 @@ def test_chat_v2_sse_emits_retrieval_skipped(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(ep, "get_sealai_graph_v2", _dummy_graph)
 
+    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
     req = ep.LangGraphV2Request(input="hi", chat_id="default")
-    text = asyncio.run(_collect(ep._event_stream_v2(req, user_id="user-1", request_id="trace-4")))
+    text = asyncio.run(_collect(_event_stream_v2(req, user_id="user-1", request_id="trace-4")))
     assert "event: done" in text
     assert "\"phase\":\"supervisor\"" in text
     assert "\"last_node\":\"supervisor_policy_node\"" in text
