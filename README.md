@@ -20,7 +20,9 @@ See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, li
 
 ## Blueprint Status
 - **Blueprint v1.2 (Engineering Firewall):** ✅ Successfully completed. The architecture is frozen.
-- **Blueprint v1.3 (LangGraph Orchestration):** 🚀 Planned next milestone.
+- **Blueprint v1.3 (LangGraph Orchestration):** ✅ Successfully completed (v1.3.1). Orchestrator & Strict Tooling are operational.
+- **Blueprint v1.4 (Knowledge Integration):** ✅ Successfully completed. RAG Pipeline & FactCard Injection are operational.
+- **Blueprint v1.5 (Advanced Reasoning):** 🚀 Planned next milestone.
 
 ## Changelog
 - MIGRATION: Phase-1 - Initial structure.
