@@ -18,6 +18,10 @@ See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, li
 - Phase-1: State slimmed, ToolNode introduced, Redis checkpointer.
 - Phase-2: Discovery loop, subgraphs, resolver, debate.
 
+## Blueprint Status
+- **Blueprint v1.2 (Engineering Firewall):** ✅ Successfully completed. The architecture is frozen.
+- **Blueprint v1.3 (LangGraph Orchestration):** 🚀 Planned next milestone.
+
 ## Changelog
 - MIGRATION: Phase-1 - Initial structure.
 - MIGRATION: Phase-2 - Full architecture.
