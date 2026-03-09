@@ -102,3 +102,6 @@ paperless/media/
 
 # Next generated
 frontend/next-env.d.ts
+
+# Local concept material
+konzept/
