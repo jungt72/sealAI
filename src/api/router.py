@@ -1,7 +1,9 @@
 import json
+import os
 from typing import Dict, AsyncGenerator
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, FastAPI
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from src.api.models import ChatRequest, ChatResponse
 from src.agent.graph import app
 from src.agent.state import AgentState
@@ -36,8 +38,7 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
     current_state = SESSION_STORE[session_id]
     current_state["messages"].append(HumanMessage(content=request.message))
     
-    full_reply = ""
-    final_state = current_state # Fallback
+    final_state = current_state 
     
     try:
         # 2. Über LangGraph Events iterieren (Version v2)
@@ -48,7 +49,6 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
             if kind == "on_chat_model_stream":
                 chunk = event["data"].get("chunk")
                 if chunk and chunk.content:
-                    full_reply += chunk.content
                     yield f"data: {json.dumps({'chunk': chunk.content})}\n\n"
             
             # Finalen State am Ende der Kette abgreifen
@@ -66,17 +66,18 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-@router.post("/chat")
+@router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    # (Bestehender Code unverändert, zur Kürze hier weggelassen oder beibehalten)
-    # ... (Code von F2)
+    """REST-Endpunkt für Chat-Anfragen (Phase F2)."""
     session_id = request.session_id
     if session_id not in SESSION_STORE:
         initial_sealing_state = create_initial_state()
         initial_sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
         SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state}
+    
     current_state = SESSION_STORE[session_id]
     current_state["messages"].append(HumanMessage(content=request.message))
+    
     try:
         updated_state = execute_agent(current_state)
         SESSION_STORE[session_id] = updated_state
@@ -87,11 +88,19 @@ async def chat_endpoint(request: ChatRequest):
 
 @router.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
-    """
-    Streaming-Endpunkt für Echtzeit-Antworten (Phase F3).
-    Gibt eine StreamingResponse mit text/event-stream zurück.
-    """
+    """Streaming-Endpunkt für Echtzeit-Antworten (Phase F3)."""
     return StreamingResponse(
         event_generator(request),
         media_type="text/event-stream"
     )
+
+# FastAPI App Instanz für Phase G1
+app_api = FastAPI(title="SealAI LangGraph PoC API")
+app_api.include_router(router)
+
+# Statische Dateien ausliefern
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app_api.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+else:
+    print(f"WARNUNG: Statisches Verzeichnis nicht gefunden: {static_dir}")

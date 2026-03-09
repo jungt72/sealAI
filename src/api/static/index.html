@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SealAI LangGraph PoC</title>
+    <style>
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; background: #f4f4f9; }
+        #chat-container { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #ccc; }
+        #chat-history { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+        .message { padding: 10px; border-radius: 8px; max-width: 80%; }
+        .user { align-self: flex-end; background: #007bff; color: white; }
+        .ai { align-self: flex-start; background: #e9ecef; color: #333; }
+        #input-area { padding: 20px; display: flex; gap: 10px; border-top: 1px solid #ccc; background: white; }
+        #chat-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        #send-btn { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        #state-container { width: 400px; padding: 20px; background: #222; color: #0f0; overflow-y: auto; }
+        pre { white-space: pre-wrap; word-wrap: break-word; font-size: 12px; }
+        h3 { color: #fff; margin-top: 0; }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div id="chat-history"></div>
+        <div id="input-area">
+            <input type="text" id="chat-input" placeholder="Nachricht eingeben...">
+            <button id="send-btn">Senden</button>
+        </div>
+    </div>
+    <div id="state-container">
+        <h3>Technical State (SealingAIState)</h3>
+        <pre id="technical-state">{}</pre>
+    </div>
+
+    <script>
+        const chatHistory = document.getElementById('chat-history');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const statePre = document.getElementById('technical-state');
+
+        let sessionId = 'session-' + Math.random().toString(36).substr(2, 9);
+
+        async function sendMessage() {
+            const message = chatInput.value.trim();
+            if (!message) return;
+
+            // User Nachricht anzeigen
+            const userDiv = document.createElement('div');
+            userDiv.className = 'message user';
+            userDiv.textContent = message;
+            chatHistory.appendChild(userDiv);
+            chatInput.value = '';
+
+            // AI Nachricht Container vorbereiten
+            const aiDiv = document.createElement('div');
+            aiDiv.className = 'message ai';
+            chatHistory.appendChild(aiDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+
+            try {
+                const response = await fetch('/chat/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message, session_id: sessionId })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.slice(6);
+                            if (dataStr === '[DONE]') continue;
+
+                            try {
+                                const data = JSON.parse(dataStr);
+                                if (data.chunk) {
+                                    aiDiv.textContent += data.chunk;
+                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                                }
+                                if (data.state) {
+                                    statePre.textContent = JSON.stringify(data.state, null, 2);
+                                }
+                                if (data.error) {
+                                    aiDiv.textContent += '\nFehler: ' + data.error;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing JSON:', dataStr);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                aiDiv.textContent = 'Fehler bei der Verbindung: ' + err.message;
+            }
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
