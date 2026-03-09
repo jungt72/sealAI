@@ -9,6 +9,7 @@ import os
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
@@ -18,6 +19,9 @@ from app.langgraph_v2.state import SealAIState
 from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
 from app.langgraph_v2.utils.assertion_cycle import build_assertion_cycle_update
 from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_to_state_layers
+from app.langgraph_v2.projections.case_workspace import project_case_workspace
+from app.api.v1.schemas.case_workspace import CaseWorkspaceProjection
+from app.api.v1.renderers.rfq_html import render_rfq_html
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.rag.state import WorkingProfile
 
@@ -53,26 +57,9 @@ class StateUpdate(BaseModel):
     )
 
 
-def _state_to_dict(values: Any) -> Dict[str, Any]:
-    if values is None:
-        return {}
-    if isinstance(values, SealAIState):
-        return values.model_dump(exclude_none=True)
-    if isinstance(values, dict):
-        return dict(values)
-    try:
-        return dict(values)
-    except Exception:
-        return {}
-
-
-def _pillar_dict(state_values: Dict[str, Any], pillar: str) -> Dict[str, Any]:
-    raw = state_values.get(pillar)
-    if hasattr(raw, "model_dump"):
-        raw = raw.model_dump(exclude_none=True)
-    if isinstance(raw, dict):
-        return dict(raw)
-    return {}
+# Shared state-access helpers — definitions live in app.api.v1.utils.state_access
+# to avoid duplication with langgraph_v2.py.
+from app.api.v1.utils.state_access import _pillar_dict, _state_to_dict  # noqa: E402
 
 
 def _state_field(state_values: Dict[str, Any], pillar: str, key: str) -> Any:
@@ -172,26 +159,16 @@ async def _resolve_state_snapshot(
 ) -> tuple[Any, Dict[str, Any], Any, bool]:
     scoped_user_id = canonical_user_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
-    try:
-        graph, config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=scoped_user_id, username=user.username
-        )
-    except TypeError:
-        graph, config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=scoped_user_id
-        )
+    graph, config = await _build_state_config_with_checkpointer(
+        thread_id=thread_id, user_id=scoped_user_id, username=user.username
+    )
     snapshot = await graph.aget_state(config)
     if not legacy_user_id or _has_state_values(snapshot):
         return graph, config, snapshot, False
 
-    try:
-        legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=legacy_user_id, username=user.username
-        )
-    except TypeError:
-        legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
-            thread_id=thread_id, user_id=legacy_user_id
-        )
+    legacy_graph, legacy_config = await _build_state_config_with_checkpointer(
+        thread_id=thread_id, user_id=legacy_user_id, username=user.username
+    )
     legacy_snapshot = await legacy_graph.aget_state(legacy_config)
     if _has_state_values(legacy_snapshot):
         if PARAM_SYNC_DEBUG:
@@ -426,6 +403,597 @@ async def update_state(
             ) from exc
         logger.exception(
             "state_update_error",
+            extra={
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
+
+
+@router.get("/state/workspace", response_model=CaseWorkspaceProjection)
+async def get_case_workspace(
+    raw_request: Request,
+    thread_id: str = Query(..., description="Thread ID"),
+    user: RequestUser = Depends(get_current_request_user),
+) -> CaseWorkspaceProjection:
+    """UI-facing read model projection of the current case state.
+
+    Returns a structured, stable workspace view without exposing internal
+    orchestration details, prompt traces, or raw LLM artifacts.
+    """
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    try:
+        _graph, _config, snapshot, _used_legacy = await _resolve_state_snapshot(
+            thread_id=thread_id,
+            user=user,
+            request_id=request_id,
+        )
+        state_values = _state_to_dict(snapshot.values)
+        projection = project_case_workspace(state_values)
+
+        logger.info(
+            "state_workspace_get_success",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+                "release_status": projection.governance_status.release_status,
+            },
+        )
+        return projection
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "state_workspace_get_error",
+            extra={
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
+
+
+RFQ_CONFIRM_AS_NODE = "supervisor_policy_node"
+
+
+@router.post("/state/workspace/rfq-confirm", response_model=CaseWorkspaceProjection)
+async def confirm_rfq_package(
+    raw_request: Request,
+    thread_id: str = Query(..., description="Thread ID"),
+    user: RequestUser = Depends(get_current_request_user),
+) -> CaseWorkspaceProjection:
+    """Confirm the RFQ package for the current case.
+
+    Sets ``system.rfq_confirmed = True`` in graph state when the case
+    has a valid RFQ draft and is not in an inadmissible or stale state.
+    Returns the updated workspace projection.
+    """
+    request_id = (
+        raw_request.headers.get("X-Request-Id")
+        or raw_request.headers.get("X-Request-ID")
+    )
+    try:
+        graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
+            thread_id=thread_id,
+            user=user,
+            request_id=request_id,
+        )
+        state_values = _state_to_dict(snapshot.values)
+        projection = project_case_workspace(state_values)
+
+        # Gate 1: RFQ draft must exist
+        if not projection.rfq_package.has_draft:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "rfq_no_draft",
+                    request_id=request_id,
+                    message="No RFQ draft available for confirmation.",
+                ),
+            )
+
+        # Gate 2: Must not be inadmissible
+        effective_status = (
+            projection.rfq_status.release_status
+            or projection.governance_status.release_status
+        )
+        if effective_status == "inadmissible":
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "rfq_inadmissible",
+                    request_id=request_id,
+                    message="Case is inadmissible — cannot confirm RFQ package.",
+                ),
+            )
+
+        # Gate 3: Must not be stale
+        if projection.cycle_info.derived_artifacts_stale:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "rfq_stale",
+                    request_id=request_id,
+                    message="Artifacts are stale — recalculation required before confirmation.",
+                ),
+            )
+
+        # Gate 4: Must not already be confirmed
+        if projection.rfq_status.rfq_confirmed:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "rfq_already_confirmed",
+                    request_id=request_id,
+                    message="RFQ package is already confirmed.",
+                ),
+            )
+
+        # Resolve as_node for state update
+        resolved = _resolve_update_as_node(state_values)
+        as_node = pick_existing_node(graph, resolved, fallback=RFQ_CONFIRM_AS_NODE)
+
+        await graph.aupdate_state(
+            config,
+            {"system": {"rfq_confirmed": True}},
+            as_node=as_node,
+        )
+
+        # Re-read and project to return fresh state
+        updated_snapshot = await graph.aget_state(config)
+        updated_values = _state_to_dict(updated_snapshot.values)
+        updated_projection = project_case_workspace(updated_values)
+
+        logger.info(
+            "rfq_confirm_success",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+                "release_status": updated_projection.governance_status.release_status,
+            },
+        )
+        return updated_projection
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "rfq_confirm_error",
+            extra={
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# POST /state/workspace/partner-select — select a partner/material
+# ---------------------------------------------------------------------------
+
+PARTNER_SELECT_AS_NODE = "supervisor_policy_node"
+
+
+@router.post("/state/workspace/partner-select", response_model=CaseWorkspaceProjection)
+async def select_partner(
+    raw_request: Request,
+    partner_id: str = Query(..., description="ID/Name of the selected partner/material"),
+    thread_id: str = Query(..., description="Thread ID"),
+    user: RequestUser = Depends(get_current_request_user),
+) -> CaseWorkspaceProjection:
+    """Select a partner/material for the current case.
+
+    Sets ``reasoning.selected_partner_id = partner_id`` in graph state.
+    Returns the updated workspace projection.
+
+    Gates (all must pass):
+    1. RFQ must be confirmed
+    2. Matching must be ready (not stale, etc.)
+    3. Selected partner must exist in material_fit_items
+    """
+    request_id = (
+        raw_request.headers.get("X-Request-Id")
+        or raw_request.headers.get("X-Request-ID")
+    )
+    try:
+        graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
+            thread_id=thread_id,
+            user=user,
+            request_id=request_id,
+        )
+        state_values = _state_to_dict(snapshot.values)
+        projection = project_case_workspace(state_values)
+
+        # Gate 1: Matching must be ready (this includes rfq_confirmed, not stale etc)
+        if not projection.partner_matching.matching_ready:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "matching_not_ready",
+                    request_id=request_id,
+                    message=f"Partner matching is not ready: {', '.join(projection.partner_matching.not_ready_reasons)}",
+                ),
+            )
+
+        # Gate 2: Selected partner must exist in material_fit_items
+        valid_partners = [item.material for item in projection.partner_matching.material_fit_items]
+        if partner_id not in valid_partners:
+            raise HTTPException(
+                status_code=400,
+                detail=error_detail(
+                    "invalid_partner",
+                    request_id=request_id,
+                    message=f"Selected partner '{partner_id}' is not in the list of valid matches.",
+                ),
+            )
+
+        # Update state
+        resolved = _resolve_update_as_node(state_values)
+        as_node = pick_existing_node(graph, resolved, fallback=PARTNER_SELECT_AS_NODE)
+
+        await graph.aupdate_state(
+            config,
+            {"reasoning": {"selected_partner_id": partner_id}},
+            as_node=as_node,
+        )
+
+        # Re-read and project
+        updated_snapshot = await graph.aget_state(config)
+        updated_values = _state_to_dict(updated_snapshot.values)
+        updated_projection = project_case_workspace(updated_values)
+
+        logger.info(
+            "partner_select_success",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+                "partner_id": partner_id,
+            },
+        )
+        return updated_projection
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "partner_select_error",
+            extra={
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# POST /state/workspace/rfq-handover — initiate RFQ handover
+# ---------------------------------------------------------------------------
+
+RFQ_HANDOVER_AS_NODE = "supervisor_policy_node"
+
+
+@router.post("/state/workspace/rfq-handover", response_model=CaseWorkspaceProjection)
+async def initiate_rfq_handover(
+    raw_request: Request,
+    thread_id: str = Query(..., description="Thread ID"),
+    user: RequestUser = Depends(get_current_request_user),
+) -> CaseWorkspaceProjection:
+    """Initiate the RFQ handover for the current case.
+
+    Sets ``system.rfq_handover_initiated = True`` in graph state.
+    Returns the updated workspace projection.
+
+    Gates (all must pass):
+    1. RFQ confirmed
+    2. RFQ document generated
+    3. Partner selected
+    4. Not stale
+    5. Not inadmissible
+    6. Not already initiated
+    """
+    request_id = (
+        raw_request.headers.get("X-Request-Id")
+        or raw_request.headers.get("X-Request-ID")
+    )
+    try:
+        graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
+            thread_id=thread_id,
+            user=user,
+            request_id=request_id,
+        )
+        state_values = _state_to_dict(snapshot.values)
+        projection = project_case_workspace(state_values)
+
+        # Gate 1: Check readiness via projection
+        if not projection.rfq_status.handover_ready:
+            reasons = []
+            if not projection.rfq_status.rfq_confirmed:
+                reasons.append("RFQ not confirmed")
+            if not projection.rfq_status.has_html_report:
+                reasons.append("RFQ document not generated")
+            if not projection.partner_matching.selected_partner_id:
+                reasons.append("No partner selected")
+            if projection.cycle_info.derived_artifacts_stale:
+                reasons.append("Artifacts are stale")
+            
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "handover_not_ready",
+                    request_id=request_id,
+                    message=f"RFQ handover is not ready: {', '.join(reasons)}",
+                ),
+            )
+
+        # Gate 2: Already initiated?
+        if projection.rfq_status.handover_initiated:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "handover_already_initiated",
+                    request_id=request_id,
+                    message="RFQ handover has already been initiated.",
+                ),
+            )
+
+        # Update state
+        resolved = _resolve_update_as_node(state_values)
+        as_node = pick_existing_node(graph, resolved, fallback=RFQ_HANDOVER_AS_NODE)
+
+        await graph.aupdate_state(
+            config,
+            {"system": {"rfq_handover_initiated": True}},
+            as_node=as_node,
+        )
+
+        # Re-read and project
+        updated_snapshot = await graph.aget_state(config)
+        updated_values = _state_to_dict(updated_snapshot.values)
+        updated_projection = project_case_workspace(updated_values)
+
+        logger.info(
+            "rfq_handover_success",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+            },
+        )
+        return updated_projection
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "rfq_handover_error",
+            extra={
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# POST /state/workspace/rfq-generate-pdf — generate RFQ HTML document
+# ---------------------------------------------------------------------------
+
+@router.post("/state/workspace/rfq-generate-pdf", response_model=CaseWorkspaceProjection)
+async def generate_rfq_pdf(
+    raw_request: Request,
+    thread_id: str = Query(..., description="Thread ID"),
+    user: RequestUser = Depends(get_current_request_user),
+) -> CaseWorkspaceProjection:
+    """Generate an RFQ HTML document from the confirmed workspace state.
+
+    Stores the generated HTML in ``system.rfq_html_report``.
+    Returns the updated workspace projection (``has_html_report`` becomes true).
+
+    Gates (all must pass):
+    1. RFQ draft must exist
+    2. Must not be inadmissible
+    3. Must not be stale
+    4. RFQ must be confirmed
+    """
+    request_id = (
+        raw_request.headers.get("X-Request-Id")
+        or raw_request.headers.get("X-Request-ID")
+    )
+    try:
+        graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
+            thread_id=thread_id,
+            user=user,
+            request_id=request_id,
+        )
+        state_values = _state_to_dict(snapshot.values)
+        projection = project_case_workspace(state_values)
+
+        # Gate 1: RFQ draft must exist
+        if not projection.rfq_package.has_draft:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "rfq_no_draft",
+                    request_id=request_id,
+                    message="No RFQ draft available for document generation.",
+                ),
+            )
+
+        # Gate 2: Must not be inadmissible
+        effective_status = (
+            projection.rfq_status.release_status
+            or projection.governance_status.release_status
+        )
+        if effective_status == "inadmissible":
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "rfq_inadmissible",
+                    request_id=request_id,
+                    message="Case is inadmissible — cannot generate RFQ document.",
+                ),
+            )
+
+        # Gate 3: Must not be stale
+        if projection.cycle_info.derived_artifacts_stale:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "rfq_stale",
+                    request_id=request_id,
+                    message="Artifacts are stale — recalculation required before document generation.",
+                ),
+            )
+
+        # Gate 4: RFQ must be confirmed
+        if not projection.rfq_status.rfq_confirmed:
+            raise HTTPException(
+                status_code=409,
+                detail=error_detail(
+                    "rfq_not_confirmed",
+                    request_id=request_id,
+                    message="RFQ package must be confirmed before generating document.",
+                ),
+            )
+
+        # Render HTML document from projection
+        html_report = render_rfq_html(projection)
+
+        # Store in graph state
+        resolved = _resolve_update_as_node(state_values)
+        as_node = pick_existing_node(graph, resolved, fallback=RFQ_CONFIRM_AS_NODE)
+
+        await graph.aupdate_state(
+            config,
+            {"system": {"rfq_html_report": html_report}},
+            as_node=as_node,
+        )
+
+        # Re-read and project to return fresh state
+        updated_snapshot = await graph.aget_state(config)
+        updated_values = _state_to_dict(updated_snapshot.values)
+        updated_projection = project_case_workspace(updated_values)
+
+        logger.info(
+            "rfq_generate_pdf_success",
+            extra={
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+                "html_length": len(html_report),
+            },
+        )
+        return updated_projection
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "rfq_generate_pdf_error",
+            extra={
+                "request_id": request_id,
+                "thread_id": thread_id,
+                "user_id": user.user_id,
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=error_detail("internal_error", request_id=request_id),
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# GET /state/workspace/rfq-document — download generated RFQ HTML
+# ---------------------------------------------------------------------------
+
+@router.get("/state/workspace/rfq-document")
+async def get_rfq_document(
+    raw_request: Request,
+    thread_id: str = Query(..., description="Thread ID"),
+    user: RequestUser = Depends(get_current_request_user),
+) -> HTMLResponse:
+    """Return the stored RFQ HTML document for download/display.
+
+    Returns 404 if no document has been generated yet.
+    """
+    request_id = (
+        raw_request.headers.get("X-Request-Id")
+        or raw_request.headers.get("X-Request-ID")
+    )
+    try:
+        _graph, _config, snapshot, _used_legacy = await _resolve_state_snapshot(
+            thread_id=thread_id,
+            user=user,
+            request_id=request_id,
+        )
+        state_values = _state_to_dict(snapshot.values)
+        system = _pillar_dict(state_values, "system")
+        html_report = system.get("rfq_html_report")
+
+        if not html_report:
+            raise HTTPException(
+                status_code=404,
+                detail=error_detail(
+                    "rfq_no_document",
+                    request_id=request_id,
+                    message="No RFQ document has been generated yet.",
+                ),
+            )
+
+        return HTMLResponse(
+            content=html_report,
+            headers={
+                "Content-Disposition": "inline; filename=\"sealai-rfq-document.html\"",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_dependency_unavailable_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=error_detail("dependency_unavailable", request_id=request_id),
+            ) from exc
+        logger.exception(
+            "rfq_document_get_error",
             extra={
                 "request_id": request_id,
                 "thread_id": thread_id,

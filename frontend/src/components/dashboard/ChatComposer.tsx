@@ -7,11 +7,23 @@ interface ChatComposerProps {
     onSend: (message: string) => void;
     isLoading?: boolean;
     autoFocus?: boolean;
+    externalValue?: string | null;
 }
 
-export default function ChatComposer({ onSend, isLoading, autoFocus }: ChatComposerProps) {
+export default function ChatComposer({ onSend, isLoading, autoFocus, externalValue }: ChatComposerProps) {
     const [message, setMessage] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Patch C4: Handle external value setting
+    useEffect(() => {
+        if (externalValue !== undefined && externalValue !== null) {
+            setMessage(externalValue);
+            // Focus and move cursor to end
+            if (textareaRef.current) {
+                textareaRef.current.focus();
+            }
+        }
+    }, [externalValue]);
 
     // Auto-resize logic
     useEffect(() => {

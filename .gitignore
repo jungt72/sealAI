@@ -95,3 +95,10 @@ C:\Users\*
 
 # local env files
 .env.dev
+
+# Paperless runtime
+paperless/data/
+paperless/media/
+
+# Next generated
+frontend/next-env.d.ts

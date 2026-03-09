@@ -473,6 +473,31 @@ class FactItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class FactVariant(BaseModel):
+    """Patch C2: A variant value for a grounded fact from a different source."""
+    value: str
+    source: str
+    source_rank: float = 0.0
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GroundedFact(BaseModel):
+    """Patch C1a: Typed grounding for technical material facts."""
+    name: str
+    value: str
+    unit: Optional[str] = None
+    source: str
+    source_rank: float = 0.0
+    grounding_basis: Literal["metadata", "text_extraction", "heuristic"] = "metadata"
+    
+    # Patch C2: Divergence detection
+    is_divergent: bool = False
+    variants: List[FactVariant] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CandidateItem(BaseModel):
     kind: str
     value: str
@@ -485,6 +510,9 @@ class CandidateItem(BaseModel):
     # Deterministic gate exclusion — set by chemical_resistance or material_limits checks.
     # A non-None value routes this candidate to inadmissible_or_excluded cluster.
     excluded_by_gate: Optional[str] = None
+    
+    # Patch C1: Deep knowledge grounding
+    grounded_facts: List[GroundedFact] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -793,6 +821,8 @@ class ReasoningState(BaseModel):
     diagnostic_data: Annotated[Dict[str, Any], merge_dicts] = Field(default_factory=dict)
     diagnostic_complete: bool = False
 
+    selected_partner_id: Annotated[Optional[str], take_last_non_null] = None
+
     open_questions: List[QuestionItem] = Field(default_factory=list)
     facts: Dict[str, FactItem] = Field(default_factory=dict)
     candidates: List[CandidateItem] = Field(default_factory=list)
@@ -838,6 +868,7 @@ class SystemState(BaseModel):
     rfq_pdf_base64: Optional[str] = None
     rfq_pdf_url: Optional[str] = None
     rfq_html_report: Optional[str] = None
+    rfq_handover_initiated: bool = False
     # TODO: Deprecated in v13. Historical plaintext RFQ export field.
     rfq_pdf_text: Optional[str] = None
 

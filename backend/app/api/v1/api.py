@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     chat_history,  # <-- WICHTIG: Chat-History/Conversations wieder aktivieren
     rag,
     mcp,
+    state,
 )
 from app.api.v1.endpoints import rfq as rfq_endpoint
 
@@ -28,6 +29,7 @@ api_router.include_router(chat_history.router)  # <-- /api/v1/chat/...
 # LangGraph HTTP/SSE-API (v2)
 api_router.include_router(langgraph_health.router, prefix="/langgraph", tags=["health"])
 api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph-v2"])
+api_router.include_router(state.router, prefix="/langgraph", tags=["state"])
 
 # Model Context Protocol (MCP)
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])

@@ -25,6 +25,8 @@ from app.langgraph_v2.state.governance_types import IdentityClass, SpecificityLe
 from app.langgraph_v2.state.sealai_state import (
     AnswerContract,
     CandidateItem,
+    GroundedFact,
+    FactVariant,
     GovernanceMetadata,
     RequirementSpec,
     SealingRequirementSpec,
@@ -742,6 +744,95 @@ def _excluded_by_upstream_gate(state: SealAIState, material: str) -> str | None:
     return None
 
 
+def _extract_grounded_facts_for_material(state: SealAIState, material: str) -> List[GroundedFact]:
+    """Extract technical facts for a specific material from authoritative retrieval chunks.
+
+    Patch C1a/C2:
+    - Deduplication of identical values.
+    - Divergence detection for different values of the same fact.
+    - Source ranking based on retrieval score.
+    - Strict material reference matching.
+    """
+    chunks = dedupe_retrieval_chunks(_extract_retrieval_chunks_for_authority(state))
+    material_clean = _normalize_material_token(material)
+    if not material_clean:
+        return []
+
+    # Intermediate storage: (name, unit) -> List[GroundedFact]
+    grouped_raw: Dict[Tuple[str, Optional[str]], List[GroundedFact]] = {}
+
+    for chunk in chunks:
+        metadata = _as_dict(chunk.get("metadata"))
+        score = float(chunk.get("retrieval_score") or 0.0)
+        chunk_material = _normalize_material_token(
+            metadata.get("material_code") or metadata.get("entity") or ""
+        )
+        
+        is_material_match = (
+            material_clean in chunk_material 
+            or material_clean in _normalize_material_token(chunk.get("text"))
+        )
+        if not is_material_match:
+            continue
+
+        extracted_in_chunk: List[GroundedFact] = []
+
+        # Rule 1: Temp Range
+        temp_range = metadata.get("temp_range")
+        if isinstance(temp_range, dict):
+            min_c, max_c = temp_range.get("min_c"), temp_range.get("max_c")
+            if min_c is not None and max_c is not None:
+                extracted_in_chunk.append(GroundedFact(
+                    name="Temperature Range", value=f"{min_c} to {max_c}", unit="°C",
+                    source=str(metadata.get("document_id") or chunk.get("source") or "unknown"),
+                    source_rank=score, grounding_basis="metadata",
+                ))
+
+        # Rule 2: Shore Hardness
+        shore = metadata.get("shore_hardness")
+        if shore:
+            extracted_in_chunk.append(GroundedFact(
+                name="Shore Hardness", value=str(shore), unit="A",
+                source=str(metadata.get("document_id") or chunk.get("source") or "unknown"),
+                source_rank=score, grounding_basis="metadata",
+            ))
+
+        for fact in extracted_in_chunk:
+            key = (fact.name, fact.unit)
+            if key not in grouped_raw:
+                grouped_raw[key] = []
+            grouped_raw[key].append(fact)
+
+    final_facts: List[GroundedFact] = []
+
+    for key, raw_list in grouped_raw.items():
+        if not raw_list:
+            continue
+        # Sort by rank descending
+        sorted_raw = sorted(raw_list, key=lambda x: x.source_rank, reverse=True)
+        
+        primary = sorted_raw[0]
+        variants: List[FactVariant] = []
+        seen_values = {primary.value}
+
+        for other in sorted_raw[1:]:
+            if other.value not in seen_values:
+                variants.append(FactVariant(
+                    value=other.value,
+                    source=other.source,
+                    source_rank=other.source_rank,
+                ))
+                seen_values.add(other.value)
+        
+        if variants:
+            primary.is_divergent = True
+            primary.variants = variants
+        
+        final_facts.append(primary)
+
+    return sorted(final_facts, key=lambda x: x.source_rank, reverse=True)
+
+
 def _build_candidate_semantics(state: SealAIState) -> List[Dict[str, Any]]:
     semantics: List[Dict[str, Any]] = []
     identity_map = _as_dict(getattr(state.reasoning, "extracted_parameter_identity", {}) or {})
@@ -751,6 +842,9 @@ def _build_candidate_semantics(state: SealAIState) -> List[Dict[str, Any]]:
         annotated_material_choice = annotate_material_choice(material_choice, identity_map=identity_map)
         material = str(annotated_material_choice.get("material") or "").strip()
         if material:
+            # Patch C1: Extract grounded facts from RAG
+            grounded_facts = _extract_grounded_facts_for_material(state, material)
+            
             semantics.append(
                 CandidateItem(
                     kind="material",
@@ -761,6 +855,7 @@ def _build_candidate_semantics(state: SealAIState) -> List[Dict[str, Any]]:
                     source_kind=str(annotated_material_choice.get("source_kind") or "unknown"),
                     governed=bool(annotated_material_choice.get("governed")),
                     excluded_by_gate=_excluded_by_upstream_gate(state, material),
+                    grounded_facts=grounded_facts,
                 ).model_dump(exclude_none=False)
             )
 
