@@ -12,15 +12,18 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.api.v1.api import api_router
 from app.api.v1.endpoints.rag import ensure_upload_directory
-from app.langgraph_v2.constants import CHECKPOINTER_NAMESPACE_V2
 from app.observability.health import run_all_health_checks
 from app.services.rag.qdrant_bootstrap import bootstrap_rag_collection
 from app.services.jobs.worker import start_job_worker
+
+# 🚀 IMPORT DES NEUEN SAUBEREN AGENTEN-ROUTERS
+from app.agent.api.router import router as agent_router
 
 log = logging.getLogger("uvicorn.error")
 slog = structlog.get_logger("app.main")
@@ -42,11 +45,12 @@ DEV_CLEAR_LANGGRAPH_CHECKPOINTS_ON_STARTUP = _bool_env(
     "1" if APP_ENV in {"dev", "development", "local", "test"} else "0",
 )
 
+CHECKPOINTER_NAMESPACE = "sealai_agent"
+
 
 # ---------------------------------------------------------------------------
 # Prometheus middleware
 # ---------------------------------------------------------------------------
-
 
 class _PrometheusMiddleware(BaseHTTPMiddleware):
     """Record HTTP request counts and latencies for Prometheus."""
@@ -54,8 +58,6 @@ class _PrometheusMiddleware(BaseHTTPMiddleware):
     def _normalize_path(self, path: str) -> str:
         """Replace variable path segments to avoid high cardinality."""
         import re
-        # Replace common ID-like path segments (UUID, 32-char hex, numeric IDs).
-        # Match until "/" or end-of-string so we do not partially replace a segment.
         path = re.sub(
             r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=/|$)",
             "/{id}",
@@ -100,7 +102,6 @@ class _PrometheusMiddleware(BaseHTTPMiddleware):
 # Dev: clear LangGraph checkpoints
 # ---------------------------------------------------------------------------
 
-
 async def _clear_langgraph_checkpoints_for_dev_run() -> None:
     if not DEV_CLEAR_LANGGRAPH_CHECKPOINTS_ON_STARTUP:
         return
@@ -115,8 +116,8 @@ async def _clear_langgraph_checkpoints_for_dev_run() -> None:
         return
 
     patterns = [
-        f"{CHECKPOINTER_NAMESPACE_V2}*",
-        f"checkpoint:{CHECKPOINTER_NAMESPACE_V2}*",
+        f"{CHECKPOINTER_NAMESPACE}*",
+        f"checkpoint:{CHECKPOINTER_NAMESPACE}*",
     ]
     deleted = 0
     client = Redis.from_url(redis_url, decode_responses=False)
@@ -133,7 +134,7 @@ async def _clear_langgraph_checkpoints_for_dev_run() -> None:
         log.warning(
             "LangGraph checkpoint reset finished for dev startup (deleted_keys=%s, namespace=%s).",
             deleted,
-            CHECKPOINTER_NAMESPACE_V2,
+            CHECKPOINTER_NAMESPACE,
         )
     except Exception as exc:
         log.warning("LangGraph checkpoint clear failed: %s", exc)
@@ -144,7 +145,6 @@ async def _clear_langgraph_checkpoints_for_dev_run() -> None:
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -158,7 +158,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _bootstrap_audit_log()
 
     if WARMUP_ON_START:
-        log.info("Warmup aktiviert, aber LangGraph wurde entfernt – überspringe Warmup.")
+        log.info("Warmup aktiviert.")
     worker_task = None
     if JOB_WORKER_ENABLED:
         worker_task = asyncio.create_task(start_job_worker())
@@ -181,8 +181,6 @@ async def _bootstrap_audit_log() -> None:
         from app.services.audit import AuditLogger
         from app.services.audit.audit_logger import set_global_audit_logger
 
-        # asyncpg expects 'postgresql://' or 'postgres://', not the
-        # SQLAlchemy-style 'postgresql+asyncpg://' that DATABASE_URL often carries.
         dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
         pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3)
         al = AuditLogger(pool)
@@ -197,12 +195,11 @@ async def _bootstrap_audit_log() -> None:
 # App factory
 # ---------------------------------------------------------------------------
 
-
 def create_app() -> FastAPI:
     from app.core.config import settings
     from app.observability import metrics as _metrics  # noqa: F401
 
-    # LangSmith tracing — set env vars before any LangChain model is created
+    # LangSmith tracing
     if settings.langchain_tracing_v2 and settings.langchain_api_key:
         os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
         os.environ.setdefault("LANGCHAIN_API_KEY", settings.langchain_api_key)
@@ -226,7 +223,7 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    # Prometheus middleware (after CORS so CORS headers are present on /metrics too)
+    # Prometheus middleware
     if settings.prometheus_enabled:
         app.add_middleware(_PrometheusMiddleware)
         try:
@@ -272,10 +269,17 @@ def create_app() -> FastAPI:
     async def ping():
         return {"pong": True}
 
-    # v1-API mounten
+    # Legacy v1-API mounten
     app.include_router(api_router, prefix="/api/v1")
+    
+    # 🚀 Neuen Agent Router mounten
+    app.include_router(agent_router, prefix="/api/agent", tags=["Agent"])
+    
+    # 🖥️ UI PoC Static Files mounten
+    static_dir = os.path.join(os.path.dirname(__file__), "agent", "api", "static")
+    if os.path.exists(static_dir):
+        app.mount("/poc", StaticFiles(directory=static_dir, html=True), name="static_poc")
 
     return app
-
 
 app = create_app()
