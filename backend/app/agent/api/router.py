@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.agent.api.models import ChatRequest, ChatResponse
 from app.agent.agent.graph import app
 from app.agent.agent.state import AgentState
+from app.agent.agent.sync import sync_working_profile_to_state
 from app.agent.cli import create_initial_state
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -17,7 +18,8 @@ SESSION_STORE: Dict[str, AgentState] = {}
 
 def execute_agent(state: AgentState) -> AgentState:
     """Kapselt den Aufruf des LangGraph-Agenten."""
-    return app.invoke(state)
+    state = app.invoke(state)
+    return sync_working_profile_to_state(state)
 
 async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
     """
@@ -32,7 +34,8 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
         initial_sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
         SESSION_STORE[session_id] = {
             "messages": [],
-            "sealing_state": initial_sealing_state
+            "sealing_state": initial_sealing_state,
+            "working_profile": {}
         }
     
     current_state = SESSION_STORE[session_id]
@@ -57,9 +60,15 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
 
         # 3. Session-Store aktualisieren
         if final_state:
+            # Wave 1: Sync aufrufen
+            final_state = sync_working_profile_to_state(final_state)
             SESSION_STORE[session_id] = final_state
+            
             # 4. Finalen technischen State senden
-            yield f"data: {json.dumps({'state': final_state['sealing_state']})}\n\n"
+            yield f"data: {json.dumps({
+                'state': final_state['sealing_state'],
+                'working_profile': final_state.get('working_profile', {})
+            })}\n\n"
         
         yield "data: [DONE]\n\n"
         

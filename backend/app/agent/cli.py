@@ -22,6 +22,7 @@ def create_initial_state() -> SealingAIState:
             "medium_profile": {},
             "machine_profile": {},
             "installation_profile": {},
+            "operating_conditions": {},
             "sealing_requirement_spec": {}
         },
         "governance": {

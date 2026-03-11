@@ -5,7 +5,78 @@ from app.agent.agent.state import SealingAIState
 from app.agent.domain.parameters import PhysicalParameter
 from app.agent.domain.limits import OperatingLimit
 from app.agent.domain.material import MaterialValidator, MaterialPhysicalProfile
+from app.agent.agent.calc import calculate_physics
+from app.agent.agent.utils import validate_material_risk
 from copy import deepcopy
+
+def search_alternative_materials(p_req: float, t_req: float, all_fact_cards: List[Dict[str, Any]]) -> List[str]:
+    """Sucht nach alternativen Materialien, die den Anforderungen p/t entsprechen."""
+    alternatives = []
+    for card in all_fact_cards:
+        profile = MaterialPhysicalProfile.from_fact_card(card)
+        if profile and profile.temp_max >= t_req and profile.pressure_max >= p_req:
+            if profile.material_id.upper() not in alternatives:
+                alternatives.append(profile.material_id.upper())
+    return alternatives
+
+def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_cards: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Phase H3/H8: Heuristische Extraktion technischer Parameter mittels Regex.
+    Dient dem working_profile (Live-UI) und bereitet Claims vor.
+    """
+    new_profile = deepcopy(current_profile)
+    all_fact_cards = all_fact_cards or []
+    
+    # 1. Drehzahl (RPM)
+    speed_match = re.search(r"(\d+)\s*(rpm|u/min)", text, re.I)
+    if speed_match:
+        new_profile["speed"] = float(speed_match.group(1))
+
+    # 2. Durchmesser (mm)
+    diam_match = re.search(r"(\d+)\s*(mm|millimeter)", text, re.I)
+    if diam_match:
+        new_profile["diameter"] = float(diam_match.group(1))
+
+    # 3. Druck (bar)
+    pres_match = re.search(r"(\d+)\s*(bar|mpa)", text, re.I)
+    if pres_match:
+        val = float(pres_match.group(1))
+        # Einfache bar/mpa Konvertierung falls nötig
+        new_profile["pressure"] = val
+
+    # 4. Temperatur (C)
+    temp_match = re.search(r"(\d+)\s*(c|grad|°c)", text, re.I)
+    if temp_match:
+        new_profile["temperature"] = float(temp_match.group(1))
+
+    # 5. Medium
+    if "medium" in text.lower() or "wasser" in text.lower() or "öl" in text.lower():
+        if "wasser" in text.lower(): new_profile["medium"] = "Wasser"
+        elif "öl" in text.lower(): new_profile["medium"] = "Öl"
+
+    # 6. Material
+    if "ptfe" in text.upper():
+        new_profile["material"] = "PTFE"
+    elif "nbr" in text.upper():
+        new_profile["material"] = "NBR"
+
+    # Risiko-Checks und Alternativen (Phase H8 UI-Logic)
+    risk_msg = validate_material_risk(new_profile)
+    if risk_msg:
+        new_profile["risk_warning"] = risk_msg
+        # Suche nach Alternativen
+        if all_fact_cards:
+            p_req = new_profile.get("pressure", 0)
+            t_req = new_profile.get("temperature", 0)
+            new_profile["alternatives"] = search_alternative_materials(p_req, t_req, all_fact_cards)
+    else:
+        new_profile.pop("risk_warning", None)
+        new_profile.pop("alternatives", None)
+
+    # Physik-Berechnungen (v_m_s, pv_value)
+    new_profile = calculate_physics(new_profile)
+
+    return new_profile
 
 def evaluate_claim_conflicts(
     claims: List[Claim], 

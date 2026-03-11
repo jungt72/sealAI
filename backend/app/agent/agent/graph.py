@@ -2,7 +2,7 @@ from typing import Literal, List, Optional, Any
 from langgraph.graph import StateGraph, START, END
 from app.agent.agent.state import AgentState, SealingAIState
 from app.agent.evidence.models import Claim, ClaimType
-from app.agent.agent.logic import evaluate_claim_conflicts, process_cycle_update
+from app.agent.agent.logic import evaluate_claim_conflicts, process_cycle_update, extract_parameters
 from app.agent.agent.tools import submit_claim
 from app.agent.agent.knowledge import load_fact_cards, retrieve_fact_cards, FactCard
 from app.agent.agent.prompts import SYSTEM_PROMPT_TEMPLATE
@@ -11,6 +11,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.runnables import RunnableConfig
 from dotenv import load_dotenv
 import os
+import json
 
 # Umgebungsvariablen laden (API Keys etc.)
 load_dotenv()
@@ -41,6 +42,7 @@ def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -
     Reichert den Kontext mit FactCards aus der Knowledge Base an.
     """
     messages = state.get("messages", [])
+    current_profile = state.get("working_profile", {})
     
     # 1. Knowledge Retrieval
     # Suche nach der letzten HumanMessage für die RAG-Suche
@@ -53,16 +55,23 @@ def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -
     cards = get_fact_cards()
     relevant_cards = retrieve_fact_cards(query, cards) if query else []
     
-    # 2. Context Formatting
+    # 2. Heuristische Extraktion (Wave 1: Bleibt im working_profile)
+    all_cards_data = [{"topic": c.topic, "content": c.content, "tags": c.tags} for c in cards]
+    new_profile = extract_parameters(query, current_profile, all_cards_data) if query else current_profile
+
+    # 3. Context Formatting
     context_str = "\n---\n".join([f"Topic: {c.topic}\nContent: {c.content}" for c in relevant_cards])
     if not context_str:
         context_str = "Keine relevanten Informationen in der Wissensdatenbank gefunden."
         
-    # 3. Prompt Construction
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_str)
+    # 4. Prompt Construction
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+        context=context_str,
+        working_profile=json.dumps(new_profile, indent=2)
+    )
     system_msg = SystemMessage(content=system_prompt)
     
-    # 4. LLM Call
+    # 5. LLM Call
     llm = get_llm(config)
     llm_with_tools = llm.bind_tools([submit_claim])
     
@@ -76,7 +85,8 @@ def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -
     
     return {
         "messages": [response],
-        "relevant_fact_cards": cards_data
+        "relevant_fact_cards": cards_data,
+        "working_profile": new_profile
     }
 
 def evidence_tool_node(state: AgentState) -> dict:

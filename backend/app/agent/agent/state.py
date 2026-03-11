@@ -68,3 +68,5 @@ class AgentState(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
     sealing_state: SealingAIState
     relevant_fact_cards: List[Dict[str, Any]]  # Speichert FactCards für Tool-Nodes (Phase H6)
+    working_profile: Dict[str, Any]  # Extrahiertes Live-Profil (Druck, Temperatur, etc.)
+    tenant_id: Optional[str]
