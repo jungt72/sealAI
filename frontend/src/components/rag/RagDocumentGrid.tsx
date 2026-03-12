@@ -7,6 +7,7 @@ import {
   healthCheckRagDocument,
   listRagDocuments,
   reingestRagDocument,
+  syncPaperless,
   uploadRagDocument,
   type RagDocumentItem,
   type RagHealthCheck,
@@ -82,6 +83,7 @@ export default function RagDocumentGrid() {
   const [uploading, setUploading] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -169,6 +171,31 @@ export default function RagDocumentGrid() {
     }, 3000);
     return () => window.clearInterval(id);
   }, [hasActiveItems, refresh]);
+
+  const handleSyncPaperless = async () => {
+    if (!token) return;
+    setSyncing(true);
+    setError(null);
+    showToast("Syncing Paperless...", "info", 0);
+    try {
+      const result = await syncPaperless(token);
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      showToast(
+        `Sync successful! Scanned: ${result.scanned}, Queued: ${result.queued}, Skipped: ${result.skipped}`,
+        "success",
+        6000,
+      );
+      await refresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Paperless-Sync fehlgeschlagen.";
+      setError(msg);
+      showToast(msg, "error", 6000);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleReingest = async (documentId: string) => {
     if (!token) return;
@@ -302,14 +329,24 @@ export default function RagDocumentGrid() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">RAG Management</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Document Grid</h1>
         </div>
-        <button
-          type="button"
-          onClick={refresh}
-          className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
-          disabled={loading}
-        >
-          {loading ? "Aktualisieren..." : "Refresh"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleSyncPaperless}
+            className="rounded-full border border-sky-300/40 bg-sky-600/20 px-4 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-600/30 disabled:cursor-wait disabled:opacity-50"
+            disabled={syncing}
+          >
+            {syncing ? "Syncing..." : "Sync Paperless"}
+          </button>
+          <button
+            type="button"
+            onClick={refresh}
+            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
+            disabled={loading}
+          >
+            {loading ? "Aktualisieren..." : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {error ? (

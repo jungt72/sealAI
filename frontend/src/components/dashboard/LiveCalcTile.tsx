@@ -67,6 +67,10 @@ const statusLabels: Record<LiveCalcStatus, string> = {
 
 const LABEL_MAP: Record<string, string> = {
   medium: "Medium",
+  pressure: "Druck (bar)",
+  temperature: "Temperatur (°C)",
+  speed: "Drehzahl (U/min)",
+  diameter: "Wellen-Ø (mm)",
   pressure_max_bar: "Druck (bar)",
   pressure_bar: "Druck (bar)",
   temperature_max_c: "Temperatur (°C)",

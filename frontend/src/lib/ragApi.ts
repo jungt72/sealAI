@@ -126,3 +126,24 @@ export async function uploadRagDocument(
     },
   );
 }
+
+
+export async function syncPaperless(token: string): Promise<{
+  status: string;
+  scanned: number;
+  queued: number;
+  skipped: number;
+  errors: number;
+  error?: string;
+}> {
+  return authFetch<{
+    status: string;
+    scanned: number;
+    queued: number;
+    skipped: number;
+    errors: number;
+    error?: string;
+  }>("/api/v1/rag/sync-paperless", token, {
+    method: "POST",
+  });
+}

@@ -5,17 +5,10 @@ import { useState, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import ChatComposer from "./ChatComposer";
 import LiveCalcTile, { type LiveCalcTileData } from "./LiveCalcTile";
-import CaseStatusPanel from "./CaseStatusPanel";
-import RfqPackagePanel from "./RfqPackagePanel";
-import PartnerMatchingPanel from "./PartnerMatchingPanel";
-import CaseLifecyclePanel from "./CaseLifecyclePanel";
-import NextBestActionPanel from "./NextBestActionPanel";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSealAIStream } from "@/hooks/useSealAIStream";
-import { useCaseWorkspace } from "@/hooks/useCaseWorkspace";
-import { rfqDocumentUrl } from "@/lib/workspaceApi";
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -36,8 +29,8 @@ export default function ChatInterface() {
     const accessToken = (session as any)?.accessToken ?? "";
     const apiBase = process.env.NEXT_PUBLIC_API_BASE || "";
     const streamApiEndpoint = apiBase.startsWith("http://backend") || !apiBase
-        ? "/api/v1/langgraph"
-        : `${apiBase}/api/v1/langgraph`;
+        ? "/api/agent"
+        : `${apiBase}/api/agent`;
 
     const {
         chatHistory,
@@ -53,21 +46,6 @@ export default function ChatInterface() {
         cancelStream,
         clearError,
     } = useSealAIStream(streamApiEndpoint, accessToken);
-
-    const {
-        workspace,
-        isLoading: wsLoading,
-        isConfirming: wsConfirming,
-        isGeneratingPdf: wsGeneratingPdf,
-        isSelectingPartner: wsSelectingPartner,
-        isHandingOver: wsHandingOver,
-        confirmRfq,
-        generatePdf,
-        selectPartner,
-        initiateHandover,
-        refresh: refreshWorkspace,
-        reset: resetWorkspace,
-    } = useCaseWorkspace(accessToken, chatId, isThinking);
 
     useEffect(() => {
         if ((workingProfile && typeof workingProfile === 'object' && Object.keys(workingProfile).length > 0) || calcResults || complianceResults || hookLiveCalcTile) {
@@ -150,8 +128,7 @@ export default function ChatInterface() {
     }
 
     const hasTileData = Boolean(liveCalcTile && liveCalcTile.status !== "insufficient_data");
-    const hasWorkspaceData = Boolean(workspace);
-    const isSidebarVisible = (showTile || hasTileData || hasWorkspaceData) && isSidebarOpen;
+    const isSidebarVisible = (showTile || hasTileData) && isSidebarOpen;
     const shouldShowStreamingBubble = !suppressCurrentAiText && (isThinking || Boolean(currentAiText));
     const isZeroState = displayedMessages.length === 0 && !shouldShowStreamingBubble;
 
@@ -189,7 +166,6 @@ export default function ChatInterface() {
         setRfqReady(false);
         setRfqPdfBase64(null);
         setRfqHtmlReport(null);
-        resetWorkspace();
     };
 
     const onSendMessage = async (message: string) => {
@@ -213,10 +189,6 @@ export default function ChatInterface() {
         }
 
         await sendMessage(message, currentChatId);
-    };
-
-    const onActionBridge = (text: string) => {
-        setChatInput(text);
     };
 
     const markdownComponents = {
@@ -390,45 +362,12 @@ export default function ChatInterface() {
                                 <ChevronRight className="h-4 w-4 text-slate-600" />
                             </button>
                             <div className="flex flex-col gap-4 h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                                {workspace && (
-                                    <CaseLifecyclePanel workspace={workspace} />
-                                )}
-                                {workspace && (
-                                    <NextBestActionPanel
-                                        workspace={workspace}
-                                        onConfirmRfq={confirmRfq}
-                                        isConfirmingRfq={wsConfirming}
-                                        onGeneratePdf={generatePdf}
-                                        isGeneratingPdf={wsGeneratingPdf}
-                                        onRefresh={refreshWorkspace}
-                                        isRefreshing={wsLoading}
-                                        onHandover={initiateHandover}
-                                        isHandingOver={wsHandingOver}
-                                    />
-                                )}
                                 <LiveCalcTile
                                     tile={liveCalcTile}
                                     rfqReady={rfqReady}
                                     rfqPdfBase64={rfqPdfBase64}
                                     rfqHtmlReport={rfqHtmlReport}
                                 />
-                                {workspace && (
-                                    <CaseStatusPanel
-                                        workspace={workspace}
-                                        isLoading={wsLoading}
-                                        onActionBridge={onActionBridge}
-                                    />
-                                )}
-                                {workspace && (workspace.rfq_package.has_draft || workspace.rfq_status.release_status !== "inadmissible") && (
-                                    <RfqPackagePanel workspace={workspace} rfqDocumentUrl={chatId ? rfqDocumentUrl(chatId) : undefined} />
-                                )}
-                                {workspace && (workspace.partner_matching.matching_ready || workspace.partner_matching.material_fit_items.length > 0) && (
-                                    <PartnerMatchingPanel
-                                        workspace={workspace}
-                                        onSelectPartner={selectPartner}
-                                        isSelectingPartner={wsSelectingPartner}
-                                    />
-                                )}
                             </div>
                         </motion.div>
                     )}
