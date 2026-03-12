@@ -1,4 +1,4 @@
-"""LangGraph v2 SSE Runtime.
+"""Legacy LangGraph v2 SSE Runtime.
 
 This module provides the `event_multiplexer` and related SSE-specific helpers
 to translate LangGraph firehose events into strict typed SSE events for the
@@ -6,6 +6,10 @@ frontend.
 
 Separating this from the endpoint allows for cleaner orchestration of the
 Two-Speed Architecture (Fast Brain vs Slow Brain).
+
+It remains in the repository only as a legacy artifact. The canonical active
+runtime is `backend/app/agent`, and this module must not be treated as a
+productively mounted entry path.
 """
 from __future__ import annotations
 
@@ -47,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 SSE_QUEUE_MAXSIZE = 200
 SSE_HEARTBEAT_SEC = 10.0
+LEGACY_RUNTIME_DEPRECATED = True
 
 
 def _format_sse(event: str, payload: Dict[str, Any], *, event_id: str | None = None) -> bytes:

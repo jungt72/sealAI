@@ -10,6 +10,13 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+pytest.skip(
+    "Legacy LangGraph v2 param-sync integration test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 # Ensure backend is on path (tests run from repo root in some setups).
 sys.path.append(str(Path(__file__).resolve().parents[3]))
 

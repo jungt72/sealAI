@@ -4,6 +4,11 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+pytest.skip(
+    "Legacy LangGraph v2 SSE integration test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 # _run_graph_to_state was moved out of the production endpoint module.
 # These integration tests patch it on the helper module where it now lives.
 # Note: _run_graph_to_state is not called by the production endpoint

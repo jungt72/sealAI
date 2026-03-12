@@ -106,7 +106,7 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     NativeEventSourceResponse = None
 
-router = APIRouter()
+router = APIRouter(deprecated=True)
 logger = logging.getLogger(__name__)
 SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 DEDUP_TTL_SEC = int(os.getenv("LANGGRAPH_V2_DEDUP_TTL_SEC", "900"))
@@ -118,6 +118,9 @@ REQUIRE_PARAM_SNAPSHOT = os.getenv("SEALAI_REQUIRE_PARAM_SNAPSHOT") == "1"
 WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") == "1"
 DEFAULT_GRAPH_RECURSION_LIMIT = 25
 _STREAM_NODE_BLOCKLIST = frozenset()
+LEGACY_RUNTIME_GONE_DETAIL = (
+    "Legacy LangGraph v2 runtime is disabled. Use the canonical /api/agent runtime instead."
+)
 
 
 def _lg_trace_enabled() -> bool:
@@ -782,6 +785,17 @@ async def _release_thread_lock(thread_id: str):
 
 
 
+def _raise_legacy_runtime_gone(*, request_id: str | None) -> None:
+    raise HTTPException(
+        status_code=410,
+        detail=error_detail(
+            "legacy_runtime_disabled",
+            request_id=request_id,
+            message=LEGACY_RUNTIME_GONE_DETAIL,
+        ),
+    )
+
+
 @router.post("/chat/v2")
 async def langgraph_chat_v2_endpoint(
     request: LangGraphV2Request,
@@ -818,6 +832,7 @@ async def langgraph_chat_v2_endpoint(
     endpoint and thread state.
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    _raise_legacy_runtime_gone(request_id=request_id)
     if not request_id:
         request_id = str(uuid.uuid4())
     last_event_id = raw_request.headers.get("Last-Event-ID")
@@ -1005,6 +1020,7 @@ async def confirm_go(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    _raise_legacy_runtime_gone(request_id=request_id)
     scoped_user_id = canonical_user_id(user)
     body.chat_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=body.chat_id)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
@@ -1166,6 +1182,7 @@ async def resume_run(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    _raise_legacy_runtime_gone(request_id=request_id)
     scoped_user_id = canonical_user_id(user)
     thread_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=thread_id)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
@@ -1260,6 +1277,7 @@ async def patch_parameters(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    _raise_legacy_runtime_gone(request_id=request_id)
     scoped_user_id = canonical_user_id(user)
     legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
     chat_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=body.chat_id)

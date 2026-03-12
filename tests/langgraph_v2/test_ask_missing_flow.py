@@ -7,6 +7,11 @@ import pytest
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 
+pytest.skip(
+    "Legacy LangGraph v2 ask-missing flow test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 from app.api.v1.endpoints import langgraph_v2 as endpoint_v2
 from app.langgraph_v2.sealai_graph_v2 import build_v2_config, create_sealai_graph_v2
 from app.langgraph_v2.state import SealAIState, Intent

@@ -8,6 +8,11 @@ from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from langchain_core.messages.ai import AIMessageChunk
 
+pytest.skip(
+    "Legacy LangGraph v2 API SSE flow test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 from app.api.v1.endpoints import langgraph_v2 as endpoint_v2
 from app.langgraph_v2.state import SealAIState
 

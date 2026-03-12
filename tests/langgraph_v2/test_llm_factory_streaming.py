@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import pytest
 
+pytest.skip(
+    "Legacy LangGraph v2 llm-factory streaming test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 from app.langgraph_v2.utils import llm_factory
 
 

@@ -5,6 +5,11 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+pytest.skip(
+    "Legacy LangGraph v2 parameter-patch test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 
 _ENV_DEFAULTS = {
     "POSTGRES_USER": "sealai",

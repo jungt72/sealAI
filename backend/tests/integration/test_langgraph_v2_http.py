@@ -5,6 +5,11 @@ from contextlib import asynccontextmanager
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+pytest.skip(
+    "Legacy LangGraph v2 HTTP integration test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 
 class _FakeSnapshot:
     def __init__(self, values, *, next_=None, config=None):

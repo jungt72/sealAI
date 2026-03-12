@@ -17,6 +17,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Tuple
 
+import pytest
+
+pytest.skip(
+    "Legacy LangGraph v2 endpoint test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 # Ensure backend is on path (tests run from repo root in some setups).
 sys.path.append(str(Path(__file__).resolve().parents[3]))
 

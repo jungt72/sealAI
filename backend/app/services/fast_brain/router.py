@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Legacy Fast-Brain router retained only for decommissioned LangGraph v2 runtime paths."""
+
 import json
 import math
 import re
@@ -17,6 +19,7 @@ from app.langgraph_v2.utils.jinja import render_template
 from app.langgraph_v2.utils.messages import flatten_message_content, sanitize_message_history
 
 logger = structlog.get_logger("fast_brain.router")
+LEGACY_RUNTIME_DEPRECATED = True
 
 _HANDOFF_TOKEN = "TRIGGER_SLOW_BRAIN"
 _MAX_HISTORY_MESSAGES = 8

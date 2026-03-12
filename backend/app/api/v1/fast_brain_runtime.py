@@ -1,8 +1,12 @@
-"""LangGraph v2 Fast-Brain Runtime.
+"""Legacy LangGraph v2 Fast-Brain Runtime.
 
 This module provides the Fast-Brain orchestration logic, allowing the chat
 endpoint to handle simple turns quickly without activating the full LangGraph
 Slow-Brain runtime.
+
+It remains in the repository only as a legacy artifact. The canonical active
+runtime is `backend/app/agent`, and this module must not be treated as a
+productively mounted entry path.
 """
 from __future__ import annotations
 
@@ -38,6 +42,7 @@ logger = logging.getLogger(__name__)
 SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 PARAMETERS_PATCH_AS_NODE = "node_p1_context"
+LEGACY_RUNTIME_DEPRECATED = True
 
 
 @lru_cache(maxsize=1)

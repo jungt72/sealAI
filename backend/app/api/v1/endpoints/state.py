@@ -28,7 +28,10 @@ from app.services.rag.state import WorkingProfile
 logger = logging.getLogger(__name__)
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 
-router = APIRouter()
+router = APIRouter(deprecated=True)
+LEGACY_STATE_RUNTIME_GONE_DETAIL = (
+    "Legacy LangGraph v2 state runtime is disabled. Use the canonical /api/agent runtime instead."
+)
 
 METADATA_FIELDS = (
     "thread_id",
@@ -41,6 +44,17 @@ METADATA_FIELDS = (
 )
 
 DEFAULT_STATE_UPDATE_NODE = "supervisor_policy_node"
+
+
+def _raise_legacy_state_runtime_gone(*, request_id: str | None) -> None:
+    raise HTTPException(
+        status_code=410,
+        detail=error_detail(
+            "legacy_runtime_disabled",
+            request_id=request_id,
+            message=LEGACY_STATE_RUNTIME_GONE_DETAIL,
+        ),
+    )
 
 
 class StateUpdate(BaseModel):
@@ -210,6 +224,7 @@ async def get_state(
     Returns the complete state including working profile, messages, etc.
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    _raise_legacy_state_runtime_gone(request_id=request_id)
     try:
         # user_id must always come from the authenticated Keycloak JWT.
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
@@ -290,6 +305,7 @@ async def update_state(
     the next graph run.
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    _raise_legacy_state_runtime_gone(request_id=request_id)
     sanitized_working_profile = body.working_profile.model_dump(exclude_none=True)
     if not sanitized_working_profile:
         raise HTTPException(
@@ -427,6 +443,7 @@ async def get_case_workspace(
     orchestration details, prompt traces, or raw LLM artifacts.
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    _raise_legacy_state_runtime_gone(request_id=request_id)
     try:
         _graph, _config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
@@ -484,6 +501,7 @@ async def confirm_rfq_package(
         raw_request.headers.get("X-Request-Id")
         or raw_request.headers.get("X-Request-ID")
     )
+    _raise_legacy_state_runtime_gone(request_id=request_id)
     try:
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
@@ -615,6 +633,7 @@ async def select_partner(
         raw_request.headers.get("X-Request-Id")
         or raw_request.headers.get("X-Request-ID")
     )
+    _raise_legacy_state_runtime_gone(request_id=request_id)
     try:
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
@@ -723,6 +742,7 @@ async def initiate_rfq_handover(
         raw_request.headers.get("X-Request-Id")
         or raw_request.headers.get("X-Request-ID")
     )
+    _raise_legacy_state_runtime_gone(request_id=request_id)
     try:
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
@@ -834,6 +854,7 @@ async def generate_rfq_pdf(
         raw_request.headers.get("X-Request-Id")
         or raw_request.headers.get("X-Request-ID")
     )
+    _raise_legacy_state_runtime_gone(request_id=request_id)
     try:
         graph, config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,
@@ -958,6 +979,7 @@ async def get_rfq_document(
         raw_request.headers.get("X-Request-Id")
         or raw_request.headers.get("X-Request-ID")
     )
+    _raise_legacy_state_runtime_gone(request_id=request_id)
     try:
         _graph, _config, snapshot, _used_legacy = await _resolve_state_snapshot(
             thread_id=thread_id,

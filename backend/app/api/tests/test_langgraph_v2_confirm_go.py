@@ -9,6 +9,11 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
+pytest.skip(
+    "Legacy LangGraph v2 confirm-go test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 # Ensure backend is on path (tests run from repo root in some setups).
 sys.path.append(str(Path(__file__).resolve().parents[3]))
 

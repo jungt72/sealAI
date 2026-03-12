@@ -9,9 +9,6 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from redis import Redis
 
-# Nur die Consult-Funktion nutzen; Checkpointer holen wir aus app.state
-from app.services.langgraph.graph.consult.io import invoke_consult as _invoke_consult
-
 # ─────────────────────────────────────────────────────────────
 # ENV / Redis STM (Short-Term Memory)
 # ─────────────────────────────────────────────────────────────
@@ -92,8 +89,8 @@ class ChatResponse(BaseModel):
 @router.post("/beratung", response_model=ChatResponse)
 async def beratung(request: Request, payload: ChatRequest) -> ChatResponse:
     """
-    Einstieg in den Consult-Flow. Nutzt (falls vorhanden) den Checkpointer aus app.state.
-    Zusätzlich: einfache STM-Merkfunktion (merke dir … / welche Zahl …?).
+    Legacy-Endpunkt.
+    Der produktive Chat-/Orchestrierungspfad läuft kanonisch über /api/agent.
     """
     user_text = (payload.input_text or "").strip()
     if not user_text:
@@ -106,7 +103,7 @@ async def beratung(request: Request, payload: ChatRequest) -> ChatResponse:
     if mem:
         return ChatResponse(text=mem)
 
-    # 2) Consult-Flow aufrufen (mit optionalem Checkpointer)
-    checkpointer = getattr(request.app.state, "swarm_checkpointer", None)
-    out = _invoke_consult(user_text, thread_id=thread_id, checkpointer=checkpointer)
-    return ChatResponse(text=out)
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy consult endpoint disabled. Use /api/agent/chat or /api/agent/chat/stream.",
+    )

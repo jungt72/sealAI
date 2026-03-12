@@ -7,6 +7,11 @@ from pathlib import Path
 
 import pytest
 
+pytest.skip(
+    "Legacy LangGraph v2 SSE trace test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
+
 # Ensure backend is on path
 sys.path.append(str(Path(__file__).resolve().parents[3]))
 

@@ -6,7 +6,13 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
 from langchain_core.messages import AIMessage
+
+pytest.skip(
+    "Legacy Fast-Brain router test disabled during agent-path canonization.",
+    allow_module_level=True,
+)
 
 sys.path.append(str(Path(__file__).resolve().parents[3]))
 

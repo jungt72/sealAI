@@ -6,9 +6,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
+from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from pydantic import BaseModel
 
-from app.api.v1.endpoints.state import _build_state_config_with_checkpointer, _state_to_dict
+from app.api.v1.utils.state_access import _state_to_dict
+from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
 from app.services.auth.dependencies import RequestUser, get_current_request_user  # <-- CurrentUser NICHT importieren
 from app.services.chat.conversations import (
     ConversationMeta,
@@ -129,6 +131,17 @@ def _find_conversation(owner_id: str, conversation_id: str, legacy_owner_id: str
     return None
 
 
+async def _build_chat_history_graph_config(
+    *, thread_id: str, user_id: str
+) -> tuple[Any, Dict[str, Any]]:
+    """Build checkpointer-aware graph config without importing legacy state endpoints."""
+    graph = await get_sealai_graph_v2()
+    config = build_v2_config(thread_id=thread_id, user_id=user_id)
+    configurable = config.setdefault("configurable", {})
+    configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
+    return graph, config
+
+
 @router.get("/conversations", response_model=List[ConversationResponse])
 async def get_conversations(
     current_user: RequestUser = Depends(get_current_request_user),
@@ -186,7 +199,7 @@ async def delete_conversation_endpoint(
 
     # Optional: LangGraph state/thread löschen (best effort)
     try:
-        graph, _ = await _build_state_config_with_checkpointer(thread_id=conversation_id, user_id=owner_id)
+        graph, _ = await _build_chat_history_graph_config(thread_id=conversation_id, user_id=owner_id)
         try:
             await graph.checkpointer.adelete_thread(conversation_id)
         except AttributeError:
@@ -221,7 +234,7 @@ async def get_conversation_history(
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    graph, config = await _build_state_config_with_checkpointer(thread_id=conversation_id, user_id=owner_id)
+    graph, config = await _build_chat_history_graph_config(thread_id=conversation_id, user_id=owner_id)
     snapshot = await graph.aget_state(config)
     state_values = _state_to_dict(snapshot.values)
     conversation = state_values.get("conversation") if isinstance(state_values, dict) else {}
