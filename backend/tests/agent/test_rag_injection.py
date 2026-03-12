@@ -1,5 +1,6 @@
+import asyncio
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.agent.agent.state import AgentState
 from app.agent.agent.graph import reasoning_node
 from app.agent.agent.knowledge import FactCard
@@ -30,17 +31,18 @@ def test_reasoning_node_rag_injection():
     
     # 3. Setup LLM Mock
     mock_llm = MagicMock()
-    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="Test Antwort")
+    mock_llm.bind_tools.return_value.ainvoke = AsyncMock(return_value=AIMessage(content="Test Antwort"))
     
     # 4. Mocks für KB und LLM anwenden
-    with patch("app.agent.agent.graph.get_fact_cards", return_value=mock_cards), \
+    with patch("app.agent.agent.graph.retrieve_rag_context", AsyncMock(return_value=mock_cards)), \
+         patch("app.agent.agent.graph.get_fact_cards", return_value=mock_cards), \
          patch("app.agent.agent.graph.get_llm", return_value=mock_llm):
         
-        reasoning_node(state)
+        asyncio.run(reasoning_node(state))
         
         # 5. Verifikation des LLM-Aufrufs
         # Das gebundene LLM (llm_with_tools) wurde aufgerufen
-        call_args = mock_llm.bind_tools.return_value.invoke.call_args[0][0]
+        call_args = mock_llm.bind_tools.return_value.ainvoke.call_args[0][0]
         
         # Die erste Nachricht muss eine SystemMessage sein
         assert isinstance(call_args[0], SystemMessage)
@@ -64,13 +66,14 @@ def test_reasoning_node_no_results_fallback():
     }
     
     mock_llm = MagicMock()
-    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="Keine Ahnung")
+    mock_llm.bind_tools.return_value.ainvoke = AsyncMock(return_value=AIMessage(content="Keine Ahnung"))
     
-    with patch("app.agent.agent.graph.get_fact_cards", return_value=[]), \
+    with patch("app.agent.agent.graph.retrieve_rag_context", AsyncMock(return_value=[])), \
+         patch("app.agent.agent.graph.get_fact_cards", return_value=[]), \
          patch("app.agent.agent.graph.get_llm", return_value=mock_llm):
         
-        reasoning_node(state)
+        asyncio.run(reasoning_node(state))
         
-        call_args = mock_llm.bind_tools.return_value.invoke.call_args[0][0]
+        call_args = mock_llm.bind_tools.return_value.ainvoke.call_args[0][0]
         system_content = call_args[0].content
         assert "Keine relevanten Informationen in der Wissensdatenbank gefunden" in system_content
