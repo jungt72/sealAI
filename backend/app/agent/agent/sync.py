@@ -1,4 +1,48 @@
-from typing import Dict, Any
+"""Read-model projection helpers for the active agent runtime.
+
+RWDR domain logic must stay in the dedicated RWDR modules:
+- `domain/rwdr_core.py` for deterministic derivation
+- `domain/rwdr_decision.py` for deterministic output decisions
+- `agent/rwdr_orchestration.py` for flow control
+
+This module is projection-only. It may reshape runtime state for API/stream/UI
+consumers, but it must never compute new RWDR engineering results.
+"""
+
+from typing import Any, Dict
+
+
+def _model_to_payload(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return value
+
+
+def project_rwdr_output(rwdr_state: Dict[str, Any] | None) -> Any:
+    """Return the structured RWDR output payload if present."""
+    if not rwdr_state:
+        return None
+    return _model_to_payload(rwdr_state.get("output"))
+
+
+def project_rwdr_read_model(rwdr_state: Dict[str, Any] | None) -> Dict[str, Any] | None:
+    """Project the active RWDR runtime slice into a stable read model."""
+    if not rwdr_state:
+        return None
+
+    rwdr_flow = rwdr_state.get("flow", {}) or {}
+    return {
+        "active": rwdr_flow.get("active", False),
+        "stage": rwdr_flow.get("stage"),
+        "missing_fields": list(rwdr_flow.get("missing_fields", [])),
+        "next_field": rwdr_flow.get("next_field"),
+        "ready_for_decision": rwdr_flow.get("ready_for_decision", False),
+        "decision_executed": rwdr_flow.get("decision_executed", False),
+        "draft": _model_to_payload(rwdr_state.get("draft")),
+        "input": _model_to_payload(rwdr_state.get("input")),
+        "derived": _model_to_payload(rwdr_state.get("derived")),
+        "output": project_rwdr_output(rwdr_state),
+    }
 
 def sync_working_profile_to_state(state: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -77,5 +121,11 @@ def sync_working_profile_to_state(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     wp["live_calc_tile"] = live_calc_tile
+
+    rwdr_projection = project_rwdr_read_model(ss.get("rwdr"))
+    if rwdr_projection is not None:
+        wp["rwdr"] = rwdr_projection
+    else:
+        wp.pop("rwdr", None)
     
     return state

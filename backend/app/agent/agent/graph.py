@@ -7,6 +7,7 @@ from app.agent.agent.logic import evaluate_claim_conflicts, process_cycle_update
 from app.agent.agent.tools import submit_claim
 from app.agent.agent.knowledge import retrieve_rag_context, retrieve_fact_cards_fallback
 from app.agent.agent.prompts import SYSTEM_PROMPT_TEMPLATE
+from app.agent.agent.rwdr_orchestration import is_rwdr_flow_active, run_rwdr_orchestration
 from app.agent.agent.selection import build_selection_state, build_final_reply
 from langchain_core.messages import ToolMessage, AIMessage, SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
@@ -30,6 +31,12 @@ def get_llm(config: Optional[RunnableConfig] = None):
     Factory-Methode für das LLM (Phase C5).
     """
     return ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+
+def get_fact_cards(query: str, tenant_id: Optional[str] = None):
+    """Backward-compatible retrieval hook for agent tests and local graph wiring."""
+    del tenant_id
+    return retrieve_fact_cards_fallback(query)
 
 async def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
     """
@@ -61,7 +68,7 @@ async def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = N
     # Fallback Pfad: Pseudo RAG (lokales JSON via knowledge-Service)
     if not relevant_cards and query:
         # retrieve_fact_cards_fallback ist aktuell synchron
-        relevant_cards = retrieve_fact_cards_fallback(query)
+        relevant_cards = get_fact_cards(query, tenant_id)
         if path_used != "real_rag_error_fallback":
             path_used = "pseudo_rag_fallback"
 
@@ -249,6 +256,30 @@ def final_response_node(state: AgentState) -> dict:
     return {"messages": [AIMessage(content=reply)]}
 
 
+def rwdr_orchestration_node(state: AgentState) -> dict:
+    """Graph entry for the active RWDR flow.
+
+    The graph may route messages into the RWDR path, but it must not duplicate
+    core or decision logic. RWDR engineering stays in the dedicated modules.
+    """
+    latest_user_message = None
+    for message in reversed(state.get("messages", [])):
+        if isinstance(message, HumanMessage):
+            latest_user_message = message.content
+            break
+    new_sealing_state, reply = run_rwdr_orchestration(
+        state["sealing_state"],
+        latest_user_message=latest_user_message,
+    )
+    return {"sealing_state": new_sealing_state, "messages": [reply]}
+
+
+def entry_router(state: AgentState) -> Literal["rwdr_orchestration_node", "reasoning_node"]:
+    if is_rwdr_flow_active(state):
+        return "rwdr_orchestration_node"
+    return "reasoning_node"
+
+
 def router(state: AgentState) -> Literal["evidence_tool_node", "selection_node"]:
     """
     Conditional Edge zur Prüfung auf Tool-Calls.
@@ -266,13 +297,21 @@ def router(state: AgentState) -> Literal["evidence_tool_node", "selection_node"]
 graph_builder = StateGraph(AgentState)
 
 # Nodes hinzufügen
+graph_builder.add_node("rwdr_orchestration_node", rwdr_orchestration_node)
 graph_builder.add_node("reasoning_node", reasoning_node)
 graph_builder.add_node("evidence_tool_node", evidence_tool_node)
 graph_builder.add_node("selection_node", selection_node)
 graph_builder.add_node("final_response_node", final_response_node)
 
-# Edges definieren (START -> reasoning_node <--> evidence_tool_node -> selection_node -> final_response_node -> END)
-graph_builder.add_edge(START, "reasoning_node")
+# Edges definieren (START -> rwdr|reasoning -> ...)
+graph_builder.add_conditional_edges(
+    START,
+    entry_router,
+    {
+        "rwdr_orchestration_node": "rwdr_orchestration_node",
+        "reasoning_node": "reasoning_node",
+    }
+)
 
 graph_builder.add_conditional_edges(
     "reasoning_node",
@@ -283,6 +322,7 @@ graph_builder.add_conditional_edges(
     }
 )
 
+graph_builder.add_edge("rwdr_orchestration_node", END)
 graph_builder.add_edge("evidence_tool_node", "reasoning_node")
 graph_builder.add_edge("selection_node", "final_response_node")
 graph_builder.add_edge("final_response_node", END)

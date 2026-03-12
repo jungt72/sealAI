@@ -2,12 +2,14 @@ import json
 import os
 from typing import Dict, AsyncGenerator
 from fastapi import APIRouter, HTTPException, FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from app.agent.api.models import ChatRequest, ChatResponse
 from app.agent.agent.graph import app
+from app.agent.agent.rwdr_orchestration import merge_rwdr_patch
 from app.agent.agent.state import AgentState
-from app.agent.agent.sync import sync_working_profile_to_state
+from app.agent.agent.sync import project_rwdr_output, project_rwdr_read_model, sync_working_profile_to_state
 from app.agent.cli import create_initial_state
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -17,7 +19,11 @@ router = APIRouter()
 SESSION_STORE: Dict[str, AgentState] = {}
 
 def execute_agent(state: AgentState) -> AgentState:
-    """Kapselt den Aufruf des LangGraph-Agenten."""
+    """Kapselt den Aufruf des LangGraph-Agenten.
+
+    Router bleibt reiner Transport-Layer. RWDR-Fachlogik darf hier nicht
+    nachgebildet werden; der Router delegiert nur an Graph/Orchestrierung.
+    """
     state = app.invoke(state)
     return sync_working_profile_to_state(state)
 
@@ -39,6 +45,12 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
         }
     
     current_state = SESSION_STORE[session_id]
+    if request.rwdr_input is not None or request.rwdr_input_patch is not None:
+        merge_rwdr_patch(
+            current_state["sealing_state"],
+            rwdr_input=request.rwdr_input,
+            rwdr_input_patch=request.rwdr_input_patch,
+        )
     current_state["messages"].append(HumanMessage(content=request.message))
     
     final_state = current_state 
@@ -66,8 +78,10 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
             
             # 4. Finalen technischen State senden
             yield f"data: {json.dumps({
-                'state': final_state['sealing_state'],
-                'working_profile': final_state.get('working_profile', {})
+                'state': jsonable_encoder(final_state['sealing_state']),
+                'working_profile': jsonable_encoder(final_state.get('working_profile', {})),
+                'rwdr': project_rwdr_read_model(final_state.get('sealing_state', {}).get('rwdr')),
+                'rwdr_output': project_rwdr_output(final_state.get('sealing_state', {}).get('rwdr')),
             })}\n\n"
         
         yield "data: [DONE]\n\n"
@@ -82,16 +96,28 @@ async def chat_endpoint(request: ChatRequest):
     if session_id not in SESSION_STORE:
         initial_sealing_state = create_initial_state()
         initial_sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
-        SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state}
+        SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state, "working_profile": {}}
     
     current_state = SESSION_STORE[session_id]
+    if request.rwdr_input is not None or request.rwdr_input_patch is not None:
+        merge_rwdr_patch(
+            current_state["sealing_state"],
+            rwdr_input=request.rwdr_input,
+            rwdr_input_patch=request.rwdr_input_patch,
+        )
     current_state["messages"].append(HumanMessage(content=request.message))
     
     try:
         updated_state = execute_agent(current_state)
         SESSION_STORE[session_id] = updated_state
         last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
-        return ChatResponse(reply=last_msg.content, session_id=session_id, sealing_state=updated_state["sealing_state"])
+        rwdr_output = updated_state.get("sealing_state", {}).get("rwdr", {}).get("output")
+        return ChatResponse(
+            reply=last_msg.content,
+            session_id=session_id,
+            sealing_state=updated_state["sealing_state"],
+            rwdr_output=rwdr_output,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

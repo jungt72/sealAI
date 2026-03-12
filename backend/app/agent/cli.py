@@ -1,7 +1,6 @@
 import json
 from unittest.mock import MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
-from app.agent.agent.graph import app
 from app.agent.agent.state import AgentState, SealingAIState
 
 def create_initial_state() -> SealingAIState:
@@ -43,6 +42,8 @@ def run_agent(query: str, use_mock: bool = False):
     """
     Startet den LangGraph-Agenten mit einer Query (Phase E1).
     """
+    from app.agent.agent.graph import app
+
     print(f"--- Starte Agent mit Query: '{query}' ---")
     
     # Initialer State

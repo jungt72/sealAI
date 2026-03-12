@@ -1,6 +1,15 @@
-from typing import Annotated, Any, Dict, List, Optional, TypedDict, Literal
+from typing import Annotated, Any, Dict, List, Optional, TypedDict, Literal, NotRequired
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
+
+from app.agent.domain.rwdr import (
+    RWDRConfidenceField,
+    RWDRSelectorConfig,
+    RWDRSelectorDerivedDTO,
+    RWDRSelectorInputDTO,
+    RWDRSelectorInputPatchDTO,
+    RWDRSelectorOutputDTO,
+)
 
 ReleaseStatus = Literal[
     "inadmissible",
@@ -142,6 +151,31 @@ class SelectionLayer(TypedDict):
     specificity_level: SpecificityLevel
     output_blocked: bool
 
+
+RWDRStage = Literal["stage_1", "stage_2", "stage_3"]
+
+
+class RWDRFlowState(TypedDict, total=False):
+    active: bool
+    stage: RWDRStage
+    collected_fields: Dict[str, Any]
+    missing_fields: List[RWDRConfidenceField]
+    required_stage1_fields: List[RWDRConfidenceField]
+    required_stage2_fields: List[RWDRConfidenceField]
+    next_field: Optional[RWDRConfidenceField]
+    ready_for_decision: bool
+    decision_executed: bool
+
+
+class RWDRSelectorState(TypedDict, total=False):
+    flow: RWDRFlowState
+    draft: RWDRSelectorInputPatchDTO
+    input: RWDRSelectorInputDTO
+    derived: RWDRSelectorDerivedDTO
+    output: RWDRSelectorOutputDTO
+    config: RWDRSelectorConfig
+    config_version: str
+
 class SealingAIState(TypedDict):
     """
     Blueprint Section 02 / Phase A1:
@@ -154,6 +188,7 @@ class SealingAIState(TypedDict):
     governance: GovernanceLayer
     cycle: CycleLayer
     selection: SelectionLayer
+    rwdr: NotRequired[RWDRSelectorState]
 
 class AgentState(TypedDict):
     """
