@@ -86,10 +86,90 @@ def test_hybrid_dedup_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
         metadata_filters={"tenant_id": "tenant-1"},
     )
 
-    assert captured.get("filters") == {"tenant_id": "tenant-1"}
+    assert captured.get("filters") == {"tenant_id": "tenant-1", "_visibility_user_id": "tenant-1"}
     assert len(hits) == 1
     hybrid = meta.get("hybrid") or {}
     assert hybrid.get("overlap") == 1
+
+
+def test_hybrid_retrieve_applies_bm25_metadata_filters_as_and(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.rag import rag_orchestrator as ro
+
+    monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
+    monkeypatch.setattr(
+        ro,
+        "_qdrant_search_with_retry",
+        lambda *_args, **_kwargs: (
+            [],
+            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+        ),
+    )
+    monkeypatch.setattr(
+        ro,
+        "_bm25_search",
+        lambda *_args, **_kwargs: (
+            [
+                {
+                    "text": "norm hit",
+                    "sparse_score": 12.0,
+                    "metadata": {
+                        "document_id": "doc-1",
+                        "tenant_id": "tenant-1",
+                        "route_key": "standard_or_norm",
+                        "category": "norms",
+                        "source_system": "paperless",
+                        "tags": ["norm", "knowledge"],
+                    },
+                },
+                {
+                    "text": "wrong route",
+                    "sparse_score": 11.0,
+                    "metadata": {
+                        "document_id": "doc-2",
+                        "tenant_id": "tenant-1",
+                        "route_key": "technical_knowledge",
+                        "category": "norms",
+                        "source_system": "paperless",
+                        "tags": ["norm"],
+                    },
+                },
+                {
+                    "text": "wrong tags",
+                    "sparse_score": 10.0,
+                    "metadata": {
+                        "document_id": "doc-3",
+                        "tenant_id": "tenant-1",
+                        "route_key": "standard_or_norm",
+                        "category": "norms",
+                        "source_system": "paperless",
+                        "tags": ["supplier"],
+                    },
+                },
+            ],
+            None,
+        ),
+    )
+    monkeypatch.setattr(ro, "_fallback_external_search", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(ro, "USE_BM25", True)
+
+    hits, meta = ro.hybrid_retrieve(
+        query="DIN 3760",
+        tenant="tenant-1",
+        k=3,
+        use_rerank=False,
+        return_metrics=True,
+        metadata_filters={
+            "route_key": "standard_or_norm",
+            "category": "norms",
+            "source_system": "paperless",
+            "tags": ["norm", "knowledge"],
+        },
+    )
+
+    assert len(hits) == 1
+    assert hits[0]["metadata"]["document_id"] == "doc-1"
+    hybrid = meta.get("hybrid") or {}
+    assert hybrid.get("counts", {}).get("bm25") == 1
 
 
 def test_hybrid_retrieve_filters_zero_scores(monkeypatch: pytest.MonkeyPatch) -> None:

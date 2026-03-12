@@ -17,6 +17,7 @@ Goals:
 from __future__ import annotations
 
 import argparse
+from datetime import date, datetime
 import hashlib
 import html
 import json
@@ -49,7 +50,9 @@ from app.services.rag.rag_etl_pipeline import (
     LLMDocumentExtraction, process_document_pipeline
 )
 from app.services.rag.qdrant_state_machine import transition_to_published_bulletproof
-from app.langgraph_v2.utils.jinja import render_template
+from app.services.rag.constants import RAG_SHARED_TENANT_ID
+from app.services.rag.route_resolver import DEFAULT_ROUTE_KEY
+from app.common.jinja import render_template
 
 log = logging.getLogger(__name__)
 
@@ -88,9 +91,9 @@ LEGACY_VECTORSTORE_ENABLED = os.getenv("RAG_INGEST_LEGACY_VECTORSTORE", "0").str
     "yes",
     "on",
 )
-DEFAULT_INGEST_TENANT = (os.getenv("RAG_INGEST_DEFAULT_TENANT") or "sealai").strip() or "sealai"
+DEFAULT_INGEST_TENANT = (os.getenv("RAG_INGEST_DEFAULT_TENANT") or RAG_SHARED_TENANT_ID).strip() or RAG_SHARED_TENANT_ID
 RAG_SHARED_TENANT_ENABLED = os.getenv("RAG_SHARED_TENANT_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
-RAG_SHARED_TENANT_ID = (os.getenv("RAG_SHARED_TENANT_ID") or "").strip()
+RAG_SHARED_TENANT_ID_ENV = (os.getenv("RAG_SHARED_TENANT_ID") or "").strip()
 RAG_DYNAMIC_METADATA_LLM_ENABLED = os.getenv("RAG_DYNAMIC_METADATA_LLM_ENABLED", "1").strip().lower() not in (
     "0",
     "false",
@@ -107,13 +110,9 @@ RAG_DYNAMIC_METADATA_MAX_CHARS = int(os.getenv("RAG_DYNAMIC_METADATA_MAX_CHARS",
 def _ensure_tenant_allowed(tenant_id: str) -> None:
     if not tenant_id or not str(tenant_id).strip():
         raise ValueError("tenant_id required for ingest")
-    if tenant_id == "sealai":
-        shared_allowed = bool(RAG_SHARED_TENANT_ENABLED and RAG_SHARED_TENANT_ID == "sealai")
-        if not shared_allowed:
-            raise ValueError(
-                "tenant_id 'sealai' is reserved; set RAG_SHARED_TENANT_ENABLED=1 and "
-                "RAG_SHARED_TENANT_ID=sealai to allow shared ingestion"
-            )
+    # Upstream API (rag.py) now securely gates the 'sealai' tenant via is_rag_admin().
+    # We allow it here to enable global knowledge ingestion.
+    pass
 
 
 def _coerce_visibility(v: str | None) -> str:
@@ -725,6 +724,42 @@ def _extract_additional_metadata(
     return merged
 
 
+_SPECIALIZED_PDF_ROUTE_KEYS = {"material_datasheet", "product_datasheet"}
+
+
+def _should_use_specialized_pdf_path(*, filename: str, route_key: str | None) -> bool:
+    if not filename.lower().endswith(".pdf"):
+        return False
+    normalized_route = (route_key or "").strip().lower()
+    if not normalized_route:
+        return True
+    return normalized_route in _SPECIALIZED_PDF_ROUTE_KEYS
+
+
+def _normalize_source_modified_at(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time()).isoformat()
+    text = str(value).strip()
+    return text or None
+
+
+def _resolve_source_type(*, source_system: str | None, source: str | None) -> SourceType:
+    normalized_source_system = str(source_system or "").strip().lower()
+    if normalized_source_system == "paperless":
+        return SourceType.CRAWL
+
+    normalized_source = str(source or "").strip().lower()
+    if normalized_source in {"upload", "uploaded"}:
+        return SourceType.UPLOAD
+    if normalized_source in {"paperless", "crawl", "crawler"}:
+        return SourceType.CRAWL
+    return SourceType.MANUAL
+
+
 @dataclass
 class IngestStats:
     chunks: int
@@ -797,6 +832,11 @@ class IngestPipeline:
         visibility: str = "public",
         source_type: SourceType = SourceType.MANUAL,
         tags: list[str] | None = None,
+        route_key: str | None = None,
+        category: str | None = None,
+        source_system: str | None = None,
+        source_document_id: str | None = None,
+        source_modified_at: Any | None = None,
     ) -> IngestStats:
         if args:
             if len(args) > 1:
@@ -813,6 +853,9 @@ class IngestPipeline:
         visibility = _coerce_visibility(visibility)
         filename = os.path.basename(file_path)
         doc_id = document_id or _hash_path(file_path)
+        raw_tags = [str(tag).strip() for tag in (tags or []) if str(tag).strip()]
+        normalized_route_key = (route_key or "").strip() or DEFAULT_ROUTE_KEY
+        normalized_source_modified_at = _normalize_source_modified_at(source_modified_at)
         facets = _parse_facets_from_tags(tags)
         entity = facets.get("entity") or _guess_entity_from_filename(filename)
         aspects = facets.get("aspects") or []
@@ -856,9 +899,10 @@ class IngestPipeline:
             tag_metadata=facets.get("additional_metadata") if isinstance(facets.get("additional_metadata"), dict) else None,
         )
 
-        # V5.2 PED-Platinum: PDFs gehen AUSSCHLIESSLICH durch den strukturierten ETL-Pfad.
-        # Kein Fallback auf rohes Chunking.
-        is_platinum = filename.lower().endswith(".pdf")
+        # Route-aware path selection:
+        # - product/material datasheets keep the specialized PDF ETL
+        # - generic PDF routes stay on the generic chunking path
+        is_platinum = _should_use_specialized_pdf_path(filename=filename, route_key=normalized_route_key)
         if is_platinum:
             log.info("platinum_etl_start", extra={"doc_filename": filename})
             # Hard-fail: Wenn LLM-Extraktion scheitert, schlägt der Ingest fehl.
@@ -962,6 +1006,12 @@ class IngestPipeline:
                 language=language,
                 source_version=source_version,
                 effective_date=effective_date,
+                category=category,
+                route_key=normalized_route_key,
+                tags=raw_tags,
+                source_system=(source_system or None),
+                source_document_id=(source_document_id or None),
+                source_modified_at=normalized_source_modified_at,
                 material_code=material_code,
                 source_url=source_url,
                 shore_hardness=int(chunk_shore),
@@ -1111,6 +1161,11 @@ def ingest_file(
     domain = _parse_domain(category)
     canonical_doc_id = document_id or sha256 or _hash_path(file_path)
     filename = os.path.basename(file_path)
+    route_key = str(kwargs.get("route_key") or DEFAULT_ROUTE_KEY).strip() or DEFAULT_ROUTE_KEY
+    source_system = str(kwargs.get("source_system") or "").strip() or None
+    source_document_id = str(kwargs.get("source_document_id") or "").strip() or None
+    source_modified_at = kwargs.get("source_modified_at")
+    source_type = _resolve_source_type(source_system=source_system, source=source)
     facets = _parse_facets_from_tags(tags)
     material_code = _normalize_material_code(
         _extract_material_code(str(facets.get("material_code") or ""), filename)
@@ -1145,6 +1200,7 @@ def ingest_file(
                 "tags": tags or [],
                 "sha256": sha256,
                 "source": source,
+                "route_key": route_key,
                 "chunks": 0,
                 "elapsed_ms": 0,
                 "file_size": None,
@@ -1184,6 +1240,13 @@ def ingest_file(
                     "tenant_id": tenant_id,
                     "document_id": canonical_doc_id,
                     "visibility": _coerce_visibility(visibility),
+                    "source_type": source_type.value,
+                    "category": category,
+                    "route_key": route_key,
+                    "tags": [str(tag).strip() for tag in (tags or []) if str(tag).strip()],
+                    "source_system": source_system,
+                    "source_document_id": source_document_id,
+                    "source_modified_at": _normalize_source_modified_at(source_modified_at),
                     "material_code": material_code,
                     "source_url": source_url,
                     "shore_hardness": _extract_shore_hardness(doc.page_content) or shore_hardness_base,
@@ -1214,6 +1277,7 @@ def ingest_file(
             "tags": tags or [],
             "sha256": sha256,
             "source": source,
+            "route_key": route_key,
             "chunks": len(docs),
             "elapsed_ms": 0,
             "file_size": size_bytes,
@@ -1231,8 +1295,13 @@ def ingest_file(
         domain=domain,
         document_id=canonical_doc_id,
         visibility=visibility,
-        source_type=SourceType.MANUAL,
+        source_type=source_type,
         tags=tags,
+        route_key=route_key,
+        category=category,
+        source_system=source_system,
+        source_document_id=source_document_id,
+        source_modified_at=source_modified_at,
     )
     return {
         "ok": True,
@@ -1245,6 +1314,7 @@ def ingest_file(
         "tags": tags or [],
         "sha256": sha256,
         "source": source,
+        "route_key": route_key,
         "chunks": stats.chunks,
         "elapsed_ms": stats.elapsed_ms,
         "file_size": stats.file_size,

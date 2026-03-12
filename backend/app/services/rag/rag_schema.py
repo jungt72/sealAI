@@ -56,6 +56,12 @@ class ChunkMetadata(BaseModel):
     language: Optional[str] = None
     source_version: Optional[str] = None
     effective_date: Optional[str] = None
+    category: Optional[str] = None
+    route_key: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    source_system: Optional[str] = None
+    source_document_id: Optional[str] = None
+    source_modified_at: Optional[str] = None
     material_code: str
     source_url: Optional[str] = None
     shore_hardness: int

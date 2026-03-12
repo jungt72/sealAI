@@ -55,10 +55,14 @@ async def process_rag_document(
                 tenant_id=doc.tenant_id,
                 document_id=doc.document_id,
                 category=doc.category,
+                route_key=doc.route_key,
                 tags=doc.tags,
                 visibility=doc.visibility,
                 sha256=doc.sha256,
-                source="upload",
+                source_system=doc.source_system,
+                source_document_id=doc.source_document_id,
+                source_modified_at=doc.source_modified_at,
+                source=doc.source_system or "upload",
             )
         else:
             ingest_func(
@@ -66,10 +70,14 @@ async def process_rag_document(
                 tenant_id=doc.tenant_id,
                 document_id=doc.document_id,
                 category=doc.category,
+                route_key=doc.route_key,
                 tags=doc.tags,
                 visibility=doc.visibility,
                 sha256=doc.sha256,
-                source="upload",
+                source_system=doc.source_system,
+                source_document_id=doc.source_document_id,
+                source_modified_at=doc.source_modified_at,
+                source=doc.source_system or "upload",
             )
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         stats = {"elapsed_ms": elapsed_ms}

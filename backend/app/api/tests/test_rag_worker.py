@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import types
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -61,15 +62,22 @@ async def test_process_once_updates_status(tmp_path: Path) -> None:
         status="queued",
         visibility="private",
         category="norms",
+        route_key="standard_or_norm",
         tags=["a"],
         sha256="hash",
+        source_system="paperless",
+        source_document_id="11",
+        source_modified_at=datetime(2026, 3, 12, 10, 0, tzinfo=timezone.utc),
         path=str(file_path),
     )
 
     async def picker(_session):
         return doc
 
+    captured = {}
+
     def fake_ingest(_path, **_kwargs):
+        captured.update(_kwargs)
         return None
 
     done = await worker.process_once(
@@ -81,3 +89,8 @@ async def test_process_once_updates_status(tmp_path: Path) -> None:
     assert done is True
     assert doc.status == "indexed"
     assert isinstance(doc.ingest_stats, dict)
+    assert captured["route_key"] == "standard_or_norm"
+    assert captured["source_system"] == "paperless"
+    assert captured["source_document_id"] == "11"
+    assert captured["source_modified_at"] == datetime(2026, 3, 12, 10, 0, tzinfo=timezone.utc)
+    assert captured["source"] == "paperless"

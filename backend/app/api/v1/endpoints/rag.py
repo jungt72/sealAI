@@ -13,12 +13,33 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.langgraph_v2.contracts import error_detail
+from app.common.errors import error_detail
+from app.services.rag.constants import (
+    RAG_SHARED_TENANT_ID,
+    RAG_VISIBILITY_PUBLIC,
+    RAG_VISIBILITY_PRIVATE,
+    RAG_SCOPE_GLOBAL,
+    ALLOWED_VISIBILITY,
+    ALLOWED_SCOPES,
+)
+
 from app.core.config import settings
 from app.database import get_db
 from app.models.rag_document import RagDocument
-from app.services.auth.dependencies import RequestUser, get_current_request_user
-from app.services.jobs.queue import enqueue_job
+from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin
+
+from app.services.rag.route_resolver import resolve_route_key
+from app.services.rag.utils import (
+    ALLOWED_CT,
+    ALLOWED_EXT,
+    RAG_UPLOAD_MAX_BYTES,
+    cleanup_upload_path,
+    ensure_upload_directory,
+    find_existing_document,
+    normalize_tags,
+    resolve_upload_dir,
+    sanitize_filename,
+)
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 logger = structlog.get_logger("api.rag")
@@ -67,89 +88,14 @@ async def _check_upload_rate_limit(tenant_id: str) -> None:
     except Exception as exc:
         logger.debug("rag_upload_rate_limit_check_skipped", reason=str(exc))
 
-UPLOAD_ROOT = (os.getenv("RAG_UPLOAD_DIR") or "/app/data/uploads").strip() or "/app/data/uploads"
-RAG_UPLOAD_MAX_BYTES = int(os.getenv("RAG_UPLOAD_MAX_BYTES", str(50 * 1024 * 1024)))
-ALLOWED_VISIBILITY = {"private", "public"}
-ALLOWED_EXT = {".pdf", ".txt", ".md", ".docx"}
-ALLOWED_CT = {
-    "application/pdf",
-    "text/plain",
-    "text/markdown",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
+
 QDRANT_URL = (os.getenv("QDRANT_URL") or "http://qdrant:6333").rstrip("/")
 QDRANT_API_KEY = (os.getenv("QDRANT_API_KEY") or "").strip() or None
 QDRANT_COLLECTION = (os.getenv("QDRANT_COLLECTION") or "sealai_knowledge").strip()
-_UPLOAD_DIR_READY = False
-
-
-def _normalize_tags(raw: Optional[str]) -> Optional[List[str]]:
-    if not raw:
-        return None
-    tags = [item.strip() for item in raw.split(",") if item and item.strip()]
-    return tags or None
-
-
-def _sanitize_filename(filename: str) -> str:
-    base = Path(filename or "").name or "upload"
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._") or "upload"
-    return safe
 
 
 def _is_admin(user: RequestUser) -> bool:
     return "admin" in (user.roles or [])
-
-
-async def _find_existing_document(
-    session: AsyncSession, tenant_id: str, sha256: str
-) -> Optional[RagDocument]:
-    stmt = (
-        select(RagDocument)
-        .where(RagDocument.tenant_id == tenant_id, RagDocument.sha256 == sha256)
-        .order_by(RagDocument.created_at.desc())
-        .limit(1)
-    )
-    result = await session.execute(stmt)
-    return result.scalars().first()
-
-
-def _cleanup_upload_path(target_path: Path) -> None:
-    try:
-        target_path.unlink()
-    except OSError:
-        pass
-    try:
-        target_path.parent.rmdir()
-    except OSError:
-        pass
-
-
-def _resolve_upload_dir(*, tenant_id: str, document_id: str) -> Path:
-    root = Path(UPLOAD_ROOT).resolve()
-    target_dir = (root / tenant_id / document_id).resolve()
-    if target_dir != root and root not in target_dir.parents:
-        raise HTTPException(status_code=500, detail="Invalid upload path")
-    return target_dir
-
-
-def ensure_upload_directory() -> Path:
-    global _UPLOAD_DIR_READY
-    root = Path(UPLOAD_ROOT).resolve()
-    if _UPLOAD_DIR_READY and root.is_dir():
-        return root
-    try:
-        os.makedirs(root, mode=0o777, exist_ok=True)
-    except PermissionError as exc:
-        logger.error(
-            "rag_upload_root_permission_denied",
-            upload_root=str(root),
-            uid=os.getuid(),
-            gid=os.getgid(),
-            error=str(exc),
-        )
-        raise
-    _UPLOAD_DIR_READY = True
-    return root
 
 
 def _qdrant_client():
@@ -218,12 +164,19 @@ def _qdrant_delete_document(*, tenant_id: str, document_id: str) -> None:
         ),
         wait=True,
     )
+@router.get("/health")
+async def rag_health() -> Dict[str, Any]:
+    """Health check for the RAG subsystem."""
+    return {"status": "ok", "service": "rag", "timestamp": time.time()}
+
+
 @router.post("/upload")
 async def upload_rag_document(
     file: UploadFile = File(...),
     category: Optional[str] = Form(default=None),
     tags: Optional[str] = Form(default=None),
     visibility: str = Form(default="private"),
+    scope: str = Form(default="tenant"),
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -232,13 +185,20 @@ async def upload_rag_document(
     except PermissionError as exc:
         raise HTTPException(status_code=500, detail="Storage permission denied") from exc
 
-    tenant_id = current_user.user_id
+    if scope == RAG_SCOPE_GLOBAL:
+        if not is_rag_admin(current_user):
+            raise HTTPException(status_code=403, detail="Admin rights required for global scope")
+        tenant_id = RAG_SHARED_TENANT_ID
+        visibility = RAG_VISIBILITY_PUBLIC
+    else:
+        tenant_id = current_user.user_id
+
     await _check_upload_rate_limit(tenant_id)
     if visibility not in ALLOWED_VISIBILITY:
         raise HTTPException(status_code=400, detail=error_detail("invalid_visibility"))
 
     document_id = uuid.uuid4().hex
-    safe_name = _sanitize_filename(file.filename or "")
+    safe_name = sanitize_filename(file.filename or "")
     ext = Path(safe_name).suffix.lower()
     if ext not in ALLOWED_EXT:
         raise HTTPException(
@@ -250,7 +210,7 @@ async def upload_rag_document(
             status_code=415,
             detail=error_detail("unsupported_content_type", content_type=content_type),
         )
-    target_dir = _resolve_upload_dir(tenant_id=tenant_id, document_id=document_id)
+    target_dir = resolve_upload_dir(tenant_id=tenant_id, document_id=document_id)
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
     except PermissionError as exc:
@@ -297,15 +257,16 @@ async def upload_rag_document(
     except OSError:
         size_bytes = None
 
-    tags_list = _normalize_tags(tags)
+    tags_list = normalize_tags(tags)
     filename = safe_name or f"upload{ext}"
-    existing_doc = await _find_existing_document(session, tenant_id, sha256)
+    route_key = resolve_route_key(tags=tags_list, category=category, filename=filename)
+    existing_doc = await find_existing_document(session, tenant_id, sha256)
     if existing_doc:
         if existing_doc.status not in {"failed", "error"}:
-            _cleanup_upload_path(target_path)
+            cleanup_upload_path(target_path)
             return {"document_id": existing_doc.document_id, "status": existing_doc.status}
 
-        retry_dir = _resolve_upload_dir(tenant_id=tenant_id, document_id=existing_doc.document_id)
+        retry_dir = resolve_upload_dir(tenant_id=tenant_id, document_id=existing_doc.document_id)
         try:
             retry_dir.mkdir(parents=True, exist_ok=True)
         except PermissionError as exc:
@@ -337,25 +298,13 @@ async def upload_rag_document(
         existing_doc.content_type = content_type
         existing_doc.size_bytes = size_bytes
         existing_doc.category = category
+        existing_doc.route_key = route_key
         existing_doc.tags = tags_list
         existing_doc.sha256 = sha256
         existing_doc.path = str(retry_path)
         session.add(existing_doc)
         await session.commit()
         await session.refresh(existing_doc)
-
-        await enqueue_job(
-            "rag_ingest",
-            {
-                "document_id": existing_doc.document_id,
-                "tenant_id": tenant_id,
-                "path": str(retry_path),
-                "category": category,
-                "tags": tags_list,
-                "visibility": visibility,
-                "sha256": sha256,
-            },
-        )
 
         return {"document_id": existing_doc.document_id, "status": "processing"}
 
@@ -369,6 +318,7 @@ async def upload_rag_document(
         content_type=content_type,
         size_bytes=None,
         category=category,
+        route_key=route_key,
         tags=tags_list,
         sha256=sha256,
         path=str(target_path),
@@ -378,20 +328,20 @@ async def upload_rag_document(
     await session.commit()
     await session.refresh(doc)
 
-    await enqueue_job(
-        "rag_ingest",
-        {
-            "document_id": document_id,
-            "tenant_id": tenant_id,
-            "path": str(target_path),
-            "category": category,
-            "tags": tags_list,
-            "visibility": visibility,
-            "sha256": sha256,
-        },
-    )
-
     return {"document_id": doc.document_id, "status": doc.status}
+
+
+@router.post("/sync-paperless")
+async def sync_paperless(
+    current_user: RequestUser = Depends(get_current_request_user),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Manually trigger a sync from Paperless to the global RAG tenant."""
+    if not is_rag_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin rights required for Paperless sync")
+
+    from app.services.rag.paperless import sync_paperless_to_rag
+    return await sync_paperless_to_rag(session)
 
 
 @router.get("/documents/{document_id}")
@@ -477,7 +427,10 @@ async def reingest_rag_document(
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
     if doc.tenant_id != current_user.user_id:
-        raise HTTPException(status_code=403, detail=error_detail("forbidden"))
+        if doc.tenant_id == RAG_SHARED_TENANT_ID and is_rag_admin(current_user):
+            pass
+        else:
+            raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     if not Path(doc.path).exists():
         raise HTTPException(
@@ -491,18 +444,6 @@ async def reingest_rag_document(
     session.add(doc)
     await session.commit()
 
-    await enqueue_job(
-        "rag_ingest",
-        {
-            "document_id": doc.document_id,
-            "tenant_id": doc.tenant_id,
-            "path": doc.path,
-            "category": doc.category,
-            "tags": doc.tags,
-            "visibility": doc.visibility,
-            "sha256": doc.sha256,
-        },
-    )
     return {"document_id": doc.document_id, "status": doc.status}
 
 
@@ -516,7 +457,10 @@ async def delete_rag_document(
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
     if doc.tenant_id != current_user.user_id:
-        raise HTTPException(status_code=403, detail=error_detail("forbidden"))
+        if doc.tenant_id == RAG_SHARED_TENANT_ID and is_rag_admin(current_user):
+            pass
+        else:
+            raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     try:
         _qdrant_delete_document(tenant_id=doc.tenant_id, document_id=doc.document_id)
@@ -528,7 +472,7 @@ async def delete_rag_document(
 
     path = Path(doc.path)
     if path.exists():
-        _cleanup_upload_path(path)
+        cleanup_upload_path(path)
 
     await session.delete(doc)
     await session.commit()

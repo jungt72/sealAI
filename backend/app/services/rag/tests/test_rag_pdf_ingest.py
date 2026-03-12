@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import sys
 import types
 from pathlib import Path
@@ -71,6 +72,7 @@ if "qdrant_client" not in sys.modules:
 
 
 from app.services.rag import rag_ingest
+from app.services.rag.bm25_store import bm25_repo
 
 
 class _DenseVec:
@@ -86,6 +88,30 @@ class _DenseEmbedder:
         return [_DenseVec([0.0, 0.0, 0.0]) for _ in texts]
 
 
+def _build_pipeline():
+    pipeline = rag_ingest.IngestPipeline()
+    pipeline._load_embedders = lambda: None
+    pipeline._dense_embedder = _DenseEmbedder()
+    captured = {}
+
+    class _DummyClient:
+        def upsert(self, _collection, points):
+            captured["points"] = points
+
+    pipeline.client = _DummyClient()
+    return pipeline, captured
+
+
+def _capture_bm25(monkeypatch: pytest.MonkeyPatch):
+    captured = {}
+
+    def _fake_upsert_documents(_collection, docs):
+        captured["docs"] = list(docs)
+
+    monkeypatch.setattr(bm25_repo, "upsert_documents", _fake_upsert_documents, raising=False)
+    return captured
+
+
 @pytest.mark.anyio
 async def test_pdf_extracts_text_non_empty() -> None:
     fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
@@ -98,18 +124,8 @@ async def test_pdf_extracts_text_non_empty() -> None:
 @pytest.mark.anyio
 async def test_pdf_chunks_include_page_number_and_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
     fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
-
-    pipeline = rag_ingest.IngestPipeline()
-    pipeline._load_embedders = lambda: None
-    pipeline._dense_embedder = _DenseEmbedder()
-
-    captured = {}
-
-    class _DummyClient:
-        def upsert(self, _collection, points):
-            captured["points"] = points
-
-    pipeline.client = _DummyClient()
+    pipeline, captured = _build_pipeline()
+    bm25_captured = _capture_bm25(monkeypatch)
 
     def _fake_platinum_extraction(*, text: str, filename: str):
         return SimpleNamespace(manufacturer="SealAI", product_name=filename, operating_points=[], safety_exclusions=[])
@@ -137,6 +153,12 @@ async def test_pdf_chunks_include_page_number_and_tenant(monkeypatch: pytest.Mon
         tenant_id="tenant-1",
         document_id="doc-1",
         visibility="public",
+        category="datasheet",
+        route_key="material_datasheet",
+        tags=["material", "compound"],
+        source_system="paperless",
+        source_document_id="11",
+        source_modified_at=datetime(2026, 3, 12, 10, 0, tzinfo=timezone.utc),
     )
 
     points = captured.get("points") or []
@@ -146,4 +168,101 @@ async def test_pdf_chunks_include_page_number_and_tenant(monkeypatch: pytest.Mon
     metadata = payload.get("metadata") or {}
     assert metadata.get("page_number") == 1
     assert metadata.get("tenant_id") == "tenant-1"
+    assert metadata.get("category") == "datasheet"
+    assert metadata.get("route_key") == "material_datasheet"
+    assert metadata.get("tags") == ["material", "compound"]
+    assert metadata.get("source_system") == "paperless"
+    assert metadata.get("source_document_id") == "11"
+    assert metadata.get("source_modified_at") == "2026-03-12T10:00:00+00:00"
     assert payload.get("tenant_id") == "tenant-1"
+    bm25_docs = bm25_captured.get("docs") or []
+    assert bm25_docs, "Expected BM25 upsert to receive documents"
+    bm25_meta = bm25_docs[0].metadata
+    assert bm25_meta.get("route_key") == "material_datasheet"
+    assert bm25_meta.get("tags") == ["material", "compound"]
+    assert bm25_meta.get("category") == "datasheet"
+    assert bm25_meta.get("source_system") == "paperless"
+    assert bm25_meta.get("source_document_id") == "11"
+    assert bm25_meta.get("source_modified_at") == "2026-03-12T10:00:00+00:00"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("route_key", ["standard_or_norm", "technical_knowledge", "general_technical_doc"])
+async def test_pdf_generic_routes_skip_specialized_etl(
+    monkeypatch: pytest.MonkeyPatch,
+    route_key: str,
+) -> None:
+    fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
+    pipeline, captured = _build_pipeline()
+    _capture_bm25(monkeypatch)
+
+    def _unexpected_platinum(*args, **kwargs):
+        raise AssertionError("specialized PDF ETL must not run for generic routes")
+
+    monkeypatch.setattr(rag_ingest, "_extract_platinum_structured_llm", _unexpected_platinum)
+
+    stats = pipeline.process_document(
+        str(fixture_path),
+        tenant_id="tenant-1",
+        document_id=f"doc-{route_key}",
+        visibility="public",
+        route_key=route_key,
+    )
+
+    points = captured.get("points") or []
+    assert stats.chunks > 0
+    assert points, "Expected generic PDF ingestion to produce chunks"
+    payload = getattr(points[0], "payload", None) or {}
+    assert "document_meta" not in payload
+    metadata = payload.get("metadata") or {}
+    assert metadata.get("page_number") == 1
+    assert metadata.get("route_key") == route_key
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("route_key", ["material_datasheet", "product_datasheet"])
+async def test_pdf_specialized_routes_keep_platinum_path(
+    monkeypatch: pytest.MonkeyPatch,
+    route_key: str,
+) -> None:
+    fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
+    pipeline, captured = _build_pipeline()
+    _capture_bm25(monkeypatch)
+    specialized_calls = {"count": 0}
+
+    def _fake_platinum_extraction(*, text: str, filename: str):
+        specialized_calls["count"] += 1
+        return SimpleNamespace(manufacturer="SealAI", product_name=filename, operating_points=[], safety_exclusions=[])
+
+    def _fake_process_document_pipeline(_llm_output, _doc_id, _additional_metadata):
+        return SimpleNamespace(
+            status=SimpleNamespace(value="published"),
+            extracted_points=[
+                {
+                    "vector_text": "Hello PDF",
+                    "source_type": "pdf",
+                    "source_url": str(fixture_path),
+                    "page_number": 1,
+                    "additional_metadata": {},
+                }
+            ],
+            quarantine_report=[],
+        )
+
+    monkeypatch.setattr(rag_ingest, "_extract_platinum_structured_llm", _fake_platinum_extraction)
+    monkeypatch.setattr(rag_ingest, "process_document_pipeline", _fake_process_document_pipeline)
+
+    stats = pipeline.process_document(
+        str(fixture_path),
+        tenant_id="tenant-1",
+        document_id=f"doc-{route_key}",
+        visibility="public",
+        route_key=route_key,
+    )
+
+    points = captured.get("points") or []
+    assert stats.chunks == 1
+    assert specialized_calls["count"] == 1
+    assert points, "Expected specialized PDF ingestion to produce chunks"
+    payload = getattr(points[0], "payload", None) or {}
+    assert "document_meta" in payload

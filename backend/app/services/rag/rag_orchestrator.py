@@ -11,6 +11,7 @@ from urllib.parse import urlparse, urlunparse
 log = logging.getLogger("app.services.rag.rag_orchestrator")
 
 from app.core.config import settings
+from app.services.rag.constants import RAG_SHARED_TENANT_ID, RAG_VISIBILITY_PUBLIC
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Env & Flags
@@ -448,6 +449,92 @@ def _as_str_list(value: Any) -> List[str]:
         out.append(text)
     return out
 
+
+_EXACT_FILTER_PATHS: Dict[str, str] = {
+    "route_key": "metadata.route_key",
+    "metadata.route_key": "metadata.route_key",
+    "category": "metadata.category",
+    "metadata.category": "metadata.category",
+    "source_system": "metadata.source_system",
+    "metadata.source_system": "metadata.source_system",
+    "material_code": "material_code",
+    "metadata.material_code": "metadata.material_code",
+}
+_TAGS_FILTER_KEYS = {"tags", "metadata.tags"}
+_SUPPORTED_METADATA_FILTER_KEYS = set(_EXACT_FILTER_PATHS.keys()) | _TAGS_FILTER_KEYS
+
+
+def _resolve_metadata_filter_path(key: str) -> Optional[str]:
+    return _EXACT_FILTER_PATHS.get(str(key).strip())
+
+
+def _normalize_supported_metadata_filters(raw_filters: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {}
+    if not isinstance(raw_filters, dict):
+        return normalized
+    for raw_key, raw_value in raw_filters.items():
+        key = str(raw_key).strip()
+        if not key or raw_value is None:
+            continue
+        if key in {"tenant_id", "metadata.tenant_id", "_visibility_user_id"}:
+            normalized[key] = raw_value
+            continue
+        if key not in _SUPPORTED_METADATA_FILTER_KEYS:
+            continue
+        values = _as_str_list(raw_value)
+        if not values:
+            continue
+        normalized[key] = values if len(values) > 1 else values[0]
+    return normalized
+
+
+def _get_hit_metadata_value(metadata: Dict[str, Any], key: str) -> Any:
+    if key in metadata:
+        return metadata.get(key)
+    if key.startswith("metadata."):
+        nested_key = key.split(".", 1)[1]
+        nested = metadata.get("metadata")
+        if isinstance(nested, dict):
+            if nested_key in nested:
+                return nested.get(nested_key)
+        return metadata.get(nested_key)
+    return None
+
+
+def _hit_matches_metadata_filters(metadata: Dict[str, Any], metadata_filters: Optional[Dict[str, Any]]) -> bool:
+    if not metadata_filters:
+        return True
+
+    for raw_key, raw_value in metadata_filters.items():
+        key = str(raw_key).strip()
+        if not key or key in {"tenant_id", "metadata.tenant_id", "_visibility_user_id"}:
+            continue
+
+        if key in _TAGS_FILTER_KEYS:
+            expected = _as_str_list(raw_value)
+            if not expected:
+                continue
+            actual = _as_str_list(_get_hit_metadata_value(metadata, key))
+            if not actual:
+                return False
+            if not set(actual).intersection(expected):
+                return False
+            continue
+
+        resolved_key = _resolve_metadata_filter_path(key)
+        if not resolved_key:
+            continue
+        expected = _as_str_list(raw_value)
+        if not expected:
+            continue
+        actual = _get_hit_metadata_value(metadata, resolved_key)
+        if actual is None:
+            return False
+        if str(actual).strip() not in expected:
+            return False
+
+    return True
+
 def _build_qdrant_filter(metadata_filters: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """Build a Qdrant filter dict from metadata_filters.
 
@@ -455,7 +542,7 @@ def _build_qdrant_filter(metadata_filters: Optional[Dict[str, Any]] = None) -> O
     that enforces visibility rules — the requesting user can see:
       (1) all documents where ``tenant_id == user_id`` (own docs, any visibility), or
       (2) documents where ``visibility == "public"`` (shared/public docs from any
-          allowed tenant, e.g. "sealai").
+          allowed tenant, e.g. defined by RAG_SHARED_TENANT_ID).
     This prevents private docs from other tenants leaking through the filter.
     """
     if not metadata_filters:
@@ -492,6 +579,28 @@ def _build_qdrant_filter(metadata_filters: Optional[Dict[str, Any]] = None) -> O
 
     result: Dict[str, Any] = {"must": [tenant_condition]}
 
+    for raw_key, raw_value in metadata_filters.items():
+        key = str(raw_key).strip()
+        if not key or key in {"tenant_id", "metadata.tenant_id", "_visibility_user_id"}:
+            continue
+
+        if key in _TAGS_FILTER_KEYS:
+            tag_values = _as_str_list(raw_value)
+            if tag_values:
+                result["must"].append({"key": "metadata.tags", "match": {"any": tag_values}})
+            continue
+
+        resolved_key = _resolve_metadata_filter_path(key)
+        if not resolved_key:
+            continue
+        values = _as_str_list(raw_value)
+        if not values:
+            continue
+        if len(values) == 1:
+            result["must"].append({"key": resolved_key, "match": {"value": values[0]}})
+        else:
+            result["must"].append({"key": resolved_key, "match": {"any": values}})
+
     # Visibility gate: enforce public-only for docs the user does not own.
     # A point passes if EITHER:
     #   • its tenant_id equals the requesting user_id (own document), OR
@@ -500,7 +609,7 @@ def _build_qdrant_filter(metadata_filters: Optional[Dict[str, Any]] = None) -> O
     # satisfy ALL must-conditions AND AT LEAST ONE should-condition.
     if visibility_user_id:
         result["should"] = [
-            {"key": "visibility", "match": {"value": "public"}},
+            {"key": "visibility", "match": {"value": RAG_VISIBILITY_PUBLIC}},
             {"key": "tenant_id", "match": {"value": visibility_user_id}},
         ]
 
@@ -756,7 +865,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
 
     # Enforce tenant scoping via payload filters (single collection strategy).
     # Restrict payload filtering to tenant scope only.
-    raw_filters: Dict[str, Any] = dict(metadata_filters or {})
+    raw_filters = _normalize_supported_metadata_filters(metadata_filters)
     filters: Dict[str, Any] = {}
     tenant_values: List[str] = []
 
@@ -766,8 +875,8 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
         tenant_values.extend(_as_str_list(raw_filters.get("metadata.tenant_id")))
     if tenant:
         tenant_values.extend(_as_str_list(tenant))
-        if tenant != "sealai":
-            tenant_values.append("sealai")
+        if tenant != RAG_SHARED_TENANT_ID:
+            tenant_values.append(RAG_SHARED_TENANT_ID)
 
     if tenant_values:
         deduped: List[str] = []
@@ -779,9 +888,14 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
             deduped.append(item)
         filters["tenant_id"] = deduped if len(deduped) > 1 else deduped[0]
 
+    for key, value in raw_filters.items():
+        if key in {"tenant_id", "metadata.tenant_id", "_visibility_user_id"}:
+            continue
+        filters[key] = value
+
     # Visibility enforcement: pass user_id so _build_qdrant_filter can add
     # a should-clause that blocks private docs from other tenants.
-    effective_user_id = user_id or (tenant if tenant and tenant != "sealai" else None)
+    effective_user_id = user_id or (tenant if tenant and tenant != RAG_SHARED_TENANT_ID else None)
     if effective_user_id:
         filters["_visibility_user_id"] = effective_user_id
 
@@ -809,7 +923,7 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     bm25_tenant_value = bm25_filters.get("tenant_id")
     if isinstance(bm25_tenant_value, (list, tuple, set)):
         bm25_tenant_candidates = _as_str_list(bm25_tenant_value)
-        preferred_tenant = next((v for v in bm25_tenant_candidates if v != "sealai"), None)
+        preferred_tenant = next((v for v in bm25_tenant_candidates if v != RAG_SHARED_TENANT_ID), None)
         if preferred_tenant:
             bm25_filters["tenant_id"] = preferred_tenant
         elif bm25_tenant_candidates:
@@ -820,6 +934,11 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
         bm25_hits, bm25_error = _bm25_search(
             q, collection, top_k=bm25_k, metadata_filters=bm25_filters
         )
+        if bm25_hits:
+            bm25_hits = [
+                hit for hit in bm25_hits
+                if _hit_matches_metadata_filters(dict(hit.get("metadata") or {}), filters)
+            ]
 
     # Placeholder: BM25 could be merged here when enabled
     merged: List[Dict[str, Any]]

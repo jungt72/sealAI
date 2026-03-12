@@ -54,6 +54,7 @@ os.environ.setdefault("keycloak_expected_azp", "test-client")
 from app.api.v1.endpoints import rag as rag_endpoint  # noqa: E402
 from app.models.rag_document import RagDocument  # noqa: E402
 from app.services.auth.dependencies import RequestUser, get_current_request_user  # noqa: E402
+from app.services.rag import utils as rag_utils  # noqa: E402
 
 
 class DummyResult:
@@ -131,9 +132,15 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+def _configure_upload_root(tmp_path: Path) -> None:
+    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    rag_utils.UPLOAD_ROOT = str(tmp_path)
+    rag_utils._UPLOAD_DIR_READY = False
+
+
 @pytest.mark.anyio
 async def test_rag_upload_unauthorized(tmp_path: Path) -> None:
-    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    _configure_upload_root(tmp_path)
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     try:
         await rag_endpoint.upload_rag_document(
@@ -149,13 +156,8 @@ async def test_rag_upload_unauthorized(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_rag_upload_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    _configure_upload_root(tmp_path)
     dummy_session = DummySession()
-
-    async def fake_enqueue(_channel: str, _payload):
-        return None
-
-    monkeypatch.setattr(rag_endpoint, "enqueue_job", fake_enqueue)
 
     user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
@@ -179,19 +181,13 @@ async def test_rag_upload_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
     stored = next(iter(dummy_session.docs.values()))
     assert Path(stored.path).exists()
+    assert stored.route_key == "general_technical_doc"
 
 
 @pytest.mark.anyio
 async def test_rag_upload_dedup_same_tenant(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    _configure_upload_root(tmp_path)
     dummy_session = DummySession()
-    enqueued = []
-
-    async def fake_enqueue(_channel: str, payload):
-        enqueued.append(payload)
-        return None
-
-    monkeypatch.setattr(rag_endpoint, "enqueue_job", fake_enqueue)
 
     user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
@@ -215,7 +211,6 @@ async def test_rag_upload_dedup_same_tenant(monkeypatch: pytest.MonkeyPatch, tmp
     )
 
     assert first["document_id"] == second["document_id"]
-    assert len(enqueued) == 1
     assert len(dummy_session.docs) == 1
 
 
@@ -223,15 +218,8 @@ async def test_rag_upload_dedup_same_tenant(monkeypatch: pytest.MonkeyPatch, tmp
 async def test_rag_upload_same_sha_different_tenant(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    _configure_upload_root(tmp_path)
     dummy_session = DummySession()
-    enqueued = []
-
-    async def fake_enqueue(_channel: str, payload):
-        enqueued.append(payload)
-        return None
-
-    monkeypatch.setattr(rag_endpoint, "enqueue_job", fake_enqueue)
 
     user_a = RequestUser(user_id="tenant-a", username="user", sub="tenant-a", roles=[])
     user_b = RequestUser(user_id="tenant-b", username="user", sub="tenant-b", roles=[])
@@ -257,21 +245,13 @@ async def test_rag_upload_same_sha_different_tenant(
     )
 
     assert first["document_id"] != second["document_id"]
-    assert len(enqueued) == 2
     assert len(dummy_session.docs) == 2
 
 
 @pytest.mark.anyio
 async def test_rag_upload_retry_failed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    _configure_upload_root(tmp_path)
     dummy_session = DummySession()
-    enqueued = []
-
-    async def fake_enqueue(_channel: str, payload):
-        enqueued.append(payload)
-        return None
-
-    monkeypatch.setattr(rag_endpoint, "enqueue_job", fake_enqueue)
 
     tenant_id = "tenant-1"
     existing_id = "existing-doc"
@@ -312,4 +292,3 @@ async def test_rag_upload_retry_failed(monkeypatch: pytest.MonkeyPatch, tmp_path
     stored = dummy_session.docs[existing_id]
     assert stored.status == "processing"
     assert stored.error is None
-    assert len(enqueued) == 1

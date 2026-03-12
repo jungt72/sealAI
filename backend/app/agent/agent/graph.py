@@ -1,11 +1,13 @@
 from typing import Literal, List, Optional, Any
+import logging
 from langgraph.graph import StateGraph, START, END
 from app.agent.agent.state import AgentState, SealingAIState
 from app.agent.evidence.models import Claim, ClaimType
 from app.agent.agent.logic import evaluate_claim_conflicts, process_cycle_update, extract_parameters
 from app.agent.agent.tools import submit_claim
-from app.agent.agent.knowledge import load_fact_cards, retrieve_fact_cards, FactCard
+from app.agent.agent.knowledge import retrieve_rag_context, retrieve_fact_cards_fallback
 from app.agent.agent.prompts import SYSTEM_PROMPT_TEMPLATE
+from app.agent.agent.selection import build_selection_state, build_final_reply
 from langchain_core.messages import ToolMessage, AIMessage, SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langchain_core.runnables import RunnableConfig
@@ -16,19 +18,12 @@ import json
 # Umgebungsvariablen laden (API Keys etc.)
 load_dotenv()
 
-# Pfad zur Knowledge Base
-_KB_PATH = "upload/PTFE/SEALAI_KB_PTFE_factcards_gates_v1_3.json"
-_CARDS_CACHE: Optional[List[FactCard]] = None
-
-def get_fact_cards() -> List[FactCard]:
-    """Lazy Loader für die Knowledge Base."""
-    global _CARDS_CACHE
-    if _CARDS_CACHE is None:
-        # Versuche den Pfad relativ zur Root zu finden
-        root_path = os.getcwd()
-        path = os.path.join(root_path, _KB_PATH)
-        _CARDS_CACHE = load_fact_cards(path)
-    return _CARDS_CACHE
+logger = logging.getLogger(__name__)
+_NON_BINDING_ASSIST_INSTRUCTION = (
+    "Du darfst nur explizit genannte Beobachtungen als nicht-bindende Rohclaims erfassen. "
+    "Keine Release-Entscheidung, keine RFQ-Admissibility, keine Governance-Wertung, "
+    "keine Compound- oder Materialfreigabe ableiten."
+)
 
 def get_llm(config: Optional[RunnableConfig] = None):
     """
@@ -36,13 +31,15 @@ def get_llm(config: Optional[RunnableConfig] = None):
     """
     return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
+async def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
     """
     Reasoning Node (Phase D1 - RAG Injection).
-    Reichert den Kontext mit FactCards aus der Knowledge Base an.
+    Reichert den Kontext mit FactCards an.
+    Nutzt Real-RAG als Primärquelle mit sauberem async Fallback (Phase K19).
     """
     messages = state.get("messages", [])
     current_profile = state.get("working_profile", {})
+    tenant_id = state.get("tenant_id")
     
     # 1. Knowledge Retrieval
     # Suche nach der letzten HumanMessage für die RAG-Suche
@@ -52,15 +49,55 @@ def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -
             query = msg.content
             break
             
-    cards = get_fact_cards()
-    relevant_cards = retrieve_fact_cards(query, cards) if query else []
+    # Primärer Pfad: Real RAG (Sauberer Async-Aufruf)
+    path_used = "real_rag"
+    try:
+        relevant_cards = await retrieve_rag_context(query, tenant_id)
+    except Exception as e:
+        logger.error(f"[RAG] Real-RAG Error, falling back: {e}", exc_info=True)
+        relevant_cards = []
+        path_used = "real_rag_error_fallback"
+
+    # Fallback Pfad: Pseudo RAG (lokales JSON via knowledge-Service)
+    if not relevant_cards and query:
+        # retrieve_fact_cards_fallback ist aktuell synchron
+        relevant_cards = retrieve_fact_cards_fallback(query)
+        if path_used != "real_rag_error_fallback":
+            path_used = "pseudo_rag_fallback"
+
+    logger.info(f"[RAG] Path: {path_used}, Hits: {len(relevant_cards)}, Tenant: {tenant_id}")
+    print(f"[RAG] Path: {path_used}, Hits: {len(relevant_cards)}, Tenant: {tenant_id}", flush=True)
     
     # 2. Heuristische Extraktion (Wave 1: Bleibt im working_profile)
-    all_cards_data = [{"topic": c.topic, "content": c.content, "tags": c.tags} for c in cards]
-    new_profile = extract_parameters(query, current_profile, all_cards_data) if query else current_profile
+    # Wir übergeben nur die relevanten Karten an extract_parameters (H8 Alternativen)
+    cards_data = [
+        {
+            "id": c.id,
+            "evidence_id": c.evidence_id,
+            "source_ref": c.source_ref,
+            "topic": c.topic,
+            "content": c.content,
+            "tags": c.tags,
+            "retrieval_rank": c.retrieval_rank,
+            "retrieval_score": c.retrieval_score,
+            "metadata": c.metadata,
+            "normalized_evidence": getattr(c, "normalized_evidence", None),
+        }
+        for c in relevant_cards
+    ]
+    cards_data = sorted(
+        cards_data,
+        key=lambda card: (
+            str(card.get("evidence_id") or card.get("id") or ""),
+            str(card.get("topic") or ""),
+        ),
+    )
+    new_profile = extract_parameters(query, current_profile, cards_data) if query else current_profile
 
     # 3. Context Formatting
-    context_str = "\n---\n".join([f"Topic: {c.topic}\nContent: {c.content}" for c in relevant_cards])
+    context_str = "\n---\n".join(
+        [f"Topic: {card.get('topic', '')}\nContent: {card.get('content', '')}" for card in cards_data]
+    )
     if not context_str:
         context_str = "Keine relevanten Informationen in der Wissensdatenbank gefunden."
         
@@ -69,6 +106,7 @@ def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -
         context=context_str,
         working_profile=json.dumps(new_profile, indent=2)
     )
+    system_prompt = f"{_NON_BINDING_ASSIST_INSTRUCTION}\n\n{system_prompt}"
     system_msg = SystemMessage(content=system_prompt)
     
     # 5. LLM Call
@@ -78,10 +116,8 @@ def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -
     # SystemMessage GANZ VORNE anfügen
     full_messages = [system_msg] + list(messages)
     
-    response = llm_with_tools.invoke(full_messages)
-    
-    # FactCards für Tool-Node persistieren (Phase H6)
-    cards_data = [{"topic": c.topic, "content": c.content, "tags": c.tags} for c in relevant_cards]
+    # invoke() ist synchron, invoke_async/ainvoke() wäre besser für echte async-chains
+    response = await llm_with_tools.ainvoke(full_messages)
     
     return {
         "messages": [response],
@@ -132,12 +168,25 @@ def evidence_tool_node(state: AgentState) -> dict:
         relevant_fact_cards=state.get("relevant_fact_cards", [])
     )
 
-    # 3. State-Update durchführen (Phase A8)
+    raw_claims = [
+        {
+            "statement": claim.statement,
+            "claim_type": claim.claim_type,
+            "confidence": claim.confidence,
+            "source_fact_ids": claim.source_fact_ids,
+            "source": "llm_submit_claim",
+        }
+        for claim in new_claims
+    ]
+
+    # 3. State-Update ausschließlich über den Engineering-Firewall-Reducer.
     new_sealing_state = process_cycle_update(
         old_state=old_sealing_state,
         intelligence_conflicts=intelligence_conflicts,
         expected_revision=current_revision,
-        validated_params=validated_params
+        validated_params=validated_params,
+        raw_claims=raw_claims,
+        relevant_fact_cards=state.get("relevant_fact_cards", []),
     )
 
     # 4. Tool-Feedback (Firewall Feedback Loop H5)
@@ -181,7 +230,26 @@ def evidence_tool_node(state: AgentState) -> dict:
         "sealing_state": new_sealing_state
     }
 
-def router(state: AgentState) -> Literal["evidence_tool_node", END]:
+def selection_node(state: AgentState) -> dict:
+    sealing_state = state["sealing_state"]
+    selection_state = build_selection_state(
+        relevant_fact_cards=state.get("relevant_fact_cards", []),
+        cycle_state=sealing_state.get("cycle", {}),
+        governance_state=sealing_state.get("governance", {}),
+        asserted_state=sealing_state.get("asserted", {}),
+    )
+    new_sealing_state = dict(sealing_state)
+    new_sealing_state["selection"] = selection_state
+    return {"sealing_state": new_sealing_state}
+
+
+def final_response_node(state: AgentState) -> dict:
+    selection_state = state["sealing_state"].get("selection", {})
+    reply = build_final_reply(selection_state)
+    return {"messages": [AIMessage(content=reply)]}
+
+
+def router(state: AgentState) -> Literal["evidence_tool_node", "selection_node"]:
     """
     Conditional Edge zur Prüfung auf Tool-Calls.
     Ermöglicht deterministisches Routing (Blueprint Section 03).
@@ -192,7 +260,7 @@ def router(state: AgentState) -> Literal["evidence_tool_node", END]:
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "evidence_tool_node"
     
-    return END
+    return "selection_node"
 
 # Aufbau der Graphen-Topologie
 graph_builder = StateGraph(AgentState)
@@ -200,8 +268,10 @@ graph_builder = StateGraph(AgentState)
 # Nodes hinzufügen
 graph_builder.add_node("reasoning_node", reasoning_node)
 graph_builder.add_node("evidence_tool_node", evidence_tool_node)
+graph_builder.add_node("selection_node", selection_node)
+graph_builder.add_node("final_response_node", final_response_node)
 
-# Edges definieren (START -> reasoning_node <--> evidence_tool_node -> END)
+# Edges definieren (START -> reasoning_node <--> evidence_tool_node -> selection_node -> final_response_node -> END)
 graph_builder.add_edge(START, "reasoning_node")
 
 graph_builder.add_conditional_edges(
@@ -209,11 +279,13 @@ graph_builder.add_conditional_edges(
     router,
     {
         "evidence_tool_node": "evidence_tool_node",
-        END: END
+        "selection_node": "selection_node",
     }
 )
 
 graph_builder.add_edge("evidence_tool_node", "reasoning_node")
+graph_builder.add_edge("selection_node", "final_response_node")
+graph_builder.add_edge("final_response_node", END)
 
 # Kompilieren des Graphen
 app = graph_builder.compile()

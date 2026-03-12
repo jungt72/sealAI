@@ -1,27 +1,67 @@
-from typing import Annotated, Any, Dict, List, Optional, TypedDict, Union
+from typing import Annotated, Any, Dict, List, Optional, TypedDict, Literal
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
+
+ReleaseStatus = Literal[
+    "inadmissible",
+    "precheck_only",
+    "manufacturer_validation_required",
+    "rfq_ready",
+]
+RFQAdmissibility = Literal["inadmissible", "provisional", "ready"]
+SpecificityLevel = Literal["family_only", "subfamily", "compound_required", "product_family_required"]
+IdentityClass = Literal[
+    "identity_confirmed",
+    "identity_probable",
+    "identity_family_only",
+    "identity_unresolved",
+]
+
+
+class ObservedInputRecord(TypedDict, total=False):
+    """Blueprint v1.2 Section 02: immutable raw intake before normalization."""
+
+    source: str
+    raw_text: str
+    claim_type: str
+    confidence: float
+    source_fact_ids: List[str]
+
+
+class IdentityRecord(TypedDict, total=False):
+    """Blueprint v1.2 Section 02: normalized field metadata with identity class."""
+
+    raw_value: Any
+    normalized_value: Any
+    identity_class: IdentityClass
+    normalization_confidence: float
+    mapping_reason: str
+    source_fact_ids: List[str]
+    deterministic_source: str
+    evidence_quality: str
+    authority_quality: str
+    temporal_quality: str
 
 class ObservedLayer(TypedDict):
     """
     Observed Layer (Rohwerte, Units, Originalformulierungen).
-    Capture Layer zur Erhöhung der Auditierbarkeit (Blueprint Section 02).
+    Blueprint Section 02: technisch wirksame Daten starten hier und bleiben roh.
     """
-    observed_inputs: List[Dict[str, Any]]
+    observed_inputs: List[ObservedInputRecord]
     raw_parameters: Dict[str, Any]
 
 class NormalizedLayer(TypedDict):
     """
     Normalized Layer (Identity Gating).
-    Strikte Trennung zwischen Rohdaten und validierten Identitäten (identity_class).
+    Blueprint Section 02 + Section 03: nur deterministisch validierte Normalisierung.
     """
-    identity_records: Dict[str, Any]
+    identity_records: Dict[str, IdentityRecord]
     normalized_parameters: Dict[str, Any]
 
 class AssertedLayer(TypedDict):
     """
     Asserted Layer (Typed Profiles).
-    Fachlich validierter technischer State (Medium, Machine, Installation).
+    Blueprint Section 02: bindender technischer State nur aus Normalized-Reducer.
     """
     medium_profile: Dict[str, Any]
     machine_profile: Dict[str, Any]
@@ -32,33 +72,88 @@ class AssertedLayer(TypedDict):
 class GovernanceLayer(TypedDict):
     """
     Governance Layer (Compliance & Readiness).
-    Überwachung der Engineering Firewall und RFQ-Admissibility.
+    Blueprint Sections 02, 06, 08: normative Governance-Enumerationen und Gates.
     """
-    release_status: str  # inadmissible / precheck_only / manufacturer_validation_required / rfq_ready
-    rfq_admissibility: str  # inadmissible / provisional / ready
+    release_status: ReleaseStatus
+    rfq_admissibility: RFQAdmissibility
+    specificity_level: SpecificityLevel
     scope_of_validity: List[str]
+    assumptions_active: List[str]
+    gate_failures: List[str]
+    unknowns_release_blocking: List[str]
+    unknowns_manufacturer_validation: List[str]
     conflicts: List[Dict[str, Any]]
 
 class CycleLayer(TypedDict):
     """
     Cycle Control (Determinismus & Revision).
-    Revision-Tracking und deterministischer Assertion-Cycle (Blueprint Section 03).
+    Blueprint Section 02 + Section 12: revisionsgebunden und obsoleszenzfähig.
     """
     analysis_cycle_id: str
     snapshot_parent_revision: int
+    superseded_by_cycle: Optional[str]
     contract_obsolete: bool
+    contract_obsolete_reason: Optional[str]
     state_revision: int
+
+class SelectionCandidate(TypedDict):
+    candidate_id: str
+    candidate_kind: str
+    material_family: str
+    filler_hint: Optional[str]
+    grade_name: Optional[str]
+    manufacturer_name: Optional[str]
+    viability_status: str
+    block_reason: Optional[str]
+    evidence_refs: List[str]
+
+class RecommendationArtifact(TypedDict):
+    """
+    Non-binding projection artifact.
+    Blueprint Section 08: never the source of technical truth or release truth.
+    """
+
+    selection_status: str
+    winner_candidate_id: Optional[str]
+    candidate_ids: List[str]
+    viable_candidate_ids: List[str]
+    blocked_candidates: List[Dict[str, str]]
+    evidence_basis: List[str]
+    release_status: ReleaseStatus
+    rfq_admissibility: RFQAdmissibility
+    specificity_level: SpecificityLevel
+    output_blocked: bool
+    trace_provenance_refs: List[str]
+
+class SelectionLayer(TypedDict):
+    """
+    Non-binding UI projection only.
+    Kept for minimal-diff compatibility with /api/agent responses.
+    """
+
+    selection_status: str
+    candidates: List[SelectionCandidate]
+    viable_candidate_ids: List[str]
+    blocked_candidates: List[Dict[str, str]]
+    winner_candidate_id: Optional[str]
+    recommendation_artifact: Optional[RecommendationArtifact]
+    release_status: ReleaseStatus
+    rfq_admissibility: RFQAdmissibility
+    specificity_level: SpecificityLevel
+    output_blocked: bool
 
 class SealingAIState(TypedDict):
     """
-    Unser striktes 5-Schichten-Modell aus Phase A.
-    Verbindet technische Tiefe mit LLM-Orchestrierung ohne Engineering-Firewall-Bruch.
+    Blueprint Section 02 / Phase A1:
+    bindender State läuft über Observed -> Normalized -> Asserted -> Governance -> Cycle.
+    `selection` bleibt ausschließlich als nicht-bindende Projektion für den Live-Pfad bestehen.
     """
     observed: ObservedLayer
     normalized: NormalizedLayer
     asserted: AssertedLayer
     governance: GovernanceLayer
     cycle: CycleLayer
+    selection: SelectionLayer
 
 class AgentState(TypedDict):
     """

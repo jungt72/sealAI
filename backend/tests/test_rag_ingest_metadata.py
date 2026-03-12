@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 import types
@@ -98,6 +99,10 @@ def test_ingest_file_enriches_metadata(monkeypatch, tmp_path: Path) -> None:
         visibility="private",
         sha256="hash-1",
         source="upload",
+        route_key="general_technical_doc",
+        source_system="paperless",
+        source_document_id="paperless-11",
+        source_modified_at=datetime(2026, 3, 12, 10, 0, tzinfo=timezone.utc),
     )
 
     docs = captured.get("docs") or []
@@ -109,6 +114,13 @@ def test_ingest_file_enriches_metadata(monkeypatch, tmp_path: Path) -> None:
     assert meta.get("source_path") == "doc.txt"
     assert meta.get("page") == 1
     assert meta.get("section") == "Einleitung"
+    assert meta.get("category") == "specs"
+    assert meta.get("route_key") == "general_technical_doc"
+    assert meta.get("tags") == ["a", "b"]
+    assert meta.get("source_type") == "crawl"
+    assert meta.get("source_system") == "paperless"
+    assert meta.get("source_document_id") == "paperless-11"
+    assert meta.get("source_modified_at") == "2026-03-12T10:00:00+00:00"
 
 
 def test_ingest_file_skips_empty_document_in_legacy_mode(monkeypatch, tmp_path: Path) -> None:
@@ -139,7 +151,9 @@ def test_ingest_file_skips_empty_document_in_legacy_mode(monkeypatch, tmp_path: 
         tenant_id="tenant-1",
         document_id="doc-empty",
         category="specs",
+        route_key="general_technical_doc",
     )
 
     assert result["chunks"] == 0
+    assert result["route_key"] == "general_technical_doc"
     assert called["from_documents"] == 0
