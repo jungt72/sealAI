@@ -142,6 +142,20 @@ class SelectionLayer(TypedDict):
     specificity_level: SpecificityLevel
     output_blocked: bool
 
+
+class RelevantEvidenceRecord(TypedDict, total=False):
+    """Bound evidence snapshot for transparent API/state inspection.
+
+    Blueprint Sections 02/12: evidence remains auditable in the productive path
+    without creating a second governance model.
+    """
+
+    evidence_id: str
+    source_ref: str
+    topic: str
+    metadata: Dict[str, Any]
+    normalized_evidence: Dict[str, Any]
+
 class SealingAIState(TypedDict):
     """
     Blueprint Section 02 / Phase A1:
@@ -154,6 +168,7 @@ class SealingAIState(TypedDict):
     governance: GovernanceLayer
     cycle: CycleLayer
     selection: SelectionLayer
+    relevant_evidence: List[RelevantEvidenceRecord]
 
 class AgentState(TypedDict):
     """

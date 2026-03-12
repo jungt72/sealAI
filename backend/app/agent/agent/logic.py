@@ -22,6 +22,27 @@ _NORMATIVE_SPECIFICITY = {
     "compound_required",
     "product_family_required",
 }
+_SPECIFICITY_ORDER = {
+    "family_only": 0,
+    "subfamily": 1,
+    "compound_required": 2,
+    "product_family_required": 2,
+}
+_FIELD_SPECIFICITY_REQUIREMENT = {
+    "material_family": "family_only",
+    "filler_hint": "subfamily",
+    "grade_name": "subfamily",
+    "manufacturer_name": "compound_required",
+}
+_CONTRACT_HARD_BLOCKERS = {"document_collision_unresolved"}
+_CONTRACT_MANUFACTURER_BLOCKERS = {
+    "audit_gate_not_passed",
+    "marketing_estimate_never_release_relevant",
+    "distributor_sheet_ceiling_without_manufacturer_grade_sheet",
+    "color_binding_missing",
+    "critical_test_context_missing",
+    "non_standard_unit_block",
+}
 _BLOCKING_CONFLICT_SEVERITIES = {"CRITICAL", "BLOCKING_UNKNOWN"}
 _MANUFACTURER_CONFLICT_SEVERITIES = {"RESOLUTION_REQUIRES_MANUFACTURER_SCOPE"}
 _BLOCKING_CONFLICT_TYPES = {
@@ -102,6 +123,7 @@ def _ensure_state_shape(state: SealingAIState) -> SealingAIState:
             "output_blocked": True,
         },
     )
+    state.setdefault("relevant_evidence", [])
     return state
 
 
@@ -121,6 +143,10 @@ def _normalize_specificity(value: Optional[str]) -> str:
     if value in _NORMATIVE_SPECIFICITY:
         return value
     return "family_only"
+
+
+def _specificity_rank(value: Optional[str]) -> int:
+    return _SPECIFICITY_ORDER.get(_normalize_specificity(value), 0)
 
 
 def _normalize_conflict_record(conflict: Dict[str, Any]) -> Dict[str, Any]:
@@ -235,6 +261,62 @@ def _build_evidence_index(relevant_fact_cards: Optional[List[Dict[str, Any]]]) -
     return evidence_index
 
 
+def _read_contract_selection_readiness(normalized_evidence: Dict[str, Any]) -> Dict[str, Any]:
+    contract = normalized_evidence.get("datasheet_contract")
+    if isinstance(contract, dict):
+        readiness = contract.get("selection_readiness")
+        if isinstance(readiness, dict):
+            return readiness
+    return {}
+
+
+def _derive_contract_governance(
+    identity_records: Dict[str, Dict[str, Any]],
+    evidence_index: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    evidence_index = evidence_index or {}
+    referenced_fact_ids: List[str] = []
+    for identity in identity_records.values():
+        for fact_id in identity.get("source_fact_ids") or []:
+            fact_id_str = str(fact_id)
+            if fact_id_str in evidence_index:
+                referenced_fact_ids.append(fact_id_str)
+
+    max_specificity_level: Optional[str] = None
+    selection_allowed = True
+    compound_level_allowed = True
+    release_relevant = True
+    rfq_ready_eligible = True
+    blocking_reasons: List[str] = []
+    contract_present = False
+
+    for fact_id in dict.fromkeys(referenced_fact_ids):
+        normalized_evidence = evidence_index[fact_id]["normalized_evidence"]
+        readiness = _read_contract_selection_readiness(normalized_evidence)
+        if not readiness:
+            continue
+        contract_present = True
+        current_specificity = _normalize_specificity(str(readiness.get("max_specificity_level") or "family_only"))
+        if max_specificity_level is None or _specificity_rank(current_specificity) < _specificity_rank(max_specificity_level):
+            max_specificity_level = current_specificity
+        selection_allowed = selection_allowed and bool(readiness.get("selection_allowed", True))
+        compound_level_allowed = compound_level_allowed and bool(readiness.get("compound_level_allowed", False))
+        release_relevant = release_relevant and bool(readiness.get("release_relevant", False))
+        rfq_ready_eligible = rfq_ready_eligible and bool(readiness.get("rfq_ready_eligible", False))
+        blocking_reasons.extend(str(reason) for reason in readiness.get("blocking_reasons") or [] if reason)
+
+    return {
+        "present": contract_present,
+        "active": contract_present and (bool(blocking_reasons) or not selection_allowed or rfq_ready_eligible),
+        "selection_allowed": selection_allowed,
+        "compound_level_allowed": compound_level_allowed,
+        "release_relevant": release_relevant if contract_present else False,
+        "rfq_ready_eligible": rfq_ready_eligible if contract_present else False,
+        "max_specificity_level": max_specificity_level or "family_only",
+        "blocking_reasons": list(dict.fromkeys(blocking_reasons)),
+    }
+
+
 def _derive_claim_bound_specificity(
     raw_text: str,
     source_fact_ids: List[str],
@@ -263,6 +345,8 @@ def _derive_claim_bound_specificity(
         authority_reasons = []
         temporal_states = []
         temporal_reasons = []
+        contract_conflicts = []
+        contract_specificity_ceilings = []
         for fact_id in bound_fact_ids:
             normalized_evidence = evidence_index[fact_id]["normalized_evidence"]
             quality_entry = normalized_evidence.get("identity_quality", {}).get(field_name, {})
@@ -275,6 +359,45 @@ def _derive_claim_bound_specificity(
             temporal_states.append(normalized_evidence.get("temporal_quality"))
             if normalized_evidence.get("temporal_reason"):
                 temporal_reasons.append(str(normalized_evidence["temporal_reason"]))
+            readiness = _read_contract_selection_readiness(normalized_evidence)
+            if readiness:
+                blocking_reasons = [str(reason) for reason in readiness.get("blocking_reasons") or [] if reason]
+                max_specificity = _normalize_specificity(str(readiness.get("max_specificity_level") or "family_only"))
+                required_specificity = _FIELD_SPECIFICITY_REQUIREMENT[field_name]
+                if not readiness.get("selection_allowed", True) and "document_collision_unresolved" in blocking_reasons:
+                    contract_conflicts.append("document_collision_unresolved")
+                elif _specificity_rank(max_specificity) < _specificity_rank(required_specificity):
+                    contract_specificity_ceilings.append(
+                        blocking_reasons[0] if blocking_reasons else f"datasheet_contract_specificity_ceiling:{field_name}"
+                    )
+                elif field_name == "manufacturer_name" and not bool(readiness.get("compound_level_allowed", False)):
+                    contract_specificity_ceilings.append(
+                        blocking_reasons[0] if blocking_reasons else "datasheet_contract_compound_level_blocked"
+                    )
+        if contract_conflicts:
+            derived[field_name] = {
+                "status": "conflict",
+                "source_fact_ids": bound_fact_ids,
+                "mapping_reason": contract_conflicts[0],
+                "deterministic_source": "datasheet_contract_selection_readiness",
+                "raw_value": " | ".join(unique_values) if unique_values else raw_text,
+                "evidence_quality": "conflict",
+                "authority_quality": "unknown",
+                "temporal_quality": "unknown",
+            }
+            continue
+        if unique_values and contract_specificity_ceilings:
+            derived[field_name] = {
+                "status": "contract_limited",
+                "source_fact_ids": bound_fact_ids,
+                "mapping_reason": contract_specificity_ceilings[0],
+                "deterministic_source": "datasheet_contract_selection_readiness",
+                "raw_value": " | ".join(unique_values),
+                "evidence_quality": "qualified",
+                "authority_quality": "sufficient",
+                "temporal_quality": "sufficient",
+            }
+            continue
         if any(state == "conflict" for state in quality_states):
             derived[field_name] = {
                 "status": "conflict",
@@ -552,7 +675,10 @@ def _derive_specificity_state(identity_records: Dict[str, Dict[str, Any]]) -> tu
     return "family_only", manufacturer_unknowns, scope_markers
 
 
-def _derive_governance_from_state(state: SealingAIState) -> None:
+def _derive_governance_from_state(
+    state: SealingAIState,
+    evidence_index: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> None:
     """Blueprint Sections 06/08: deterministic admissibility only from normalized/asserted/conflicts."""
 
     governance = state["governance"]
@@ -565,9 +691,18 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
         "deterministic_agent_firewall",
         "observed_normalized_asserted_reducer",
     ]
+    contract_governance = _derive_contract_governance(identity_records, evidence_index=evidence_index)
 
     specificity_level, specificity_unknowns, specificity_scope_markers = _derive_specificity_state(identity_records)
     governance["specificity_level"] = _normalize_specificity(specificity_level)
+    if contract_governance["present"]:
+        governance["specificity_level"] = (
+            contract_governance["max_specificity_level"]
+            if _specificity_rank(contract_governance["max_specificity_level"]) < _specificity_rank(governance["specificity_level"])
+            else governance["specificity_level"]
+        )
+        scope_markers.append("datasheet_contract_selection_readiness")
+        scope_markers.append(f"datasheet_contract_max_specificity:{governance['specificity_level']}")
     manufacturer_unknowns.extend(specificity_unknowns)
     scope_markers.extend(specificity_scope_markers)
     specificity_level = governance["specificity_level"]
@@ -590,6 +725,18 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
         elif severity in _BLOCKING_CONFLICT_SEVERITIES or conflict_type in _BLOCKING_CONFLICT_TYPES:
             gate_failures.append(conflict.get("message") or conflict.get("type") or "critical_conflict")
             blocking_unknowns.append(conflict_type or "critical_conflict")
+
+    if contract_governance["active"]:
+        for reason in contract_governance["blocking_reasons"]:
+            if not reason:
+                continue
+            if reason in _CONTRACT_HARD_BLOCKERS or not contract_governance["selection_allowed"]:
+                gate_failures.append(reason)
+                blocking_unknowns.append(reason)
+            elif reason in _CONTRACT_MANUFACTURER_BLOCKERS:
+                manufacturer_unknowns.append(reason)
+            else:
+                manufacturer_unknowns.append(reason)
 
     # Deduplicate while preserving order.
     governance["conflicts"] = conflicts
@@ -617,6 +764,13 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
     elif not has_asserted_signal:
         governance["release_status"] = "precheck_only"
         governance["rfq_admissibility"] = "inadmissible"
+    elif contract_governance["active"]:
+        if contract_governance["rfq_ready_eligible"]:
+            governance["release_status"] = "rfq_ready"
+            governance["rfq_admissibility"] = "ready"
+        else:
+            governance["release_status"] = "manufacturer_validation_required"
+            governance["rfq_admissibility"] = "provisional"
     elif governance["unknowns_manufacturer_validation"]:
         governance["release_status"] = "manufacturer_validation_required"
         governance["rfq_admissibility"] = "provisional"
@@ -635,6 +789,22 @@ def _advance_cycle_state(state: SealingAIState, expected_revision: int) -> None:
     cycle["superseded_by_cycle"] = None
     cycle["contract_obsolete"] = False
     cycle["contract_obsolete_reason"] = None
+
+
+def _snapshot_relevant_evidence(relevant_fact_cards: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    snapshot: List[Dict[str, Any]] = []
+    for card in relevant_fact_cards or []:
+        normalized_evidence = card.get("normalized_evidence") or normalize_fact_card_evidence(card)
+        snapshot.append(
+            {
+                "evidence_id": str(card.get("evidence_id") or card.get("id") or ""),
+                "source_ref": str(card.get("source_ref") or card.get("source") or ""),
+                "topic": str(card.get("topic") or ""),
+                "metadata": dict(card.get("metadata") or {}),
+                "normalized_evidence": normalized_evidence,
+            }
+        )
+    return snapshot
 
 
 def apply_engineering_firewall_transition(
@@ -681,8 +851,9 @@ def apply_engineering_firewall_transition(
         for conflict in intelligence_conflicts
         if conflict.get("field")
     }
+    new_state["relevant_evidence"] = _snapshot_relevant_evidence(relevant_fact_cards)
     _derive_asserted_from_normalized(new_state, blocked_fields=blocked_fields)
-    _derive_governance_from_state(new_state)
+    _derive_governance_from_state(new_state, evidence_index=evidence_index)
     _advance_cycle_state(new_state, expected_revision=expected_revision)
     return new_state
 

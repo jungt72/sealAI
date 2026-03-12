@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from app.agent.api.models import ChatRequest, ChatResponse
 from app.agent.agent.graph import app
+from app.agent.agent.selection import build_final_reply
 from app.agent.agent.state import AgentState
 from app.agent.agent.sync import sync_working_profile_to_state
 from app.agent.cli import create_initial_state
@@ -15,6 +16,11 @@ router = APIRouter()
 
 # Globaler In-Memory Session Store (Phase F2)
 SESSION_STORE: Dict[str, AgentState] = {}
+
+
+def _get_final_reply(state: AgentState) -> str:
+    selection = state.get("sealing_state", {}).get("selection", {})
+    return build_final_reply(selection)
 
 def execute_agent(state: AgentState) -> AgentState:
     """Kapselt den Aufruf des LangGraph-Agenten."""
@@ -47,15 +53,9 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
         # 2. Über LangGraph Events iterieren (Version v2)
         async for event in app.astream_events(current_state, version="v2"):
             kind = event["event"]
-            
-            # Token-Streaming vom Chat-Modell
-            if kind == "on_chat_model_stream":
-                chunk = event["data"].get("chunk")
-                if chunk and chunk.content:
-                    yield f"data: {json.dumps({'chunk': chunk.content})}\n\n"
-            
+
             # Finalen State am Ende der Kette abgreifen
-            elif kind == "on_chain_end" and event["name"] == "LangGraph":
+            if kind == "on_chain_end" and event["name"] == "LangGraph":
                 final_state = event["data"].get("output")
 
         # 3. Session-Store aktualisieren
@@ -63,12 +63,16 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
             # Wave 1: Sync aufrufen
             final_state = sync_working_profile_to_state(final_state)
             SESSION_STORE[session_id] = final_state
+            final_reply = _get_final_reply(final_state)
+
+            yield f"data: {json.dumps({'reply': final_reply})}\n\n"
             
             # 4. Finalen technischen State senden
-            yield f"data: {json.dumps({
+            payload = {
                 'state': final_state['sealing_state'],
                 'working_profile': final_state.get('working_profile', {})
-            })}\n\n"
+            }
+            yield f"data: {json.dumps(payload)}\n\n"
         
         yield "data: [DONE]\n\n"
         
@@ -90,8 +94,8 @@ async def chat_endpoint(request: ChatRequest):
     try:
         updated_state = execute_agent(current_state)
         SESSION_STORE[session_id] = updated_state
-        last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
-        return ChatResponse(reply=last_msg.content, session_id=session_id, sealing_state=updated_state["sealing_state"])
+        reply = _get_final_reply(updated_state)
+        return ChatResponse(reply=reply, session_id=session_id, sealing_state=updated_state["sealing_state"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -3,6 +3,20 @@ import re
 import json
 from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
+from app.agent.domain.datasheet_contract import (
+    AuditContract,
+    DataExtractionMethod,
+    DataOriginType,
+    DatasheetContractV23,
+    DocumentBindingStrength,
+    DocumentClass,
+    DocumentCollisionStatus,
+    DocumentIdentity,
+    DocumentMetadata,
+    EvidenceStrengthClass,
+    HumanReviewStatus,
+    TestSpecimenSource,
+)
 from app.agent.domain.parameters import PhysicalParameter
 from app.agent.domain.limits import OperatingLimit
 
@@ -13,6 +27,12 @@ _FILLER_PATTERN = re.compile(r"\b(filled|glass[- ]filled|carbon[- ]filled|bronze
 _YEAR_PATTERN = re.compile(r"\b(19\d{2}|20\d{2})\b")
 _KB_SOURCE_PATH = Path(__file__).resolve().parents[2] / "data" / "kb" / "SEALAI_KB_PTFE_factcards_gates_v1_3.json"
 _SOURCE_CATALOG_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
+_MANUFACTURER_DOCUMENT_TYPES = {
+    "manufacturer_datasheet",
+    "manufacturer_technical_brochure",
+    "manufacturer_brochure",
+    "manufacturer_guide",
+}
 
 
 def _read_metadata_str(metadata: Dict[str, Any], *keys: str) -> Optional[str]:
@@ -59,7 +79,24 @@ def _source_entry(card_dict: dict) -> Dict[str, Any]:
         catalog_entry = _load_source_catalog().get(str(source_key), {}) or {}
 
     entry = dict(catalog_entry)
-    for key in ("source", "source_type", "source_rank", "title", "url", "edition"):
+    for key in (
+        "source",
+        "source_type",
+        "source_rank",
+        "title",
+        "url",
+        "edition",
+        "revision_date",
+        "published_at",
+        "edition_year",
+        "document_revision",
+        "manufacturer_name",
+        "product_line",
+        "grade_name",
+        "material_family",
+        "evidence_scope",
+        "scope_of_validity",
+    ):
         if card_dict.get(key) not in (None, ""):
             entry[key] = card_dict.get(key)
     for meta_key, target_key in (
@@ -69,33 +106,345 @@ def _source_entry(card_dict: dict) -> Dict[str, Any]:
         ("title", "title"),
         ("url", "url"),
         ("edition", "edition"),
+        ("revision_date", "revision_date"),
+        ("published_at", "published_at"),
+        ("edition_year", "edition_year"),
+        ("document_revision", "document_revision"),
+        ("source_version", "document_revision"),
+        ("effective_date", "published_at"),
+        ("manufacturer_name", "manufacturer_name"),
+        ("manufacturer", "manufacturer_name"),
+        ("product_line", "product_line"),
+        ("grade_name", "grade_name"),
+        ("grade", "grade_name"),
+        ("material_family", "material_family"),
+        ("material", "material_family"),
+        ("evidence_scope", "evidence_scope"),
+        ("scope_of_validity", "scope_of_validity"),
     ):
-        if metadata.get(meta_key) not in (None, "") and target_key not in entry:
+        if metadata.get(meta_key) not in (None, "") and entry.get(target_key) in (None, ""):
             entry[target_key] = metadata.get(meta_key)
     return entry
 
 
-def _classify_source_authority(card_dict: dict) -> Dict[str, Any]:
+def _document_metadata(card_dict: dict) -> Dict[str, Any]:
     entry = _source_entry(card_dict)
-    source_type = entry.get("source_type") or entry.get("type")
+    metadata = card_dict.get("metadata") or {}
     source_rank = entry.get("source_rank", entry.get("rank"))
     try:
         source_rank = int(source_rank) if source_rank is not None else None
     except (TypeError, ValueError):
         source_rank = None
 
+    source_type = entry.get("source_type") or entry.get("type")
+    source_ref = card_dict.get("source_ref") or card_dict.get("source")
+    scope_of_validity = entry.get("scope_of_validity")
+    if isinstance(scope_of_validity, str):
+        scope_of_validity = [scope_of_validity]
+    evidence_scope = entry.get("evidence_scope")
+    if isinstance(evidence_scope, str):
+        evidence_scope = [evidence_scope]
+
+    return {
+        "source_ref": source_ref,
+        "source_type": source_type,
+        "source_rank": source_rank,
+        "title": entry.get("title"),
+        "url": entry.get("url"),
+        "revision_date": entry.get("revision_date"),
+        "published_at": entry.get("published_at"),
+        "edition_year": entry.get("edition_year"),
+        "document_revision": entry.get("document_revision"),
+        "manufacturer_name": entry.get("manufacturer_name") or _read_metadata_str(metadata, "manufacturer_name", "manufacturer", "brand"),
+        "product_line": entry.get("product_line") or _read_metadata_str(metadata, "product_line", "product_series", "trade_name", "entity"),
+        "grade_name": entry.get("grade_name") or _read_metadata_str(metadata, "grade_name", "grade", "compound_code", "compound"),
+        "material_family": entry.get("material_family") or _read_metadata_str(metadata, "material_family", "material", "family"),
+        "evidence_scope": evidence_scope or [],
+        "scope_of_validity": scope_of_validity or [],
+    }
+
+
+def _document_metadata_quality(card_dict: dict) -> Dict[str, Any]:
+    doc_meta = _document_metadata(card_dict)
+    candidate_kind = _candidate_kind(
+        _extract_material_family(card_dict),
+        _extract_filler_hint(card_dict),
+        _extract_grade_name(card_dict),
+        _extract_manufacturer_name(card_dict),
+    )
+    required = ["source_ref", "source_type", "source_rank"]
+    if candidate_kind in {"grade", "manufacturer_grade"}:
+        required.extend(["material_family", "grade_name"])
+    if candidate_kind == "manufacturer_grade":
+        required.append("manufacturer_name")
+    if doc_meta.get("source_type") == "manufacturer_datasheet" and candidate_kind in {"grade", "manufacturer_grade"}:
+        if not any(doc_meta.get(field) not in (None, "", []) for field in ("revision_date", "published_at", "edition_year", "document_revision")):
+            required.append("revision_or_publication_metadata")
+    missing = [
+        field for field in required
+        if field == "revision_or_publication_metadata"
+        and not any(doc_meta.get(candidate) not in (None, "", []) for candidate in ("revision_date", "published_at", "edition_year", "document_revision"))
+    ]
+    missing.extend(
+        field for field in required
+        if field != "revision_or_publication_metadata" and doc_meta.get(field) in (None, "", [])
+    )
+    return {
+        "quality": "complete" if not missing else "incomplete",
+        "missing_fields": missing,
+    }
+
+
+def _map_document_class(source_type: Optional[str]) -> DocumentClass:
+    mapping = {
+        "manufacturer_grade_sheet": DocumentClass.manufacturer_grade_sheet,
+        "manufacturer_datasheet": DocumentClass.manufacturer_datasheet,
+        "distributor_sheet": DocumentClass.distributor_sheet,
+        "certificate": DocumentClass.certificate,
+        "standard_specification": DocumentClass.standard_specification,
+        "standard_test_method": DocumentClass.standard_test_method,
+    }
+    return mapping.get(str(source_type or "").strip().lower(), DocumentClass.unknown)
+
+
+def _map_data_origin_type(source_type: Optional[str]) -> DataOriginType:
+    mapping = {
+        "manufacturer_grade_sheet": DataOriginType.manufacturer_grade_sheet,
+        "manufacturer_datasheet": DataOriginType.manufacturer_declared,
+        "distributor_sheet": DataOriginType.distributor_sheet,
+        "certificate": DataOriginType.certificate,
+        "standard_specification": DataOriginType.standard_document,
+        "standard_test_method": DataOriginType.standard_document,
+    }
+    return mapping.get(str(source_type or "").strip().lower(), DataOriginType.unknown)
+
+
+def _read_data_origin_type(card_dict: dict, document_metadata: Dict[str, Any]) -> DataOriginType:
+    metadata = card_dict.get("metadata") or {}
+    explicit = str(metadata.get("data_origin_type") or card_dict.get("data_origin_type") or "").strip().lower()
+    if explicit:
+        try:
+            return DataOriginType(explicit)
+        except ValueError:
+            pass
+    return _map_data_origin_type(document_metadata.get("source_type"))
+
+
+def _derive_document_binding_strength(card_dict: dict, document_metadata: Dict[str, Any]) -> DocumentBindingStrength:
+    metadata = card_dict.get("metadata") or {}
+    if any(metadata.get(key) not in (None, "") for key in ("revision_date", "published_at", "document_revision", "edition_year")):
+        return DocumentBindingStrength.direct_document
+    if card_dict.get("source") and document_metadata.get("source_ref"):
+        return DocumentBindingStrength.source_registry_bound
+    if (card_dict.get("evidence_id") or card_dict.get("id")) and document_metadata.get("source_ref"):
+        return DocumentBindingStrength.fact_card_bound
+    return DocumentBindingStrength.weak_reference
+
+
+def _derive_data_extraction_method(card_dict: dict, identity_quality: Dict[str, Dict[str, Any]]) -> DataExtractionMethod:
+    metadata = card_dict.get("metadata") or {}
+    source = str(metadata.get("extraction_method") or metadata.get("data_extraction_method") or "").strip().lower()
+    if source == "llm":
+        return DataExtractionMethod.llm_extracted
+    if source in {"manual", "manual_structured"}:
+        return DataExtractionMethod.manual_structured
+    if source in {"parser", "deterministic_parser"}:
+        return DataExtractionMethod.deterministic_parser
+
+    quality_sources = {str(details.get("source") or "") for details in identity_quality.values()}
+    if "metadata" in quality_sources:
+        return DataExtractionMethod.manual_structured
+    if "metadata_conflict_text" in quality_sources:
+        return DataExtractionMethod.mixed
+    if "text" in quality_sources:
+        return DataExtractionMethod.regex_structured
+    return DataExtractionMethod.deterministic_parser
+
+
+def _derive_evidence_strength_class(
+    authority: Dict[str, Any],
+    temporal: Dict[str, Any],
+    document_quality: Dict[str, Any],
+    evidence_quality: str,
+) -> EvidenceStrengthClass:
+    if (
+        authority.get("quality") == "sufficient"
+        and temporal.get("quality") == "sufficient"
+        and document_quality.get("quality") == "complete"
+        and evidence_quality == "qualified_identity"
+    ):
+        return EvidenceStrengthClass.strong
+    if authority.get("quality") == "sufficient" and evidence_quality == "qualified_identity":
+        return EvidenceStrengthClass.qualified
+    if authority.get("quality") in {"insufficient", "unknown"} or evidence_quality != "qualified_identity":
+        return EvidenceStrengthClass.weak
+    return EvidenceStrengthClass.unknown
+
+
+def _derive_context_completeness_score(document_metadata: Dict[str, Any], document_quality: Dict[str, Any]) -> int:
+    present = sum(
+        1
+        for key in ("source_ref", "source_type", "source_rank", "manufacturer_name", "material_family", "grade_name")
+        if document_metadata.get(key) not in (None, "", [])
+    )
+    temporal_present = any(
+        document_metadata.get(key) not in (None, "", [])
+        for key in ("revision_date", "published_at", "edition_year", "document_revision")
+    )
+    score = present * 10
+    if temporal_present:
+        score += 25
+    if document_quality.get("quality") == "complete":
+        score += 15
+    return max(0, min(score, 100))
+
+
+def _derive_document_collision_status(identity_quality: Dict[str, Dict[str, Any]]) -> DocumentCollisionStatus:
+    if any(details.get("quality") == "conflict" for details in identity_quality.values()):
+        return DocumentCollisionStatus.unresolved
+    return DocumentCollisionStatus.none
+
+
+def _derive_non_standard_unit_block(card_dict: dict, temp_max: Optional[float], pressure_max: Optional[float]) -> bool:
+    units = str(card_dict.get("units") or "").strip().lower()
+    if not units:
+        return False
+    if units in {"c", "°c", "bar", "psi"}:
+        return False
+    if temp_max is not None or pressure_max is not None:
+        return False
+    return True
+
+
+def _build_datasheet_contract(
+    card_dict: dict,
+    document_metadata: Dict[str, Any],
+    document_quality: Dict[str, Any],
+    identity_quality: Dict[str, Dict[str, Any]],
+    authority: Dict[str, Any],
+    temporal: Dict[str, Any],
+    evidence_quality: str,
+    temp_min: Optional[float],
+    temp_max: Optional[float],
+    pressure_max: Optional[float],
+) -> DatasheetContractV23:
+    document_class = _map_document_class(document_metadata.get("source_type"))
+    evidence_scope = document_metadata.get("evidence_scope") or []
+    critical_test_context_present = bool(evidence_scope) or any(
+        value is not None for value in (temp_min, temp_max, pressure_max)
+    )
+    unit_normalized_present = not _derive_non_standard_unit_block(card_dict, temp_max, pressure_max)
+    audit_gate_passed = (
+        authority.get("quality") == "sufficient"
+        and temporal.get("quality") == "sufficient"
+        and document_quality.get("quality") == "complete"
+        and evidence_quality == "qualified_identity"
+        and unit_normalized_present
+    )
+    return DatasheetContractV23(
+        document_identity=DocumentIdentity(
+            source_ref=str(document_metadata.get("source_ref") or card_dict.get("source_ref") or card_dict.get("source") or "unknown"),
+            source_type=str(document_metadata.get("source_type") or "unknown"),
+            source_rank=document_metadata.get("source_rank"),
+            document_class=document_class,
+            linked_manufacturer_grade_sheet_ref=(card_dict.get("metadata") or {}).get("linked_manufacturer_grade_sheet_ref"),
+        ),
+        document_metadata=DocumentMetadata(
+            manufacturer_name=document_metadata.get("manufacturer_name"),
+            product_line=document_metadata.get("product_line"),
+            grade_name=document_metadata.get("grade_name"),
+            material_family=document_metadata.get("material_family"),
+            revision_date=document_metadata.get("revision_date"),
+            published_at=document_metadata.get("published_at"),
+            edition_year=document_metadata.get("edition_year"),
+            document_revision=document_metadata.get("document_revision"),
+            applies_to_color=(card_dict.get("metadata") or {}).get("applies_to_color"),
+            certificate_color_dependent=bool((card_dict.get("metadata") or {}).get("certificate_color_dependent")),
+            evidence_scope=list(document_metadata.get("evidence_scope") or []),
+            scope_of_validity=list(document_metadata.get("scope_of_validity") or []),
+        ),
+        material_identity={
+            "material_family": document_metadata.get("material_family"),
+            "grade_name": document_metadata.get("grade_name"),
+            "manufacturer_name": document_metadata.get("manufacturer_name"),
+            "candidate_kind": _candidate_kind(
+                document_metadata.get("material_family"),
+                None,
+                document_metadata.get("grade_name"),
+                document_metadata.get("manufacturer_name"),
+            ),
+        },
+        property_facts=[
+            entry
+            for entry in [
+                {
+                    "property_name": card_dict.get("property"),
+                    "value": card_dict.get("value"),
+                    "unit_original": card_dict.get("units"),
+                    "unit_normalized": "C" if temp_max is not None else ("bar" if pressure_max is not None else None),
+                    "normalized_value": temp_max if temp_max is not None else pressure_max,
+                    "test_specimen_source": TestSpecimenSource.unknown.value,
+                }
+            ]
+            if entry["property_name"]
+        ],
+        processing_dependency={
+            "processing_dependency_declared": "processing" in str(card_dict.get("topic") or "").lower(),
+            "test_specimen_source": TestSpecimenSource.unknown.value,
+        },
+        audit=AuditContract(
+            document_binding_strength=_derive_document_binding_strength(card_dict, document_metadata),
+            data_extraction_method=_derive_data_extraction_method(card_dict, identity_quality),
+            data_origin_type=_read_data_origin_type(card_dict, document_metadata),
+            evidence_strength_class=_derive_evidence_strength_class(authority, temporal, document_quality, evidence_quality),
+            context_completeness_score=_derive_context_completeness_score(document_metadata, document_quality),
+            document_collision_status=_derive_document_collision_status(identity_quality),
+            audit_gate_passed=audit_gate_passed,
+            human_review_status=HumanReviewStatus.not_required if audit_gate_passed else HumanReviewStatus.required,
+            normalization_uncertainty=0.0 if evidence_quality == "qualified_identity" else 1.0,
+            test_specimen_source=TestSpecimenSource.unknown,
+            critical_test_context_present=critical_test_context_present,
+            non_standard_unit_block=not unit_normalized_present,
+            unit_normalized_present=unit_normalized_present,
+        ),
+    )
+
+
+def _classify_source_authority(card_dict: dict) -> Dict[str, Any]:
+    entry = _source_entry(card_dict)
+    doc_meta = _document_metadata(card_dict)
+    source_type = entry.get("source_type") or entry.get("type")
+    source_rank = entry.get("source_rank", entry.get("rank"))
+    try:
+        source_rank = int(source_rank) if source_rank is not None else None
+    except (TypeError, ValueError):
+        source_rank = None
+    candidate_kind = _candidate_kind(
+        _extract_material_family(card_dict),
+        _extract_filler_hint(card_dict),
+        _extract_grade_name(card_dict),
+        _extract_manufacturer_name(card_dict),
+    )
+
     authoritative_types = {
         "manufacturer_datasheet",
-        "manufacturer_technical_brochure",
-        "manufacturer_guide",
-        "manufacturer_brochure",
         "standard_specification",
         "standard_test_method",
         "peer_reviewed_paper",
         "peer_reviewed_review",
         "government_report",
     }
+    if source_type == "manufacturer_datasheet" and source_rank in {1, 2}:
+        if candidate_kind == "manufacturer_grade" and doc_meta.get("manufacturer_name") and doc_meta.get("grade_name") and doc_meta.get("material_family"):
+            return {"quality": "sufficient", "reason": f"authority:manufacturer_datasheet:grade_bound:rank_{source_rank}"}
+        if candidate_kind in {"family", "filled_family", "grade"}:
+            return {"quality": "sufficient", "reason": f"authority:manufacturer_datasheet:rank_{source_rank}"}
+        return {"quality": "insufficient", "reason": f"authority_insufficient:manufacturer_datasheet:incomplete_identity:rank_{source_rank}"}
+    if source_type in _MANUFACTURER_DOCUMENT_TYPES and candidate_kind == "manufacturer_grade":
+        return {"quality": "insufficient", "reason": f"authority_insufficient:{source_type}:not_grade_specific:rank_{source_rank}"}
     if isinstance(source_type, str) and source_type in authoritative_types and source_rank in {1, 2}:
+        return {"quality": "sufficient", "reason": f"authority:{source_type}:rank_{source_rank}"}
+    if isinstance(source_type, str) and source_type in _MANUFACTURER_DOCUMENT_TYPES and source_rank in {1, 2}:
         return {"quality": "sufficient", "reason": f"authority:{source_type}:rank_{source_rank}"}
     if source_type or source_rank is not None:
         return {"quality": "insufficient", "reason": f"authority_insufficient:{source_type or 'unknown'}:rank_{source_rank}"}
@@ -104,16 +453,37 @@ def _classify_source_authority(card_dict: dict) -> Dict[str, Any]:
 
 def _classify_source_temporal_validity(card_dict: dict) -> Dict[str, Any]:
     entry = _source_entry(card_dict)
-    candidates = [
+    doc_meta = _document_metadata(card_dict)
+    source_type = entry.get("source_type") or entry.get("type")
+    candidate_kind = _candidate_kind(
+        _extract_material_family(card_dict),
+        _extract_filler_hint(card_dict),
+        _extract_grade_name(card_dict),
+        _extract_manufacturer_name(card_dict),
+    )
+    direct_candidates = [
+        str(doc_meta.get("revision_date") or ""),
+        str(doc_meta.get("published_at") or ""),
+        str(doc_meta.get("edition_year") or ""),
+        str(doc_meta.get("document_revision") or ""),
+    ]
+    years = []
+    for candidate in direct_candidates:
+        years.extend(int(match) for match in _YEAR_PATTERN.findall(candidate))
+    if years:
+        return {"quality": "sufficient", "reason": f"temporal_document_metadata:{max(years)}", "year": max(years)}
+    if source_type in _MANUFACTURER_DOCUMENT_TYPES and candidate_kind in {"grade", "manufacturer_grade"}:
+        return {"quality": "unknown", "reason": "temporal_document_metadata_missing"}
+
+    fallback_candidates = [
         str(entry.get("title") or ""),
         str(entry.get("url") or ""),
         str(entry.get("edition") or ""),
     ]
-    years = []
-    for candidate in candidates:
+    for candidate in fallback_candidates:
         years.extend(int(match) for match in _YEAR_PATTERN.findall(candidate))
     if years:
-        return {"quality": "sufficient", "reason": f"temporal_year:{max(years)}", "year": max(years)}
+        return {"quality": "sufficient", "reason": f"temporal_fallback_year:{max(years)}", "year": max(years)}
     return {"quality": "unknown", "reason": "temporal_metadata_missing"}
 
 
@@ -295,6 +665,8 @@ def normalize_fact_card_evidence(card_dict: dict) -> Dict[str, Any]:
     pressure_max = _extract_pressure_max(card_dict)
     authority = _classify_source_authority(card_dict)
     temporal = _classify_source_temporal_validity(card_dict)
+    document_metadata = _document_metadata(card_dict)
+    document_quality = _document_metadata_quality(card_dict)
     identity_quality = {
         "material_family": _evaluate_identity_quality(card_dict, "material_family", family),
         "filler_hint": _evaluate_identity_quality(card_dict, "filler_hint", filler_hint),
@@ -311,10 +683,22 @@ def normalize_fact_card_evidence(card_dict: dict) -> Dict[str, Any]:
         evidence_quality = "conflicted_identity"
     elif any(details["quality"] == "unqualified" for details in identity_quality.values()):
         evidence_quality = "unqualified_identity"
+    datasheet_contract = _build_datasheet_contract(
+        card_dict=card_dict,
+        document_metadata=document_metadata,
+        document_quality=document_quality,
+        identity_quality=identity_quality,
+        authority=authority,
+        temporal=temporal,
+        evidence_quality=evidence_quality,
+        temp_min=temp_min,
+        temp_max=temp_max,
+        pressure_max=pressure_max,
+    )
 
     return {
         "evidence_id": card_dict.get("evidence_id") or card_dict.get("id"),
-        "source_ref": card_dict.get("source_ref"),
+        "source_ref": card_dict.get("source_ref") or card_dict.get("source"),
         "material_family": family,
         "filler_hint": filler_hint,
         "grade_name": grade_name,
@@ -331,6 +715,10 @@ def normalize_fact_card_evidence(card_dict: dict) -> Dict[str, Any]:
         "temporal_quality": temporal["quality"],
         "temporal_reason": temporal["reason"],
         "temporal_year": temporal.get("year"),
+        "document_metadata": document_metadata,
+        "document_metadata_quality": document_quality["quality"],
+        "document_metadata_missing": document_quality["missing_fields"],
+        "datasheet_contract": datasheet_contract.model_dump(mode="json"),
     }
 
 # Import existing model for compatibility if possible, or define a compatible one

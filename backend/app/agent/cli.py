@@ -28,15 +28,35 @@ def create_initial_state() -> SealingAIState:
         "governance": {
             "release_status": "inadmissible",
             "rfq_admissibility": "inadmissible",
+            "specificity_level": "family_only",
             "scope_of_validity": [],
+            "assumptions_active": [],
+            "gate_failures": [],
+            "unknowns_release_blocking": [],
+            "unknowns_manufacturer_validation": [],
             "conflicts": []
         },
         "cycle": {
             "analysis_cycle_id": "session_init_1",
             "snapshot_parent_revision": 0,
+            "superseded_by_cycle": None,
             "contract_obsolete": False,
+            "contract_obsolete_reason": None,
             "state_revision": 1
-        }
+        },
+        "selection": {
+            "selection_status": "not_started",
+            "candidates": [],
+            "viable_candidate_ids": [],
+            "blocked_candidates": [],
+            "winner_candidate_id": None,
+            "recommendation_artifact": None,
+            "release_status": "inadmissible",
+            "rfq_admissibility": "inadmissible",
+            "specificity_level": "family_only",
+            "output_blocked": True,
+        },
+        "relevant_evidence": [],
     }
 
 def run_agent(query: str, use_mock: bool = False):

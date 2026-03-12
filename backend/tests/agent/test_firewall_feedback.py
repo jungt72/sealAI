@@ -17,13 +17,20 @@ def create_initial_state_with_ptfe() -> SealingAIState:
         "governance": {
             "release_status": "rfq_ready",
             "rfq_admissibility": "ready",
+            "specificity_level": "family_only",
             "scope_of_validity": [],
+            "assumptions_active": [],
+            "gate_failures": [],
+            "unknowns_release_blocking": [],
+            "unknowns_manufacturer_validation": [],
             "conflicts": []
         },
         "cycle": {
             "analysis_cycle_id": "test_session",
             "snapshot_parent_revision": 0,
+            "superseded_by_cycle": None,
             "contract_obsolete": False,
+            "contract_obsolete_reason": None,
             "state_revision": 1
         }
     }
@@ -83,6 +90,9 @@ def test_firewall_feedback_loop_limit_violation():
 
     # 5. Validierung des States
     new_sealing_state = output["sealing_state"]
+    assert new_sealing_state["observed"]["observed_inputs"][0]["source"] == "llm_submit_claim"
+    assert new_sealing_state["normalized"]["normalized_parameters"]["temperature_c"] == 300.0
     assert new_sealing_state["governance"]["release_status"] == "inadmissible"
+    assert "domain_limit_violation" in new_sealing_state["governance"]["unknowns_release_blocking"]
     assert len(new_sealing_state["governance"]["conflicts"]) == 1
-    assert new_sealing_state["governance"]["conflicts"][0]["type"] == "DOMAIN_LIMIT_VIOLATION"
+    assert new_sealing_state["governance"]["conflicts"][0]["type"] == "domain_limit_violation"

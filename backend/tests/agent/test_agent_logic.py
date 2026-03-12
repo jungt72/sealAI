@@ -173,6 +173,54 @@ def test_process_cycle_update_allows_rfq_ready_only_for_evidence_bound_compound_
     assert new_state["governance"]["rfq_admissibility"] == "ready"
 
 
+def test_process_cycle_update_accepts_revisioned_manufacturer_datasheet_for_compound_release():
+    old_state = create_initial_state()
+
+    new_state = process_cycle_update(
+        old_state=old_state,
+        intelligence_conflicts=[],
+        expected_revision=1,
+        validated_params={"temperature": 120.0},
+        raw_claims=[
+            {
+                "statement": "Material ist PTFE, Grade G461, Hersteller Acme. Medium ist Wasser.",
+                "claim_type": "fact_observed",
+                "confidence": 1.0,
+                "source": "llm_submit_claim",
+                "source_fact_ids": ["fc-g461"],
+            }
+        ],
+        relevant_fact_cards=[
+            {
+                "evidence_id": "fc-g461",
+                "source_ref": "SRC-G461",
+                "source_type": "manufacturer_datasheet",
+                "source_rank": 2,
+                "topic": "Acme G461",
+                "content": "PTFE grade G461 fuer Acme.",
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G461",
+                    "manufacturer_name": "Acme",
+                    "product_line": "G-Series",
+                    "revision_date": "2024-01-15",
+                    "document_revision": "Rev. 3",
+                    "temperature_max_c": 260,
+                    "evidence_scope": ["grade_identity"],
+                },
+            }
+        ],
+    )
+
+    identity = new_state["normalized"]["identity_records"]["manufacturer_name"]
+    assert identity["deterministic_source"] == "fact_card_binding"
+    assert identity["authority_quality"] == "sufficient"
+    assert identity["temporal_quality"] == "sufficient"
+    assert new_state["governance"]["specificity_level"] == "compound_required"
+    assert new_state["governance"]["release_status"] == "rfq_ready"
+    assert new_state["governance"]["rfq_admissibility"] == "ready"
+
+
 def test_process_cycle_update_upgrades_only_to_subfamily_without_manufacturer():
     old_state = create_initial_state()
 
@@ -342,7 +390,7 @@ def test_process_cycle_update_rejects_authoritatively_weak_fact_card_for_rfq_rea
     assert new_state["governance"]["rfq_admissibility"] == "provisional"
 
 
-def test_process_cycle_update_rejects_temporally_undated_fact_card_for_rfq_ready():
+def test_process_cycle_update_rejects_grade_specific_technical_brochure_for_rfq_ready():
     old_state = create_initial_state()
 
     new_state = process_cycle_update(
@@ -379,7 +427,50 @@ def test_process_cycle_update_rejects_temporally_undated_fact_card_for_rfq_ready
     )
 
     assert new_state["normalized"]["identity_records"]["manufacturer_name"]["identity_class"] == "identity_unresolved"
-    assert new_state["normalized"]["identity_records"]["manufacturer_name"]["mapping_reason"] == "temporal_metadata_missing"
+    assert new_state["normalized"]["identity_records"]["manufacturer_name"]["mapping_reason"] == "authority_insufficient:manufacturer_technical_brochure:not_grade_specific:rank_2"
+    assert new_state["governance"]["specificity_level"] == "family_only"
+    assert new_state["governance"]["release_status"] == "manufacturer_validation_required"
+    assert new_state["governance"]["rfq_admissibility"] == "provisional"
+
+
+def test_process_cycle_update_requires_revision_or_publication_metadata_for_manufacturer_datasheet():
+    old_state = create_initial_state()
+
+    new_state = process_cycle_update(
+        old_state=old_state,
+        intelligence_conflicts=[],
+        expected_revision=1,
+        validated_params={"temperature": 120.0},
+        raw_claims=[
+            {
+                "statement": "Material ist PTFE, Grade G461, Hersteller Acme. Medium ist Wasser.",
+                "claim_type": "fact_observed",
+                "confidence": 1.0,
+                "source": "llm_submit_claim",
+                "source_fact_ids": ["fc-g461"],
+            }
+        ],
+        relevant_fact_cards=[
+            {
+                "evidence_id": "fc-g461",
+                "source_ref": "SRC-G461",
+                "source_type": "manufacturer_datasheet",
+                "source_rank": 2,
+                "topic": "Acme G461",
+                "content": "PTFE grade G461 fuer Acme.",
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G461",
+                    "manufacturer_name": "Acme",
+                    "product_line": "G-Series",
+                    "temperature_max_c": 260,
+                },
+            }
+        ],
+    )
+
+    assert new_state["normalized"]["identity_records"]["manufacturer_name"]["identity_class"] == "identity_unresolved"
+    assert new_state["normalized"]["identity_records"]["manufacturer_name"]["mapping_reason"] == "temporal_document_metadata_missing"
     assert new_state["governance"]["specificity_level"] == "family_only"
     assert new_state["governance"]["release_status"] == "manufacturer_validation_required"
     assert new_state["governance"]["rfq_admissibility"] == "provisional"
@@ -638,3 +729,219 @@ def test_dynamic_nbr_limit_from_rag():
     assert "100" in conflicts[0]["message"]
     assert "120" in conflicts[0]["message"]
     assert "Quelle: FactCard Factory" in conflicts[0]["message"]
+
+
+def test_process_cycle_update_uses_datasheet_contract_ready_path_for_rfq_release():
+    old_state = create_initial_state()
+
+    new_state = process_cycle_update(
+        old_state=old_state,
+        intelligence_conflicts=[],
+        expected_revision=1,
+        validated_params={"temperature": 120.0},
+        raw_claims=[
+            {
+                "statement": "Material ist PTFE, Grade G461, Hersteller Acme. Medium ist Wasser.",
+                "claim_type": "fact_observed",
+                "confidence": 1.0,
+                "source": "llm_submit_claim",
+                "source_fact_ids": ["fc-contract-ready"],
+            }
+        ],
+        relevant_fact_cards=[
+            {
+                "evidence_id": "fc-contract-ready",
+                "source_ref": "SRC-G461",
+                "source_type": "manufacturer_datasheet",
+                "source_rank": 1,
+                "topic": "Acme G461",
+                "content": "PTFE grade G461 fuer Acme.",
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G461",
+                    "manufacturer_name": "Acme",
+                    "product_line": "G-Series",
+                    "revision_date": "2024-01-15",
+                    "document_revision": "Rev. 3",
+                    "temperature_max_c": 260,
+                    "evidence_scope": ["grade_identity", "temperature_limit"],
+                },
+            }
+        ],
+    )
+
+    assert new_state["governance"]["specificity_level"] == "compound_required"
+    assert new_state["governance"]["release_status"] == "rfq_ready"
+    assert new_state["governance"]["rfq_admissibility"] == "ready"
+
+
+def test_process_cycle_update_uses_datasheet_contract_to_block_marketing_estimate_release():
+    old_state = create_initial_state()
+
+    new_state = process_cycle_update(
+        old_state=old_state,
+        intelligence_conflicts=[],
+        expected_revision=1,
+        validated_params={"temperature": 120.0},
+        raw_claims=[
+            {
+                "statement": "Material ist PTFE, Grade G461, Hersteller Acme. Medium ist Wasser.",
+                "claim_type": "fact_observed",
+                "confidence": 1.0,
+                "source": "llm_submit_claim",
+                "source_fact_ids": ["fc-marketing"],
+            }
+        ],
+        relevant_fact_cards=[
+            {
+                "evidence_id": "fc-marketing",
+                "source_ref": "SRC-G461-MKT",
+                "source_type": "manufacturer_datasheet",
+                "source_rank": 1,
+                "topic": "Acme G461",
+                "content": "PTFE grade G461 fuer Acme.",
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G461",
+                    "manufacturer_name": "Acme",
+                    "product_line": "G-Series",
+                    "revision_date": "2024-01-15",
+                    "document_revision": "Rev. 3",
+                    "temperature_max_c": 260,
+                    "evidence_scope": ["grade_identity", "temperature_limit"],
+                    "data_origin_type": "marketing_estimate",
+                },
+            }
+        ],
+    )
+
+    assert "marketing_estimate_never_release_relevant" in new_state["governance"]["unknowns_manufacturer_validation"]
+    assert new_state["governance"]["release_status"] == "manufacturer_validation_required"
+    assert new_state["governance"]["rfq_admissibility"] == "provisional"
+
+
+def test_process_cycle_update_uses_datasheet_contract_collision_as_inadmissible():
+    old_state = create_initial_state()
+
+    new_state = process_cycle_update(
+        old_state=old_state,
+        intelligence_conflicts=[],
+        expected_revision=1,
+        validated_params={"temperature": 120.0},
+        raw_claims=[
+            {
+                "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
+                "claim_type": "fact_observed",
+                "confidence": 1.0,
+                "source": "llm_submit_claim",
+                "source_fact_ids": ["fc-collision"],
+            }
+        ],
+        relevant_fact_cards=[
+            {
+                "evidence_id": "fc-collision",
+                "source_ref": "SRC-COLLISION",
+                "source_type": "manufacturer_datasheet",
+                "source_rank": 1,
+                "topic": "PTFE G25",
+                "content": "PTFE grade G26 fuer Acme.",
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G25",
+                    "manufacturer_name": "Acme",
+                    "revision_date": "2024-01-15",
+                    "document_revision": "Rev. 1",
+                    "temperature_max_c": 260,
+                    "evidence_scope": ["grade_identity"],
+                },
+            }
+        ],
+    )
+
+    assert "document_collision_unresolved" in new_state["governance"]["unknowns_release_blocking"]
+    assert new_state["governance"]["release_status"] == "inadmissible"
+    assert new_state["governance"]["rfq_admissibility"] == "inadmissible"
+
+
+def test_process_cycle_update_uses_datasheet_contract_distributor_sheet_ceiling():
+    old_state = create_initial_state()
+
+    new_state = process_cycle_update(
+        old_state=old_state,
+        intelligence_conflicts=[],
+        expected_revision=1,
+        validated_params={"temperature": 120.0},
+        raw_claims=[
+            {
+                "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
+                "claim_type": "fact_observed",
+                "confidence": 1.0,
+                "source": "llm_submit_claim",
+                "source_fact_ids": ["fc-distributor"],
+            }
+        ],
+        relevant_fact_cards=[
+            {
+                "evidence_id": "fc-distributor",
+                "source_ref": "SRC-DISTRIBUTOR",
+                "source_type": "distributor_sheet",
+                "source_rank": 1,
+                "topic": "PTFE G25",
+                "content": "PTFE grade G25 fuer Acme.",
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G25",
+                    "manufacturer_name": "Acme",
+                    "revision_date": "2024-01-15",
+                    "document_revision": "Rev. 2",
+                    "temperature_max_c": 260,
+                    "evidence_scope": ["grade_identity"],
+                },
+            }
+        ],
+    )
+
+    assert new_state["governance"]["specificity_level"] != "compound_required"
+    assert "distributor_sheet_ceiling_without_manufacturer_grade_sheet" in new_state["governance"]["unknowns_manufacturer_validation"]
+    assert new_state["governance"]["release_status"] == "manufacturer_validation_required"
+
+
+def test_process_cycle_update_uses_datasheet_contract_audit_gate_blocker_without_rfq_ready():
+    old_state = create_initial_state()
+
+    new_state = process_cycle_update(
+        old_state=old_state,
+        intelligence_conflicts=[],
+        expected_revision=1,
+        validated_params={"temperature": 120.0},
+        raw_claims=[
+            {
+                "statement": "Material ist PTFE, Grade G461, Hersteller Acme. Medium ist Wasser.",
+                "claim_type": "fact_observed",
+                "confidence": 1.0,
+                "source": "llm_submit_claim",
+                "source_fact_ids": ["fc-audit-block"],
+            }
+        ],
+        relevant_fact_cards=[
+            {
+                "evidence_id": "fc-audit-block",
+                "source_ref": "SRC-G461-AUDIT",
+                "source_type": "manufacturer_datasheet",
+                "source_rank": 1,
+                "topic": "Acme G461",
+                "content": "PTFE grade G461 fuer Acme.",
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G461",
+                    "manufacturer_name": "Acme",
+                    "product_line": "G-Series",
+                    "temperature_max_c": 260,
+                },
+            }
+        ],
+    )
+
+    assert "audit_gate_not_passed" in new_state["governance"]["unknowns_manufacturer_validation"]
+    assert new_state["governance"]["release_status"] == "manufacturer_validation_required"
+    assert new_state["governance"]["rfq_admissibility"] == "provisional"
