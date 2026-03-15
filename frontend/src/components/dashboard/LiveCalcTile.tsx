@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   AlertCircle 
 } from "lucide-react";
+import type { StructuredCasePanelModel } from "@/lib/caseStateProjection";
 
 type LiveCalcStatus = "ok" | "warning" | "critical" | "insufficient_data";
 
@@ -46,9 +47,13 @@ export type LiveCalcTileData = {
 
 type LiveCalcTileProps = {
   tile?: LiveCalcTileData | null;
+  casePanel?: StructuredCasePanelModel | null;
   rfqReady?: boolean;
   rfqPdfBase64?: string | null;
   rfqHtmlReport?: string | null;
+  rfqActionStatus?: string | null;
+  onQualifiedAction?: (() => void | Promise<void>) | null;
+  onSuggestedQuestionAction?: ((prompt: string) => void) | null;
 };
 
 const statusStyles: Record<LiveCalcStatus, string> = {
@@ -100,9 +105,13 @@ export default function LiveCalcTile(props: LiveCalcTileProps) {
   console.log("RENDERED LIVECALCTILE WITH PROPS:", props);
   const {
     tile: rawTile,
+    casePanel = null,
     rfqReady = false,
     rfqPdfBase64 = null,
     rfqHtmlReport = null,
+    rfqActionStatus = null,
+    onQualifiedAction = null,
+    onSuggestedQuestionAction = null,
   } = props;
   const tile =
     rawTile && typeof (rawTile as any).working_profile?.live_calc_tile === "object"
@@ -163,6 +172,105 @@ export default function LiveCalcTile(props: LiveCalcTileProps) {
       URL.revokeObjectURL(url);
     }
   };
+
+  if (casePanel?.isStructured) {
+    const actionGate = casePanel.actionGate;
+    const actionAllowed = Boolean(actionGate?.allowed);
+    return (
+      <aside className="h-full rounded-3xl border border-slate-200/70 bg-[linear-gradient(145deg,#f7fbff_0%,#eef6ff_55%,#f8fbff_100%)] p-5 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.45)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Case State Projection</p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-900">{casePanel.title}</h2>
+            <p className="mt-1 text-xs text-slate-500">{casePanel.subtitle}</p>
+          </div>
+          <span className="rounded-full px-3 py-1 text-xs font-semibold bg-blue-500/10 text-blue-700 ring-1 ring-blue-500/20">
+            Structured
+          </span>
+        </div>
+
+        <StructuredPanelSection title="Technical Direction" items={casePanel.technicalDirection} />
+        <StructuredPanelSection title="Validity & Constraints" items={casePanel.validityEnvelope} />
+        <StructuredPanelSection title="Current Case Summary" items={casePanel.caseSummary} />
+        <StructuredPanelSection title="Failure Analysis" items={casePanel.failureAnalysis} />
+        <StructuredPanelSection title="Next Best Inputs" items={casePanel.nextBestInputs} />
+        <StructuredPanelSection
+          title="Suggested Next Questions"
+          items={casePanel.suggestedNextQuestions}
+          actionable
+          onAction={onSuggestedQuestionAction}
+        />
+        <StructuredPanelSection title="Known Parameters" items={casePanel.knownParameters} />
+        <StructuredPanelSection title="Derived Values" items={casePanel.derivedValues} />
+        <StructuredPanelSection title="Engineering Signals" items={casePanel.engineeringSignals} />
+        <StructuredPanelSection title="Qualification Status" items={casePanel.qualificationStatus} />
+
+        {actionGate && (
+          <div className="mt-5 space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (onQualifiedAction) {
+                  void onQualifiedAction();
+                  return;
+                }
+                handleDownloadRfq();
+              }}
+              disabled={!actionAllowed}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition active:scale-[0.99] ${
+                actionAllowed
+                  ? "border-[#0b5fff] bg-[#0b5fff] text-white hover:bg-[#0a4ed0]"
+                  : "cursor-not-allowed border-slate-300 bg-slate-100 text-slate-500"
+              }`}
+            >
+              Download Technical RFQ
+            </button>
+            {!actionAllowed && actionGate.blockReasons.length > 0 && (
+              <p className="text-xs text-slate-600">
+                Blocked: {actionGate.blockReasons.join(", ")}
+              </p>
+            )}
+            {rfqActionStatus && (
+              <p className="text-xs text-slate-600">{rfqActionStatus}</p>
+            )}
+            {casePanel.lastQualifiedAction && casePanel.lastQualifiedAction.lastStatus !== "none" && (
+              <p className="text-xs text-slate-600">
+                Last RFQ Action: {casePanel.lastQualifiedAction.lastStatus}
+                {casePanel.lastQualifiedAction.blockReasons.length > 0
+                  ? ` · ${casePanel.lastQualifiedAction.blockReasons.join(", ")}`
+                  : ""}
+              </p>
+            )}
+            {casePanel.qualifiedActionHistory.length > 1 && (
+              <div className="rounded-xl border border-slate-200 bg-white/60 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Recent Action History
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {casePanel.qualifiedActionHistory.slice(0, 5).map((entry, index) => (
+                    <p key={`${entry.timestamp}-${index}`} className="text-xs text-slate-600">
+                      {entry.lastStatus}
+                      {entry.blockReasons.length > 0 ? ` · ${entry.blockReasons.join(", ")}` : ""}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!actionGate && rfqReady && (
+          <button
+            type="button"
+            onClick={handleDownloadRfq}
+            className="mt-5 w-full rounded-xl border border-[#0b5fff] bg-[#0b5fff] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0a4ed0] active:scale-[0.99]"
+          >
+            Download Technical RFQ
+          </button>
+        )}
+      </aside>
+    );
+  }
 
   return (
     <aside className="h-full rounded-3xl border border-slate-200/70 bg-[linear-gradient(145deg,#f7fbff_0%,#eef6ff_55%,#f8fbff_100%)] p-5 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.45)]">
@@ -324,5 +432,68 @@ export default function LiveCalcTile(props: LiveCalcTileProps) {
         </button>
       )}
     </aside>
+  );
+}
+
+function StructuredPanelSection({
+  title,
+  items,
+  actionable = false,
+  onAction = null,
+}: {
+  title: string;
+  items: Array<{ key: string; label: string; value: string; detail?: string | null; severity?: "low" | "medium" | "high" }>;
+  actionable?: boolean;
+  onAction?: ((prompt: string) => void) | null;
+}) {
+  return (
+    <section className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-4">
+      <div className="mb-3 text-sm font-semibold text-slate-700">{title}</div>
+      {items.length === 0 ? (
+        <p className="text-xs text-slate-500">Noch keine strukturierten Daten.</p>
+      ) : (
+        <dl className="space-y-2.5 text-sm">
+          {items.map(item => (
+            <div key={item.key} className="border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+              {actionable && onAction && item.key.startsWith("suggested_question_") && item.detail ? (
+                <button
+                  type="button"
+                  onClick={() => onAction(item.detail ?? item.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-left transition hover:border-[#0b5fff]/35 hover:bg-[#0b5fff]/5"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <dt className="text-xs text-slate-500">{item.label}</dt>
+                      <div className="mt-1 text-sm font-medium text-slate-900">{item.detail}</div>
+                    </div>
+                    <dd className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                      {item.value}
+                    </dd>
+                  </div>
+                </button>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-xs text-slate-500">{item.label}</dt>
+                    <dd className="text-right font-medium text-slate-900">{item.value}</dd>
+                  </div>
+                  {item.detail && (
+                    <div className={`mt-1 text-[11px] ${
+                      item.severity === "high"
+                        ? "text-rose-700"
+                        : item.severity === "medium"
+                        ? "text-amber-700"
+                        : "text-slate-500"
+                    }`}>
+                      {item.detail}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </dl>
+      )}
+    </section>
   );
 }

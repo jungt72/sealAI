@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
+import type { RuntimeMeta, VisibleCaseNarrative } from '@/lib/caseStateProjection';
 
 export interface WorkingProfile {
   medium?: string;
@@ -18,24 +19,38 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
   const [chatHistory, setChatHistory] = useState<{role: 'user'|'ai', text: string}[]>([]);
   const [currentAiText, setCurrentAiText] = useState('');
   const [workingProfile, setWorkingProfile] = useState<WorkingProfile | null>(null);
+  const [caseState, setCaseState] = useState<Record<string, any> | null>(null);
+  const [visibleCaseNarrative, setVisibleCaseNarrative] = useState<VisibleCaseNarrative | null>(null);
   const [calcResults, setCalcResults] = useState<any | null>(null);
   const [complianceResults, setComplianceResults] = useState<any | null>(null);
   const [liveCalcTile, setLiveCalcTile] = useState<any | null>(null);
+  const [runtimeMeta, setRuntimeMeta] = useState<RuntimeMeta | null>(null);
+  const [qualifiedActionGate, setQualifiedActionGate] = useState<Record<string, any> | null>(null);
+  const [rfqReady, setRfqReady] = useState(false);
   const [nodeStatus, setNodeStatus] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const activeChatIdRef = useRef<string | null>(null);
+  // Request-generation counter: each sendMessage() increments this. onmessage closures
+  // capture the generation at call time and drop events if a newer stream has started.
+  const streamGenerationRef = useRef(0);
 
   const sendMessage = useCallback(async (inputText: string, chatId: string) => {
     if (!inputText.trim()) return;
 
+    activeChatIdRef.current = chatId;
     setChatHistory(prev => [...prev, { role: 'user', text: inputText }]);
     setCurrentAiText('');
     setIsThinking(true);
     setError(null);
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
     abortControllerRef.current = new AbortController();
+    const thisGeneration = ++streamGenerationRef.current;
 
     try {
       await fetchEventSource(`${apiEndpoint}/chat/stream`, {
@@ -65,6 +80,7 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
         },
 
         onmessage(ev) {
+          if (thisGeneration !== streamGenerationRef.current) return;
           const { data } = ev;
           if (!data || data === ': keep-alive') return;
           
@@ -86,6 +102,40 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
               setCurrentAiText(prev => prev + payload.chunk);
             }
 
+            if (
+              payload.interaction_class ||
+              payload.runtime_path ||
+              payload.binding_level ||
+              typeof payload.has_case_state === 'boolean'
+            ) {
+              setRuntimeMeta({
+                interactionClass: payload.interaction_class ?? null,
+                runtimePath: payload.runtime_path ?? null,
+                bindingLevel: payload.binding_level ?? null,
+                hasCaseState: payload.has_case_state ?? null,
+              });
+            }
+
+            if (typeof payload.reply === 'string' && payload.reply.trim().length > 0) {
+              setCurrentAiText(payload.reply);
+            }
+
+            if (payload.case_state) {
+              setCaseState(payload.case_state);
+            }
+
+            if (payload.visible_case_narrative) {
+              setVisibleCaseNarrative(payload.visible_case_narrative);
+            }
+
+            if (payload.qualified_action_gate) {
+              setQualifiedActionGate(payload.qualified_action_gate);
+            }
+
+            if (typeof payload.rfq_ready === 'boolean') {
+              setRfqReady(payload.rfq_ready);
+            }
+
             if (payload.working_profile) {
               setWorkingProfile(payload.working_profile);
               
@@ -103,19 +153,23 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
           }
         },
         onclose() {
+          if (thisGeneration !== streamGenerationRef.current) return;
           setIsThinking(false);
         },
         onerror(err) {
+          if (thisGeneration !== streamGenerationRef.current) return;
           console.error("SSE Connection Error", err);
           setIsThinking(false);
           throw err; 
         }
       });
       
-      setCurrentAiText(finalText => {
-         if (finalText) setChatHistory(prev => [...prev, { role: 'ai', text: finalText }]);
-         return '';
-      });
+      if (thisGeneration === streamGenerationRef.current) {
+        setCurrentAiText(finalText => {
+           if (finalText) setChatHistory(prev => [...prev, { role: 'ai', text: finalText }]);
+           return '';
+        });
+      }
 
     } catch (error) {
        console.error("Stream aborted or failed", error);
@@ -134,18 +188,38 @@ export function useSealAIStream(apiEndpoint: string, authToken: string) {
     setError(null);
   }, []);
 
+  const applyExternalCaseState = useCallback((targetChatId: string, nextCaseState: Record<string, any> | null, nextVisibleCaseNarrative?: VisibleCaseNarrative | null) => {
+    if (activeChatIdRef.current !== targetChatId) {
+      console.warn("Ignoring external state update: chatId mismatch", { current: activeChatIdRef.current, target: targetChatId });
+      return;
+    }
+    setCaseState(nextCaseState);
+    if (nextVisibleCaseNarrative !== undefined) {
+      setVisibleCaseNarrative(nextVisibleCaseNarrative ?? null);
+    }
+    const gate = nextCaseState?.qualified_action_gate;
+    setQualifiedActionGate(gate ?? null);
+    setRfqReady(Boolean(gate?.allowed));
+  }, []);
+
   const reset = useCallback(() => {
     cancelStream();
+    activeChatIdRef.current = null;
     setChatHistory([]);
     setCurrentAiText('');
     setWorkingProfile(null);
+    setCaseState(null);
+    setVisibleCaseNarrative(null);
     setCalcResults(null);
     setComplianceResults(null);
     setLiveCalcTile(null);
+    setRuntimeMeta(null);
+    setQualifiedActionGate(null);
+    setRfqReady(false);
     setNodeStatus(null);
     setError(null);
     setIsThinking(false);
   }, [cancelStream]);
 
-  return { chatHistory, currentAiText, workingProfile, calcResults, complianceResults, liveCalcTile, nodeStatus, isThinking, error, sendMessage, cancelStream, reset, clearError };
+  return { chatHistory, currentAiText, workingProfile, caseState, visibleCaseNarrative, calcResults, complianceResults, liveCalcTile, runtimeMeta, qualifiedActionGate, rfqReady, nodeStatus, isThinking, error, sendMessage, cancelStream, reset, clearError, applyExternalCaseState };
 }

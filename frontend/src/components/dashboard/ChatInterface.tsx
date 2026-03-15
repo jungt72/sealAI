@@ -1,7 +1,7 @@
 "use client";
 
 import { Bot, ChevronLeft, ChevronRight, RotateCcw, AlertCircle } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import ChatComposer from "./ChatComposer";
 import LiveCalcTile, { type LiveCalcTileData } from "./LiveCalcTile";
@@ -9,6 +9,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSealAIStream } from "@/hooks/useSealAIStream";
+import { projectCaseStatePanel } from "@/lib/caseStateProjection";
+import { invokeQualifiedAction } from "@/lib/qualifiedActionContract";
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -24,6 +26,7 @@ export default function ChatInterface() {
     const [rfqReady, setRfqReady] = useState(false);
     const [rfqPdfBase64, setRfqPdfBase64] = useState<string | null>(null);
     const [rfqHtmlReport, setRfqHtmlReport] = useState<string | null>(null);
+    const [rfqActionStatus, setRfqActionStatus] = useState<string | null>(null);
     const [chatInput, setChatInput] = useState<string | null>(null);
 
     const accessToken = (session as any)?.accessToken ?? "";
@@ -38,16 +41,33 @@ export default function ChatInterface() {
         isThinking,
         nodeStatus,
         workingProfile,
+        caseState,
+        visibleCaseNarrative,
         calcResults,
         complianceResults,
         liveCalcTile: hookLiveCalcTile,
+        runtimeMeta,
+        rfqReady: streamRfqReady,
         error: streamError,
         sendMessage,
         cancelStream,
+        applyExternalCaseState,
         clearError,
+        reset,
     } = useSealAIStream(streamApiEndpoint, accessToken);
 
+    const structuredCasePanel = projectCaseStatePanel(caseState, runtimeMeta, visibleCaseNarrative);
+
     useEffect(() => {
+        setRfqReady(Boolean(structuredCasePanel?.actionGate?.allowed ?? streamRfqReady));
+    }, [structuredCasePanel, streamRfqReady]);
+
+    useEffect(() => {
+        if (structuredCasePanel?.isStructured) {
+            setShowTile(true);
+            return;
+        }
+
         if ((workingProfile && typeof workingProfile === 'object' && Object.keys(workingProfile).length > 0) || calcResults || complianceResults || hookLiveCalcTile) {
             console.log("FULL SYNC DATA:", { workingProfile, calcResults, hookLiveCalcTile, complianceResults });
             
@@ -101,17 +121,18 @@ export default function ChatInterface() {
                 return mergedTile as LiveCalcTileData;
             });
         }
-    }, [workingProfile, calcResults, complianceResults, hookLiveCalcTile]);
+    }, [workingProfile, calcResults, complianceResults, hookLiveCalcTile, structuredCasePanel]);
 
     useEffect(() => {
         if (
+            structuredCasePanel?.isStructured ||
             workingProfile !== null ||
             (liveCalcTile && liveCalcTile.v_surface_m_s !== null && liveCalcTile.v_surface_m_s !== undefined) ||
             calcResults !== null
         ) {
             setShowTile(true);
         }
-    }, [workingProfile, liveCalcTile, calcResults]);
+    }, [structuredCasePanel, workingProfile, liveCalcTile, calcResults]);
 
     const visibleHistory = chatHistory.slice(chatHistoryOffset);
     const completedMessages: Message[] = visibleHistory.map((message) => ({
@@ -153,7 +174,7 @@ export default function ChatInterface() {
     }, [displayedMessages, shouldShowStreamingBubble, currentAiText, isZeroState]);
 
     const startNewChat = () => {
-        cancelStream();
+        reset();
         clearError();
         setChatHistoryOffset(chatHistory.length);
         setChatId(null);
@@ -166,6 +187,7 @@ export default function ChatInterface() {
         setRfqReady(false);
         setRfqPdfBase64(null);
         setRfqHtmlReport(null);
+        setRfqActionStatus(null);
     };
 
     const onSendMessage = async (message: string) => {
@@ -190,6 +212,46 @@ export default function ChatInterface() {
 
         await sendMessage(message, currentChatId);
     };
+
+    const onRunQualifiedRfqAction = useCallback(async () => {
+        if (!chatId || !accessToken) return;
+        try {
+            const response = await invokeQualifiedAction({
+                apiEndpoint: streamApiEndpoint,
+                caseId: chatId,
+                authToken: accessToken,
+            });
+            if (response.case_state && typeof response.case_state === "object") {
+                applyExternalCaseState(chatId, response.case_state, response.visible_case_narrative ?? null);
+            }
+            if (response.executed) {
+                setRfqActionStatus(
+                    String(response.action_payload?.message ?? "RFQ action accepted."),
+                );
+                return;
+            }
+            setRfqActionStatus(
+                response.block_reasons.length > 0
+                    ? `Blocked: ${response.block_reasons.join(", ")}`
+                    : "RFQ action blocked.",
+            );
+        } catch (error) {
+            setRfqActionStatus(error instanceof Error ? error.message : "RFQ action failed.");
+        }
+    }, [accessToken, applyExternalCaseState, chatId, streamApiEndpoint]);
+
+    const onApplySuggestedQuestion = useCallback((prompt: string) => {
+        setChatInput(null);
+
+        if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+            window.requestAnimationFrame(() => {
+                setChatInput(prompt);
+            });
+            return;
+        }
+
+        setChatInput(prompt);
+    }, []);
 
     const markdownComponents = {
         p: ({ node, ...props }: any) => <p className="mb-4 last:mb-0" {...props} />,
@@ -364,9 +426,13 @@ export default function ChatInterface() {
                             <div className="flex flex-col gap-4 h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                                 <LiveCalcTile
                                     tile={liveCalcTile}
+                                    casePanel={structuredCasePanel}
                                     rfqReady={rfqReady}
                                     rfqPdfBase64={rfqPdfBase64}
                                     rfqHtmlReport={rfqHtmlReport}
+                                    rfqActionStatus={rfqActionStatus}
+                                    onQualifiedAction={structuredCasePanel?.isStructured ? onRunQualifiedRfqAction : null}
+                                    onSuggestedQuestionAction={onApplySuggestedQuestion}
                                 />
                             </div>
                         </motion.div>
