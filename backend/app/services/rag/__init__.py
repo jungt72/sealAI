@@ -1,11 +1,17 @@
 # backend/app/services/rag/__init__.py
 from __future__ import annotations
 
-# Public surface für Altaufrufer: ro.prewarm(), ro.hybrid_retrieve, ro.FINAL_K
-from .rag_orchestrator import (
-    startup_warmup as prewarm,   # erwartet von Startup
-    hybrid_retrieve,
-    FINAL_K,
-)
+def __getattr__(name: str):
+    if name not in {"prewarm", "hybrid_retrieve", "FINAL_K"}:
+        raise AttributeError(name)
+
+    from . import rag_orchestrator
+
+    mapping = {
+        "prewarm": rag_orchestrator.startup_warmup,
+        "hybrid_retrieve": rag_orchestrator.hybrid_retrieve,
+        "FINAL_K": rag_orchestrator.FINAL_K,
+    }
+    return mapping[name]
 
 __all__ = ["prewarm", "hybrid_retrieve", "FINAL_K"]

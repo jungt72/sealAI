@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import jinja2
 
-from app.langgraph_v2.state import RenderedPrompt
+
+@dataclass(frozen=True)
+class RenderedPrompt:
+    template_name: str
+    version: str
+    rendered_text: str
+    hash_sha256: str
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 

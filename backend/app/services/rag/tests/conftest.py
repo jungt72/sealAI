@@ -61,4 +61,3 @@ def anyio_backend() -> str:
 # (sealai_state.py uses try/except import; running conftest first ensures
 # env vars are set before that import chain fires).
 from app.services.rag.state import WorkingProfile as _WP  # noqa: F401, E402
-from app.langgraph_v2.state.sealai_state import SealAIState as _SS  # noqa: F401, E402

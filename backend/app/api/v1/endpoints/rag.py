@@ -6,14 +6,13 @@ import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import structlog
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.common.errors import error_detail
 from app.services.rag.constants import (
     RAG_SHARED_TENANT_ID,
     RAG_VISIBILITY_PUBLIC,
@@ -24,8 +23,6 @@ from app.services.rag.constants import (
 )
 
 from app.core.config import settings
-from app.database import get_db
-from app.models.rag_document import RagDocument
 from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin
 
 from app.services.rag.route_resolver import resolve_route_key
@@ -41,8 +38,30 @@ from app.services.rag.utils import (
     sanitize_filename,
 )
 
+if TYPE_CHECKING:
+    from app.models.rag_document import RagDocument
+
 router = APIRouter(prefix="/rag", tags=["rag"])
 logger = structlog.get_logger("api.rag")
+
+
+def error_detail(code: str, **details: object) -> dict[str, object]:
+    payload: dict[str, object] = {"code": code}
+    payload.update(details)
+    return payload
+
+
+async def get_db_dependency():
+    from app.database import get_db
+
+    async for session in get_db():
+        yield session
+
+
+def _rag_document_model():
+    from app.models.rag_document import RagDocument
+
+    return RagDocument
 
 
 async def _check_upload_rate_limit(tenant_id: str) -> None:
@@ -172,14 +191,26 @@ async def rag_health() -> Dict[str, Any]:
 
 @router.post("/upload")
 async def upload_rag_document(
-    file: UploadFile = File(...),
-    category: Optional[str] = Form(default=None),
-    tags: Optional[str] = Form(default=None),
-    visibility: str = Form(default="private"),
-    scope: str = Form(default="tenant"),
+    request: Request,
     current_user: RequestUser = Depends(get_current_request_user),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db_dependency),
 ) -> Dict[str, Any]:
+    try:
+        form = await request.form()
+    except AssertionError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=error_detail("missing_optional_dependency", dependency="python-multipart"),
+        ) from exc
+
+    file = form.get("file")
+    if not isinstance(file, UploadFile):
+        raise HTTPException(status_code=400, detail=error_detail("missing_file"))
+    category = form.get("category")
+    tags = form.get("tags")
+    visibility = str(form.get("visibility") or "private")
+    scope = str(form.get("scope") or "tenant")
+
     try:
         ensure_upload_directory()
     except PermissionError as exc:
@@ -308,6 +339,7 @@ async def upload_rag_document(
 
         return {"document_id": existing_doc.document_id, "status": "processing"}
 
+    RagDocument = _rag_document_model()
     doc = RagDocument(
         document_id=document_id,
         tenant_id=tenant_id,
@@ -334,7 +366,7 @@ async def upload_rag_document(
 @router.post("/sync-paperless")
 async def sync_paperless(
     current_user: RequestUser = Depends(get_current_request_user),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db_dependency),
 ) -> Dict[str, Any]:
     """Manually trigger a sync from Paperless to the global RAG tenant."""
     if not is_rag_admin(current_user):
@@ -348,9 +380,9 @@ async def sync_paperless(
 async def get_rag_document(
     document_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db_dependency),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await session.get(_rag_document_model(), document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
 
@@ -370,9 +402,9 @@ async def get_rag_document(
 async def rag_document_health_check(
     document_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db_dependency),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await session.get(_rag_document_model(), document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
     if doc.tenant_id != current_user.user_id:
@@ -421,9 +453,9 @@ async def rag_document_health_check(
 async def reingest_rag_document(
     document_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db_dependency),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await session.get(_rag_document_model(), document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
     if doc.tenant_id != current_user.user_id:
@@ -451,9 +483,9 @@ async def reingest_rag_document(
 async def delete_rag_document(
     document_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db_dependency),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await session.get(_rag_document_model(), document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
     if doc.tenant_id != current_user.user_id:
@@ -486,8 +518,9 @@ async def list_rag_documents(
     category: Optional[str] = Query(default=None),
     visibility: Optional[str] = Query(default=None),
     current_user: RequestUser = Depends(get_current_request_user),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db_dependency),
 ) -> Dict[str, Any]:
+    RagDocument = _rag_document_model()
     stmt = select(RagDocument).where(RagDocument.tenant_id == current_user.user_id)
     if status:
         stmt = stmt.where(RagDocument.status == status)

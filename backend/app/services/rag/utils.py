@@ -5,16 +5,17 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import structlog
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.common.errors import error_detail
-from app.models.rag_document import RagDocument
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    from app.models.rag_document import RagDocument
 
 logger = structlog.get_logger("services.rag.utils")
 
@@ -30,6 +31,12 @@ ALLOWED_CT = {
 }
 _UPLOAD_DIR_READY = False
 
+
+def error_detail(code: str, **details: object) -> dict[str, object]:
+    payload: dict[str, object] = {"code": code}
+    payload.update(details)
+    return payload
+
 def normalize_tags(raw: Optional[str]) -> Optional[List[str]]:
     if not raw:
         return None
@@ -43,7 +50,9 @@ def sanitize_filename(filename: str) -> str:
 
 async def find_existing_document(
     session: AsyncSession, tenant_id: str, sha256: str
-) -> Optional[RagDocument]:
+) -> Optional["RagDocument"]:
+    from app.models.rag_document import RagDocument
+
     stmt = (
         select(RagDocument)
         .where(RagDocument.tenant_id == tenant_id, RagDocument.sha256 == sha256)
@@ -60,7 +69,9 @@ async def find_existing_document_by_source(
     tenant_id: str,
     source_system: str,
     source_document_id: str,
-) -> Optional[RagDocument]:
+) -> Optional["RagDocument"]:
+    from app.models.rag_document import RagDocument
+
     stmt = (
         select(RagDocument)
         .where(

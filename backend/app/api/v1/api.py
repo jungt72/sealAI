@@ -6,13 +6,13 @@ from fastapi import APIRouter
 # REST-/Service-Endpunkte
 from app.api.v1.endpoints import (
     auth,
+    rag,
     langgraph_health,
     memory,
+    mcp,
     ping,
     users,
     chat_history,  # <-- WICHTIG: Chat-History/Conversations wieder aktivieren
-    rag,
-    mcp,
 )
 from app.api.v1.endpoints import rfq as rfq_endpoint
 

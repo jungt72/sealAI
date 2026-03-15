@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 import types
+import copy
 import pytest
 
 # Provide safe defaults so settings can initialize during test collection.
@@ -57,6 +58,44 @@ def app(fastapi_app):
 @pytest.fixture()
 def client(fastapi_app):
     return TestClient(fastapi_app)
+
+
+@pytest.fixture()
+def agent_request_user():
+    from app.services.auth.dependencies import RequestUser
+
+    return RequestUser(
+        user_id="user-test",
+        username="tester",
+        sub="user-test",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-test",
+    )
+
+
+@pytest.fixture(autouse=True)
+def agent_structured_case_store(monkeypatch):
+    try:
+        from app.agent.api import router as router_mod
+    except Exception:
+        yield {}
+        return
+
+    store = {}
+
+    async def _fake_load_structured_case(*, owner_id: str, case_id: str):
+        state = store.get((owner_id, case_id))
+        return copy.deepcopy(state) if state is not None else None
+
+    async def _fake_save_structured_case(*, owner_id: str, case_id: str, state, runtime_path: str, binding_level: str):
+        store[(owner_id, case_id)] = copy.deepcopy(state)
+
+    monkeypatch.setattr(router_mod, "load_structured_case", _fake_load_structured_case, raising=True)
+    monkeypatch.setattr(router_mod, "save_structured_case", _fake_save_structured_case, raising=True)
+    router_mod.SESSION_STORE.clear()
+    yield store
+    router_mod.SESSION_STORE.clear()
 
 @pytest.fixture()
 def mock_run_stream(monkeypatch):
