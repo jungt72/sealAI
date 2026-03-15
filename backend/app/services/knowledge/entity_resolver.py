@@ -1,35 +1,23 @@
-from typing import Dict
-
-_MATERIAL_SYNONYMS: Dict[str, str] = {
-    "viton": "fkm",
-    "nitril": "nbr",
-    "teflon": "ptfe",
-    "perfluorelastomer": "ffkm",
-}
-
-_MEDIUM_SYNONYMS: Dict[str, str] = {
-    "bio-öl": "hees",
-    "panolin": "hees",
-    "ester": "hees",
-    "mineralöl": "hlp",
-    "hydrauliköl": "hlp",
-    "öl": "hlp",
-    "water": "wasser",
-}
+from typing import Dict, Optional
+from app.agent.domain.normalization import normalize_material, normalize_medium_id
 
 def normalize_entity(entity_type: str, user_input: str) -> str:
     """
-    Normalizes user input for materials and media into canonical IDs.
-    Example: 'Viton' -> 'fkm', 'Bio-Öl' -> 'hees'.
+    Normalizes user input for materials and media into canonical service-layer IDs.
+    Example: 'Viton' -> 'FKM', 'Bio-Öl' -> 'hees', 'HLP' -> 'hlp'.
+
+    0B.3b: medium now uses normalize_medium_id() to restore the technical
+    service-/knowledge-layer lookup contract broken by 0B.3a.
+    material continues to use normalize_material() (uppercase canonical IDs).
     """
     if not user_input:
         return ""
-    
-    val = user_input.strip().lower()
-    
+
     if entity_type == "material":
-        return _MATERIAL_SYNONYMS.get(val, val)
+        norm = normalize_material(user_input)
+        return norm or user_input
     elif entity_type == "medium":
-        return _MEDIUM_SYNONYMS.get(val, val)
-    
-    return val
+        norm = normalize_medium_id(user_input)
+        return norm or user_input
+
+    return user_input.strip().lower()
