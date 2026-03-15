@@ -13,14 +13,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.api.v1.api import api_router
-from app.api.v1.endpoints.rag import ensure_upload_directory
-from app.observability.health import run_all_health_checks
-from app.services.rag.qdrant_bootstrap import bootstrap_rag_collection
-from app.services.jobs.worker import start_job_worker
+from app.services.rag.utils import ensure_upload_directory
 
 # 🚀 IMPORT DES NEUEN SAUBEREN AGENTEN-ROUTERS
 from app.agent.api.router import router as agent_router
@@ -46,6 +44,42 @@ DEV_CLEAR_LANGGRAPH_CHECKPOINTS_ON_STARTUP = _bool_env(
 )
 
 CHECKPOINTER_NAMESPACE = "sealai_agent"
+
+
+def _extract_missing_settings(exc: Exception) -> list[str]:
+    if not isinstance(exc, ValidationError):
+        return []
+    missing: list[str] = []
+    for error in exc.errors():
+        if error.get("type") != "missing":
+            continue
+        loc = error.get("loc") or ()
+        field = ".".join(str(part) for part in loc if part is not None).strip(".")
+        if field:
+            missing.append(field)
+    return sorted(set(missing))
+
+
+def _resolve_config_readiness():
+    from app.core.config import get_settings
+
+    try:
+        settings = get_settings()
+        return settings, {
+            "status": "ready",
+            "config_ready": True,
+            "reason": None,
+            "missing_settings": [],
+        }
+    except Exception as exc:
+        missing_settings = _extract_missing_settings(exc)
+        log.warning("Settings unavailable during app bootstrap: %s", exc)
+        return None, {
+            "status": "not_ready",
+            "config_ready": False,
+            "reason": "required_settings_missing" if missing_settings else type(exc).__name__,
+            "missing_settings": missing_settings,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +182,9 @@ async def _clear_langgraph_checkpoints_for_dev_run() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    from app.services.jobs.worker import start_job_worker
+    from app.services.rag.qdrant_bootstrap import bootstrap_rag_collection
+
     log.info("Starting %s v%s", APP_NAME, APP_VERSION)
     ensure_upload_directory()
     await _clear_langgraph_checkpoints_for_dev_run()
@@ -196,11 +233,17 @@ async def _bootstrap_audit_log() -> None:
 # ---------------------------------------------------------------------------
 
 def create_app() -> FastAPI:
-    from app.core.config import settings
-    from app.observability import metrics as _metrics  # noqa: F401
+    settings, config_readiness = _resolve_config_readiness()
+    metrics_available = False
+    try:
+        if settings is not None:
+            from app.observability import metrics as _metrics  # noqa: F401
+            metrics_available = True
+    except Exception as exc:
+        log.warning("Prometheus metrics import unavailable during app bootstrap: %s", exc)
 
     # LangSmith tracing
-    if settings.langchain_tracing_v2 and settings.langchain_api_key:
+    if settings is not None and settings.langchain_tracing_v2 and settings.langchain_api_key:
         os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
         os.environ.setdefault("LANGCHAIN_API_KEY", settings.langchain_api_key)
         os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
@@ -213,6 +256,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+    app.state.config_readiness = config_readiness
 
     if ENABLE_CORS:
         app.add_middleware(
@@ -224,7 +268,7 @@ def create_app() -> FastAPI:
         )
 
     # Prometheus middleware
-    if settings.prometheus_enabled:
+    if settings is not None and settings.prometheus_enabled and metrics_available:
         app.add_middleware(_PrometheusMiddleware)
         try:
             from prometheus_fastapi_instrumentator import Instrumentator
@@ -257,11 +301,28 @@ def create_app() -> FastAPI:
 
     @app.get("/readyz")
     async def ready():
-        return {"ready": bool(getattr(app.state, "warmed_up", False))}
+        config_status = dict(getattr(app.state, "config_readiness", {}))
+        ready_now = bool(getattr(app.state, "warmed_up", False)) and bool(config_status.get("config_ready", False))
+        return JSONResponse(
+            status_code=200 if ready_now else 503,
+            content={"ready": ready_now, "config": config_status},
+        )
 
     @app.get("/health", include_in_schema=False)
     async def health_check():
+        config_status = dict(getattr(app.state, "config_readiness", {}))
+        if not bool(config_status.get("config_ready", False)):
+            return JSONResponse(
+                status_code=503,
+                content={"status": "degraded", "checks": {"config": config_status}},
+            )
+
+        from app.observability.health import run_all_health_checks
+
         result = await run_all_health_checks()
+        checks = dict(result.get("checks") or {})
+        checks["config"] = config_status
+        result["checks"] = checks
         status_code = 200 if result.get("status") == "healthy" else 503
         return JSONResponse(status_code=status_code, content=result)
 

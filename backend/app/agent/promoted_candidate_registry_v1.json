@@ -1,0 +1,15 @@
+[
+  {
+    "registry_record_id": "registry-ptfe-g25-acme",
+    "material_family": "PTFE",
+    "grade_name": "G25",
+    "manufacturer_name": "Acme",
+    "candidate_kind": "manufacturer_grade",
+    "promotion_state": "promoted",
+    "registry_authority": "demo_only",
+    "source_refs": [
+      "registry:ptfe:g25:acme"
+    ],
+    "evidence_refs": []
+  }
+]

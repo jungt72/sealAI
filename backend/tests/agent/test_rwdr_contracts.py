@@ -1,4 +1,5 @@
 from app.agent.agent.state import SealingAIState
+from app.agent.case_state import build_default_sealing_requirement_spec
 from app.agent.domain.rwdr import (
     RWDRSelectorConfig,
     RWDRSelectorDerivedDTO,
@@ -121,7 +122,10 @@ def test_rwdr_state_can_hold_optional_contracts_without_breaking_layers():
             "machine_profile": {},
             "installation_profile": {},
             "operating_conditions": {},
-            "sealing_requirement_spec": {},
+            "sealing_requirement_spec": build_default_sealing_requirement_spec(
+                analysis_cycle_id="cycle-1",
+                state_revision=1,
+            ),
         },
         "governance": {
             "release_status": "inadmissible",

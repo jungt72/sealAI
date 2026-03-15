@@ -17,7 +17,12 @@ from fastapi import Depends, HTTPException, WebSocket, status, Header
 
 from app.core.config import settings              # <-- korrekter Pfad!
 import app.services.auth.token as auth_token
-from app.langgraph_v2.contracts import error_detail
+
+
+def error_detail(code: str, **details: object) -> dict[str, object]:
+    payload: dict[str, object] = {"code": code}
+    payload.update(details)
+    return payload
 
 
 # --------------------------------------------------------------------------- #
@@ -112,6 +117,10 @@ def _extract_scopes(payload: dict) -> list[str]:
 def canonical_user_id(user: RequestUser) -> str:
     """Return the canonical user id for scoping (claim-based preferred)."""
     return user.user_id or user.sub
+
+
+def is_rag_admin(user: RequestUser) -> bool:
+    return "admin" in (user.roles or [])
 
 
 async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)

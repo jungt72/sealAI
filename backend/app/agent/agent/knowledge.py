@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -78,14 +79,68 @@ def retrieve_fact_cards_fallback(query: str, limit: int = _DEFAULT_RAG_LIMIT) ->
     return retrieve_fact_cards(query, cards, limit=limit)
 
 
-async def retrieve_rag_context(query: str, tenant_id: Optional[str] = None, limit: int = _DEFAULT_RAG_LIMIT) -> List[FactCard]:
-    """Best-effort async retrieval hook used by the active agent graph.
+def _hit_to_fact_card(hit: Dict[str, Any], rank: int) -> FactCard:
+    """Map a single hybrid_retrieve result hit to a FactCard for use in the agent graph."""
+    metadata = hit.get("metadata") or {}
+    doc_id = (
+        metadata.get("id")
+        or metadata.get("doc_id")
+        or hit.get("source")
+        or f"rag_hit_{rank}"
+    )
+    return FactCard({
+        "id": doc_id,
+        "evidence_id": metadata.get("evidence_id") or doc_id,
+        "source_ref": hit.get("source"),
+        "topic": metadata.get("topic") or metadata.get("title") or "",
+        "content": hit.get("text") or "",
+        "topic_tags": metadata.get("tags") or metadata.get("topic_tags") or [],
+        "retrieval_rank": rank,
+        "retrieval_score": hit.get("fused_score") or hit.get("vector_score"),
+        "metadata": metadata,
+        "normalized_evidence": None,
+    })
 
-    The active agent path currently has no dedicated external RAG client here.
-    This adapter preserves the expected async contract and falls back to the
-    local fact-card KB until a canonical async retriever is wired in.
+
+async def retrieve_rag_context(
+    query: str,
+    tenant_id: Optional[str] = None,
+    limit: int = _DEFAULT_RAG_LIMIT,
+    *,
+    owner_id: Optional[str] = None,
+) -> List[FactCard]:
+    """Tenant-safe async retrieval using the canonical hybrid_retrieve infrastructure.
+
+    Parameters
+    ----------
+    tenant_id:
+        Organizational/session scope passed as `tenant` to hybrid_retrieve.
+        May be an org-level JWT claim or fall back to the individual user identity.
+    owner_id:
+        Individual document-ownership identity — canonical_user_id (user.user_id or sub).
+        This is the value stored in Qdrant as `tenant_id` at ingest time and used by
+        the visibility `should`-clause to unlock private documents.
+        Falls back to tenant_id when not provided.
+
+    Raises on retrieval failure so the caller (_retrieve_relevant_cards_async in
+    graph.py) can apply the controlled local-KB fallback with explicit path labeling.
+    The local fallback is never invoked silently from within this function.
     """
-    del tenant_id
     if not query or not query.strip():
         return []
-    return retrieve_fact_cards_fallback(query, limit=limit)
+    # Lazy import avoids circular import at module load time and keeps the
+    # rag_orchestrator (with its heavy fastembed/qdrant deps) out of agent tests.
+    from app.services.rag import hybrid_retrieve  # noqa: PLC0415
+    effective_owner_id = owner_id or tenant_id
+    hits: List[Dict[str, Any]] = await asyncio.to_thread(
+        hybrid_retrieve,
+        query=query,
+        tenant=tenant_id,
+        k=limit,
+        user_id=effective_owner_id,
+    )
+    logger.debug(
+        "[RAG:knowledge] hybrid_retrieve: %d hits, tenant=%s, owner=%s",
+        len(hits), tenant_id, effective_owner_id,
+    )
+    return [_hit_to_fact_card(h, rank) for rank, h in enumerate(hits)]

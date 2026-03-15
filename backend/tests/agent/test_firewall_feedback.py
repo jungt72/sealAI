@@ -1,6 +1,7 @@
 import pytest
 from app.agent.agent.graph import app
 from app.agent.agent.state import SealingAIState, AgentState
+from app.agent.case_state import build_default_sealing_requirement_spec
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 def create_initial_state_with_ptfe() -> SealingAIState:
@@ -12,7 +13,10 @@ def create_initial_state_with_ptfe() -> SealingAIState:
             "machine_profile": {},
             "installation_profile": {},
             "operating_conditions": {},
-            "sealing_requirement_spec": {}
+            "sealing_requirement_spec": build_default_sealing_requirement_spec(
+                analysis_cycle_id="test_session",
+                state_revision=1,
+            ),
         },
         "governance": {
             "release_status": "rfq_ready",
@@ -85,4 +89,4 @@ def test_firewall_feedback_loop_limit_violation():
     new_sealing_state = output["sealing_state"]
     assert new_sealing_state["governance"]["release_status"] == "inadmissible"
     assert len(new_sealing_state["governance"]["conflicts"]) == 1
-    assert new_sealing_state["governance"]["conflicts"][0]["type"] == "DOMAIN_LIMIT_VIOLATION"
+    assert new_sealing_state["governance"]["conflicts"][0]["type"] == "domain_limit_violation"

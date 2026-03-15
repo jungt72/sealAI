@@ -58,54 +58,16 @@ async def check_qdrant() -> Dict[str, Any]:
         return {"status": "unhealthy", "error": str(exc)}
 
 
-async def check_graph_compilation() -> Dict[str, Any]:
-    """Check whether LangGraph v2 can be built/retrieved."""
-    start = time.perf_counter()
-    try:
-        from app.langgraph_v2.sealai_graph_v2 import get_sealai_graph_v2
-
-        graph = await asyncio.wait_for(get_sealai_graph_v2(), timeout=10)
-
-        node_count = None
-        if hasattr(graph, "nodes"):
-            try:
-                node_count = len(getattr(graph, "nodes"))
-            except Exception:
-                node_count = None
-        if node_count is None and hasattr(graph, "get_graph"):
-            try:
-                compiled_view = graph.get_graph()
-                nodes = getattr(compiled_view, "nodes", None)
-                if nodes is not None:
-                    node_count = len(nodes)
-            except Exception:
-                node_count = None
-
-        latency_ms = (time.perf_counter() - start) * 1000
-        DEPENDENCY_UP.labels(dependency="graph").set(1)
-        return {
-            "status": "healthy",
-            "latency_ms": round(latency_ms, 2),
-            "nodes": node_count,
-            "version": "v2",
-        }
-    except Exception as exc:
-        DEPENDENCY_UP.labels(dependency="graph").set(0)
-        log.error("health.graph_compilation_failed", error=str(exc))
-        return {"status": "unhealthy", "error": str(exc)}
-
-
 async def run_all_health_checks() -> Dict[str, Any]:
     """Run all health checks in parallel and aggregate status."""
     results = await asyncio.gather(
         check_redis(),
         check_qdrant(),
-        check_graph_compilation(),
         return_exceptions=True,
     )
 
     checks: Dict[str, Any] = {}
-    names = ["redis", "qdrant", "graph"]
+    names = ["redis", "qdrant"]
 
     for idx, name in enumerate(names):
         result = results[idx]
@@ -125,6 +87,5 @@ async def run_all_health_checks() -> Dict[str, Any]:
 __all__ = [
     "check_redis",
     "check_qdrant",
-    "check_graph_compilation",
     "run_all_health_checks",
 ]

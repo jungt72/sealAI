@@ -1,3 +1,5 @@
+import hashlib as _hashlib
+
 SYSTEM_PROMPT_TEMPLATE = """
 Du bist der SealAI Prequalification Agent.
 Du beantwortest Fragen ausschließlich basierend auf dem folgenden Kontext (FactCards).
@@ -14,3 +16,7 @@ Anforderungen:
 3. Bevor du eine finale Empfehlung gibst, stelle sicher, dass alle kritischen Parameter (Medium, Druck, Temperatur) im Kontext oder durch den Nutzer geklärt wurden.
 4. Wenn das System einen DOMAIN_LIMIT_VIOLATION Konflikt meldet (z.B. Druck- oder Temperaturlimit überschritten), erkläre dem Nutzer höflich die technische Grenze und frage nach Alternativen oder Korrekturen.
 """
+
+# 0A.5: Version constants — change these when the prompt text changes materially.
+REASONING_PROMPT_VERSION = "reasoning_v1"
+REASONING_PROMPT_HASH = _hashlib.sha256(SYSTEM_PROMPT_TEMPLATE.encode()).hexdigest()[:12]

@@ -170,15 +170,27 @@ def test_candidate_with_pressure_conflict_is_not_viable():
     assert selection_state["candidates"][0]["viability_status"] == "blocked_pressure_conflict"
 
 
-def test_viable_candidate_can_be_released_when_governance_is_open():
+def test_candidate_with_demo_only_registry_becomes_exploratory():
+    """0B.1: A candidate matched only against a demo_only registry entry must NOT reach
+    qualified/promoted status.  The physical viability check still passes (temperature
+    within limits), but without a governed promoted trust anchor the candidate is
+    exploratory — output_blocked is True and no NEUTRAL_SCOPE_REPLY is produced.
+    """
     selection_state = build_selection_state(
         [
             {
                 "evidence_id": "fc-1",
-                "topic": "PTFE",
-                "content": "PTFE hat ein Temperaturlimit von max. 260 C.",
+                "topic": "PTFE G25 Acme datasheet",
+                "content": "PTFE grade G25 from Acme hat ein Temperaturlimit von max. 260 C.",
                 "retrieval_rank": 1,
-                "metadata": {},
+                "source_ref": "datasheet-acme-g25",
+                "source_type": "manufacturer_datasheet",
+                "source_rank": 1,
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G25",
+                    "manufacturer_name": "Acme",
+                },
             }
         ],
         {"analysis_cycle_id": "cycle-1"},
@@ -191,16 +203,23 @@ def test_viable_candidate_can_be_released_when_governance_is_open():
         {"operating_conditions": {"temperature": 200.0}},
     )
 
+    # Physical viability still holds — candidate is within temperature limits
     assert selection_state["selection_status"] == "winner_selected"
-    assert selection_state["winner_candidate_id"] == "ptfe"
-    assert selection_state["viable_candidate_ids"] == ["ptfe"]
-    assert selection_state["release_status"] == "rfq_ready"
-    assert selection_state["rfq_admissibility"] == "ready"
-    assert selection_state["recommendation_artifact"]["viable_candidate_ids"] == ["ptfe"]
+    assert selection_state["winner_candidate_id"] == "ptfe::g25::acme"
+    assert selection_state["viable_candidate_ids"] == ["ptfe::g25::acme"]
     assert selection_state["candidates"][0]["viability_status"] == "viable"
     assert selection_state["candidates"][0]["block_reason"] is None
-    assert selection_state["output_blocked"] is False
-    assert build_final_reply(selection_state) == NEUTRAL_SCOPE_REPLY
+
+    # 0B.1: demo_only registry entry does NOT grant promoted trust anchor status
+    assert selection_state["candidates"][0]["candidate_source_class"] == "exploratory_candidate_input"
+    assert selection_state["promoted_candidate_ids"] == []
+    assert selection_state["qualified_candidate_ids"] == []
+    assert selection_state["exploratory_candidate_ids"] == ["ptfe::g25::acme"]
+    assert selection_state["candidate_source_origin"] == "retrieval_fact_card_transition_adapter"
+
+    # output is blocked — exploratory source does not satisfy release gate
+    assert selection_state["output_blocked"] is True
+    assert build_final_reply(selection_state) == SAFEGUARDED_WITHHELD_REPLY
 
 
 def test_subfamily_governance_never_releases_rfq_reply():
@@ -234,6 +253,76 @@ def test_subfamily_governance_never_releases_rfq_reply():
     assert selection_state["specificity_level"] == "subfamily"
     assert selection_state["output_blocked"] is True
     assert build_final_reply(selection_state) == MANUFACTURER_VALIDATION_REPLY
+
+
+def test_contextual_final_reply_surfaces_direction_binding_and_limits():
+    selection_state = build_selection_state(
+        [
+            {
+                "evidence_id": "fc-1",
+                "topic": "PTFE grade G25 from Acme",
+                "content": "PTFE grade G25 from Acme hat ein Temperaturlimit von max. 260 C.",
+                "retrieval_rank": 1,
+                "metadata": {
+                    "material_family": "PTFE",
+                    "grade_name": "G25",
+                    "manufacturer_name": "Acme",
+                },
+            }
+        ],
+        {"analysis_cycle_id": "cycle-1"},
+        {
+            "release_status": "manufacturer_validation_required",
+            "rfq_admissibility": "provisional",
+            "specificity_level": "subfamily",
+            "conflicts": [],
+        },
+        {"operating_conditions": {"temperature": 200.0}},
+    )
+
+    reply = build_final_reply(
+        selection_state,
+        {
+            "rwdr_type_class": "engineering_review_required",
+            "review_flags": ["review_water_with_pressure"],
+            "blockers": ["manufacturer_name_unconfirmed_for_compound"],
+        },
+    )
+
+    assert "Aktuelle technische Richtung" in reply
+    assert "ptfe::g25::acme" in reply
+    assert "Bindungsgrad: Belastbare Vorqualifikation" in reply
+    assert "RFQ: provisional" in reply
+    assert "Review-pflichtig: review_water_with_pressure" in reply
+
+
+def test_contextual_final_reply_surfaces_scope_assumptions_and_recompute_boundary():
+    selection_state = build_selection_state(
+        [],
+        {"analysis_cycle_id": "cycle-1"},
+        {
+            "release_status": "inadmissible",
+            "rfq_admissibility": "inadmissible",
+            "specificity_level": "family_only",
+            "conflicts": [],
+        },
+    )
+
+    reply = build_final_reply(
+        selection_state,
+        {
+            "scope_of_validity": ["specificity_level:family_only", "medium_profile:water"],
+            "assumptions_active": ["temperature_estimated"],
+            "blockers": ["pressure_bar_missing"],
+            "obsolescence_state": "active",
+            "recompute_requirement": "required",
+        },
+    )
+
+    assert "Geltungsgrenze: specificity_level:family_only, medium_profile:water" in reply
+    assert "Annahmen: temperature_estimated" in reply
+    assert "Obsoleszenz: active" in reply
+    assert "Recompute: required" in reply
 
 
 def test_unknowns_release_blocking_prevents_governed_release():

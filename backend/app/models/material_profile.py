@@ -42,6 +42,10 @@ class MaterialPhysicalProfile(BaseModel):
     )
 
     # Mechanical / Extrusion
+    pressure_max: Optional[float] = Field(
+        None,
+        description="Maximum permitted static pressure in bar when explicitly known.",
+    )
     hardness_shore_a: Optional[float] = Field(
         None,
         description="Typical Shore A hardness of the compound.",

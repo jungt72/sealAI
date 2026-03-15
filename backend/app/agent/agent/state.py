@@ -10,6 +10,7 @@ from app.agent.domain.rwdr import (
     RWDRSelectorInputPatchDTO,
     RWDRSelectorOutputDTO,
 )
+from app.agent.case_state import CandidateCluster, CaseState, ResultContract, SealingRequirementSpec
 
 ReleaseStatus = Literal[
     "inadmissible",
@@ -33,7 +34,8 @@ class ObservedInputRecord(TypedDict, total=False):
     source: str
     raw_text: str
     claim_type: str
-    confidence: float
+    certainty: str       # ExtractionCertainty string value — structurally derived, not LLM self-assessed
+    confirmed: bool      # True when the user has explicitly confirmed this value
     source_fact_ids: List[str]
 
 
@@ -43,7 +45,7 @@ class IdentityRecord(TypedDict, total=False):
     raw_value: Any
     normalized_value: Any
     identity_class: IdentityClass
-    normalization_confidence: float
+    normalization_certainty: str   # ExtractionCertainty value for this normalized entry
     mapping_reason: str
     source_fact_ids: List[str]
     deterministic_source: str
@@ -76,7 +78,7 @@ class AssertedLayer(TypedDict):
     machine_profile: Dict[str, Any]
     installation_profile: Dict[str, Any]
     operating_conditions: Dict[str, Any]  # temperature, pressure
-    sealing_requirement_spec: Dict[str, Any]
+    sealing_requirement_spec: SealingRequirementSpec
 
 class GovernanceLayer(TypedDict):
     """
@@ -104,6 +106,21 @@ class CycleLayer(TypedDict):
     contract_obsolete: bool
     contract_obsolete_reason: Optional[str]
     state_revision: int
+    material_input_snapshot: NotRequired[Dict[str, Any]]
+    material_input_fingerprint: NotRequired[str]
+    material_input_revision: NotRequired[int]
+    last_material_recompute_previous_fingerprint: NotRequired[Optional[str]]
+    last_material_recompute_current_fingerprint: NotRequired[Optional[str]]
+    last_material_recompute_reasons: NotRequired[List[str]]
+    last_material_recompute_revision: NotRequired[int]
+    provider_contract_snapshot: NotRequired[Dict[str, Any]]
+    provider_contract_fingerprint: NotRequired[str]
+    provider_contract_revision: NotRequired[int]
+    matched_promoted_registry_record_ids: NotRequired[List[str]]
+    last_provider_recompute_previous_fingerprint: NotRequired[Optional[str]]
+    last_provider_recompute_current_fingerprint: NotRequired[Optional[str]]
+    last_provider_recompute_reasons: NotRequired[List[str]]
+    last_provider_recompute_revision: NotRequired[int]
 
 class SelectionCandidate(TypedDict):
     candidate_id: str
@@ -146,6 +163,7 @@ class SelectionLayer(TypedDict):
     blocked_candidates: List[Dict[str, str]]
     winner_candidate_id: Optional[str]
     recommendation_artifact: Optional[RecommendationArtifact]
+    candidate_clusters: NotRequired[List[CandidateCluster]]
     release_status: ReleaseStatus
     rfq_admissibility: RFQAdmissibility
     specificity_level: SpecificityLevel
@@ -188,6 +206,7 @@ class SealingAIState(TypedDict):
     governance: GovernanceLayer
     cycle: CycleLayer
     selection: SelectionLayer
+    result_contract: NotRequired[ResultContract]
     rwdr: NotRequired[RWDRSelectorState]
 
 class AgentState(TypedDict):
@@ -200,3 +219,7 @@ class AgentState(TypedDict):
     relevant_fact_cards: List[Dict[str, Any]]  # Speichert FactCards für Tool-Nodes (Phase H6)
     working_profile: Dict[str, Any]  # Extrahiertes Live-Profil (Druck, Temperatur, etc.)
     tenant_id: Optional[str]
+    # Individual document-ownership identity (canonical_user_id — matches RAG ingest tenant_id).
+    # Distinct from tenant_id which may carry an org-level JWT claim.
+    owner_id: NotRequired[Optional[str]]
+    case_state: NotRequired[CaseState]

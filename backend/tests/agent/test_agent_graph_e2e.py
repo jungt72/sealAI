@@ -1,9 +1,15 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.agent.agent.state import AgentState, SealingAIState
+from app.agent.case_state import build_default_sealing_requirement_spec
 from app.agent.agent.graph import app
 from app.agent.evidence.models import ClaimType
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+
+
+def _stream_once(message):
+    yield message
+
 
 def test_e2e_agent_conflict_injection():
     """
@@ -27,7 +33,10 @@ def test_e2e_agent_conflict_injection():
             "medium_profile": {"name": "Wasser"},
             "machine_profile": {},
             "installation_profile": {},
-            "sealing_requirement_spec": {}
+            "sealing_requirement_spec": build_default_sealing_requirement_spec(
+                analysis_cycle_id="session_e2e_1",
+                state_revision=1,
+            ),
         },
         "governance": {
             "release_status": "rfq_ready",
@@ -74,20 +83,37 @@ def test_e2e_agent_conflict_injection():
         tool_calls=[]
     )
     
-    # Mock das Verhalten von invoke() des gebundenen Modells
-    mock_llm.bind_tools.return_value.invoke.side_effect = [tool_call_response, final_response]
+    mock_llm.bind_tools.return_value.stream = MagicMock(
+        side_effect=[
+            _stream_once(tool_call_response),
+            _stream_once(final_response),
+        ]
+    )
+    mock_llm.stream = MagicMock(
+        side_effect=lambda messages, config=None: _stream_once(
+            AIMessage(
+                content="Ich habe den Konflikt dokumentiert. Fuer eine Freigabe brauche ich erst einen konsistenten, neu bestaetigten Fallstand.",
+                tool_calls=[],
+            )
+        )
+    )
     
     # 4. Graphen ausführen
-    with patch("app.agent.agent.graph.get_llm", return_value=mock_llm):
+    with patch("app.agent.agent.graph.retrieve_rag_context", new=AsyncMock(return_value=[])), \
+         patch("app.agent.agent.graph.get_fact_cards", return_value=[]), \
+         patch("app.agent.agent.graph.get_llm", return_value=mock_llm):
         final_output = app.invoke(agent_state)
         
-    # 5. Verifiziere Nachrichten-Historie (Human -> AI (ToolCall) -> ToolMessage -> AI (Final))
+    # 5. Verifiziere Nachrichten-Historie
+    # Human -> AI (ToolCall) -> ToolMessage -> AI (LLM Final) -> AI (Governed Final Reply)
     messages = final_output["messages"]
-    assert len(messages) == 4
+    assert len(messages) == 5
     assert isinstance(messages[0], HumanMessage)
     assert isinstance(messages[1], AIMessage) and messages[1].tool_calls
     assert isinstance(messages[2], ToolMessage)
     assert isinstance(messages[3], AIMessage) and not messages[3].tool_calls
+    assert isinstance(messages[4], AIMessage) and not messages[4].tool_calls
+    assert "Konflikt" in messages[4].content
     
     # 6. Verifiziere Engineering Firewall (sealing_state)
     final_sealing_state = final_output["sealing_state"]

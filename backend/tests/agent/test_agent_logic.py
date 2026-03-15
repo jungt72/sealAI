@@ -45,7 +45,7 @@ def test_process_cycle_update_channels_raw_claims_through_observed_and_normalize
             {
                 "statement": "Temperatur ist 120 C und Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 0.9,
+                "certainty": "explicit_value",
                 "source_fact_ids": ["fc-1"],
                 "source": "llm_submit_claim",
             }
@@ -57,7 +57,7 @@ def test_process_cycle_update_channels_raw_claims_through_observed_and_normalize
     assert new_state["normalized"]["normalized_parameters"]["temperature_c"] == 120.0
     assert new_state["normalized"]["normalized_parameters"]["medium_normalized"] == "Wasser"
     assert new_state["normalized"]["identity_records"]["temperature"]["identity_class"] == "identity_confirmed"
-    assert new_state["normalized"]["identity_records"]["temperature"]["deterministic_source"] == "raw_claim_regex"
+    assert new_state["normalized"]["identity_records"]["temperature"]["deterministic_source"] == "central_normalization"
     assert new_state["asserted"]["operating_conditions"]["temperature"] == 120.0
     assert new_state["asserted"]["medium_profile"]["name"] == "Wasser"
 
@@ -90,7 +90,7 @@ def test_process_cycle_update_separates_blocking_and_manufacturer_unknowns():
         ],
         expected_revision=1,
         validated_params={"temperature": 120.0},
-        raw_claims=[{"statement": "Medium bleibt unklar.", "claim_type": "fact_observed", "confidence": 0.8, "source": "llm_submit_claim"}],
+        raw_claims=[{"statement": "Medium bleibt unklar.", "claim_type": "fact_observed", "certainty": "explicit_value", "source": "llm_submit_claim"}],
     )
 
     assert new_state["governance"]["release_status"] == "inadmissible"
@@ -112,7 +112,7 @@ def test_process_cycle_update_raw_claim_grade_and_manufacturer_without_evidence_
             {
                 "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 1.0,
+                "certainty": "explicit_value",
                 "source": "llm_submit_claim",
             }
         ],
@@ -137,7 +137,7 @@ def test_process_cycle_update_allows_rfq_ready_only_for_evidence_bound_compound_
             {
                 "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 1.0,
+                "certainty": "explicit_value",
                 "source": "llm_submit_claim",
                 "source_fact_ids": ["fc-1"],
             }
@@ -185,7 +185,7 @@ def test_process_cycle_update_upgrades_only_to_subfamily_without_manufacturer():
             {
                 "statement": "Material ist PTFE, Grade G25. Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 1.0,
+                "certainty": "explicit_value",
                 "source": "llm_submit_claim",
                 "source_fact_ids": ["fc-1"],
             }
@@ -245,7 +245,7 @@ def test_process_cycle_update_marks_claim_hint_without_fact_card_binding_as_unre
             {
                 "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 1.0,
+                "certainty": "explicit_value",
                 "source": "llm_submit_claim",
                 "source_fact_ids": ["fc-missing"],
             }
@@ -272,7 +272,7 @@ def test_process_cycle_update_rejects_unqualified_fact_card_identity_for_rfq_rea
             {
                 "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 1.0,
+                "certainty": "explicit_value",
                 "source": "llm_submit_claim",
                 "source_fact_ids": ["fc-1"],
             }
@@ -311,7 +311,7 @@ def test_process_cycle_update_rejects_authoritatively_weak_fact_card_for_rfq_rea
             {
                 "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 1.0,
+                "certainty": "explicit_value",
                 "source": "llm_submit_claim",
                 "source_fact_ids": ["fc-1"],
             }
@@ -354,7 +354,7 @@ def test_process_cycle_update_rejects_temporally_undated_fact_card_for_rfq_ready
             {
                 "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 1.0,
+                "certainty": "explicit_value",
                 "source": "llm_submit_claim",
                 "source_fact_ids": ["fc-1"],
             }
@@ -397,7 +397,7 @@ def test_process_cycle_update_surfaces_conflicting_fact_card_identity_as_inadmis
             {
                 "statement": "Material ist PTFE, Grade G25, Hersteller Acme. Medium ist Wasser.",
                 "claim_type": "fact_observed",
-                "confidence": 1.0,
+                "certainty": "explicit_value",
                 "source": "llm_submit_claim",
                 "source_fact_ids": ["fc-1", "fc-2"],
             }
@@ -462,7 +462,7 @@ def test_ptfe_temperature_limit_violation():
         Claim(
             claim_type=ClaimType.FACT_OBSERVED,
             statement="Die Anwendung läuft bei 300 C.",
-            confidence=1.0,
+            is_inferred=False,
             source_fact_ids=[]
         )
     ]
@@ -503,7 +503,7 @@ def test_ptfe_temperature_within_limits():
         Claim(
             claim_type=ClaimType.FACT_OBSERVED,
             statement="Temperatur ist 200 °C.",
-            confidence=1.0,
+            is_inferred=False,
             source_fact_ids=[]
         )
     ]
@@ -536,7 +536,7 @@ def test_non_ptfe_no_limit_check():
         Claim(
             claim_type=ClaimType.FACT_OBSERVED,
             statement="Temperatur ist 300 C.",
-            confidence=1.0,
+            is_inferred=False,
             source_fact_ids=[]
         )
     ]
@@ -561,7 +561,7 @@ def test_water_pressure_limit_violation():
         Claim(
             claim_type=ClaimType.FACT_OBSERVED,
             statement="Druck ist 20 bar",
-            confidence=1.0,
+            is_inferred=False,
             source_fact_ids=[]
         )
     ]
@@ -586,7 +586,7 @@ def test_water_pressure_within_limits_psi():
         Claim(
             claim_type=ClaimType.FACT_OBSERVED,
             statement="Druck ist 145 psi",
-            confidence=1.0,
+            is_inferred=False,
             source_fact_ids=[]
         )
     ]
@@ -621,7 +621,7 @@ def test_dynamic_nbr_limit_from_rag():
         Claim(
             claim_type=ClaimType.FACT_OBSERVED,
             statement="Die Temperatur ist 120 C.",
-            confidence=1.0,
+            is_inferred=False,
             source_fact_ids=[]
         )
     ]

@@ -64,4 +64,10 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     return Settings()
 
-settings = get_settings()
+
+class _LazySettings:
+    def __getattr__(self, name: str):
+        return getattr(get_settings(), name)
+
+
+settings = _LazySettings()

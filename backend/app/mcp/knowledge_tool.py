@@ -10,6 +10,7 @@ from functools import lru_cache, wraps
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from langchain_core.tools import BaseTool, StructuredTool
+from pydantic import BaseModel, ConfigDict, Field
 from qdrant_client import QdrantClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -18,12 +19,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.langgraph_v2.state.audit import (
-    ToolCallRecord,
-    append_tool_call_to_state,
-    build_tool_call_record,
-    emit_tool_call_record,
-)
 from app.services.rag.rag_orchestrator import hybrid_retrieve
 
 logger = logging.getLogger(__name__)
@@ -47,6 +42,75 @@ RAG_MIN_SCORE_THRESHOLD = float(os.getenv("RAG_SCORE_THRESHOLD", "0.05"))
 # Prefer Streamable HTTP (JSON-RPC 2.0 over HTTP) for production interoperability.
 # Fallback to SSE transport only when streamable HTTP is unavailable.
 MCP_TRANSPORT_PREFERENCE: Dict[str, str] = {"primary": "streamable_http", "fallback": "sse"}
+
+
+class ToolCallRecord(BaseModel):
+    tool_name: str
+    tool_input: Dict[str, Any] = Field(default_factory=dict)
+    tool_output: Any = None
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int
+    status: str
+    run_id: Optional[str] = None
+    thread_id: Optional[str] = None
+    tenant_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    error_message: Optional[str] = None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+def build_tool_call_record(
+    *,
+    tool_name: str,
+    tool_input: Dict[str, Any],
+    tool_output: Any,
+    started_at: datetime,
+    finished_at: datetime,
+    error: Exception | None = None,
+    run_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> ToolCallRecord:
+    duration_ms = max(0, int((finished_at - started_at).total_seconds() * 1000))
+    return ToolCallRecord(
+        tool_name=tool_name,
+        tool_input=dict(tool_input or {}),
+        tool_output=tool_output,
+        started_at=started_at,
+        finished_at=finished_at,
+        duration_ms=duration_ms,
+        status="error" if error is not None else "ok",
+        run_id=run_id,
+        thread_id=thread_id,
+        tenant_id=tenant_id,
+        metadata=dict(metadata or {}),
+        error_message=str(error) if error is not None else None,
+    )
+
+
+def emit_tool_call_record(record: ToolCallRecord) -> None:
+    logger.debug(
+        "mcp_tool_call_record_emitted",
+        extra={
+            "tool_name": record.tool_name,
+            "status": record.status,
+            "duration_ms": record.duration_ms,
+            "run_id": record.run_id,
+            "thread_id": record.thread_id,
+            "tenant_id": record.tenant_id,
+        },
+    )
+
+
+def append_tool_call_to_state(state: Any, record: ToolCallRecord) -> None:
+    if not isinstance(state, dict):
+        return
+    records = state.setdefault("tool_call_records", [])
+    if isinstance(records, list):
+        records.append(record.model_dump(mode="python"))
 
 SEARCH_TECHNICAL_DOCS_SPEC: Dict[str, Any] = {
     "name": SEARCH_TECHNICAL_DOCS_TOOL_NAME,

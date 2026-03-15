@@ -2,11 +2,18 @@ from typing import List, Dict, Any, Tuple, Optional
 import re
 from app.agent.evidence.models import Claim, ClaimType
 from app.agent.agent.state import SealingAIState
+from app.agent.hardening.enums import ExtractionCertainty
+from app.agent.case_state import (
+    build_default_candidate_clusters,
+    build_default_result_contract,
+    build_default_sealing_requirement_spec,
+)
 from app.agent.domain.parameters import PhysicalParameter
 from app.agent.domain.limits import OperatingLimit
 from app.agent.domain.material import MaterialValidator, MaterialPhysicalProfile, normalize_fact_card_evidence
 from app.agent.agent.calc import calculate_physics
 from app.agent.agent.utils import validate_material_risk
+from app.agent.domain.normalization import extract_parameters as norm_extract, normalize_material, normalize_medium
 from copy import deepcopy
 
 _NORMATIVE_RELEASE_STATUSES = {
@@ -38,7 +45,7 @@ _MANUFACTURER_CONFLICT_TYPES = {
     "manufacturer_scope_required",
     "resolution_requires_manufacturer_scope",
 }
-_MATERIAL_FAMILY_PATTERN = re.compile(r"\b(NBR|PTFE|FKM|EPDM|SILIKON)\b", re.I)
+_MATERIAL_FAMILY_PATTERN = re.compile(r"\b(NBR|PTFE|FKM|FFKM|EPDM|SILIKON)\b", re.I)
 _SPECIFIC_GRADE_PATTERN = re.compile(r"\b(?:grade|compound|typ|type)\s*[:\-]?\s*([a-z0-9._-]+)\b", re.I)
 _FILLER_HINT_PATTERN = re.compile(r"\b(filled|glass[- ]filled|carbon[- ]filled|bronze[- ]filled)\b", re.I)
 _MANUFACTURER_NAME_PATTERN = re.compile(
@@ -59,7 +66,10 @@ def _ensure_state_shape(state: SealingAIState) -> SealingAIState:
             "machine_profile": {},
             "installation_profile": {},
             "operating_conditions": {},
-            "sealing_requirement_spec": {},
+            "sealing_requirement_spec": build_default_sealing_requirement_spec(
+                analysis_cycle_id="session_init_1",
+                state_revision=1,
+            ),
         },
     )
     state.setdefault(
@@ -96,11 +106,19 @@ def _ensure_state_shape(state: SealingAIState) -> SealingAIState:
             "blocked_candidates": [],
             "winner_candidate_id": None,
             "recommendation_artifact": None,
+            "candidate_clusters": build_default_candidate_clusters(),
             "release_status": "inadmissible",
             "rfq_admissibility": "inadmissible",
             "specificity_level": "family_only",
             "output_blocked": True,
         },
+    )
+    state.setdefault(
+        "result_contract",
+        build_default_result_contract(
+            analysis_cycle_id="session_init_1",
+            state_revision=1,
+        ),
     )
     return state
 
@@ -151,22 +169,21 @@ def _record_observed_claims(state: SealingAIState, raw_claims: List[Dict[str, An
             "source": str(claim.get("source") or "llm_claim"),
             "raw_text": statement,
             "claim_type": str(claim.get("claim_type") or ClaimType.FACT_OBSERVED),
-            "confidence": float(claim.get("confidence") or 0.0),
+            "certainty": str(claim.get("certainty") or ExtractionCertainty.EXPLICIT_VALUE.value),
+            "confirmed": bool(claim.get("confirmed", False)),
             "source_fact_ids": list(claim.get("source_fact_ids") or []),
         }
         observed_layer.setdefault("observed_inputs", []).append(entry)
         observed_entries.append(entry)
 
-        temp_match = re.search(r"(\d+)\s*(c|grad|°c)", statement, re.I)
-        if temp_match:
-            raw_parameters["temperature_raw"] = temp_match.group(0)
-        pressure_match = re.search(r"(\d+)\s*(bar|psi|mpa)", statement, re.I)
-        if pressure_match:
-            raw_parameters["pressure_raw"] = pressure_match.group(0)
-        if "wasser" in statement.lower():
-            raw_parameters["medium_raw_input"] = "Wasser"
-        elif "öl" in statement.lower() or "oil" in statement.lower():
-            raw_parameters["medium_raw_input"] = "Öl"
+        # 0B.3: Use central normalization for parameter extraction
+        extracted = norm_extract(statement)
+        if "temperature_raw" in extracted:
+            raw_parameters["temperature_raw"] = extracted["temperature_raw"]
+        if "pressure_raw" in extracted:
+            raw_parameters["pressure_raw"] = extracted["pressure_raw"]
+        if "medium_normalized" in extracted:
+            raw_parameters["medium_raw_input"] = extracted["medium_normalized"]
 
     return observed_entries
 
@@ -187,7 +204,7 @@ def _write_identity_record(
         "raw_value": raw_value,
         "normalized_value": normalized_value,
         "identity_class": "identity_confirmed",
-        "normalization_confidence": 1.0,
+        "normalization_certainty": ExtractionCertainty.EXPLICIT_VALUE.value,
         "mapping_reason": mapping_reason,
         "source_fact_ids": list(dict.fromkeys(source_fact_ids or [])),
         "deterministic_source": deterministic_source,
@@ -212,7 +229,7 @@ def _write_unresolved_identity_record(
         "raw_value": raw_value,
         "normalized_value": None,
         "identity_class": "identity_unresolved",
-        "normalization_confidence": 0.0,
+        "normalization_certainty": ExtractionCertainty.AMBIGUOUS.value,
         "mapping_reason": mapping_reason,
         "source_fact_ids": list(dict.fromkeys(source_fact_ids or [])),
         "deterministic_source": deterministic_source,
@@ -379,49 +396,44 @@ def _normalize_observed_entries(
 
     for entry in observed_entries:
         raw_text = entry.get("raw_text", "")
-        temp_match = re.search(r"(\d+)\s*(c|grad|°c)", raw_text, re.I)
-        if temp_match:
-            normalized["temperature_c"] = float(temp_match.group(1))
+        # 0B.3: Use central normalization for parameter extraction
+        extracted = norm_extract(raw_text)
+
+        if "temperature_c" in extracted:
+            normalized["temperature_c"] = extracted["temperature_c"]
             identity_records["temperature"] = {
-                "raw_value": temp_match.group(0),
-                "normalized_value": float(temp_match.group(1)),
+                "raw_value": extracted["temperature_raw"],
+                "normalized_value": extracted["temperature_c"],
                 "identity_class": "identity_confirmed",
-                "normalization_confidence": 1.0,
-                "mapping_reason": "regex_temperature_c",
+                "normalization_certainty": ExtractionCertainty.EXPLICIT_VALUE.value,
+                "mapping_reason": "normalized_temperature_c",
                 "source_fact_ids": [],
-                "deterministic_source": "raw_claim_regex",
+                "deterministic_source": "central_normalization",
             }
-        pressure_match = re.search(r"(\d+)\s*(bar|psi)", raw_text, re.I)
-        if pressure_match:
-            raw_value = pressure_match.group(0)
-            param = PhysicalParameter(value=float(pressure_match.group(1)), unit=pressure_match.group(2))
-            normalized["pressure_bar"] = param.to_base_unit()
+        
+        if "pressure_bar" in extracted:
+            normalized["pressure_bar"] = extracted["pressure_bar"]
             identity_records["pressure"] = {
-                "raw_value": raw_value,
-                "normalized_value": param.to_base_unit(),
+                "raw_value": extracted["pressure_raw"],
+                "normalized_value": extracted["pressure_bar"],
                 "identity_class": "identity_confirmed",
-                "normalization_confidence": 1.0,
-                "mapping_reason": "regex_pressure",
+                "normalization_certainty": ExtractionCertainty.EXPLICIT_VALUE.value,
+                "mapping_reason": "normalized_pressure_bar",
                 "source_fact_ids": [],
-                "deterministic_source": "raw_claim_regex",
+                "deterministic_source": "central_normalization",
             }
-        medium_value: Optional[str] = None
-        if "wasser" in raw_text.lower():
-            medium_value = "Wasser"
-        elif "öl" in raw_text.lower() or "oil" in raw_text.lower():
-            medium_value = "Öl"
-        elif "medium" in raw_text.lower():
-            medium_value = None
-        if medium_value:
+
+        if "medium_normalized" in extracted:
+            medium_value = extracted["medium_normalized"]
             normalized["medium_normalized"] = medium_value
             identity_records["medium"] = {
                 "raw_value": medium_value,
                 "normalized_value": medium_value,
                 "identity_class": "identity_confirmed",
-                "normalization_confidence": 1.0,
-                "mapping_reason": "keyword_match",
+                "normalization_certainty": ExtractionCertainty.EXPLICIT_VALUE.value,
+                "mapping_reason": "normalized_medium",
                 "source_fact_ids": [],
-                "deterministic_source": "raw_claim_regex",
+                "deterministic_source": "central_normalization",
             }
         elif "medium" in raw_text.lower():
             _write_unresolved_identity_record(
@@ -698,44 +710,32 @@ def search_alternative_materials(p_req: float, t_req: float, all_fact_cards: Lis
 
 def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_cards: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Phase H3/H8: Heuristische Extraktion technischer Parameter mittels Regex.
+    Phase H3/H8: Heuristische Extraktion technischer Parameter mittels zentraler Normalisierung.
     Dient dem working_profile (Live-UI) und bereitet Claims vor.
     """
     new_profile = deepcopy(current_profile)
     all_fact_cards = all_fact_cards or []
     
-    # 1. Drehzahl (RPM)
-    speed_match = re.search(r"(\d+)\s*(rpm|u/min)", text, re.I)
-    if speed_match:
-        new_profile["speed"] = float(speed_match.group(1))
+    # 0B.3: Use central normalization for parameter extraction
+    extracted = norm_extract(text)
+    
+    if "speed_rpm" in extracted:
+        new_profile["speed"] = extracted["speed_rpm"]
 
-    # 2. Durchmesser (mm)
-    diam_match = re.search(r"(\d+)\s*(mm|millimeter)", text, re.I)
-    if diam_match:
-        new_profile["diameter"] = float(diam_match.group(1))
+    if "diameter_mm" in extracted:
+        new_profile["diameter"] = extracted["diameter_mm"]
 
-    # 3. Druck (bar)
-    pres_match = re.search(r"(\d+)\s*(bar|mpa)", text, re.I)
-    if pres_match:
-        val = float(pres_match.group(1))
-        # Einfache bar/mpa Konvertierung falls nötig
-        new_profile["pressure"] = val
+    if "pressure_bar" in extracted:
+        new_profile["pressure"] = extracted["pressure_bar"]
 
-    # 4. Temperatur (C)
-    temp_match = re.search(r"(\d+)\s*(c|grad|°c)", text, re.I)
-    if temp_match:
-        new_profile["temperature"] = float(temp_match.group(1))
+    if "temperature_c" in extracted:
+        new_profile["temperature"] = extracted["temperature_c"]
 
-    # 5. Medium
-    if "medium" in text.lower() or "wasser" in text.lower() or "öl" in text.lower():
-        if "wasser" in text.lower(): new_profile["medium"] = "Wasser"
-        elif "öl" in text.lower(): new_profile["medium"] = "Öl"
+    if "medium_normalized" in extracted:
+        new_profile["medium"] = extracted["medium_normalized"]
 
-    # 6. Material
-    if "ptfe" in text.upper():
-        new_profile["material"] = "PTFE"
-    elif "nbr" in text.upper():
-        new_profile["material"] = "NBR"
+    if "material_normalized" in extracted:
+        new_profile["material"] = extracted["material_normalized"]
 
     # Risiko-Checks und Alternativen (Phase H8 UI-Logic)
     risk_msg = validate_material_risk(new_profile)
@@ -779,10 +779,13 @@ def evaluate_claim_conflicts(
             material_validators[profile.material_id.lower()] = MaterialValidator(profile)
 
     for claim in claims:
-        # Medium-Konflikt (legacy)
-        if "medium" in claim.statement.lower() or "öl" in claim.statement.lower() or "wasser" in claim.statement.lower():
-            new_medium = "öl" if "öl" in claim.statement.lower() else "wasser" if "wasser" in claim.statement.lower() else None
-            if current_medium and new_medium and current_medium.lower() != new_medium.lower():
+        # 0B.3: Use central normalization for parameter extraction
+        extracted = norm_extract(claim.statement)
+
+        # Medium-Konflikt
+        if "medium_normalized" in extracted:
+            new_medium = extracted["medium_normalized"]
+            if current_medium and new_medium.lower() != current_medium.lower():
                 conflicts.append({
                     "type": "PARAMETER_CONFLICT",
                     "severity": "CRITICAL",
@@ -793,47 +796,31 @@ def evaluate_claim_conflicts(
 
         # Physikalische Parameter-Validierung (H3/H6/H7)
         if claim.claim_type == ClaimType.FACT_OBSERVED:
-            # Temperatur-Parsing
-            temp_match = re.search(r"(\d+)\s*(C|F|°C|°F)", claim.statement)
-            if temp_match:
-                val = float(temp_match.group(1))
-                unit = temp_match.group(2).replace("°", "")
+            # Temperatur-Prüfung
+            if "temperature_c" in extracted:
+                temp_c = extracted["temperature_c"]
+                has_conflict = False
                 
-                try:
-                    temp_param = PhysicalParameter(value=val, unit=unit)
-                    has_conflict = False
-                    
-                    # Dynamische Prüfung gegen alle gefundenen Material-Validatoren
-                    for mat_id, validator in material_validators.items():
-                        # Prüfe ob das Material für diesen Kontext relevant ist
-                        if (current_medium and mat_id in current_medium.lower()) or (mat_id in claim.statement.lower()):
-                            if not validator.validate_temperature(temp_param):
-                                conflicts.append({
-                                    "type": "DOMAIN_LIMIT_VIOLATION",
-                                    "severity": "CRITICAL",
-                                    "field": "temperature",
-                                    "message": f"{mat_id.upper()} Limit überschritten: {temp_param.to_base_unit()}°C > {validator.profile.temp_max}°C (Quelle: FactCard Factory).",
-                                    "claim_statement": claim.statement
-                                })
-                                has_conflict = True
-                    
-                    if not has_conflict:
-                        validated_params["temperature"] = temp_param.to_base_unit()
-                        
-                except Exception:
-                    pass
+                # Dynamische Prüfung gegen alle gefundenen Material-Validatoren
+                for mat_id, validator in material_validators.items():
+                    # Prüfe ob das Material für diesen Kontext relevant ist
+                    if (current_medium and mat_id in current_medium.lower()) or (mat_id in claim.statement.lower()):
+                        if temp_c > validator.profile.temp_max:
+                            conflicts.append({
+                                "type": "DOMAIN_LIMIT_VIOLATION",
+                                "severity": "CRITICAL",
+                                "field": "temperature",
+                                "message": f"{mat_id.upper()} Limit überschritten: {temp_c}°C > {validator.profile.temp_max}°C (Quelle: FactCard Factory).",
+                                "claim_statement": claim.statement
+                            })
+                            has_conflict = True
+                
+                if not has_conflict:
+                    validated_params["temperature"] = temp_c
 
-            # Druck-Parsing
-            pressure_match = re.search(r"(\d+)\s*(bar|psi)", claim.statement.lower())
-            if pressure_match:
-                val = float(pressure_match.group(1))
-                unit = pressure_match.group(2)
-                
-                try:
-                    pressure_param = PhysicalParameter(value=val, unit=unit)
-                    validated_params["pressure"] = pressure_param.to_base_unit()
-                except Exception:
-                    pass
+            # Druck-Prüfung
+            if "pressure_bar" in extracted:
+                validated_params["pressure"] = extracted["pressure_bar"]
                 
     return conflicts, validated_params
 

@@ -1,7 +1,8 @@
 import re
 from typing import Any, Dict, List, Optional
-from app.agent.domain.material import MaterialPhysicalProfile, MaterialValidator, normalize_fact_card_evidence
-from app.agent.domain.parameters import PhysicalParameter
+
+from app.agent.domain.material import normalize_fact_card_evidence
+from app.agent.material_core import build_material_candidate_source_adapter, evaluate_material_qualification_core
 
 
 _MATERIAL_PATTERN = re.compile(r"\b(PTFE|NBR|FKM|EPDM|SILIKON)\b", re.I)
@@ -22,6 +23,91 @@ MANUFACTURER_VALIDATION_REPLY = (
 PRECHECK_ONLY_REPLY = (
     "Technischer Vorpruefstand erreicht. Weitere deterministische Klaerung ist erforderlich."
 )
+
+
+def _resolve_binding_scope(
+    selection_state: Dict[str, Any],
+    qualification_context: Dict[str, Any],
+) -> str:
+    release_status = selection_state.get("release_status")
+    rfq_admissibility = selection_state.get("rfq_admissibility")
+    specificity_level = selection_state.get("specificity_level", "family_only")
+    output_blocked = bool(selection_state.get("output_blocked", True))
+    if (
+        not output_blocked
+        and release_status == "rfq_ready"
+        and rfq_admissibility == "ready"
+        and specificity_level == "compound_required"
+    ):
+        return "RFQ-Basis"
+    if release_status == "manufacturer_validation_required" or rfq_admissibility == "provisional":
+        return "Belastbare Vorqualifikation"
+    if qualification_context.get("hard_stop") or selection_state.get("selection_status", "").startswith("blocked_"):
+        return "Orientierung"
+    if release_status == "precheck_only":
+        return "Orientierung"
+    return "Technische Orientierung"
+
+
+def _resolve_direction_statement(
+    selection_state: Dict[str, Any],
+    qualification_context: Dict[str, Any],
+) -> str:
+    hard_stop = qualification_context.get("hard_stop")
+    rwdr_type_class = qualification_context.get("rwdr_type_class")
+    winner_candidate_id = selection_state.get("winner_candidate_id")
+    viable_candidate_ids = list(selection_state.get("viable_candidate_ids", []))
+    selection_status = str(selection_state.get("selection_status") or "not_started")
+
+    if hard_stop:
+        return f"Aktuelle technische Richtung: blockiert durch {hard_stop}."
+    if winner_candidate_id:
+        return f"Aktuelle technische Richtung: Materialpfad {winner_candidate_id} bleibt der fuehrende Kandidat."
+    if rwdr_type_class:
+        return f"Aktuelle technische Richtung: RWDR-Typklasse {rwdr_type_class} ist vorselektiert."
+    if viable_candidate_ids:
+        return (
+            "Aktuelle technische Richtung: materialseitiger Shortlist-Raum ist bestimmt, "
+            "aber noch nicht auf einen einzelnen Kandidaten verengt."
+        )
+    if selection_status == "blocked_missing_required_inputs":
+        return "Aktuelle technische Richtung: noch keine belastbare Freigaberichtung, weil Kernangaben fehlen."
+    if selection_status == "blocked_no_viable_candidates":
+        return "Aktuelle technische Richtung: kein tragfaehiger Kandidat bleibt nach den deterministischen Pruefungen uebrig."
+    if selection_status == "blocked_no_candidates":
+        return "Aktuelle technische Richtung: es liegt noch keine belastbare Kandidatenbasis vor."
+    return "Aktuelle technische Richtung: nur ein vorlaeufiger technischer Eignungsraum ist sichtbar."
+
+
+def _build_contextual_reply(
+    selection_state: Dict[str, Any],
+    qualification_context: Dict[str, Any],
+) -> str:
+    direction = _resolve_direction_statement(selection_state, qualification_context)
+    binding_scope = _resolve_binding_scope(selection_state, qualification_context)
+    release_status = str(selection_state.get("release_status") or "inadmissible")
+    rfq_admissibility = str(selection_state.get("rfq_admissibility") or "inadmissible")
+    review_flags = [str(item) for item in qualification_context.get("review_flags", []) if item][:3]
+    blockers = [str(item) for item in qualification_context.get("blockers", []) if item][:3]
+    scope_markers = [str(item) for item in qualification_context.get("scope_of_validity", []) if item][:2]
+    assumptions = [str(item) for item in qualification_context.get("assumptions_active", []) if item][:2]
+    obsolescence_state = str(qualification_context.get("obsolescence_state") or "").strip()
+    recompute_requirement = str(qualification_context.get("recompute_requirement") or "").strip()
+
+    detail_parts = [f"Bindungsgrad: {binding_scope}", f"RFQ: {rfq_admissibility}", f"Release: {release_status}"]
+    if scope_markers:
+        detail_parts.append(f"Geltungsgrenze: {', '.join(scope_markers)}")
+    if assumptions:
+        detail_parts.append(f"Annahmen: {', '.join(assumptions)}")
+    if blockers:
+        detail_parts.append(f"Blocker: {', '.join(blockers)}")
+    if review_flags:
+        detail_parts.append(f"Review-pflichtig: {', '.join(review_flags)}")
+    if obsolescence_state:
+        detail_parts.append(f"Obsoleszenz: {obsolescence_state}")
+    if recompute_requirement:
+        detail_parts.append(f"Recompute: {recompute_requirement}")
+    return f"{direction} {'. '.join(detail_parts)}."
 
 
 def _pick_material_family(text: str, metadata: Dict[str, Any]) -> Optional[str]:
@@ -154,188 +240,43 @@ def _artifact_is_aligned(selection_state: Dict[str, Any], artifact: Dict[str, An
     )
 
 
-def _normalize_temperature(asserted_state: Dict[str, Any]) -> Optional[PhysicalParameter]:
-    temperature_value = (asserted_state or {}).get("operating_conditions", {}).get("temperature")
-    if temperature_value is None:
-        return None
-    try:
-        return PhysicalParameter(value=float(temperature_value), unit="C")
-    except Exception:
-        return None
-
-
-def _normalize_pressure(asserted_state: Dict[str, Any]) -> Optional[PhysicalParameter]:
-    pressure_value = (asserted_state or {}).get("operating_conditions", {}).get("pressure")
-    if pressure_value is None:
-        return None
-    try:
-        return PhysicalParameter(value=float(pressure_value), unit="bar")
-    except Exception:
-        return None
-
-
-def _classify_candidates(
-    candidates: List[Dict[str, Any]],
-    relevant_fact_cards: List[Dict[str, Any]],
-    asserted_state: Dict[str, Any],
-) -> tuple[List[str], List[Dict[str, str]]]:
-    temperature = _normalize_temperature(asserted_state)
-    pressure = _normalize_pressure(asserted_state)
-
-    cards_by_evidence_id = {
-        (card.get("evidence_id") or card.get("id")): {
-            "card": card,
-            "normalized_evidence": card.get("normalized_evidence") or normalize_fact_card_evidence(card),
-        }
-        for card in relevant_fact_cards
-        if (card.get("evidence_id") or card.get("id"))
-    }
-    viable_candidate_ids: List[str] = []
-    blocked_candidates: List[Dict[str, str]] = []
-
-    for candidate in candidates:
-        supporting_profiles: List[MaterialPhysicalProfile] = []
-        for evidence_ref in candidate.get("evidence_refs", []):
-            entry = cards_by_evidence_id.get(evidence_ref)
-            if not entry:
-                continue
-            card = dict(entry["card"])
-            card["normalized_evidence"] = entry["normalized_evidence"]
-            profile = MaterialPhysicalProfile.from_fact_card(card)
-            if profile and profile.material_id.upper() == candidate.get("material_family", "").upper():
-                supporting_profiles.append(profile)
-
-        if not supporting_profiles:
-            candidate["viability_status"] = "blocked_missing_required_inputs"
-            candidate["block_reason"] = "blocked_missing_required_inputs"
-            blocked_candidates.append(
-                {
-                    "candidate_id": candidate["candidate_id"],
-                    "block_reason": "blocked_missing_required_inputs",
-                }
-            )
-            continue
-
-        requires_temperature = True
-        requires_pressure = any(getattr(profile, "pressure_max", None) is not None for profile in supporting_profiles)
-
-        if requires_temperature and temperature is None:
-            candidate["viability_status"] = "blocked_missing_required_inputs"
-            candidate["block_reason"] = "blocked_missing_required_inputs"
-            blocked_candidates.append(
-                {
-                    "candidate_id": candidate["candidate_id"],
-                    "block_reason": "blocked_missing_required_inputs",
-                }
-            )
-            continue
-
-        if requires_pressure and pressure is None:
-            candidate["viability_status"] = "blocked_missing_required_inputs"
-            candidate["block_reason"] = "blocked_missing_required_inputs"
-            blocked_candidates.append(
-                {
-                    "candidate_id": candidate["candidate_id"],
-                    "block_reason": "blocked_missing_required_inputs",
-                }
-            )
-            continue
-
-        has_temperature_conflict = any(
-            not MaterialValidator(profile).validate_temperature(temperature)
-            for profile in supporting_profiles
-        )
-        if has_temperature_conflict:
-            candidate["viability_status"] = "blocked_temperature_conflict"
-            candidate["block_reason"] = "blocked_temperature_conflict"
-            blocked_candidates.append(
-                {
-                    "candidate_id": candidate["candidate_id"],
-                    "block_reason": "blocked_temperature_conflict",
-                }
-            )
-            continue
-
-        has_pressure_conflict = any(
-            getattr(profile, "pressure_max", None) is not None
-            and not MaterialValidator(profile).validate_pressure(pressure)
-            for profile in supporting_profiles
-        )
-        if has_pressure_conflict:
-            candidate["viability_status"] = "blocked_pressure_conflict"
-            candidate["block_reason"] = "blocked_pressure_conflict"
-            blocked_candidates.append(
-                {
-                    "candidate_id": candidate["candidate_id"],
-                    "block_reason": "blocked_pressure_conflict",
-                }
-            )
-            continue
-
-        candidate["viability_status"] = "viable"
-        candidate["block_reason"] = None
-        viable_candidate_ids.append(candidate["candidate_id"])
-
-    return viable_candidate_ids, blocked_candidates
-
-
 def build_selection_state(
     relevant_fact_cards: List[Dict[str, Any]],
     cycle_state: Dict[str, Any],
     governance_state: Optional[Dict[str, Any]] = None,
     asserted_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    candidates_by_id: Dict[str, Dict[str, Any]] = {}
-    evidence_basis: List[str] = []
     governance_state = governance_state or {}
     asserted_state = asserted_state or {}
-
-    for card in relevant_fact_cards:
-        normalized_evidence = card.get("normalized_evidence") or normalize_fact_card_evidence(card)
-        family = normalized_evidence.get("material_family")
-        if not family:
-            continue
-
-        filler_hint = normalized_evidence.get("filler_hint")
-        grade_name = normalized_evidence.get("grade_name")
-        manufacturer_name = normalized_evidence.get("manufacturer_name")
-        kind = normalized_evidence.get("candidate_kind") or _candidate_kind(family, filler_hint, grade_name, manufacturer_name)
-        candidate_id = _candidate_id(family, filler_hint, grade_name, manufacturer_name)
-        evidence_id = card.get("evidence_id") or card.get("id")
-        if not evidence_id:
-            continue
-
-        existing = candidates_by_id.get(candidate_id)
-        if not existing:
-            existing = {
-                "candidate_id": candidate_id,
-                "candidate_kind": kind,
-                "material_family": family,
-                "filler_hint": filler_hint,
-                "grade_name": grade_name,
-                "manufacturer_name": manufacturer_name,
-                "viability_status": "blocked_missing_required_inputs",
-                "block_reason": None,
-                "evidence_refs": [],
-                "_best_rank": card.get("retrieval_rank", 9999),
-            }
-            candidates_by_id[candidate_id] = existing
-
-        if evidence_id not in existing["evidence_refs"]:
-            existing["evidence_refs"].append(evidence_id)
-        existing["_best_rank"] = min(existing["_best_rank"], card.get("retrieval_rank", 9999))
-        if evidence_id not in evidence_basis:
-            evidence_basis.append(evidence_id)
-
-    ordered_candidates = sorted(candidates_by_id.values(), key=lambda candidate: candidate["candidate_id"])
-    for candidate in ordered_candidates:
-        candidate.pop("_best_rank", None)
-
-    viable_candidate_ids, blocked_candidates = _classify_candidates(
-        ordered_candidates,
-        relevant_fact_cards,
-        asserted_state,
+    adapter_output = build_material_candidate_source_adapter(
+        relevant_fact_cards=relevant_fact_cards,
     )
+    ordered_candidates = [record.model_dump() for record in adapter_output.candidate_source_records]
+    evidence_basis = list(adapter_output.evidence_basis)
+
+    core_output = evaluate_material_qualification_core(
+        candidate_source_records=adapter_output.candidate_source_records,
+        relevant_fact_cards=relevant_fact_cards,
+        asserted_state=asserted_state,
+        governance_state=governance_state,
+    )
+    assessments_by_id = {
+        assessment.candidate_id: assessment.model_dump()
+        for assessment in core_output.candidate_assessments
+    }
+    for candidate in ordered_candidates:
+        assessment = assessments_by_id.get(candidate["candidate_id"])
+        if not assessment:
+            continue
+        candidate["viability_status"] = assessment["viability_status"]
+        candidate["block_reason"] = assessment.get("block_reason")
+        candidate["candidate_source_class"] = assessment.get("candidate_source_class")
+        candidate["candidate_source_quality"] = assessment.get("candidate_source_quality")
+        candidate["qualified_eligible"] = bool(assessment.get("qualified_eligible"))
+        candidate["source_gate_reasons"] = list(assessment.get("source_gate_reasons", []))
+
+    viable_candidate_ids = list(core_output.viable_candidate_ids)
+    blocked_candidates = list(core_output.blocked_candidates)
     winner_candidate_id = viable_candidate_ids[0] if len(viable_candidate_ids) == 1 else None
     if not ordered_candidates:
         selection_status = "blocked_no_candidates"
@@ -348,10 +289,7 @@ def build_selection_state(
     governance_release_status = governance_state.get("release_status", "inadmissible")
     governance_rfq_admissibility = governance_state.get("rfq_admissibility", "inadmissible")
     specificity_level = governance_state.get("specificity_level", "family_only")
-    output_blocked = (
-        not viable_candidate_ids
-        or _governance_projection_blocks_output(governance_state)
-    )
+    output_blocked = bool(core_output.output_blocked or _governance_projection_blocks_output(governance_state))
     trace_refs = list(evidence_basis)
     cycle_id = cycle_state.get("analysis_cycle_id")
     if cycle_id:
@@ -382,13 +320,31 @@ def build_selection_state(
         "rfq_admissibility": governance_rfq_admissibility,
         "specificity_level": specificity_level,
         "output_blocked": output_blocked,
+        "material_core_status": core_output.qualification_status,
+        "material_core_open_points": list(core_output.open_points),
+        "material_core_missing_required_inputs": list(core_output.missing_required_inputs),
+        "qualified_candidate_ids": list(core_output.qualified_viable_candidate_ids),
+        "exploratory_candidate_ids": list(core_output.exploratory_candidate_ids),
+        "promoted_candidate_ids": list(core_output.promoted_candidate_ids),
+        "transition_candidate_ids": list(core_output.transition_candidate_ids),
+        "blocked_by_candidate_source": list(core_output.blocked_by_candidate_source),
+        "candidate_source_adapter": adapter_output.source_adapter,
+        "candidate_source_origin": adapter_output.source_origin,
+        "candidate_source_origins": list(adapter_output.source_origins),
+        "candidate_source_records": [record.model_dump() for record in adapter_output.candidate_source_records],
     }
 
 
-def build_final_reply(selection_state: Dict[str, Any]) -> str:
+def build_final_reply(
+    selection_state: Dict[str, Any],
+    qualification_context: Optional[Dict[str, Any]] = None,
+) -> str:
     artifact = selection_state.get("recommendation_artifact") or {}
     if not _artifact_is_aligned(selection_state, artifact):
         return SAFEGUARDED_WITHHELD_REPLY
+
+    if qualification_context:
+        return _build_contextual_reply(selection_state, qualification_context)
 
     release_status = selection_state.get("release_status")
     rfq_admissibility = selection_state.get("rfq_admissibility")
@@ -415,3 +371,31 @@ def build_final_reply(selection_state: Dict[str, Any]) -> str:
         return NO_VIABLE_CANDIDATES_REPLY
 
     return SAFEGUARDED_WITHHELD_REPLY
+
+
+def build_visible_reply_fallback(
+    selection_state: Dict[str, Any],
+    guidance_contract: Dict[str, Any],
+) -> str:
+    governed_summary = build_final_reply(selection_state)
+    ask_mode = str(guidance_contract.get("ask_mode") or "no_question_needed")
+    requested_fields = [str(item) for item in guidance_contract.get("requested_fields", []) if item][:3]
+
+    if ask_mode == "recompute_first":
+        return (
+            f"{governed_summary} Vor dem nächsten Eingabeschritt muss ich zuerst die veralteten "
+            "Qualifikationsabschnitte mit dem aktuellen Fallstand neu berechnen."
+        )
+    if ask_mode == "critical_inputs" and requested_fields:
+        fields = ", ".join(requested_fields)
+        return (
+            f"{governed_summary} Damit ich den Fall belastbar weiterführen kann, brauche ich als Nächstes nur noch: {fields}."
+        )
+    if ask_mode == "review_inputs" and requested_fields:
+        fields = ", ".join(requested_fields)
+        return (
+            f"{governed_summary} Der Kernfall steht; zur technischen Absicherung fehlen noch diese Review-Angaben: {fields}."
+        )
+    if ask_mode == "qualification_ready":
+        return f"{governed_summary} Der aktuelle Fall ist aus deterministischer Sicht bereit für den nächsten Qualification-Schritt."
+    return governed_summary

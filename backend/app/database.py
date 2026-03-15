@@ -2,28 +2,33 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from functools import lru_cache
 # Best Practice: Einzige Quelle für Einstellungen ist app.core.config
 from app.core.config import settings
 
 # SQLAlchemy Base
 Base = declarative_base()
 
-# Datenbank-URL aus Core-Config ziehen
-DATABASE_URL = settings.database_url
+@lru_cache(maxsize=1)
+def _get_engine():
+    return create_async_engine(
+        settings.database_url,
+        future=True,
+        echo=settings.debug_sql,
+    )
 
-# Engine mit optionalem SQL-Debug aus den Settings
-engine = create_async_engine(
-    DATABASE_URL,
-    future=True,
-    echo=settings.debug_sql,   # gibt SQL-Statements bei Bedarf aus
-)
 
-# Session-Factory
-AsyncSessionLocal = sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
+@lru_cache(maxsize=1)
+def _get_session_factory():
+    return sessionmaker(
+        bind=_get_engine(),
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+
+def AsyncSessionLocal():
+    return _get_session_factory()()
 
 # FastAPI-Dependency für DB-Sessions
 async def get_db() -> AsyncSession:

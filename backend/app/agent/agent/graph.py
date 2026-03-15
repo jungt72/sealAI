@@ -1,5 +1,6 @@
 from typing import Literal, List, Optional, Any, Dict
 import asyncio
+import hashlib
 import logging
 from langgraph.graph import StateGraph, START, END
 from app.agent.agent.state import AgentState, SealingAIState
@@ -43,16 +44,28 @@ _VISIBLE_REPLY_SYSTEM_PROMPT = (
     "Die Governed Summary ist technisch bindend; du darfst sie sprachlich natuerlich machen, aber nicht fachlich veraendern."
 )
 
+# 0A.5: Version constants for graph-level prompts and model.
+# Update these when the prompt text or model changes materially.
+_GRAPH_MODEL_ID = "gpt-4o-mini"
+VISIBLE_REPLY_PROMPT_VERSION = "visible_reply_v1"
+VISIBLE_REPLY_PROMPT_HASH = hashlib.sha256(_VISIBLE_REPLY_SYSTEM_PROMPT.encode()).hexdigest()[:12]
+
+
 def get_llm(config: Optional[RunnableConfig] = None):
     """
     Factory-Methode für das LLM (Phase C5).
     """
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    return ChatOpenAI(model=_GRAPH_MODEL_ID, temperature=0)
 
 
 def get_fact_cards(query: str, tenant_id: Optional[str] = None):
-    """Backward-compatible retrieval hook for agent tests and local graph wiring."""
-    del tenant_id
+    """Backward-compatible local-KB fallback hook used when the primary retriever is unavailable.
+
+    tenant_id is accepted for API compatibility and logging but does not scope
+    the static local KB (which contains only shared engineering knowledge).
+    This path is only reached when hybrid_retrieve fails or returns empty.
+    """
+    logger.debug("[RAG:fallback] local KB lookup, tenant=%s", tenant_id)
     return retrieve_fact_cards_fallback(query)
 
 
@@ -197,10 +210,12 @@ def _build_reply_qualification_context(state: AgentState) -> Dict[str, Any]:
     }
 
 
-async def _retrieve_relevant_cards_async(query: str, tenant_id: Optional[str]) -> List[Any]:
+async def _retrieve_relevant_cards_async(
+    query: str, tenant_id: Optional[str], owner_id: Optional[str] = None
+) -> List[Any]:
     path_used = "real_rag"
     try:
-        relevant_cards = await retrieve_rag_context(query, tenant_id)
+        relevant_cards = await retrieve_rag_context(query, tenant_id, owner_id=owner_id)
     except Exception as e:
         logger.error(f"[RAG] Real-RAG Error, falling back: {e}", exc_info=True)
         relevant_cards = []
@@ -211,13 +226,17 @@ async def _retrieve_relevant_cards_async(query: str, tenant_id: Optional[str]) -
         if path_used != "real_rag_error_fallback":
             path_used = "pseudo_rag_fallback"
 
-    logger.info(f"[RAG] Path: {path_used}, Hits: {len(relevant_cards)}, Tenant: {tenant_id}")
-    print(f"[RAG] Path: {path_used}, Hits: {len(relevant_cards)}, Tenant: {tenant_id}", flush=True)
+    logger.info(
+        "[RAG] Path: %s, Hits: %d, Tenant: %s, Owner: %s",
+        path_used, len(relevant_cards), tenant_id, owner_id,
+    )
     return relevant_cards
 
 
-def _retrieve_relevant_cards_sync(query: str, tenant_id: Optional[str]) -> List[Any]:
-    return asyncio.run(_retrieve_relevant_cards_async(query, tenant_id))
+def _retrieve_relevant_cards_sync(
+    query: str, tenant_id: Optional[str], owner_id: Optional[str] = None
+) -> List[Any]:
+    return asyncio.run(_retrieve_relevant_cards_async(query, tenant_id, owner_id=owner_id))
 
 async def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
     """
@@ -228,8 +247,9 @@ async def reasoning_node(state: AgentState, config: Optional[RunnableConfig] = N
     messages = list(state.get("messages", []))
     current_profile = dict(state.get("working_profile") or {})
     tenant_id = state.get("tenant_id")
+    owner_id = state.get("owner_id")
     query = _extract_query(messages)
-    relevant_cards = await _retrieve_relevant_cards_async(query, tenant_id)
+    relevant_cards = await _retrieve_relevant_cards_async(query, tenant_id, owner_id=owner_id)
     cards_data = _normalize_cards(relevant_cards)
     _sealing_state_r = state.get("sealing_state") or {}
     _det_hash_r = snapshot_deterministic_layers(_sealing_state_r)
@@ -251,8 +271,9 @@ def reasoning_node_sync(state: AgentState, config: Optional[RunnableConfig] = No
     messages = list(state.get("messages", []))
     current_profile = dict(state.get("working_profile") or {})
     tenant_id = state.get("tenant_id")
+    owner_id = state.get("owner_id")
     query = _extract_query(messages)
-    relevant_cards = _retrieve_relevant_cards_sync(query, tenant_id)
+    relevant_cards = _retrieve_relevant_cards_sync(query, tenant_id, owner_id=owner_id)
     cards_data = _normalize_cards(relevant_cards)
     _sealing_state_rs = state.get("sealing_state") or {}
     _det_hash_rs = snapshot_deterministic_layers(_sealing_state_rs)
@@ -292,8 +313,9 @@ def evidence_tool_node(state: AgentState) -> dict:
             claim = Claim(
                 claim_type=args["claim_type"],
                 statement=args["statement"],
-                confidence=args["confidence"],
-                source_fact_ids=args.get("source_fact_ids", [])
+                is_inferred=bool(args.get("is_inferred", False)),
+                is_range=bool(args.get("is_range", False)),
+                source_fact_ids=args.get("source_fact_ids", []),
             )
             new_claims.append(claim)
             claim_to_tool_id[claim.statement] = tc["id"]
@@ -321,7 +343,8 @@ def evidence_tool_node(state: AgentState) -> dict:
         {
             "statement": claim.statement,
             "claim_type": claim.claim_type,
-            "confidence": claim.confidence,
+            "certainty": claim.certainty.value,
+            "confirmed": False,
             "source_fact_ids": claim.source_fact_ids,
             "source": "llm_submit_claim",
         }

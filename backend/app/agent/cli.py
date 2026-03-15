@@ -1,6 +1,11 @@
 import json
 from unittest.mock import MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
+from app.agent.case_state import (
+    build_default_candidate_clusters,
+    build_default_result_contract,
+    build_default_sealing_requirement_spec,
+)
 from app.agent.agent.state import AgentState, SealingAIState
 
 def create_initial_state() -> SealingAIState:
@@ -22,20 +27,46 @@ def create_initial_state() -> SealingAIState:
             "machine_profile": {},
             "installation_profile": {},
             "operating_conditions": {},
-            "sealing_requirement_spec": {}
+            "sealing_requirement_spec": build_default_sealing_requirement_spec(
+                analysis_cycle_id="session_init_1",
+                state_revision=1,
+            ),
         },
         "governance": {
             "release_status": "inadmissible",
             "rfq_admissibility": "inadmissible",
+            "specificity_level": "family_only",
             "scope_of_validity": [],
+            "assumptions_active": [],
+            "gate_failures": [],
+            "unknowns_release_blocking": [],
+            "unknowns_manufacturer_validation": [],
             "conflicts": []
         },
         "cycle": {
             "analysis_cycle_id": "session_init_1",
             "snapshot_parent_revision": 0,
             "contract_obsolete": False,
+            "contract_obsolete_reason": None,
             "state_revision": 1
-        }
+        },
+        "selection": {
+            "selection_status": "not_started",
+            "candidates": [],
+            "viable_candidate_ids": [],
+            "blocked_candidates": [],
+            "winner_candidate_id": None,
+            "recommendation_artifact": None,
+            "candidate_clusters": build_default_candidate_clusters(),
+            "release_status": "inadmissible",
+            "rfq_admissibility": "inadmissible",
+            "specificity_level": "family_only",
+            "output_blocked": True,
+        },
+        "result_contract": build_default_result_contract(
+            analysis_cycle_id="session_init_1",
+            state_revision=1,
+        ),
     }
 
 def run_agent(query: str, use_mock: bool = False):
