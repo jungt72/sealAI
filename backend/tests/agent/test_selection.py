@@ -73,6 +73,7 @@ def test_candidate_exists_but_governance_inadmissible_blocks_release():
 
     assert selection_state["winner_candidate_id"] == "ptfe"
     assert selection_state["selection_status"] == "winner_selected"
+    assert selection_state["direction_authority"] == "evidence_oriented"
     assert selection_state["release_status"] == "inadmissible"
     assert selection_state["recommendation_artifact"]["release_status"] == "inadmissible"
     assert build_final_reply(selection_state) == SAFEGUARDED_WITHHELD_REPLY
@@ -96,6 +97,7 @@ def test_critical_conflict_blocks_release_but_keeps_winner():
 
     assert selection_state["winner_candidate_id"] == "ptfe"
     assert selection_state["release_status"] == "rfq_ready"
+    assert selection_state["direction_authority"] == "evidence_oriented"
     assert selection_state["output_blocked"] is True
     assert selection_state["recommendation_artifact"]["release_status"] == selection_state["release_status"]
     assert build_final_reply(selection_state) == SAFEGUARDED_WITHHELD_REPLY
@@ -377,6 +379,7 @@ def test_selection_mirrors_governance_manufacturer_validation_without_releasing(
 
     assert selection_state["winner_candidate_id"] == "ptfe"
     assert selection_state["release_status"] == "manufacturer_validation_required"
+    assert selection_state["direction_authority"] == "evidence_oriented"
     assert selection_state["rfq_admissibility"] == "provisional"
     assert selection_state["output_blocked"] is True
     assert build_final_reply(selection_state) == MANUFACTURER_VALIDATION_REPLY
@@ -439,6 +442,7 @@ def test_candidate_identity_prefers_metadata_over_text_heuristics():
     assert candidate["manufacturer_name"] == "Acme"
     assert candidate["candidate_id"] == "ptfe::g25::acme"
     assert selection_state["winner_candidate_id"] == "ptfe::g25::acme"
+    assert selection_state["direction_authority"] == "evidence_oriented"
 
 
 def test_selection_uses_normalized_metadata_limits_over_text_fallback():

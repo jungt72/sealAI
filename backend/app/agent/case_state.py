@@ -170,6 +170,7 @@ class CandidateCluster(TypedDict, total=False):
     candidate_count: int
     winner_candidate_id: str | None
     candidate_source_origin: str | None
+    direction_authority: str | None
     source_ref: str
 
 
@@ -779,6 +780,20 @@ def _build_qualification_results(
             "source_ref": "sealing_state.selection",
             "details": {
                 "winner_candidate_id": selection.get("winner_candidate_id"),
+                "direction_authority": (
+                    selection.get("direction_authority")
+                    or (
+                        "governed_authority"
+                        if list(selection.get("qualified_candidate_ids", []))
+                        and selection.get("winner_candidate_id") in list(selection.get("qualified_candidate_ids", []))
+                        else "evidence_oriented"
+                        if (
+                            selection.get("winner_candidate_id")
+                            or list(selection.get("viable_candidate_ids", []))
+                        )
+                        else "none"
+                    )
+                ),
                 "viable_candidate_ids": list(selection.get("viable_candidate_ids", [])),
                 "qualified_candidate_ids": list(selection.get("qualified_candidate_ids", [])),
                 "exploratory_candidate_ids": list(selection.get("exploratory_candidate_ids", [])),
@@ -1210,6 +1225,8 @@ def _build_visible_technical_direction(
     critical_inputs = [str(item) for item in readiness.get("missing_critical_inputs", []) if item]
     review_inputs = [str(item) for item in readiness.get("missing_review_inputs", []) if item]
     winner_candidate_id = selection_details.get("winner_candidate_id")
+    direction_authority = str(selection_details.get("direction_authority") or "none")
+    candidate_source_origin = selection_details.get("candidate_source_origin")
     type_class = (rwdr.get("details") or {}).get("type_class")
     qualification_level = _resolve_qualification_level(qualification_results)
 
@@ -1236,6 +1253,10 @@ def _build_visible_technical_direction(
         basis_tokens.append(f"RWDR {type_class}")
     if isinstance(winner_candidate_id, str) and winner_candidate_id:
         basis_tokens.append(f"Winner {winner_candidate_id}")
+    if direction_authority and direction_authority != "none":
+        basis_tokens.append(f"Authority {_humanize_token(direction_authority)}")
+    if candidate_source_origin:
+        basis_tokens.append(f"Source {candidate_source_origin}")
 
     return [
         _narrative_item(
@@ -1251,6 +1272,31 @@ def _build_visible_technical_direction(
             value=_humanize_token("blocked" if hard_stops else "rwdr" if type_class else "material" if winner_candidate_id else "none"),
             detail=" · ".join(basis_tokens) or None,
             severity="high" if hard_stops else "low",
+        ),
+        _narrative_item(
+            key="technical_direction_authority",
+            label="Direction Authority",
+            value=(
+                "Governed authority"
+                if direction_authority == "governed_authority"
+                else "Evidence-oriented direction"
+                if direction_authority == "evidence_oriented"
+                else "No active direction authority"
+            ),
+            detail=" · ".join(
+                part
+                for part in [
+                    "Governed domain data is the active trust-granting basis"
+                    if direction_authority == "governed_authority"
+                    else "Evidence supports orientation and viability but is not trust-granting"
+                    if direction_authority == "evidence_oriented"
+                    else None,
+                    f"Source {candidate_source_origin}" if candidate_source_origin else None,
+                ]
+                if part
+            )
+            or None,
+            severity="low" if direction_authority == "governed_authority" else "medium" if direction_authority == "evidence_oriented" else "low",
         ),
         _narrative_item(
             key="technical_direction_binding",
@@ -1731,11 +1777,13 @@ def _build_visible_governed_summary(
     policy_context: Dict[str, Any] | None = None,
 ) -> str:
     direction = next((item for item in technical_direction if item.get("key") == "technical_direction_current"), None) or {}
+    authority = next((item for item in technical_direction if item.get("key") == "technical_direction_authority"), None) or {}
     binding = next((item for item in technical_direction if item.get("key") == "technical_direction_binding"), None) or {}
     constraints = next((item for item in validity_envelope if item.get("key") == "validity_constraints"), None) or {}
     obsolescence = next((item for item in validity_envelope if item.get("key") == "validity_obsolescence"), None) or {}
     parts = [
         f"Aktuelle technische Richtung: {direction.get('value', 'N/A')}.",
+        f"Autoritaet: {authority.get('value', 'N/A')}.",
         f"Bindungsrahmen: {binding.get('value', 'N/A')}.",
     ]
     if handover_status and handover_status.get("value"):
@@ -1823,6 +1871,7 @@ def _build_sealing_requirement_spec(
     if selection_projection:
         selection_snapshot = {
             "winner_candidate_id": selection_projection.get("winner_candidate_id"),
+            "direction_authority": selection_projection.get("direction_authority"),
             "viable_candidate_ids": list(selection_projection.get("viable_candidate_ids", [])),
             "qualified_candidate_ids": list(selection_projection.get("qualified_candidate_ids", [])),
             "candidate_source_origin": selection_projection.get("candidate_source_origin"),
@@ -1940,6 +1989,7 @@ def _build_candidate_clusters(
     )
     winner_candidate_id = selection_projection.get("winner_candidate_id")
     candidate_source_origin = selection_projection.get("candidate_source_origin")
+    direction_authority = selection_projection.get("direction_authority")
     blocked_candidate_ids = [
         str(item.get("candidate_id"))
         for item in selection_projection.get("blocked_candidates", [])
@@ -1970,6 +2020,9 @@ def _build_candidate_clusters(
                 "winner_candidate_id": str(winner_candidate_id) if winner_candidate_id else None,
                 "candidate_source_origin": (
                     str(candidate_source_origin) if candidate_source_origin else None
+                ),
+                "direction_authority": (
+                    str(direction_authority) if direction_authority else None
                 ),
                 "source_ref": "case_state.candidate_clusters",
             }
