@@ -295,6 +295,11 @@ def test_case_action_response_accepts_rendered_spec_artifact():
                     "qualified_candidate_ids": ["ptfe::g25::acme"],
                     "candidate_source_origin": "promoted_registry",
                     "output_blocked": False,
+                    "material_direction_contract": {
+                        "authority_layer": "governed_authority",
+                        "direction_layer": "governed_direction",
+                        "source_provenance": "promoted_registry",
+                    },
                 },
                 "candidate_clusters": [],
                 "render_artifact": {
@@ -324,6 +329,12 @@ def test_case_action_response_accepts_rendered_spec_artifact():
     assert response.action_payload is not None
     assert response.action_payload.render_artifact.filename == "sealing-requirement-spec-cycle-3.md"
     assert response.action_payload.render_artifact.mime_type == "text/markdown"
+    assert response.action_payload.sealing_requirement_spec.selection_snapshot is not None
+    assert response.action_payload.sealing_requirement_spec.selection_snapshot.material_direction_contract is not None
+    assert (
+        response.action_payload.sealing_requirement_spec.selection_snapshot.material_direction_contract.authority_layer
+        == "governed_authority"
+    )
 
 
 def test_qualified_action_contract_rejects_unknown_action_identifier():

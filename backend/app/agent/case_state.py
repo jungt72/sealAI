@@ -163,6 +163,12 @@ class ResultContract(TypedDict, total=False):
     source_ref: str
 
 
+class MaterialDirectionContract(TypedDict, total=False):
+    authority_layer: str
+    direction_layer: str
+    source_provenance: str | None
+
+
 class CandidateCluster(TypedDict, total=False):
     cluster_key: str
     cluster_status: str
@@ -171,6 +177,7 @@ class CandidateCluster(TypedDict, total=False):
     winner_candidate_id: str | None
     candidate_source_origin: str | None
     direction_authority: str | None
+    material_direction_contract: MaterialDirectionContract | None
     source_ref: str
 
 
@@ -703,6 +710,29 @@ def _build_derived_calculations(
     return build_calculation_foundation(sealing_state, working_profile, rwdr_state)
 
 
+def _build_material_direction_contract(
+    *,
+    direction_authority: Any,
+    candidate_source_origin: Any,
+) -> MaterialDirectionContract:
+    authority_token = str(direction_authority or "none")
+    if authority_token == "governed_authority":
+        authority_layer = "governed_authority"
+        direction_layer = "governed_direction"
+    elif authority_token == "evidence_oriented":
+        authority_layer = "not_trust_granting"
+        direction_layer = "evidence_oriented_direction"
+    else:
+        authority_layer = "none"
+        direction_layer = "none"
+
+    return {
+        "authority_layer": authority_layer,
+        "direction_layer": direction_layer,
+        "source_provenance": str(candidate_source_origin) if candidate_source_origin else None,
+    }
+
+
 def _build_engineering_signals(
     sealing_state: Dict[str, Any],
     working_profile: Dict[str, Any],
@@ -773,6 +803,28 @@ def _build_qualification_results(
         results["material_core"]["details"]["stale"] = True
         results["material_core"]["details"]["stale_reasons"] = list(invalidation_state.get("recompute_reasons", []))
     if selection:
+        direction_authority = (
+            selection.get("direction_authority")
+            or (
+                "governed_authority"
+                if list(selection.get("qualified_candidate_ids", []))
+                and selection.get("winner_candidate_id") in list(selection.get("qualified_candidate_ids", []))
+                else "evidence_oriented"
+                if (
+                    selection.get("winner_candidate_id")
+                    or list(selection.get("viable_candidate_ids", []))
+                )
+                else "none"
+            )
+        )
+        candidate_source_origin = (
+            selection.get("candidate_source_origin")
+            or (
+                material_core_output.candidate_source_origins[0]
+                if len(material_core_output.candidate_source_origins) == 1
+                else "mixed_candidate_source_boundary_v1"
+            )
+        )
         results["material_selection_projection"] = {
             "status": str(selection.get("selection_status", "not_started")),
             "binding_level": "ORIENTATION",
@@ -780,20 +832,7 @@ def _build_qualification_results(
             "source_ref": "sealing_state.selection",
             "details": {
                 "winner_candidate_id": selection.get("winner_candidate_id"),
-                "direction_authority": (
-                    selection.get("direction_authority")
-                    or (
-                        "governed_authority"
-                        if list(selection.get("qualified_candidate_ids", []))
-                        and selection.get("winner_candidate_id") in list(selection.get("qualified_candidate_ids", []))
-                        else "evidence_oriented"
-                        if (
-                            selection.get("winner_candidate_id")
-                            or list(selection.get("viable_candidate_ids", []))
-                        )
-                        else "none"
-                    )
-                ),
+                "direction_authority": direction_authority,
                 "viable_candidate_ids": list(selection.get("viable_candidate_ids", [])),
                 "qualified_candidate_ids": list(selection.get("qualified_candidate_ids", [])),
                 "exploratory_candidate_ids": list(selection.get("exploratory_candidate_ids", [])),
@@ -811,14 +850,7 @@ def _build_qualification_results(
                     selection.get("candidate_source_adapter")
                     or material_core_output.deterministic_gate_summary.get("candidate_source_adapter")
                 ),
-                "candidate_source_origin": (
-                    selection.get("candidate_source_origin")
-                    or (
-                        material_core_output.candidate_source_origins[0]
-                        if len(material_core_output.candidate_source_origins) == 1
-                        else "mixed_candidate_source_boundary_v1"
-                    )
-                ),
+                "candidate_source_origin": candidate_source_origin,
                 "candidate_source_origins": list(
                     selection.get("candidate_source_origins", [])
                     or material_core_output.candidate_source_origins
@@ -829,6 +861,10 @@ def _build_qualification_results(
                 ),
                 "has_promoted_candidate_source": bool(material_core_output.has_promoted_candidate_source),
                 "output_blocked": bool(selection.get("output_blocked", True)),
+                "material_direction_contract": _build_material_direction_contract(
+                    direction_authority=direction_authority,
+                    candidate_source_origin=candidate_source_origin,
+                ),
             },
         }
         if material_stale:
@@ -1876,6 +1912,13 @@ def _build_sealing_requirement_spec(
             "qualified_candidate_ids": list(selection_projection.get("qualified_candidate_ids", [])),
             "candidate_source_origin": selection_projection.get("candidate_source_origin"),
             "output_blocked": bool(selection_projection.get("output_blocked", True)),
+            "material_direction_contract": dict(
+                selection_projection.get("material_direction_contract")
+                or _build_material_direction_contract(
+                    direction_authority=selection_projection.get("direction_authority"),
+                    candidate_source_origin=selection_projection.get("candidate_source_origin"),
+                )
+            ),
         }
 
     sealing_requirement_spec: SealingRequirementSpec = {
@@ -2023,6 +2066,10 @@ def _build_candidate_clusters(
                 ),
                 "direction_authority": (
                     str(direction_authority) if direction_authority else None
+                ),
+                "material_direction_contract": _build_material_direction_contract(
+                    direction_authority=direction_authority,
+                    candidate_source_origin=candidate_source_origin,
                 ),
                 "source_ref": "case_state.candidate_clusters",
             }

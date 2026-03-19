@@ -654,12 +654,22 @@ def test_allowed_promoted_fresh_case_executes_rfq_action_successfully(fake_struc
     assert spec["contract_obsolete"] is False
     assert spec["qualified_action"]["summary"] == "qualified_action_enabled"
     assert spec["selection_snapshot"]["winner_candidate_id"] == "ptfe::g25::acme"
+    assert spec["selection_snapshot"]["material_direction_contract"] == {
+        "authority_layer": "governed_authority",
+        "direction_layer": "governed_direction",
+        "source_provenance": "promoted_candidate_registry_v1",
+    }
     assert [cluster["cluster_key"] for cluster in spec["candidate_clusters"]] == [
         "selected",
         "qualified_viable",
         "viable",
     ]
     assert spec["candidate_clusters"][0]["candidate_ids"] == ["ptfe::g25::acme"]
+    assert spec["candidate_clusters"][0]["material_direction_contract"] == {
+        "authority_layer": "governed_authority",
+        "direction_layer": "governed_direction",
+        "source_provenance": "promoted_candidate_registry_v1",
+    }
     assert spec["render_artifact"] == artifact
     assert artifact["artifact_type"] == "sealing_requirement_spec_markdown"
     assert artifact["artifact_version"] == "sealing_requirement_spec_render_v1"
@@ -741,6 +751,11 @@ def test_exploratory_case_is_blocked_server_side(fake_structured_case_store, age
     assert payload["allowed"] is False
     assert payload["executed"] is False
     assert "exploratory_candidate_source_only" in payload["block_reasons"]
+    assert payload["case_state"]["sealing_requirement_spec"]["selection_snapshot"]["material_direction_contract"] == {
+        "authority_layer": "not_trust_granting",
+        "direction_layer": "evidence_oriented_direction",
+        "source_provenance": "retrieval_fact_card_transition_adapter",
+    }
     assert payload["case_state"]["qualified_action_status"]["last_status"] == "blocked"
     assert payload["case_state"]["qualified_action_status"]["block_reasons"] == payload["block_reasons"]
     assert payload["case_state"]["qualified_action_history"][0]["last_status"] == "blocked"

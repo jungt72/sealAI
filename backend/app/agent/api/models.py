@@ -66,6 +66,14 @@ class QualifiedActionGateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class MaterialDirectionContractResponse(BaseModel):
+    authority_layer: str
+    direction_layer: str
+    source_provenance: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CandidateClusterContract(BaseModel):
     cluster_key: str
     cluster_status: str
@@ -74,6 +82,7 @@ class CandidateClusterContract(BaseModel):
     winner_candidate_id: Optional[str] = None
     candidate_source_origin: Optional[str] = None
     direction_authority: Optional[str] = None
+    material_direction_contract: Optional[MaterialDirectionContractResponse] = None
     source_ref: str
 
     model_config = ConfigDict(extra="forbid")
@@ -143,6 +152,7 @@ class SelectionSnapshotContract(BaseModel):
     qualified_candidate_ids: list[str] = Field(default_factory=list)
     candidate_source_origin: Optional[str] = None
     output_blocked: bool
+    material_direction_contract: Optional[MaterialDirectionContractResponse] = None
 
     model_config = ConfigDict(extra="forbid")
 
