@@ -276,6 +276,7 @@ def build_selection_state(
         candidate["source_gate_reasons"] = list(assessment.get("source_gate_reasons", []))
 
     viable_candidate_ids = list(core_output.viable_candidate_ids)
+    qualified_candidate_ids = list(core_output.qualified_viable_candidate_ids)
     blocked_candidates = list(core_output.blocked_candidates)
     winner_candidate_id = viable_candidate_ids[0] if len(viable_candidate_ids) == 1 else None
     if not ordered_candidates:
@@ -286,6 +287,12 @@ def build_selection_state(
         selection_status = "blocked_missing_required_inputs"
     else:
         selection_status = "blocked_no_viable_candidates"
+    if winner_candidate_id and winner_candidate_id in qualified_candidate_ids:
+        direction_authority = "governed_authority"
+    elif viable_candidate_ids:
+        direction_authority = "evidence_oriented"
+    else:
+        direction_authority = "none"
     governance_release_status = governance_state.get("release_status", "inadmissible")
     governance_rfq_admissibility = governance_state.get("rfq_admissibility", "inadmissible")
     specificity_level = governance_state.get("specificity_level", "family_only")
@@ -315,6 +322,7 @@ def build_selection_state(
         "viable_candidate_ids": viable_candidate_ids,
         "blocked_candidates": blocked_candidates,
         "winner_candidate_id": winner_candidate_id,
+        "direction_authority": direction_authority,
         "recommendation_artifact": recommendation_artifact,
         "release_status": governance_release_status,
         "rfq_admissibility": governance_rfq_admissibility,
@@ -323,7 +331,7 @@ def build_selection_state(
         "material_core_status": core_output.qualification_status,
         "material_core_open_points": list(core_output.open_points),
         "material_core_missing_required_inputs": list(core_output.missing_required_inputs),
-        "qualified_candidate_ids": list(core_output.qualified_viable_candidate_ids),
+        "qualified_candidate_ids": qualified_candidate_ids,
         "exploratory_candidate_ids": list(core_output.exploratory_candidate_ids),
         "promoted_candidate_ids": list(core_output.promoted_candidate_ids),
         "transition_candidate_ids": list(core_output.transition_candidate_ids),

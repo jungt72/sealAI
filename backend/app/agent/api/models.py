@@ -73,6 +73,7 @@ class CandidateClusterContract(BaseModel):
     candidate_count: int
     winner_candidate_id: Optional[str] = None
     candidate_source_origin: Optional[str] = None
+    direction_authority: Optional[str] = None
     source_ref: str
 
     model_config = ConfigDict(extra="forbid")
@@ -137,6 +138,7 @@ class ResultContractResponse(BaseModel):
 
 class SelectionSnapshotContract(BaseModel):
     winner_candidate_id: Optional[str] = None
+    direction_authority: Optional[str] = None
     viable_candidate_ids: list[str] = Field(default_factory=list)
     qualified_candidate_ids: list[str] = Field(default_factory=list)
     candidate_source_origin: Optional[str] = None

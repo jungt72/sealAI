@@ -241,6 +241,7 @@ def _exploratory_material_action_state(*, revision: int = 3):
         "blocked_candidates": [],
         "blocked_by_candidate_source": [],
         "winner_candidate_id": "ptfe",
+        "direction_authority": "evidence_oriented",
         "candidate_source_adapter": "material_candidate_source_adapter_v1",
         "candidate_source_origin": "retrieval_fact_card_transition_adapter",
         "candidate_source_origins": ["retrieval_fact_card_transition_adapter"],
@@ -840,6 +841,40 @@ def test_legacy_rfq_ready_does_not_bypass_server_side_gate(fake_structured_case_
     assert payload["allowed"] is False
     assert payload["qualified_action_gate"]["allowed"] is False
     assert payload["case_state"]["qualified_action_status"]["last_status"] == "blocked"
+
+
+def test_blocked_rfq_gate_keeps_visible_handover_prequalified_in_action_response(fake_structured_case_store, agent_request_user):
+    state = _exploratory_material_action_state()
+    state["sealing_state"]["governance"]["release_status"] = "rfq_ready"
+    state["sealing_state"]["governance"]["rfq_admissibility"] = "ready"
+    state["sealing_state"]["selection"]["release_status"] = "rfq_ready"
+    state["sealing_state"]["selection"]["rfq_admissibility"] = "ready"
+    state["sealing_state"]["selection"]["recommendation_artifact"]["release_status"] = "rfq_ready"
+    state["sealing_state"]["selection"]["recommendation_artifact"]["rfq_admissibility"] = "ready"
+    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-5-visible")] = state
+
+    response = asyncio.run(
+        download_rfq_action(
+            "rfq-case-5-visible",
+            CaseActionRequest(action="download_rfq"),
+            current_user=agent_request_user,
+        )
+    )
+
+    payload = response.model_dump()
+    governed_summary = str(payload["visible_case_narrative"]["governed_summary"])
+    authority_item = next(
+        item for item in payload["visible_case_narrative"]["technical_direction"]
+        if item["key"] == "technical_direction_authority"
+    )
+    assert payload["allowed"] is False
+    assert payload["qualified_action_gate"]["allowed"] is False
+    assert payload["binding_level"] == "QUALIFIED_PRESELECTION"
+    assert payload["result_contract"]["rfq_admissibility"] == "ready"
+    assert "Handover-Status: Prequalified." in governed_summary
+    assert "Handover-Status: RFQ ready." not in governed_summary
+    assert "Autoritaet: Evidence-oriented direction." in governed_summary
+    assert authority_item["value"] == "Evidence-oriented direction"
 
 
 def test_qualified_action_status_matches_newest_history_entry(fake_structured_case_store, agent_request_user):

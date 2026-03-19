@@ -225,6 +225,13 @@ def test_chat_response_accepts_typed_governed_output_contracts():
                     "value": "No active technical direction",
                     "detail": None,
                     "severity": "low",
+                },
+                {
+                    "key": "technical_direction_authority",
+                    "label": "Direction Authority",
+                    "value": "No active direction authority",
+                    "detail": None,
+                    "severity": "low",
                 }
             ],
             "validity_envelope": [],
@@ -283,6 +290,7 @@ def test_case_action_response_accepts_rendered_spec_artifact():
                 },
                 "selection_snapshot": {
                     "winner_candidate_id": "ptfe::g25::acme",
+                    "direction_authority": "governed_authority",
                     "viable_candidate_ids": ["ptfe::g25::acme"],
                     "qualified_candidate_ids": ["ptfe::g25::acme"],
                     "candidate_source_origin": "promoted_registry",

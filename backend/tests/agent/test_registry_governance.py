@@ -255,6 +255,7 @@ def test_governed_entry_enables_promoted_source_and_qualified_path(monkeypatch):
     assert selection_state["qualified_candidate_ids"] == ["ptfe::g25::acme"]
     assert selection_state["exploratory_candidate_ids"] == []
     assert selection_state["candidate_source_origin"] == PROMOTED_SOURCE_ORIGIN
+    assert selection_state["direction_authority"] == "governed_authority"
     assert selection_state["candidates"][0]["candidate_source_class"] == "qualified_candidate_input"
     assert selection_state["output_blocked"] is False
     assert build_final_reply(selection_state) == NEUTRAL_SCOPE_REPLY
