@@ -8,16 +8,10 @@ from typing import Any, Dict, List, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.api.v1.endpoints.state import _build_state_config_with_checkpointer, _state_to_dict
-from app.services.auth.dependencies import RequestUser, get_current_request_user  # <-- CurrentUser NICHT importieren
-from app.services.chat.conversations import (
-    ConversationMeta,
-    delete_conversation,
-    list_conversations,
-    upsert_conversation,
-)
+from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
+from app.services.chat.conversations import ConversationMeta, delete_conversation, list_conversations, upsert_conversation
+from app.services.history.persist import delete_structured_case, load_structured_case
 
-"""Conversation and history endpoints that are scoped to the Keycloak user."""
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -91,53 +85,51 @@ def _serialize_message(raw: Any, index: int) -> Dict[str, Any]:
                     return candidate
         return datetime.now(timezone.utc).isoformat()
 
-    content = ""
-    role = "assistant"
-    if isinstance(raw, dict):
-        content = _coerce_text(raw)
-        role = _determine_role(raw)
-    elif isinstance(raw, BaseMessage):
-        value = getattr(raw, "content", "")
-        content = _coerce_text(value)
-        role = _determine_role(raw)
-    else:
-        content = _coerce_text(raw)
-
     return {
         "id": uuid.uuid4().hex,
-        "role": role,
-        "content": content,
+        "role": _determine_role(raw),
+        "content": _coerce_text(getattr(raw, "content", raw)),
         "createdAt": _created_at(raw),
         "index": index,
     }
 
 
 def _resolve_owner_ids(current_user: RequestUser) -> Tuple[str, str | None]:
-    owner_id = current_user.sub
+    owner_id = canonical_user_id(current_user)
     if not owner_id:
         return "", None
-    legacy_owner_id = str(current_user.user_id or "")
-    if legacy_owner_id == owner_id:
-        legacy_owner_id = None
+    sub = current_user.sub or ""
+    legacy_owner_id = sub if sub and sub != owner_id else None
     return owner_id, legacy_owner_id
 
 
-def _find_conversation(owner_id: str, conversation_id: str, legacy_owner_id: str | None) -> ConversationMeta | None:
-    for entry in list_conversations(owner_id, legacy_owner_id=legacy_owner_id):
+def _find_conversation(
+    owner_id: str,
+    conversation_id: str,
+    legacy_owner_id: str | None,
+    *,
+    tenant_id: str | None = None,
+) -> ConversationMeta | None:
+    for entry in list_conversations(owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id):
         if entry.id == conversation_id:
             return entry
     return None
+
+
+def _resolved_conversation_owner(entry: ConversationMeta, fallback_owner_id: str) -> str:
+    owner = str(entry.owner_id or "").strip()
+    return owner or fallback_owner_id
 
 
 @router.get("/conversations", response_model=List[ConversationResponse])
 async def get_conversations(
     current_user: RequestUser = Depends(get_current_request_user),
 ) -> List[ConversationResponse]:
-    """Return the user's conversations ordered by `updated_at` (Keycloak-scoped)."""
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    entries = list_conversations(owner_id, legacy_owner_id=legacy_owner_id)
+    tenant_id = current_user.tenant_id or owner_id
+    entries = list_conversations(owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id)
     return [_conversation_to_dict(entry) for entry in entries]
 
 
@@ -147,24 +139,21 @@ async def rename_conversation(
     payload: ConversationTitleUpdate,
     current_user: RequestUser = Depends(get_current_request_user),
 ) -> ConversationResponse:
-    """Update the title for a single conversation belonging to the authenticated user."""
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    tenant_id = current_user.tenant_id or owner_id
+    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
-
+    resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
     upsert_conversation(
-        owner_id=owner_id,
+        owner_id=resolved_owner_id,
         conversation_id=conversation_id,
+        tenant_id=tenant_id,
         title=payload.title,
         updated_at=datetime.now(timezone.utc),
     )
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
-    if not entry:
-        raise HTTPException(status_code=500, detail="Failed to update conversation")
     return _conversation_to_dict(entry)
 
 
@@ -173,37 +162,19 @@ async def delete_conversation_endpoint(
     conversation_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, bool]:
-    """Delete both the metadata hash and LangGraph state for the user's conversation."""
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    tenant_id = current_user.tenant_id or owner_id
+    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
-
-    delete_conversation(owner_id, conversation_id, reason="user_delete")
-
-    # Optional: LangGraph state/thread löschen (best effort)
+    resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
+    delete_conversation(resolved_owner_id, conversation_id, tenant_id=tenant_id, reason="user_delete")
     try:
-        graph, _ = await _build_state_config_with_checkpointer(thread_id=conversation_id, user_id=owner_id)
-        try:
-            await graph.checkpointer.adelete_thread(conversation_id)
-        except AttributeError:
-            pass
-        except Exception as exc:
-            logger.warning(
-                "Failed to delete checkpointer thread: %s",
-                exc,
-                extra={"user_id": owner_id, "conversation_id": conversation_id},
-            )
+        await delete_structured_case(tenant_id=tenant_id, owner_id=resolved_owner_id, case_id=conversation_id)
     except Exception as exc:
-        logger.warning(
-            "Failed to resolve graph for conversation deletion: %s",
-            exc,
-                extra={"user_id": owner_id, "conversation_id": conversation_id},
-        )
-
+        logger.warning("Failed to delete structured case: %s", exc)
     return {"deleted": True}
 
 
@@ -212,24 +183,19 @@ async def get_conversation_history(
     conversation_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
-    """Return the LangGraph message history for the authenticated user's conversation."""
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    tenant_id = current_user.tenant_id or owner_id
+    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
-
-    graph, config = await _build_state_config_with_checkpointer(thread_id=conversation_id, user_id=owner_id)
-    snapshot = await graph.aget_state(config)
-    state_values = _state_to_dict(snapshot.values)
-    conversation = state_values.get("conversation") if isinstance(state_values, dict) else {}
-    raw_messages = []
-    if isinstance(conversation, dict):
-        raw_messages = conversation.get("messages") or []
+    resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
+    state = await load_structured_case(tenant_id=tenant_id, owner_id=resolved_owner_id, case_id=conversation_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Structured case not found for conversation")
+    raw_messages = (state or {}).get("messages") or []
     messages = [_serialize_message(raw, idx) for idx, raw in enumerate(raw_messages or [])]
-
     return {
         "conversation_id": conversation_id,
         "title": entry.title,

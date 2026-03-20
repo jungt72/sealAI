@@ -354,14 +354,20 @@ try:
                 t_min = -50.0
             pressure_max = normalized.get("normalized_pressure_max")
             
-            return cls(
-                material_id=mat_name,
-                temp_min=t_min,
-                temp_max=t_max,
-                pressure_max=pressure_max,
-                v_surface_max=0, # Fallback
-                pv_limit_critical=3.0 # Fallback
-            )
+            payload = {
+                "material_id": mat_name,
+                "temp_min": t_min,
+                "temp_max": t_max,
+                "v_surface_max": 0,
+                "pv_limit_critical": 3.0,
+            }
+            model_fields = getattr(cls, "model_fields", {}) or {}
+            if "pressure_max" in model_fields:
+                payload["pressure_max"] = pressure_max
+                return cls(**payload)
+            instance = cls(**payload)
+            object.__setattr__(instance, "pressure_max", pressure_max)
+            return instance
 
 except ImportError:
     # Fallback/Mock for standalone domain logic if backend is not in path
