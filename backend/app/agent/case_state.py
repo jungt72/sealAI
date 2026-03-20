@@ -288,23 +288,6 @@ def get_material_provider_snapshot_and_fingerprint(state: dict[str, Any]) -> tup
     return snapshot, str(sorted(snapshot.items()))
 
 
-def case_lifecycle_requires_review(case_state: dict[str, Any] | None) -> bool:
-    lifecycle = (((case_state or {}).get("case_meta") or {}).get("lifecycle_status"))
-    return lifecycle in {"review_pending", "out_of_scope"}
-
-
-def sync_case_lifecycle_status(
-    *,
-    case_state: dict[str, Any],
-    lifecycle_status: str,
-) -> dict[str, Any]:
-    updated = dict(case_state)
-    case_meta = dict(updated.get("case_meta") or {})
-    case_meta["lifecycle_status"] = lifecycle_status
-    updated["case_meta"] = case_meta
-    return updated
-
-
 def resolve_next_step_contract(state: dict[str, Any]) -> dict[str, Any]:
     cycle = ((state.get("sealing_state") or {}).get("cycle") or {})
     return {
