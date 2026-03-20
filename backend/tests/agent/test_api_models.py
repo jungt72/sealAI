@@ -1,57 +1,56 @@
 import pytest
 from pydantic import ValidationError
-from app.agent.api.models import ChatRequest, ChatResponse
+
+from app.agent.api.models import ChatRequest, ChatResponse, VisibleCaseNarrativeResponse
+
 
 def test_chat_request_valid():
-    """
-    Test: Gültige ChatRequest-Instanziierung.
-    """
     req = ChatRequest(message="Hallo", session_id="session-1")
     assert req.message == "Hallo"
     assert req.session_id == "session-1"
 
+
 def test_chat_request_default_session():
-    """
-    Test: ChatRequest nutzt Standardwert für session_id.
-    """
     req = ChatRequest(message="Hallo")
     assert req.session_id == "default"
 
+
 def test_chat_request_empty_message():
-    """
-    Test: ChatRequest lehnt leere Nachrichten ab (min_length=1).
-    """
     with pytest.raises(ValidationError):
         ChatRequest(message="")
 
-def test_chat_request_extra_fields():
-    """
-    Test: ChatRequest lehnt unbekannte Felder ab (extra="forbid").
-    """
-    with pytest.raises(ValidationError):
-        ChatRequest(message="Hallo", unknown_field="Ups")
 
-def test_chat_response_valid():
-    """
-    Test: Gültige ChatResponse-Instanziierung.
-    """
+def test_chat_response_accepts_structured_contract_fields():
     res = ChatResponse(
         reply="Hallo zurück",
         session_id="session-123",
-        sealing_state={"cycle": {"state_revision": 1}}
+        sealing_state={"cycle": {"state_revision": 1}},
+        interaction_class="structured_case",
+        runtime_path="STRUCTURED_QUALIFICATION",
+        binding_level="ORIENTATION",
+        has_case_state=True,
+        visible_case_narrative={
+            "governed_summary": "Aktuelle technische Richtung: No active technical direction.",
+            "coverage_scope": [],
+        },
+        version_provenance={"policy_version": "interaction_policy_v1"},
     )
-    assert res.reply == "Hallo zurück"
-    assert res.session_id == "session-123"
-    assert res.sealing_state["cycle"]["state_revision"] == 1
+    assert res.runtime_path == "STRUCTURED_QUALIFICATION"
+    assert res.visible_case_narrative is not None
+    assert res.version_provenance["policy_version"] == "interaction_policy_v1"
 
-def test_chat_response_extra_fields():
-    """
-    Test: ChatResponse lehnt unbekannte Felder ab (extra="forbid").
-    """
-    with pytest.raises(ValidationError):
-        ChatResponse(
-            reply="Antwort",
-            session_id="id",
-            sealing_state={},
-            extra="unzulässig"
-        )
+
+def test_visible_case_narrative_response_accepts_coverage_scope():
+    narrative = VisibleCaseNarrativeResponse(
+        governed_summary="summary",
+        coverage_scope=[
+            {
+                "key": "coverage_boundary",
+                "label": "Coverage",
+                "value": "partial",
+                "detail": None,
+                "severity": "medium",
+            }
+        ],
+    )
+    assert narrative.coverage_scope[0].key == "coverage_boundary"

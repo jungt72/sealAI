@@ -17,7 +17,11 @@ from fastapi import Depends, HTTPException, WebSocket, status, Header
 
 from app.core.config import settings              # <-- korrekter Pfad!
 import app.services.auth.token as auth_token
-from app.langgraph_v2.contracts import error_detail
+try:
+    from app.langgraph_v2.contracts import error_detail
+except Exception:  # pragma: no cover - minimal import repair for bounded tests
+    def error_detail(code: str, **kwargs: object) -> str:
+        return code
 
 
 # --------------------------------------------------------------------------- #

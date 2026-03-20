@@ -1,7 +1,6 @@
 import json
 from unittest.mock import MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
-from app.agent.agent.graph import app
 from app.agent.agent.state import AgentState, SealingAIState
 
 def create_initial_state() -> SealingAIState:
@@ -104,3 +103,4 @@ def run_agent(query: str, use_mock: bool = False):
 if __name__ == "__main__":
     # Beispielaufruf im Mock-Modus
     run_agent("Ich brauche eine Dichtung für 10 bar Wasser", use_mock=True)
+    from app.agent.agent.graph import app

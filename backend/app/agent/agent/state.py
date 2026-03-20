@@ -1,14 +1,17 @@
-from typing import Annotated, Any, Dict, List, Optional, TypedDict, Literal
+from typing import Annotated, Any, Dict, List, Optional, TypedDict, Literal, NotRequired
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
+
+from app.agent.case_state import CaseState
 
 ReleaseStatus = Literal[
     "inadmissible",
     "precheck_only",
     "manufacturer_validation_required",
     "rfq_ready",
+    "not_applicable",
 ]
-RFQAdmissibility = Literal["inadmissible", "provisional", "ready"]
+RFQAdmissibility = Literal["inadmissible", "provisional", "ready", "not_applicable"]
 SpecificityLevel = Literal["family_only", "subfamily", "compound_required", "product_family_required"]
 IdentityClass = Literal[
     "identity_confirmed",
@@ -24,7 +27,8 @@ class ObservedInputRecord(TypedDict, total=False):
     source: str
     raw_text: str
     claim_type: str
-    confidence: float
+    certainty: str
+    confirmed: bool
     source_fact_ids: List[str]
 
 
@@ -34,7 +38,7 @@ class IdentityRecord(TypedDict, total=False):
     raw_value: Any
     normalized_value: Any
     identity_class: IdentityClass
-    normalization_confidence: float
+    normalization_certainty: str
     mapping_reason: str
     source_fact_ids: List[str]
     deterministic_source: str
@@ -137,6 +141,7 @@ class SelectionLayer(TypedDict):
     blocked_candidates: List[Dict[str, str]]
     winner_candidate_id: Optional[str]
     recommendation_artifact: Optional[RecommendationArtifact]
+    candidate_clusters: NotRequired[List[Dict[str, Any]]]
     release_status: ReleaseStatus
     rfq_admissibility: RFQAdmissibility
     specificity_level: SpecificityLevel
@@ -154,6 +159,7 @@ class SealingAIState(TypedDict):
     governance: GovernanceLayer
     cycle: CycleLayer
     selection: SelectionLayer
+    result_contract: NotRequired[Dict[str, Any]]
 
 class AgentState(TypedDict):
     """
@@ -165,3 +171,7 @@ class AgentState(TypedDict):
     relevant_fact_cards: List[Dict[str, Any]]  # Speichert FactCards für Tool-Nodes (Phase H6)
     working_profile: Dict[str, Any]  # Extrahiertes Live-Profil (Druck, Temperatur, etc.)
     tenant_id: Optional[str]
+    owner_id: NotRequired[Optional[str]]
+    loaded_state_revision: NotRequired[int]
+    case_state: NotRequired[CaseState]
+    result_form: NotRequired[Optional[str]]
