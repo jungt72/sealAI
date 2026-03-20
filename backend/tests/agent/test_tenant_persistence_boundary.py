@@ -165,18 +165,26 @@ class TestLoadStructuredCaseTenantGuard:
         result = self._run_load(transcript, tenant_id="tenant-b", owner_id="user-1", case_id="case-1")
         assert result is None
 
-    def test_legacy_record_without_tenant_id_is_accepted(self):
-        """Legacy records with tenant_id=None are accepted; request tenant_id is authoritative."""
+    def test_legacy_record_without_tenant_id_is_rejected_on_tenant_scoped_request(self):
+        """Tenant-scoped runtime paths must fail closed for tenant-less legacy records."""
         meta = _persisted_payload_dict(tenant_id=None, owner_id="user-1", case_id="case-1")
         transcript = _make_transcript_mock(meta, user_id="user-1")
-        result = self._run_load(transcript, tenant_id="tenant-a", owner_id="user-1", case_id="case-1")
-        assert result is not None
-        assert result["tenant_id"] == "tenant-a"
+        session_mock = AsyncMock()
+        session_mock.get = AsyncMock(side_effect=[None, transcript])
+        session_ctx = MagicMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=session_mock)
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        with patch("app.database.AsyncSessionLocal", return_value=session_ctx):
+            result = asyncio.run(
+                load_structured_case(tenant_id="tenant-a", owner_id="user-1", case_id="case-1")
+            )
+        assert result is None
 
-    def test_legacy_record_tenant_id_set_from_request(self):
-        meta = _persisted_payload_dict(tenant_id=None, owner_id="user-1", case_id="case-1")
+    def test_legacy_record_with_matching_explicit_tenant_id_is_loadable(self):
+        meta = _persisted_payload_dict(tenant_id="new-tenant", owner_id="user-1", case_id="case-1")
         transcript = _make_transcript_mock(meta, user_id="user-1")
         result = self._run_load(transcript, tenant_id="new-tenant", owner_id="user-1", case_id="case-1")
+        assert result is not None
         assert result["tenant_id"] == "new-tenant"
 
     def test_cross_owner_access_returns_none(self):
@@ -297,13 +305,20 @@ class TestLegacyKeyFallbackOnLoad:
                 load_structured_case(tenant_id=tenant_id, owner_id=owner_id, case_id=case_id)
             )
 
-    def test_legacy_record_is_returned_when_new_key_absent(self):
-        """Record on old key loads correctly when new key has no entry."""
-        meta = _persisted_payload_dict(tenant_id=None, owner_id="user-1", case_id="case-1")
+    def test_legacy_record_with_matching_explicit_tenant_id_is_returned_when_new_key_absent(self):
+        """Legacy-key fallback remains available only for records with matching tenant proof."""
+        meta = _persisted_payload_dict(tenant_id="tenant-a", owner_id="user-1", case_id="case-1")
         legacy_t = _make_transcript_mock(meta, user_id="user-1")
         result = self._run_load(None, legacy_t, tenant_id="tenant-a", owner_id="user-1", case_id="case-1")
         assert result is not None
-        assert result["tenant_id"] == "tenant-a"  # request tenant_id backfilled for legacy
+        assert result["tenant_id"] == "tenant-a"
+
+    def test_legacy_record_without_tenant_id_is_not_returned_when_new_key_absent(self):
+        """Tenant-less legacy records stay unreachable on tenant-scoped user paths."""
+        meta = _persisted_payload_dict(tenant_id=None, owner_id="user-1", case_id="case-1")
+        legacy_t = _make_transcript_mock(meta, user_id="user-1")
+        result = self._run_load(None, legacy_t, tenant_id="tenant-a", owner_id="user-1", case_id="case-1")
+        assert result is None
 
     def test_legacy_record_not_visible_cross_tenant(self):
         """Legacy record stored for user-1 must not be returned for user-2 (cross-owner guard)."""
@@ -363,11 +378,17 @@ class TestLegacyKeyFallbackOnDelete:
             )
         return session_mock
 
-    def test_legacy_record_deleted_when_new_key_absent(self):
-        meta = _persisted_payload_dict(tenant_id=None, owner_id="user-1", case_id="case-1")
+    def test_legacy_record_with_matching_explicit_tenant_id_is_deleted_when_new_key_absent(self):
+        meta = _persisted_payload_dict(tenant_id="tenant-a", owner_id="user-1", case_id="case-1")
         legacy_t = _make_transcript_mock(meta, user_id="user-1")
         session_mock = self._run_delete(None, legacy_t, tenant_id="tenant-a", owner_id="user-1", case_id="case-1")
         session_mock.delete.assert_awaited_once_with(legacy_t)
+
+    def test_legacy_record_without_tenant_id_is_not_deleted_when_new_key_absent(self):
+        meta = _persisted_payload_dict(tenant_id=None, owner_id="user-1", case_id="case-1")
+        legacy_t = _make_transcript_mock(meta, user_id="user-1")
+        session_mock = self._run_delete(None, legacy_t, tenant_id="tenant-a", owner_id="user-1", case_id="case-1")
+        session_mock.delete.assert_not_awaited()
 
     def test_delete_is_noop_when_both_keys_absent(self):
         session_mock = self._run_delete(None, None, tenant_id="tenant-a", owner_id="user-1", case_id="case-1")

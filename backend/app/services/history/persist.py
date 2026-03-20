@@ -113,6 +113,17 @@ class ConcurrencyConflictError(Exception):
     pass
 
 
+def _legacy_payload_matches_tenant(
+    payload: PersistedStructuredCasePayload,
+    *,
+    tenant_id: str | None,
+) -> bool:
+    """Fail closed on tenant-scoped runtime paths for legacy-key records."""
+    if tenant_id is None:
+        return True
+    return payload.tenant_id is not None and payload.tenant_id == tenant_id
+
+
 async def save_structured_case(
     *,
     tenant_id: str,
@@ -205,13 +216,16 @@ async def load_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -
 
     # A5: Storage key is tenant-scoped so cross-tenant access is structurally impossible.
     storage_key = build_structured_case_storage_key(tenant_id, owner_id, case_id)
+    loaded_from_legacy = False
     async with AsyncSessionLocal() as session:
         transcript = await session.get(ChatTranscript, storage_key)
         if transcript is None:
             # A5 legacy-compat: records persisted before A5 use the 2-part owner-only key.
-            # Try legacy key as a controlled fallback; tenant guard below still applies.
+            # Try legacy key as a controlled fallback; tenant guard below must still
+            # prove tenant scope from the record itself.
             legacy_key = _build_legacy_storage_key(owner_id, case_id)
             transcript = await session.get(ChatTranscript, legacy_key)
+            loaded_from_legacy = transcript is not None
         if transcript is None or transcript.user_id != owner_id:
             return None
         metadata = transcript.metadata_json or {}
@@ -227,11 +241,17 @@ async def load_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -
             )
             return None
 
-    # A5: Fail-closed tenant mismatch guard. If the persisted tenant_id is present
-    # and does not match the request tenant_id, reject the load. This catches any
-    # edge case where a record was stored under an inconsistent tenant scope.
-    # Legacy records (payload.tenant_id is None) are accepted; the request tenant_id
-    # is authoritative for them.
+    # A5: Fail-closed tenant guard. Tenant-scoped requests may only accept a
+    # legacy-key record when the record itself carries a matching tenant_id proof.
+    if loaded_from_legacy and not _legacy_payload_matches_tenant(payload, tenant_id=tenant_id):
+        logger.warning(
+            "Legacy structured case rejected on tenant-scoped load: case=%s, persisted tenant_id=%r, request tenant_id=%r",
+            case_id,
+            payload.tenant_id,
+            tenant_id,
+            extra={"owner_id": owner_id, "case_id": case_id},
+        )
+        return None
     if payload.tenant_id is not None and payload.tenant_id != tenant_id:
         logger.warning(
             "Tenant mismatch on case %s: persisted tenant_id=%r, request tenant_id=%r — access denied",
@@ -246,8 +266,8 @@ async def load_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -
         "working_profile": payload.working_profile,
         "relevant_fact_cards": payload.relevant_fact_cards,
     }
-    # Use persisted tenant_id if present; fall back to request tenant_id for legacy records.
-    state["tenant_id"] = payload.tenant_id if payload.tenant_id is not None else tenant_id
+    if payload.tenant_id is not None:
+        state["tenant_id"] = payload.tenant_id
     if payload.case_state is not None:
         state["case_state"] = payload.case_state
     return state
@@ -265,6 +285,16 @@ async def delete_structured_case(*, tenant_id: str, owner_id: str, case_id: str)
             # A5 legacy-compat: check old 2-part key for records stored before A5.
             legacy_key = _build_legacy_storage_key(owner_id, case_id)
             transcript = await session.get(ChatTranscript, legacy_key)
+            if transcript is not None:
+                metadata = transcript.metadata_json or {}
+                if metadata.get("record_type") != STRUCTURED_CASE_RECORD_TYPE:
+                    return
+                try:
+                    payload = PersistedStructuredCasePayload.model_validate(metadata)
+                except ValidationError:
+                    return
+                if not _legacy_payload_matches_tenant(payload, tenant_id=tenant_id):
+                    return
         if transcript is None or transcript.user_id != owner_id:
             return
         await session.delete(transcript)

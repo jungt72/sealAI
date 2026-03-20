@@ -210,7 +210,7 @@ class TestCollectForOwner:
         assert result[0].id == conv_id
         assert result[0].tenant_id == tenant_id
 
-    def test_falls_back_to_legacy_key_when_tenant_set_empty(self):
+    def test_tenant_scoped_listing_does_not_fall_back_to_tenantless_legacy_key(self):
         owner_id, tenant_id = "user-1", "tenant-a"
         conv_id = "conv-legacy"
         legacy_hash_key = _hash_key_legacy(owner_id, conv_id)
@@ -226,8 +226,27 @@ class TestCollectForOwner:
         ):
             result = _collect_for_owner(owner_id, tenant_id=tenant_id)
 
+        assert result == []
+
+    def test_tenant_scoped_listing_accepts_legacy_entry_with_matching_tenant_proof(self):
+        owner_id, tenant_id = "user-1", "tenant-a"
+        conv_id = "conv-legacy"
+        legacy_hash_key = _hash_key_legacy(owner_id, conv_id)
+        r = self._make_r(
+            new_members=[],
+            legacy_members=[conv_id],
+            legacy_hashes={legacy_hash_key: _make_hash_data(conv_id, "2023-06-01T00:00:00+00:00", tenant_id)},
+            tenant_id=tenant_id,
+            owner_id=owner_id,
+        )
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "app.services.chat.conversations._redis_client", return_value=r
+        ):
+            result = _collect_for_owner(owner_id, tenant_id=tenant_id)
+
         assert len(result) == 1
         assert result[0].id == conv_id
+        assert result[0].tenant_id == tenant_id
 
     def test_new_key_takes_priority_on_deduplication(self):
         """Same conv_id in both sets: new-key entry wins."""
@@ -321,6 +340,7 @@ class TestDeleteConversation:
         r = MagicMock()
         pipe = MagicMock()
         r.pipeline.return_value = pipe
+        r.hgetall.return_value = {"tenant_id": tenant_id}
         pipe.delete = MagicMock()
         pipe.zrem = MagicMock()
         pipe.execute = MagicMock()
@@ -337,6 +357,29 @@ class TestDeleteConversation:
         assert _hash_key_legacy(owner_id, conv_id) in deleted_keys
         assert _sorted_set_key(tenant_id, owner_id) in zrem_keys
         assert _sorted_set_key_legacy(owner_id) in zrem_keys
+
+    def test_tenant_scoped_delete_does_not_delete_tenantless_legacy_key(self):
+        owner_id, tenant_id, conv_id = "user-1", "tenant-a", "conv-1"
+        r = MagicMock()
+        pipe = MagicMock()
+        r.pipeline.return_value = pipe
+        r.hgetall.return_value = {}
+        pipe.delete = MagicMock()
+        pipe.zrem = MagicMock()
+        pipe.execute = MagicMock()
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "app.services.chat.conversations._redis_client", return_value=r
+        ):
+            delete_conversation(owner_id, conv_id, tenant_id=tenant_id)
+
+        deleted_keys = [c[0][0] for c in pipe.delete.call_args_list]
+        zrem_keys = [c[0][0] for c in pipe.zrem.call_args_list]
+
+        assert _hash_key(tenant_id, owner_id, conv_id) in deleted_keys
+        assert _hash_key_legacy(owner_id, conv_id) not in deleted_keys
+        assert _sorted_set_key(tenant_id, owner_id) in zrem_keys
+        assert _sorted_set_key_legacy(owner_id) not in zrem_keys
 
     def test_without_tenant_id_deletes_legacy_key_only(self):
         owner_id, conv_id = "user-1", "conv-1"

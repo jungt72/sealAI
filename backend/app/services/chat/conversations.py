@@ -245,6 +245,7 @@ def _collect_from_sorted_set(
     hash_key_fn: Callable[[str], str],
     owner_id: str,
     tenant_id: str | None = None,
+    required_tenant_id: str | None = None,
 ) -> List[ConversationMeta]:
     """Read ConversationMeta entries from one sorted-set + hash pair.
 
@@ -257,6 +258,9 @@ def _collect_from_sorted_set(
         data = r.hgetall(hash_key_fn(conv_id))
         if not data:
             stale.append(conv_id)
+            continue
+        entry_tenant_id = data.get("tenant_id")
+        if required_tenant_id is not None and entry_tenant_id != required_tenant_id:
             continue
         updated_raw = data.get("updated_at")
         try:
@@ -271,7 +275,7 @@ def _collect_from_sorted_set(
             ConversationMeta(
                 id=data.get("id") or conv_id,
                 owner_id=owner_id,
-                tenant_id=data.get("tenant_id") or tenant_id,
+                tenant_id=entry_tenant_id or tenant_id,
                 title=data.get("title"),
                 updated_at=updated,
                 last_preview=data.get(_PREVIEW_FIELD) or None,
@@ -308,12 +312,13 @@ def _collect_for_owner(owner_id: str, *, tenant_id: str | None = None) -> List[C
             ):
                 merged[entry.id] = entry  # new-key entry is always authoritative
 
-        # Legacy fallback: owner-only sorted set (pre-A5 records)
+        # Legacy fallback: only entries that carry their own matching tenant proof.
         for entry in _collect_from_sorted_set(
             r,
             _sorted_set_key_legacy(owner_id),
             lambda cid: _hash_key_legacy(owner_id, cid),
             owner_id,
+            required_tenant_id=tenant_id,
         ):
             if entry.id not in merged:  # do not override tenant-scoped entries
                 merged[entry.id] = entry
@@ -370,9 +375,13 @@ def delete_conversation(
         if tenant_id:
             pipe.delete(_hash_key(tenant_id, owner_id, conversation_id))
             pipe.zrem(_sorted_set_key(tenant_id, owner_id), conversation_id)
-        # Always also clean up the legacy key — idempotent if not present
-        pipe.delete(_hash_key_legacy(owner_id, conversation_id))
-        pipe.zrem(_sorted_set_key_legacy(owner_id), conversation_id)
+            legacy_hash = r.hgetall(_hash_key_legacy(owner_id, conversation_id))
+            if legacy_hash.get("tenant_id") == tenant_id:
+                pipe.delete(_hash_key_legacy(owner_id, conversation_id))
+                pipe.zrem(_sorted_set_key_legacy(owner_id), conversation_id)
+        else:
+            pipe.delete(_hash_key_legacy(owner_id, conversation_id))
+            pipe.zrem(_sorted_set_key_legacy(owner_id), conversation_id)
         pipe.execute()
         logger.info(
             "Deleted conversation metadata",
