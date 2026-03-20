@@ -13,6 +13,8 @@ from app.agent.agent.prompts import (
 )
 from app.agent.case_state import (
     CASE_STATE_BUILDER_VERSION,
+    DETERMINISTIC_DATA_VERSION,
+    DETERMINISTIC_SERVICE_VERSION,
     PROJECTION_VERSION,
     VersionProvenance,
     build_case_state,
@@ -55,14 +57,14 @@ def user():
 def fake_store(monkeypatch):
     store = {}
 
-    async def _load(*, owner_id, case_id):
+    async def _load(*, tenant_id, owner_id, case_id):
         import copy
-        s = store.get((owner_id, case_id))
+        s = store.get((tenant_id, owner_id, case_id))
         return copy.deepcopy(s) if s is not None else None
 
-    async def _save(*, owner_id, case_id, state, runtime_path, binding_level):
+    async def _save(*, tenant_id, owner_id, case_id, state, runtime_path, binding_level):
         import copy
-        store[(owner_id, case_id)] = copy.deepcopy(state)
+        store[(tenant_id, owner_id, case_id)] = copy.deepcopy(state)
 
     monkeypatch.setattr("app.agent.api.router.load_structured_case", _load)
     monkeypatch.setattr("app.agent.api.router.save_structured_case", _save)
@@ -162,6 +164,7 @@ def test_build_case_state_without_provenance_does_not_crash():
     state = _simple_agent_state()
     cs = build_case_state(state, session_id="s1", runtime_path="STRUCTURED_QUALIFICATION", binding_level="ORIENTATION")
     assert "case_meta" in cs
+    assert cs["case_meta"]["version"] == cs["case_meta"]["state_revision"]
     assert "version_provenance" not in cs["case_meta"]
 
 
@@ -173,7 +176,8 @@ def test_build_case_state_with_provenance_populates_case_meta():
         "policy_version": "interaction_policy_v1",
         "projection_version": "visible_case_narrative_v1",
         "case_state_builder_version": "case_state_builder_v1",
-        "data_version_note": "not_yet_governed",
+        "service_version": DETERMINISTIC_SERVICE_VERSION,
+        "data_version": DETERMINISTIC_DATA_VERSION,
     }
     state = _simple_agent_state()
     cs = build_case_state(
@@ -184,6 +188,7 @@ def test_build_case_state_with_provenance_populates_case_meta():
         version_provenance=vp,
     )
     assert cs["case_meta"]["version_provenance"]["model_id"] == "gpt-4o-mini"
+    assert cs["case_meta"]["version_provenance"]["model_version"] == "gpt-4o-mini"
     assert cs["case_meta"]["version_provenance"]["policy_version"] == "interaction_policy_v1"
 
 
@@ -195,7 +200,8 @@ def test_build_case_state_provenance_in_audit_trail():
         "policy_version": "interaction_policy_v1",
         "projection_version": "visible_case_narrative_v1",
         "case_state_builder_version": "case_state_builder_v1",
-        "data_version_note": "not_yet_governed",
+        "service_version": DETERMINISTIC_SERVICE_VERSION,
+        "data_version": DETERMINISTIC_DATA_VERSION,
     }
     state = _simple_agent_state()
     cs = build_case_state(
@@ -218,19 +224,60 @@ def test_structured_provenance_has_model_id():
     decision = evaluate_interaction_policy("empfehle ein Material")
     vp = _build_structured_version_provenance(decision=decision)
     assert vp["model_id"] == "gpt-4o-mini"
+    assert vp["model_version"] == "gpt-4o-mini"
 
 
 def test_structured_provenance_has_all_required_fields():
     decision = evaluate_interaction_policy("empfehle ein Material")
     vp = _build_structured_version_provenance(decision=decision)
     required = {
-        "model_id", "prompt_version", "prompt_hash",
+        "model_id", "model_version", "prompt_version", "prompt_hash",
         "visible_reply_prompt_version", "visible_reply_prompt_hash",
         "policy_version", "projection_version", "case_state_builder_version",
-        "data_version_note",
+        "service_version", "data_version",
     }
     missing = required - set(vp.keys())
     assert not missing, f"Missing fields in structured provenance: {missing}"
+
+
+def test_structured_provenance_has_real_data_version():
+    """0A.5: data_version must be a real version value, not a placeholder."""
+    decision = evaluate_interaction_policy("empfehle ein Material")
+    vp = _build_structured_version_provenance(decision=decision)
+    assert vp["data_version"] == DETERMINISTIC_DATA_VERSION
+    assert vp["data_version"] != "not_yet_governed"
+    assert len(vp["data_version"]) > 0
+
+
+def test_structured_provenance_has_service_version():
+    """0A.5: service_version must identify the deterministic service stack."""
+    decision = evaluate_interaction_policy("empfehle ein Material")
+    vp = _build_structured_version_provenance(decision=decision)
+    assert vp["service_version"] == DETERMINISTIC_SERVICE_VERSION
+    assert len(vp["service_version"]) > 0
+
+
+def test_fast_path_provenance_has_no_data_version():
+    """0A.5: Fast paths must NOT carry data_version.
+
+    Fast knowledge uses runtime RAG retrieval — no static versioned registry consulted.
+    Fast calculation uses pure formulas — no domain data artifact consulted.
+    Asserting promoted_registry_v1 on these paths would be false attribution.
+    """
+    for msg in ("50mm 1000rpm berechne", "Was ist FKM?"):
+        decision = evaluate_interaction_policy(msg)
+        vp = _build_fast_path_version_provenance(decision=decision)
+        assert "data_version" not in vp, (
+            f"Fast path must not carry data_version, but got {vp.get('data_version')!r} "
+            f"for message {msg!r}"
+        )
+
+
+def test_fast_path_provenance_has_service_version():
+    """0A.5: Fast calculation paths use the deterministic service stack."""
+    decision = evaluate_interaction_policy("50mm 1000rpm berechne")
+    vp = _build_fast_path_version_provenance(decision=decision)
+    assert vp["service_version"] == DETERMINISTIC_SERVICE_VERSION
 
 
 def test_fast_path_provenance_has_no_model_id():
@@ -238,6 +285,7 @@ def test_fast_path_provenance_has_no_model_id():
     decision = evaluate_interaction_policy("Was ist PTFE?")
     vp = _build_fast_path_version_provenance(decision=decision)
     assert vp["model_id"] is None
+    assert vp["model_version"] is None
 
 
 def test_fast_path_provenance_has_policy_version():
@@ -274,7 +322,7 @@ def test_chat_endpoint_guided_response_carries_version_provenance(user):
     with patch("app.agent.api.router.execute_agent", new=AsyncMock(return_value=state)):
         response = asyncio.run(
             chat_endpoint(
-                ChatRequest(message="Hallo", session_id="vp-guided"),
+                ChatRequest(message="Empfehle ein Material", session_id="vp-guided"),
                 current_user=user,
             )
         )
@@ -301,6 +349,11 @@ def test_chat_endpoint_fast_path_has_no_model_id(user):
 # ── SSE event_generator carries version_provenance ───────────────────────────
 
 def test_sse_guided_payload_carries_version_provenance(user):
+    """0A.5 P3: The guided SSE path must carry version_provenance in the final payload.
+
+    Uses 'empfehle ein Material' which reliably routes to result_form='guided'
+    (not 'direct'/'fast' like the previous 'Was ist eine Dichtung?' did).
+    """
     session_id = "vp-sse-guided"
     final_state = _mock_state(revision=3)
 
@@ -320,7 +373,7 @@ def test_sse_guided_payload_carries_version_provenance(user):
 
         async def _run():
             async for chunk in event_generator(
-                ChatRequest(message="Was ist eine Dichtung?", session_id=session_id),
+                ChatRequest(message="empfehle ein Material", session_id=session_id),
                 current_user=user,
             ):
                 chunks.append(chunk)
@@ -344,4 +397,70 @@ def test_sse_guided_payload_carries_version_provenance(user):
     assert final_payload is not None, "No SSE chunk with version_provenance found"
     vp = final_payload["version_provenance"]
     assert vp.get("policy_version") == INTERACTION_POLICY_VERSION
+    assert vp.get("model_id") is not None, "Guided path uses LLM — model_id must be present"
     assert "[DONE]" in content
+
+
+# ── Reload survival ───────────────────────────────────────────────────────────
+
+def test_reload_preserves_version_provenance(user, fake_store):
+    """0A.5 P4: load_and_refresh_structured_case must carry forward persisted version_provenance."""
+    from app.agent.api.router import load_and_refresh_structured_case
+
+    persisted_vp = {
+        "model_id": "gpt-4o-mini",
+        "prompt_version": "reasoning_v1",
+        "prompt_hash": "abc123def456",
+        "policy_version": "interaction_policy_v1",
+        "projection_version": "visible_case_narrative_v1",
+        "case_state_builder_version": "case_state_builder_v1",
+        "service_version": DETERMINISTIC_SERVICE_VERSION,
+        "data_version": DETERMINISTIC_DATA_VERSION,
+    }
+    state = _mock_state(revision=5)
+    state["case_state"] = {
+        "case_meta": {
+            "binding_level": "ORIENTATION",
+            "runtime_path": "STRUCTURED_GUIDANCE",
+            "version_provenance": persisted_vp,
+        },
+    }
+    fake_store[(user.tenant_id, user.user_id, "vp-reload")] = state
+
+    refreshed, runtime_path, binding_level = asyncio.run(
+        load_and_refresh_structured_case(current_user=user, case_id="vp-reload")
+    )
+
+    reloaded_cs = refreshed.get("case_state") or {}
+    reloaded_meta = reloaded_cs.get("case_meta") or {}
+    reloaded_vp = reloaded_meta.get("version_provenance")
+
+    assert reloaded_vp is not None, "version_provenance lost on reload"
+    assert reloaded_vp["policy_version"] == "interaction_policy_v1"
+    assert reloaded_vp["projection_version"] == "visible_case_narrative_v1"
+    assert reloaded_vp["case_state_builder_version"] == "case_state_builder_v1"
+    assert reloaded_vp["model_version"] == "gpt-4o-mini"
+    assert reloaded_vp["model_id"] == "gpt-4o-mini"
+
+
+def test_reload_without_version_provenance_does_not_crash(user, fake_store):
+    """0A.5: Reload of pre-0A.5 cases (no version_provenance) must not crash."""
+    from app.agent.api.router import load_and_refresh_structured_case
+
+    state = _mock_state(revision=2)
+    state["case_state"] = {
+        "case_meta": {
+            "binding_level": "QUALIFIED_PRESELECTION",
+            "runtime_path": "STRUCTURED_QUALIFICATION",
+        },
+    }
+    fake_store[(user.tenant_id, user.user_id, "vp-reload-legacy")] = state
+
+    refreshed, runtime_path, binding_level = asyncio.run(
+        load_and_refresh_structured_case(current_user=user, case_id="vp-reload-legacy")
+    )
+
+    reloaded_cs = refreshed.get("case_state") or {}
+    reloaded_meta = reloaded_cs.get("case_meta") or {}
+    # No version_provenance was persisted — must not be present, and must not crash
+    assert "version_provenance" not in reloaded_meta

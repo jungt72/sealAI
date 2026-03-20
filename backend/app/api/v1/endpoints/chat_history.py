@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.services.auth.dependencies import RequestUser, get_current_request_user  # <-- CurrentUser NICHT importieren
+from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user  # <-- CurrentUser NICHT importieren
 from app.services.chat.conversations import (
     ConversationMeta,
     delete_conversation,
@@ -113,20 +113,34 @@ def _serialize_message(raw: Any, index: int) -> Dict[str, Any]:
 
 
 def _resolve_owner_ids(current_user: RequestUser) -> Tuple[str, str | None]:
-    owner_id = current_user.sub
+    # Identity Consistency: use canonical_user_id (user_id or sub) as primary —
+    # same resolution as the agent/router path so cases and conversations share owner_id.
+    owner_id = canonical_user_id(current_user)
     if not owner_id:
         return "", None
-    legacy_owner_id = str(current_user.user_id or "")
-    if legacy_owner_id == owner_id:
-        legacy_owner_id = None
+    # sub as legacy_owner_id when it differs — covers conversations stored before
+    # user_id was preferred as canonical (pre-A5 / pre-identity-consistency records).
+    sub = current_user.sub or ""
+    legacy_owner_id = sub if sub and sub != owner_id else None
     return owner_id, legacy_owner_id
 
 
-def _find_conversation(owner_id: str, conversation_id: str, legacy_owner_id: str | None) -> ConversationMeta | None:
-    for entry in list_conversations(owner_id, legacy_owner_id=legacy_owner_id):
+def _find_conversation(
+    owner_id: str,
+    conversation_id: str,
+    legacy_owner_id: str | None,
+    *,
+    tenant_id: str | None = None,
+) -> ConversationMeta | None:
+    for entry in list_conversations(owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id):
         if entry.id == conversation_id:
             return entry
     return None
+
+
+def _resolved_conversation_owner(entry: ConversationMeta, fallback_owner_id: str) -> str:
+    owner = str(entry.owner_id or "").strip()
+    return owner or fallback_owner_id
 
 
 @router.get("/conversations", response_model=List[ConversationResponse])
@@ -137,7 +151,9 @@ async def get_conversations(
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    entries = list_conversations(owner_id, legacy_owner_id=legacy_owner_id)
+    # A5: tenant-scoped listing
+    tenant_id = current_user.tenant_id or owner_id
+    entries = list_conversations(owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id)
     return [_conversation_to_dict(entry) for entry in entries]
 
 
@@ -151,18 +167,22 @@ async def rename_conversation(
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    tenant_id = current_user.tenant_id or owner_id
 
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
 
+    # A5: write under tenant-scoped key
     upsert_conversation(
-        owner_id=owner_id,
+        owner_id=resolved_owner_id,
         conversation_id=conversation_id,
+        tenant_id=tenant_id,
         title=payload.title,
         updated_at=datetime.now(timezone.utc),
     )
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=500, detail="Failed to update conversation")
     return _conversation_to_dict(entry)
@@ -177,20 +197,23 @@ async def delete_conversation_endpoint(
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    tenant_id = current_user.tenant_id or owner_id
 
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
 
-    delete_conversation(owner_id, conversation_id, reason="user_delete")
+    # A5: delete from tenant-scoped key (and legacy key as fallback — idempotent)
+    delete_conversation(resolved_owner_id, conversation_id, tenant_id=tenant_id, reason="user_delete")
 
     try:
-        await delete_structured_case(owner_id=owner_id, case_id=conversation_id)
+        await delete_structured_case(tenant_id=tenant_id, owner_id=resolved_owner_id, case_id=conversation_id)
     except Exception as exc:
         logger.warning(
             "Failed to delete structured case: %s",
             exc,
-            extra={"user_id": owner_id, "conversation_id": conversation_id},
+            extra={"user_id": resolved_owner_id, "conversation_id": conversation_id},
         )
 
     return {"deleted": True}
@@ -206,12 +229,17 @@ async def get_conversation_history(
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    tenant_id = current_user.tenant_id or owner_id
 
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id)
+    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
 
-    state = await load_structured_case(owner_id=owner_id, case_id=conversation_id)
+    # A5: tenant_id required for tenant-scoped key lookup (and legacy fallback).
+    state = await load_structured_case(tenant_id=tenant_id, owner_id=resolved_owner_id, case_id=conversation_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Structured case not found for conversation")
     raw_messages = (state or {}).get("messages") or []
     messages = [_serialize_message(raw, idx) for idx, raw in enumerate(raw_messages or [])]
 

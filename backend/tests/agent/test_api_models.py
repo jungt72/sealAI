@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 from app.agent.api.models import (
     CaseActionResponse,
+    CaseStateResponse,
     ChatRequest,
     ChatResponse,
     QualifiedActionAuditEventResponse,
@@ -129,6 +130,9 @@ def test_chat_response_accepts_typed_governed_output_contracts():
         runtime_path="STRUCTURED_QUALIFICATION",
         binding_level="QUALIFIED_PRESELECTION",
         has_case_state=True,
+        path="structured",
+        stream_mode="structured_progress_stream",
+        required_fields=["pressure_bar"],
         qualified_action_gate={
             "action": "download_rfq",
             "allowed": False,
@@ -145,6 +149,38 @@ def test_chat_response_accepts_typed_governed_output_contracts():
                 "state_revision": 1,
                 "runtime_path": "STRUCTURED_QUALIFICATION",
                 "binding_level": "QUALIFIED_PRESELECTION",
+                "boundary_contract": {
+                    "binding_level": "ORIENTATION",
+                    "coverage_status": "partial",
+                    "boundary_flags": ["orientation_only"],
+                    "escalation_reason": "qualification_signal_without_data_basis",
+                },
+            },
+            "normalization_identity_snapshot": {
+                "medium": {
+                    "raw_value": "Wasser",
+                    "normalized_value": "Wasser",
+                    "identity_class": "identity_confirmed",
+                    "normalization_certainty": "explicit_value",
+                    "mapping_reason": "normalized_medium",
+                    "deterministic_source": "central_normalization",
+                    "source_fact_ids": [],
+                    "evidence_quality": "",
+                    "authority_quality": "",
+                    "temporal_quality": "",
+                },
+                "manufacturer_name": {
+                    "raw_value": "Acme",
+                    "normalized_value": None,
+                    "identity_class": "identity_unresolved",
+                    "normalization_certainty": "ambiguous",
+                    "mapping_reason": "claim_hint_without_fact_card_binding:manufacturer_name",
+                    "deterministic_source": "claim_hint_without_fact_card_binding",
+                    "source_fact_ids": [],
+                    "evidence_quality": "unqualified",
+                    "authority_quality": "unknown",
+                    "temporal_quality": "unknown",
+                },
             },
             "result_contract": {
                 "analysis_cycle_id": "session_test_1",
@@ -170,6 +206,11 @@ def test_chat_response_accepts_typed_governed_output_contracts():
                 "source_ref": "case_state.default_result_contract",
             },
             "candidate_clusters": [],
+            "material_direction_contract": {
+                "authority_layer": "not_trust_granting",
+                "direction_layer": "evidence_oriented_direction",
+                "source_provenance": "retrieval_fact_card_transition_adapter",
+            },
             "sealing_requirement_spec": {
                 "contract_type": "sealing_requirement_spec",
                 "contract_version": "sealing_requirement_spec_v1",
@@ -248,6 +289,19 @@ def test_chat_response_accepts_typed_governed_output_contracts():
     assert res.case_state is not None
     assert res.case_state.case_meta is not None
     assert res.case_state.case_meta.state_revision == 1
+    assert res.case_state.case_meta.boundary_contract is not None
+    assert res.case_state.case_meta.boundary_contract.binding_level == "ORIENTATION"
+    assert res.case_state.case_meta.boundary_contract.coverage_status == "partial"
+    assert res.case_state.case_meta.boundary_contract.boundary_flags == ["orientation_only"]
+    assert res.case_state.normalization_identity_snapshot["medium"].identity_class == "identity_confirmed"
+    assert res.case_state.normalization_identity_snapshot["manufacturer_name"].identity_class == "identity_unresolved"
+    assert res.case_state.material_direction_contract is not None
+    assert res.case_state.material_direction_contract.authority_layer == "not_trust_granting"
+    assert res.case_state.material_direction_contract.direction_layer == "evidence_oriented_direction"
+    assert res.case_state.material_direction_contract.source_provenance == "retrieval_fact_card_transition_adapter"
+    assert res.path == "structured"
+    assert res.stream_mode == "structured_progress_stream"
+    assert res.required_fields == ["pressure_bar"]
     assert res.case_state.raw_inputs == {}
     assert res.case_state.derived_calculations == {}
     assert res.case_state.engineering_signals == {}
@@ -335,6 +389,88 @@ def test_case_action_response_accepts_rendered_spec_artifact():
         response.action_payload.sealing_requirement_spec.selection_snapshot.material_direction_contract.authority_layer
         == "governed_authority"
     )
+
+
+def test_case_state_response_accepts_commercial_handover_contract():
+    case_state = CaseStateResponse(
+        case_meta={
+            "state_revision": 4,
+            "runtime_path": "STRUCTURED_QUALIFICATION",
+            "binding_level": "RFQ_BASIS",
+        },
+        commercial_handover_contract={
+            "readiness_layer": {
+                "binding_level": "RFQ_BASIS",
+                "release_status": "rfq_ready",
+                "rfq_admissibility": "ready",
+                "gate_allowed": True,
+                "gate_rfq_ready": True,
+                "lifecycle_status": "exported",
+            },
+            "review_layer": {
+                "review_required": False,
+                "review_state": "completed",
+                "review_decision": "approved",
+                "review_reason": "final_expert_check",
+                "reviewed_by": "expert-1",
+            },
+            "action_layer": {
+                "action": "download_rfq",
+                "last_status": "executed",
+                "executed": True,
+                "allowed_at_execution_time": True,
+                "current_gate_allows_action": True,
+                "block_reasons": [],
+            },
+            "artifact_layer": {
+                "contract_version": "sealing_requirement_spec_v1",
+                "rendering_status": "rendered",
+                "render_artifact_available": True,
+                "artifact_filename": "sealing-requirement-spec-cycle-3.md",
+                "artifact_source_ref": "case_state.rendered_sealing_requirement_spec",
+            },
+        },
+    )
+
+    assert case_state.commercial_handover_contract is not None
+    assert case_state.commercial_handover_contract.readiness_layer.binding_level == "RFQ_BASIS"
+    assert case_state.commercial_handover_contract.review_layer.review_state == "completed"
+    assert case_state.commercial_handover_contract.action_layer.last_status == "executed"
+    assert case_state.commercial_handover_contract.artifact_layer.render_artifact_available is True
+
+
+def test_case_state_response_accepts_governed_data_contract():
+    case_state = CaseStateResponse(
+        case_meta={
+            "state_revision": 4,
+            "runtime_path": "STRUCTURED_QUALIFICATION",
+            "binding_level": "RFQ_BASIS",
+        },
+        governed_data_contract={
+            "authority_basis": {
+                "authority_layer": "governed_authority",
+                "direction_layer": "governed_direction",
+                "has_promoted_candidate_source": True,
+            },
+            "source_governance": {
+                "source_provenance": "promoted_candidate_registry_v1",
+                "candidate_source_class": "qualified_candidate_input",
+                "candidate_source_quality": "promoted_registry",
+                "normalized_quality_basis": "material_family",
+                "normalized_authority_quality": "sufficient",
+                "normalized_evidence_quality": "qualified",
+                "normalized_temporal_quality": "sufficient",
+            },
+            "data_governance": {
+                "data_version": "promoted_registry_v1",
+            },
+        },
+    )
+
+    assert case_state.governed_data_contract is not None
+    assert case_state.governed_data_contract.authority_basis.authority_layer == "governed_authority"
+    assert case_state.governed_data_contract.source_governance.source_provenance == "promoted_candidate_registry_v1"
+    assert case_state.governed_data_contract.data_governance.data_version == "promoted_registry_v1"
 
 
 def test_qualified_action_contract_rejects_unknown_action_identifier():

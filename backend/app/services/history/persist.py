@@ -36,7 +36,15 @@ class PersistedStructuredCasePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def build_structured_case_storage_key(owner_id: str, case_id: str) -> str:
+def build_structured_case_storage_key(tenant_id: str, owner_id: str, case_id: str) -> str:
+    # A5: Tenant-complete storage key. tenant_id is the outermost scope so
+    # cross-tenant users with identical owner_id/case_id are structurally isolated.
+    return f"agent_case:{tenant_id}:{owner_id}:{case_id}"
+
+
+def _build_legacy_storage_key(owner_id: str, case_id: str) -> str:
+    # A5 legacy compat: pre-A5 records were stored under the 2-part owner-only key.
+    # Used only as a controlled read-fallback; never written to.
     return f"agent_case:{owner_id}:{case_id}"
 
 
@@ -74,12 +82,15 @@ def _first_user_message(messages: list[BaseMessage]) -> str | None:
 
 def _build_structured_case_payload(
     *,
+    tenant_id: str,
     owner_id: str,
     case_id: str,
     state: AgentState,
     runtime_path: str,
     binding_level: str,
 ) -> PersistedStructuredCasePayload:
+    # A5: tenant_id is explicit from the caller, not derived from state, so it
+    # is always authoritative and cannot be silently omitted or overwritten.
     messages = state.get("messages", [])
     return PersistedStructuredCasePayload(
         case_id=case_id,
@@ -92,12 +103,19 @@ def _build_structured_case_payload(
         working_profile=jsonable_encoder(state.get("working_profile", {})),
         relevant_fact_cards=jsonable_encoder(state.get("relevant_fact_cards", [])),
         messages=messages_to_dict(messages),
-        tenant_id=state.get("tenant_id"),
+        tenant_id=tenant_id,
     )
+
+
+class ConcurrencyConflictError(Exception):
+    """Raised when a structured case write fails due to a state revision mismatch."""
+
+    pass
 
 
 async def save_structured_case(
     *,
+    tenant_id: str,
     owner_id: str,
     case_id: str,
     state: AgentState,
@@ -107,20 +125,55 @@ async def save_structured_case(
     from app.database import AsyncSessionLocal
     from app.models.chat_transcript import ChatTranscript
 
+    # A5: tenant_id is a required parameter; storage key is tenant-scoped.
     payload = _build_structured_case_payload(
+        tenant_id=tenant_id,
         owner_id=owner_id,
         case_id=case_id,
         state=state,
         runtime_path=runtime_path,
         binding_level=binding_level,
     )
-    storage_key = build_structured_case_storage_key(owner_id, case_id)
+    storage_key = build_structured_case_storage_key(tenant_id, owner_id, case_id)
     messages = state.get("messages", [])
     summary = _latest_assistant_preview(messages)
 
+    # 0B.5: Extract revision and cycle signals for optimistic concurrency check
+    sealing_cycle = state.get("sealing_state", {}).get("cycle", {})
+    incoming_rev = sealing_cycle.get("state_revision")
+    incoming_parent_rev = sealing_cycle.get("snapshot_parent_revision")
+    incoming_cycle_id = sealing_cycle.get("analysis_cycle_id")
+
     async with AsyncSessionLocal() as session:
-        existing = await session.get(ChatTranscript, storage_key)
+        # 0B.5: Use with_for_update to prevent races during the check itself
+        existing = await session.get(ChatTranscript, storage_key, with_for_update=True)
         if existing:
+            # 0B.5: Perform Optimistic Concurrency Check
+            existing_metadata = existing.metadata_json or {}
+            existing_sealing_state = existing_metadata.get("sealing_state", {})
+            existing_cycle = existing_sealing_state.get("cycle", {})
+            db_rev = existing_cycle.get("state_revision")
+            db_cycle_id = existing_cycle.get("analysis_cycle_id")
+
+            # Check: Did the DB move past what we loaded?
+            if db_rev is not None and incoming_rev is not None:
+                if incoming_cycle_id != db_cycle_id:
+                    # New cycle / Advance: must start from current DB revision
+                    is_valid = (incoming_parent_rev == db_rev)
+                else:
+                    # Same cycle / Resave: must match current DB revision
+                    is_valid = (incoming_rev == db_rev)
+
+                if not is_valid:
+                    logger.warning(
+                        "Concurrency conflict on case %s: DB is at rev %s (cycle %s), incoming is rev %s (parent %s, cycle %s)",
+                        case_id, db_rev, db_cycle_id, incoming_rev, incoming_parent_rev, incoming_cycle_id
+                    )
+                    raise ConcurrencyConflictError(
+                        f"State revision conflict on case {case_id}: "
+                        f"DB is at revision {db_rev}, but incoming state expects parent {incoming_parent_rev} or same rev {incoming_rev}."
+                    )
+
             existing.user_id = owner_id
             existing.summary = summary
             existing.contributors = {"runtime_path": runtime_path, "binding_level": binding_level}
@@ -140,18 +193,25 @@ async def save_structured_case(
     upsert_conversation(
         owner_id=owner_id,
         conversation_id=case_id,
+        tenant_id=tenant_id,
         first_user_message=_first_user_message(messages),
         last_preview=summary,
     )
 
 
-async def load_structured_case(*, owner_id: str, case_id: str) -> AgentState | None:
+async def load_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -> AgentState | None:
     from app.database import AsyncSessionLocal
     from app.models.chat_transcript import ChatTranscript
 
-    storage_key = build_structured_case_storage_key(owner_id, case_id)
+    # A5: Storage key is tenant-scoped so cross-tenant access is structurally impossible.
+    storage_key = build_structured_case_storage_key(tenant_id, owner_id, case_id)
     async with AsyncSessionLocal() as session:
         transcript = await session.get(ChatTranscript, storage_key)
+        if transcript is None:
+            # A5 legacy-compat: records persisted before A5 use the 2-part owner-only key.
+            # Try legacy key as a controlled fallback; tenant guard below still applies.
+            legacy_key = _build_legacy_storage_key(owner_id, case_id)
+            transcript = await session.get(ChatTranscript, legacy_key)
         if transcript is None or transcript.user_id != owner_id:
             return None
         metadata = transcript.metadata_json or {}
@@ -167,26 +227,44 @@ async def load_structured_case(*, owner_id: str, case_id: str) -> AgentState | N
             )
             return None
 
+    # A5: Fail-closed tenant mismatch guard. If the persisted tenant_id is present
+    # and does not match the request tenant_id, reject the load. This catches any
+    # edge case where a record was stored under an inconsistent tenant scope.
+    # Legacy records (payload.tenant_id is None) are accepted; the request tenant_id
+    # is authoritative for them.
+    if payload.tenant_id is not None and payload.tenant_id != tenant_id:
+        logger.warning(
+            "Tenant mismatch on case %s: persisted tenant_id=%r, request tenant_id=%r — access denied",
+            case_id, payload.tenant_id, tenant_id,
+            extra={"owner_id": owner_id, "case_id": case_id},
+        )
+        return None
+
     state: AgentState = {
         "messages": messages_from_dict(payload.messages),
         "sealing_state": payload.sealing_state,
         "working_profile": payload.working_profile,
         "relevant_fact_cards": payload.relevant_fact_cards,
     }
-    if payload.tenant_id is not None:
-        state["tenant_id"] = payload.tenant_id
+    # Use persisted tenant_id if present; fall back to request tenant_id for legacy records.
+    state["tenant_id"] = payload.tenant_id if payload.tenant_id is not None else tenant_id
     if payload.case_state is not None:
         state["case_state"] = payload.case_state
     return state
 
 
-async def delete_structured_case(*, owner_id: str, case_id: str) -> None:
+async def delete_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -> None:
     from app.database import AsyncSessionLocal
     from app.models.chat_transcript import ChatTranscript
 
-    storage_key = build_structured_case_storage_key(owner_id, case_id)
+    # A5: Tenant-scoped storage key.
+    storage_key = build_structured_case_storage_key(tenant_id, owner_id, case_id)
     async with AsyncSessionLocal() as session:
         transcript = await session.get(ChatTranscript, storage_key)
+        if transcript is None:
+            # A5 legacy-compat: check old 2-part key for records stored before A5.
+            legacy_key = _build_legacy_storage_key(owner_id, case_id)
+            transcript = await session.get(ChatTranscript, legacy_key)
         if transcript is None or transcript.user_id != owner_id:
             return
         await session.delete(transcript)

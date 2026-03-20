@@ -5,8 +5,8 @@ import json
 from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI, HTTPException
 from pydantic import ValidationError
-from app.agent.api.router import download_rfq_action, download_rfq_artifact, router, SESSION_STORE, chat_endpoint, event_generator
-from app.agent.api.models import CaseActionRequest, ChatRequest
+from app.agent.api.router import download_rfq_action, download_rfq_artifact, case_review_action, router, SESSION_STORE, chat_endpoint, event_generator
+from app.agent.api.models import CaseActionRequest, CaseReviewRequest, ChatRequest
 from app.agent.cli import create_initial_state
 from app.agent.case_state import sync_case_state_to_state, sync_material_cycle_control
 from app.agent.domain.rwdr import RWDRSelectorOutputDTO
@@ -334,14 +334,15 @@ def agent_request_user():
 
 @pytest.fixture(autouse=True)
 def fake_structured_case_store(monkeypatch):
+    # A5: Store key is (tenant_id, owner_id, case_id) — tenant-complete.
     store = {}
 
-    async def _fake_load_structured_case(*, owner_id: str, case_id: str):
-        state = store.get((owner_id, case_id))
+    async def _fake_load_structured_case(*, tenant_id: str, owner_id: str, case_id: str):
+        state = store.get((tenant_id, owner_id, case_id))
         return copy.deepcopy(state) if state is not None else None
 
-    async def _fake_save_structured_case(*, owner_id: str, case_id: str, state, runtime_path: str, binding_level: str):
-        store[(owner_id, case_id)] = copy.deepcopy(state)
+    async def _fake_save_structured_case(*, tenant_id: str, owner_id: str, case_id: str, state, runtime_path: str, binding_level: str):
+        store[(tenant_id, owner_id, case_id)] = copy.deepcopy(state)
 
     monkeypatch.setattr("app.agent.api.router.load_structured_case", _fake_load_structured_case)
     monkeypatch.setattr("app.agent.api.router.save_structured_case", _fake_save_structured_case)
@@ -350,19 +351,14 @@ def fake_structured_case_store(monkeypatch):
 def test_api_chat_endpoint_success(agent_request_user):
     """
     Test Phase F2:
-    Verifiziert den POST /chat Endpunkt mit einem gemockten Agenten.
+    Verifiziert den POST /chat Endpunkt mit einem gemockten Fast-Knowledge-Pfad.
+    "Hallo Agent" routes to FAST_KNOWLEDGE (direct path) — result_form="direct".
     """
-    # 1. Mock für den Agenten-Lauf vorbereiten
-    # Wir mocken die execute_agent Funktion, um keine echten API-Aufrufe zu machen.
-    mock_updated_state = _structured_mock_state(
-        messages=[
-            HumanMessage(content="Hallo Agent"),
-            AIMessage(content="Hallo! Wie kann ich helfen?"),
-        ],
-        revision=1,
-    )
+    from app.agent.runtime import RuntimeExecutionResult
 
-    with patch("app.agent.api.router.execute_agent", new=AsyncMock(return_value=mock_updated_state)):
+    mock_fast_result = RuntimeExecutionResult(reply="Hallo! Wie kann ich helfen?", working_profile=None)
+
+    with patch("app.agent.api.router.execute_fast_knowledge", new=AsyncMock(return_value=mock_fast_result)):
         response = asyncio.run(
             chat_endpoint(
                 ChatRequest(message="Hallo Agent", session_id="test_session"),
@@ -370,15 +366,14 @@ def test_api_chat_endpoint_success(agent_request_user):
             )
         )
 
-        # 3. Validierung
-        # 0A.3: "Hallo Agent" routes to guided (fallback). Guided responses carry
-        # orientation semantics — no result_contract, no qualified_action_gate.
+        # "Hallo Agent" is a conversational opening → FAST_KNOWLEDGE, direct path.
+        # Direct responses carry orientation semantics — no result_contract, no qualified_action_gate.
         data = response.model_dump()
 
         assert data["reply"] == "Hallo! Wie kann ich helfen?"
         assert data["session_id"] == "test_session"
-        assert data["result_form"] == "guided"
-        assert data["binding_level"] == "ORIENTATION"
+        assert data["result_form"] == "direct"
+        assert data["binding_level"] == "KNOWLEDGE"
         assert data["rfq_ready"] is False
         assert data["case_state"] is None
         assert data["result_contract"] is None
@@ -406,8 +401,8 @@ def test_api_session_persistence(agent_request_user):
             )
         )
     
-    # Prüfen, ob Session existiert
-    cache_key = f"{agent_request_user.user_id}:{session_id}"
+    # Prüfen, ob Session existiert (A5: key is tenant-complete)
+    cache_key = f"{agent_request_user.tenant_id}:{agent_request_user.user_id}:{session_id}"
     assert cache_key in SESSION_STORE
     assert len(SESSION_STORE[cache_key]["messages"]) == 2
     
@@ -504,7 +499,7 @@ def test_api_chat_stream_endpoint_projects_rwdr_payload(agent_request_user):
     session_id = "stream_rwdr_test"
     # 0A.3: Pre-seed SESSION_STORE with asserted medium so the policy routes to
     # qualified for "RWDR Stream" (qualification keyword + asserted state basis).
-    SESSION_STORE[f"{agent_request_user.user_id}:{session_id}"] = {
+    SESSION_STORE[f"{agent_request_user.tenant_id}:{agent_request_user.user_id}:{session_id}"] = {
         "sealing_state": {
             "asserted": {"medium_profile": {"name": "Wasser"}, "operating_conditions": {}},
             "governance": {"unknowns_release_blocking": []},
@@ -572,7 +567,7 @@ def test_api_chat_stream_endpoint_projects_rwdr_payload(agent_request_user):
 def test_api_chat_endpoint_transports_structured_rwdr_output(agent_request_user):
     # 0A.3: Pre-seed SESSION_STORE with asserted medium so the policy routes to
     # qualified for "RWDR" (qualification keyword + asserted state basis).
-    SESSION_STORE[f"{agent_request_user.user_id}:rwdr_session"] = {
+    SESSION_STORE[f"{agent_request_user.tenant_id}:{agent_request_user.user_id}:rwdr_session"] = {
         "sealing_state": {
             "asserted": {"medium_profile": {"name": "Wasser"}, "operating_conditions": {}},
             "governance": {"unknowns_release_blocking": []},
@@ -622,7 +617,7 @@ def test_allowed_promoted_fresh_case_executes_rfq_action_successfully(fake_struc
             source_refs=["registry:ptfe:g25:acme"], evidence_refs=[],
         ),),
     )
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-1")] = _qualified_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-1")] = _qualified_material_action_state()
 
     response = asyncio.run(
         download_rfq_action(
@@ -645,8 +640,9 @@ def test_allowed_promoted_fresh_case_executes_rfq_action_successfully(fake_struc
     assert payload["action_payload"]["message"] == spec["rendering_message"]
     assert payload["case_state"]["sealing_requirement_spec"] == spec
     assert payload["case_state"]["candidate_clusters"] == spec["candidate_clusters"]
-    assert spec["analysis_cycle_id"] == "cycle-3"
-    assert spec["state_revision"] == 3
+    # _advance_case_state_only_revision stamps a compound cycle id on action writes
+    assert spec["analysis_cycle_id"].startswith("cycle-3::")
+    assert spec["state_revision"] == 4
     assert spec["binding_level"] == "RFQ_BASIS"
     assert spec["release_status"] == "rfq_ready"
     assert spec["rfq_admissibility"] == "ready"
@@ -705,7 +701,7 @@ def test_allowed_promoted_fresh_case_downloads_render_artifact(fake_structured_c
             source_refs=["registry:ptfe:g25:acme"], evidence_refs=[],
         ),),
     )
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-1-artifact")] = _qualified_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-1-artifact")] = _qualified_material_action_state()
 
     response = asyncio.run(
         download_rfq_artifact(
@@ -718,7 +714,7 @@ def test_allowed_promoted_fresh_case_downloads_render_artifact(fake_structured_c
     assert response.headers["content-disposition"] == 'attachment; filename="sealing-requirement-spec-cycle-3.md"'
     assert response.body.decode("utf-8").startswith("# Sealing Requirement Spec")
     assert "- Winner Candidate ID: ptfe::g25::acme" in response.body.decode("utf-8")
-    saved_state = fake_structured_case_store[(agent_request_user.user_id, "rfq-case-1-artifact")]
+    saved_state = fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-1-artifact")]
     status = saved_state["case_state"]["qualified_action_status"]
     assert status["action"] == "download_rfq"
     assert status["last_status"] == "executed"
@@ -737,7 +733,7 @@ def test_allowed_promoted_fresh_case_downloads_render_artifact(fake_structured_c
 
 
 def test_exploratory_case_is_blocked_server_side(fake_structured_case_store, agent_request_user):
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-2")] = _exploratory_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-2")] = _exploratory_material_action_state()
 
     response = asyncio.run(
         download_rfq_action(
@@ -764,7 +760,7 @@ def test_exploratory_case_is_blocked_server_side(fake_structured_case_store, age
 
 
 def test_blocked_case_cannot_download_render_artifact(fake_structured_case_store, agent_request_user):
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-2-artifact")] = _exploratory_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-2-artifact")] = _exploratory_material_action_state()
 
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(
@@ -777,7 +773,7 @@ def test_blocked_case_cannot_download_render_artifact(fake_structured_case_store
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail["code"] == "rfq_action_blocked"
     assert "exploratory_candidate_source_only" in exc_info.value.detail["block_reasons"]
-    saved_state = fake_structured_case_store[(agent_request_user.user_id, "rfq-case-2-artifact")]
+    saved_state = fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-2-artifact")]
     status = saved_state["case_state"]["qualified_action_status"]
     assert status["action"] == "download_rfq"
     assert status["last_status"] == "blocked"
@@ -790,7 +786,7 @@ def test_blocked_case_cannot_download_render_artifact(fake_structured_case_store
 
 
 def test_stale_requires_recompute_case_is_blocked_server_side(fake_structured_case_store, agent_request_user, monkeypatch):
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-3")] = _qualified_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-3")] = _qualified_material_action_state()
     monkeypatch.setattr(
         "app.agent.material_core.load_promoted_candidate_registry_records",
         lambda: (
@@ -820,7 +816,7 @@ def test_stale_requires_recompute_case_is_blocked_server_side(fake_structured_ca
 
 
 def test_cross_user_access_to_another_case_is_not_found(fake_structured_case_store, agent_request_user):
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-4")] = _qualified_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-4")] = _qualified_material_action_state()
 
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(
@@ -842,7 +838,7 @@ def test_cross_user_access_to_another_case_is_not_found(fake_structured_case_sto
 
 
 def test_legacy_rfq_ready_does_not_bypass_server_side_gate(fake_structured_case_store, agent_request_user):
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-5")] = _exploratory_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-5")] = _exploratory_material_action_state()
 
     response = asyncio.run(
         download_rfq_action(
@@ -866,7 +862,7 @@ def test_blocked_rfq_gate_keeps_visible_handover_prequalified_in_action_response
     state["sealing_state"]["selection"]["rfq_admissibility"] = "ready"
     state["sealing_state"]["selection"]["recommendation_artifact"]["release_status"] = "rfq_ready"
     state["sealing_state"]["selection"]["recommendation_artifact"]["rfq_admissibility"] = "ready"
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-5-visible")] = state
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-5-visible")] = state
 
     response = asyncio.run(
         download_rfq_action(
@@ -893,7 +889,7 @@ def test_blocked_rfq_gate_keeps_visible_handover_prequalified_in_action_response
 
 
 def test_qualified_action_status_matches_newest_history_entry(fake_structured_case_store, agent_request_user):
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-6")] = _qualified_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-6")] = _qualified_material_action_state()
 
     response = asyncio.run(
         download_rfq_action(
@@ -938,7 +934,7 @@ def test_history_is_server_side_bounded_and_trims_old_entries(fake_structured_ca
         )
     state["case_state"]["qualified_action_history"] = history
     state["case_state"]["qualified_action_status"] = history[0]
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-case-7")] = state
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-case-7")] = state
 
     response = asyncio.run(
         download_rfq_action(
@@ -979,7 +975,7 @@ def test_event_generator_final_payload_includes_complete_visible_case_narrative_
     path includes case_state in the final SSE payload.
     """
     session_id = "stream_narrative_atomicity_test"
-    SESSION_STORE[f"{agent_request_user.user_id}:{session_id}"] = {
+    SESSION_STORE[f"{agent_request_user.tenant_id}:{agent_request_user.user_id}:{session_id}"] = {
         "sealing_state": {
             "asserted": {"medium_profile": {"name": "Wasser"}, "operating_conditions": {}},
             "governance": {"unknowns_release_blocking": []},
@@ -1071,7 +1067,7 @@ def test_download_rfq_action_response_includes_complete_visible_case_narrative(f
     im CaseActionResponse. Frontend-seitig benötigt applyExternalCaseState beide Felder
     im selben Payload-Objekt — kein separater Fetch, kein Drift möglich.
     """
-    fake_structured_case_store[(agent_request_user.user_id, "rfq-narrative-vcn-case")] = _qualified_material_action_state()
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "rfq-narrative-vcn-case")] = _qualified_material_action_state()
 
     response = asyncio.run(
         download_rfq_action(
@@ -1096,3 +1092,136 @@ def test_download_rfq_action_response_includes_complete_visible_case_narrative(f
 
     assert isinstance(vcn["qualification_status"], list) and len(vcn["qualification_status"]) > 0
     assert isinstance(vcn["case_summary"], list) and len(vcn["case_summary"]) > 0
+
+
+# ── A5: Tenant-boundary tests for persistence, session/cache, and action paths ──
+
+def test_cross_tenant_access_to_case_is_not_found(fake_structured_case_store, agent_request_user):
+    """A5: A user on tenant-B cannot access a case belonging to tenant-A, even with the
+    same user_id. The storage key is tenant-scoped so the lookup structurally fails."""
+    # Seed under the legitimate user's tenant
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "a5-tenant-case")] = _qualified_material_action_state()
+
+    cross_tenant_user = RequestUser(
+        user_id=agent_request_user.user_id,  # same user_id, different tenant
+        username="same-user-other-tenant",
+        sub=agent_request_user.user_id,
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-intruder",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            download_rfq_action(
+                "a5-tenant-case",
+                CaseActionRequest(action="download_rfq"),
+                current_user=cross_tenant_user,
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+def test_session_cache_key_is_tenant_scoped(agent_request_user):
+    """A5: Two users with identical user_id but different tenant_id must produce
+    different SESSION_STORE keys. No cross-tenant cache collision is possible."""
+    from app.agent.api.router import _case_cache_key
+
+    user_a = RequestUser(
+        user_id="shared-sub-42", username="u", sub="shared-sub-42",
+        roles=[], scopes=[], tenant_id="tenant-alpha",
+    )
+    user_b = RequestUser(
+        user_id="shared-sub-42", username="u", sub="shared-sub-42",
+        roles=[], scopes=[], tenant_id="tenant-beta",
+    )
+
+    key_a = _case_cache_key(user_a.tenant_id or user_a.user_id, user_a.user_id, "same-case")
+    key_b = _case_cache_key(user_b.tenant_id or user_b.user_id, user_b.user_id, "same-case")
+
+    assert key_a != key_b, "Tenant-A and Tenant-B must never share a SESSION_STORE key"
+    assert "tenant-alpha" in key_a
+    assert "tenant-beta" in key_b
+
+
+def test_rfq_action_cross_tenant_is_not_found(fake_structured_case_store, agent_request_user):
+    """A5: download_rfq_action must respect the same tenant boundary as normal case load."""
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "a5-rfq-tenant-case")] = _qualified_material_action_state()
+
+    intruder = RequestUser(
+        user_id=agent_request_user.user_id,
+        username="intruder",
+        sub=agent_request_user.user_id,
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-evil",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            download_rfq_action(
+                "a5-rfq-tenant-case",
+                CaseActionRequest(action="download_rfq"),
+                current_user=intruder,
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+def test_review_action_cross_tenant_is_not_found(fake_structured_case_store, agent_request_user):
+    """A5: case_review_action must respect the same tenant boundary as all other case paths."""
+    state = _qualified_material_action_state(revision=3)
+    state["case_state"]["case_meta"]["review_required"] = True
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "a5-review-tenant-case")] = state
+
+    intruder = RequestUser(
+        user_id=agent_request_user.user_id,
+        username="intruder",
+        sub=agent_request_user.user_id,
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-evil",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            case_review_action(
+                "a5-review-tenant-case",
+                CaseReviewRequest(
+                    review_decision="approved",
+                    review_state="completed",
+                    review_note="hijack attempt",
+                    review_reason="final_review",
+                ),
+                current_user=intruder,
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+def test_same_tenant_same_user_can_save_and_load(fake_structured_case_store, agent_request_user, monkeypatch):
+    """A5: The happy path — same tenant + same user can save and reload a case."""
+    monkeypatch.setattr(
+        "app.agent.material_core.load_promoted_candidate_registry_records",
+        lambda: (PromotedCandidateRegistryRecordDTO(
+            registry_record_id="registry-ptfe-g25-acme",
+            material_family="PTFE", grade_name="G25", manufacturer_name="Acme",
+            promotion_state="promoted", registry_authority="governed",
+            source_refs=["registry:ptfe:g25:acme"], evidence_refs=[],
+        ),),
+    )
+    fake_structured_case_store[(agent_request_user.tenant_id, agent_request_user.user_id, "a5-happy-case")] = _qualified_material_action_state()
+
+    response = asyncio.run(
+        download_rfq_action(
+            "a5-happy-case",
+            CaseActionRequest(action="download_rfq"),
+            current_user=agent_request_user,
+        )
+    )
+
+    assert response.allowed is True
+    assert response.executed is True

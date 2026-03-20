@@ -1,19 +1,22 @@
 import json
 import os
 import asyncio
+import uuid
 from datetime import datetime, timezone
-from typing import Dict, AsyncGenerator, Any
+from typing import Dict, AsyncGenerator, Any, Optional
 from fastapi import APIRouter, HTTPException, FastAPI, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from app.agent.api.models import CaseActionRequest, CaseActionResponse, ChatRequest, ChatResponse
+from app.agent.api.models import CaseActionRequest, CaseActionResponse, CaseReviewRequest, ChatRequest, ChatResponse
 from app.agent.agent.rwdr_orchestration import merge_rwdr_patch
 from app.agent.agent.state import AgentState
 from app.agent.agent.sync import project_rwdr_output, project_rwdr_read_model, sync_working_profile_to_state
 from app.agent.agent.prompts import REASONING_PROMPT_VERSION, REASONING_PROMPT_HASH
 from app.agent.case_state import (
     CASE_STATE_BUILDER_VERSION,
+    DETERMINISTIC_DATA_VERSION,
+    DETERMINISTIC_SERVICE_VERSION,
     PROJECTION_VERSION,
     QUALIFIED_ACTION_AUDIT_EVENT,
     QUALIFIED_ACTION_DOWNLOAD_RFQ,
@@ -23,11 +26,15 @@ from app.agent.case_state import (
     QualifiedActionId,
     QualifiedActionLifecycleStatus,
     VersionProvenance,
+    VisibleCaseNarrative,
+    _build_visible_coverage_scope,
     get_material_input_snapshot_and_fingerprint,
     get_material_provider_snapshot_and_fingerprint,
     build_visible_case_narrative,
     build_conversation_guidance_contract,
+    resolve_next_step_contract,
     normalize_qualified_action_id,
+    sync_case_lifecycle_status,
     sync_case_state_to_state,
     sync_material_cycle_control,
 )
@@ -42,7 +49,7 @@ from app.agent.runtime import (
     InteractionPolicyDecision,
 )
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
-from app.services.history.persist import load_structured_case, save_structured_case
+from app.services.history.persist import ConcurrencyConflictError, load_structured_case, save_structured_case
 from langchain_core.messages import HumanMessage, AIMessage
 
 router = APIRouter()
@@ -74,6 +81,7 @@ def _build_structured_version_provenance(
     )
     vp: VersionProvenance = {
         "model_id": _GRAPH_MODEL_ID,
+        "model_version": _GRAPH_MODEL_ID,
         "prompt_version": REASONING_PROMPT_VERSION,
         "prompt_hash": REASONING_PROMPT_HASH,
         "visible_reply_prompt_version": VISIBLE_REPLY_PROMPT_VERSION,
@@ -81,7 +89,8 @@ def _build_structured_version_provenance(
         "policy_version": getattr(decision, "policy_version", INTERACTION_POLICY_VERSION),
         "projection_version": PROJECTION_VERSION,
         "case_state_builder_version": CASE_STATE_BUILDER_VERSION,
-        "data_version_note": "not_yet_governed",
+        "service_version": DETERMINISTIC_SERVICE_VERSION,
+        "data_version": DETERMINISTIC_DATA_VERSION,
     }
     if rwdr_config_version is not None:
         vp["rwdr_config_version"] = rwdr_config_version
@@ -94,14 +103,38 @@ def _build_fast_path_version_provenance(*, decision: Any) -> VersionProvenance:
     model_id is intentionally None: fast calculation and fast knowledge paths
     do not run an LLM to generate the visible answer. Recording a model_id here
     would be false attribution.
+
+    data_version is intentionally absent: fast knowledge uses runtime RAG retrieval
+    (no static versioned registry consulted); fast calculation uses pure formulas only.
+    Neither path reads promoted_candidate_registry_v1.json — attributing a registry
+    version to these paths would be false.
     """
     return {
         "model_id": None,
+        "model_version": None,
         "policy_version": getattr(decision, "policy_version", INTERACTION_POLICY_VERSION),
         "projection_version": PROJECTION_VERSION,
         "case_state_builder_version": CASE_STATE_BUILDER_VERSION,
-        "data_version_note": "not_yet_governed",
+        "service_version": DETERMINISTIC_SERVICE_VERSION,
     }
+
+
+def _build_policy_narrative_snapshot(decision: Any) -> Dict[str, Any] | None:
+    if not hasattr(decision, "coverage_status"):
+        return None
+    # 0B.2 completion: result_form and required_fields added to enable result-level
+    # and known-unknowns visible items in _build_visible_coverage_scope.
+    return {
+        "coverage_status": getattr(decision, "coverage_status", None),
+        "boundary_flags": list(getattr(decision, "boundary_flags", ())),
+        "escalation_reason": getattr(decision, "escalation_reason", None),
+        "result_form": getattr(decision, "result_form", None),
+        "required_fields": list(getattr(decision, "required_fields", ())),
+    }
+
+
+def _build_next_step_contract_snapshot(state: AgentState) -> Dict[str, Any]:
+    return resolve_next_step_contract(state)
 
 
 def get_agent_graph():
@@ -161,6 +194,9 @@ def build_runtime_payload(
         "visible_case_narrative": visible_case_narrative,
         # 0A.2: Interaction Policy V1 fields — present when decision is InteractionPolicyDecision
         "result_form": getattr(decision, "result_form", None),
+        "path": getattr(decision, "path", None),
+        "stream_mode": getattr(decision, "stream_mode", None),
+        "required_fields": list(getattr(decision, "required_fields", ()) or ()),
         "coverage_status": getattr(decision, "coverage_status", None),
         "boundary_flags": list(getattr(decision, "boundary_flags", ())),
         "escalation_reason": getattr(decision, "escalation_reason", None),
@@ -180,8 +216,9 @@ def build_runtime_payload(
     return payload
 
 
-def _case_cache_key(owner_id: str, case_id: str) -> str:
-    return f"{owner_id}:{case_id}"
+def _case_cache_key(tenant_id: str, owner_id: str, case_id: str) -> str:
+    # A5: Tenant-complete in-process cache key.
+    return f"{tenant_id}:{owner_id}:{case_id}"
 
 
 def _resolve_payload_binding_level(
@@ -239,15 +276,22 @@ def _create_initial_agent_state(case_id: str, *, owner_id: str, tenant_id: str |
 
 async def prepare_structured_state(request: ChatRequest, *, current_user: RequestUser) -> AgentState:
     owner_id = canonical_user_id(current_user)
-    cache_key = _case_cache_key(owner_id, request.session_id)
-    current_state = await load_structured_case(owner_id=owner_id, case_id=request.session_id)
+    # A5: tenant_id is the authoritative first-class scope for all case operations.
+    tenant_id = current_user.tenant_id or owner_id
+    cache_key = _case_cache_key(tenant_id, owner_id, request.session_id)
+    current_state = await load_structured_case(tenant_id=tenant_id, owner_id=owner_id, case_id=request.session_id)
     if current_state is None:
         current_state = _create_initial_agent_state(
             request.session_id,
             owner_id=owner_id,
-            tenant_id=current_user.tenant_id,
+            tenant_id=tenant_id,
         )
-    current_state["tenant_id"] = current_user.tenant_id or owner_id
+    # A5: Do not silently overwrite the persisted tenant_id. For new states it is
+    # already set correctly by _create_initial_agent_state. For loaded states it was
+    # verified by load_structured_case (mismatch → None → fresh state above).
+    # Only back-fill if absent (legacy records loaded before this patch).
+    if not current_state.get("tenant_id"):
+        current_state["tenant_id"] = tenant_id
     current_state["owner_id"] = owner_id
     if request.rwdr_input is not None or request.rwdr_input_patch is not None:
         merge_rwdr_patch(
@@ -268,18 +312,114 @@ async def persist_structured_state(
     decision: RuntimeDecision,
 ) -> None:
     owner_id = canonical_user_id(current_user)
-    cache_key = _case_cache_key(owner_id, session_id)
-    await save_structured_case(
-        owner_id=owner_id,
-        case_id=session_id,
-        state=state,
-        runtime_path=decision.runtime_path,
-        binding_level=_resolve_payload_binding_level(
-            decision.binding_level,
-            case_state=state.get("case_state"),
-        ),
-    )
+    tenant_id = current_user.tenant_id or owner_id
+    cache_key = _case_cache_key(tenant_id, owner_id, session_id)
+    try:
+        await save_structured_case(
+            tenant_id=tenant_id,
+            owner_id=owner_id,
+            case_id=session_id,
+            state=state,
+            runtime_path=decision.runtime_path,
+            binding_level=_resolve_payload_binding_level(
+                decision.binding_level,
+                case_state=state.get("case_state"),
+            ),
+        )
+    except ConcurrencyConflictError as exc:
+        # 0B.5: Translate revision conflict to 409 Conflict
+        raise HTTPException(status_code=409, detail=str(exc))
     SESSION_STORE[cache_key] = state
+
+
+def _advance_case_state_only_revision(
+    state: AgentState,
+    *,
+    case_id: str,
+    write_scope: str,
+) -> AgentState:
+    updated_state = dict(state)
+    sealing_state = dict(updated_state.get("sealing_state") or {})
+    cycle = dict(sealing_state.get("cycle") or {})
+
+    current_revision = int(cycle.get("state_revision", 0) or 0)
+    next_revision = current_revision + 1
+    current_cycle_id = str(cycle.get("analysis_cycle_id") or f"session_{case_id}_1")
+    cycle["snapshot_parent_revision"] = current_revision
+    cycle["state_revision"] = next_revision
+    cycle["analysis_cycle_id"] = (
+        f"{current_cycle_id}::{write_scope}::rev{next_revision}::{uuid.uuid4().hex[:8]}"
+    )
+    sealing_state["cycle"] = cycle
+    updated_state["sealing_state"] = sealing_state
+
+    case_state = dict(updated_state.get("case_state") or {})
+    if not case_state:
+        return updated_state
+
+    case_meta = dict(case_state.get("case_meta") or {})
+    case_meta["analysis_cycle_id"] = cycle["analysis_cycle_id"]
+    case_meta["state_revision"] = next_revision
+    case_meta["version"] = next_revision
+    case_state["case_meta"] = case_meta
+
+    result_contract = dict(case_state.get("result_contract") or {})
+    if result_contract:
+        result_contract["analysis_cycle_id"] = cycle["analysis_cycle_id"]
+        result_contract["state_revision"] = next_revision
+        case_state["result_contract"] = result_contract
+
+    sealing_requirement_spec = dict(case_state.get("sealing_requirement_spec") or {})
+    if sealing_requirement_spec:
+        sealing_requirement_spec["analysis_cycle_id"] = cycle["analysis_cycle_id"]
+        sealing_requirement_spec["state_revision"] = next_revision
+        case_state["sealing_requirement_spec"] = sealing_requirement_spec
+
+    updated_state["case_state"] = case_state
+    return updated_state
+
+
+async def _save_structured_case_or_409(
+    *,
+    current_user: RequestUser,
+    case_id: str,
+    state: AgentState,
+    runtime_path: str,
+    binding_level: str,
+) -> None:
+    _owner_id = canonical_user_id(current_user)
+    _tenant_id = current_user.tenant_id or _owner_id
+    try:
+        await save_structured_case(
+            tenant_id=_tenant_id,
+            owner_id=_owner_id,
+            case_id=case_id,
+            state=state,
+            runtime_path=runtime_path,
+            binding_level=binding_level,
+        )
+    except ConcurrencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+def _resolve_case_review_admissibility(
+    *,
+    case_state: Dict[str, Any] | None,
+) -> tuple[bool, list[str]]:
+    active_case_state = case_state or {}
+    case_meta = active_case_state.get("case_meta") or {}
+    lifecycle_status = str(case_meta.get("lifecycle_status") or "")
+    review_state = str(case_meta.get("review_state") or "none")
+    review_required = bool(case_meta.get("review_required"))
+
+    allowed = bool(
+        review_required
+        or lifecycle_status == "review_pending"
+        or review_state in {"pending", "in_review"}
+    )
+    if allowed:
+        return True, []
+    return False, ["review_not_admissible"]
 
 
 async def load_and_refresh_structured_case(
@@ -288,7 +428,8 @@ async def load_and_refresh_structured_case(
     case_id: str,
 ) -> tuple[AgentState, str, str]:
     owner_id = canonical_user_id(current_user)
-    state = await load_structured_case(owner_id=owner_id, case_id=case_id)
+    tenant_id = current_user.tenant_id or owner_id
+    state = await load_structured_case(tenant_id=tenant_id, owner_id=owner_id, case_id=case_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Structured case not found")
 
@@ -296,13 +437,23 @@ async def load_and_refresh_structured_case(
     case_meta = existing_case_state.get("case_meta") or {}
     runtime_path = str(case_meta.get("runtime_path") or "STRUCTURED_QUALIFICATION")
     binding_level = str(case_meta.get("binding_level") or "QUALIFIED_PRESELECTION")
+    # 0A.5: carry forward persisted version_provenance so reload does not lose it
+    existing_vp = case_meta.get("version_provenance")
+    existing_policy_snapshot = case_meta.get("policy_narrative_snapshot")
+    existing_next_step_snapshot = case_meta.get("next_step_contract_snapshot")
     refreshed_state = sync_case_state_to_state(
         state,
         session_id=case_id,
         runtime_path=runtime_path,
         binding_level=binding_level,
+        version_provenance=existing_vp,
+        policy_narrative_snapshot=existing_policy_snapshot,
+        next_step_contract_snapshot=existing_next_step_snapshot or _build_next_step_contract_snapshot(state),
     )
-    return refreshed_state, runtime_path, binding_level
+    refreshed_case_meta = (refreshed_state.get("case_state") or {}).get("case_meta") or {}
+    refreshed_runtime_path = str(refreshed_case_meta.get("runtime_path") or runtime_path)
+    refreshed_binding_level = str(refreshed_case_meta.get("binding_level") or binding_level)
+    return refreshed_state, refreshed_runtime_path, refreshed_binding_level
 
 
 def _build_qualified_action_status_payload(
@@ -397,22 +548,20 @@ def _build_guidance_response_payload(
     0B.2: policy_context threaded into narrative builder for coverage_scope.
     0B.2a: next_step_contract wired from live post-run guidance_contract.
     """
-    policy_context: Dict[str, Any] | None = None
-    if hasattr(decision, "coverage_status"):
-        policy_context = {
-            "coverage_status": getattr(decision, "coverage_status", None),
-            "boundary_flags": list(getattr(decision, "boundary_flags", ())),
-            "escalation_reason": getattr(decision, "escalation_reason", None),
-            "required_fields": list(getattr(decision, "required_fields", ())),
-        }
+    policy_context = _build_policy_narrative_snapshot(decision)
+    # 0A.3 P3b: reuse graph-level guidance case_state builder (same as final_response_node)
+    # to prevent qualification fallback and carry live guidance semantics (missing fields,
+    # readiness, ask_mode) into the visible narrative.
+    from app.agent.agent.graph import _build_guidance_case_state  # noqa: PLC0415 — lazy to avoid circular import
+    guidance_contract = build_conversation_guidance_contract(state)
+    light_case_state = _build_guidance_case_state(guidance_contract)
+    next_step_contract = _build_next_step_contract_snapshot(state)
     visible_case_narrative = build_visible_case_narrative(
         state=state,
-        case_state=None,
+        case_state=light_case_state,
         binding_level="ORIENTATION",
         policy_context=policy_context,
     )
-    # 0B.2a: derive next_step_contract from post-run live state
-    next_step_contract = build_conversation_guidance_contract(state)
     payload: Dict[str, Any] = {
         "reply": reply,
         "session_id": session_id,
@@ -423,6 +572,9 @@ def _build_guidance_response_payload(
         "case_id": session_id,
         "rfq_ready": False,
         "result_form": getattr(decision, "result_form", "guided"),
+        "path": getattr(decision, "path", None),
+        "stream_mode": getattr(decision, "stream_mode", None),
+        "required_fields": list(getattr(decision, "required_fields", ()) or ()),
         "coverage_status": getattr(decision, "coverage_status", None),
         "boundary_flags": list(getattr(decision, "boundary_flags", ())),
         "escalation_reason": getattr(decision, "escalation_reason", None),
@@ -441,17 +593,30 @@ async def execute_fast_path(
     request: ChatRequest,
     decision: RuntimeDecision,
     version_provenance: Any = None,
+    *,
+    tenant_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if decision.runtime_path == "FAST_CALCULATION":
         result = await execute_fast_calculation(request.message)
     else:
-        result = await execute_fast_knowledge(request.message)
+        result = await execute_fast_knowledge(request.message, tenant_id=tenant_id, owner_id=owner_id)
+    # 0B.2: fast paths carry structured coverage_scope so Direct/Deterministic paths are
+    # visibly distinguishable from Guided/Qualified in the frontend contract.
+    # Stays lean: only coverage_scope from policy signals — no case_state traversal.
+    # governed_summary is empty string: fast paths produce no structured case summary.
+    policy_context = _build_policy_narrative_snapshot(decision)
+    visible_case_narrative: VisibleCaseNarrative = {
+        "governed_summary": "",
+        "coverage_scope": _build_visible_coverage_scope(policy_context),
+    }
     return build_runtime_payload(
         decision,
         session_id=request.session_id,
         reply=result.reply,
         working_profile=result.working_profile,
         version_provenance=version_provenance,
+        visible_case_narrative=visible_case_narrative,
     )
 
 async def event_generator(
@@ -466,7 +631,8 @@ async def event_generator(
     from app.services.auth.dependencies import canonical_user_id as _cuid
     session_id = request.session_id
     _owner_id = _cuid(current_user)
-    _cache_key = _case_cache_key(_owner_id, session_id)
+    _tenant_id = current_user.tenant_id or _owner_id
+    _cache_key = _case_cache_key(_tenant_id, _owner_id, session_id)
     _cached_state = SESSION_STORE.get(_cache_key)
     decision = evaluate_interaction_policy(
         request.message,
@@ -477,7 +643,10 @@ async def event_generator(
     if not decision.has_case_state:
         try:
             vp_fast = _build_fast_path_version_provenance(decision=decision)
-            fast_payload = await execute_fast_path(request, decision, version_provenance=vp_fast)
+            fast_payload = await execute_fast_path(
+                request, decision, version_provenance=vp_fast,
+                tenant_id=current_user.tenant_id, owner_id=_owner_id,
+            )
             yield f"data: {json.dumps({'chunk': fast_payload['reply']})}\n\n"
             yield f"data: {json.dumps(fast_payload)}\n\n"
             yield "data: [DONE]\n\n"
@@ -498,6 +667,8 @@ async def event_generator(
     )
 
     current_state = await prepare_structured_state(request, current_user=current_user)
+    # 0A.3: propagate result_form into graph state so selection_node/final_response_node can branch
+    current_state["result_form"] = decision.result_form
     final_state = current_state
     cycle = current_state.get("sealing_state", {}).get("cycle", {})
     previous_material_snapshot = cycle.get("material_input_snapshot")
@@ -536,7 +707,32 @@ async def event_generator(
             # 0A.3: Split guided vs qualified post-graph execution
             if decision.result_form == "guided":
                 guided_state = dict(final_state)
-                guided_state.pop("case_state", None)  # strip stale case_state from prior qualified turns
+                # 0A.3 P5c: persist minimal case_meta so reload path knows this is guidance
+                # 0A.5: include version_provenance for reload-path reproducibility
+                guidance_snapshot = _build_next_step_contract_snapshot(guided_state)
+                policy_snapshot = _build_policy_narrative_snapshot(decision)
+                guided_state["case_state"] = sync_case_lifecycle_status(
+                    state=guided_state,
+                    case_state={
+                        "case_meta": {
+                            "binding_level": "ORIENTATION",
+                            "runtime_path": "STRUCTURED_GUIDANCE",
+                            "boundary_contract": {
+                                "binding_level": "ORIENTATION",
+                                "coverage_status": (policy_snapshot or {}).get("coverage_status"),
+                                "boundary_flags": list((policy_snapshot or {}).get("boundary_flags") or []),
+                                "escalation_reason": (policy_snapshot or {}).get("escalation_reason"),
+                            },
+                            "version_provenance": vp_structured,
+                            "policy_narrative_snapshot": policy_snapshot,
+                            "next_step_contract_snapshot": guidance_snapshot,
+                        },
+                    },
+                    runtime_path="STRUCTURED_GUIDANCE",
+                    binding_level="ORIENTATION",
+                    guidance_contract=guidance_snapshot,
+                    policy_context=policy_snapshot,
+                )
                 last_msg = [m for m in guided_state["messages"] if isinstance(m, AIMessage)][-1]
                 await persist_structured_state(
                     current_user=current_user,
@@ -570,6 +766,8 @@ async def event_generator(
                 runtime_path=decision.runtime_path,
                 binding_level=decision.binding_level,
                 version_provenance=vp_structured,
+                policy_narrative_snapshot=_build_policy_narrative_snapshot(decision),
+                next_step_contract_snapshot=_build_next_step_contract_snapshot(final_state),
             )
             await persist_structured_state(
                 current_user=current_user,
@@ -590,13 +788,12 @@ async def event_generator(
                         decision.binding_level,
                         case_state=final_state.get("case_state"),
                     ),
-                    policy_context={"coverage_status": getattr(decision, "coverage_status", None), "boundary_flags": list(getattr(decision, "boundary_flags", ())), "escalation_reason": getattr(decision, "escalation_reason", None), "required_fields": list(getattr(decision, "required_fields", ()))},
+                    policy_context=_build_policy_narrative_snapshot(decision),
                 ),
                 working_profile=final_state.get("working_profile", {}),
                 rwdr_output=project_rwdr_output(final_state.get("sealing_state", {}).get("rwdr")),
                 version_provenance=vp_structured,
-                # 0B.2a: post-run live next-step contract
-                next_step_contract=build_conversation_guidance_contract(final_state),
+                next_step_contract=resolve_next_step_contract(final_state, case_state=final_state.get("case_state")),
             )
             payload["rwdr"] = project_rwdr_read_model(final_state.get("sealing_state", {}).get("rwdr"))
 
@@ -616,18 +813,22 @@ async def chat_endpoint(
     """REST-Endpunkt für Chat-Anfragen (Phase F2)."""
     session_id = request.session_id
     owner_id = canonical_user_id(current_user)
-    cache_key = _case_cache_key(owner_id, session_id)
+    tenant_id = current_user.tenant_id or owner_id
+    cache_key = _case_cache_key(tenant_id, owner_id, session_id)
     cached_state = SESSION_STORE.get(cache_key)
     decision = evaluate_interaction_policy(
         request.message,
         has_rwdr_payload=request.rwdr_input is not None or request.rwdr_input_patch is not None,
         existing_state=cached_state,
     )
-    
+
     try:
         if not decision.has_case_state:
             vp_fast = _build_fast_path_version_provenance(decision=decision)
-            fast_payload = await execute_fast_path(request, decision, version_provenance=vp_fast)
+            fast_payload = await execute_fast_path(
+                request, decision, version_provenance=vp_fast,
+                tenant_id=current_user.tenant_id, owner_id=owner_id,
+            )
             return ChatResponse(**fast_payload)
 
         # 0A.5: build structured provenance once for this request
@@ -643,6 +844,8 @@ async def chat_endpoint(
         )
 
         current_state = await prepare_structured_state(request, current_user=current_user)
+        # 0A.3: propagate result_form into graph state so selection_node/final_response_node can branch
+        current_state["result_form"] = decision.result_form
         cycle = current_state.get("sealing_state", {}).get("cycle", {})
         previous_material_snapshot = cycle.get("material_input_snapshot")
         previous_material_fingerprint = cycle.get("material_input_fingerprint")
@@ -658,7 +861,32 @@ async def chat_endpoint(
         # 0A.3: Split guided vs qualified post-graph execution
         if decision.result_form == "guided":
             guided_state = dict(updated_state)
-            guided_state.pop("case_state", None)  # strip stale case_state from prior qualified turns
+            # 0A.3 P5c: persist minimal case_meta so reload path knows this is guidance
+            # 0A.5: include version_provenance for reload-path reproducibility
+            guidance_snapshot = _build_next_step_contract_snapshot(guided_state)
+            policy_snapshot = _build_policy_narrative_snapshot(decision)
+            guided_state["case_state"] = sync_case_lifecycle_status(
+                state=guided_state,
+                case_state={
+                    "case_meta": {
+                        "binding_level": "ORIENTATION",
+                        "runtime_path": "STRUCTURED_GUIDANCE",
+                        "boundary_contract": {
+                            "binding_level": "ORIENTATION",
+                            "coverage_status": (policy_snapshot or {}).get("coverage_status"),
+                            "boundary_flags": list((policy_snapshot or {}).get("boundary_flags") or []),
+                            "escalation_reason": (policy_snapshot or {}).get("escalation_reason"),
+                        },
+                        "version_provenance": vp_structured,
+                        "policy_narrative_snapshot": policy_snapshot,
+                        "next_step_contract_snapshot": guidance_snapshot,
+                    },
+                },
+                runtime_path="STRUCTURED_GUIDANCE",
+                binding_level="ORIENTATION",
+                guidance_contract=guidance_snapshot,
+                policy_context=policy_snapshot,
+            )
             last_msg = [m for m in guided_state["messages"] if isinstance(m, AIMessage)][-1]
             await persist_structured_state(
                 current_user=current_user,
@@ -689,6 +917,8 @@ async def chat_endpoint(
             runtime_path=decision.runtime_path,
             binding_level=decision.binding_level,
             version_provenance=vp_structured,
+            policy_narrative_snapshot=_build_policy_narrative_snapshot(decision),
+            next_step_contract_snapshot=_build_next_step_contract_snapshot(updated_state),
         )
         await persist_structured_state(
             current_user=current_user,
@@ -710,13 +940,12 @@ async def chat_endpoint(
                     decision.binding_level,
                     case_state=updated_state.get("case_state"),
                 ),
-                policy_context={"coverage_status": getattr(decision, "coverage_status", None), "boundary_flags": list(getattr(decision, "boundary_flags", ())), "escalation_reason": getattr(decision, "escalation_reason", None), "required_fields": list(getattr(decision, "required_fields", ()))},
+                policy_context=_build_policy_narrative_snapshot(decision),
             ),
             working_profile=updated_state.get("working_profile", {}),
             rwdr_output=rwdr_output,
             version_provenance=vp_structured,
-            # 0B.2a: post-run live next-step contract
-            next_step_contract=build_conversation_guidance_contract(updated_state),
+            next_step_contract=resolve_next_step_contract(updated_state, case_state=updated_state.get("case_state")),
         ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -754,7 +983,7 @@ async def download_rfq_action(
         executed=executed,
         block_reasons=block_reasons,
         runtime_path=runtime_path,
-        binding_level=binding_level,
+        binding_level=str(gate.get("binding_level") or "ORIENTATION"),
         action_payload=action_payload,
         source_ref="api.agent.actions.download_rfq_action",
     )
@@ -767,15 +996,36 @@ async def download_rfq_action(
         state,
         entry=qualified_action_status,
     )
+    state = _advance_case_state_only_revision(
+        state,
+        case_id=case_id,
+        write_scope="download_rfq_action",
+    )
+    state["case_state"] = sync_case_lifecycle_status(
+        state=state,
+        case_state=state.get("case_state"),
+        runtime_path=runtime_path,
+        binding_level=binding_level,
+    )
+    if action_payload is not None:
+        current_spec = ((state.get("case_state") or {}).get("sealing_requirement_spec") or {})
+        action_payload = {
+            "sealing_requirement_spec": current_spec,
+            "contract_version": current_spec.get("contract_version"),
+            "rendering_status": current_spec.get("rendering_status"),
+            "message": current_spec.get("rendering_message"),
+            "render_artifact": current_spec.get("render_artifact"),
+        }
     state.setdefault("case_state", {}).setdefault("audit_trail", []).append(audit_event)
-    await save_structured_case(
-        owner_id=canonical_user_id(current_user),
+    await _save_structured_case_or_409(
+        current_user=current_user,
         case_id=case_id,
         state=state,
         runtime_path=runtime_path,
         binding_level=binding_level,
     )
-    SESSION_STORE[_case_cache_key(canonical_user_id(current_user), case_id)] = state
+    _rfq_owner_id = canonical_user_id(current_user)
+    SESSION_STORE[_case_cache_key(current_user.tenant_id or _rfq_owner_id, _rfq_owner_id, case_id)] = state
 
     return CaseActionResponse(
         case_id=case_id,
@@ -793,7 +1043,112 @@ async def download_rfq_action(
             case_state=state.get("case_state"),
             binding_level=binding_level,
         ),
+        next_step_contract=resolve_next_step_contract(state, case_state=state.get("case_state")),
         action_payload=action_payload,
+        audit_event=audit_event,
+    )
+
+
+@router.post("/cases/{case_id}/actions/review", response_model=CaseActionResponse)
+async def case_review_action(
+    case_id: str,
+    body: CaseReviewRequest,
+    current_user: RequestUser = Depends(get_current_request_user),
+):
+    owner_id = canonical_user_id(current_user)
+    state, runtime_path, binding_level = await load_and_refresh_structured_case(
+        current_user=current_user,
+        case_id=case_id,
+    )
+    case_state = state.get("case_state") or {}
+    review_allowed, review_block_reasons = _resolve_case_review_admissibility(
+        case_state=case_state,
+    )
+    if not review_allowed:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "review_action_blocked",
+                "block_reasons": review_block_reasons,
+            },
+        )
+
+    review_data = body
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    # 1. Update CaseMeta with HITL metadata
+    case_state = state.setdefault("case_state", {})
+    case_meta = case_state.setdefault("case_meta", {})
+    case_meta["review_state"] = review_data.review_state
+    case_meta["review_decision"] = review_data.review_decision
+    case_meta["review_reason"] = review_data.review_reason
+    case_meta["review_note"] = review_data.review_note
+    case_meta["review_notes"] = review_data.review_note
+    case_meta["reviewed_by"] = owner_id
+    case_meta["reviewer_id"] = owner_id
+    case_meta["review_timestamp"] = now_iso
+    case_meta["review_at"] = now_iso
+    case_meta["updated_at"] = now_iso
+
+    # 2. Build audit event (literal event_type as per Block C / Phase 1)
+    audit_event = {
+        "event_type": "case_review_action",
+        "timestamp": now_iso,
+        "source_ref": "api.agent.actions.review",
+        "details": {
+            "action": "case_review",
+            "executed": True,
+            "review_state": review_data.review_state,
+            "review_decision": review_data.review_decision,
+            "reviewed_by": owner_id
+        }
+    }
+    case_state.setdefault("audit_trail", []).append(audit_event)
+
+    # 3. Re-resolve lifecycle status after metadata update
+    state = _advance_case_state_only_revision(
+        state,
+        case_id=case_id,
+        write_scope="case_review_action",
+    )
+    case_state = state.get("case_state") or case_state
+    state["case_state"] = sync_case_lifecycle_status(
+        state=state,
+        case_state=case_state,
+        runtime_path=runtime_path,
+        binding_level=binding_level,
+    )
+    case_state = state.get("case_state") or case_state
+
+    # 4. Persistence (standard productive path)
+    await _save_structured_case_or_409(
+        current_user=current_user,
+        case_id=case_id,
+        state=state,
+        runtime_path=runtime_path,
+        binding_level=binding_level,
+    )
+    SESSION_STORE[_case_cache_key(current_user.tenant_id or owner_id, owner_id, case_id)] = state
+
+    # 5. Response
+    gate = case_state.get("qualified_action_gate") or {}
+    return CaseActionResponse(
+        case_id=case_id,
+        action="case_review",
+        allowed=True,
+        executed=True,
+        block_reasons=[],
+        runtime_path=runtime_path,
+        binding_level=binding_level,
+        qualified_action_gate=gate,
+        result_contract=case_state.get("result_contract"),
+        case_state=case_state,
+        visible_case_narrative=build_visible_case_narrative(
+            state=state,
+            case_state=case_state,
+            binding_level=binding_level,
+        ),
+        next_step_contract=resolve_next_step_contract(state, case_state=case_state),
         audit_event=audit_event,
     )
 
@@ -816,7 +1171,7 @@ async def download_rfq_artifact(
             executed=False,
             block_reasons=block_reasons,
             runtime_path=runtime_path,
-            binding_level=binding_level,
+            binding_level=str(gate.get("binding_level") or "ORIENTATION"),
             action_payload=None,
             source_ref="api.agent.actions.download_rfq_artifact",
         )
@@ -829,15 +1184,27 @@ async def download_rfq_artifact(
             state,
             entry=qualified_action_status,
         )
+        state = _advance_case_state_only_revision(
+            state,
+            case_id=case_id,
+            write_scope="download_rfq_artifact_blocked",
+        )
+        state["case_state"] = sync_case_lifecycle_status(
+            state=state,
+            case_state=state.get("case_state"),
+            runtime_path=runtime_path,
+            binding_level=binding_level,
+        )
         state.setdefault("case_state", {}).setdefault("audit_trail", []).append(audit_event)
-        await save_structured_case(
-            owner_id=canonical_user_id(current_user),
+        await _save_structured_case_or_409(
+            current_user=current_user,
             case_id=case_id,
             state=state,
             runtime_path=runtime_path,
             binding_level=binding_level,
         )
-        SESSION_STORE[_case_cache_key(canonical_user_id(current_user), case_id)] = state
+        _artifact_owner_id = canonical_user_id(current_user)
+        SESSION_STORE[_case_cache_key(current_user.tenant_id or _artifact_owner_id, _artifact_owner_id, case_id)] = state
         raise HTTPException(
             status_code=409,
             detail={
@@ -872,7 +1239,7 @@ async def download_rfq_artifact(
         executed=True,
         block_reasons=[],
         runtime_path=runtime_path,
-        binding_level=binding_level,
+        binding_level=str(gate.get("binding_level") or "ORIENTATION"),
         action_payload=action_payload,
         source_ref="api.agent.actions.download_rfq_artifact",
     )
@@ -885,15 +1252,27 @@ async def download_rfq_artifact(
         state,
         entry=qualified_action_status,
     )
+    state = _advance_case_state_only_revision(
+        state,
+        case_id=case_id,
+        write_scope="download_rfq_artifact",
+    )
+    state["case_state"] = sync_case_lifecycle_status(
+        state=state,
+        case_state=state.get("case_state"),
+        runtime_path=runtime_path,
+        binding_level=binding_level,
+    )
     state.setdefault("case_state", {}).setdefault("audit_trail", []).append(audit_event)
-    await save_structured_case(
-        owner_id=canonical_user_id(current_user),
+    await _save_structured_case_or_409(
+        current_user=current_user,
         case_id=case_id,
         state=state,
         runtime_path=runtime_path,
         binding_level=binding_level,
     )
-    SESSION_STORE[_case_cache_key(canonical_user_id(current_user), case_id)] = state
+    _artifact_exec_owner_id = canonical_user_id(current_user)
+    SESSION_STORE[_case_cache_key(current_user.tenant_id or _artifact_exec_owner_id, _artifact_exec_owner_id, case_id)] = state
     return Response(
         content=content.encode("utf-8"),
         media_type=mime_type,

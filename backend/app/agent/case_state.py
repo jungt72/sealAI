@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, NotRequired, TypedDict
+from typing import Any, Dict, List, Literal, Mapping, NotRequired, TypedDict
 
 from app.agent.deterministic_foundation import (
     build_calculation_foundation,
@@ -22,6 +22,22 @@ ActiveDomain = Literal[
     "calculation_only",
     "unknown",
 ]
+CaseLifecycleStatus = Literal[
+    "created",
+    "collecting",
+    "needs_clarification",
+    "guidance_only",
+    "calculating",
+    "review_pending",
+    "qualified",
+    "out_of_scope",
+    "exported",
+    "archived",
+    "outcome_recorded",
+]
+
+ReviewState = Literal["none", "pending", "in_review", "completed"]
+ReviewDecision = Literal["approved", "rejected", "needs_change"]
 
 QualifiedActionId = Literal["download_rfq"]
 QualifiedActionLifecycleStatus = Literal["none", "blocked", "executed"]
@@ -33,9 +49,19 @@ QUALIFIED_ACTION_STATUS_BLOCKED: QualifiedActionLifecycleStatus = "blocked"
 QUALIFIED_ACTION_STATUS_EXECUTED: QualifiedActionLifecycleStatus = "executed"
 QUALIFIED_ACTION_AUDIT_EVENT: QualifiedActionAuditEventType = "qualified_action"
 
+
 # 0A.5: Version constants for case-state projection and builder.
 PROJECTION_VERSION = "visible_case_narrative_v1"
 CASE_STATE_BUILDER_VERSION = "case_state_builder_v1"
+# 0A.5: Deterministic service layer and data artifact versions.
+# DETERMINISTIC_SERVICE_VERSION covers the composite deterministic stack:
+#   material qualification core, physics/calculation foundation, and RWDR selector.
+#   Increment this constant when any deterministic service logic changes materially.
+# DETERMINISTIC_DATA_VERSION references the structured domain data artifact currently
+#   in use: promoted_candidate_registry_v1.json. Tied directly to PROMOTED_SOURCE_ORIGIN
+#   in material_core.py; update when the registry file version changes.
+DETERMINISTIC_SERVICE_VERSION = "deterministic_stack_v1"
+DETERMINISTIC_DATA_VERSION = "promoted_registry_v1"
 
 
 class VersionProvenance(TypedDict, total=False):
@@ -43,9 +69,25 @@ class VersionProvenance(TypedDict, total=False):
 
     All fields are optional (total=False). Fields that are not applicable for a
     given runtime path (e.g. model_id on non-LLM fast paths) are omitted or None.
+
+    Dimensions:
+      model_id / model_version  — LLM used for visible reply (None on fast paths)
+      prompt_version / prompt_hash — reasoning prompt identity
+      visible_reply_prompt_version / visible_reply_prompt_hash — reply prompt
+      policy_version            — interaction policy version
+      projection_version        — visible case narrative projection version
+      case_state_builder_version — case-state builder version
+      service_version           — deterministic service stack version (covers
+                                   material qualification core, calc foundation,
+                                   RWDR selector composite)
+      rwdr_config_version       — RWDR-specific runtime config version (subdimension
+                                   of service_version; populated when RWDR is active)
+      data_version              — structured domain data artifact version (currently
+                                   promoted_candidate_registry_v1.json)
     """
 
     model_id: str | None
+    model_version: str | None
     prompt_version: str
     prompt_hash: str
     visible_reply_prompt_version: str
@@ -53,8 +95,35 @@ class VersionProvenance(TypedDict, total=False):
     policy_version: str
     projection_version: str
     case_state_builder_version: str
+    service_version: str
     rwdr_config_version: str | None
-    data_version_note: str
+    data_version: str
+
+
+class PolicyNarrativeSnapshot(TypedDict, total=False):
+    coverage_status: str | None
+    boundary_flags: List[str]
+    escalation_reason: str | None
+    # 0B.2 completion: result_form differentiates visible contract between result forms;
+    # required_fields carries known unknowns for visible known_unknowns item.
+    result_form: str | None
+    required_fields: List[str]
+
+
+class BoundaryContract(TypedDict, total=False):
+    binding_level: str
+    coverage_status: str | None
+    boundary_flags: List[str]
+    escalation_reason: str | None
+
+
+class NextStepContractSnapshot(TypedDict, total=False):
+    ask_mode: str
+    requested_fields: List[str]
+    reason_code: str
+    impact_hint: str | None
+    rfq_admissibility: str
+    state_revision: int
 
 
 class CaseMeta(TypedDict, total=False):
@@ -62,14 +131,32 @@ class CaseMeta(TypedDict, total=False):
     session_id: str
     analysis_cycle_id: str | None
     state_revision: int
+    version: int
     status: str
+    lifecycle_status: CaseLifecycleStatus
     origin: str
     runtime_path: str
     binding_level: str
+    boundary_contract: BoundaryContract
     created_at: str
     updated_at: str
     # 0A.5: additive — present when a structured request populates it
     version_provenance: VersionProvenance
+    # 0B.2: additive — persisted policy snapshot for reload-safe narrative rebuild
+    policy_narrative_snapshot: PolicyNarrativeSnapshot
+    # 0B.2a: additive projection snapshot for reload/action-safe next-step transport
+    next_step_contract_snapshot: NextStepContractSnapshot
+    # Block C / Phase 1: additive HITL-Review metadata
+    review_required: bool
+    review_state: ReviewState
+    review_reason: str | None
+    reviewer_id: str | None
+    reviewed_by: str | None
+    review_decision: ReviewDecision | None
+    review_notes: str | None
+    review_note: str | None
+    review_at: str | None
+    review_timestamp: str | None
 
 
 class RawInputEntry(TypedDict, total=False):
@@ -79,6 +166,19 @@ class RawInputEntry(TypedDict, total=False):
     source_ref: str
     confidence: float
     confirmed: bool
+
+
+class NormalizationIdentityEntry(TypedDict, total=False):
+    raw_value: Any
+    normalized_value: Any
+    identity_class: str
+    normalization_certainty: str
+    mapping_reason: str
+    deterministic_source: str
+    source_fact_ids: List[str]
+    evidence_quality: str
+    authority_quality: str
+    temporal_quality: str
 
 
 class DerivedCalculationEntry(TypedDict, total=False):
@@ -167,6 +267,73 @@ class MaterialDirectionContract(TypedDict, total=False):
     authority_layer: str
     direction_layer: str
     source_provenance: str | None
+
+
+class CommercialHandoverReadinessLayer(TypedDict, total=False):
+    binding_level: str
+    release_status: str
+    rfq_admissibility: str
+    gate_allowed: bool
+    gate_rfq_ready: bool
+    lifecycle_status: CaseLifecycleStatus | None
+
+
+class CommercialHandoverReviewLayer(TypedDict, total=False):
+    review_required: bool | None
+    review_state: ReviewState | None
+    review_decision: ReviewDecision | None
+    review_reason: str | None
+    reviewed_by: str | None
+
+
+class CommercialHandoverActionLayer(TypedDict, total=False):
+    action: QualifiedActionId
+    last_status: QualifiedActionLifecycleStatus
+    executed: bool
+    allowed_at_execution_time: bool
+    current_gate_allows_action: bool
+    block_reasons: List[str]
+
+
+class CommercialHandoverArtifactLayer(TypedDict, total=False):
+    contract_version: str | None
+    rendering_status: str | None
+    render_artifact_available: bool
+    artifact_filename: str | None
+    artifact_source_ref: str | None
+
+
+class CommercialHandoverContract(TypedDict, total=False):
+    readiness_layer: CommercialHandoverReadinessLayer
+    review_layer: CommercialHandoverReviewLayer
+    action_layer: CommercialHandoverActionLayer
+    artifact_layer: CommercialHandoverArtifactLayer
+
+
+class GovernedDataAuthorityBasis(TypedDict, total=False):
+    authority_layer: str
+    direction_layer: str
+    has_promoted_candidate_source: bool
+
+
+class GovernedDataSourceGovernance(TypedDict, total=False):
+    source_provenance: str | None
+    candidate_source_class: str | None
+    candidate_source_quality: str | None
+    normalized_quality_basis: str | None
+    normalized_authority_quality: str | None
+    normalized_evidence_quality: str | None
+    normalized_temporal_quality: str | None
+
+
+class GovernedDataDataGovernance(TypedDict, total=False):
+    data_version: str | None
+
+
+class GovernedDataContract(TypedDict, total=False):
+    authority_basis: GovernedDataAuthorityBasis
+    source_governance: GovernedDataSourceGovernance
+    data_governance: GovernedDataDataGovernance
 
 
 class CandidateCluster(TypedDict, total=False):
@@ -287,6 +454,10 @@ class CaseState(TypedDict):
     case_meta: CaseMeta
     active_domain: ActiveDomain
     raw_inputs: Dict[str, RawInputEntry]
+    normalization_identity_snapshot: Dict[str, NormalizationIdentityEntry]
+    material_direction_contract: MaterialDirectionContract
+    commercial_handover_contract: CommercialHandoverContract
+    governed_data_contract: GovernedDataContract
     derived_calculations: Dict[str, DerivedCalculationEntry]
     engineering_signals: Dict[str, EngineeringSignalEntry]
     qualification_results: Dict[str, QualificationResultEntry]
@@ -357,6 +528,71 @@ def build_default_result_contract(
     }
 
 
+def _build_commercial_handover_contract(
+    *,
+    case_meta: CaseMeta,
+    result_contract: ResultContract,
+    qualified_action_gate: QualifiedActionGate,
+    qualified_action_status: QualifiedActionStatus,
+    qualified_action_history: List[QualifiedActionHistoryEntry] | None,
+    sealing_requirement_spec: SealingRequirementSpec,
+) -> CommercialHandoverContract:
+    effective_action_status = (
+        dict((qualified_action_history or [])[0])
+        if qualified_action_history
+        else dict(qualified_action_status or {})
+    )
+    render_artifact = sealing_requirement_spec.get("render_artifact") or {}
+    return {
+        "readiness_layer": {
+            "binding_level": str(result_contract.get("binding_level") or case_meta.get("binding_level") or "ORIENTATION"),
+            "release_status": str(result_contract.get("release_status") or "inadmissible"),
+            "rfq_admissibility": str(result_contract.get("rfq_admissibility") or "inadmissible"),
+            "gate_allowed": bool(qualified_action_gate.get("allowed")),
+            "gate_rfq_ready": bool(qualified_action_gate.get("rfq_ready")),
+            "lifecycle_status": case_meta.get("lifecycle_status"),
+        },
+        "review_layer": {
+            "review_required": case_meta.get("review_required"),
+            "review_state": case_meta.get("review_state"),
+            "review_decision": case_meta.get("review_decision"),
+            "review_reason": case_meta.get("review_reason"),
+            "reviewed_by": case_meta.get("reviewed_by") or case_meta.get("reviewer_id"),
+        },
+        "action_layer": {
+            "action": normalize_qualified_action_id(effective_action_status.get("action")),
+            "last_status": normalize_qualified_action_lifecycle_status(effective_action_status.get("last_status")),
+            "executed": bool(effective_action_status.get("executed")),
+            "allowed_at_execution_time": bool(effective_action_status.get("allowed_at_execution_time")),
+            "current_gate_allows_action": bool(effective_action_status.get("current_gate_allows_action")),
+            "block_reasons": [str(item) for item in effective_action_status.get("block_reasons", [])],
+        },
+        "artifact_layer": {
+            "contract_version": (
+                str(sealing_requirement_spec.get("contract_version"))
+                if sealing_requirement_spec.get("contract_version") is not None
+                else None
+            ),
+            "rendering_status": (
+                str(sealing_requirement_spec.get("rendering_status"))
+                if sealing_requirement_spec.get("rendering_status") is not None
+                else None
+            ),
+            "render_artifact_available": bool(render_artifact.get("filename") or render_artifact.get("content")),
+            "artifact_filename": (
+                str(render_artifact.get("filename"))
+                if render_artifact.get("filename") is not None
+                else None
+            ),
+            "artifact_source_ref": (
+                str(render_artifact.get("source_ref"))
+                if render_artifact.get("source_ref") is not None
+                else None
+            ),
+        },
+    }
+
+
 def build_default_sealing_requirement_spec(
     *,
     analysis_cycle_id: str | None = None,
@@ -404,6 +640,8 @@ def sync_case_state_to_state(
     runtime_path: str,
     binding_level: str,
     version_provenance: VersionProvenance | None = None,
+    policy_narrative_snapshot: PolicyNarrativeSnapshot | None = None,
+    next_step_contract_snapshot: NextStepContractSnapshot | None = None,
 ) -> Dict[str, Any]:
     updated = dict(state)
     case_state = build_case_state(
@@ -412,9 +650,149 @@ def sync_case_state_to_state(
         runtime_path=runtime_path,
         binding_level=binding_level,
         version_provenance=version_provenance,
+        policy_narrative_snapshot=policy_narrative_snapshot,
+        next_step_contract_snapshot=next_step_contract_snapshot,
     )
     updated["case_state"] = case_state
     return updated
+
+
+def _normalize_case_lifecycle_status(value: Any) -> CaseLifecycleStatus | None:
+    allowed: frozenset[str] = frozenset(
+        {
+            "created",
+            "collecting",
+            "needs_clarification",
+            "guidance_only",
+            "calculating",
+            "review_pending",
+            "qualified",
+            "out_of_scope",
+            "exported",
+            "archived",
+            "outcome_recorded",
+        }
+    )
+    normalized = str(value or "").strip()
+    return normalized if normalized in allowed else None
+
+
+def resolve_case_lifecycle_status(
+    *,
+    state: Dict[str, Any],
+    runtime_path: str,
+    binding_level: str,
+    case_state: Dict[str, Any] | None = None,
+    readiness: Dict[str, Any] | None = None,
+    result_contract: Dict[str, Any] | None = None,
+    qualified_action_gate: Dict[str, Any] | None = None,
+    invalidation_state: Dict[str, Any] | None = None,
+    guidance_contract: Dict[str, Any] | None = None,
+    policy_context: Dict[str, Any] | None = None,
+) -> CaseLifecycleStatus:
+    active_case_state = case_state or state.get("case_state") or {}
+    case_meta = active_case_state.get("case_meta") or {}
+    persisted_lifecycle = _normalize_case_lifecycle_status(case_meta.get("lifecycle_status"))
+    if persisted_lifecycle in {"archived", "outcome_recorded"}:
+        return persisted_lifecycle
+
+    previous_status = active_case_state.get("qualified_action_status") or {}
+    if normalize_qualified_action_lifecycle_status(previous_status.get("last_status")) == QUALIFIED_ACTION_STATUS_EXECUTED:
+        return "exported"
+
+    effective_policy_context = policy_context or (case_meta.get("policy_narrative_snapshot") or {})
+    if str(effective_policy_context.get("coverage_status") or "") == "out_of_scope":
+        return "out_of_scope"
+
+    effective_result_contract = result_contract or (active_case_state.get("result_contract") or {})
+    effective_gate = qualified_action_gate or (active_case_state.get("qualified_action_gate") or {})
+    effective_readiness = readiness or (active_case_state.get("readiness") or {})
+    effective_invalidation = invalidation_state or (active_case_state.get("invalidation_state") or {})
+    effective_guidance_contract = guidance_contract or (case_meta.get("next_step_contract_snapshot") or {})
+
+    if runtime_path == "STRUCTURED_GUIDANCE":
+        if not effective_guidance_contract:
+            effective_guidance_contract = build_conversation_guidance_contract(state)
+        ask_mode = str(effective_guidance_contract.get("ask_mode") or "no_question_needed")
+        if ask_mode in {"critical_inputs", "review_inputs", "recompute_first"}:
+            return "needs_clarification"
+        return "guidance_only"
+
+    if bool(effective_invalidation.get("requires_recompute")):
+        return "calculating"
+
+    if (
+        bool(effective_gate.get("allowed"))
+        and bool(effective_gate.get("rfq_ready"))
+        and str(effective_gate.get("binding_level") or "") == "RFQ_BASIS"
+    ):
+        # Block C / Phase 1: human rejection keeps it in review_pending even if technically qualified.
+        # Human approval DOES NOT override technical blocks (already guaranteed by gate logic).
+        if case_meta.get("review_decision") == "rejected":
+            return "review_pending"
+        return "qualified"
+
+    release_status = str(effective_result_contract.get("release_status") or "")
+    rfq_admissibility = str(effective_result_contract.get("rfq_admissibility") or "")
+    
+    # Block C / Phase 1: check review state from CaseMeta.
+    # review_state is additive. completed review_state DOES NOT force a state.
+    # It only signals that it was once review-relevant.
+    review_state: ReviewState = case_meta.get("review_state") or "none"
+
+    if (
+        release_status in {"manufacturer_validation_required", "precheck_only"}
+        or rfq_admissibility == "provisional"
+        or binding_level == "QUALIFIED_PRESELECTION"
+        or review_state in {"pending", "in_review"}
+    ):
+        return "review_pending"
+
+    if bool(effective_readiness.get("ready_for_guidance")):
+        return "collecting"
+
+    return "created"
+
+
+def sync_case_lifecycle_status(
+    *,
+    state: Dict[str, Any],
+    runtime_path: str,
+    binding_level: str,
+    case_state: Dict[str, Any] | None = None,
+    readiness: Dict[str, Any] | None = None,
+    result_contract: Dict[str, Any] | None = None,
+    qualified_action_gate: Dict[str, Any] | None = None,
+    invalidation_state: Dict[str, Any] | None = None,
+    guidance_contract: Dict[str, Any] | None = None,
+    policy_context: Dict[str, Any] | None = None,
+) -> CaseState | Dict[str, Any]:
+    active_case_state = dict(case_state or state.get("case_state") or {})
+    case_meta = dict(active_case_state.get("case_meta") or {})
+    lifecycle_status = resolve_case_lifecycle_status(
+        state=state,
+        case_state=active_case_state,
+        runtime_path=runtime_path,
+        binding_level=binding_level,
+        readiness=readiness,
+        result_contract=result_contract,
+        qualified_action_gate=qualified_action_gate,
+        invalidation_state=invalidation_state,
+        guidance_contract=guidance_contract,
+        policy_context=policy_context,
+    )
+    case_meta["lifecycle_status"] = lifecycle_status
+    active_case_state["case_meta"] = case_meta
+    if active_case_state.get("commercial_handover_contract"):
+        active_case_state["commercial_handover_contract"] = _build_commercial_handover_contract(
+            case_meta=case_meta,
+            result_contract=dict(active_case_state.get("result_contract") or {}),
+            qualified_action_gate=dict(active_case_state.get("qualified_action_gate") or {}),
+            qualified_action_status=dict(active_case_state.get("qualified_action_status") or {}),
+            qualified_action_history=list(active_case_state.get("qualified_action_history") or []),
+            sealing_requirement_spec=dict(active_case_state.get("sealing_requirement_spec") or {}),
+        )
+    return active_case_state
 
 
 def sync_material_cycle_control(
@@ -515,6 +893,8 @@ def build_case_state(
     runtime_path: str,
     binding_level: str,
     version_provenance: VersionProvenance | None = None,
+    policy_narrative_snapshot: PolicyNarrativeSnapshot | None = None,
+    next_step_contract_snapshot: NextStepContractSnapshot | None = None,
 ) -> CaseState:
     sealing_state = state.get("sealing_state") or {}
     working_profile = state.get("working_profile") or {}
@@ -580,25 +960,122 @@ def build_case_state(
         version_provenance=version_provenance,
     )
 
+    # Block C / Phase 1: carry forward HITL-Review metadata from existing case_meta
+    existing_case_meta = (state.get("case_state") or {}).get("case_meta") or {}
+    
     _case_meta: CaseMeta = {
         "case_id": session_id,
         "session_id": session_id,
         "analysis_cycle_id": cycle.get("analysis_cycle_id"),
         "state_revision": int(cycle.get("state_revision", 0) or 0),
+        "version": int(cycle.get("state_revision", 0) or 0),
         "status": "active_structured_case",
         "origin": "transitional_structured_projection",
         "runtime_path": runtime_path,
         "binding_level": effective_binding_level,
-        "created_at": now,
-        "updated_at": now,
+        "boundary_contract": _build_boundary_contract(
+            binding_level=effective_binding_level,
+            policy_narrative_snapshot=policy_narrative_snapshot,
+            existing_boundary_contract=existing_case_meta.get("boundary_contract"),
+        ),
+        "created_at": existing_case_meta.get("created_at") or now,
+        "updated_at": (
+            now if existing_case_meta.get("analysis_cycle_id") != cycle.get("analysis_cycle_id")
+            else existing_case_meta.get("updated_at") or now
+        ),
     }
-    if version_provenance is not None:
-        _case_meta["version_provenance"] = version_provenance
+    
+    # Selective additive carry-forward of review metadata
+    if "review_required" in existing_case_meta:
+        _case_meta["review_required"] = existing_case_meta["review_required"]
+    if "review_state" in existing_case_meta:
+        _case_meta["review_state"] = existing_case_meta["review_state"]
+    if "review_reason" in existing_case_meta:
+        _case_meta["review_reason"] = existing_case_meta["review_reason"]
+    reviewer_id = _coalesce_case_meta_value(existing_case_meta, "reviewer_id", "reviewed_by")
+    if reviewer_id is not None:
+        _case_meta["reviewer_id"] = reviewer_id
+        _case_meta["reviewed_by"] = reviewer_id
+    if "review_decision" in existing_case_meta:
+        _case_meta["review_decision"] = existing_case_meta["review_decision"]
+    review_notes = _coalesce_case_meta_value(existing_case_meta, "review_notes", "review_note")
+    if review_notes is not None:
+        _case_meta["review_notes"] = review_notes
+        _case_meta["review_note"] = review_notes
+    review_at = _coalesce_case_meta_value(existing_case_meta, "review_at", "review_timestamp")
+    if review_at is not None:
+        _case_meta["review_at"] = review_at
+        _case_meta["review_timestamp"] = review_at
 
-    return {
+    if version_provenance is not None:
+        canonical_vp = dict(version_provenance)
+        if "model_version" not in canonical_vp and "model_id" in canonical_vp:
+            canonical_vp["model_version"] = canonical_vp.get("model_id")
+        _case_meta["version_provenance"] = canonical_vp
+    if policy_narrative_snapshot is not None:
+        # 0B.2 completion: result_form and required_fields are now part of the persisted
+        # snapshot so narrative rebuilds on reload carry the same visible contract.
+        _persisted_snapshot: Dict[str, Any] = {
+            "coverage_status": policy_narrative_snapshot.get("coverage_status"),
+            "boundary_flags": list(policy_narrative_snapshot.get("boundary_flags") or []),
+            "escalation_reason": policy_narrative_snapshot.get("escalation_reason"),
+        }
+        if policy_narrative_snapshot.get("result_form") is not None:
+            _persisted_snapshot["result_form"] = policy_narrative_snapshot["result_form"]
+        if policy_narrative_snapshot.get("required_fields") is not None:
+            _persisted_snapshot["required_fields"] = list(policy_narrative_snapshot.get("required_fields") or [])
+        _case_meta["policy_narrative_snapshot"] = _persisted_snapshot
+    if next_step_contract_snapshot is not None:
+        _case_meta["next_step_contract_snapshot"] = {
+            "ask_mode": str(next_step_contract_snapshot.get("ask_mode") or "no_question_needed"),
+            "requested_fields": list(next_step_contract_snapshot.get("requested_fields") or []),
+            "reason_code": str(next_step_contract_snapshot.get("reason_code") or "no_action_needed"),
+            "impact_hint": next_step_contract_snapshot.get("impact_hint"),
+            "rfq_admissibility": str(next_step_contract_snapshot.get("rfq_admissibility") or "inadmissible"),
+            "state_revision": int(next_step_contract_snapshot.get("state_revision", 0) or 0),
+        }
+
+    normalization_identity_snapshot = _build_normalization_identity_snapshot(sealing_state)
+    material_direction_contract = dict(
+        (
+            (qualification_results.get("material_selection_projection") or {}).get("details") or {}
+        ).get("material_direction_contract")
+        or _build_material_direction_contract(
+            direction_authority=(
+                ((qualification_results.get("material_selection_projection") or {}).get("details") or {}).get(
+                    "direction_authority"
+                )
+            ),
+            candidate_source_origin=(
+                ((qualification_results.get("material_selection_projection") or {}).get("details") or {}).get(
+                    "candidate_source_origin"
+                )
+            ),
+        )
+    )
+    commercial_handover_contract = _build_commercial_handover_contract(
+        case_meta=_case_meta,
+        result_contract=result_contract,
+        qualified_action_gate=qualified_action_gate,
+        qualified_action_status=qualified_action_status,
+        qualified_action_history=qualified_action_history,
+        sealing_requirement_spec=sealing_requirement_spec,
+    )
+    governed_data_contract = _build_governed_data_contract(
+        case_meta=_case_meta,
+        qualification_results=qualification_results,
+        normalization_identity_snapshot=normalization_identity_snapshot,
+        material_direction_contract=material_direction_contract,
+    )
+
+    case_state: CaseState = {
         "case_meta": _case_meta,
         "active_domain": _detect_active_domain(sealing_state, rwdr_state),
         "raw_inputs": raw_inputs,
+        "normalization_identity_snapshot": normalization_identity_snapshot,
+        "material_direction_contract": material_direction_contract,
+        "commercial_handover_contract": commercial_handover_contract,
+        "governed_data_contract": governed_data_contract,
         "derived_calculations": derived_calculations,
         "engineering_signals": engineering_signals,
         "qualification_results": qualification_results,
@@ -613,6 +1090,18 @@ def build_case_state(
         "invalidation_state": invalidation_state,
         "audit_trail": audit_trail,
     }
+    return sync_case_lifecycle_status(
+        state=state,
+        case_state=case_state,
+        runtime_path=runtime_path,
+        binding_level=effective_binding_level,
+        readiness=readiness,
+        result_contract=result_contract,
+        qualified_action_gate=qualified_action_gate,
+        invalidation_state=invalidation_state,
+        guidance_contract=next_step_contract_snapshot,
+        policy_context=policy_narrative_snapshot,
+    )
 
 
 def _build_raw_inputs(
@@ -710,6 +1199,40 @@ def _build_derived_calculations(
     return build_calculation_foundation(sealing_state, working_profile, rwdr_state)
 
 
+def _build_normalization_identity_snapshot(
+    sealing_state: Dict[str, Any],
+) -> Dict[str, NormalizationIdentityEntry]:
+    normalized = sealing_state.get("normalized") or {}
+    identity_records = normalized.get("identity_records") or {}
+    snapshot: Dict[str, NormalizationIdentityEntry] = {}
+
+    for field_name in (
+        "temperature",
+        "pressure",
+        "medium",
+        "material_family",
+        "grade_name",
+        "manufacturer_name",
+    ):
+        record = identity_records.get(field_name) or {}
+        if not record:
+            continue
+        snapshot[field_name] = {
+            "raw_value": record.get("raw_value"),
+            "normalized_value": record.get("normalized_value"),
+            "identity_class": str(record.get("identity_class") or "identity_unresolved"),
+            "normalization_certainty": str(record.get("normalization_certainty") or ""),
+            "mapping_reason": str(record.get("mapping_reason") or ""),
+            "deterministic_source": str(record.get("deterministic_source") or ""),
+            "source_fact_ids": [str(item) for item in record.get("source_fact_ids", []) if item],
+            "evidence_quality": str(record.get("evidence_quality") or ""),
+            "authority_quality": str(record.get("authority_quality") or ""),
+            "temporal_quality": str(record.get("temporal_quality") or ""),
+        }
+
+    return snapshot
+
+
 def _build_material_direction_contract(
     *,
     direction_authority: Any,
@@ -730,6 +1253,106 @@ def _build_material_direction_contract(
         "authority_layer": authority_layer,
         "direction_layer": direction_layer,
         "source_provenance": str(candidate_source_origin) if candidate_source_origin else None,
+    }
+
+
+def _pick_selected_candidate_source_record(
+    selection_projection: Dict[str, Any],
+) -> Dict[str, Any]:
+    candidate_source_records = list(selection_projection.get("candidate_source_records") or [])
+    winner_candidate_id = selection_projection.get("winner_candidate_id")
+    if winner_candidate_id:
+        for record in candidate_source_records:
+            if record.get("candidate_id") == winner_candidate_id:
+                return dict(record)
+    if len(candidate_source_records) == 1:
+        return dict(candidate_source_records[0])
+    return {}
+
+
+def _pick_material_governance_quality_snapshot(
+    normalization_identity_snapshot: Dict[str, NormalizationIdentityEntry],
+    *,
+    selected_source_record: Dict[str, Any],
+) -> tuple[str | None, NormalizationIdentityEntry]:
+    candidate_kind = str(selected_source_record.get("candidate_kind") or "family")
+    if candidate_kind == "manufacturer_grade":
+        field_order = ("manufacturer_name", "grade_name", "material_family")
+    elif candidate_kind == "grade":
+        field_order = ("grade_name", "material_family")
+    else:
+        field_order = ("material_family",)
+    for field_name in field_order:
+        entry = normalization_identity_snapshot.get(field_name) or {}
+        if any(entry.get(key) for key in ("authority_quality", "evidence_quality", "temporal_quality")):
+            return field_name, entry
+    return None, {}
+
+
+def _build_governed_data_contract(
+    *,
+    case_meta: CaseMeta,
+    qualification_results: Dict[str, QualificationResultEntry],
+    normalization_identity_snapshot: Dict[str, NormalizationIdentityEntry],
+    material_direction_contract: MaterialDirectionContract,
+) -> GovernedDataContract:
+    selection_projection = (
+        (qualification_results.get("material_selection_projection") or {}).get("details") or {}
+    )
+    selected_source_record = _pick_selected_candidate_source_record(selection_projection)
+    quality_basis, quality_entry = _pick_material_governance_quality_snapshot(
+        normalization_identity_snapshot,
+        selected_source_record=selected_source_record,
+    )
+    version_provenance = case_meta.get("version_provenance") or {}
+    return {
+        "authority_basis": {
+            "authority_layer": str(material_direction_contract.get("authority_layer") or "none"),
+            "direction_layer": str(material_direction_contract.get("direction_layer") or "none"),
+            "has_promoted_candidate_source": bool(
+                selection_projection.get("has_promoted_candidate_source", False)
+            ),
+        },
+        "source_governance": {
+            "source_provenance": (
+                str(material_direction_contract.get("source_provenance"))
+                if material_direction_contract.get("source_provenance")
+                else None
+            ),
+            "candidate_source_class": (
+                str(selected_source_record.get("candidate_source_class"))
+                if selected_source_record.get("candidate_source_class")
+                else None
+            ),
+            "candidate_source_quality": (
+                str(selected_source_record.get("candidate_source_quality"))
+                if selected_source_record.get("candidate_source_quality")
+                else None
+            ),
+            "normalized_quality_basis": quality_basis,
+            "normalized_authority_quality": (
+                str(quality_entry.get("authority_quality"))
+                if quality_entry.get("authority_quality")
+                else None
+            ),
+            "normalized_evidence_quality": (
+                str(quality_entry.get("evidence_quality"))
+                if quality_entry.get("evidence_quality")
+                else None
+            ),
+            "normalized_temporal_quality": (
+                str(quality_entry.get("temporal_quality"))
+                if quality_entry.get("temporal_quality")
+                else None
+            ),
+        },
+        "data_governance": {
+            "data_version": (
+                str(version_provenance.get("data_version"))
+                if version_provenance.get("data_version")
+                else None
+            ),
+        },
     }
 
 
@@ -774,6 +1397,9 @@ def _build_qualification_results(
             "unknowns_manufacturer_validation": list(governance.get("unknowns_manufacturer_validation", [])),
         },
     }
+    # 0A.3 P5: guidance selection (selection_status == "not_applicable") skips full qualification pipeline
+    if selection.get("selection_status") == "not_applicable":
+        return results
     material_core_output = evaluate_material_qualification_core(
         candidates=list(selection.get("candidates", [])),
         relevant_fact_cards=list(state.get("relevant_fact_cards") or []),
@@ -985,6 +1611,34 @@ def build_conversation_guidance_contract(state: Dict[str, Any]) -> Dict[str, Any
     }
 
 
+def resolve_next_step_contract(
+    state: Dict[str, Any],
+    *,
+    case_state: Dict[str, Any] | None = None,
+) -> NextStepContractSnapshot:
+    active_case_state = case_state or state.get("case_state") or {}
+    case_meta = active_case_state.get("case_meta") or {}
+    snapshot = case_meta.get("next_step_contract_snapshot")
+    if isinstance(snapshot, dict) and snapshot.get("ask_mode") and snapshot.get("reason_code"):
+        return {
+            "ask_mode": str(snapshot.get("ask_mode")),
+            "requested_fields": list(snapshot.get("requested_fields") or []),
+            "reason_code": str(snapshot.get("reason_code")),
+            "impact_hint": snapshot.get("impact_hint"),
+            "rfq_admissibility": str(snapshot.get("rfq_admissibility") or "inadmissible"),
+            "state_revision": int(snapshot.get("state_revision", 0) or 0),
+        }
+    contract = build_conversation_guidance_contract(state)
+    return {
+        "ask_mode": str(contract.get("ask_mode") or "no_question_needed"),
+        "requested_fields": list(contract.get("requested_fields") or []),
+        "reason_code": str(contract.get("reason_code") or "no_action_needed"),
+        "impact_hint": contract.get("impact_hint"),
+        "rfq_admissibility": str(contract.get("rfq_admissibility") or "inadmissible"),
+        "state_revision": int(contract.get("state_revision", 0) or 0),
+    }
+
+
 def build_visible_case_narrative(
     *,
     state: Dict[str, Any],
@@ -1025,8 +1679,22 @@ def build_visible_case_narrative(
             "readiness": readiness,
             "invalidation_state": invalidation_state,
             "qualified_action_gate": qualified_action_gate,
-            "case_meta": {"binding_level": effective_binding_level},
+            "case_meta": {
+                "binding_level": effective_binding_level,
+            },
         }
+        active_case_state = sync_case_lifecycle_status(
+            state=state,
+            case_state=active_case_state,
+            runtime_path="STRUCTURED_QUALIFICATION",
+            binding_level=effective_binding_level,
+            readiness=readiness,
+            result_contract=result_contract,
+            qualified_action_gate=qualified_action_gate,
+            invalidation_state=invalidation_state,
+            policy_context=policy_context,
+        )
+    effective_policy_context = policy_context or _get_policy_narrative_snapshot(active_case_state)
     qualification_results = active_case_state.get("qualification_results") or {}
     result_contract = active_case_state.get("result_contract") or {}
     readiness = active_case_state.get("readiness") or {}
@@ -1039,6 +1707,24 @@ def build_visible_case_narrative(
         or ((active_case_state.get("qualified_action_gate") or {}).get("binding_level"))
         or "ORIENTATION"
     )
+    case_meta = dict(active_case_state.get("case_meta") or {})
+    if not _normalize_case_lifecycle_status(case_meta.get("lifecycle_status")):
+        visible_runtime_path = str(
+            case_meta.get("runtime_path")
+            or ("STRUCTURED_GUIDANCE" if str(visible_binding) == "ORIENTATION" else "STRUCTURED_QUALIFICATION")
+        )
+        active_case_state = sync_case_lifecycle_status(
+            state=state,
+            case_state=active_case_state,
+            runtime_path=visible_runtime_path,
+            binding_level=str(visible_binding),
+            readiness=readiness,
+            result_contract=result_contract,
+            qualified_action_gate=active_case_state.get("qualified_action_gate") or {},
+            invalidation_state=invalidation_state,
+            guidance_contract=guidance_contract,
+            policy_context=effective_policy_context,
+        )
     technical_direction = _build_visible_technical_direction(
         qualification_results=qualification_results,
         result_contract=result_contract,
@@ -1082,13 +1768,34 @@ def build_visible_case_narrative(
         binding_level=str(visible_binding),
         delta_status=delta_status,
     )
-    coverage_scope = _build_visible_coverage_scope(policy_context)
+    coverage_scope = _build_visible_coverage_scope(effective_policy_context)
+    # 0B.2 remaining gaps: lifecycle-derived items not reachable via policy_context alone
+    _cov_meta = active_case_state.get("case_meta") or {}
+    _cov_lifecycle = _cov_meta.get("lifecycle_status")
+    _cov_review_required = bool(_cov_meta.get("review_required"))
+    _cov_review_state = str(_cov_meta.get("review_state") or "none")
+    if _cov_lifecycle == "review_pending" or _cov_review_required or _cov_review_state in {"pending", "in_review"}:
+        coverage_scope = list(coverage_scope) + [_narrative_item(
+            key="requires_review",
+            label="Prüfvorbehalt",
+            value="Ergebnis erfordert Fachprüfung vor Verwendung",
+            detail=None,
+            severity="high",
+        )]
+    if _cov_lifecycle == "out_of_scope" and not any(item["key"] == "coverage_boundary" for item in coverage_scope):
+        coverage_scope = list(coverage_scope) + [_narrative_item(
+            key="coverage_boundary",
+            label="Coverage Boundary",
+            value="Außerhalb des Anwendungsbereichs",
+            detail=None,
+            severity="high",
+        )]
     return {
         "governed_summary": _build_visible_governed_summary(
             technical_direction=technical_direction,
             validity_envelope=validity_envelope,
             handover_status=handover_status,
-            policy_context=policy_context,
+            policy_context=effective_policy_context,
         ),
         "technical_direction": technical_direction,
         "validity_envelope": validity_envelope,
@@ -1165,6 +1872,25 @@ def _build_visible_qualification_status(
         detail=", ".join(review_flags) if review_flags else "None",
         severity="medium" if review_flags else "low"
     ))
+
+    # Block C / Phase 1: Expert Review (HITL) status
+    case_meta = active_case_state.get("case_meta") or {}
+    review_state = case_meta.get("review_state") or "none"
+    review_decision = case_meta.get("review_decision")
+    review_note = case_meta.get("review_notes") or case_meta.get("review_note")
+    
+    if review_state != "none":
+        review_value = _humanize_token(review_state)
+        if review_decision:
+            review_value = f"{review_value} ({_humanize_token(review_decision)})"
+        
+        items.append(_narrative_item(
+            key="expert_review_status",
+            label="Expert Review",
+            value=review_value,
+            detail=review_note or "No additional expert notes.",
+            severity="low" if review_decision == "approved" else "high" if review_decision == "rejected" else "medium"
+        ))
 
     # 5. Missing Critical Summary
     missing_critical = [str(i) for i in (readiness.get("missing_critical_inputs") or []) if i]
@@ -1244,6 +1970,38 @@ def _resolve_qualification_level(qualification_results: Dict[str, Any]) -> Dict[
         if isinstance(entry.get("status"), str):
             return entry
     return None
+
+
+def _coalesce_case_meta_value(case_meta: Mapping[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in case_meta:
+            return case_meta.get(key)
+    return None
+
+
+def _build_boundary_contract(
+    *,
+    binding_level: str,
+    policy_narrative_snapshot: Mapping[str, Any] | None = None,
+    existing_boundary_contract: Mapping[str, Any] | None = None,
+) -> BoundaryContract:
+    policy_snapshot = policy_narrative_snapshot if isinstance(policy_narrative_snapshot, Mapping) else {}
+    existing_contract = existing_boundary_contract if isinstance(existing_boundary_contract, Mapping) else {}
+    coverage_status = policy_snapshot.get("coverage_status")
+    if coverage_status is None and "coverage_status" in existing_contract:
+        coverage_status = existing_contract.get("coverage_status")
+    escalation_reason = policy_snapshot.get("escalation_reason")
+    if escalation_reason is None and "escalation_reason" in existing_contract:
+        escalation_reason = existing_contract.get("escalation_reason")
+    boundary_flags = policy_snapshot.get("boundary_flags")
+    if boundary_flags is None and "boundary_flags" in existing_contract:
+        boundary_flags = existing_contract.get("boundary_flags")
+    return {
+        "binding_level": binding_level,
+        "coverage_status": coverage_status,
+        "boundary_flags": list(boundary_flags or []),
+        "escalation_reason": escalation_reason,
+    }
 
 
 def _build_visible_technical_direction(
@@ -1529,7 +2287,7 @@ def _build_visible_handover_status(
     if handover_ready:
         value = "Handover ready"
         severity: Literal["low", "medium", "high"] = "low"
-    elif rfq == "ready" or binding_level == "RFQ_BASIS":
+    elif binding_level == "RFQ_BASIS":
         value = "RFQ ready"
         severity = "low"
     elif binding_level == "QUALIFIED_PRESELECTION":
@@ -1631,12 +2389,14 @@ def _build_visible_case_summary(
     qualification_results = active_case_state.get("qualification_results") or {}
     qualification_level = _resolve_qualification_level(qualification_results)
     release_status = result_contract.get("release_status")
-    if qualification_level or release_status or binding_level:
+    lifecycle_status = _normalize_case_lifecycle_status(case_meta.get("lifecycle_status"))
+    if qualification_level or release_status or binding_level or lifecycle_status:
         summary.append(_narrative_item(
             key="current_case_summary",
             label="Current Case Summary",
-            value=str(release_status or (qualification_level.get("status") if qualification_level else "pending")),
+            value=_humanize_token(lifecycle_status) if lifecycle_status else str(release_status or (qualification_level.get("status") if qualification_level else "pending")),
             detail=" · ".join(filter(None, [
+                f"Lifecycle {_humanize_token(lifecycle_status)}" if lifecycle_status else None,
                 f"Qualification {_humanize_token(str(qualification_level.get('status')))}" if qualification_level else None,
                 f"Binding {binding_level}" if binding_level else None,
                 "Qualification ready" if readiness.get("ready_for_qualification") else "Qualification pending"
@@ -1744,11 +2504,22 @@ def _build_visible_failure_analysis(
 def _build_visible_coverage_scope(
     policy_context: Dict[str, Any] | None,
 ) -> List[VisibleNarrativeItem]:
-    """0B.2: Translate coverage/boundary policy signals into narrative items.
+    """0B.2 completion: Translate coverage/boundary policy signals into first-class narrative items.
 
-    Max 1-2 items. Stable keys: 'coverage_boundary', 'escalation_context'.
-    No new coverage logic — only translates signals already present in InteractionPolicyDecision.
+    Stable item keys (emission order):
+    - 'result_level'         — what kind of result this is (direct/deterministic/guided/qualified);
+                               emitted when result_form is present in policy_context
+    - 'manufacturer_release' — emitted when 'no_manufacturer_release' is in boundary_flags
+    - 'coverage_boundary'    — for non-in_scope coverage states or case-specific (other) flags
+    - 'known_unknowns'       — emitted when required_fields is non-empty
+    - 'escalation_context'   — emitted when escalation_reason is set
+
+    Flags 'orientation_only' and 'no_manufacturer_release' are handled via dedicated items
+    rather than being buried in the coverage_boundary detail string. Other case-specific flags
+    (e.g. 'missing_pressure', 'edge_case_compound') still appear in coverage_boundary detail.
+
     Fast paths with no policy_context return an empty list (lean, no overhead).
+    Clean in-scope qualified paths (no flags, no required_fields, no escalation) return [].
     """
     if not policy_context:
         return []
@@ -1757,8 +2528,50 @@ def _build_visible_coverage_scope(
     coverage_status = policy_context.get("coverage_status")
     boundary_flags = list(policy_context.get("boundary_flags") or [])
     escalation_reason = policy_context.get("escalation_reason")
+    result_form = policy_context.get("result_form")
+    required_fields = list(policy_context.get("required_fields") or [])
 
-    # Item 1: coverage_boundary — emitted for non-trivial coverage states
+    # Flags promoted to dedicated items — excluded from coverage_boundary detail
+    _DEDICATED_FLAG_ITEMS: frozenset[str] = frozenset({"orientation_only", "no_manufacturer_release"})
+    other_flags = [f for f in boundary_flags if f not in _DEDICATED_FLAG_ITEMS]
+
+    # Item 1: result_level — what kind of result this is
+    if result_form:
+        _RESULT_FORM_LABELS: Dict[str, str] = {
+            "direct": "Information",
+            "deterministic": "Berechnung (deterministisch)",
+            "guided": "Orientierung",
+            "qualified": "Qualifizierung",
+        }
+        items.append(_narrative_item(
+            key="result_level",
+            label="Ergebnis-Stufe",
+            value=_RESULT_FORM_LABELS.get(str(result_form), _humanize_token(str(result_form))),
+            detail=None,
+            severity="low",
+        ))
+
+    # Item 2: manufacturer_release — explicit disclaimer when no_manufacturer_release flag set
+    if "no_manufacturer_release" in boundary_flags:
+        items.append(_narrative_item(
+            key="manufacturer_release",
+            label="Herstellerfreigabe",
+            value="Keine Herstellerfreigabe in diesem Ergebnis",
+            detail=None,
+            severity="medium",
+        ))
+
+    # Item 2.5: orientation_only — explicit notice when result is not release-ready
+    if "orientation_only" in boundary_flags:
+        items.append(_narrative_item(
+            key="orientation_only",
+            label="Ergebnis-Verbindlichkeit",
+            value="Nur zur Orientierung — nicht freigabefähig",
+            detail=None,
+            severity="medium",
+        ))
+
+    # Item 3: coverage_boundary — for non-trivial coverage states or case-specific flags
     if coverage_status and coverage_status != "in_scope":
         severity_map: Dict[str, Literal["low", "medium", "high"]] = {
             "out_of_scope": "high",
@@ -1774,7 +2587,7 @@ def _build_visible_coverage_scope(
         }
         value = value_map.get(str(coverage_status), _humanize_token(str(coverage_status)))
         severity: Literal["low", "medium", "high"] = severity_map.get(str(coverage_status), "medium")
-        detail = ", ".join(_humanize_token(f) for f in boundary_flags) if boundary_flags else None
+        detail = ", ".join(_humanize_token(f) for f in other_flags) if other_flags else None
         items.append(_narrative_item(
             key="coverage_boundary",
             label="Coverage Boundary",
@@ -1782,17 +2595,27 @@ def _build_visible_coverage_scope(
             detail=detail,
             severity=severity,
         ))
-    elif coverage_status == "in_scope" and boundary_flags:
-        # In-scope but flags present — low-severity note only
+    elif coverage_status == "in_scope" and other_flags:
+        # In-scope but case-specific flags present — low-severity note only
         items.append(_narrative_item(
             key="coverage_boundary",
             label="Coverage Boundary",
             value="In Scope",
-            detail=", ".join(_humanize_token(f) for f in boundary_flags),
+            detail=", ".join(_humanize_token(f) for f in other_flags),
             severity="low",
         ))
 
-    # Item 2: escalation_context — only when escalation_reason is set
+    # Item 4: known_unknowns — emitted when required_fields is non-empty
+    if required_fields:
+        items.append(_narrative_item(
+            key="known_unknowns",
+            label="Offene Parameter",
+            value=f"{len(required_fields)} offene(r) Parameter",
+            detail=", ".join(_humanize_token(f) for f in required_fields[:5]),
+            severity="medium",
+        ))
+
+    # Item 5: escalation_context — only when escalation_reason is set
     if escalation_reason:
         items.append(_narrative_item(
             key="escalation_context",
@@ -1803,6 +2626,36 @@ def _build_visible_coverage_scope(
         ))
 
     return items
+
+
+def _get_policy_narrative_snapshot(
+    active_case_state: Dict[str, Any],
+) -> PolicyNarrativeSnapshot | None:
+    case_meta = active_case_state.get("case_meta") or {}
+    snapshot = case_meta.get("policy_narrative_snapshot")
+    if not isinstance(snapshot, dict):
+        snapshot = case_meta.get("boundary_contract")
+    if not isinstance(snapshot, dict):
+        return None
+    normalized = {
+        "coverage_status": snapshot.get("coverage_status"),
+        "boundary_flags": list(snapshot.get("boundary_flags") or []),
+        "escalation_reason": snapshot.get("escalation_reason"),
+        "result_form": snapshot.get("result_form"),
+        "required_fields": list(snapshot.get("required_fields") or []),
+    }
+    if not any(
+        normalized.get(key) is not None and normalized.get(key) != []
+        for key in ("coverage_status", "boundary_flags", "escalation_reason", "result_form", "required_fields")
+    ):
+        return None
+    return {
+        "coverage_status": normalized.get("coverage_status"),
+        "boundary_flags": list(normalized.get("boundary_flags") or []),
+        "escalation_reason": normalized.get("escalation_reason"),
+        "result_form": normalized.get("result_form"),
+        "required_fields": list(normalized.get("required_fields") or []),
+    }
 
 
 def _build_visible_governed_summary(
@@ -1929,8 +2782,8 @@ def _build_sealing_requirement_spec(
         "analysis_cycle_id": result_contract.get("analysis_cycle_id"),
         "state_revision": int(result_contract.get("state_revision", 0) or 0),
         "binding_level": str(
-            (result_contract.get("qualified_action") or {}).get("binding_level")
-            or result_contract.get("binding_level")
+            result_contract.get("binding_level")
+            or (result_contract.get("qualified_action") or {}).get("binding_level")
             or "ORIENTATION"
         ),
         "runtime_path": runtime_path,
@@ -2329,6 +3182,9 @@ def _detect_active_domain(sealing_state: Dict[str, Any], rwdr_state: Dict[str, A
         return "rwdr_preselection"
     selection = sealing_state.get("selection") or {}
     governance = sealing_state.get("governance") or {}
+    # 0A.3 P4: guidance selection (selection_status == "not_applicable") is not qualification
+    if selection.get("selection_status") == "not_applicable":
+        return "knowledge_only"
     if selection or governance:
         return "material_static_seal_prequalification"
     return "unknown"
@@ -2376,7 +3232,7 @@ def _build_qualified_action_status(
     *,
     qualified_action_gate: QualifiedActionGate,
 ) -> QualifiedActionStatus:
-    """Blueprint Sections 02/08/12: persisted read-model for the last qualified action attempt."""
+    """Blueprint Sections 02/08/12: last-attempt status with current gate overlay."""
 
     previous_case_state = state.get("case_state") or {}
     previous_status = previous_case_state.get("qualified_action_status") or {}
@@ -2401,9 +3257,9 @@ def _build_qualified_action_status(
         "last_status": normalize_qualified_action_lifecycle_status(previous_status.get("last_status")),
         "allowed_at_execution_time": bool(previous_status.get("allowed_at_execution_time")),
         "executed": bool(previous_status.get("executed")),
-        "block_reasons": [str(item) for item in previous_status.get("block_reasons", [])],
+        "block_reasons": [str(item) for item in qualified_action_gate.get("block_reasons", [])],
         "timestamp": str(previous_status.get("timestamp") or ""),
-        "binding_level": str(previous_status.get("binding_level") or qualified_action_gate.get("binding_level") or "ORIENTATION"),
+        "binding_level": str(qualified_action_gate.get("binding_level") or "ORIENTATION"),
         "runtime_path": str(previous_status.get("runtime_path") or ""),
         "source_ref": str(previous_status.get("source_ref") or "case_state.qualified_action_status"),
         "action_payload_stub": previous_status.get("action_payload_stub"),
