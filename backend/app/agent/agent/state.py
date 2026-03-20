@@ -17,8 +17,9 @@ ReleaseStatus = Literal[
     "precheck_only",
     "manufacturer_validation_required",
     "rfq_ready",
+    "not_applicable",
 ]
-RFQAdmissibility = Literal["inadmissible", "provisional", "ready"]
+RFQAdmissibility = Literal["inadmissible", "provisional", "ready", "not_applicable"]
 SpecificityLevel = Literal["family_only", "subfamily", "compound_required", "product_family_required"]
 IdentityClass = Literal[
     "identity_confirmed",
@@ -222,4 +223,7 @@ class AgentState(TypedDict):
     # Individual document-ownership identity (canonical_user_id — matches RAG ingest tenant_id).
     # Distinct from tenant_id which may carry an org-level JWT claim.
     owner_id: NotRequired[Optional[str]]
+    loaded_state_revision: NotRequired[int]
     case_state: NotRequired[CaseState]
+    # 0A.3: result_form propagated from InteractionPolicyDecision into graph state
+    result_form: NotRequired[Optional[str]]

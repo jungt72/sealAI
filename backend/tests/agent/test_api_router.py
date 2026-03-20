@@ -5,7 +5,7 @@ import json
 from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI, HTTPException
 from pydantic import ValidationError
-from app.agent.api.router import download_rfq_action, download_rfq_artifact, case_review_action, router, SESSION_STORE, chat_endpoint, event_generator
+from app.agent.api.router import download_rfq_action, download_rfq_artifact, case_review_action, router, SESSION_STORE, chat_endpoint, event_generator, _resolve_case_review_admissibility, persist_structured_state
 from app.agent.api.models import CaseActionRequest, CaseReviewRequest, ChatRequest
 from app.agent.cli import create_initial_state
 from app.agent.case_state import sync_case_state_to_state, sync_material_cycle_control
@@ -66,6 +66,106 @@ def test_chat_endpoint_transports_visible_case_narrative(current_user=None):
     assert response.visible_case_narrative is not None
     # 0B.2: governed_summary may carry a coverage prefix when policy signals are present
     assert "Aktuelle technische Richtung" in response.visible_case_narrative.governed_summary
+
+
+def test_persist_structured_state_advances_revision_when_request_did_not():
+    user = RequestUser(
+        user_id="user-1",
+        username="tester",
+        sub="user-1",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-1",
+    )
+    state = _structured_mock_state(messages=[HumanMessage(content="Bitte weiter")], revision=5)
+    state["owner_id"] = "user-1"
+    state["tenant_id"] = "tenant-1"
+    state["loaded_state_revision"] = 5
+    state["case_state"] = {
+        "case_meta": {"state_revision": 5, "version": 5, "analysis_cycle_id": "session_test_5"},
+        "result_contract": {"state_revision": 5, "analysis_cycle_id": "session_test_5"},
+        "sealing_requirement_spec": {"state_revision": 5, "analysis_cycle_id": "session_test_5"},
+    }
+    decision = type("Decision", (), {"runtime_path": "STRUCTURED_GUIDANCE", "binding_level": "ORIENTATION"})()
+
+    captured = {}
+
+    async def _fake_save_structured_case(*, tenant_id: str, owner_id: str, case_id: str, state, runtime_path: str, binding_level: str):
+        captured["state"] = copy.deepcopy(state)
+
+    with patch("app.agent.api.router.save_structured_case", new=AsyncMock(side_effect=_fake_save_structured_case)):
+        asyncio.run(
+            persist_structured_state(
+                current_user=user,
+                session_id="case-1",
+                state=state,
+                decision=decision,
+            )
+        )
+
+    saved_state = captured["state"]
+    cycle = saved_state["sealing_state"]["cycle"]
+    assert cycle["snapshot_parent_revision"] == 5
+    assert cycle["state_revision"] == 6
+    assert "::structured_persist::rev6::" in cycle["analysis_cycle_id"]
+    assert saved_state["case_state"]["case_meta"]["state_revision"] == 6
+    assert saved_state["case_state"]["result_contract"]["state_revision"] == 6
+    assert saved_state["case_state"]["sealing_requirement_spec"]["state_revision"] == 6
+
+
+def test_persist_structured_state_does_not_double_advance_revision():
+    user = RequestUser(
+        user_id="user-1",
+        username="tester",
+        sub="user-1",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-1",
+    )
+    state = _structured_mock_state(messages=[HumanMessage(content="Bitte weiter")], revision=6)
+    state["owner_id"] = "user-1"
+    state["tenant_id"] = "tenant-1"
+    state["loaded_state_revision"] = 5
+    state["sealing_state"]["cycle"]["snapshot_parent_revision"] = 5
+    state["sealing_state"]["cycle"]["analysis_cycle_id"] = "cycle-advanced"
+    decision = type("Decision", (), {"runtime_path": "STRUCTURED_QUALIFICATION", "binding_level": "QUALIFIED_PRESELECTION"})()
+
+    captured = {}
+
+    async def _fake_save_structured_case(*, tenant_id: str, owner_id: str, case_id: str, state, runtime_path: str, binding_level: str):
+        captured["state"] = copy.deepcopy(state)
+
+    with patch("app.agent.api.router.save_structured_case", new=AsyncMock(side_effect=_fake_save_structured_case)):
+        asyncio.run(
+            persist_structured_state(
+                current_user=user,
+                session_id="case-1",
+                state=state,
+                decision=decision,
+            )
+        )
+
+    saved_state = captured["state"]
+    cycle = saved_state["sealing_state"]["cycle"]
+    assert cycle["snapshot_parent_revision"] == 5
+    assert cycle["state_revision"] == 6
+    assert cycle["analysis_cycle_id"] == "cycle-advanced"
+
+
+def test_case_review_admissibility_uses_lifecycle_status():
+    allowed, reasons = _resolve_case_review_admissibility(
+        case_state={"case_meta": {"lifecycle_status": "review_pending", "review_required": False, "review_state": "none"}}
+    )
+    assert allowed is True
+    assert reasons == []
+
+
+def test_case_review_admissibility_rejects_review_flags_without_review_pending_lifecycle():
+    allowed, reasons = _resolve_case_review_admissibility(
+        case_state={"case_meta": {"review_required": True, "review_state": "pending"}}
+    )
+    assert allowed is False
+    assert reasons == ["review_not_admissible"]
 
 
 def _qualified_material_action_state(*, revision: int = 3):

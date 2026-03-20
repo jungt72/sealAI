@@ -31,6 +31,7 @@ from app.agent.case_state import (
     get_material_input_snapshot_and_fingerprint,
     get_material_provider_snapshot_and_fingerprint,
     build_visible_case_narrative,
+    case_lifecycle_requires_review,
     build_conversation_guidance_contract,
     resolve_next_step_contract,
     normalize_qualified_action_id,
@@ -270,6 +271,7 @@ def _create_initial_agent_state(case_id: str, *, owner_id: str, tenant_id: str |
         "relevant_fact_cards": [],
         "tenant_id": tenant_id or owner_id,
         "owner_id": owner_id,
+        "loaded_state_revision": int(initial_sealing_state["cycle"].get("state_revision", 0) or 0),
     }
     return state
 
@@ -293,6 +295,9 @@ async def prepare_structured_state(request: ChatRequest, *, current_user: Reques
     if not current_state.get("tenant_id"):
         current_state["tenant_id"] = tenant_id
     current_state["owner_id"] = owner_id
+    current_state["loaded_state_revision"] = int(
+        ((current_state.get("sealing_state") or {}).get("cycle") or {}).get("state_revision", 0) or 0
+    )
     if request.rwdr_input is not None or request.rwdr_input_patch is not None:
         merge_rwdr_patch(
             current_state["sealing_state"],
@@ -314,6 +319,14 @@ async def persist_structured_state(
     owner_id = canonical_user_id(current_user)
     tenant_id = current_user.tenant_id or owner_id
     cache_key = _case_cache_key(tenant_id, owner_id, session_id)
+    current_revision = int((((state.get("sealing_state") or {}).get("cycle") or {}).get("state_revision", 0) or 0))
+    loaded_revision = int(state.get("loaded_state_revision", current_revision) or 0)
+    if current_revision == loaded_revision:
+        state = _advance_case_state_only_revision(
+            state,
+            case_id=session_id,
+            write_scope="structured_persist",
+        )
     try:
         await save_structured_case(
             tenant_id=tenant_id,
@@ -329,6 +342,7 @@ async def persist_structured_state(
     except ConcurrencyConflictError as exc:
         # 0B.5: Translate revision conflict to 409 Conflict
         raise HTTPException(status_code=409, detail=str(exc))
+    state["loaded_state_revision"] = int((((state.get("sealing_state") or {}).get("cycle") or {}).get("state_revision", 0) or 0))
     SESSION_STORE[cache_key] = state
 
 
@@ -406,18 +420,7 @@ def _resolve_case_review_admissibility(
     *,
     case_state: Dict[str, Any] | None,
 ) -> tuple[bool, list[str]]:
-    active_case_state = case_state or {}
-    case_meta = active_case_state.get("case_meta") or {}
-    lifecycle_status = str(case_meta.get("lifecycle_status") or "")
-    review_state = str(case_meta.get("review_state") or "none")
-    review_required = bool(case_meta.get("review_required"))
-
-    allowed = bool(
-        review_required
-        or lifecycle_status == "review_pending"
-        or review_state in {"pending", "in_review"}
-    )
-    if allowed:
+    if case_lifecycle_requires_review(case_state):
         return True, []
     return False, ["review_not_admissible"]
 
