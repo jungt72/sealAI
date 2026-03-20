@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,7 +23,8 @@ from app.agent.case_state import (
     resolve_next_step_contract,
 )
 from app.agent.cli import create_initial_state
-from app.services.auth.dependencies import RequestUser, canonical_user_id
+from app.agent.runtime import evaluate_interaction_policy
+from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.history.persist import ConcurrencyConflictError, load_structured_case, save_structured_case
 
 router = APIRouter()
@@ -258,23 +259,28 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
         last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
         return ChatResponse(reply=last_msg.content, session_id=session_id, sealing_state=updated_state["sealing_state"])
 
+    decision = evaluate_interaction_policy(request.message)
+
+    if not decision.has_case_state:
+        session_id = request.session_id
+        owner_id = canonical_user_id(current_user)
+        tenant_id = current_user.tenant_id or owner_id
+        cache_key = _case_cache_key(tenant_id, owner_id, session_id)
+        if cache_key not in SESSION_STORE:
+            initial_sealing_state = create_initial_state()
+            initial_sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
+            SESSION_STORE[cache_key] = {"messages": [], "sealing_state": initial_sealing_state, "working_profile": {}, "owner_id": owner_id, "tenant_id": tenant_id}
+        current_state = SESSION_STORE[cache_key]
+        current_state["messages"].append(HumanMessage(content=request.message))
+        updated_state = execute_agent(current_state)
+        SESSION_STORE[cache_key] = updated_state
+        last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
+        payload = _build_guidance_response_payload(decision, session_id=session_id, reply=last_msg.content, state=updated_state, working_profile=updated_state.get("working_profile"))
+        return ChatResponse(sealing_state=updated_state["sealing_state"], **payload)
+
     state = await prepare_structured_state(request, current_user=current_user)
     updated_state = execute_agent(state)
     last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
-    decision = type("Decision", (), {
-        "interaction_class": "structured_case",
-        "runtime_path": "STRUCTURED_QUALIFICATION",
-        "binding_level": "ORIENTATION",
-        "has_case_state": True,
-        "policy_version": "interaction_policy_v1",
-        "result_form": "qualified",
-        "path": "structured",
-        "stream_mode": "structured_progress_stream",
-        "required_fields": (),
-        "coverage_status": None,
-        "boundary_flags": (),
-        "escalation_reason": None,
-    })()
     visible_case_narrative = build_visible_case_narrative(state=updated_state, case_state=updated_state.get("case_state"), binding_level="ORIENTATION")
     payload = build_runtime_payload(
         decision,
@@ -291,8 +297,8 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_route(request: ChatRequest):
-    return await chat_endpoint(request)
+async def chat_route(request: ChatRequest, current_user: RequestUser = Depends(get_current_request_user)):
+    return await chat_endpoint(request, current_user=current_user)
 
 
 @router.post("/chat/stream")
