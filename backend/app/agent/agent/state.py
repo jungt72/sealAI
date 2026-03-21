@@ -88,6 +88,23 @@ class GovernanceLayer(TypedDict):
     unknowns_manufacturer_validation: List[str]
     conflicts: List[Dict[str, Any]]
 
+
+ReviewState = Literal["none", "pending", "approved", "rejected"]
+
+
+class ReviewLayer(TypedDict, total=False):
+    """
+    HITL Review Layer — Phase A3.
+    Deterministic trigger writes this; frontend/operator resolves it.
+    Never populated by the LLM.
+    """
+    review_required: bool           # True when a human review is mandatory
+    review_state: ReviewState       # lifecycle: none → pending → approved | rejected
+    review_reason: str              # why the review was triggered (deterministic rule name)
+    reviewed_by: Optional[str]      # set by operator after review
+    review_decision: Optional[str]  # operator decision text
+    review_note: Optional[str]      # optional annotation by reviewer
+
 class CycleLayer(TypedDict):
     """
     Cycle Control (Determinismus & Revision).
@@ -147,11 +164,40 @@ class SelectionLayer(TypedDict):
     specificity_level: SpecificityLevel
     output_blocked: bool
 
+class HandoverLayer(TypedDict, total=False):
+    """
+    Commercial / Handover Layer — Phase A6.
+    Populated deterministically at the end of a qualified structured-path case.
+    Contains only clean, ERP-ready order-profile data — no internal governance
+    state, no reasoning artefacts, no demo-data flags.
+    """
+    is_handover_ready: bool            # True only when rfq_ready + no pending HITL review
+    target_system: Optional[str]       # e.g. "rfq_portal" | "shop" | None
+    handover_payload: Optional[Dict[str, Any]]  # sanitised order-profile for the target system
+
+
+class OutcomeLayer(TypedDict, total=False):
+    """
+    Outcome-Feedback Layer — Phase A7.
+    Populated asynchronously by external feedback loops after the case is closed.
+    NEVER written by the agent graph or LLM during a run.
+    All fields are optional — the layer starts empty and is filled post-deployment.
+    """
+    implemented: bool       # Recommendation was implemented as-is
+    failed: bool            # Implementation failed in the field
+    replaced: bool          # Material was replaced after initial deployment
+    review_override: bool   # A human reviewer overrode the governed recommendation
+    outcome_note: str       # Free-text field for the operator/engineer feedback note
+
+
 class SealingAIState(TypedDict):
     """
     Blueprint Section 02 / Phase A1:
     bindender State läuft über Observed -> Normalized -> Asserted -> Governance -> Cycle.
     `selection` bleibt ausschließlich als nicht-bindende Projektion für den Live-Pfad bestehen.
+    `review`    trägt den HITL-Status (Phase A3) — niemals LLM-generiert.
+    `handover`  trägt den Commercial-Payload (Phase A6) — kein ERP-Call, nur Grenzstruktur.
+    `outcome`   trägt das Echtzeit-Feedback nach Deployment (Phase A7) — nur extern befüllt.
     """
     observed: ObservedLayer
     normalized: NormalizedLayer
@@ -160,6 +206,9 @@ class SealingAIState(TypedDict):
     cycle: CycleLayer
     selection: SelectionLayer
     result_contract: NotRequired[Dict[str, Any]]
+    review: NotRequired[ReviewLayer]      # HITL review state (Phase A3)
+    handover: NotRequired[HandoverLayer]  # Commercial handover payload (Phase A6)
+    outcome: NotRequired[OutcomeLayer]    # Post-deployment outcome feedback (Phase A7)
 
 class AgentState(TypedDict):
     """
@@ -174,4 +223,12 @@ class AgentState(TypedDict):
     owner_id: NotRequired[Optional[str]]
     loaded_state_revision: NotRequired[int]
     case_state: NotRequired[CaseState]
-    result_form: NotRequired[Optional[str]]
+    result_form: NotRequired[Optional[str]]   # ResultForm value, e.g. "direct_answer"
+    policy_path: NotRequired[Optional[str]]   # "fast" | "structured" — set by router (Phase 0A.3)
+    run_meta: NotRequired[Optional[Dict[str, Any]]]  # model_id, prompt_version, policy_version (Phase 0A.5)
+    # V3 spec fields (Phase 0A QW-2/3/4)
+    turn_count: int                           # current turn in this session (hard limit guard)
+    max_turns: int                            # hard ceiling — default 12 (CLAUDE.md)
+    user_persona: NotRequired[str]            # "erfahrener" | "einsteiger" | "entscheider" | "unknown"
+    knowledge_coverage: NotRequired[str]      # "full" | "partial" | "limited"
+    inquiry_id: NotRequired[str]              # session_id mirrored for state traceability

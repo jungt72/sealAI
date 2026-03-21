@@ -14,10 +14,10 @@ from jinja2 import UndefinedError
 from pydantic import ValidationError
 from langchain_core.messages import AIMessage
 
-from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import CalcResults, SealAIState, LiveCalcTile
-from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
-from app.langgraph_v2.utils.jinja import render_template
+from app._legacy_v2.phase import PHASE
+from app._legacy_v2.state import CalcResults, SealAIState, LiveCalcTile
+from app._legacy_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
+from app._legacy_v2.utils.jinja import render_template
 from app.mcp.calc_engine import mcp_calc_gasket
 from app.mcp.calc_schemas import CalcInput, CalcOutput
 from app.services.rag.nodes.p4_live_calc import (

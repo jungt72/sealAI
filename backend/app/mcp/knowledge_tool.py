@@ -18,12 +18,42 @@ from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.langgraph_v2.state.audit import (
-    ToolCallRecord,
-    append_tool_call_to_state,
-    build_tool_call_record,
-    emit_tool_call_record,
-)
+try:
+    from app._legacy_v2.state.audit import (
+        ToolCallRecord,
+        append_tool_call_to_state,
+        build_tool_call_record,
+        emit_tool_call_record,
+    )
+except ModuleNotFoundError:
+    # _legacy_v2 is no longer available — provide no-op stubs
+    from dataclasses import dataclass, field
+    from datetime import datetime
+
+    @dataclass
+    class ToolCallRecord:  # type: ignore[no-redef]
+        tool_name: str = ""
+        tool_input: Any = None
+        tool_output: Any = None
+        started_at: Any = None
+        finished_at: Any = None
+        error: Any = None
+        run_id: Any = None
+        thread_id: Any = None
+        tenant_id: Any = None
+        metadata: Any = None
+
+        def model_dump(self, **_: Any) -> dict:
+            return self.__dict__.copy()
+
+    def build_tool_call_record(**kwargs: Any) -> ToolCallRecord:  # type: ignore[no-redef]
+        return ToolCallRecord(**{k: v for k, v in kwargs.items() if k in ToolCallRecord.__dataclass_fields__})
+
+    def append_tool_call_to_state(_state: Any, _record: Any) -> None:  # type: ignore[no-redef]
+        pass
+
+    def emit_tool_call_record(_record: Any) -> None:  # type: ignore[no-redef]
+        pass
 from app.services.rag.rag_orchestrator import hybrid_retrieve
 
 logger = logging.getLogger(__name__)

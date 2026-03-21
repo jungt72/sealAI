@@ -25,17 +25,17 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from langgraph.types import Command
 
-from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.utils.messages import (
+from app._legacy_v2.phase import PHASE
+from app._legacy_v2.state import SealAIState
+from app._legacy_v2.utils.messages import (
     flatten_message_content,
     latest_user_text,
     sanitize_message_history,
 )
-from app.langgraph_v2.utils.parameter_patch import stage_extracted_parameter_patch
-from app.langgraph_v2.utils.jinja import render_template
+from app._legacy_v2.utils.parameter_patch import stage_extracted_parameter_patch
+from app._legacy_v2.utils.jinja import render_template
 from app.services.rag.state import WorkingProfile
-from app.langgraph_v2.nodes.persona_detection import update_persona_in_state
+from app._legacy_v2.nodes.persona_detection import update_persona_in_state
 
 logger = structlog.get_logger("rag.nodes.p1_context")
 

@@ -66,18 +66,18 @@ from pydantic.config import ConfigDict
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from langgraph.errors import InvalidUpdateError
 
-from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2, scope_v2_thread_id
-from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.contracts import (
+from app._legacy_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2, scope_v2_thread_id
+from app._legacy_v2.state import SealAIState
+from app._legacy_v2.contracts import (
     HITLResumeRequest,
     assert_node_exists,
     error_detail,
     is_dependency_unavailable_error,
 )
-from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest
-from app.langgraph_v2.utils.assertion_cycle import build_assertion_cycle_update
-from app.langgraph_v2.utils.rfq_admissibility import rfq_contract_is_ready
-from app.langgraph_v2.utils.parameter_patch import (
+from app._legacy_v2.utils.confirm_go import ConfirmGoRequest
+from app._legacy_v2.utils.assertion_cycle import build_assertion_cycle_update
+from app._legacy_v2.utils.rfq_admissibility import rfq_contract_is_ready
+from app._legacy_v2.utils.parameter_patch import (
     ParametersPatchRequest,
     apply_parameter_patch_to_state_layers,
     sanitize_v2_parameter_patch,
@@ -117,6 +117,9 @@ SSE_SLOW_NOTICE_SEC = float(os.getenv("SEALAI_SSE_SLOW_NOTICE_SEC", "5"))
 REQUIRE_PARAM_SNAPSHOT = os.getenv("SEALAI_REQUIRE_PARAM_SNAPSHOT") == "1"
 WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") == "1"
 DEFAULT_GRAPH_RECURSION_LIMIT = 25
+# Phase 0B.2 — SSoT Thin Translation Facade
+# Set SEALAI_SSOT_FACADE_ENABLED=0 to fall back to legacy LangGraph v2 pipeline.
+SEALAI_SSOT_FACADE_ENABLED = os.getenv("SEALAI_SSOT_FACADE_ENABLED", "1") == "1"
 _STREAM_NODE_BLOCKLIST = frozenset()
 
 
@@ -781,6 +784,135 @@ async def _release_thread_lock(thread_id: str):
 #   app.api.tests.helpers.langgraph_v2_test_stream_helpers
 
 
+async def _ssot_to_legacy_sse_stream(
+    user_input: str,
+    chat_id: str,
+) -> AsyncIterator[Any]:
+    """Thin Translation Facade — Phase 0B.2 (rev. 2: atomic text synthesis).
+
+    Routes /chat/v2 through the SSoT agent pipeline and translates SSoT
+    events to the legacy LangGraph v2 SSE contract.
+
+    Translation map:
+      on_chat_model_stream (speaking nodes) → token + text_chunk  (live tokens)
+      on_chain_end (LangGraph)              → captures final_state incl. messages
+      [post-stream synthesis]               → if no tokens were streamed, emit
+                                              one synthetic token + text_chunk
+                                              from final AIMessage content
+      state_update                          → legacy state_update payload
+      turn_complete + done                  → stream close sentinel
+
+    Why we call astream_events directly (not agent_sse_generator):
+      agent_sse_generator emits a parsed state_update event but drops the
+      messages list from final_state.  We need the AIMessage content for the
+      structured path where final_response_node writes atomically (no stream).
+    """
+    # Lazy imports — avoid circular import at module load time.
+    from app.agent.agent.graph import app as ssot_graph  # type: ignore[import]
+    from app.agent.api.sse_runtime import AGENT_SPEAKING_NODES, _node_name_from_event  # type: ignore[import]
+    from app.agent.api.router import SESSION_STORE  # type: ignore[import]
+    from app.agent.cli import create_initial_state  # type: ignore[import]
+
+    # Bootstrap SSoT session on first contact for this chat_id.
+    if chat_id not in SESSION_STORE:
+        initial_sealing_state = create_initial_state()
+        initial_sealing_state["cycle"]["analysis_cycle_id"] = f"facade_{chat_id}_1"
+        SESSION_STORE[chat_id] = {
+            "messages": [],
+            "sealing_state": initial_sealing_state,
+            "working_profile": {},
+        }
+    current_state = SESSION_STORE[chat_id]
+    current_state["messages"].append(HumanMessage(content=user_input))
+
+    streamed_text = False       # True once any live token has been forwarded
+    final_state: Dict[str, Any] | None = None
+
+    try:
+        async for raw_event in ssot_graph.astream_events(current_state, version="v2"):
+            if not isinstance(raw_event, dict):
+                continue
+            event_kind = str(raw_event.get("event") or "")
+
+            # ── Live token stream (fast_guidance_node only) ────────────────
+            if event_kind == "on_chat_model_stream":
+                node_name = _node_name_from_event(raw_event)
+                if node_name not in AGENT_SPEAKING_NODES:
+                    continue
+                chunk = (raw_event.get("data") or {}).get("chunk")
+                text = getattr(chunk, "content", None) if chunk is not None else None
+                if text:
+                    streamed_text = True
+                    yield _eventsource_event("text_chunk", {"type": "text_chunk", "text": text})
+                    yield _eventsource_event("token", {"type": "token", "text": text})
+
+            # ── Graph completion — capture full output incl. messages ──────
+            elif event_kind == "on_chain_end" and raw_event.get("name") == "LangGraph":
+                output = (raw_event.get("data") or {}).get("output")
+                if isinstance(output, dict):
+                    final_state = output
+
+    except Exception as exc:
+        logger.error("[facade] ssot stream error: %s", exc, exc_info=True)
+        yield _eventsource_event("error", {"type": "error", "message": str(exc)})
+        yield _eventsource_event("turn_complete", {"type": "turn_complete"})
+        yield _eventsource_event("done", {"type": "done"})
+        return
+
+    # ── Atomic text synthesis for structured path ──────────────────────────
+    # final_response_node writes the reply as an AIMessage (no token stream).
+    # The frontend builds the chat bubble from token/text_chunk events, so we
+    # must promote the AIMessage content to a single synthetic chunk.
+    if not streamed_text and final_state is not None:
+        # Primary: governed_output_text in sealing_state.governance
+        sealing_state_out = final_state.get("sealing_state") or {}
+        governance_out = sealing_state_out.get("governance") or {}
+        final_text: str = governance_out.get("governed_output_text") or ""
+
+        # Fallback: last AIMessage in the graph output messages list
+        if not final_text:
+            for msg in reversed(final_state.get("messages") or []):
+                content = getattr(msg, "content", None)
+                if content and isinstance(content, str) and not isinstance(msg, HumanMessage):
+                    final_text = content
+                    break
+
+        if final_text:
+            yield _eventsource_event("text_chunk", {"type": "text_chunk", "text": final_text})
+            yield _eventsource_event("token", {"type": "token", "text": final_text})
+
+    # ── state_update ───────────────────────────────────────────────────────
+    if final_state is not None:
+        sealing_state_out = final_state.get("sealing_state") or {}
+        working_profile_out = final_state.get("working_profile") or {}
+        governance_out = sealing_state_out.get("governance") or {}
+        cycle_out = sealing_state_out.get("cycle") or {}
+        conflicts_out = governance_out.get("conflicts") or []
+
+        su_payload: Dict[str, Any] = {
+            "type": "state_update",
+            "streaming_complete": True,
+        }
+        if working_profile_out:
+            su_payload["working_profile"] = working_profile_out
+        if governance_out:
+            su_payload["governance_metadata"] = {
+                "conflicts": conflicts_out,
+                "release_status": governance_out.get("release_status"),
+                "rfq_admissibility": governance_out.get("rfq_admissibility"),
+                "state_revision": cycle_out.get("state_revision"),
+            }
+        rfq_adm = governance_out.get("rfq_admissibility")
+        if rfq_adm is not None:
+            su_payload["rfq_admissibility"] = rfq_adm
+        su_payload["governed_output_ready"] = (
+            governance_out.get("release_status") == "approved"
+        )
+        yield _eventsource_event("state_update", su_payload)
+
+    yield _eventsource_event("turn_complete", {"type": "turn_complete"})
+    yield _eventsource_event("done", {"type": "done"})
+
 
 @router.post("/chat/v2")
 async def langgraph_chat_v2_endpoint(
@@ -903,6 +1035,25 @@ async def langgraph_chat_v2_endpoint(
                 message="Another request is already processing for this thread. Please wait.",
             ),
         )
+
+    # ── Phase 0B.2: SSoT Thin Translation Facade ────────────────────────────
+    # When enabled, delegate to the SSoT agent pipeline instead of the legacy
+    # LangGraph v2 graph. The LangGraph checkpoint lock is released immediately
+    # because the SSoT pipeline manages its own in-memory session concurrency.
+    if SEALAI_SSOT_FACADE_ENABLED:
+        await _release_thread_lock(request.chat_id)
+        headers: Dict[str, str] = {
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+        if request_id:
+            headers["X-Request-Id"] = request_id
+        return EventSourceResponse(
+            _ssot_to_legacy_sse_stream(request.input, request.chat_id),
+            headers=headers,
+        )
+    # ────────────────────────────────────────────────────────────────────────
 
     try:
         graph, config = await _build_graph_config(

@@ -16,8 +16,8 @@ from fastapi import Request
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from app.services.fast_brain.router import FastBrainRouter
-from app.langgraph_v2.contracts import assert_node_exists
-from app.langgraph_v2.utils.parameter_patch import (
+from app._legacy_v2.contracts import assert_node_exists
+from app._legacy_v2.utils.parameter_patch import (
     sanitize_v2_parameter_patch,
     stage_extracted_parameter_patch,
 )

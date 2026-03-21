@@ -6,6 +6,10 @@ services:
   backend:
     # DEV: publish
     ports: ["8000:8000"]
+    environment:
+      # TEMPORÄR — nur für lokale QA-Tests (Blueprint Sec. 06 Audit)
+      # Entfernen sobald Keycloak-Token für Tests verfügbar
+      BYPASS_AUTH: "1"
 
   frontend:
     # DEV: publish

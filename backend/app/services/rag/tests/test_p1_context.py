@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.langgraph_v2.state import SealAIState
+from app._legacy_v2.state import SealAIState
 from app.services.rag.nodes.p1_context import (
     _P1Extraction,
     _merge_extraction_into_profile,

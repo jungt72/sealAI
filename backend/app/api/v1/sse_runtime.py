@@ -19,8 +19,8 @@ from fastapi import Request
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.messages.ai import AIMessageChunk
 
-from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.utils.rfq_admissibility import rfq_contract_is_ready
+from app._legacy_v2.state import SealAIState
+from app._legacy_v2.utils.rfq_admissibility import rfq_contract_is_ready
 from app.api.v1.utils.state_access import (
     _state_values_to_dict,
     _pillar_dict,

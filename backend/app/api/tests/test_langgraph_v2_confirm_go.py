@@ -33,7 +33,7 @@ os.environ.setdefault("keycloak_client_secret", "test-secret")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
-from app.langgraph_v2.utils.confirm_go import ConfirmGoRequest  # noqa: E402
+from app._legacy_v2.utils.confirm_go import ConfirmGoRequest  # noqa: E402
 from app.services.auth.dependencies import RequestUser  # noqa: E402
 
 

@@ -37,7 +37,7 @@ from starlette.requests import Request  # noqa: E402
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
 from app.api.v1.endpoints import state as state_endpoint  # noqa: E402
-from app.langgraph_v2.utils.parameter_patch import ParametersPatchRequest  # noqa: E402
+from app._legacy_v2.utils.parameter_patch import ParametersPatchRequest  # noqa: E402
 from app.services.auth.dependencies import RequestUser  # noqa: E402
 
 

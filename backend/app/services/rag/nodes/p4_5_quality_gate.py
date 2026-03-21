@@ -29,8 +29,8 @@ from typing import Any, Dict, List, Literal
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import SealAIState
+from app._legacy_v2.phase import PHASE
+from app._legacy_v2.state import SealAIState
 from app.mcp.calculations.compliance import is_critical_application as _compliance_is_critical
 
 logger = structlog.get_logger("rag.nodes.p4_5_quality_gate")

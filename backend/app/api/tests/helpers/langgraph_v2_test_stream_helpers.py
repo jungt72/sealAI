@@ -66,8 +66,8 @@ from app.api.v1.endpoints.langgraph_v2 import (  # noqa: F401
     _working_profile_value,
     _event_belongs_to_current_run,
 )
-from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.contracts import is_dependency_unavailable_error
+from app._legacy_v2.state import SealAIState
+from app._legacy_v2.contracts import is_dependency_unavailable_error
 from app.services.sse_broadcast import sse_broadcast
 
 logger = logging.getLogger(__name__)

@@ -12,8 +12,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from app.langgraph_v2.utils.candidate_semantics import annotate_material_choice
-from app.langgraph_v2.utils.rfq_admissibility import normalize_rfq_admissibility_contract
+from app._legacy_v2.utils.candidate_semantics import annotate_material_choice
+from app._legacy_v2.utils.rfq_admissibility import normalize_rfq_admissibility_contract
 
 
 def _state_values_to_dict(values: Any) -> Dict[str, Any]:
@@ -26,7 +26,7 @@ def _state_values_to_dict(values: Any) -> Dict[str, Any]:
         return {}
     # Defer import to avoid circular dependencies at module load time.
     try:
-        from app.langgraph_v2.state import SealAIState
+        from app._legacy_v2.state import SealAIState
         if isinstance(values, SealAIState):
             return values.model_dump(exclude_none=True)
     except Exception:
@@ -314,7 +314,7 @@ def _extract_final_text_from_patch(data: Any) -> str:
         seen.add(marker)
         # Defer import to avoid circular dependencies
         try:
-            from app.langgraph_v2.state import SealAIState
+            from app._legacy_v2.state import SealAIState
             if isinstance(current, SealAIState):
                 # Using a generic extract if possible, but for SealAIState we use the known pillar structure
                 text = _resolve_governed_output_text(current)
@@ -351,7 +351,7 @@ def _extract_final_text_from_patch(data: Any) -> str:
                 else:
                     # Check for SealAIState if it's a value
                     try:
-                        from app.langgraph_v2.state import SealAIState
+                        from app._legacy_v2.state import SealAIState
                         if isinstance(nested, SealAIState):
                             stack.append(nested)
                     except Exception:

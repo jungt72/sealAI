@@ -8,6 +8,48 @@ from pydantic import BaseModel, ConfigDict, Field
 BindingLevel = Literal["KNOWLEDGE", "ORIENTATION", "CALCULATION", "QUALIFIED_PRESELECTION", "RFQ_BASIS"]
 
 
+# ---------------------------------------------------------------------------
+# HITL Review — Blueprint Sections 08 & 12
+# ---------------------------------------------------------------------------
+
+class ReviewRequest(BaseModel):
+    """Payload for the POST /review endpoint (human-in-the-loop decision)."""
+    session_id: str = Field(..., min_length=1)
+    action: Literal["approve", "reject"] = Field(
+        ...,
+        description="Reviewer decision: 'approve' → rfq_ready, 'reject' → inadmissible",
+    )
+    reviewer_notes: Optional[str] = Field(
+        default=None,
+        description="Optional free-text annotation by the reviewer",
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReviewResponse(BaseModel):
+    """Response from POST /review."""
+    session_id: str
+    action: str
+    review_state: str
+    release_status: str
+    is_handover_ready: bool
+    handover: Optional[Dict[str, Any]] = None
+    reply: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReviewSeedResponse(BaseModel):
+    """Response from POST /review/seed (test-only helper)."""
+    session_id: str
+    review_state: str
+    release_status: str
+    review_reason: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: Optional[str] = Field(default="default")

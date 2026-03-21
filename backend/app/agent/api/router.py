@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict
 
@@ -10,10 +11,11 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.agent.agent.graph import app, _GRAPH_MODEL_ID, VISIBLE_REPLY_PROMPT_HASH, VISIBLE_REPLY_PROMPT_VERSION
+from app.agent.agent.graph import app, final_response_node, _GRAPH_MODEL_ID, VISIBLE_REPLY_PROMPT_HASH, VISIBLE_REPLY_PROMPT_VERSION
+from app.agent.api.sse_runtime import agent_sse_generator
 from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.agent.state import AgentState
-from app.agent.api.models import ChatRequest, ChatResponse
+from app.agent.api.models import ChatRequest, ChatResponse, ReviewRequest, ReviewResponse, ReviewSeedResponse
 from app.agent.case_state import (
     CASE_STATE_BUILDER_VERSION,
     DETERMINISTIC_DATA_VERSION,
@@ -23,7 +25,7 @@ from app.agent.case_state import (
     resolve_next_step_contract,
 )
 from app.agent.cli import create_initial_state
-from app.agent.runtime import evaluate_interaction_policy
+from app.agent.agent.interaction_policy import evaluate_policy as evaluate_interaction_policy
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.history.persist import ConcurrencyConflictError, load_structured_case, save_structured_case
 
@@ -31,8 +33,8 @@ router = APIRouter()
 SESSION_STORE: Dict[str, AgentState] = {}
 
 
-def execute_agent(state: AgentState) -> AgentState:
-    return app.invoke(state)
+async def execute_agent(state: AgentState) -> AgentState:
+    return await app.ainvoke(state)
 
 
 def _build_structured_version_provenance(*, decision: Any, rwdr_config_version: str | None = None) -> dict[str, Any]:
@@ -220,6 +222,12 @@ def _build_guidance_response_payload(decision: Any, *, session_id: str, reply: s
 
 
 async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
+    """SSE stream with Phase 0A.4 node filter.
+
+    Only fast_guidance_node and final_response_node tokens reach the client.
+    Internal nodes (reasoning_node, evidence_tool_node, selection_node) are
+    silently filtered by agent_sse_generator.
+    """
     session_id = request.session_id
     if session_id not in SESSION_STORE:
         initial_sealing_state = create_initial_state()
@@ -227,22 +235,8 @@ async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
         SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state, "working_profile": {}}
     current_state = SESSION_STORE[session_id]
     current_state["messages"].append(HumanMessage(content=request.message))
-    final_state = current_state
-    try:
-        async for event in app.astream_events(current_state, version="v2"):
-            kind = event["event"]
-            if kind == "on_chat_model_stream":
-                chunk = event["data"].get("chunk")
-                if chunk and chunk.content:
-                    yield f"data: {json.dumps({'chunk': chunk.content})}\n\n"
-            elif kind == "on_chain_end" and event["name"] == "LangGraph":
-                final_state = event["data"].get("output")
-        if final_state:
-            SESSION_STORE[session_id] = final_state
-            yield f"data: {json.dumps({'state': final_state['sealing_state'], 'working_profile': final_state.get('working_profile', {})})}\n\n"
-        yield "data: [DONE]\n\n"
-    except Exception as e:
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    async for frame in agent_sse_generator(current_state, graph=app):
+        yield frame
 
 
 async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None = None):
@@ -254,7 +248,10 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
             SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state}
         current_state = SESSION_STORE[session_id]
         current_state["messages"].append(HumanMessage(content=request.message))
-        updated_state = execute_agent(current_state)
+        current_state["inquiry_id"] = session_id
+        current_state.setdefault("turn_count", 0)
+        current_state.setdefault("max_turns", 12)
+        updated_state = await execute_agent(current_state)
         SESSION_STORE[session_id] = updated_state
         last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
         return ChatResponse(reply=last_msg.content, session_id=session_id, sealing_state=updated_state["sealing_state"])
@@ -272,14 +269,28 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
             SESSION_STORE[cache_key] = {"messages": [], "sealing_state": initial_sealing_state, "working_profile": {}, "owner_id": owner_id, "tenant_id": tenant_id}
         current_state = SESSION_STORE[cache_key]
         current_state["messages"].append(HumanMessage(content=request.message))
-        updated_state = execute_agent(current_state)
+        # Phase 0A.3: inject policy signals so the graph entry switch can route correctly
+        current_state["policy_path"] = decision.path.value
+        current_state["result_form"] = decision.result_form.value
+        # Phase 0A QW-4: V3 spec fields
+        current_state["inquiry_id"] = session_id
+        current_state.setdefault("turn_count", 0)
+        current_state.setdefault("max_turns", 12)
+        updated_state = await execute_agent(current_state)
         SESSION_STORE[cache_key] = updated_state
         last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
         payload = _build_guidance_response_payload(decision, session_id=session_id, reply=last_msg.content, state=updated_state, working_profile=updated_state.get("working_profile"))
         return ChatResponse(sealing_state=updated_state["sealing_state"], **payload)
 
     state = await prepare_structured_state(request, current_user=current_user)
-    updated_state = execute_agent(state)
+    # Phase 0A.3: structured path — inject policy signals into state
+    state["policy_path"] = decision.path.value
+    state["result_form"] = decision.result_form.value
+    # Phase 0A QW-4: V3 spec fields
+    state["inquiry_id"] = request.session_id
+    state.setdefault("turn_count", 0)
+    state.setdefault("max_turns", 12)
+    updated_state = await execute_agent(state)
     last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
     visible_case_narrative = build_visible_case_narrative(state=updated_state, case_state=updated_state.get("case_state"), binding_level="ORIENTATION")
     payload = build_runtime_payload(
@@ -304,6 +315,260 @@ async def chat_route(request: ChatRequest, current_user: RequestUser = Depends(g
 @router.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
     return StreamingResponse(event_generator(request), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# HITL Review — Blueprint Sections 08 & 12
+# ---------------------------------------------------------------------------
+
+def _find_session(session_id: str) -> AgentState | None:
+    """Look up a session from SESSION_STORE by plain or composite key."""
+    if session_id in SESSION_STORE:
+        return SESSION_STORE[session_id]
+    # Composite key used by authenticated path: "tenant_id:owner_id:session_id"
+    for key, state in SESSION_STORE.items():
+        if key.endswith(f":{session_id}"):
+            return state
+    return None
+
+
+def _save_session(session_id: str, state: AgentState) -> None:
+    """Write back into the same SESSION_STORE slot the state was loaded from."""
+    if session_id in SESSION_STORE:
+        SESSION_STORE[session_id] = state
+        return
+    for key in list(SESSION_STORE.keys()):
+        if key.endswith(f":{session_id}"):
+            SESSION_STORE[key] = state
+            return
+    SESSION_STORE[session_id] = state
+
+
+def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentState:
+    """Return a deep-copied state with governance, review and selection layers patched.
+
+    Does NOT call the LLM or any external service — purely deterministic.
+    The cycle revision is advanced so concurrent writes are detectable.
+    """
+    patched = deepcopy(state)
+    sealing_state: dict = patched["sealing_state"]
+
+    governance = dict(sealing_state.get("governance") or {})
+    review = dict(sealing_state.get("review") or {})
+    selection = dict(sealing_state.get("selection") or {})
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if request.action == "approve":
+        # Governance
+        governance["release_status"] = "rfq_ready"
+        governance["rfq_admissibility"] = "ready"
+        # Review lifecycle
+        review["review_required"] = False
+        review["review_state"] = "approved"
+        review["reviewed_by"] = "reviewer"
+        review["review_decision"] = "approved"
+        review["review_note"] = request.reviewer_notes or ""
+        review["reviewed_at"] = now_iso
+        # Selection projection — keep aligned with governance so build_final_reply
+        # can produce a meaningful response (not just SAFEGUARDED_WITHHELD_REPLY).
+        selection["release_status"] = "rfq_ready"
+        selection["rfq_admissibility"] = "ready"
+        selection["output_blocked"] = False
+        selection.setdefault("specificity_level", "compound_required")
+        artifact = dict(selection.get("recommendation_artifact") or {})
+        if artifact:
+            artifact["release_status"] = "rfq_ready"
+            artifact["rfq_admissibility"] = "ready"
+            artifact["output_blocked"] = False
+            selection["recommendation_artifact"] = artifact
+
+    elif request.action == "reject":
+        governance["release_status"] = "inadmissible"
+        governance["rfq_admissibility"] = "inadmissible"
+        review["review_required"] = False
+        review["review_state"] = "rejected"
+        review["reviewed_by"] = "reviewer"
+        review["review_decision"] = "rejected"
+        review["review_note"] = request.reviewer_notes or ""
+        review["reviewed_at"] = now_iso
+
+    sealing_state["governance"] = governance
+    sealing_state["review"] = review
+    sealing_state["selection"] = selection
+
+    # Advance revision so optimistic-locking checks remain valid
+    cycle = dict(sealing_state.get("cycle") or {})
+    current_rev = int(cycle.get("state_revision", 0) or 0)
+    cycle["state_revision"] = current_rev + 1
+    cycle["snapshot_parent_revision"] = current_rev
+    cycle["analysis_cycle_id"] = (
+        f"{cycle.get('analysis_cycle_id') or request.session_id}"
+        f"::review::{request.action}::{uuid.uuid4().hex[:8]}"
+    )
+    sealing_state["cycle"] = cycle
+    patched["sealing_state"] = sealing_state
+    return patched
+
+
+@router.post("/review", response_model=ReviewResponse)
+async def review_endpoint(request: ReviewRequest) -> ReviewResponse:
+    """HITL resume — apply a reviewer decision to a pending review session.
+
+    Blueprint Section 08 & 12: the graph is NOT re-invoked end-to-end.
+    Instead the state is patched deterministically and then routed through
+    final_response_node only, so the handover object is computed and the
+    audit log is written without re-running LLM reasoning.
+    """
+    # 1. Load session
+    state = _find_session(request.session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail=f"Session '{request.session_id}' not found")
+
+    # 2. Guard: only process sessions that have a pending review
+    sealing_state: dict = state.get("sealing_state") or {}
+    review_layer: dict = sealing_state.get("review") or {}
+    if not review_layer.get("review_required"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"No pending review for session '{request.session_id}'. "
+                f"Current review_state='{review_layer.get('review_state', 'none')}'"
+            ),
+        )
+
+    # 3. Patch state with reviewer decision (deterministic, no LLM)
+    patched_state = _apply_review_decision(state, request)
+
+    # 4. Run final_response_node directly — computes handover + fires audit log
+    node_result = await final_response_node(patched_state)
+
+    # 5. Merge node output back into state and persist to SESSION_STORE
+    patched_state["sealing_state"] = node_result["sealing_state"]
+    existing_msgs = list(patched_state.get("messages") or [])
+    patched_state["messages"] = existing_msgs + list(node_result.get("messages") or [])
+    _save_session(request.session_id, patched_state)
+
+    # 6. Build response
+    final_sealing: dict = patched_state["sealing_state"]
+    final_governance: dict = final_sealing.get("governance") or {}
+    final_review: dict = final_sealing.get("review") or {}
+    handover: dict | None = final_sealing.get("handover")
+    last_ai_msgs = [m for m in node_result.get("messages") or [] if isinstance(m, AIMessage)]
+    reply_text = last_ai_msgs[-1].content if last_ai_msgs else ""
+
+    return ReviewResponse(
+        session_id=request.session_id,
+        action=request.action,
+        review_state=str(final_review.get("review_state", "")),
+        release_status=str(final_governance.get("release_status", "")),
+        is_handover_ready=bool((handover or {}).get("is_handover_ready", False)),
+        handover=handover,
+        reply=reply_text,
+    )
+
+
+@router.post("/review/seed", response_model=ReviewSeedResponse)
+async def review_seed_endpoint() -> ReviewSeedResponse:
+    """Test-only: inject a review-pending session into SESSION_STORE.
+
+    Creates a deterministic AgentState with:
+    - governance.release_status = "manufacturer_validation_required"
+    - review.review_required = True / review_state = "pending"
+    - A minimal but valid selection layer
+
+    Returns the generated session_id so the test script can call POST /review.
+    """
+    from app.agent.agent.review import REASON_MANUFACTURER_VALIDATION
+    from app.agent.cli import create_initial_state
+
+    session_id = f"hitl-test-{uuid.uuid4().hex[:12]}"
+    sealing_state = create_initial_state()
+
+    # Asserted signal so governance does not fall back to "precheck_only"
+    sealing_state["asserted"] = {
+        "medium_profile": {"medium": "water", "medium_raw": "Wasser"},
+        "machine_profile": {"shaft_diameter_mm": 50.0, "rpm": 3000},
+        "installation_profile": {},
+        "operating_conditions": {"pressure_bar": 8.0, "temperature_c": 60.0},
+        "sealing_requirement_spec": {},
+    }
+
+    # Governance: manufacturer validation required (unknowns present but not blocking)
+    sealing_state["governance"] = {
+        "release_status": "manufacturer_validation_required",
+        "rfq_admissibility": "provisional",
+        "specificity_level": "compound_required",
+        "scope_of_validity": ["manufacturer_validation_scope"],
+        "assumptions_active": [],
+        "gate_failures": [],
+        "unknowns_release_blocking": [],
+        "unknowns_manufacturer_validation": ["Compound-Validierung durch Hersteller erforderlich"],
+        "conflicts": [],
+    }
+
+    # Review layer: pending
+    sealing_state["review"] = {
+        "review_required": True,
+        "review_state": "pending",
+        "review_reason": REASON_MANUFACTURER_VALIDATION,
+        "reviewed_by": None,
+        "review_decision": None,
+        "review_note": None,
+    }
+
+    # Selection layer aligned with governance (needed by build_final_reply)
+    candidate_id = "candidate_FKM_compound_required"
+    artifact = {
+        "selection_status": "viable_candidate_found",
+        "winner_candidate_id": candidate_id,
+        "candidate_ids": [candidate_id],
+        "viable_candidate_ids": [candidate_id],
+        "blocked_candidates": [],
+        "evidence_basis": ["seed_data"],
+        "release_status": "manufacturer_validation_required",
+        "rfq_admissibility": "provisional",
+        "specificity_level": "compound_required",
+        "output_blocked": True,
+        "trace_provenance_refs": [],
+    }
+    sealing_state["selection"] = {
+        "selection_status": "viable_candidate_found",
+        "candidates": [],
+        "viable_candidate_ids": [candidate_id],
+        "blocked_candidates": [],
+        "winner_candidate_id": candidate_id,
+        "recommendation_artifact": artifact,
+        "release_status": "manufacturer_validation_required",
+        "rfq_admissibility": "provisional",
+        "specificity_level": "compound_required",
+        "output_blocked": True,
+    }
+
+    sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
+
+    agent_state: AgentState = {
+        "messages": [HumanMessage(content="Ich brauche eine Dichtung: Welle 50mm, 3000 rpm, Wasser, 8 bar.")],
+        "sealing_state": sealing_state,
+        "working_profile": {
+            "shaft_diameter_mm": 50.0,
+            "rpm": 3000,
+            "medium": "water",
+            "pressure_bar": 8.0,
+        },
+        "relevant_fact_cards": [],
+        "tenant_id": None,
+        "turn_count": 1,
+        "max_turns": 12,
+        "inquiry_id": session_id,
+    }
+    SESSION_STORE[session_id] = agent_state
+
+    return ReviewSeedResponse(
+        session_id=session_id,
+        review_state="pending",
+        release_status="manufacturer_validation_required",
+        review_reason=REASON_MANUFACTURER_VALIDATION,
+    )
 
 
 app_api = FastAPI(title="SealAI LangGraph PoC API")

@@ -12,9 +12,9 @@ from typing import Any, Dict
 import structlog
 from pydantic import ValidationError
 
-from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.utils.messages import latest_user_text
+from app._legacy_v2.phase import PHASE
+from app._legacy_v2.state import SealAIState
+from app._legacy_v2.utils.messages import latest_user_text
 from app.mcp.calc_schemas import CalcInput
 
 logger = structlog.get_logger("rag.nodes.p4a_extract")

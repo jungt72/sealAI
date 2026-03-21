@@ -30,7 +30,7 @@ os.environ.setdefault("keycloak_client_secret", "test-secret")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 from app.api.v1.endpoints import langgraph_v2 as endpoint  # noqa: E402
-from app.langgraph_v2.state import SealAIState  # noqa: E402
+from app._legacy_v2.state import SealAIState  # noqa: E402
 from langchain_core.messages.ai import AIMessageChunk  # noqa: E402
 
 

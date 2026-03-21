@@ -18,7 +18,7 @@ from fastapi import Depends, HTTPException, WebSocket, status, Header
 from app.core.config import settings              # <-- korrekter Pfad!
 import app.services.auth.token as auth_token
 try:
-    from app.langgraph_v2.contracts import error_detail
+    from app._legacy_v2.contracts import error_detail
 except Exception:  # pragma: no cover - minimal import repair for bounded tests
     def error_detail(code: str, **kwargs: object) -> str:
         return code
@@ -113,18 +113,43 @@ def _extract_scopes(payload: dict) -> list[str]:
     return sorted(scopes)
 
 
+def is_rag_admin(user: RequestUser) -> bool:
+    """Return True when the user holds the rag_admin (or admin) role."""
+    admin_roles = {"rag_admin", "admin", "superuser"}
+    return bool(admin_roles.intersection(user.roles))
+
+
 def canonical_user_id(user: RequestUser) -> str:
     """Return the canonical user id for scoping (claim-based preferred)."""
     return user.user_id or user.sub
 
 
+_DEV_BYPASS_USER = RequestUser(
+    user_id="dev-user",
+    username="dev-user",
+    sub="dev-user",
+    roles=["admin"],
+    scopes=["openid"],
+    tenant_id="dev-tenant",
+)
+
+
 async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     authorization: str | None = Header(default=None),
+    x_bypass_auth: str | None = Header(default=None),
 ) -> RequestUser:
     """
     Liefert ein RequestUser-Objekt aus dem gültigen JWT,
     sonst → 401 UNAUTHORIZED.
+
+    DEV-MODE: Wenn die Umgebungsvariable BYPASS_AUTH=1 gesetzt ist UND der
+    Request den Header X-Bypass-Auth: 1 trägt, wird ein statischer Dev-User
+    zurückgegeben. Ausschließlich für lokales Testen — niemals in Produktion.
     """
+    # --- DEV BYPASS (nur wenn explizit aktiviert) ---
+    if os.getenv("BYPASS_AUTH") == "1" and x_bypass_auth == "1":
+        return _DEV_BYPASS_USER
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

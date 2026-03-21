@@ -1,54 +1,22 @@
-from __future__ import annotations
+"""
+Agent Runtime — Interaction Policy Entry Point
+Phase 0A.2
 
-from dataclasses import dataclass
-
-INTERACTION_POLICY_VERSION = "interaction_policy_v1"
-
-
-@dataclass(frozen=True)
-class InteractionPolicyDecision:
-    result_form: str
-    path: str
-    stream_mode: str
-    interaction_class: str
-    runtime_path: str
-    binding_level: str
-    has_case_state: bool
-    coverage_status: str | None = None
-    boundary_flags: tuple[str, ...] = ()
-    escalation_reason: str | None = None
-    required_fields: tuple[str, ...] = ()
-    policy_version: str = INTERACTION_POLICY_VERSION
+Re-exports the new policy types for backwards compatibility with the router.
+All routing logic lives in app.agent.agent.interaction_policy.
+"""
+from app.agent.agent.policy import (  # noqa: F401 — public re-export
+    INTERACTION_POLICY_VERSION,
+    InteractionPolicyDecision,
+    ResultForm,
+    RoutingPath,
+)
+from app.agent.agent.interaction_policy import evaluate_policy  # noqa: F401
 
 
 def evaluate_interaction_policy(message: str) -> InteractionPolicyDecision:
-    lowered = message.lower()
-    if "was ist" in lowered:
-        return InteractionPolicyDecision(
-            result_form="guided",
-            path="fast",
-            stream_mode="reply_only",
-            interaction_class="KNOWLEDGE",
-            runtime_path="FAST_KNOWLEDGE",
-            binding_level="KNOWLEDGE",
-            has_case_state=False,
-        )
-    if "berechne" in lowered:
-        return InteractionPolicyDecision(
-            result_form="guided",
-            path="fast",
-            stream_mode="reply_only",
-            interaction_class="CALCULATION",
-            runtime_path="FAST_CALCULATION",
-            binding_level="CALCULATION",
-            has_case_state=False,
-        )
-    return InteractionPolicyDecision(
-        result_form="qualified",
-        path="structured",
-        stream_mode="structured_progress_stream",
-        interaction_class="QUALIFICATION",
-        runtime_path="STRUCTURED_QUALIFICATION",
-        binding_level="ORIENTATION",
-        has_case_state=True,
-    )
+    """
+    Backwards-compatible shim used by existing router imports.
+    Delegates to evaluate_policy() with no current_state context.
+    """
+    return evaluate_policy(message)

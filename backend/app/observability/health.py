@@ -62,7 +62,7 @@ async def check_graph_compilation() -> Dict[str, Any]:
     """Check whether LangGraph v2 can be built/retrieved."""
     start = time.perf_counter()
     try:
-        from app.langgraph_v2.sealai_graph_v2 import get_sealai_graph_v2
+        from app._legacy_v2.sealai_graph_v2 import get_sealai_graph_v2
 
         graph = await asyncio.wait_for(get_sealai_graph_v2(), timeout=10)
 

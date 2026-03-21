@@ -3,9 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.agent.domain.governed_data import (  # noqa: F401 — re-exported for consumers
+    DomainDataProvider,
+    DummyDomainDataProvider,
+    GovernedMaterialRecord,
+    get_default_domain_data_provider,
+)
+
 
 PROMOTED_SOURCE_ORIGIN = "promoted_candidate_registry_v1"
 TRANSITION_SOURCE_ORIGIN = "retrieval_fact_card_transition_adapter"
+
+# Phase 0B.1: explicit quarantine flag for the current registry state.
+# Set to False only when the registry contains fully governed, source-backed entries.
+REGISTRY_IS_DEMO_ONLY: bool = True
 
 
 @dataclass(frozen=True)
@@ -23,6 +34,11 @@ class PromotedCandidateRegistryRecordDTO:
     def __post_init__(self) -> None:
         if self.registry_authority not in {"demo_only", "governed"}:
             raise ValueError("registry_authority must be demo_only or governed")
+
+    @property
+    def is_demo_only(self) -> bool:
+        """True when this record has no governed source and must not drive binding decisions."""
+        return self.registry_authority == "demo_only"
 
 
 @dataclass(frozen=True)
@@ -43,6 +59,9 @@ class MaterialQualificationCoreOutput:
     exploratory_candidate_ids: list[str]
     qualification_status: str
     output_blocked: bool
+    # Phase 0B.1: True when any registry record in scope carries demo_only authority.
+    # Consumers MUST surface this as a boundary disclaimer in the visible output.
+    demo_data_in_scope: bool = False
 
 
 def load_promoted_candidate_registry_records() -> tuple[PromotedCandidateRegistryRecordDTO, ...]:
@@ -163,6 +182,11 @@ def evaluate_material_qualification_core(
     exploratory_candidate_ids = [item.candidate_id for item in assessments if item.source_origin != PROMOTED_SOURCE_ORIGIN]
     qualified_candidate_ids = [item.candidate_id for item in assessments if item.qualified_eligible]
     has_promoted_candidate_source = bool(promoted_candidate_ids)
+    # Phase 0B.1: detect demo data — registry-level flag OR any individual demo record in scope
+    demo_data_in_scope = REGISTRY_IS_DEMO_ONLY or any(
+        item.registry_record is not None and item.registry_record.is_demo_only
+        for item in assessments
+    )
     return MaterialQualificationCoreOutput(
         has_promoted_candidate_source=has_promoted_candidate_source,
         promoted_candidate_ids=promoted_candidate_ids,
@@ -170,6 +194,7 @@ def evaluate_material_qualification_core(
         exploratory_candidate_ids=exploratory_candidate_ids,
         qualification_status="qualified_candidate_source_available" if has_promoted_candidate_source else "exploratory_candidate_source_only",
         output_blocked=not has_promoted_candidate_source,
+        demo_data_in_scope=demo_data_in_scope,
     )
 
 
@@ -190,3 +215,20 @@ def build_material_provider_contract_snapshot(
         ],
         "matched_promoted_registry_record_ids": [record.registry_record_id for record in promoted_records.values()],
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase A4: Governed Domain Data Layer bridge
+# ---------------------------------------------------------------------------
+
+def load_governed_material_records(
+    provider: DomainDataProvider | None = None,
+) -> list[GovernedMaterialRecord]:
+    """Return all GovernedMaterialRecord objects from the given provider.
+
+    If *provider* is None, the module-level default provider is used.
+    This is the single access point for the governed domain data layer —
+    callers must never import flat-file helpers or load registry data directly.
+    """
+    p = provider if provider is not None else get_default_domain_data_provider()
+    return p.list_material_records()

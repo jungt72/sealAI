@@ -14,12 +14,12 @@ from pydantic import BaseModel, Field
 
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 
-from app.langgraph_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
-from app.langgraph_v2.state import SealAIState
-from app.langgraph_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
-from app.langgraph_v2.utils.assertion_cycle import build_assertion_cycle_update
-from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_to_state_layers
-from app.langgraph_v2.projections.case_workspace import project_case_workspace
+from app._legacy_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2
+from app._legacy_v2.state import SealAIState
+from app._legacy_v2.contracts import error_detail, is_dependency_unavailable_error, pick_existing_node
+from app._legacy_v2.utils.assertion_cycle import build_assertion_cycle_update
+from app._legacy_v2.utils.parameter_patch import apply_parameter_patch_to_state_layers
+from app._legacy_v2.projections.case_workspace import project_case_workspace
 from app.api.v1.schemas.case_workspace import CaseWorkspaceProjection
 from app.api.v1.renderers.rfq_html import render_rfq_html
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user

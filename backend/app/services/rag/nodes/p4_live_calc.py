@@ -8,13 +8,13 @@ from typing import Any, Dict, Iterable, List, Literal, Optional
 
 import structlog
 
-from app.langgraph_v2.phase import PHASE
-from app.langgraph_v2.state import CalcResults, LiveCalcTile, SealAIState
+from app._legacy_v2.phase import PHASE
+from app._legacy_v2.state import CalcResults, LiveCalcTile, SealAIState
 from app.services.knowledge.entity_resolver import normalize_entity
 from app.services.knowledge.chemical_repository import get_chemical_repository
 from app.services.knowledge.material_repository import get_material_repository
 from app.models.chemical_matrix import RatingEnum
-from app.langgraph_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
+from app._legacy_v2.utils.assertion_cycle import stamp_patch_with_assertion_binding
 
 logger = structlog.get_logger("rag.nodes.p4_live_calc")
 

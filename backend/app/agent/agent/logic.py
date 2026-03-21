@@ -12,7 +12,13 @@ from app.agent.domain.limits import OperatingLimit
 from app.agent.domain.material import MaterialValidator, MaterialPhysicalProfile, normalize_fact_card_evidence
 from app.agent.agent.calc import calculate_physics
 from app.agent.agent.utils import validate_material_risk
-from app.agent.domain.normalization import extract_parameters as norm_extract
+from app.agent.domain.normalization import (
+    extract_parameters as norm_extract,
+    normalize_parameter,
+    confidence_to_identity_class,
+    confidence_to_normalization_certainty,
+    MappingConfidence,
+)
 from copy import deepcopy
 
 _NORMATIVE_RELEASE_STATUSES = {
@@ -425,24 +431,28 @@ def _normalize_observed_entries(
 
         if "temperature_c" in extracted:
             normalized["temperature_c"] = extracted["temperature_c"]
+            # Phase 0B.3: use normalize_parameter for explicit confidence grading
+            temp_entity = normalize_parameter("temperature", extracted["temperature_raw"])
             identity_records["temperature"] = {
                 "raw_value": extracted["temperature_raw"],
                 "normalized_value": extracted["temperature_c"],
-                "identity_class": "identity_confirmed",
-                "normalization_certainty": "explicit_value",
-                "mapping_reason": "normalized_temperature_c",
+                "identity_class": confidence_to_identity_class(temp_entity.confidence),
+                "normalization_certainty": confidence_to_normalization_certainty(temp_entity.confidence),
+                "mapping_reason": temp_entity.warning_message or "normalized_temperature_c",
                 "source_fact_ids": [],
                 "deterministic_source": "central_normalization",
             }
 
         if "pressure_bar" in extracted:
             normalized["pressure_bar"] = extracted["pressure_bar"]
+            # Phase 0B.3: use normalize_parameter for explicit confidence grading
+            pres_entity = normalize_parameter("pressure", extracted["pressure_raw"])
             identity_records["pressure"] = {
                 "raw_value": extracted["pressure_raw"],
                 "normalized_value": extracted["pressure_bar"],
-                "identity_class": "identity_confirmed",
-                "normalization_certainty": "explicit_value",
-                "mapping_reason": "normalized_pressure_bar",
+                "identity_class": confidence_to_identity_class(pres_entity.confidence),
+                "normalization_certainty": confidence_to_normalization_certainty(pres_entity.confidence),
+                "mapping_reason": pres_entity.warning_message or "normalized_pressure_bar",
                 "source_fact_ids": [],
                 "deterministic_source": "central_normalization",
             }
@@ -829,21 +839,32 @@ def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_card
     return new_profile
 
 def evaluate_claim_conflicts(
-    claims: List[Claim], 
+    claims: List[Claim],
     asserted_state: Dict[str, Any],
-    relevant_fact_cards: List[Dict[str, Any]] = None
+    relevant_fact_cards: List[Dict[str, Any]] = None,
+    working_profile: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
     """
-    Phase B2/H3/H6/H7: Prüft neue Claims gegen den aktuellen asserted state.
-    Nutzt die FactCard Factory für dynamische Material-Validierung.
+    Phase B2/H3/H6/H7/0B.1: Prüft neue Claims gegen den aktuellen asserted state.
+    Nutzt die FactCard Factory für dynamische Material-Validierung UND den
+    deterministischen Compound Validator (Phase 0B.1) für Domainlimits.
     """
+    from app.agent.services.compound import validate_claim_against_matrix
+
     conflicts = []
     validated_params = {}
     relevant_fact_cards = relevant_fact_cards or []
-    
+    wp = working_profile or {}
+
     # 1. Aktuellen Kontext extrahieren
     current_medium = asserted_state.get("medium_profile", {}).get("name")
-    
+
+    # Candidate materials from asserted state for limit checks
+    candidate_materials: List[str] = []
+    machine_profile = asserted_state.get("machine_profile", {})
+    if machine_profile.get("seal_material"):
+        candidate_materials.append(str(machine_profile["seal_material"]))
+
     # 2. Dynamische Material-Validatoren aus RAG-Kontext (via Factory H7)
     material_validators = {}
     for card in relevant_fact_cards:
@@ -886,7 +907,15 @@ def evaluate_claim_conflicts(
 
             if "pressure_bar" in extracted:
                 validated_params["pressure"] = extracted["pressure_bar"]
-                
+
+        # Phase 0B.1: Compound Validator — RPM / velocity / material domain limits
+        matrix_conflicts = validate_claim_against_matrix(
+            claim.statement,
+            candidate_materials=candidate_materials or None,
+            working_profile=wp,
+        )
+        conflicts.extend(matrix_conflicts)
+
     return conflicts, validated_params
 
 def process_cycle_update(

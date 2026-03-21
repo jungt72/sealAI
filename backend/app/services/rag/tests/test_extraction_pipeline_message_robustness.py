@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from app.langgraph_v2.state import SealAIState
+from app._legacy_v2.state import SealAIState
 from app.services.rag.nodes.p1_context import _P1Extraction, _invoke_extraction
 from app.services.rag.nodes.p4a_extract import node_p4a_extract
 from app.services.rag.state import WorkingProfile

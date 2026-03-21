@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     auth,
     langgraph_health,
-    langgraph_v2,  # LangGraph v2 HTTP/SSE-Endpunkte
+    langgraph_v2,
     memory,
     ping,
     users,
@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     state,
 )
 from app.api.v1.endpoints import rfq as rfq_endpoint
+from app.agent.api.router import router as agent_router
 
 api_router = APIRouter()
 
@@ -28,8 +29,8 @@ api_router.include_router(chat_history.router)  # <-- /api/v1/chat/...
 
 # LangGraph HTTP/SSE-API (v2)
 api_router.include_router(langgraph_health.router, prefix="/langgraph", tags=["health"])
-api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph-v2"])
-api_router.include_router(state.router, prefix="/langgraph", tags=["state"])
+api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph"])
+api_router.include_router(state.router, prefix="/langgraph", tags=["langgraph"])
 
 # Model Context Protocol (MCP)
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
@@ -42,3 +43,6 @@ api_router.include_router(rag.router)
 
 # RFQ
 api_router.include_router(rfq_endpoint.router, prefix="/rfq", tags=["rfq"])
+
+# SSoT Agent (app/agent — Phase 0A)
+api_router.include_router(agent_router, prefix="/agent", tags=["ssot-agent"])

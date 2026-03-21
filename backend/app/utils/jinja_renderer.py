@@ -9,7 +9,7 @@ from typing import Any
 
 import jinja2
 
-from app.langgraph_v2.state import RenderedPrompt
+from app._legacy_v2.state import RenderedPrompt
 
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 

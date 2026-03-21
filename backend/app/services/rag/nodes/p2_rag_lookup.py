@@ -20,12 +20,12 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 
-from app.langgraph_v2.state import SealAIState, Source, WorkingMemory, FactItem
-from app.langgraph_v2.utils.jinja import render_prompt_sections
-from app.langgraph_v2.utils.llm_factory import get_model_tier, run_llm_async
+from app._legacy_v2.state import SealAIState, Source, WorkingMemory, FactItem
+from app._legacy_v2.utils.jinja import render_prompt_sections
+from app._legacy_v2.utils.llm_factory import get_model_tier, run_llm_async
 from app.observability.metrics import track_error, track_rag_retrieval
-from app.langgraph_v2.utils.messages import latest_user_text
-from app.langgraph_v2.utils.rag_cache import RAGCache
+from app._legacy_v2.utils.messages import latest_user_text
+from app._legacy_v2.utils.rag_cache import RAGCache
 from app.mcp.knowledge_tool import query_deterministic_norms, search_technical_docs
 from app.services.rag.bm25_store import bm25_repo
 from app.services.rag.rag_orchestrator import QDRANT_COLLECTION_DEFAULT
@@ -42,7 +42,7 @@ _IDENTITY_GUARDED_FIELDS = frozenset({
 })
 
 
-from app.langgraph_v2.state.governance_types import IdentityClass
+from app._legacy_v2.state.governance_types import IdentityClass
 
 
 def _strip_unconfirmed_identity_fields(

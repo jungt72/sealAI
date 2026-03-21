@@ -2,6 +2,7 @@ import re
 from typing import Any, Dict, List, Optional
 from app.agent.domain.material import MaterialPhysicalProfile, MaterialValidator, normalize_fact_card_evidence
 from app.agent.domain.parameters import PhysicalParameter
+from app.agent.agent.boundaries import build_boundary_block
 
 
 _MATERIAL_PATTERN = re.compile(r"\b(PTFE|NBR|FKM|EPDM|SILIKON)\b", re.I)
@@ -385,33 +386,55 @@ def build_selection_state(
     }
 
 
-def build_final_reply(selection_state: Dict[str, Any]) -> str:
+def build_final_reply(
+    selection_state: Dict[str, Any],
+    *,
+    coverage_status: Optional[str] = None,
+    known_unknowns: Optional[List[str]] = None,
+    demo_data_present: bool = False,
+    review_required: bool = False,
+    review_reason: str = "",
+) -> str:
+    """Build the governed structured-path reply and append a deterministic boundary block.
+
+    Phase 0B.2: the boundary block is ALWAYS appended — it is never produced by the LLM.
+    Phase A3: if review_required, the boundary block includes the HITL pending notice.
+    """
     artifact = selection_state.get("recommendation_artifact") or {}
     if not _artifact_is_aligned(selection_state, artifact):
-        return SAFEGUARDED_WITHHELD_REPLY
+        core_reply = SAFEGUARDED_WITHHELD_REPLY
+    else:
+        release_status = selection_state.get("release_status")
+        rfq_admissibility = selection_state.get("rfq_admissibility")
+        output_blocked = bool(selection_state.get("output_blocked", True))
+        specificity_level = selection_state.get("specificity_level", "family_only")
 
-    release_status = selection_state.get("release_status")
-    rfq_admissibility = selection_state.get("rfq_admissibility")
-    output_blocked = bool(selection_state.get("output_blocked", True))
-    specificity_level = selection_state.get("specificity_level", "family_only")
+        if release_status == "precheck_only":
+            core_reply = PRECHECK_ONLY_REPLY
+        elif release_status == "manufacturer_validation_required" or rfq_admissibility == "provisional":
+            core_reply = MANUFACTURER_VALIDATION_REPLY
+        elif (
+            not output_blocked
+            and release_status == "rfq_ready"
+            and rfq_admissibility == "ready"
+            and specificity_level == "compound_required"
+        ):
+            core_reply = NEUTRAL_SCOPE_REPLY
+        elif selection_state.get("selection_status") == "blocked_no_candidates":
+            core_reply = NO_CANDIDATES_REPLY
+        elif selection_state.get("selection_status") == "blocked_missing_required_inputs":
+            core_reply = MISSING_INPUTS_REPLY
+        elif selection_state.get("selection_status") == "blocked_no_viable_candidates":
+            core_reply = NO_VIABLE_CANDIDATES_REPLY
+        else:
+            core_reply = SAFEGUARDED_WITHHELD_REPLY
 
-    if release_status == "precheck_only":
-        return PRECHECK_ONLY_REPLY
-    if release_status == "manufacturer_validation_required" or rfq_admissibility == "provisional":
-        return MANUFACTURER_VALIDATION_REPLY
-    if (
-        not output_blocked
-        and release_status == "rfq_ready"
-        and rfq_admissibility == "ready"
-        and specificity_level == "compound_required"
-    ):
-        return NEUTRAL_SCOPE_REPLY
-
-    if selection_state.get("selection_status") == "blocked_no_candidates":
-        return NO_CANDIDATES_REPLY
-    if selection_state.get("selection_status") == "blocked_missing_required_inputs":
-        return MISSING_INPUTS_REPLY
-    if selection_state.get("selection_status") == "blocked_no_viable_candidates":
-        return NO_VIABLE_CANDIDATES_REPLY
-
-    return SAFEGUARDED_WITHHELD_REPLY
+    boundary = build_boundary_block(
+        "structured",
+        coverage_status=coverage_status,
+        known_unknowns=known_unknowns,
+        demo_data_present=demo_data_present,
+        review_required=review_required,
+        review_reason=review_reason,
+    )
+    return f"{core_reply}\n\n{boundary}"

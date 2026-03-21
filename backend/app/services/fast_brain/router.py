@@ -13,8 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.mcp.calculations.material_limits import check as check_material_limits
 from app.mcp.knowledge_tool import aquery_deterministic_norms
-from app.langgraph_v2.utils.jinja import render_template
-from app.langgraph_v2.utils.messages import flatten_message_content, sanitize_message_history
+from app._legacy_v2.utils.jinja import render_template
+from app._legacy_v2.utils.messages import flatten_message_content, sanitize_message_history
 
 logger = structlog.get_logger("fast_brain.router")
 
@@ -92,7 +92,7 @@ def _should_force_knowledge_handoff(user_input: str) -> bool:
         return False
 
     try:
-        from app.langgraph_v2.nodes.nodes_frontdoor import (
+        from app._legacy_v2.nodes.nodes_frontdoor import (
             detect_material_or_trade_query,
             detect_sources_request,
         )
