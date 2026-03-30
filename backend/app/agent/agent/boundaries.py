@@ -26,17 +26,22 @@ FAST_PATH_DISCLAIMER = (
 # Structured-path: scope-of-validity block
 # ---------------------------------------------------------------------------
 
-_STRUCTURED_PREAMBLE = "ℹ️ Technischer Scope-of-Validity:"
+_STRUCTURED_PREAMBLE = "ℹ️ Technischer Hinweis zum Gültigkeitsbereich:"
 
 _COVERAGE_NOTES: dict[str | None, str] = {
     "full": "Alle Kernparameter vorhanden.",
-    "partial": "Teilweise abgedeckt — einige Parameter fehlen noch.",
+    "partial": "Teilweise abgedeckt — einige Parameter noch offen.",
     "limited": "Eingeschränkte Datenbasis — wichtige Parameter ausstehend.",
 }
 
 _DEMO_DATA_NOTE = (
     "Enthält synthetische Referenzdaten zur Veranschaulichung "
-    "(keine governe Materialdaten, nicht produktiv verwenden)."
+    "(keine freigegebenen Materialdaten, nicht produktiv verwenden)."
+)
+
+_NO_EVIDENCE_NOTE = (
+    "Keine technischen Referenzdaten verfügbar — "
+    "Beurteilung basiert ausschließlich auf den eingegebenen Parametern."
 )
 
 STRUCTURED_PATH_SUFFIX = "Keine bindende Material- oder Compound-Freigabe."
@@ -65,6 +70,7 @@ def build_boundary_block(
     demo_data_present: bool = False,
     review_required: bool = False,
     review_reason: str = "",
+    evidence_available: bool = True,
 ) -> str:
     """Return the deterministic boundary string for the given routing path.
 
@@ -75,6 +81,7 @@ def build_boundary_block(
         demo_data_present: True if synthetic/demo registry data was in scope
         review_required: True when HITL review is pending (Phase A3)
         review_reason: human-readable trigger reason for the review notice
+        evidence_available: False when no RAG evidence was retrievable (Phase 0D.4)
 
     Returns:
         A ready-to-append boundary string (begins with ``---``).
@@ -95,6 +102,9 @@ def build_boundary_block(
 
     if demo_data_present:
         parts.append(_DEMO_DATA_NOTE)
+
+    if not evidence_available:
+        parts.append(_NO_EVIDENCE_NOTE)
 
     parts.append(STRUCTURED_PATH_SUFFIX)
 

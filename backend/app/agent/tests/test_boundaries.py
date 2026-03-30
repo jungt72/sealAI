@@ -22,7 +22,7 @@ from app.agent.agent.boundaries import (
     _COVERAGE_NOTES,
     build_boundary_block,
 )
-from app.agent.agent.selection import build_final_reply
+from app.agent.agent.selection import build_final_reply, NO_CANDIDATES_REPLY
 from app.agent.material_core import (
     REGISTRY_IS_DEMO_ONLY,
     PromotedCandidateRegistryRecordDTO,
@@ -217,7 +217,7 @@ class TestBuildFinalReplyBoundary:
         state = _make_minimal_selection_state(selection_status="blocked_no_candidates")
         reply = build_final_reply(state)
         sep_pos = reply.index("---")
-        core_pos = reply.index("No governed")
+        core_pos = reply.index(NO_CANDIDATES_REPLY)
         assert core_pos < sep_pos
 
     def test_known_unknowns_forwarded(self):
@@ -241,7 +241,6 @@ class TestBuildFinalReplyBoundary:
         from app.agent.agent.selection import (
             SAFEGUARDED_WITHHELD_REPLY,
             NO_CANDIDATES_REPLY,
-            MISSING_INPUTS_REPLY,
             NO_VIABLE_CANDIDATES_REPLY,
         )
         # Test misaligned artifact path (SAFEGUARDED)
@@ -250,10 +249,11 @@ class TestBuildFinalReplyBoundary:
         assert SAFEGUARDED_WITHHELD_REPLY in reply_misaligned
         assert STRUCTURED_PATH_SUFFIX in reply_misaligned
 
-        # Test blocked_missing_required_inputs path
+        # Test blocked_missing_required_inputs path — now returns dynamic German text
         state_missing = _make_minimal_selection_state(selection_status="blocked_missing_required_inputs")
         reply_missing = build_final_reply(state_missing)
-        assert MISSING_INPUTS_REPLY in reply_missing
+        # The reply is now a dynamic German text listing missing params, not the English constant
+        assert "nächste wichtige Punkt" in reply_missing or "gemeinsam eingrenzen" in reply_missing
         assert STRUCTURED_PATH_SUFFIX in reply_missing
 
         # Test blocked_no_viable_candidates path
@@ -335,3 +335,81 @@ class TestFastGuidanceNodeBoundary:
 
         content = result["messages"][0].content
         assert FAST_PATH_DISCLAIMER in content
+
+
+# ---------------------------------------------------------------------------
+# Phase 0C.4 — selection_node uses REGISTRY_IS_DEMO_ONLY directly
+# ---------------------------------------------------------------------------
+
+class TestSelectionNodeDemoFlag:
+    """Verify that selection_node wires REGISTRY_IS_DEMO_ONLY into the review trigger
+    without relying on result_contract being populated (which it isn't in the current
+    graph topology)."""
+
+    def _make_agent_state(self, result_contract_demo_flag: bool = False) -> dict:
+        sealing_state: dict = {
+            "observed": {},
+            "normalized": {},
+            "asserted": {},
+            "governance": {},
+            "cycle": {},
+            "result_contract": {"demo_data_in_scope": result_contract_demo_flag},
+        }
+        return {
+            "messages": [],
+            "sealing_state": sealing_state,
+            "relevant_fact_cards": [],
+            "tenant_id": "tenant_test",
+            "turn_count": 0,
+            "max_turns": 20,
+            "working_profile": {},
+            "policy_path": "structured",
+            "result_form": "deterministic_result",
+        }
+
+    def test_registry_demo_only_triggers_review_without_contract(self, monkeypatch):
+        """When REGISTRY_IS_DEMO_ONLY=True, review trigger fires even with
+        result_contract.demo_data_in_scope=False (the normal wiring gap)."""
+        from app.agent.agent import graph as graph_mod
+        from app.agent.agent.graph import selection_node
+
+        # Ensure the constant seen by selection_node is True (it always is in prod)
+        monkeypatch.setattr(graph_mod, "REGISTRY_IS_DEMO_ONLY", True)
+
+        state = self._make_agent_state(result_contract_demo_flag=False)
+        result = selection_node(state)
+        review = result["sealing_state"]["review"]
+        # evaluate_review_trigger with demo_data_in_scope=True must set requires_review=True
+        assert review.get("review_required") is True, (
+            "selection_node must pass demo_data_in_scope=True when REGISTRY_IS_DEMO_ONLY is True"
+        )
+
+    def test_registry_not_demo_only_and_no_contract_flag_no_review(self, monkeypatch):
+        """When REGISTRY_IS_DEMO_ONLY=False and contract flag=False → no forced review."""
+        from app.agent.agent import graph as graph_mod
+        from app.agent.agent.graph import selection_node
+        from app.agent.agent.review import evaluate_review_trigger
+
+        monkeypatch.setattr(graph_mod, "REGISTRY_IS_DEMO_ONLY", False)
+
+        state = self._make_agent_state(result_contract_demo_flag=False)
+        # Independently check what evaluate_review_trigger returns with demo_data_in_scope=False
+        baseline = evaluate_review_trigger(governance_state={}, demo_data_in_scope=False)
+        result = selection_node(state)
+        review = result["sealing_state"]["review"]
+        assert review == baseline, (
+            "When both REGISTRY_IS_DEMO_ONLY=False and contract flag=False, "
+            "selection_node must not artificially set requires_review=True"
+        )
+
+    def test_contract_flag_true_alone_also_triggers_review(self, monkeypatch):
+        """When result_contract.demo_data_in_scope=True (fallback wiring works), review fires."""
+        from app.agent.agent import graph as graph_mod
+        from app.agent.agent.graph import selection_node
+
+        monkeypatch.setattr(graph_mod, "REGISTRY_IS_DEMO_ONLY", False)
+
+        state = self._make_agent_state(result_contract_demo_flag=True)
+        result = selection_node(state)
+        review = result["sealing_state"]["review"]
+        assert review.get("review_required") is True
