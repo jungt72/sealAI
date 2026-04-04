@@ -2,8 +2,9 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
-scrape_configs:
-  - job_name: sealai-backend
-    static_configs:
-      - targets: ["backend:8000"]
-    metrics_path: /metrics
+scrape_configs: []
+
+# The current production backend image does not register a Prometheus
+# `/metrics` route, so scraping it only produces persistent 404 noise.
+# Re-enable a backend scrape job when a backend release explicitly exposes
+# a supported metrics endpoint.

@@ -1,11 +1,20 @@
-version: "3.9"
 services:
   backend:
-    image: ghcr.io/jungt72/sealai-backend:latest
+    image: ${BACKEND_IMAGE}
+    pull_policy: always
+    env_file:
+      - ./.env.prod
     environment:
       RAG_UPLOAD_DIR: "/app/data/uploads"
+    volumes:
+      - backend-data:/app/data
   frontend:
-    # Empfohlen: FRONTEND_TAG auf einen unveränderlichen Tag setzen (z.B. git sha); Default bleibt "latest" für Backward-Compatibility.
-    image: "ghcr.io/jungt72/sealai-frontend:${FRONTEND_TAG:-latest}"
+    profiles: ["frontend-container"]
+    image: ${FRONTEND_IMAGE}
+    pull_policy: always
   keycloak:
-    image: ghcr.io/jungt72/sealai-keycloak:latest
+    image: ${KEYCLOAK_IMAGE}
+    pull_policy: always
+    env_file: [ ./.env.prod ]
+volumes:
+  backend-data:

@@ -3,10 +3,10 @@ services:
     image: postgres:15
     container_name: postgres
     restart: unless-stopped
-    env_file: [ ./.env.dev ]
     environment:
-      POSTGRES_DB: sealai
-      POSTGRES_USER: sealai
+      POSTGRES_DB: ${POSTGRES_DB:-sealai}
+      POSTGRES_USER: ${POSTGRES_USER:-sealai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -21,8 +21,9 @@ services:
     image: redis/redis-stack-server:7.4.0-v8
     container_name: redis
     restart: unless-stopped
-    env_file: [ ./.env.dev ]
     environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
       REDIS_ARGS: >-
         --requirepass ${REDIS_PASSWORD}
         --appendonly yes
@@ -32,7 +33,7 @@ services:
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" PING | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli --raw PING | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -49,24 +50,23 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     healthcheck:
-      # Wir prüfen nur, ob der Port antwortet, falls kein curl im Image ist
       test: ["CMD-SHELL", "timeout 1s bash -c '> /dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
 
   keycloak:
-    build: { context: ./keycloak, dockerfile: Dockerfile }
-    image: ghcr.io/jungt72/sealai-keycloak:latest
     container_name: keycloak
     depends_on:
       postgres: { condition: service_healthy }
     restart: unless-stopped
-    env_file: [ ./.env.dev ]
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/sealai
-      KC_DB_USERNAME: sealai
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sealai}
+      KC_DB_USERNAME: ${KC_DB_USERNAME:-sealai}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME: "https://auth.sealai.net"
@@ -75,24 +75,25 @@ services:
       KC_METRICS_ENABLED: "true"
     expose:
       - "8080"
+      - "9000"
 
   backend:
-    image: sealai-backend:dev
     container_name: backend
     user: "1000:1000"
-    build:
-      context: ./backend
-      args:
-        INSTALL_DEV: "true"
     depends_on:
       postgres: { condition: service_healthy }
-      redis:    { condition: service_healthy }
-      qdrant:   { condition: service_started } # Hier auf service_started zurück, um Qdrant-Probleme zu ignorieren
+      redis: { condition: service_healthy }
+      qdrant: { condition: service_started }
     restart: unless-stopped
-    env_file:
-      - ./backend/.env
-      - ./.env.dev
     environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sealai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-sealai}
+      POSTGRES_SYNC_URL: ${POSTGRES_SYNC_URL:-postgresql://${POSTGRES_USER:-sealai}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-sealai}}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION}
       REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
       RAG_UPLOAD_DIR: "/app/data/uploads"
       HF_HOME: "/app/data/models"
@@ -108,28 +109,25 @@ services:
       CONSULT_GRAPH_DEBUG_LEVEL: "debug"
       WS_AUTH_OPTIONAL: "1"
       SEALAI_LG_TRACE: "1"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+      KEYCLOAK_JWKS_URL: ${KEYCLOAK_JWKS_URL}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
+      EXPECTED_AZP: ${EXPECTED_AZP:-nextauth}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120
     expose:
       - "8000"
-    volumes:
-      - ./data/backend:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/langgraph/health >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health >/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
-
   frontend:
-    container_name: frontend
-    image: sealai-frontend:dev
-    env_file: [ ./.env.dev ]
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_API_BASE: "${NEXT_PUBLIC_API_BASE:-https://sealai.net/api}"
-        NEXT_PUBLIC_SITE_URL: "${NEXT_PUBLIC_SITE_URL:-https://sealai.net}"
-        BUILD_ID: "${BUILD_ID:-dev}"
+    profiles: ["frontend-container"]
     depends_on:
       backend: { condition: service_healthy }
     restart: unless-stopped
@@ -147,7 +145,7 @@ services:
       start_period: 30s
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus@sha256:4a61322ac1103a0e3aea2a61ef1718422a48fa046441f299d71e660a3bc71ae9
     container_name: prometheus
     depends_on:
       backend: { condition: service_started }
@@ -162,7 +160,7 @@ services:
       - "--storage.tsdb.path=/prometheus"
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana@sha256:83749231c3835e390a3144e5e940203e42b9589761f20ef3169c716e734ad505
     container_name: grafana
     depends_on:
       prometheus: { condition: service_started }
@@ -180,8 +178,7 @@ services:
     image: nginx:1.29.4
     container_name: nginx
     depends_on:
-      frontend: { condition: service_started }
-      backend:  { condition: service_started }
+      backend: { condition: service_started }
       keycloak: { condition: service_started }
     restart: unless-stopped
     ports:

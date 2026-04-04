@@ -1,24 +1,4 @@
 services:
-  keycloak:
-    # DEV: publish
-    ports: ["8080:8080"]
-
-  backend:
-    # DEV: publish
-    ports: ["8000:8000"]
-    environment:
-      # TEMPORÄR — nur für lokale QA-Tests (Blueprint Sec. 06 Audit)
-      # Entfernen sobald Keycloak-Token für Tests verfügbar
-      BYPASS_AUTH: "1"
-
-  frontend:
-    # DEV: publish
-    ports: ["3000:3000"]
-
-  qdrant:
-    # DEV: publish (nur wenn du wirklich von außen testen willst)
-    ports: ["6333:6333", "6334:6334"]
-
   frontend_test:
     profiles: ["test"]
     build:
