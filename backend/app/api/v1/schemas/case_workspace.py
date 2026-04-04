@@ -227,6 +227,70 @@ class PartnerMatchingSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CommunicationContext(BaseModel):
+    """Small additive communication layer for the canonical workspace read model."""
+
+    conversation_phase: Optional[str] = None
+    turn_goal: Optional[str] = None
+    primary_question: Optional[str] = None
+    supporting_reason: Optional[str] = None
+    response_mode: Optional[str] = None
+    confirmed_facts_summary: List[str] = Field(default_factory=list)
+    open_points_summary: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MediumContextSummary(BaseModel):
+    medium_label: Optional[str] = None
+    status: str = "unavailable"
+    scope: str = "orientierend"
+    summary: Optional[str] = None
+    properties: List[str] = Field(default_factory=list)
+    challenges: List[str] = Field(default_factory=list)
+    followup_points: List[str] = Field(default_factory=list)
+    confidence: Optional[str] = None
+    source_type: Optional[str] = None
+    not_for_release_decisions: bool = True
+    disclaimer: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MediumCaptureSummary(BaseModel):
+    raw_mentions: List[str] = Field(default_factory=list)
+    primary_raw_text: Optional[str] = None
+    source_turn_ref: Optional[str] = None
+    source_turn_index: Optional[int] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MediumClassificationSummary(BaseModel):
+    canonical_label: Optional[str] = None
+    family: str = "unknown"
+    confidence: str = "low"
+    status: str = "unavailable"
+    normalization_source: Optional[str] = None
+    mapping_confidence: Optional[str] = None
+    matched_alias: Optional[str] = None
+    source_registry_key: Optional[str] = None
+    followup_question: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TechnicalDerivationItem(BaseModel):
+    calc_type: str = "unknown"
+    status: str = "insufficient_data"
+    v_surface_m_s: Optional[float] = None
+    pv_value_mpa_m_s: Optional[float] = None
+    dn_value: Optional[float] = None
+    notes: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CycleInfo(BaseModel):
     current_assertion_cycle_id: int = 0
     state_revision: int = 0
@@ -251,6 +315,11 @@ class CaseWorkspaceProjection(BaseModel):
     artifact_status: ArtifactStatus = Field(default_factory=ArtifactStatus)
     rfq_package: RFQPackageSummary = Field(default_factory=RFQPackageSummary)
     partner_matching: PartnerMatchingSummary = Field(default_factory=PartnerMatchingSummary)
+    communication_context: CommunicationContext = Field(default_factory=CommunicationContext)
+    medium_capture: MediumCaptureSummary = Field(default_factory=MediumCaptureSummary)
+    medium_classification: MediumClassificationSummary = Field(default_factory=MediumClassificationSummary)
+    medium_context: MediumContextSummary = Field(default_factory=MediumContextSummary)
+    technical_derivations: List[TechnicalDerivationItem] = Field(default_factory=list)
     cycle_info: CycleInfo = Field(default_factory=CycleInfo)
 
     model_config = ConfigDict(extra="forbid")

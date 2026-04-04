@@ -12,8 +12,6 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from app._legacy_v2.utils.candidate_semantics import annotate_material_choice
-from app._legacy_v2.utils.rfq_admissibility import normalize_rfq_admissibility_contract
 
 
 def _state_values_to_dict(values: Any) -> Dict[str, Any]:
@@ -24,13 +22,6 @@ def _state_values_to_dict(values: Any) -> Dict[str, Any]:
     """
     if values is None:
         return {}
-    # Defer import to avoid circular dependencies at module load time.
-    try:
-        from app._legacy_v2.state import SealAIState
-        if isinstance(values, SealAIState):
-            return values.model_dump(exclude_none=True)
-    except Exception:
-        pass
     if isinstance(values, dict):
         return dict(values)
     try:
@@ -94,7 +85,12 @@ def _working_profile_value(values: Dict[str, Any], key: str) -> Any:
 
 
 def _rfq_admissibility_value(values: Dict[str, Any]) -> Dict[str, Any]:
-    return normalize_rfq_admissibility_contract(values)
+    rfq = values.get("rfq_admissibility") or values.get("rfq")
+    if hasattr(rfq, "model_dump"):
+        rfq = rfq.model_dump(exclude_none=True)
+    if isinstance(rfq, dict):
+        return dict(rfq)
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -166,22 +162,17 @@ def _candidate_semantics_payload(values: Dict[str, Any]) -> List[Dict[str, Any]]
     if hasattr(material_choice, "model_dump"):
         material_choice = material_choice.model_dump(exclude_none=True)
     if isinstance(material_choice, dict):
-        reasoning = _pillar_dict(values, "reasoning")
-        identity_map = reasoning.get("extracted_parameter_identity")
-        if hasattr(identity_map, "model_dump"):
-            identity_map = identity_map.model_dump(exclude_none=True)
-        annotated = annotate_material_choice(material_choice, identity_map=identity_map if isinstance(identity_map, dict) else {})
-        material = str(annotated.get("material") or "").strip()
+        material = str(material_choice.get("material") or "").strip()
         if material:
             return [
                 {
                     "kind": "material",
                     "value": material,
-                    "rationale": str(annotated.get("details") or ""),
+                    "rationale": str(material_choice.get("details") or ""),
                     "confidence": 0.6,
-                    "specificity": str(annotated.get("specificity") or "unresolved"),
-                    "source_kind": str(annotated.get("source_kind") or "unknown"),
-                    "governed": bool(annotated.get("governed")),
+                    "specificity": str(material_choice.get("specificity") or "unresolved"),
+                    "source_kind": str(material_choice.get("source_kind") or "unknown"),
+                    "governed": bool(material_choice.get("governed")),
                 }
             ]
     return []
@@ -312,19 +303,6 @@ def _extract_final_text_from_patch(data: Any) -> str:
         if marker in seen:
             continue
         seen.add(marker)
-        # Defer import to avoid circular dependencies
-        try:
-            from app._legacy_v2.state import SealAIState
-            if isinstance(current, SealAIState):
-                # Using a generic extract if possible, but for SealAIState we use the known pillar structure
-                text = _resolve_governed_output_text(current)
-                if text:
-                    return text
-                stack.append(current.model_dump(exclude_none=True))
-                continue
-        except Exception:
-            pass
-
         if isinstance(current, dict):
             value = _system_value(current, "governed_output_text")
             if isinstance(value, str) and value.strip():
@@ -348,14 +326,6 @@ def _extract_final_text_from_patch(data: Any) -> str:
             for nested in current.values():
                 if isinstance(nested, (dict, list, tuple)):
                     stack.append(nested)
-                else:
-                    # Check for SealAIState if it's a value
-                    try:
-                        from app._legacy_v2.state import SealAIState
-                        if isinstance(nested, SealAIState):
-                            stack.append(nested)
-                    except Exception:
-                        pass
             continue
         if isinstance(current, (list, tuple)):
             stack.extend(current)

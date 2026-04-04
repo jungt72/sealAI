@@ -1,40 +1,726 @@
-import json
+import logging
 import os
+import json
 import uuid
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, HumanMessage
+from app.api.v1.projections.case_workspace import (
+    project_case_workspace_from_governed_state,
+    project_case_workspace_from_ssot,
+)
+from app.api.v1.renderers.rfq_html import render_rfq_html
+from app.api.v1.schemas.case_workspace import CaseWorkspaceProjection
 
 from app.agent.agent.graph import app, final_response_node, _GRAPH_MODEL_ID, VISIBLE_REPLY_PROMPT_HASH, VISIBLE_REPLY_PROMPT_VERSION
+from app.agent.agent.commercial import (
+    build_dispatch_bridge,
+    build_dispatch_dry_run,
+    build_dispatch_event,
+    build_dispatch_handoff,
+    build_dispatch_transport_envelope,
+    build_dispatch_trigger,
+    build_handover_payload,
+)
 from app.agent.api.sse_runtime import agent_sse_generator
+from app.agent.agent.selection import build_final_reply, build_structured_api_exposure
 from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.agent.state import AgentState
-from app.agent.api.models import ChatRequest, ChatResponse, ReviewRequest, ReviewResponse, ReviewSeedResponse
+from app.agent.api.models import (
+    ChatRequest,
+    ChatResponse,
+    OverrideRequest,
+    OverrideResponse,
+    OverrideGovernanceResult,
+    ReviewRequest,
+    ReviewResponse,
+    ReviewSeedResponse,
+    build_public_response_core,
+)
+from app.agent.graph.nodes.output_contract_node import (
+    _determine_response_class,
+    build_governed_conversation_strategy_contract,
+)
+from app.agent.state.models import (
+    ConversationMessage,
+    GovernedSessionState,
+    ObservedExtraction,
+    TurnContextContract,
+    UserOverride,
+)
+from app.agent.runtime.reply_composition import (
+    GovernedAllowedSurfaceClaims,
+    compose_clarification_reply,
+    compose_result_reply,
+)
+from app.agent.runtime.surface_claims import get_surface_claims_spec
+from app.agent.runtime.turn_context import build_governed_turn_context
+from app.agent.runtime.user_facing_reply import (
+    assemble_user_facing_reply,
+    collect_governed_visible_reply,
+)
+from app.agent.state.projections import project_for_ui
+from app.agent.state.medium_derivation import (
+    derive_medium_capture,
+    derive_medium_classification,
+)
+from app.agent.state.persistence import (
+    get_or_create_governed_state_async,
+    load_governed_state_async,
+    save_governed_state_async,
+)
+from app.agent.state.reducers import (
+    reduce_observed_to_normalized,
+    reduce_normalized_to_asserted,
+    reduce_asserted_to_governance,
+)
+from app.agent.services.medium_context import MediumContext, normalize_medium_context_key, resolve_medium_context
+from app.agent.graph import GraphState
+from app.agent.graph.topology import GOVERNED_GRAPH
+from app.agent.runtime.response_renderer import render_response
+from prompts.builder import PromptBuilder
+
+_prompt_builder = PromptBuilder()
 from app.agent.case_state import (
     CASE_STATE_BUILDER_VERSION,
     DETERMINISTIC_DATA_VERSION,
     DETERMINISTIC_SERVICE_VERSION,
     PROJECTION_VERSION,
+    build_dispatch_intent,
     build_visible_case_narrative,
+    ensure_case_state,
     resolve_next_step_contract,
 )
+from app.agent.domain.critical_review import (
+    CriticalReviewGovernanceSummary,
+    CriticalReviewMatchingPackage,
+    CriticalReviewRecommendationPackage,
+    CriticalReviewRfqBasis,
+    CriticalReviewSpecialistInput,
+    critical_review_result_to_dict,
+    run_critical_review_specialist,
+)
 from app.agent.cli import create_initial_state
-from app.agent.agent.interaction_policy import evaluate_policy as evaluate_interaction_policy
+from app.agent.agent.interaction_policy import (
+    evaluate_policy as evaluate_interaction_policy,
+    evaluate_policy_async as evaluate_interaction_policy_async,
+)
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.history.persist import ConcurrencyConflictError, load_structured_case, save_structured_case
 
 router = APIRouter()
 SESSION_STORE: Dict[str, AgentState] = {}
 
+_log = logging.getLogger(__name__)
+_RESIDUAL_LEGACY_RUNTIME_LABEL = "residual_legacy_compat_only"
+_LIGHT_HISTORY_MESSAGES = 20
+
+
+@dataclass(frozen=True)
+class GovernedReplyAssemblyContext:
+    response_class: str
+    structured_state: dict[str, Any] | None
+    assertions_payload: dict[str, Any]
+    conversation_strategy: Any
+    turn_context: TurnContextContract
+    run_meta: dict[str, Any]
+    ui_payload: dict[str, Any]
+    deterministic_reply: str
+
+
+def _conversation_message_payload(
+    *,
+    role: Literal["user", "assistant"],
+    content: str,
+) -> ConversationMessage | None:
+    text = str(content or "").strip()
+    if not text:
+        return None
+    return ConversationMessage(
+        role=role,
+        content=text,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _with_governed_conversation_turn(
+    state: GovernedSessionState,
+    *,
+    user_message: str,
+    assistant_reply: str,
+) -> GovernedSessionState:
+    additions: list[ConversationMessage] = []
+    user_entry = _conversation_message_payload(role="user", content=user_message)
+    assistant_entry = _conversation_message_payload(role="assistant", content=assistant_reply)
+    if user_entry is not None:
+        additions.append(user_entry)
+    if assistant_entry is not None:
+        additions.append(assistant_entry)
+    if not additions:
+        return state
+    return state.model_copy(update={"conversation_messages": state.conversation_messages + additions})
+
+
+def _governed_history_slice(
+    state: GovernedSessionState,
+    *,
+    limit: int = _LIGHT_HISTORY_MESSAGES,
+) -> list[dict[str, str]]:
+    messages = list(state.conversation_messages or [])
+    if limit > 0:
+        messages = messages[-limit:]
+    history: list[dict[str, str]] = []
+    for item in messages:
+        role = str(item.role or "").strip()
+        content = str(item.content or "").strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        history.append({"role": role, "content": content})
+    return history
+
+
+async def _load_live_governed_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+    create_if_missing: bool = False,
+) -> GovernedSessionState | None:
+    tenant_id, _, _ = _canonical_scope(current_user, case_id=session_id)
+    redis_url = os.getenv("REDIS_URL", "")
+    if not redis_url:
+        return GovernedSessionState() if create_if_missing else None
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+    async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+        if create_if_missing:
+            return await get_or_create_governed_state_async(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                redis_client=redis_client,
+            )
+        return await load_governed_state_async(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            redis_client=redis_client,
+        )
+
+
+async def _persist_live_governed_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+    state: GovernedSessionState,
+) -> None:
+    tenant_id, _, _ = _canonical_scope(current_user, case_id=session_id)
+    redis_url = os.getenv("REDIS_URL", "")
+    if not redis_url:
+        return
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+    async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+        await save_governed_state_async(
+            state,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            redis_client=redis_client,
+        )
+
+
+async def _build_light_runtime_context(
+    *,
+    request: ChatRequest,
+    current_user: RequestUser,
+) -> tuple[GovernedSessionState | None, list[dict[str, str]], Optional[str]]:
+    if not request.session_id:
+        return None, [], None
+    try:
+        governed = await _load_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            create_if_missing=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("[router] live governed context load skipped: %s", exc)
+        return None, [], None
+    if governed is None:
+        return None, [], None
+    history = _governed_history_slice(governed)
+    case_summary = _build_param_summary(governed.model_dump())
+    return governed, history, case_summary
+
+
+def _serialize_governed_history_payload(
+    *,
+    conversation_id: str,
+    governed_state: GovernedSessionState,
+) -> dict[str, Any]:
+    messages = []
+    for index, item in enumerate(governed_state.conversation_messages):
+        role = str(item.role or "").strip()
+        content = str(item.content or "").strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        messages.append(
+            {
+                "id": item.created_at or f"governed-{index}",
+                "role": role,
+                "content": content,
+                "createdAt": item.created_at or datetime.now(timezone.utc).isoformat(),
+                "index": index,
+            }
+        )
+    return {
+        "conversation_id": conversation_id,
+        "title": None,
+        "updated_at": (
+            messages[-1]["createdAt"] if messages else datetime.now(timezone.utc).isoformat()
+        ),
+        "messages": messages,
+    }
+
+
+def _governed_working_profile_snapshot(state: GovernedSessionState) -> dict[str, Any]:
+    profile: dict[str, Any] = {}
+    for field_name, claim in state.asserted.assertions.items():
+        if claim.asserted_value is None:
+            continue
+        profile[field_name] = claim.asserted_value
+    motion_label = getattr(state.motion_hint, "label", None)
+    if motion_label in {"rotary", "linear", "static"}:
+        profile["movement_type"] = motion_label
+    application_label = getattr(state.application_hint, "label", None)
+    if application_label:
+        profile["application_context"] = application_label
+    return profile
+
+
+def _governed_messages_as_langchain(
+    state: GovernedSessionState,
+) -> list[HumanMessage | AIMessage]:
+    messages: list[HumanMessage | AIMessage] = []
+    for item in state.conversation_messages:
+        role = str(item.role or "").strip()
+        content = str(item.content or "").strip()
+        if role == "user" and content:
+            messages.append(HumanMessage(content=content))
+        elif role == "assistant" and content:
+            messages.append(AIMessage(content=content))
+    return messages
+
+
+def _governed_release_status_snapshot(state: GovernedSessionState) -> str:
+    if state.rfq.rfq_ready or (state.governance.rfq_admissible and state.rfq.critical_review_passed):
+        return "rfq_ready"
+    if state.matching.status == "matched_primary_candidate" or state.governance.gov_class == "A":
+        return "manufacturer_validation_required"
+    if state.governance.gov_class == "B":
+        return "precheck_only"
+    return "inadmissible"
+
+
+def _overlay_live_governed_snapshot(
+    *,
+    state: AgentState,
+    governed_state: GovernedSessionState,
+) -> AgentState:
+    patched: AgentState = deepcopy(state)
+
+    governed_messages = _governed_messages_as_langchain(governed_state)
+    if governed_messages:
+        patched["messages"] = governed_messages
+
+    governed_profile = _governed_working_profile_snapshot(governed_state)
+    if governed_profile:
+        patched["working_profile"] = governed_profile
+
+    release_status = _governed_release_status_snapshot(governed_state)
+    review_layer = dict(((patched.get("sealing_state") or {}).get("review") or {}))
+    review_required = bool(review_layer.get("review_required", False))
+    review_state = review_layer.get("review_state")
+
+    case_state = dict(patched.get("case_state") or {})
+    governance_state = dict(case_state.get("governance_state") or {})
+    governance_state.update(
+        {
+            "release_status": release_status,
+            "rfq_admissibility": "ready" if governed_state.governance.rfq_admissible else "inadmissible",
+            "unknowns_release_blocking": list(governed_state.asserted.blocking_unknowns),
+            "unknowns_manufacturer_validation": list(governed_state.governance.open_validation_points),
+            "scope_of_validity": list(governed_state.governance.validity_limits),
+            "critical_review_status": governed_state.rfq.critical_review_status,
+            "critical_review_passed": governed_state.rfq.critical_review_passed,
+            "blocking_findings": list(governed_state.rfq.blocking_findings),
+            "soft_findings": list(governed_state.rfq.soft_findings),
+            "required_corrections": list(governed_state.rfq.required_corrections),
+        }
+    )
+    governance_state["review_required"] = review_required
+    if review_state is not None:
+        governance_state["review_state"] = review_state
+    case_state["governance_state"] = governance_state
+
+    rfq_state = dict(case_state.get("rfq_state") or {})
+    rfq_state.update(
+        {
+            "status": governed_state.rfq.status,
+            "rfq_admissibility": "ready" if governed_state.rfq.rfq_admissible else "inadmissible",
+            "rfq_ready": governed_state.rfq.rfq_ready,
+            "handover_ready": governed_state.rfq.rfq_ready,
+            "handover_status": governed_state.rfq.handover_status,
+            "rfq_object": dict(governed_state.rfq.rfq_object or {}),
+            "critical_review_status": governed_state.rfq.critical_review_status,
+            "critical_review_passed": governed_state.rfq.critical_review_passed,
+            "blocking_findings": list(governed_state.rfq.blocking_findings),
+            "soft_findings": list(governed_state.rfq.soft_findings),
+            "required_corrections": list(governed_state.rfq.required_corrections),
+        }
+    )
+    case_state["rfq_state"] = rfq_state
+    patched["case_state"] = case_state
+
+    sealing_state = dict(patched.get("sealing_state") or {})
+    sealing_governance = dict(sealing_state.get("governance") or {})
+    sealing_governance.update(
+        {
+            "release_status": release_status,
+            "rfq_admissibility": "ready" if governed_state.governance.rfq_admissible else "inadmissible",
+            "scope_of_validity": list(governed_state.governance.validity_limits),
+            "unknowns_release_blocking": list(governed_state.asserted.blocking_unknowns),
+            "unknowns_manufacturer_validation": list(governed_state.governance.open_validation_points),
+        }
+    )
+    sealing_state["governance"] = sealing_governance
+    review_layer.update(
+        {
+            "critical_review_status": governed_state.rfq.critical_review_status,
+            "critical_review_passed": governed_state.rfq.critical_review_passed,
+            "blocking_findings": list(governed_state.rfq.blocking_findings),
+            "soft_findings": list(governed_state.rfq.soft_findings),
+            "required_corrections": list(governed_state.rfq.required_corrections),
+        }
+    )
+    sealing_state["review"] = review_layer
+    patched["sealing_state"] = sealing_state
+    return patched
+
+
+def _sync_governed_state_from_review_outcome(
+    governed_state: GovernedSessionState,
+    *,
+    case_state: dict[str, Any] | None,
+    sealing_state: dict[str, Any] | None,
+) -> GovernedSessionState:
+    case_state = dict(case_state or {})
+    sealing_state = dict(sealing_state or {})
+    governance_state = dict(case_state.get("governance_state") or {})
+    rfq_state = dict(case_state.get("rfq_state") or {})
+    review_state = dict(sealing_state.get("review") or {})
+    handover = dict(sealing_state.get("handover") or {})
+    requirement_class_payload = (
+        case_state.get("requirement_class")
+        or (case_state.get("result_contract") or {}).get("requirement_class")
+        or (rfq_state.get("requirement_class") or {})
+    )
+    selected_manufacturer_ref = (
+        rfq_state.get("selected_manufacturer_ref")
+        or handover.get("selected_manufacturer_ref")
+        or (case_state.get("matching_state") or {}).get("selected_manufacturer_ref")
+    )
+    dispatch_intent = dict(case_state.get("dispatch_intent") or {})
+
+    updated_governance = governed_state.governance.model_copy(
+        update={
+            "requirement_class": requirement_class_payload or governed_state.governance.requirement_class,
+            "rfq_admissible": str(
+                governance_state.get("rfq_admissibility")
+                or rfq_state.get("rfq_admissibility")
+                or "inadmissible"
+            ) == "ready",
+            "validity_limits": list(
+                governance_state.get("scope_of_validity")
+                or governed_state.governance.validity_limits
+            ),
+            "open_validation_points": list(
+                governance_state.get("unknowns_manufacturer_validation")
+                or governed_state.governance.open_validation_points
+            ),
+        }
+    )
+
+    updated_rfq = governed_state.rfq.model_copy(
+        update={
+            "status": str(rfq_state.get("handover_status") or rfq_state.get("status") or governed_state.rfq.status),
+            "rfq_admissible": str(governance_state.get("rfq_admissibility") or rfq_state.get("rfq_admissibility") or "inadmissible") == "ready",
+            "critical_review_status": str(
+                governance_state.get("critical_review_status")
+                or rfq_state.get("critical_review_status")
+                or review_state.get("review_state")
+                or governed_state.rfq.critical_review_status
+            ),
+            "critical_review_passed": bool(
+                governance_state.get("critical_review_passed", rfq_state.get("critical_review_passed", governed_state.rfq.critical_review_passed))
+            ),
+            "blocking_findings": list(
+                governance_state.get("blocking_findings")
+                or rfq_state.get("blocking_findings")
+                or review_state.get("blocking_findings")
+                or governed_state.rfq.blocking_findings
+            ),
+            "soft_findings": list(
+                governance_state.get("soft_findings")
+                or rfq_state.get("soft_findings")
+                or review_state.get("soft_findings")
+                or governed_state.rfq.soft_findings
+            ),
+            "required_corrections": list(
+                governance_state.get("required_corrections")
+                or rfq_state.get("required_corrections")
+                or review_state.get("required_corrections")
+                or governed_state.rfq.required_corrections
+            ),
+            "handover_status": str(rfq_state.get("handover_status") or handover.get("handover_status") or governed_state.rfq.handover_status or ""),
+            "rfq_ready": bool(rfq_state.get("handover_ready", rfq_state.get("rfq_ready", handover.get("is_handover_ready", governed_state.rfq.rfq_ready)))),
+            "rfq_object": dict(rfq_state.get("rfq_object") or governed_state.rfq.rfq_object or {}),
+            "selected_manufacturer_ref": selected_manufacturer_ref or governed_state.rfq.selected_manufacturer_ref,
+            "requirement_class": requirement_class_payload or governed_state.rfq.requirement_class,
+            "handover_summary": str(handover.get("handover_reason") or governed_state.rfq.handover_summary or ""),
+            "notes": list(rfq_state.get("notes") or governed_state.rfq.notes),
+        }
+    )
+    updated_dispatch = governed_state.dispatch.model_copy(
+        update={
+            "dispatch_ready": bool(
+                dispatch_intent.get("dispatch_ready", handover.get("is_handover_ready", governed_state.dispatch.dispatch_ready))
+            ),
+            "dispatch_status": str(
+                dispatch_intent.get("dispatch_status")
+                or handover.get("handover_status")
+                or governed_state.dispatch.dispatch_status
+            ),
+            "selected_manufacturer_ref": selected_manufacturer_ref or governed_state.dispatch.selected_manufacturer_ref,
+            "requirement_class": requirement_class_payload or governed_state.dispatch.requirement_class,
+            "handover_summary": str(handover.get("handover_reason") or governed_state.dispatch.handover_summary or ""),
+            "dispatch_notes": list(dispatch_intent.get("dispatch_blockers") or governed_state.dispatch.dispatch_notes),
+        }
+    )
+    return governed_state.model_copy(
+        update={
+            "governance": updated_governance,
+            "rfq": updated_rfq,
+            "dispatch": updated_dispatch,
+        }
+    )
+
+
+async def _persist_review_outcome_to_live_governed_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+    case_state: dict[str, Any] | None,
+    sealing_state: dict[str, Any] | None,
+    assistant_reply: str | None = None,
+) -> None:
+    try:
+        governed_state = await _load_live_governed_state(
+            current_user=current_user,
+            session_id=session_id,
+            create_if_missing=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("[router] review governed sync load skipped: %s", exc)
+        return
+    if governed_state is None:
+        return
+    updated = _sync_governed_state_from_review_outcome(
+        governed_state,
+        case_state=case_state,
+        sealing_state=sealing_state,
+    )
+    if assistant_reply:
+        updated = _with_governed_conversation_turn(
+            updated,
+            user_message="",
+            assistant_reply=assistant_reply,
+        )
+    await _persist_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        state=updated,
+    )
+
+
+def _current_governed_medium_label(state: GraphState) -> str | None:
+    classification_label = str(state.medium_classification.canonical_label or "").strip()
+    if classification_label:
+        return classification_label
+    asserted_medium = state.asserted.assertions.get("medium")
+    if asserted_medium is not None and asserted_medium.asserted_value is not None:
+        text = str(asserted_medium.asserted_value).strip()
+        if text:
+            return text
+    normalized_medium = state.normalized.parameters.get("medium")
+    if normalized_medium is not None and normalized_medium.value is not None:
+        text = str(normalized_medium.value).strip()
+        if text:
+            return text
+    return None
+
+
+def _enrich_medium_context_state(
+    *,
+    result_state: GraphState,
+    persisted_state: GovernedSessionState,
+) -> tuple[GraphState, GovernedSessionState]:
+    medium_label = _current_governed_medium_label(result_state)
+    medium_family = (
+        str(result_state.medium_classification.family or "").strip()
+        if result_state.medium_classification.status in {"recognized", "family_only"}
+        else None
+    )
+    medium_key = normalize_medium_context_key(medium_label)
+    if not medium_key and not medium_family:
+        empty_context = MediumContext()
+        return (
+            result_state.model_copy(update={"medium_context": empty_context}),
+            persisted_state.model_copy(update={"medium_context": empty_context}),
+        )
+
+    existing_context = persisted_state.medium_context
+    resolved_context = resolve_medium_context(
+        medium_label,
+        medium_family=medium_family,
+        previous=existing_context,
+    )
+
+    return (
+        result_state.model_copy(update={"medium_context": resolved_context}),
+        persisted_state.model_copy(update={"medium_context": resolved_context}),
+    )
+
+# ---------------------------------------------------------------------------
+# Phase F Feature-Flags — read once at import time from environment.
+# Both default to True so the productive chat path uses the new runtime by
+# default. Rollback: set to "false" in env, no code deployment needed.
+# ---------------------------------------------------------------------------
+_ENABLE_BINARY_GATE: bool = (
+    os.environ.get("SEALAI_ENABLE_BINARY_GATE", "true").lower() == "true"
+)
+_ENABLE_CONVERSATION_RUNTIME: bool = (
+    os.environ.get("SEALAI_ENABLE_CONVERSATION_RUNTIME", "true").lower() == "true"
+)
+_ENABLE_GOVERNED_REDUCERS: bool = (
+    # Phase F-B.4: run reducer chain + Redis persist in the GOVERNED chat path.
+    # Safe rollout: set SEALAI_ENABLE_GOVERNED_REDUCERS=true in env.
+    # Rollback: set to "false" — no code deployment needed.
+    os.environ.get("SEALAI_ENABLE_GOVERNED_REDUCERS", "false").lower() == "true"
+)
+
+
+@dataclass(frozen=True)
+class RuntimeDispatchResolution:
+    gate_route: Literal["instant_light_reply", "light_exploration", "governed_needed"]
+    gate_reason: str
+    runtime_mode: Literal["instant_light_reply", "light_exploration", "governed_needed"]
+    gate_applied: bool
+    session_zone: str | None = None
+
 
 async def execute_agent(state: AgentState) -> AgentState:
+    """Residual compat helper for legacy/unauthenticated flows only."""
+    _log.warning(
+        "[%s] execute_agent invoked policy_path=%s inquiry_id=%s",
+        _RESIDUAL_LEGACY_RUNTIME_LABEL,
+        state.get("policy_path"),
+        state.get("inquiry_id") or state.get("session_id"),
+    )
     return await app.ainvoke(state)
+
+
+async def _resolve_runtime_dispatch(
+    request: ChatRequest,
+    *,
+    current_user: RequestUser | None,
+) -> RuntimeDispatchResolution:
+    if current_user is None:
+        return RuntimeDispatchResolution(
+            gate_route="governed_needed",
+            gate_reason="missing_current_user",
+            runtime_mode="governed_needed",
+            gate_applied=False,
+        )
+
+    if not _ENABLE_BINARY_GATE:
+        return RuntimeDispatchResolution(
+            gate_route="governed_needed",
+            gate_reason="binary_gate_disabled",
+            runtime_mode="governed_needed",
+            gate_applied=False,
+        )
+
+    try:
+        from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+        from app.agent.runtime.gate import decide_route_async  # noqa: PLC0415
+        from app.agent.runtime.session_manager import (  # noqa: PLC0415
+            apply_gate_decision_and_persist_async,
+            get_or_create_session_async,
+        )
+
+        redis_url = os.getenv("REDIS_URL", "")
+        tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=request.session_id)
+
+        async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+            envelope = await get_or_create_session_async(
+                tenant_id,
+                request.session_id,
+                owner_id,
+                redis_client=redis_client,
+            )
+            gate = await decide_route_async(request.message, envelope)
+            updated_envelope = await apply_gate_decision_and_persist_async(
+                envelope,
+                gate_route=gate.route,
+                gate_reason=gate.reason,
+                redis_client=redis_client,
+            )
+
+        runtime_mode: Literal["instant_light_reply", "light_exploration", "governed_needed"] = (
+            gate.route
+            if _ENABLE_CONVERSATION_RUNTIME and gate.route in {"instant_light_reply", "light_exploration"}
+            else "governed_needed"
+        )
+        _log.debug(
+            "[runtime_dispatch] gate=%s reason=%s session_zone=%s runtime_mode=%s",
+            gate.route,
+            gate.reason,
+            updated_envelope.session_zone,
+            runtime_mode,
+        )
+        return RuntimeDispatchResolution(
+            gate_route=gate.route,
+            gate_reason=gate.reason,
+            runtime_mode=runtime_mode,
+            gate_applied=True,
+            session_zone=updated_envelope.session_zone,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "[runtime_dispatch] gate/session resolution failed (%s: %s) — fail-open to governed",
+            type(exc).__name__,
+            exc,
+        )
+        return RuntimeDispatchResolution(
+            gate_route="governed_needed",
+            gate_reason=f"gate_session_fail_open:{type(exc).__name__}",
+            runtime_mode="governed_needed",
+            gate_applied=False,
+        )
 
 
 def _build_structured_version_provenance(*, decision: Any, rwdr_config_version: str | None = None) -> dict[str, Any]:
@@ -71,6 +757,47 @@ def _case_cache_key(tenant_id: str, owner_id: str, case_id: str) -> str:
     return f"{tenant_id}:{owner_id}:{case_id}"
 
 
+def _canonical_scope(current_user: RequestUser, *, case_id: str) -> tuple[str, str, str]:
+    owner_id = canonical_user_id(current_user)
+    tenant_id = current_user.tenant_id or owner_id
+    return tenant_id, owner_id, _case_cache_key(tenant_id, owner_id, case_id)
+
+
+def _canonical_case_token(state: AgentState) -> dict[str, Any]:
+    case_meta = dict(((state.get("case_state") or {}).get("case_meta") or {}))
+    cycle = dict(((state.get("sealing_state") or {}).get("cycle") or {}))
+    return {
+        "state_revision": case_meta.get("state_revision")
+        if case_meta.get("state_revision") is not None
+        else cycle.get("state_revision"),
+        "snapshot_parent_revision": case_meta.get("snapshot_parent_revision")
+        if case_meta.get("snapshot_parent_revision") is not None
+        else cycle.get("snapshot_parent_revision"),
+        "analysis_cycle_id": case_meta.get("analysis_cycle_id")
+        if case_meta.get("analysis_cycle_id") is not None
+        else cycle.get("analysis_cycle_id"),
+    }
+
+
+def _canonical_state_revision(state: AgentState) -> int:
+    token = _canonical_case_token(state)
+    return int(token.get("state_revision", 0) or 0)
+
+
+def _cache_loaded_state(
+    *,
+    state: AgentState,
+    current_user: RequestUser,
+    session_id: str,
+) -> AgentState:
+    tenant_id, owner_id, cache_key = _canonical_scope(current_user, case_id=session_id)
+    state["owner_id"] = owner_id
+    state["tenant_id"] = tenant_id
+    state["loaded_state_revision"] = _canonical_state_revision(state)
+    SESSION_STORE[cache_key] = state
+    return state
+
+
 def _resolve_payload_binding_level(default_binding_level: str, *, case_state: Dict[str, Any] | None) -> str:
     if not case_state:
         return default_binding_level
@@ -88,33 +815,40 @@ def _advance_case_state_only_revision(
     write_scope: str,
 ) -> AgentState:
     updated_state = dict(state)
+    token = _canonical_case_token(updated_state)
     sealing_state = dict(updated_state.get("sealing_state") or {})
     cycle = dict(sealing_state.get("cycle") or {})
-    current_revision = int(cycle.get("state_revision", 0) or 0)
+    current_revision = int(token.get("state_revision", 0) or 0)
     next_revision = current_revision + 1
-    cycle["snapshot_parent_revision"] = current_revision
-    cycle["state_revision"] = next_revision
-    cycle["analysis_cycle_id"] = f"{cycle.get('analysis_cycle_id') or case_id}::{write_scope}::rev{next_revision}::{uuid.uuid4().hex[:8]}"
-    sealing_state["cycle"] = cycle
-    updated_state["sealing_state"] = sealing_state
+    next_cycle_id = f"{token.get('analysis_cycle_id') or case_id}::{write_scope}::rev{next_revision}::{uuid.uuid4().hex[:8]}"
     if updated_state.get("case_state"):
         case_state = dict(updated_state["case_state"])
         for section in ("case_meta", "result_contract", "sealing_requirement_spec"):
             if isinstance(case_state.get(section), dict):
                 entry = dict(case_state[section])
+                entry["snapshot_parent_revision"] = current_revision
                 entry["state_revision"] = next_revision
-                entry["analysis_cycle_id"] = cycle["analysis_cycle_id"]
+                entry["analysis_cycle_id"] = next_cycle_id
                 if section == "case_meta":
                     entry["version"] = next_revision
                 case_state[section] = entry
         updated_state["case_state"] = case_state
+    cycle["snapshot_parent_revision"] = current_revision
+    cycle["state_revision"] = next_revision
+    cycle["analysis_cycle_id"] = next_cycle_id
+    sealing_state["cycle"] = cycle
+    updated_state["sealing_state"] = sealing_state
     return updated_state
 
 
 async def prepare_structured_state(request: ChatRequest, *, current_user: RequestUser) -> AgentState:
-    owner_id = canonical_user_id(current_user)
-    tenant_id = current_user.tenant_id or owner_id
-    cache_key = _case_cache_key(tenant_id, owner_id, request.session_id)
+    """Residual compat state loader; no longer part of productive structured authority."""
+    _log.warning(
+        "[%s] prepare_structured_state invoked session=%s",
+        _RESIDUAL_LEGACY_RUNTIME_LABEL,
+        request.session_id,
+    )
+    tenant_id, owner_id, cache_key = _canonical_scope(current_user, case_id=request.session_id)
     current_state = await load_structured_case(tenant_id=tenant_id, owner_id=owner_id, case_id=request.session_id)
     if current_state is None:
         initial_sealing_state = create_initial_state()
@@ -130,23 +864,47 @@ async def prepare_structured_state(request: ChatRequest, *, current_user: Reques
         }
     current_state["owner_id"] = owner_id
     current_state["tenant_id"] = tenant_id
-    current_state["loaded_state_revision"] = int((((current_state.get("sealing_state") or {}).get("cycle") or {}).get("state_revision", 0) or 0))
+    current_state["loaded_state_revision"] = _canonical_state_revision(current_state)
     current_state["messages"].append(HumanMessage(content=request.message))
     SESSION_STORE[cache_key] = current_state
     return current_state
 
 
-async def persist_structured_state(
+async def load_canonical_state(*, current_user: RequestUser, session_id: str) -> AgentState | None:
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
+    state = await load_structured_case(tenant_id=tenant_id, owner_id=owner_id, case_id=session_id)
+    if state is None:
+        return None
+    governed_state = await _load_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        create_if_missing=False,
+    )
+    if governed_state is not None:
+        state = _overlay_live_governed_snapshot(
+            state=state,
+            governed_state=governed_state,
+        )
+    return _cache_loaded_state(state=state, current_user=current_user, session_id=session_id)
+
+
+async def require_canonical_state(*, current_user: RequestUser, session_id: str) -> AgentState:
+    state = await load_canonical_state(current_user=current_user, session_id=session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    return state
+
+
+async def persist_canonical_state(
     *,
     current_user: RequestUser,
     session_id: str,
     state: AgentState,
-    decision: Any,
-) -> None:
-    owner_id = canonical_user_id(current_user)
-    tenant_id = current_user.tenant_id or owner_id
-    cache_key = _case_cache_key(tenant_id, owner_id, session_id)
-    current_revision = int((((state.get("sealing_state") or {}).get("cycle") or {}).get("state_revision", 0) or 0))
+    runtime_path: str,
+    binding_level: str,
+) -> AgentState:
+    tenant_id, owner_id, cache_key = _canonical_scope(current_user, case_id=session_id)
+    current_revision = _canonical_state_revision(state)
     loaded_revision = int(state.get("loaded_state_revision", current_revision) or 0)
     if current_revision == loaded_revision:
         state = _advance_case_state_only_revision(state, case_id=session_id, write_scope="structured_persist")
@@ -156,13 +914,32 @@ async def persist_structured_state(
             owner_id=owner_id,
             case_id=session_id,
             state=state,
-            runtime_path=decision.runtime_path,
-            binding_level=_resolve_payload_binding_level(decision.binding_level, case_state=state.get("case_state")),
+            runtime_path=runtime_path,
+            binding_level=binding_level,
         )
     except ConcurrencyConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
-    state["loaded_state_revision"] = int((((state.get("sealing_state") or {}).get("cycle") or {}).get("state_revision", 0) or 0))
+    state["loaded_state_revision"] = _canonical_state_revision(state)
+    state["owner_id"] = owner_id
+    state["tenant_id"] = tenant_id
     SESSION_STORE[cache_key] = state
+    return state
+
+
+async def persist_structured_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+    state: AgentState,
+    decision: Any,
+) -> None:
+    await persist_canonical_state(
+        current_user=current_user,
+        session_id=session_id,
+        state=state,
+        runtime_path=decision.runtime_path,
+        binding_level=_resolve_payload_binding_level(decision.binding_level, case_state=state.get("case_state")),
+    )
 
 
 def build_runtime_payload(
@@ -175,11 +952,17 @@ def build_runtime_payload(
     working_profile: Any = None,
     version_provenance: Any = None,
     next_step_contract: Any = None,
+    structured_state: Any = None,
 ) -> Dict[str, Any]:
     qualified_action_gate = case_state.get("qualified_action_gate") if case_state else None
     result_contract = case_state.get("result_contract") if case_state else None
     return {
-        "reply": reply,
+        **build_public_response_core(
+            reply=reply,
+            structured_state=jsonable_encoder(structured_state) if structured_state is not None else None,
+            policy_path=getattr(getattr(decision, "path", None), "value", getattr(decision, "path", None)),
+            run_meta=jsonable_encoder(version_provenance) if version_provenance is not None else None,
+        ),
         "session_id": session_id,
         "interaction_class": getattr(decision, "interaction_class", None),
         "runtime_path": getattr(decision, "runtime_path", None),
@@ -204,7 +987,7 @@ def build_runtime_payload(
     }
 
 
-def _build_guidance_response_payload(decision: Any, *, session_id: str, reply: str, state: AgentState, working_profile: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def _build_conversation_response_payload(decision: Any, *, session_id: str, reply: str, state: AgentState, working_profile: Dict[str, Any] | None = None) -> Dict[str, Any]:
     visible_case_narrative = build_visible_case_narrative(state=state, case_state=None, binding_level="ORIENTATION", policy_context={
         "coverage_status": getattr(decision, "coverage_status", None),
         "boundary_flags": list(getattr(decision, "boundary_flags", ()) or ()),
@@ -218,24 +1001,801 @@ def _build_guidance_response_payload(decision: Any, *, session_id: str, reply: s
         case_state=None,
         visible_case_narrative=visible_case_narrative,
         working_profile=working_profile,
+        structured_state=None,
     )
 
 
-async def event_generator(request: ChatRequest) -> AsyncGenerator[str, None]:
+# ---------------------------------------------------------------------------
+# Phase F-B.4 — Working-profile → ObservedExtraction bridge
+# ---------------------------------------------------------------------------
+
+# Maps working_profile keys to canonical ObservedExtraction field_names.
+# Ordered list: for the same canonical name, later entries win (higher priority).
+# Phase F-C will replace this with intake_observe_node inside the graph.
+_WP_FIELD_MAP: list[tuple[str, str]] = [
+    ("material", "material"),
+    ("medium", "medium"),
+    ("pressure_bar", "pressure_bar"),
+    ("temperature", "temperature_c"),        # low-priority alias
+    ("temperature_max_c", "temperature_c"),  # higher-priority alias (wins)
+    ("installation", "installation"),
+    ("geometry_context", "geometry_context"),
+    ("clearance_gap_mm", "clearance_gap_mm"),
+    ("counterface_surface", "counterface_surface"),
+    ("counterface_material", "counterface_material"),
+    ("shaft_diameter_mm", "shaft_diameter_mm"),
+    ("speed_rpm", "speed_rpm"),
+]
+
+
+_PARAM_LABELS: dict[str, tuple[str, str]] = {
+    "medium":            ("Medium",          ""),
+    "temperature_c":     ("Temperatur",        "°C"),
+    "pressure_bar":      ("Druck",            "bar"),
+    "shaft_diameter_mm": ("Wellen-Ø",         "mm"),
+    "speed_rpm":         ("Drehzahl",         "rpm"),
+    "installation":      ("Einbausituation",  ""),
+    "geometry_context":  ("Geometrie",        ""),
+    "clearance_gap_mm":  ("Spalt",            "mm"),
+    "counterface_surface": ("Oberflaeche",    ""),
+    "counterface_material": ("Gegenlaufpartner", ""),
+}
+
+
+def _build_param_summary(governed_state_data: dict) -> Optional[str]:
+    """Baut einen lesbaren Parameter-Block aus governed_state.asserted.assertions.
+
+    Gibt None zurück wenn keine Werte vorhanden sind (frische Session).
+    Das Ergebnis wird als case_summary an _prompt_builder.conversation() übergeben.
+
+    Fallback-Priorität:
+      1. asserted.assertions[key].asserted_value  — höchste Konfidenz
+      2. normalized.parameters[key].value         — bereits normalisiert, aber noch unbestätigt
+    """
+    assertions: dict = (
+        governed_state_data
+        .get("asserted", {})
+        .get("assertions", {})
+    )
+    normalized: dict = (
+        governed_state_data
+        .get("normalized", {})
+        .get("parameters", {})
+    )
+    lines: list[str] = []
+    for key, (label, unit) in _PARAM_LABELS.items():
+        # Priority 1: asserted value
+        entry = assertions.get(key)
+        if entry and isinstance(entry, dict) and entry.get("asserted_value") is not None:
+            val = entry["asserted_value"]
+            val_str = str(int(val)) if isinstance(val, float) and val == int(val) else str(val)
+            suffix = f" {unit}" if unit else ""
+            lines.append(f"- {label}: {val_str}{suffix}")
+            continue
+        # Priority 2: normalized value (known but not yet asserted)
+        norm_entry = normalized.get(key)
+        if norm_entry and isinstance(norm_entry, dict) and norm_entry.get("value") is not None:
+            val = norm_entry["value"]
+            val_str = str(int(val)) if isinstance(val, float) and val == int(val) else str(val)
+            suffix = f" {unit}" if unit else ""
+            lines.append(f"- {label}: {val_str}{suffix}")
+    return "\n".join(lines) if lines else None
+
+
+def _extract_extractions_from_working_profile(
+    working_profile: Dict[str, Any],
+    turn_index: int,
+) -> list[ObservedExtraction]:
+    """Map scalar values from working_profile to ObservedExtraction objects.
+
+    Phase F-B.4 bridge: reads LLM-extracted values from the existing
+    working_profile (populated by LangGraph nodes) and converts them into
+    ObservedExtractions for the Pydantic reducer chain.
+
+    Rules:
+    - Only scalar values (str, int, float, bool) are extracted.
+    - Nested dicts / lists (e.g. live_calc_tile) are ignored.
+    - Later entries in _WP_FIELD_MAP overwrite earlier ones for the same
+      canonical field_name (e.g. temperature_max_c beats temperature).
+    - confidence=0.9 — high, but not user-confirmed (LLM source).
+    """
+    seen: Dict[str, ObservedExtraction] = {}
+    for wp_key, canonical_name in _WP_FIELD_MAP:
+        val = working_profile.get(wp_key)
+        if val is None or isinstance(val, (dict, list)):
+            continue
+        seen[canonical_name] = ObservedExtraction(
+            field_name=canonical_name,
+            raw_value=val,
+            source="llm",
+            confidence=0.9,
+            turn_index=turn_index,
+        )
+    return list(seen.values())
+
+
+async def _update_governed_state_post_graph(
+    *,
+    governed_state: GovernedSessionState,
+    final_agent_state: AgentState,
+    tenant_id: str,
+    session_id: str,
+    turn_index: int,
+) -> GovernedSessionState:
+    """Extract params from working_profile, run reducer chain, persist to Redis.
+
+    Called from the on_complete hook in event_generator after LangGraph finishes.
+
+    Architecture invariant (F-B.2):
+    - Never writes directly to Normalized/Asserted/GovernanceState.
+    - Only ObservedState.with_extraction() is used for writes.
+    - All downstream state is derived via the deterministic reducer chain.
+    """
+    working_profile: Dict[str, Any] = dict(final_agent_state.get("working_profile") or {})
+    extractions = _extract_extractions_from_working_profile(working_profile, turn_index=turn_index)
+
+    # Append new extractions to ObservedState (append-only — never mutate)
+    observed = governed_state.observed
+    for extraction in extractions:
+        observed = observed.with_extraction(extraction)
+
+    # Run the full deterministic reducer chain (no LLM, no I/O)
+    normalized = reduce_observed_to_normalized(observed)
+    medium_capture = derive_medium_capture(
+        message=str(final_agent_state.get("input_text") or final_agent_state.get("user_message") or ""),
+        observed=observed,
+        previous=governed_state.medium_capture,
+    )
+    medium_classification = derive_medium_classification(
+        capture=medium_capture,
+        normalized=normalized,
+        previous=governed_state.medium_classification,
+    )
+    asserted = reduce_normalized_to_asserted(normalized)
+    governance = reduce_asserted_to_governance(
+        asserted,
+        analysis_cycle=governed_state.analysis_cycle + 1,
+        max_cycles=governed_state.max_cycles,
+    )
+
+    updated = governed_state.model_copy(update={
+        "observed": observed,
+        "normalized": normalized,
+        "medium_capture": medium_capture,
+        "medium_classification": medium_classification,
+        "asserted": asserted,
+        "governance": governance,
+        "analysis_cycle": governed_state.analysis_cycle + 1,
+    })
+
+    # Persist updated state to Redis (fail-safe — SSE stream is already done)
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+    redis_url = os.getenv("REDIS_URL", "")
+    if redis_url:
+        try:
+            async with AsyncRedis.from_url(redis_url, decode_responses=True) as _rc:
+                await save_governed_state_async(
+                    updated,
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    redis_client=_rc,
+                )
+        except Exception as _exc:  # noqa: BLE001
+            _log.warning(
+                "[event_generator] governed state Redis save failed "
+                "tenant=%s session=%s: %s",
+                tenant_id,
+                session_id,
+                _exc,
+            )
+
+    _log.debug(
+        "[event_generator] governed_state updated "
+        "gov_class=%s rfq_admissible=%s cycle=%d "
+        "params=%s blocking=%s",
+        governance.gov_class,
+        governance.rfq_admissible,
+        updated.analysis_cycle,
+        sorted(normalized.parameters.keys()),
+        asserted.blocking_unknowns,
+    )
+    return updated
+
+
+def _governed_structured_state(state: GovernedSessionState, response_class: str) -> dict[str, Any]:
+    active_blockers = list(state.asserted.blocking_unknowns) + list(state.asserted.conflict_flags)
+    medium_status = state.medium_classification.status
+    medium_family = state.medium_classification.family
+    if response_class == "rfq_ready":
+        selected = state.rfq.selected_manufacturer_ref
+        return {
+            "case_status": "rfq_ready",
+            "output_status": "rfq_ready",
+            "next_step": "review_rfq_handover",
+            "primary_allowed_action": "inspect_rfq_basis",
+            "active_blockers": active_blockers,
+            "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
+            "dispatch_ready": state.dispatch.dispatch_ready,
+            "dispatch_status": state.dispatch.dispatch_status,
+            "medium_classification_status": medium_status,
+            "medium_family": medium_family,
+            "norm_status": state.sealai_norm.status,
+            "export_status": state.export_profile.status,
+            "mapping_status": state.manufacturer_mapping.status,
+            "contract_status": state.dispatch_contract.status,
+        }
+    if response_class == "manufacturer_match_result":
+        selected = state.matching.selected_manufacturer_ref
+        return {
+            "case_status": "matching_available",
+            "output_status": "manufacturer_match_result",
+            "next_step": "review_matching_result",
+            "primary_allowed_action": "inspect_manufacturer_candidates",
+            "active_blockers": active_blockers,
+            "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
+            "medium_classification_status": medium_status,
+            "medium_family": medium_family,
+            "norm_status": state.sealai_norm.status,
+            "export_status": state.export_profile.status,
+            "mapping_status": state.manufacturer_mapping.status,
+            "contract_status": state.dispatch_contract.status,
+        }
+    if response_class == "structured_clarification":
+        return {
+            "case_status": "clarification_needed",
+            "output_status": "clarification_needed",
+            "next_step": "provide_missing_parameters",
+            "primary_allowed_action": "answer_open_points",
+            "active_blockers": active_blockers,
+            "medium_classification_status": medium_status,
+            "medium_family": medium_family,
+            "norm_status": state.sealai_norm.status,
+            "export_status": state.export_profile.status,
+            "mapping_status": state.manufacturer_mapping.status,
+            "contract_status": state.dispatch_contract.status,
+        }
+    return {
+        "case_status": "governed_visible",
+        "output_status": "governed_non_binding_result",
+        "next_step": "review_governed_result",
+        "primary_allowed_action": "continue_governed_session",
+        "active_blockers": active_blockers,
+        "medium_classification_status": medium_status,
+        "medium_family": medium_family,
+        "norm_status": state.sealai_norm.status,
+        "export_status": state.export_profile.status,
+        "mapping_status": state.manufacturer_mapping.status,
+        "contract_status": state.dispatch_contract.status,
+    }
+
+
+def _compose_deterministic_governed_reply(
+    *,
+    response_class: str,
+    turn_context: TurnContextContract,
+    fallback_text: str,
+) -> str:
+    if response_class == "structured_clarification":
+        return compose_clarification_reply(
+            turn_context,
+            fallback_text=fallback_text,
+        )
+    if response_class == "governed_state_update":
+        return compose_result_reply(
+            turn_context,
+            fallback_text=fallback_text,
+            response_class=response_class,
+            facts_prefix="Bisher steht",
+            open_points_prefix="Zur Absicherung noch offen",
+        )
+    if response_class == "governed_recommendation":
+        return compose_result_reply(
+            turn_context,
+            fallback_text=fallback_text,
+            response_class=response_class,
+            facts_prefix="Technische Richtung",
+            open_points_prefix="Im Scope jetzt noch pruefen",
+        )
+    if response_class == "manufacturer_match_result":
+        return compose_result_reply(
+            turn_context,
+            fallback_text=fallback_text,
+            response_class=response_class,
+            facts_prefix="Belastbarer Rahmen",
+            open_points_prefix="Vor Herstellerfreigabe noch offen",
+        )
+    if response_class == "rfq_ready":
+        return compose_result_reply(
+            turn_context,
+            fallback_text=fallback_text,
+            response_class=response_class,
+            facts_prefix="RFQ-Basis",
+            open_points_prefix="Vor Versand noch im Blick",
+        )
+    return str(fallback_text or "").strip()
+
+
+def _build_governed_reply_context(
+    *,
+    result_state: GraphState,
+    persisted_state: GovernedSessionState,
+) -> GovernedReplyAssemblyContext:
+    def _sanitize_public_notes(notes: list[Any]) -> list[str]:
+        blocked_fragments = (
+            "transport",
+            "bridge",
+            "handoff",
+            "dry-run",
+            "internal trigger",
+            "sender/connector",
+            "connector consumption",
+            "envelope",
+        )
+        public_notes: list[str] = []
+        for note in notes:
+            text = str(note or "").strip()
+            if not text:
+                continue
+            lowered = text.lower()
+            if any(fragment in lowered for fragment in blocked_fragments):
+                continue
+            if text not in public_notes:
+                public_notes.append(text)
+        return public_notes
+
+    def _strip_forbidden_keys(value: Any) -> Any:
+        forbidden_keys = {
+            "event_id",
+            "event_key",
+            "analysis_cycle_id",
+            "partner_id",
+            "transport_channel",
+            "manufacturer_sku",
+            "compound_code",
+        }
+        if isinstance(value, dict):
+            return {
+                key: _strip_forbidden_keys(item)
+                for key, item in value.items()
+                if key not in forbidden_keys
+            }
+        if isinstance(value, list):
+            return [_strip_forbidden_keys(item) for item in value]
+        return value
+
+    ui_payload = project_for_ui(result_state).model_dump()
+    for tile_name, note_field in (
+        ("rfq", "notes"),
+        ("export_profile", "notes"),
+        ("dispatch_contract", "handover_notes"),
+    ):
+        tile = ui_payload.get(tile_name)
+        if isinstance(tile, dict) and isinstance(tile.get(note_field), list):
+            tile[note_field] = _sanitize_public_notes(tile[note_field])
+    ui_payload = _strip_forbidden_keys(ui_payload)
+
+    rendered = render_response(result_state.output_reply, path="GOVERNED")
+    response_class = str(result_state.output_response_class or "structured_clarification")
+    conversation_strategy = build_governed_conversation_strategy_contract(result_state, response_class)
+    turn_context = build_governed_turn_context(
+        state=result_state,
+        strategy=conversation_strategy,
+        response_class=response_class,
+    )
+    allowed_surface_claims = _build_governed_allowed_surface_claims(response_class)
+    assertions_payload: dict[str, Any] = {}
+    for _key, _e in (result_state.asserted.assertions or {}).items():
+        if _e.asserted_value is not None:
+            _raw = _e.asserted_value
+            _val_str = (
+                str(int(_raw))
+                if isinstance(_raw, float) and _raw == int(_raw)
+                else str(_raw)
+            )
+            assertions_payload[_key] = {"value": _val_str, "confidence": _e.confidence}
+
+    structured_state = _governed_structured_state(persisted_state, response_class)
+    fallback_seed = str(allowed_surface_claims.get("fallback_text") or "").strip()
+    deterministic_reply = _compose_deterministic_governed_reply(
+        response_class=response_class,
+        turn_context=turn_context,
+        fallback_text=fallback_seed,
+    )
+    return GovernedReplyAssemblyContext(
+        response_class=response_class,
+        structured_state=structured_state,
+        assertions_payload=assertions_payload,
+        conversation_strategy=conversation_strategy,
+        turn_context=turn_context,
+        run_meta={
+            "path": "governed_graph",
+            "was_scrubbed": rendered.was_scrubbed,
+        },
+        ui_payload=ui_payload,
+        deterministic_reply=deterministic_reply,
+    )
+
+
+def _assemble_governed_stream_payload(
+    *,
+    context: GovernedReplyAssemblyContext,
+    visible_reply: str | None = None,
+) -> dict[str, Any]:
+    fallback_reply = str(context.deterministic_reply or "").strip()
+    visible_reply_text = str(visible_reply or "").strip()
+    final_reply = visible_reply_text or fallback_reply
+    public_reply = assemble_user_facing_reply(
+        reply=final_reply,
+        structured_state=context.structured_state,
+        policy_path="governed",
+        run_meta=context.run_meta,
+        response_class=context.response_class,
+        fallback_text=fallback_reply,
+    )
+
+    return {
+        "type": "state_update",
+        **public_reply,
+        "assertions": context.assertions_payload,
+        "conversation_strategy": context.conversation_strategy.model_dump(),
+        "turn_context": context.turn_context.model_dump(),
+        "ui": context.ui_payload,
+    }
+
+
+def _build_governed_stream_payload(
+    *,
+    result_state: GraphState,
+    persisted_state: GovernedSessionState,
+    visible_reply: str | None = None,
+) -> dict[str, Any]:
+    context = _build_governed_reply_context(
+        result_state=result_state,
+        persisted_state=persisted_state,
+    )
+    return _assemble_governed_stream_payload(
+        context=context,
+        visible_reply=visible_reply,
+    )
+
+
+def _build_governed_allowed_surface_claims(response_class: str) -> GovernedAllowedSurfaceClaims:
+    return get_surface_claims_spec(response_class)
+
+
+def _is_light_runtime_mode(runtime_mode: str | None) -> bool:
+    return runtime_mode in {"instant_light_reply", "light_exploration"}
+
+
+def _legacy_decision_requires_governed_authority(decision: Any) -> bool:
+    """Structured/case-state turns must never fall back to the legacy graph."""
+    return bool(getattr(decision, "has_case_state", False))
+
+
+def _legacy_decision_conversation_mode(
+    decision: Any,
+) -> Literal["instant_light_reply", "light_exploration"]:
+    path = str(getattr(getattr(decision, "path", None), "value", getattr(decision, "path", "")) or "").strip().lower()
+    if path == "fast":
+        return "instant_light_reply"
+    return "light_exploration"
+
+
+def _block_residual_legacy_structured_usage(*, session_id: str, decision: Any) -> None:
+    if not _legacy_decision_requires_governed_authority(decision):
+        return
+    path = str(getattr(getattr(decision, "path", None), "value", getattr(decision, "path", "")) or "").strip()
+    _log.error(
+        "[%s] blocked structured unauthenticated usage session=%s policy_path=%s",
+        _RESIDUAL_LEGACY_RUNTIME_LABEL,
+        session_id,
+        path or "<unknown>",
+    )
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            "Structured technical turns require the authenticated governed runtime. "
+            "Residual legacy helper paths are compat-only."
+        ),
+    )
+
+
+async def _stream_light_runtime(
+    *,
+    message: str,
+    request: ChatRequest,
+    current_user: RequestUser,
+    mode: Literal["instant_light_reply", "light_exploration"],
+) -> AsyncGenerator[str, None]:
+    from app.agent.runtime.conversation_runtime import stream_conversation  # noqa: PLC0415
+
+    governed, history, case_summary = await _build_light_runtime_context(
+        request=request,
+        current_user=current_user,
+    )
+    final_reply = ""
+    async for frame in stream_conversation(
+        message,
+        history=history,
+        case_summary=case_summary,
+        mode=mode,
+    ):
+        if frame.startswith("data: "):
+            raw = frame[6:].strip()
+            if raw and raw != "[DONE]":
+                try:
+                    payload = json.loads(raw)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    payload = None
+                if isinstance(payload, dict) and str(payload.get("type") or "") == "state_update":
+                    final_reply = str(payload.get("reply") or "").strip()
+        yield frame
+    if governed is not None and request.session_id and final_reply:
+        updated = _with_governed_conversation_turn(
+            governed,
+            user_message=message,
+            assistant_reply=final_reply,
+        )
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            state=updated,
+        )
+
+
+async def _run_light_chat_response(
+    *,
+    message: str,
+    request: ChatRequest,
+    current_user: RequestUser,
+    mode: Literal["instant_light_reply", "light_exploration"],
+) -> ChatResponse:
+    from app.agent.runtime.conversation_runtime import run_conversation  # noqa: PLC0415
+
+    governed, history, case_summary = await _build_light_runtime_context(
+        request=request,
+        current_user=current_user,
+    )
+
+    result = await run_conversation(
+        message,
+        history=history,
+        case_summary=case_summary,
+        mode=mode,
+    )
+    if governed is not None and request.session_id and result.reply_text:
+        updated = _with_governed_conversation_turn(
+            governed,
+            user_message=message,
+            assistant_reply=result.reply_text,
+        )
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            state=updated,
+        )
+    return ChatResponse(
+        session_id=request.session_id,
+        **build_public_response_core(
+            reply=result.reply_text,
+            structured_state=None,
+            policy_path="fast",
+            run_meta=None,
+        ),
+    )
+
+
+async def _run_governed_graph_once(
+    request: ChatRequest,
+    *,
+    current_user: RequestUser,
+) -> tuple[GraphState, GovernedSessionState]:
+    tenant_id, _, _ = _canonical_scope(current_user, case_id=request.session_id)
+    redis_url = os.getenv("REDIS_URL", "")
+    governed_state = GovernedSessionState()
+
+    if redis_url:
+        from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+        async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+            governed_state = await get_or_create_governed_state_async(
+                tenant_id=tenant_id,
+                session_id=request.session_id,
+                redis_client=redis_client,
+            )
+
+            graph_input = GraphState.model_validate(
+                {
+                    **governed_state.model_dump(),
+                    "tenant_id": tenant_id,
+                    "session_id": request.session_id,
+                    "pending_message": request.message,
+                }
+            )
+            raw_result = await GOVERNED_GRAPH.ainvoke(graph_input)
+            result_state = GraphState.model_validate(raw_result)
+            persisted_state = GovernedSessionState.model_validate(result_state.model_dump())
+            result_state, persisted_state = _enrich_medium_context_state(
+                result_state=result_state,
+                persisted_state=persisted_state,
+            )
+            await save_governed_state_async(
+                persisted_state,
+                tenant_id=tenant_id,
+                session_id=request.session_id,
+                redis_client=redis_client,
+            )
+            return result_state, persisted_state
+
+    graph_input = GraphState.model_validate(
+        {
+            **governed_state.model_dump(),
+            "tenant_id": tenant_id,
+            "session_id": request.session_id,
+            "pending_message": request.message,
+        }
+    )
+    raw_result = await GOVERNED_GRAPH.ainvoke(graph_input)
+    result_state = GraphState.model_validate(raw_result)
+    persisted_state = GovernedSessionState.model_validate(result_state.model_dump())
+    result_state, persisted_state = _enrich_medium_context_state(
+        result_state=result_state,
+        persisted_state=persisted_state,
+    )
+    return result_state, persisted_state
+
+
+async def _stream_governed_graph(
+    request: ChatRequest,
+    *,
+    current_user: RequestUser,
+) -> AsyncGenerator[str, None]:
+    result_state, persisted_state = await _run_governed_graph_once(
+        request,
+        current_user=current_user,
+    )
+
+    context = _build_governed_reply_context(
+        result_state=result_state,
+        persisted_state=persisted_state,
+    )
+    visible_reply: str | None = None
+    if context.deterministic_reply:
+        visible_reply = await collect_governed_visible_reply(
+            response_class=context.response_class,
+            turn_context=context.turn_context,
+            fallback_text=context.deterministic_reply,
+            allowed_surface_claims=_build_governed_allowed_surface_claims(context.response_class),
+        )
+    if request.session_id and visible_reply:
+        persisted_state = _with_governed_conversation_turn(
+            persisted_state,
+            user_message=request.message,
+            assistant_reply=visible_reply,
+        )
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            state=persisted_state,
+        )
+    payload = _assemble_governed_stream_payload(
+        context=context,
+        visible_reply=visible_reply,
+    )
+    yield f"data: {json.dumps(payload, default=str)}\n\n"
+    yield "data: [DONE]\n\n"
+
+
+async def _run_governed_chat_response(
+    request: ChatRequest,
+    *,
+    current_user: RequestUser,
+) -> ChatResponse:
+    result_state, persisted_state = await _run_governed_graph_once(
+        request,
+        current_user=current_user,
+    )
+    context = _build_governed_reply_context(
+        result_state=result_state,
+        persisted_state=persisted_state,
+    )
+    visible_reply = await collect_governed_visible_reply(
+        response_class=context.response_class,
+        turn_context=context.turn_context,
+        fallback_text=context.deterministic_reply,
+        allowed_surface_claims=_build_governed_allowed_surface_claims(context.response_class),
+    )
+    if request.session_id and visible_reply:
+        persisted_state = _with_governed_conversation_turn(
+            persisted_state,
+            user_message=request.message,
+            assistant_reply=visible_reply,
+        )
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            state=persisted_state,
+        )
+    payload = _assemble_governed_stream_payload(
+        context=context,
+        visible_reply=visible_reply,
+    )
+    return ChatResponse(
+        session_id=request.session_id,
+        reply=str(payload["reply"]),
+        response_class=payload.get("response_class"),
+        structured_state=payload.get("structured_state"),
+        policy_path=payload.get("policy_path"),
+        run_meta=payload.get("run_meta"),
+    )
+
+
+async def event_generator(
+    request: ChatRequest,
+    *,
+    current_user: RequestUser,
+) -> AsyncGenerator[str, None]:
     """SSE stream with Phase 0A.4 node filter.
 
     Only fast_guidance_node and final_response_node tokens reach the client.
     Internal nodes (reasoning_node, evidence_tool_node, selection_node) are
     silently filtered by agent_sse_generator.
+
+    Phase 0F: policy_path / result_form are injected here so meta/blocked
+    routing fires consistently on the streaming path too (same as /chat).
+
+    Phase F-A (feature-flag guarded): If SEALAI_ENABLE_BINARY_GATE is true,
+    the Gate + SessionEnvelope layer runs first. If SEALAI_ENABLE_CONVERSATION_RUNTIME
+    is also true and gate decides CONVERSATION, stream_conversation() is used
+    instead of the governed path. On any gate/session exception the dispatch
+    fails closed to governed_needed.
     """
-    session_id = request.session_id
-    if session_id not in SESSION_STORE:
-        initial_sealing_state = create_initial_state()
-        initial_sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
-        SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state, "working_profile": {}}
-    current_state = SESSION_STORE[session_id]
-    current_state["messages"].append(HumanMessage(content=request.message))
-    async for frame in agent_sse_generator(current_state, graph=app):
+    dispatch = await _resolve_runtime_dispatch(
+        request,
+        current_user=current_user,
+    )
+    if _is_light_runtime_mode(dispatch.runtime_mode):
+        async for frame in _stream_light_runtime(
+            message=request.message,
+            request=request,
+            current_user=current_user,
+            mode=dispatch.runtime_mode,
+        ):
+            yield frame
+        return
+
+    if dispatch.runtime_mode == "governed_needed":
+        _log.debug(
+            "[runtime_authority] stream session=%s authority=governed_graph reason=%s",
+            request.session_id,
+            dispatch.gate_reason,
+        )
+        async for frame in _stream_governed_graph(request, current_user=current_user):
+            yield frame
+        return
+
+    legacy_decision = await evaluate_interaction_policy_async(request.message)
+    if _legacy_decision_requires_governed_authority(legacy_decision):
+        _log.warning(
+            "[runtime_authority] stream session=%s authority=governed_graph via legacy policy fallback",
+            request.session_id,
+        )
+        async for frame in _stream_governed_graph(request, current_user=current_user):
+            yield frame
+        return
+
+    light_mode = _legacy_decision_conversation_mode(legacy_decision)
+    _log.warning(
+        "[runtime_authority] stream session=%s authority=conversation_runtime via legacy policy fallback mode=%s",
+        request.session_id,
+        light_mode,
+    )
+    async for frame in _stream_light_runtime(
+        message=request.message,
+        request=request,
+        current_user=current_user,
+        mode=light_mode,
+    ):
         yield frame
 
 
@@ -245,66 +1805,83 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
         if session_id not in SESSION_STORE:
             initial_sealing_state = create_initial_state()
             initial_sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
-            SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state}
+            SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state, "working_profile": {}}
         current_state = SESSION_STORE[session_id]
         current_state["messages"].append(HumanMessage(content=request.message))
+        # Phase 0E: apply policy routing for unauthenticated sessions too —
+        # meta/blocked paths must fire consistently regardless of auth state.
+        _anon_decision = await evaluate_interaction_policy_async(request.message)
+        _block_residual_legacy_structured_usage(
+            session_id=session_id,
+            decision=_anon_decision,
+        )
+        _log.warning(
+            "[%s] unauthenticated JSON helper path used session=%s policy_path=%s",
+            _RESIDUAL_LEGACY_RUNTIME_LABEL,
+            session_id,
+            _anon_decision.path.value,
+        )
+        current_state["policy_path"] = _anon_decision.path.value
+        current_state["result_form"] = _anon_decision.result_form.value
         current_state["inquiry_id"] = session_id
         current_state.setdefault("turn_count", 0)
         current_state.setdefault("max_turns", 12)
         updated_state = await execute_agent(current_state)
         SESSION_STORE[session_id] = updated_state
         last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
-        return ChatResponse(reply=last_msg.content, session_id=session_id, sealing_state=updated_state["sealing_state"])
+        return ChatResponse(
+            session_id=session_id,
+            **build_public_response_core(
+                reply=last_msg.content,
+                structured_state=None,
+                policy_path=updated_state.get("policy_path"),
+                run_meta=jsonable_encoder(updated_state.get("run_meta")) if updated_state.get("run_meta") is not None else None,
+            ),
+        )
 
-    decision = evaluate_interaction_policy(request.message)
+    dispatch = await _resolve_runtime_dispatch(request, current_user=current_user)
+    if _is_light_runtime_mode(dispatch.runtime_mode):
+        return await _run_light_chat_response(
+            message=request.message,
+            request=request,
+            current_user=current_user,
+            mode=dispatch.runtime_mode,
+        )
 
-    if not decision.has_case_state:
-        session_id = request.session_id
-        owner_id = canonical_user_id(current_user)
-        tenant_id = current_user.tenant_id or owner_id
-        cache_key = _case_cache_key(tenant_id, owner_id, session_id)
-        if cache_key not in SESSION_STORE:
-            initial_sealing_state = create_initial_state()
-            initial_sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
-            SESSION_STORE[cache_key] = {"messages": [], "sealing_state": initial_sealing_state, "working_profile": {}, "owner_id": owner_id, "tenant_id": tenant_id}
-        current_state = SESSION_STORE[cache_key]
-        current_state["messages"].append(HumanMessage(content=request.message))
-        # Phase 0A.3: inject policy signals so the graph entry switch can route correctly
-        current_state["policy_path"] = decision.path.value
-        current_state["result_form"] = decision.result_form.value
-        # Phase 0A QW-4: V3 spec fields
-        current_state["inquiry_id"] = session_id
-        current_state.setdefault("turn_count", 0)
-        current_state.setdefault("max_turns", 12)
-        updated_state = await execute_agent(current_state)
-        SESSION_STORE[cache_key] = updated_state
-        last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
-        payload = _build_guidance_response_payload(decision, session_id=session_id, reply=last_msg.content, state=updated_state, working_profile=updated_state.get("working_profile"))
-        return ChatResponse(sealing_state=updated_state["sealing_state"], **payload)
+    if dispatch.runtime_mode == "governed_needed":
+        _log.debug(
+            "[runtime_authority] json session=%s authority=governed_graph reason=%s",
+            request.session_id,
+            dispatch.gate_reason,
+        )
+        return await _run_governed_chat_response(
+            request,
+            current_user=current_user,
+        )
 
-    state = await prepare_structured_state(request, current_user=current_user)
-    # Phase 0A.3: structured path — inject policy signals into state
-    state["policy_path"] = decision.path.value
-    state["result_form"] = decision.result_form.value
-    # Phase 0A QW-4: V3 spec fields
-    state["inquiry_id"] = request.session_id
-    state.setdefault("turn_count", 0)
-    state.setdefault("max_turns", 12)
-    updated_state = await execute_agent(state)
-    last_msg = [m for m in updated_state["messages"] if isinstance(m, AIMessage)][-1]
-    visible_case_narrative = build_visible_case_narrative(state=updated_state, case_state=updated_state.get("case_state"), binding_level="ORIENTATION")
-    payload = build_runtime_payload(
-        decision,
-        session_id=request.session_id,
-        reply=last_msg.content,
-        case_state=updated_state.get("case_state"),
-        visible_case_narrative=visible_case_narrative,
-        working_profile=updated_state.get("working_profile"),
-        version_provenance=_build_structured_version_provenance(decision=decision),
-        next_step_contract=resolve_next_step_contract(updated_state),
+    legacy_decision = await evaluate_interaction_policy_async(request.message)
+    if _legacy_decision_requires_governed_authority(legacy_decision):
+        _log.warning(
+            "[runtime_authority] json session=%s authority=governed_graph via legacy policy fallback",
+            request.session_id,
+        )
+        return await _run_governed_chat_response(
+            request,
+            current_user=current_user,
+        )
+
+    light_mode = _legacy_decision_conversation_mode(legacy_decision)
+    _log.warning(
+        "[runtime_authority] json session=%s authority=conversation_runtime via legacy policy fallback mode=%s",
+        request.session_id,
+        light_mode,
     )
-    await persist_structured_state(current_user=current_user, session_id=request.session_id, state=updated_state, decision=decision)
-    return ChatResponse(sealing_state=updated_state["sealing_state"], **payload)
+    return await _run_light_chat_response(
+        message=request.message,
+        request=request,
+        current_user=current_user,
+        mode=light_mode,
+    )
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -313,8 +1890,103 @@ async def chat_route(request: ChatRequest, current_user: RequestUser = Depends(g
 
 
 @router.post("/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest):
-    return StreamingResponse(event_generator(request), media_type="text/event-stream")
+async def chat_stream_endpoint(request: ChatRequest, current_user: RequestUser = Depends(get_current_request_user)):
+    return StreamingResponse(event_generator(request, current_user=current_user), media_type="text/event-stream")
+
+
+@router.get("/workspace/{case_id}", response_model=CaseWorkspaceProjection)
+async def get_workspace_projection(
+    case_id: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> CaseWorkspaceProjection:
+    """Canonical workspace read contract backed by persisted agent state."""
+    governed_state = await _load_live_governed_state(
+        current_user=current_user,
+        session_id=case_id,
+        create_if_missing=False,
+    )
+    if governed_state is not None:
+        return project_case_workspace_from_governed_state(governed_state, chat_id=case_id)
+    state = await require_canonical_state(current_user=current_user, session_id=case_id)
+    return project_case_workspace_from_ssot(state, chat_id=case_id)
+
+
+@router.get("/chat/history/{case_id}")
+async def get_live_chat_history(
+    case_id: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> dict[str, Any]:
+    governed_state = await _load_live_governed_state(
+        current_user=current_user,
+        session_id=case_id,
+        create_if_missing=False,
+    )
+    if governed_state is not None and governed_state.conversation_messages:
+        return _serialize_governed_history_payload(
+            conversation_id=case_id,
+            governed_state=governed_state,
+        )
+    state = await require_canonical_state(current_user=current_user, session_id=case_id)
+    raw_messages = (state or {}).get("messages") or []
+    return {
+        "conversation_id": case_id,
+        "title": None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "messages": [
+            {
+                "id": uuid.uuid4().hex,
+                "role": "user" if isinstance(raw, HumanMessage) else "assistant",
+                "content": str(getattr(raw, "content", raw) or ""),
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "index": index,
+            }
+            for index, raw in enumerate(raw_messages)
+            if str(getattr(raw, "content", raw) or "").strip()
+        ],
+    }
+
+
+@router.get("/workspace/{case_id}/rfq-document")
+async def get_workspace_rfq_document(
+    case_id: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> HTMLResponse:
+    """Return an RFQ HTML representation derived from canonical persisted RFQ state."""
+    state = await require_canonical_state(current_user=current_user, session_id=case_id)
+    case_state = dict(state.get("case_state") or {})
+    rfq_state = dict(case_state.get("rfq_state") or {})
+    rfq_object = dict(rfq_state.get("rfq_object") or {})
+    sealing = dict(state.get("sealing_state") or {})
+    handover = dict(sealing.get("handover") or {})
+    if (rfq_object or handover.get("rfq_html_report")) and not _is_review_handover_releasable(
+        case_state=case_state,
+        sealing_handover=handover,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="RFQ document is blocked until the mandatory critical review passes.",
+        )
+    if rfq_object:
+        projection = project_case_workspace_from_ssot(state, chat_id=case_id)
+        return HTMLResponse(
+            content=render_rfq_html(projection),
+            headers={
+                "Content-Disposition": "inline; filename=\"sealai-rfq-document.html\"",
+            },
+        )
+
+    html_report = handover.get("rfq_html_report")
+    if not html_report:
+        raise HTTPException(
+            status_code=404,
+            detail="No RFQ document has been generated yet.",
+        )
+    return HTMLResponse(
+        content=html_report,
+        headers={
+            "Content-Disposition": "inline; filename=\"sealai-rfq-document.html\"",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -322,26 +1994,77 @@ async def chat_stream_endpoint(request: ChatRequest):
 # ---------------------------------------------------------------------------
 
 def _find_session(session_id: str) -> AgentState | None:
-    """Look up a session from SESSION_STORE by plain or composite key."""
-    if session_id in SESSION_STORE:
-        return SESSION_STORE[session_id]
-    # Composite key used by authenticated path: "tenant_id:owner_id:session_id"
-    for key, state in SESSION_STORE.items():
-        if key.endswith(f":{session_id}"):
-            return state
-    return None
+    """Cache lookup by exact key only.
+
+    Active runtime flows must use persisted canonical state loaders instead of
+    suffix-based SESSION_STORE discovery.
+    """
+    return SESSION_STORE.get(session_id)
 
 
 def _save_session(session_id: str, state: AgentState) -> None:
-    """Write back into the same SESSION_STORE slot the state was loaded from."""
-    if session_id in SESSION_STORE:
-        SESSION_STORE[session_id] = state
-        return
-    for key in list(SESSION_STORE.keys()):
-        if key.endswith(f":{session_id}"):
-            SESSION_STORE[key] = state
-            return
+    """Write back by exact cache key only."""
     SESSION_STORE[session_id] = state
+
+
+def _build_review_handover_response(
+    *,
+    case_state: dict[str, Any] | None,
+    sealing_handover: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    rfq_state = dict((case_state or {}).get("rfq_state") or {})
+    rfq_object = dict(rfq_state.get("rfq_object") or {})
+
+    structured_handover = {
+        "is_handover_ready": bool(
+            rfq_state.get(
+                "handover_ready",
+                (sealing_handover or {}).get("is_handover_ready", False),
+            )
+        ),
+        "handover_status": rfq_state.get("handover_status")
+        or (sealing_handover or {}).get("handover_status"),
+    }
+    if not _is_review_handover_releasable(
+        case_state=case_state,
+        sealing_handover=sealing_handover,
+    ):
+        return structured_handover
+
+    if rfq_object:
+        structured_handover["handover_payload"] = {
+            "qualified_material_ids": list(rfq_object.get("qualified_material_ids") or []),
+            "qualified_materials": list(rfq_object.get("qualified_materials") or []),
+            "confirmed_parameters": dict(rfq_object.get("confirmed_parameters") or {}),
+            "dimensions": dict(rfq_object.get("dimensions") or {}),
+        }
+        if rfq_object.get("target_system") is not None:
+            structured_handover["target_system"] = rfq_object.get("target_system")
+        return structured_handover
+
+    if rfq_state:
+        fallback_payload = dict((sealing_handover or {}).get("handover_payload") or {})
+        if fallback_payload:
+            structured_handover["handover_payload"] = fallback_payload
+        if (sealing_handover or {}).get("target_system") is not None:
+            structured_handover["target_system"] = (sealing_handover or {}).get("target_system")
+        return structured_handover
+
+    return sealing_handover
+
+
+def _is_review_handover_releasable(
+    *,
+    case_state: dict[str, Any] | None,
+    sealing_handover: dict[str, Any] | None,
+) -> bool:
+    rfq_state = dict((case_state or {}).get("rfq_state") or {})
+    if rfq_state:
+        if rfq_state.get("handover_ready") is not None:
+            return bool(rfq_state.get("handover_ready"))
+        if rfq_state.get("rfq_ready") is not None:
+            return bool(rfq_state.get("rfq_ready"))
+    return bool((sealing_handover or {}).get("is_handover_ready", False))
 
 
 def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentState:
@@ -352,6 +2075,8 @@ def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentSt
     """
     patched = deepcopy(state)
     sealing_state: dict = patched["sealing_state"]
+    existing_case_state = dict(patched.get("case_state") or {})
+    governance_state = dict(existing_case_state.get("governance_state") or {})
 
     governance = dict(sealing_state.get("governance") or {})
     review = dict(sealing_state.get("review") or {})
@@ -359,12 +2084,17 @@ def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentSt
     now_iso = datetime.now(timezone.utc).isoformat()
 
     if request.action == "approve":
+        governance_state["release_status"] = "rfq_ready"
+        governance_state["rfq_admissibility"] = "ready"
+        governance_state["review_required"] = False
+        governance_state["review_state"] = "approved"
+
         # Governance
-        governance["release_status"] = "rfq_ready"
-        governance["rfq_admissibility"] = "ready"
+        governance["release_status"] = governance_state["release_status"]
+        governance["rfq_admissibility"] = governance_state["rfq_admissibility"]
         # Review lifecycle
-        review["review_required"] = False
-        review["review_state"] = "approved"
+        review["review_required"] = governance_state["review_required"]
+        review["review_state"] = governance_state["review_state"]
         review["reviewed_by"] = "reviewer"
         review["review_decision"] = "approved"
         review["review_note"] = request.reviewer_notes or ""
@@ -383,46 +2113,229 @@ def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentSt
             selection["recommendation_artifact"] = artifact
 
     elif request.action == "reject":
-        governance["release_status"] = "inadmissible"
-        governance["rfq_admissibility"] = "inadmissible"
-        review["review_required"] = False
-        review["review_state"] = "rejected"
+        governance_state["release_status"] = "inadmissible"
+        governance_state["rfq_admissibility"] = "inadmissible"
+        governance_state["review_required"] = False
+        governance_state["review_state"] = "rejected"
+
+        governance["release_status"] = governance_state["release_status"]
+        governance["rfq_admissibility"] = governance_state["rfq_admissibility"]
+        review["review_required"] = governance_state["review_required"]
+        review["review_state"] = governance_state["review_state"]
         review["reviewed_by"] = "reviewer"
         review["review_decision"] = "rejected"
         review["review_note"] = request.reviewer_notes or ""
         review["reviewed_at"] = now_iso
+        selection["release_status"] = "inadmissible"
+        selection["rfq_admissibility"] = "inadmissible"
+        selection["output_blocked"] = True
+        artifact = dict(selection.get("recommendation_artifact") or {})
+        if artifact:
+            artifact["release_status"] = "inadmissible"
+            artifact["rfq_admissibility"] = "inadmissible"
+            artifact["output_blocked"] = True
+            selection["recommendation_artifact"] = artifact
 
+    existing_case_state["governance_state"] = governance_state
+    patched["case_state"] = existing_case_state
     sealing_state["governance"] = governance
     sealing_state["review"] = review
     sealing_state["selection"] = selection
 
     # Advance revision so optimistic-locking checks remain valid
     cycle = dict(sealing_state.get("cycle") or {})
+    case_meta = dict(existing_case_state.get("case_meta") or {})
     current_rev = int(cycle.get("state_revision", 0) or 0)
-    cycle["state_revision"] = current_rev + 1
-    cycle["snapshot_parent_revision"] = current_rev
-    cycle["analysis_cycle_id"] = (
+    next_revision = current_rev + 1
+    next_cycle_id = (
         f"{cycle.get('analysis_cycle_id') or request.session_id}"
-        f"::review::{request.action}::{uuid.uuid4().hex[:8]}"
+        f"::review::{request.action}::rev{next_revision}::{uuid.uuid4().hex[:8]}"
     )
+
+    case_meta["snapshot_parent_revision"] = current_rev
+    case_meta["state_revision"] = next_revision
+    case_meta["analysis_cycle_id"] = next_cycle_id
+    case_meta["version"] = next_revision
+    existing_case_state["case_meta"] = case_meta
+    patched["case_state"] = existing_case_state
+
+    cycle["state_revision"] = case_meta["state_revision"]
+    cycle["snapshot_parent_revision"] = case_meta["snapshot_parent_revision"]
+    cycle["analysis_cycle_id"] = case_meta["analysis_cycle_id"]
     sealing_state["cycle"] = cycle
     patched["sealing_state"] = sealing_state
+    result_contract = dict(existing_case_state.get("result_contract") or {})
+    patched = ensure_case_state(
+        patched,
+        session_id=request.session_id,
+        runtime_path=str(case_meta.get("runtime_path") or "STRUCTURED_QUALIFICATION"),
+        binding_level=str(
+            case_meta.get("binding_level")
+            or result_contract.get("binding_level")
+            or "ORIENTATION"
+        ),
+    )
     return patched
 
 
-@router.post("/review", response_model=ReviewResponse)
-async def review_endpoint(request: ReviewRequest) -> ReviewResponse:
-    """HITL resume — apply a reviewer decision to a pending review session.
+def _governed_native_review_commit(state: AgentState) -> tuple[AgentState, str]:
+    """Finalize review deterministically without routing through the legacy final node."""
+    committed = deepcopy(state)
+    sealing_state: dict[str, Any] = dict(committed.get("sealing_state") or {})
+    case_state: dict[str, Any] = dict(committed.get("case_state") or {})
+    governance_state: dict[str, Any] = dict(case_state.get("governance_state") or {})
+    rfq_state: dict[str, Any] = dict(case_state.get("rfq_state") or {})
+    selection_state: dict[str, Any] = dict(sealing_state.get("selection") or {})
+    review_state: dict[str, Any] = dict(sealing_state.get("review") or {})
+    matching_state: dict[str, Any] = dict(case_state.get("matching_state") or {})
+    recipient_selection: dict[str, Any] = dict(
+        case_state.get("recipient_selection")
+        or rfq_state.get("recipient_selection")
+        or {}
+    )
+    requirement_class = dict(
+        case_state.get("requirement_class")
+        or governance_state.get("requirement_class")
+        or selection_state.get("requirement_class")
+        or {}
+    )
+    selected_manufacturer_ref = (
+        matching_state.get("selected_manufacturer_ref")
+        or rfq_state.get("selected_manufacturer_ref")
+        or {}
+    )
 
-    Blueprint Section 08 & 12: the graph is NOT re-invoked end-to-end.
-    Instead the state is patched deterministically and then routed through
-    final_response_node only, so the handover object is computed and the
-    audit log is written without re-running LLM reasoning.
+    critical_review = run_critical_review_specialist(
+        payload=CriticalReviewSpecialistInput(
+            governance_summary=CriticalReviewGovernanceSummary(
+                release_status=str(governance_state.get("release_status") or "inadmissible"),
+                rfq_admissibility=str(governance_state.get("rfq_admissibility") or "inadmissible"),
+                unknowns_release_blocking=tuple(governance_state.get("unknowns_release_blocking") or ()),
+                unknowns_manufacturer_validation=tuple(governance_state.get("unknowns_manufacturer_validation") or ()),
+                scope_of_validity=tuple(governance_state.get("scope_of_validity") or ()),
+                conflicts=tuple(governance_state.get("conflicts") or ()),
+                review_required=bool(governance_state.get("review_required", False)),
+            ),
+            recommendation_package=CriticalReviewRecommendationPackage(
+                requirement_class=requirement_class or None,
+            ),
+            matching_package=CriticalReviewMatchingPackage(
+                status=str(matching_state.get("status") or ""),
+                selected_manufacturer_ref=dict(selected_manufacturer_ref or {}) or None,
+            ),
+            rfq_basis=CriticalReviewRfqBasis(
+                rfq_object=dict(rfq_state.get("rfq_object") or {}) or None,
+                recipient_refs=tuple(
+                    dict(ref)
+                    for ref in list(
+                        recipient_selection.get("candidate_recipient_refs")
+                        or recipient_selection.get("selected_recipient_refs")
+                        or rfq_state.get("recipient_refs")
+                        or []
+                    )
+                    if isinstance(ref, dict) and ref
+                ),
+            ),
+        )
+    )
+    review_projection = critical_review_result_to_dict(critical_review)
+    review_state.update(review_projection)
+    governance_state.update(review_projection)
+    rfq_state.update(review_projection)
+    review_state["critical_review_status"] = critical_review.critical_review_status
+
+    rfq_state["rfq_admissibility"] = str(governance_state.get("rfq_admissibility") or rfq_state.get("rfq_admissibility") or "inadmissible")
+    rfq_state["status"] = "ready" if rfq_state.get("rfq_admissibility") == "ready" else str(rfq_state.get("rfq_admissibility") or "inadmissible")
+    if requirement_class:
+        rfq_state["requirement_class"] = dict(requirement_class)
+    if selected_manufacturer_ref:
+        rfq_state["selected_manufacturer_ref"] = dict(selected_manufacturer_ref)
+
+    sealing_state["review"] = review_state
+    sealing_state["governance"] = dict(sealing_state.get("governance") or {})
+    sealing_state["governance"].update(
+        {
+            "release_status": governance_state.get("release_status"),
+            "rfq_admissibility": governance_state.get("rfq_admissibility"),
+            "scope_of_validity": list(governance_state.get("scope_of_validity") or []),
+            "unknowns_release_blocking": list(governance_state.get("unknowns_release_blocking") or []),
+            "unknowns_manufacturer_validation": list(governance_state.get("unknowns_manufacturer_validation") or []),
+        }
+    )
+
+    handover = build_handover_payload(
+        sealing_state,
+        canonical_case_state={
+            **case_state,
+            "governance_state": governance_state,
+            "rfq_state": rfq_state,
+        },
+        canonical_rfq_object=dict(rfq_state.get("rfq_object") or {}) or None,
+        rfq_admissibility=str(rfq_state.get("rfq_admissibility") or governance_state.get("rfq_admissibility") or "inadmissible"),
+    )
+    sealing_state["handover"] = handover
+    rfq_state["handover_status"] = handover.get("handover_status")
+    rfq_state["handover_ready"] = bool(handover.get("is_handover_ready", False))
+    rfq_state["rfq_ready"] = bool(handover.get("is_handover_ready", False))
+
+    if requirement_class:
+        case_state["requirement_class"] = dict(requirement_class)
+    case_state["governance_state"] = governance_state
+    case_state["rfq_state"] = rfq_state
+
+    dispatch_intent = build_dispatch_intent(rfq_state.get("rfq_dispatch"))
+    if dispatch_intent is not None:
+        case_state["dispatch_intent"] = dispatch_intent
+        sealing_state["dispatch_intent"] = dispatch_intent
+
+    dispatch_state_input = {
+        "case_state": case_state,
+        "sealing_state": sealing_state,
+    }
+    sealing_state["dispatch_trigger"] = build_dispatch_trigger(dispatch_state_input)
+    sealing_state["dispatch_dry_run"] = build_dispatch_dry_run(dispatch_state_input)
+    sealing_state["dispatch_event"] = build_dispatch_event(dispatch_state_input)
+    sealing_state["dispatch_bridge"] = build_dispatch_bridge(dispatch_state_input)
+    sealing_state["dispatch_handoff"] = build_dispatch_handoff(dispatch_state_input)
+    sealing_state["dispatch_transport_envelope"] = build_dispatch_transport_envelope(dispatch_state_input)
+
+    for key in (
+        "dispatch_trigger",
+        "dispatch_dry_run",
+        "dispatch_event",
+        "dispatch_bridge",
+        "dispatch_handoff",
+        "dispatch_transport_envelope",
+    ):
+        case_state[key] = dict(sealing_state.get(key) or {})
+
+    committed["case_state"] = case_state
+    committed["sealing_state"] = sealing_state
+
+    reply_text = build_final_reply(
+        selection_state,
+        review_required=bool(review_state.get("review_required", False)),
+        review_reason=str(review_state.get("review_note") or review_state.get("review_reason") or ""),
+        review_state=review_state,
+        asserted_state=sealing_state.get("asserted"),
+        working_profile=committed.get("working_profile"),
+        case_state=case_state,
+    )
+    committed["messages"] = list(committed.get("messages") or []) + [AIMessage(content=reply_text)]
+    return committed, reply_text
+
+
+@router.post("/review", response_model=ReviewResponse)
+async def review_endpoint(
+    request: ReviewRequest,
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> ReviewResponse:
+    """HITL resume — apply a reviewer decision and commit the bounded review result.
+
+    The review path stays deterministic and does not re-run the graph end-to-end.
+    Phase 4 removes the legacy final_response_node handover commit dependency.
     """
-    # 1. Load session
-    state = _find_session(request.session_id)
-    if state is None:
-        raise HTTPException(status_code=404, detail=f"Session '{request.session_id}' not found")
+    state = await require_canonical_state(current_user=current_user, session_id=request.session_id)
 
     # 2. Guard: only process sessions that have a pending review
     sealing_state: dict = state.get("sealing_state") or {}
@@ -439,136 +2352,294 @@ async def review_endpoint(request: ReviewRequest) -> ReviewResponse:
     # 3. Patch state with reviewer decision (deterministic, no LLM)
     patched_state = _apply_review_decision(state, request)
 
-    # 4. Run final_response_node directly — computes handover + fires audit log
-    node_result = await final_response_node(patched_state)
+    # 4. Deterministic governed-native review commit
+    patched_state, reply_text = _governed_native_review_commit(patched_state)
 
-    # 5. Merge node output back into state and persist to SESSION_STORE
-    patched_state["sealing_state"] = node_result["sealing_state"]
-    existing_msgs = list(patched_state.get("messages") or [])
-    patched_state["messages"] = existing_msgs + list(node_result.get("messages") or [])
-    _save_session(request.session_id, patched_state)
+    # 5. Persist canonical state
+    patched_state = await persist_canonical_state(
+        current_user=current_user,
+        session_id=request.session_id,
+        state=patched_state,
+        runtime_path="STRUCTURED_QUALIFICATION",
+        binding_level=_resolve_payload_binding_level("ORIENTATION", case_state=patched_state.get("case_state")),
+    )
 
     # 6. Build response
     final_sealing: dict = patched_state["sealing_state"]
+    final_case_state: dict = (
+        patched_state.get("case_state")
+        or {}
+    )
     final_governance: dict = final_sealing.get("governance") or {}
     final_review: dict = final_sealing.get("review") or {}
-    handover: dict | None = final_sealing.get("handover")
-    last_ai_msgs = [m for m in node_result.get("messages") or [] if isinstance(m, AIMessage)]
-    reply_text = last_ai_msgs[-1].content if last_ai_msgs else ""
+    final_governance_state: dict = final_case_state.get("governance_state") or {}
+    final_rfq_state: dict = final_case_state.get("rfq_state") or {}
+    handover: dict | None = _build_review_handover_response(
+        case_state=final_case_state,
+        sealing_handover=final_sealing.get("handover"),
+    )
+    structured_state = build_structured_api_exposure(
+        final_sealing.get("selection") or {},
+        case_state=final_case_state,
+    )
+    await _persist_review_outcome_to_live_governed_state(
+        current_user=current_user,
+        session_id=request.session_id,
+        case_state=final_case_state,
+        sealing_state=final_sealing,
+        assistant_reply=reply_text,
+    )
+    try:
+        live_governed_state = await _load_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            create_if_missing=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("[router] review governed reply load skipped: %s", exc)
+        live_governed_state = None
+    if live_governed_state is not None:
+        review_graph_state = GraphState.model_validate(live_governed_state.model_dump())
+        review_response_class = _determine_response_class(review_graph_state)
+        review_structured_state = _governed_structured_state(
+            live_governed_state,
+            review_response_class,
+        )
+        review_strategy = build_governed_conversation_strategy_contract(
+            review_graph_state,
+            review_response_class,
+        )
+        review_turn_context = build_governed_turn_context(
+            state=review_graph_state,
+            strategy=review_strategy,
+            response_class=review_response_class,
+        )
+        review_allowed_surface_claims = _build_governed_allowed_surface_claims(review_response_class)
+        review_fallback_seed = str(
+            review_allowed_surface_claims.get("fallback_text") or reply_text or ""
+        ).strip()
+        review_deterministic_reply = _compose_deterministic_governed_reply(
+            response_class=review_response_class,
+            turn_context=review_turn_context,
+            fallback_text=review_fallback_seed,
+        )
+        visible_review_reply = await collect_governed_visible_reply(
+            response_class=review_response_class,
+            turn_context=review_turn_context,
+            fallback_text=review_deterministic_reply,
+            allowed_surface_claims=review_allowed_surface_claims,
+        )
+        public_reply = assemble_user_facing_reply(
+            reply=visible_review_reply or review_deterministic_reply,
+            structured_state=review_structured_state,
+            policy_path="governed",
+            response_class=review_response_class,
+            fallback_text=review_deterministic_reply,
+        )["reply"]
+    else:
+        public_reply = build_public_response_core(
+            reply=reply_text,
+            structured_state=structured_state,
+            policy_path="structured",
+        )["reply"]
 
     return ReviewResponse(
         session_id=request.session_id,
         action=request.action,
-        review_state=str(final_review.get("review_state", "")),
-        release_status=str(final_governance.get("release_status", "")),
-        is_handover_ready=bool((handover or {}).get("is_handover_ready", False)),
+        review_state=str(final_governance_state.get("review_state") or final_review.get("review_state", "")),
+        release_status=str(final_governance_state.get("release_status") or final_governance.get("release_status", "")),
+        is_handover_ready=bool(final_rfq_state.get("handover_ready", bool((handover or {}).get("is_handover_ready", False)))),
         handover=handover,
-        reply=reply_text,
+        reply=public_reply,
     )
 
 
 @router.post("/review/seed", response_model=ReviewSeedResponse)
 async def review_seed_endpoint() -> ReviewSeedResponse:
-    """Test-only: inject a review-pending session into SESSION_STORE.
-
-    Creates a deterministic AgentState with:
-    - governance.release_status = "manufacturer_validation_required"
-    - review.review_required = True / review_state = "pending"
-    - A minimal but valid selection layer
-
-    Returns the generated session_id so the test script can call POST /review.
-    """
-    from app.agent.agent.review import REASON_MANUFACTURER_VALIDATION
-    from app.agent.cli import create_initial_state
-
-    session_id = f"hitl-test-{uuid.uuid4().hex[:12]}"
-    sealing_state = create_initial_state()
-
-    # Asserted signal so governance does not fall back to "precheck_only"
-    sealing_state["asserted"] = {
-        "medium_profile": {"medium": "water", "medium_raw": "Wasser"},
-        "machine_profile": {"shaft_diameter_mm": 50.0, "rpm": 3000},
-        "installation_profile": {},
-        "operating_conditions": {"pressure_bar": 8.0, "temperature_c": 60.0},
-        "sealing_requirement_spec": {},
-    }
-
-    # Governance: manufacturer validation required (unknowns present but not blocking)
-    sealing_state["governance"] = {
-        "release_status": "manufacturer_validation_required",
-        "rfq_admissibility": "provisional",
-        "specificity_level": "compound_required",
-        "scope_of_validity": ["manufacturer_validation_scope"],
-        "assumptions_active": [],
-        "gate_failures": [],
-        "unknowns_release_blocking": [],
-        "unknowns_manufacturer_validation": ["Compound-Validierung durch Hersteller erforderlich"],
-        "conflicts": [],
-    }
-
-    # Review layer: pending
-    sealing_state["review"] = {
-        "review_required": True,
-        "review_state": "pending",
-        "review_reason": REASON_MANUFACTURER_VALIDATION,
-        "reviewed_by": None,
-        "review_decision": None,
-        "review_note": None,
-    }
-
-    # Selection layer aligned with governance (needed by build_final_reply)
-    candidate_id = "candidate_FKM_compound_required"
-    artifact = {
-        "selection_status": "viable_candidate_found",
-        "winner_candidate_id": candidate_id,
-        "candidate_ids": [candidate_id],
-        "viable_candidate_ids": [candidate_id],
-        "blocked_candidates": [],
-        "evidence_basis": ["seed_data"],
-        "release_status": "manufacturer_validation_required",
-        "rfq_admissibility": "provisional",
-        "specificity_level": "compound_required",
-        "output_blocked": True,
-        "trace_provenance_refs": [],
-    }
-    sealing_state["selection"] = {
-        "selection_status": "viable_candidate_found",
-        "candidates": [],
-        "viable_candidate_ids": [candidate_id],
-        "blocked_candidates": [],
-        "winner_candidate_id": candidate_id,
-        "recommendation_artifact": artifact,
-        "release_status": "manufacturer_validation_required",
-        "rfq_admissibility": "provisional",
-        "specificity_level": "compound_required",
-        "output_blocked": True,
-    }
-
-    sealing_state["cycle"]["analysis_cycle_id"] = f"session_{session_id}_1"
-
-    agent_state: AgentState = {
-        "messages": [HumanMessage(content="Ich brauche eine Dichtung: Welle 50mm, 3000 rpm, Wasser, 8 bar.")],
-        "sealing_state": sealing_state,
-        "working_profile": {
-            "shaft_diameter_mm": 50.0,
-            "rpm": 3000,
-            "medium": "water",
-            "pressure_bar": 8.0,
-        },
-        "relevant_fact_cards": [],
-        "tenant_id": None,
-        "turn_count": 1,
-        "max_turns": 12,
-        "inquiry_id": session_id,
-    }
-    SESSION_STORE[session_id] = agent_state
-
-    return ReviewSeedResponse(
-        session_id=session_id,
-        review_state="pending",
-        release_status="manufacturer_validation_required",
-        review_reason=REASON_MANUFACTURER_VALIDATION,
+    raise HTTPException(
+        status_code=501,
+        detail="review/seed is disabled in the canonical SSoT runtime.",
     )
+
+
+# ---------------------------------------------------------------------------
+# F-B.3 — Override Endpoint
+# ---------------------------------------------------------------------------
+
+@router.patch("/session/{session_id}/override", response_model=OverrideResponse)
+async def session_override_endpoint(
+    session_id: str,
+    request: OverrideRequest,
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> OverrideResponse:
+    """Apply user-submitted tile overrides to ObservedState and re-evaluate.
+
+    Architecture invariant (F-B.3):
+      User overrides ALWAYS write into ObservedState.user_overrides.
+      They NEVER bypass the reducer chain to write directly into
+      NormalizedState, AssertedState, or GovernanceState.
+
+    Flow:
+      1. Load or create GovernedSessionState from Redis.
+      2. Append each OverrideItem as a UserOverride to ObservedState.
+      3. Run the full reducer chain deterministically.
+      4. Persist the updated GovernedSessionState.
+      5. Return governance outcome to the caller.
+    """
+    tenant_id = current_user.tenant_id or current_user.sub
+    owner_id = canonical_user_id(current_user)
+
+    redis_url = os.getenv("REDIS_URL", "")
+    if not redis_url:
+        raise HTTPException(status_code=503, detail="REDIS_URL not configured")
+
+    try:
+        from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+        async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+            # 1. Load or create governed state
+            state = await get_or_create_governed_state_async(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                redis_client=redis_client,
+            )
+
+            # 2. Append user overrides to ObservedState
+            observed = state.observed
+            for item in request.overrides:
+                override = UserOverride(
+                    field_name=item.field_name,
+                    override_value=item.value,
+                    override_unit=item.unit,
+                    turn_index=request.turn_index,
+                )
+                observed = observed.with_override(override)
+
+            # 3. Re-evaluate deterministically through the full reducer chain
+            normalized = reduce_observed_to_normalized(observed)
+            asserted = reduce_normalized_to_asserted(normalized)
+            governance = reduce_asserted_to_governance(
+                asserted,
+                analysis_cycle=state.analysis_cycle,
+                max_cycles=state.max_cycles,
+            )
+
+            # 4. Persist updated state
+            updated_state = state.model_copy(update={
+                "observed": observed,
+                "normalized": normalized,
+                "asserted": asserted,
+                "governance": governance,
+            })
+            await save_governed_state_async(
+                updated_state,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                redis_client=redis_client,
+            )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Override processing failed: {exc}") from exc
+
+    return OverrideResponse(
+        session_id=session_id,
+        applied_fields=[item.field_name for item in request.overrides],
+        governance=OverrideGovernanceResult(
+            gov_class=governance.gov_class,
+            rfq_admissible=governance.rfq_admissible,
+            blocking_unknowns=list(asserted.blocking_unknowns),
+            conflict_flags=list(asserted.conflict_flags),
+            validity_limits=list(governance.validity_limits),
+            open_validation_points=list(governance.open_validation_points),
+        ),
+    )
+
+
+@router.get("/health")
+async def agent_health() -> dict:
+    """Liveness probe for the SSoT Agent router.
+
+    Phase 0C.5: Docker Compose and load-balancer health checks MUST point to
+    this endpoint, not to the legacy /api/v1/langgraph/health path.
+
+    Returns a deterministic JSON payload — no DB or LLM calls.
+    """
+    return {"status": "ok", "service": "sealai-agent"}
+
+
+_MEDIUM_INTELLIGENCE_SYSTEM_PROMPT = """\
+Du bist ein Experte für Dichtungstechnik und Fluidchemie.
+Analysiere das Medium "{medium}" und liefere alle dichtungsrelevanten Eigenschaften.
+Antworte NUR mit diesem JSON-Schema (kein Text davor/danach):
+{{
+  "canonicalName": "Vollständiger chemischer/technischer Name",
+  "family": "Mediumfamilie (z.B. wässrig, mineralölbasiert, synthetisch)",
+  "subFamily": "Unterkategorie oder null",
+  "pH": {{"min": null, "max": null, "note": "string"}},
+  "viscosityMpas": {{"at20c": null, "at40c": null, "at80c": null}},
+  "temperatureRange": {{"minC": -10, "maxC": 100, "criticalNoteC": null}},
+  "pressureTypical": {{"maxBar": null, "note": "string"}},
+  "corrosiveness": "low|medium|high|very_high",
+  "chemicalAggressiveness": "low|medium|high|very_high",
+  "compatibleMaterials": ["NBR", "FKM"],
+  "incompatibleMaterials": [{{"material": "Naturkautschuk", "reason": "Quellung"}}],
+  "specialChallenges": ["string"],
+  "sealingConsiderations": ["string"],
+  "typicalIndustries": ["string"],
+  "normsStandards": [],
+  "warningFlags": [],
+  "confidenceLevel": "high|medium|low"
+}}
+"""
+
+_MEDIUM_INTELLIGENCE_MODEL = os.environ.get("SEALAI_MEDIUM_INTELLIGENCE_MODEL", "gpt-4o-mini")
+
+
+@router.get("/medium-intelligence")
+async def get_medium_intelligence(
+    medium: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> dict:
+    """Generate LLM-powered medium intelligence data for the dashboard tile.
+
+    Accepts a single ?medium=<label> query parameter.
+    Returns structured JSON with physical properties, compatibility, and sealing notes.
+    This is an orientierend (non-binding) information resource — not a governance decision.
+    """
+    medium_clean = str(medium or "").strip()
+    if not medium_clean:
+        raise HTTPException(status_code=400, detail="medium parameter required")
+
+    try:
+        import openai as _openai  # noqa: PLC0415
+        client = _openai.AsyncOpenAI()
+        system_prompt = _MEDIUM_INTELLIGENCE_SYSTEM_PROMPT.format(medium=medium_clean)
+        response = await client.chat.completions.create(
+            model=_MEDIUM_INTELLIGENCE_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Medium: {medium_clean}"},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+            max_tokens=1200,
+        )
+        raw = response.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        # Ensure canonical output shape even if model omitted optional fields
+        data.setdefault("canonicalName", medium_clean)
+        data.setdefault("family", "")
+        data.setdefault("warningFlags", [])
+        data.setdefault("normsStandards", [])
+        data.setdefault("confidenceLevel", "medium")
+        return data
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("[medium_intelligence] LLM call failed for medium=%s: %s", medium_clean, exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Medium intelligence generation failed: {type(exc).__name__}",
+        ) from exc
 
 
 app_api = FastAPI(title="SealAI LangGraph PoC API")

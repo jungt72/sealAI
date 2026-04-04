@@ -19,8 +19,6 @@ from fastapi import Request
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.messages.ai import AIMessageChunk
 
-from app._legacy_v2.state import SealAIState
-from app._legacy_v2.utils.rfq_admissibility import rfq_contract_is_ready
 from app.api.v1.utils.state_access import (
     _state_values_to_dict,
     _pillar_dict,
@@ -44,6 +42,14 @@ from app.api.v1.utils.state_access import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def rfq_contract_is_ready(rfq_admissibility: Any) -> bool:
+    """Local stub — legacy graph removed."""
+    if not isinstance(rfq_admissibility, dict):
+        return False
+    return bool(rfq_admissibility.get("ready") or rfq_admissibility.get("rfq_ready"))
+
 
 SSE_QUEUE_MAXSIZE = 200
 SSE_HEARTBEAT_SEC = 10.0
@@ -73,7 +79,7 @@ def _eventsource_event(event: str, payload: Dict[str, Any], *, event_id: str | N
     return event_payload
 
 
-def _build_state_update_payload(state: SealAIState | Dict[str, Any]) -> Dict[str, Any]:
+def _build_state_update_payload(state: Dict[str, Any]) -> Dict[str, Any]:
     values = _state_values_to_dict(state)
     working_profile = _engineering_profile_payload(values) if isinstance(values, dict) else {}
     prompt_meta = _system_value(values, "final_prompt_metadata") if isinstance(values, dict) else None
@@ -278,19 +284,19 @@ def _looks_like_state_payload(data: Dict[str, Any]) -> bool:
     return any(key in data for key in expected_keys)
 
 
-def _extract_state_update_source(data: Any) -> SealAIState | Dict[str, Any] | None:
-    if isinstance(data, SealAIState):
+def _extract_state_update_source(data: Any) -> Dict[str, Any] | None:
+    if isinstance(data, dict):
         return data
     if not isinstance(data, dict):
         return None
 
     for key in ("output", "state", "final_state", "values", "result", "chunk", "patch", "update", "delta"):
         candidate = data.get(key)
-        if isinstance(candidate, SealAIState):
+        if isinstance(candidate, dict):
             return candidate
         if isinstance(candidate, dict):
             nested_values = candidate.get("values")
-            if isinstance(nested_values, (SealAIState, dict)):
+            if isinstance(nested_values, dict):
                 return nested_values
             if _looks_like_state_payload(candidate):
                 return candidate
@@ -343,7 +349,7 @@ def _extract_chunk_text_from_stream_event(chunk: Any) -> str:
     return text
 
 
-def _extract_working_profile_payload(state_like: SealAIState | Dict[str, Any] | None) -> Dict[str, Any] | None:
+def _extract_working_profile_payload(state_like: Dict[str, Any] | None) -> Dict[str, Any] | None:
     values = _state_values_to_dict(state_like)
     raw_profile = _engineering_profile_payload(values)
     if isinstance(raw_profile, dict) and raw_profile:
@@ -351,7 +357,7 @@ def _extract_working_profile_payload(state_like: SealAIState | Dict[str, Any] | 
     return None
 
 
-def _extract_blocker_conflicts(state_like: SealAIState | Dict[str, Any] | None) -> list[Dict[str, Any]]:
+def _extract_blocker_conflicts(state_like: Dict[str, Any] | None) -> list[Dict[str, Any]]:
     profile = _extract_working_profile_payload(state_like)
     if not isinstance(profile, dict):
         return []
@@ -382,15 +388,15 @@ def _extract_blocker_conflicts(state_like: SealAIState | Dict[str, Any] | None) 
     return blockers
 
 
-def _extract_terminal_text_candidate(state: SealAIState | Dict[str, Any] | None) -> str:
-    if not isinstance(state, (SealAIState, dict)):
+def _extract_terminal_text_candidate(state: Dict[str, Any] | None) -> str:
+    if not isinstance(state, dict):
         return ""
     return _resolve_governed_output_text(state)
 
 
 async def event_multiplexer(
     graph: Any,
-    state_input: SealAIState,
+    state_input: Dict[str, Any],
     config: Dict[str, Any],
     request: Request,
 ) -> AsyncIterator[str]:
@@ -415,7 +421,7 @@ async def event_multiplexer(
         return
 
     queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=max(32, SSE_QUEUE_MAXSIZE // 2))
-    latest_state: SealAIState | Dict[str, Any] | None = state_input
+    latest_state: Dict[str, Any] | None = state_input
     turn_complete_sent = False
 
     async def _queue_emit(event_name: str, payload: Dict[str, Any]) -> None:
@@ -426,7 +432,7 @@ async def event_multiplexer(
         queue.put_nowait(frame)
 
     async def _queue_done() -> None:
-        final_text = _resolve_final_text(latest_state).strip() if isinstance(latest_state, (SealAIState, dict)) else ""
+        final_text = _resolve_final_text(latest_state).strip() if isinstance(latest_state, dict) else ""
         payload = {
             "type": "done",
             "chat_id": thread_id,
@@ -445,9 +451,9 @@ async def event_multiplexer(
         token_seen = False
         emitted_terminal_text: str | None = None
 
-        async def _emit_terminal_token_if_available(source: SealAIState | Dict[str, Any] | None) -> None:
+        async def _emit_terminal_token_if_available(source: Dict[str, Any] | None) -> None:
             nonlocal token_seen, emitted_terminal_text
-            if token_seen or not isinstance(source, (SealAIState, dict)):
+            if token_seen or not isinstance(source, dict):
                 return
             final_text = _extract_terminal_text_candidate(source).strip()
             if not final_text or final_text == emitted_terminal_text:
@@ -458,7 +464,7 @@ async def event_multiplexer(
 
         async def _emit_state_update_if_available() -> None:
             nonlocal state_update_signature
-            if not isinstance(latest_state, (SealAIState, dict)):
+            if not isinstance(latest_state, dict):
                 return
             payload = _build_state_update_payload(latest_state)
             payload_data = payload.get("data")
@@ -558,7 +564,7 @@ async def event_multiplexer(
                     continue
 
                 update_source = _extract_state_update_source(data)
-                if isinstance(update_source, (SealAIState, dict)):
+                if isinstance(update_source, dict):
                     latest_state = _merge_state_like(latest_state, update_source)
 
                 if event_name in {"on_custom_event", "on_node_end", "on_chain_end"}:

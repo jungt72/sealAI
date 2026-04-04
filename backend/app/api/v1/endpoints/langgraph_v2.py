@@ -66,23 +66,7 @@ from pydantic.config import ConfigDict
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from langgraph.errors import InvalidUpdateError
 
-from app._legacy_v2.sealai_graph_v2 import build_v2_config, get_sealai_graph_v2, scope_v2_thread_id
-from app._legacy_v2.state import SealAIState
-from app._legacy_v2.contracts import (
-    HITLResumeRequest,
-    assert_node_exists,
-    error_detail,
-    is_dependency_unavailable_error,
-)
-from app._legacy_v2.utils.confirm_go import ConfirmGoRequest
-from app._legacy_v2.utils.assertion_cycle import build_assertion_cycle_update
-from app._legacy_v2.utils.rfq_admissibility import rfq_contract_is_ready
-from app._legacy_v2.utils.parameter_patch import (
-    ParametersPatchRequest,
-    apply_parameter_patch_to_state_layers,
-    sanitize_v2_parameter_patch,
-    stage_extracted_parameter_patch,
-)
+from app.common.errors import error_detail
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.chat.conversations import upsert_conversation
 from app.services.sse_broadcast import sse_broadcast
@@ -116,11 +100,50 @@ SSE_QUEUE_MAXSIZE = int(os.getenv("SEALAI_SSE_QUEUE_MAXSIZE", "200"))
 SSE_SLOW_NOTICE_SEC = float(os.getenv("SEALAI_SSE_SLOW_NOTICE_SEC", "5"))
 REQUIRE_PARAM_SNAPSHOT = os.getenv("SEALAI_REQUIRE_PARAM_SNAPSHOT") == "1"
 WARN_STALE_PARAM_SNAPSHOT = os.getenv("SEALAI_WARN_STALE_PARAM_SNAPSHOT", "1") == "1"
+# Residual compat ingress. Disabled by default so the canonical /api/agent
+# runtime remains the productive standard authority.
+ENABLE_COMPAT_CHAT = os.getenv("SEALAI_ENABLE_LANGGRAPH_V2_COMPAT_CHAT", "false").lower() == "true"
 DEFAULT_GRAPH_RECURSION_LIMIT = 25
-# Phase 0B.2 — SSoT Thin Translation Facade
-# Set SEALAI_SSOT_FACADE_ENABLED=0 to fall back to legacy LangGraph v2 pipeline.
-SEALAI_SSOT_FACADE_ENABLED = os.getenv("SEALAI_SSOT_FACADE_ENABLED", "1") == "1"
 _STREAM_NODE_BLOCKLIST = frozenset()
+
+
+# ---------------------------------------------------------------------------
+# Inline stubs for symbols that were in app._legacy_v2 (now deleted).
+# ---------------------------------------------------------------------------
+
+class ParametersPatchRequest(BaseModel):
+    """Request body for /parameters/patch."""
+    model_config = ConfigDict(extra="ignore")
+    chat_id: str = Field(default="")
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    base_versions: Optional[Dict[str, int]] = None
+
+
+class ConfirmGoRequest(BaseModel):
+    """Request body for /confirm/go (stub — endpoint returns 501)."""
+    model_config = ConfigDict(extra="ignore")
+    chat_id: str = Field(default="")
+    decision: str = Field(default="")
+    checkpoint_id: Optional[str] = None
+    edits: Optional[Any] = None
+
+
+class HITLResumeRequest(BaseModel):
+    """Request body for /chat/v2/threads/.../runs/resume (stub — endpoint returns 501)."""
+    model_config = ConfigDict(extra="ignore")
+    chat_id: Optional[str] = None
+
+
+def sanitize_v2_parameter_patch(patch: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip None and empty-string values from a UI parameter patch dict."""
+    return {k: v for k, v in (patch or {}).items() if v is not None and v != ""}
+
+
+def rfq_contract_is_ready(rfq_admissibility: Any) -> bool:
+    """Stub: always False when legacy graph is absent."""
+    if not isinstance(rfq_admissibility, dict):
+        return False
+    return rfq_admissibility.get("status") == "ready"
 
 
 def _lg_trace_enabled() -> bool:
@@ -181,38 +204,6 @@ def _reasoning_working_memory(values: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(memory, dict):
         return dict(memory)
     return {}
-
-
-def _confirm_action_requires_rfq_ready(action: Any) -> bool:
-    text = str(action or "").strip().lower()
-    if not text:
-        return False
-    return any(token in text for token in ("rfq", "spec", "procurement", "approve_specification"))
-
-
-def _release_blockers_from_state(state_like: SealAIState | Dict[str, Any]) -> list[str]:
-    values = _state_values_to_dict(state_like)
-    governance = _governance_metadata_payload(values)
-    blockers = governance.get("unknowns_release_blocking")
-    if not isinstance(blockers, list):
-        return []
-    return [str(item).strip() for item in blockers if str(item).strip()]
-
-
-def _build_release_response(state_like: SealAIState | Dict[str, Any], *, thread_id: str) -> Dict[str, Any]:
-    values = _state_values_to_dict(state_like)
-    return {
-        "chat_id": thread_id,
-        "final_text": _resolve_final_text(values),
-        "governed_output_text": _system_value(values, "governed_output_text") or _resolve_final_text(values),
-        "governed_output_ready": bool(_system_value(values, "governed_output_ready")),
-        "governance_metadata": _governance_metadata_payload(values),
-        "rfq_admissibility": _rfq_admissibility_value(values),
-        "candidate_semantics": _candidate_semantics_payload(values),
-        "phase": _reasoning_value(values, "phase"),
-        "last_node": _reasoning_value(values, "last_node"),
-        "requires_human_review": bool(_system_value(values, "requires_human_review")),
-    }
 
 
 def _short_user_id(user_id: str | None) -> str:
@@ -308,7 +299,7 @@ def _scope_thread_id_for_user(*, user_id: str, thread_id: str) -> str:
     so Fast Brain, Slow Brain, thread locks, dedup keys, and checkpoint lookup
     all address the same namespace.
     """
-    return scope_v2_thread_id(thread_id=thread_id, user_id=user_id)
+    return f"{user_id}:{thread_id}"
 
 
 class _CompatEventSourceResponse(StreamingResponse):
@@ -408,98 +399,6 @@ def _extract_snapshot_checkpoint_id(snapshot: Any, state_values: Dict[str, Any],
             if isinstance(value, str) and value.strip():
                 return value.strip()
     return fallback
-
-
-async def _build_graph_config(
-    *,
-    thread_id: str,
-    user_id: str,
-    username: str | None = None,
-    auth_scopes: list[str] | None = None,
-    legacy_user_id: str | None = None,
-    request_id: str | None = None,
-    allow_legacy_fallback: bool = True,
-) -> tuple[Any, Dict[str, Any]]:
-    graph = await get_sealai_graph_v2()
-
-    def _with_default_recursion_limit(base_config: Dict[str, Any]) -> Dict[str, Any]:
-        config = dict(base_config or {})
-        config["recursion_limit"] = DEFAULT_GRAPH_RECURSION_LIMIT
-        return config
-
-    def _attach_config(base_config: Dict[str, Any], *, scoped_user_id: str) -> Dict[str, Any]:
-        configurable = base_config.setdefault("configurable", {})
-        metadata = base_config.setdefault("metadata", {})
-        if hasattr(graph, "checkpointer"):
-            configurable[CONFIG_KEY_CHECKPOINTER] = graph.checkpointer
-        if username:
-            metadata["username"] = username
-            metadata["user_sub"] = scoped_user_id
-        if auth_scopes:
-            metadata["auth_scopes"] = list(auth_scopes)
-        if request_id:
-            metadata["run_id"] = request_id
-        return base_config
-
-    config = _with_default_recursion_limit(
-        _attach_config(build_v2_config(thread_id=thread_id, user_id=user_id), scoped_user_id=user_id)
-    )
-    if not allow_legacy_fallback or not legacy_user_id or legacy_user_id == user_id:
-        return graph, config
-
-    try:
-        snapshot = await graph.aget_state(config)
-        if _has_checkpoint_state(snapshot):
-            return graph, config
-
-        legacy_config = _with_default_recursion_limit(
-            _attach_config(
-                build_v2_config(thread_id=thread_id, user_id=legacy_user_id),
-                scoped_user_id=legacy_user_id,
-            )
-        )
-        legacy_snapshot = await graph.aget_state(legacy_config)
-        if _has_checkpoint_state(legacy_snapshot):
-            if SSE_DEBUG or PARAM_SYNC_DEBUG or _lg_trace_enabled():
-                logger.warning(
-                    "langgraph_v2_legacy_thread_fallback",
-                    extra={
-                        "request_id": request_id,
-                        "chat_id": thread_id,
-                        "user_id": user_id,
-                        "legacy_user_id": legacy_user_id,
-                    },
-                )
-            return graph, legacy_config
-    except Exception:
-        logger.exception(
-            "langgraph_v2_legacy_fallback_failed",
-            extra={
-                "request_id": request_id,
-                "chat_id": thread_id,
-                "user_id": user_id,
-                "legacy_user_id": legacy_user_id,
-            },
-        )
-
-    return graph, config
-
-
-# _run_graph_to_state was removed from production code (never called by any endpoint).
-# Tests that reference it must import from:
-#   app.api.tests.helpers.langgraph_v2_test_stream_helpers
-
-
-def _should_emit_confirm_checkpoint(state: SealAIState) -> bool:
-    if state.system.awaiting_user_confirmation:
-        return True
-    if state.system.confirm_checkpoint:
-        return True
-    if (state.reasoning.phase or "") == "confirm":
-        return True
-    if (state.reasoning.last_node or "") == "confirm_recommendation_node":
-        return True
-    return False
 
 
 def _parse_last_event_id(last_event_id: str | None, *, chat_id: str) -> int | None:
@@ -784,131 +683,142 @@ async def _release_thread_lock(thread_id: str):
 #   app.api.tests.helpers.langgraph_v2_test_stream_helpers
 
 
+def _extract_agent_sse_payload(frame: Any) -> Dict[str, Any] | None:
+    text = frame.decode("utf-8") if isinstance(frame, (bytes, bytearray)) else str(frame)
+    payload_line = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("data: "):
+            payload_line = line.removeprefix("data: ").strip()
+            break
+    if not payload_line or payload_line == "[DONE]":
+        return None
+    try:
+        payload = json.loads(payload_line)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _legacy_state_update_from_canonical_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    case_state_out = dict(payload.get("case_state") or {})
+    sealing_state_out = dict(payload.get("sealing_state") or {})
+    governance_state_out = dict(case_state_out.get("governance_state") or {})
+    rfq_state_out = dict(case_state_out.get("rfq_state") or {})
+    case_meta_out = dict(case_state_out.get("case_meta") or {})
+    governance_out = dict(sealing_state_out.get("governance") or {})
+    cycle_out = dict(sealing_state_out.get("cycle") or {})
+
+    release_status = (
+        governance_state_out.get("release_status")
+        or governance_out.get("release_status")
+    )
+    rfq_admissibility = (
+        rfq_state_out.get("rfq_admissibility")
+        or governance_state_out.get("rfq_admissibility")
+        or governance_out.get("rfq_admissibility")
+    )
+    state_revision = (
+        case_meta_out.get("state_revision")
+        if case_meta_out.get("state_revision") is not None
+        else cycle_out.get("state_revision")
+    )
+    conflicts = (
+        governance_state_out.get("conflicts")
+        or governance_out.get("conflicts")
+        or []
+    )
+
+    su_payload: Dict[str, Any] = {
+        "type": "state_update",
+        "streaming_complete": True,
+    }
+    working_profile_out = payload.get("working_profile") or {}
+    if working_profile_out:
+        su_payload["working_profile"] = working_profile_out
+    if any(
+        value is not None
+        for value in (release_status, rfq_admissibility, state_revision)
+    ) or conflicts:
+        su_payload["governance_metadata"] = {
+            "conflicts": conflicts,
+            "release_status": release_status,
+            "rfq_admissibility": rfq_admissibility,
+            "state_revision": state_revision,
+        }
+        if rfq_admissibility is not None:
+            su_payload["rfq_admissibility"] = rfq_admissibility
+        su_payload["governed_output_ready"] = release_status == "approved"
+    return su_payload
+
+
 async def _ssot_to_legacy_sse_stream(
     user_input: str,
     chat_id: str,
+    *,
+    current_user: RequestUser,
+    request_id: str | None = None,
 ) -> AsyncIterator[Any]:
-    """Thin Translation Facade — Phase 0B.2 (rev. 2: atomic text synthesis).
+    """Compatibility SSE facade over the canonical /api/agent runtime.
 
-    Routes /chat/v2 through the SSoT agent pipeline and translates SSoT
-    events to the legacy LangGraph v2 SSE contract.
-
-    Translation map:
-      on_chat_model_stream (speaking nodes) → token + text_chunk  (live tokens)
-      on_chain_end (LangGraph)              → captures final_state incl. messages
-      [post-stream synthesis]               → if no tokens were streamed, emit
-                                              one synthetic token + text_chunk
-                                              from final AIMessage content
-      state_update                          → legacy state_update payload
-      turn_complete + done                  → stream close sentinel
-
-    Why we call astream_events directly (not agent_sse_generator):
-      agent_sse_generator emits a parsed state_update event but drops the
-      messages list from final_state.  We need the AIMessage content for the
-      structured path where final_response_node writes atomically (no stream).
+    The v1 endpoint no longer orchestrates LangGraph execution or persistence
+    directly. It delegates to the canonical agent SSE generator and only
+    translates canonical frames to the legacy SSE event contract.
     """
-    # Lazy imports — avoid circular import at module load time.
-    from app.agent.agent.graph import app as ssot_graph  # type: ignore[import]
-    from app.agent.api.sse_runtime import AGENT_SPEAKING_NODES, _node_name_from_event  # type: ignore[import]
-    from app.agent.api.router import SESSION_STORE  # type: ignore[import]
-    from app.agent.cli import create_initial_state  # type: ignore[import]
+    from app.agent.api.models import ChatRequest  # type: ignore[import]
+    from app.agent.api.router import event_generator as agent_event_generator  # type: ignore[import]
 
-    # Bootstrap SSoT session on first contact for this chat_id.
-    if chat_id not in SESSION_STORE:
-        initial_sealing_state = create_initial_state()
-        initial_sealing_state["cycle"]["analysis_cycle_id"] = f"facade_{chat_id}_1"
-        SESSION_STORE[chat_id] = {
-            "messages": [],
-            "sealing_state": initial_sealing_state,
-            "working_profile": {},
-        }
-    current_state = SESSION_STORE[chat_id]
-    current_state["messages"].append(HumanMessage(content=user_input))
-
-    streamed_text = False       # True once any live token has been forwarded
-    final_state: Dict[str, Any] | None = None
+    streamed_text = False
 
     try:
-        async for raw_event in ssot_graph.astream_events(current_state, version="v2"):
-            if not isinstance(raw_event, dict):
+        async for frame in agent_event_generator(
+            ChatRequest(message=user_input, session_id=chat_id),
+            current_user=current_user,
+        ):
+            payload = _extract_agent_sse_payload(frame)
+            if not payload:
                 continue
-            event_kind = str(raw_event.get("event") or "")
 
-            # ── Live token stream (fast_guidance_node only) ────────────────
-            if event_kind == "on_chat_model_stream":
-                node_name = _node_name_from_event(raw_event)
-                if node_name not in AGENT_SPEAKING_NODES:
+            payload_type = str(payload.get("type") or "")
+            if payload_type == "text_chunk":
+                text = str(payload.get("text") or "").strip()
+                if not text:
                     continue
-                chunk = (raw_event.get("data") or {}).get("chunk")
-                text = getattr(chunk, "content", None) if chunk is not None else None
-                if text:
+                streamed_text = True
+                yield _eventsource_event("text_chunk", {"type": "text_chunk", "text": text})
+                yield _eventsource_event("token", {"type": "token", "text": text})
+                continue
+
+            if payload_type == "state_update":
+                reply_text = str(payload.get("reply") or "").strip()
+
+                if reply_text and not streamed_text:
                     streamed_text = True
-                    yield _eventsource_event("text_chunk", {"type": "text_chunk", "text": text})
-                    yield _eventsource_event("token", {"type": "token", "text": text})
+                    yield _eventsource_event("text_chunk", {"type": "text_chunk", "text": reply_text})
+                    yield _eventsource_event("token", {"type": "token", "text": reply_text})
 
-            # ── Graph completion — capture full output incl. messages ──────
-            elif event_kind == "on_chain_end" and raw_event.get("name") == "LangGraph":
-                output = (raw_event.get("data") or {}).get("output")
-                if isinstance(output, dict):
-                    final_state = output
+                su_payload = _legacy_state_update_from_canonical_payload(payload)
+                yield _eventsource_event("state_update", su_payload)
+                continue
 
-    except Exception as exc:
-        logger.error("[facade] ssot stream error: %s", exc, exc_info=True)
-        yield _eventsource_event("error", {"type": "error", "message": str(exc)})
+            if payload_type == "error":
+                yield _eventsource_event(
+                    "error",
+                    {"type": "error", "message": "internal_error", "request_id": request_id},
+                )
+                yield _eventsource_event("turn_complete", {"type": "turn_complete"})
+                yield _eventsource_event("done", {"type": "done"})
+                return
+
+    except Exception:
+        logger.exception("langgraph_v2_compat_stream_failed", extra={"chat_id": chat_id})
+        yield _eventsource_event(
+            "error",
+            {"type": "error", "message": "internal_error", "request_id": request_id},
+        )
         yield _eventsource_event("turn_complete", {"type": "turn_complete"})
         yield _eventsource_event("done", {"type": "done"})
         return
-
-    # ── Atomic text synthesis for structured path ──────────────────────────
-    # final_response_node writes the reply as an AIMessage (no token stream).
-    # The frontend builds the chat bubble from token/text_chunk events, so we
-    # must promote the AIMessage content to a single synthetic chunk.
-    if not streamed_text and final_state is not None:
-        # Primary: governed_output_text in sealing_state.governance
-        sealing_state_out = final_state.get("sealing_state") or {}
-        governance_out = sealing_state_out.get("governance") or {}
-        final_text: str = governance_out.get("governed_output_text") or ""
-
-        # Fallback: last AIMessage in the graph output messages list
-        if not final_text:
-            for msg in reversed(final_state.get("messages") or []):
-                content = getattr(msg, "content", None)
-                if content and isinstance(content, str) and not isinstance(msg, HumanMessage):
-                    final_text = content
-                    break
-
-        if final_text:
-            yield _eventsource_event("text_chunk", {"type": "text_chunk", "text": final_text})
-            yield _eventsource_event("token", {"type": "token", "text": final_text})
-
-    # ── state_update ───────────────────────────────────────────────────────
-    if final_state is not None:
-        sealing_state_out = final_state.get("sealing_state") or {}
-        working_profile_out = final_state.get("working_profile") or {}
-        governance_out = sealing_state_out.get("governance") or {}
-        cycle_out = sealing_state_out.get("cycle") or {}
-        conflicts_out = governance_out.get("conflicts") or []
-
-        su_payload: Dict[str, Any] = {
-            "type": "state_update",
-            "streaming_complete": True,
-        }
-        if working_profile_out:
-            su_payload["working_profile"] = working_profile_out
-        if governance_out:
-            su_payload["governance_metadata"] = {
-                "conflicts": conflicts_out,
-                "release_status": governance_out.get("release_status"),
-                "rfq_admissibility": governance_out.get("rfq_admissibility"),
-                "state_revision": cycle_out.get("state_revision"),
-            }
-        rfq_adm = governance_out.get("rfq_admissibility")
-        if rfq_adm is not None:
-            su_payload["rfq_admissibility"] = rfq_adm
-        su_payload["governed_output_ready"] = (
-            governance_out.get("release_status") == "approved"
-        )
-        yield _eventsource_event("state_update", su_payload)
 
     yield _eventsource_event("turn_complete", {"type": "turn_complete"})
     yield _eventsource_event("done", {"type": "done"})
@@ -920,38 +830,32 @@ async def langgraph_chat_v2_endpoint(
     raw_request: Request,
     user: RequestUser = Depends(get_current_request_user),
 ) -> StreamingResponse:
-    """Primary chat endpoint for the v13 two-speed runtime.
+    """Residual compatibility SSE ingress.
 
-    Interception workflow:
-
-    1. Authenticate the request, deduplicate `client_msg_id`, and claim the
-       thread lock exactly as before. Fast-Brain interception must remain
-       invisible to auth and checkpoint semantics.
-    2. Load the current checkpoint state and pass recent conversation history to
-       the Fast Brain.
-    3. Branch on the Fast-Brain status:
-
-       - `chat_continue`
-         The Fast Brain fully answers the turn. We sync any extracted
-         parameters / live physics outputs into the checkpoint, persist the
-         transcript for this turn, and stream the response directly as SSE
-         (`state_update` -> `text_chunk` -> `turn_complete`). The LangGraph is
-         not started.
-
-       - `handoff_to_langgraph`
-         The Fast Brain has gathered enough context to wake the Slow Brain. We
-         first sync its state contributions into the checkpoint so the graph
-         sees the same engineering profile and deterministic tool outputs, then
-         start the existing `event_multiplexer` flow unchanged.
-
-    The practical consequence is intentional: a simple chat request may return
-    instantly without graph execution, while a sufficiently "engineering-heavy"
-    request escalates into the LangGraph Expert Council using the same REST
-    endpoint and thread state.
+    This route is no longer a productive default chat entrypoint. It remains
+    available only as an explicit opt-in compatibility facade and otherwise
+    instructs callers to use the canonical /api/agent runtime.
     """
+    if not ENABLE_COMPAT_CHAT:
+        request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+        raise HTTPException(
+            status_code=410,
+            detail=error_detail(
+                "compat_chat_disabled",
+                request_id=request_id,
+                message="Compatibility chat facade disabled. Use /api/agent/chat/stream.",
+            ),
+        )
+
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     if not request_id:
         request_id = str(uuid.uuid4())
+    logger.warning(
+        "langgraph_v2_compat_chat_invoked request_id=%s chat_id=%s user=%s",
+        request_id,
+        request.chat_id,
+        _short_user_id(canonical_user_id(user)),
+    )
     last_event_id = raw_request.headers.get("Last-Event-ID")
     snapshot = _extract_param_snapshot(request)
     version_count, updated_max = _snapshot_stats(snapshot)
@@ -1036,117 +940,25 @@ async def langgraph_chat_v2_endpoint(
             ),
         )
 
-    # ── Phase 0B.2: SSoT Thin Translation Facade ────────────────────────────
-    # When enabled, delegate to the SSoT agent pipeline instead of the legacy
-    # LangGraph v2 graph. The LangGraph checkpoint lock is released immediately
-    # because the SSoT pipeline manages its own in-memory session concurrency.
-    if SEALAI_SSOT_FACADE_ENABLED:
-        await _release_thread_lock(request.chat_id)
-        headers: Dict[str, str] = {
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-        if request_id:
-            headers["X-Request-Id"] = request_id
-        return EventSourceResponse(
-            _ssot_to_legacy_sse_stream(request.input, request.chat_id),
-            headers=headers,
-        )
-    # ────────────────────────────────────────────────────────────────────────
-
-    try:
-        graph, config = await _build_graph_config(
-            thread_id=request.chat_id,
-            user_id=scoped_user_id,
-            username=user.username,
-            auth_scopes=user.scopes,
-            legacy_user_id=legacy_user_id,
+    # SSoT is the sole execution path — release the LangGraph thread lock
+    # (the SSoT pipeline manages its own in-memory session concurrency).
+    await _release_thread_lock(request.chat_id)
+    headers: Dict[str, str] = {
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    if request_id:
+        headers["X-Request-Id"] = request_id
+    return EventSourceResponse(
+        _ssot_to_legacy_sse_stream(
+            request.input,
+            request.chat_id,
+            current_user=user,
             request_id=request_id,
-        )
-        state_values = await _get_graph_state_values_for_stream(graph, config)
-        fast_brain_result: Dict[str, Any] | None = None
-        try:
-            fast_brain_result = await _get_fast_brain_router().chat(
-                user_input=request.input,
-                history=_extract_fast_brain_history(state_values),
-            )
-        except Exception:
-            logger.exception(
-                "fast_brain_router_failed",
-                extra={
-                    "request_id": request_id,
-                    "chat_id": request.chat_id,
-                    "user_id": scoped_user_id,
-                },
-            )
-
-        headers = {
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-        if request_id:
-            headers["X-Request-Id"] = request_id
-
-        if isinstance(fast_brain_result, dict):
-            fast_status = _normalize_fast_brain_status(fast_brain_result)
-            logger.info(
-                "langgraph_v2_fast_brain_route",
-                extra={
-                    "request_id": request_id,
-                    "chat_id": request.chat_id,
-                    "user_id": scoped_user_id,
-                    "status": fast_status,
-                    "has_state_patch": bool(_coerce_fast_brain_state_patch(fast_brain_result)),
-                },
-            )
-            if fast_status == "chat_continue":
-                # Fast path: no graph run. Persist the reply and stream it back
-                # with the SSE contract expected by the frontend.
-                synced_state = await _sync_fast_brain_checkpoint_state(
-                    graph=graph,
-                    config=config,
-                    user_input=request.input,
-                    fast_brain_result=fast_brain_result,
-                    request_id=request_id,
-                    persist_transcript=True,
-                )
-                stream = _fast_brain_sse_stream(
-                    request=raw_request,
-                    thread_id=request.chat_id,
-                    fast_brain_result=fast_brain_result,
-                    state_values=synced_state,
-                )
-                return EventSourceResponse(stream, headers=headers)
-
-            if fast_status == "handoff_to_langgraph":
-                # Handoff path: checkpoint Fast-Brain discoveries first so the
-                # LangGraph starts from the already-enriched digital twin.
-                await _sync_fast_brain_checkpoint_state(
-                    graph=graph,
-                    config=config,
-                    user_input=request.input,
-                    fast_brain_result=fast_brain_result,
-                    request_id=request_id,
-                    persist_transcript=False,
-                )
-
-        state_input = SealAIState(
-            conversation={
-                "user_id": scoped_user_id,
-                "thread_id": request.chat_id,
-                "messages": [HumanMessage(content=request.input)],
-                "user_context": {"auth_scopes": list(user.scopes or []), "tenant_id": user.tenant_id},
-            },
-            system={"tenant_id": user.tenant_id},
-        )
-        stream = event_multiplexer(graph, state_input, config, raw_request)
-        return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
-    except Exception:
-        # If we failed before returning the stream, release the lock immediately.
-        await _release_thread_lock(request.chat_id)
-        raise
+        ),
+        headers=headers,
+    )
 
 
 @router.post("/confirm/go")
@@ -1156,157 +968,14 @@ async def confirm_go(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
-    scoped_user_id = canonical_user_id(user)
-    body.chat_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=body.chat_id)
-    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
-
-    # Concurrency check: Ensure only one active run per thread_id.
-    locked = await _claim_thread_lock(body.chat_id, ttl=300)
-    if not locked:
-        raise HTTPException(
-            status_code=409,
-            detail=error_detail(
-                "thread_locked",
-                request_id=request_id,
-                message="Another request is already processing for this thread. Please wait.",
-            ),
-        )
-
-    try:
-        if not (body.chat_id or "").strip():
-            raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
-        if not body.decision:
-            raise HTTPException(status_code=400, detail=error_detail("missing_decision", request_id=request_id))
-        graph, config = await _build_graph_config(
-            thread_id=body.chat_id,
-            user_id=scoped_user_id,
-            username=user.username,
-            auth_scopes=user.scopes,
-            legacy_user_id=legacy_user_id,
+    raise HTTPException(
+        status_code=501,
+        detail=error_detail(
+            "endpoint_removed",
             request_id=request_id,
-        )
-        snapshot = await graph.aget_state(config)
-        state_values = _state_values_to_dict(snapshot.values)
-        confirm_payload = _system_value(state_values, "confirm_checkpoint") if isinstance(state_values, dict) else {}
-        if not isinstance(confirm_payload, dict):
-            confirm_payload = {}
-        confirm_status = _system_value(state_values, "confirm_status") if isinstance(state_values, dict) else None
-        required_sub = ""
-        if confirm_payload:
-            required_sub = str(confirm_payload.get("required_user_sub") or "")
-        pending_action = _system_value(state_values, "pending_action") if isinstance(state_values, dict) else None
-        checkpoint_id = _system_value(state_values, "confirm_checkpoint_id") if isinstance(state_values, dict) else None
-        if confirm_status == "resolved":
-            raise HTTPException(
-                status_code=409,
-                detail=error_detail("checkpoint_already_resolved", request_id=request_id),
-            )
-        if not confirm_payload and not pending_action and not checkpoint_id:
-            raise HTTPException(status_code=409, detail=error_detail("no_pending_checkpoint", request_id=request_id))
-        # Legacy/test graphs may not expose explicit checkpoint payload fields; allow
-        # confirm updates to proceed and let graph/update layer decide applicability.
-        if confirm_payload:
-            conversation_id = str(confirm_payload.get("conversation_id") or "")
-            if conversation_id != body.chat_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail=error_detail("checkpoint_conversation_mismatch", request_id=request_id),
-                )
-        if required_sub and required_sub != scoped_user_id:
-            raise HTTPException(status_code=403, detail=error_detail("forbidden", request_id=request_id))
-        if body.checkpoint_id and checkpoint_id and body.checkpoint_id != checkpoint_id:
-            raise HTTPException(status_code=409, detail=error_detail("checkpoint_mismatch", request_id=request_id))
-
-        current_action = str((confirm_payload.get("action") if isinstance(confirm_payload, dict) else None) or pending_action or "").strip()
-        current_release_blockers = _release_blockers_from_state(state_values)
-        if body.decision == "approve" and current_release_blockers:
-            raise HTTPException(
-                status_code=409,
-                detail=error_detail(
-                    "release_blocked",
-                    request_id=request_id,
-                    blockers=current_release_blockers,
-                ),
-            )
-        if body.decision == "approve" and _confirm_action_requires_rfq_ready(current_action):
-            rfq_admissibility = _rfq_admissibility_value(state_values)
-            if not rfq_contract_is_ready(rfq_admissibility):
-                raise HTTPException(
-                    status_code=409,
-                    detail=error_detail(
-                        "rfq_not_admissible",
-                        request_id=request_id,
-                        status=rfq_admissibility.get("status"),
-                        reason=rfq_admissibility.get("reason"),
-                    ),
-                )
-
-        edits_payload = body.edits.model_dump(exclude_none=True) if body.edits else {}
-        edit_parameters = {}
-        if edits_payload.get("working_profile") or edits_payload.get("parameters"):
-            edit_parameters = sanitize_v2_parameter_patch(
-                edits_payload.get("working_profile") or edits_payload.get("parameters") or {}
-            )
-        edits = {
-            "working_profile": edit_parameters,
-            "instructions": (edits_payload.get("instructions") or "").strip() or None,
-        }
-
-        as_node_candidate = str(_reasoning_value(state_values, "last_node") or CONFIRM_GO_AS_NODE).strip()
-        as_node = pick_existing_node(graph, as_node_candidate, fallback=CONFIRM_GO_AS_NODE)
-
-        assert_node_exists(
-            graph,
-            as_node,
-            request_id=request_id,
-            status_code=500,
-            code="server_misconfigured",
-        )
-        await graph.aupdate_state(
-            config,
-            {
-                "system": {
-                    "confirm_decision": body.decision,
-                    "confirm_edits": edits,
-                },
-                # Backward-compatible mirrors for legacy test doubles/graphs.
-                "confirm_decision": body.decision,
-                "confirm_edits": edits,
-            },
-            as_node=as_node,
-        )
-
-        result = await graph.ainvoke({}, config=config)
-        state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result or {})
-        response = {
-            "ok": True,
-            "decision": body.decision,
-        }
-        response.update(_build_release_response(state, thread_id=body.chat_id))
-        return response
-    except HTTPException:
-        raise
-    except InvalidUpdateError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc)),
-        ) from exc
-    except Exception as exc:
-        if is_dependency_unavailable_error(exc):
-            raise HTTPException(
-                status_code=503,
-                detail=error_detail("dependency_unavailable", request_id=request_id),
-            ) from exc
-        logger.exception(
-            "langgraph_v2_confirm_go_error",
-            extra={"request_id": request_id, "chat_id": body.chat_id, "user": user.user_id},
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=error_detail("internal_error", request_id=request_id),
-        ) from exc
-    finally:
-        await _release_thread_lock(body.chat_id)
+            message="This HITL endpoint is no longer available in the SSoT architecture.",
+        ),
+    )
 
 
 @router.post("/chat/v2/threads/{thread_id}/runs/resume")
@@ -1317,91 +986,14 @@ async def resume_run(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
-    scoped_user_id = canonical_user_id(user)
-    thread_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=thread_id)
-    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
-
-    # Concurrency check: Ensure only one active run per thread_id.
-    locked = await _claim_thread_lock(thread_id, ttl=300)
-    if not locked:
-        raise HTTPException(
-            status_code=409,
-            detail=error_detail(
-                "thread_locked",
-                request_id=request_id,
-                message="Another request is already processing for this thread. Please wait.",
-            ),
-        )
-
-    try:
-        thread_id = (thread_id or "").strip()
-        if not thread_id:
-            raise HTTPException(status_code=400, detail=error_detail("missing_thread_id", request_id=request_id))
-        if not (body.checkpoint_id or "").strip():
-            raise HTTPException(status_code=400, detail=error_detail("missing_checkpoint_id", request_id=request_id))
-
-        graph, config = await _build_graph_config(
-            thread_id=thread_id,
-            user_id=scoped_user_id,
-            username=user.username,
-            auth_scopes=user.scopes,
-            legacy_user_id=legacy_user_id,
+    raise HTTPException(
+        status_code=501,
+        detail=error_detail(
+            "endpoint_removed",
             request_id=request_id,
-        )
-        snapshot = await graph.aget_state(config)
-        state_values = _state_values_to_dict(snapshot.values)
-        state_checkpoint_id = _system_value(state_values, "confirm_checkpoint_id") if isinstance(state_values, dict) else None
-        if (
-            isinstance(state_checkpoint_id, str)
-            and state_checkpoint_id.strip()
-            and state_checkpoint_id.strip() != body.checkpoint_id.strip()
-        ):
-            raise HTTPException(status_code=409, detail=error_detail("checkpoint_mismatch", request_id=request_id))
-
-        # Resume contract payload passed to graph runtime (LangGraph resume protocol).
-        resume_payload = {
-            "checkpoint_id": body.checkpoint_id,
-            "action": body.command.action,
-            "feedback": body.command.feedback,
-            "override_params": body.command.override_params or {},
-        }
-        result = await graph.ainvoke(Command(resume=resume_payload), config=config)
-        state = result if isinstance(result, SealAIState) else SealAIState.model_validate(result or {})
-        response = {
-            "ok": True,
-            "thread_id": thread_id,
-            "checkpoint_id": body.checkpoint_id,
-            "action": body.command.action,
-        }
-        response.update(_build_release_response(state, thread_id=thread_id))
-        return response
-    except HTTPException:
-        raise
-    except InvalidUpdateError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=error_detail("invalid_resume_command", request_id=request_id, message=str(exc)),
-        ) from exc
-    except Exception as exc:
-        if is_dependency_unavailable_error(exc):
-            raise HTTPException(
-                status_code=503,
-                detail=error_detail("dependency_unavailable", request_id=request_id),
-            ) from exc
-        logger.exception(
-            "langgraph_v2_resume_error",
-            extra={
-                "request_id": request_id,
-                "thread_id": thread_id,
-                "user": user.user_id,
-            },
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=error_detail("internal_error", request_id=request_id),
-        ) from exc
-    finally:
-        await _release_thread_lock(thread_id)
+            message="This resume endpoint is no longer available in the SSoT architecture.",
+        ),
+    )
 
 
 @router.post("/parameters/patch")
@@ -1411,217 +1003,14 @@ async def patch_parameters(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
-    scoped_user_id = canonical_user_id(user)
-    legacy_user_id = user.sub if user.sub and user.sub != scoped_user_id else None
-    chat_id = _scope_thread_id_for_user(user_id=scoped_user_id, thread_id=body.chat_id)
-    body.chat_id = chat_id
-    patch: Dict[str, Any] = {}
-    try:
-        if PARAM_SYNC_DEBUG:
-            logger.info(
-                "langgraph_v2_parameters_patch_payload",
-                extra={
-                    "request_id": request_id,
-                    "chat_id": chat_id,
-                    "parameters": body.parameters,
-                },
-            )
-        if not chat_id:
-            raise HTTPException(status_code=400, detail=error_detail("missing_chat_id", request_id=request_id))
-        patch = sanitize_v2_parameter_patch(body.parameters)
-        if not patch:
-            raise HTTPException(status_code=400, detail=error_detail("missing_parameters", request_id=request_id))
-
-        graph, config = await _build_graph_config(
-            thread_id=chat_id,
-            user_id=scoped_user_id,
-            username=user.username,
-            auth_scopes=user.scopes,
-            legacy_user_id=legacy_user_id,
+    raise HTTPException(
+        status_code=501,
+        detail=error_detail(
+            "endpoint_removed",
             request_id=request_id,
-        )
-        assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
-        snapshot = await graph.aget_state(config)
-        state_values = _state_values_to_dict(snapshot.values)
-        existing_params = _engineering_profile_payload(state_values) if isinstance(state_values, dict) else {}
-        existing_provenance = {}
-        existing_normalized = {}
-        existing_normalized_provenance = {}
-        existing_identity = {}
-        existing_observed_inputs = {}
-        existing_versions: Dict[str, int] = {}
-        existing_updated_at: Dict[str, float] = {}
-        if isinstance(state_values, dict):
-            existing_provenance = _reasoning_value(state_values, "parameter_provenance") or {}
-            existing_normalized = (
-                _working_profile_value(state_values, "normalized_profile")
-                or _working_profile_value(state_values, "extracted_params")
-                or {}
-            )
-            existing_normalized_provenance = _reasoning_value(state_values, "extracted_parameter_provenance") or {}
-            existing_identity = _reasoning_value(state_values, "extracted_parameter_identity") or {}
-            existing_observed_inputs = _reasoning_value(state_values, "observed_inputs") or {}
-            existing_versions = _reasoning_value(state_values, "parameter_versions") or {}
-            existing_updated_at = _reasoning_value(state_values, "parameter_updated_at") or {}
-        (
-            merged,
-            merged_provenance,
-            merged_versions,
-            merged_updated_at,
-            merged_normalized,
-            merged_normalized_provenance,
-            merged_identity,
-            merged_observed_inputs,
-            staged_fields,
-            asserted_fields,
-            rejected_fields,
-        ) = apply_parameter_patch_to_state_layers(
-            existing_params,
-            existing_normalized,
-            patch,
-            existing_provenance,
-            existing_normalized_provenance,
-            existing_identity,
-            existing_observed_inputs,
-            source="user",
-            parameter_versions=existing_versions,
-            parameter_updated_at=existing_updated_at,
-            base_versions=body.base_versions,
-        )
-        cycle_update = build_assertion_cycle_update(state_values, applied_fields=asserted_fields)
-
-        if PARAM_SYNC_DEBUG:
-            patch_keys = sorted(patch.keys())
-            types = {key: type(patch.get(key)).__name__ for key in patch_keys}
-            before = {}
-            after = {}
-            if isinstance(existing_params, dict):
-                before = {key: existing_params.get(key) for key in patch_keys}
-            if isinstance(merged, dict):
-                after = {key: merged.get(key) for key in patch_keys}
-            configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
-            logger.info(
-                "langgraph_v2_parameters_patch_debug",
-                extra={
-                    "request_id": request_id,
-                    "chat_id": chat_id,
-                    "user": _short_user_id(user.user_id),
-                    "patch_keys": patch_keys,
-                    "patch_types": types,
-                    "patch_before": before,
-                    "patch_after": after,
-                    "merged_keys": sorted(merged.keys()) if isinstance(merged, dict) else [],
-                    "checkpoint_thread_id": configurable.get("thread_id"),
-                    "checkpoint_ns": configurable.get("checkpoint_ns"),
-                },
-            )
-
-        updates = {
-            "working_profile": {
-                "normalized_profile": merged_normalized,
-                "engineering_profile": merged,
-                "extracted_params": merged_normalized,
-            },
-            "reasoning": {
-                "parameter_provenance": merged_provenance,
-                "extracted_parameter_provenance": merged_normalized_provenance,
-                "extracted_parameter_identity": merged_identity,
-                "observed_inputs": merged_observed_inputs,
-                "parameter_versions": merged_versions,
-                "parameter_updated_at": merged_updated_at,
-            },
-        }
-        if cycle_update:
-            updates = _merge_state_like(updates, cycle_update) or updates
-
-        await graph.aupdate_state(
-            config,
-            updates,
-            # LangGraph requires `as_node` to be an existing node in the compiled graph.
-            # Parameter patches are UI-driven and should not advance the graph; we attach
-            # the update to a stable, always-present node.
-            as_node=PARAMETERS_PATCH_AS_NODE,
-        )
-        response_fields = sorted(patch.keys())
-        response_payload = {
-            "ok": True,
-            "chat_id": body.chat_id,
-            "applied_fields": staged_fields,
-            "asserted_fields": asserted_fields,
-            "rejected_fields": rejected_fields,
-            "versions": {field: merged_versions.get(field, 0) for field in response_fields},
-            "updated_at": {field: merged_updated_at.get(field) for field in response_fields},
-        }
-        ack_payload = {
-            "chat_id": body.chat_id,
-            "patch": patch,
-            "applied_fields": staged_fields,
-            "asserted_fields": asserted_fields,
-            "rejected_fields": rejected_fields,
-            "versions": response_payload["versions"],
-            "updated_at": response_payload["updated_at"],
-            "source": "patch_endpoint",
-            "request_id": request_id,
-        }
-        await sse_broadcast.broadcast(
-            user_id=scoped_user_id,
-            chat_id=chat_id,
-            event="parameter_patch_ack",
-            data=ack_payload,
-        )
-        return response_payload
-    except HTTPException:
-        raise
-    except ValueError as exc:
-        if PARAM_SYNC_DEBUG:
-            logger.warning(
-                "langgraph_v2_parameters_patch_invalid_payload",
-                extra={
-                    "request_id": request_id,
-                    "chat_id": chat_id,
-                    "user": _short_user_id(user.user_id),
-                    "error": str(exc),
-                    "patch_keys": sorted(patch.keys()) if isinstance(patch, dict) else [],
-                },
-            )
-        raise HTTPException(
-            status_code=400,
-            detail=error_detail("invalid_parameters", request_id=request_id, message=str(exc)),
-        ) from exc
-    except InvalidUpdateError as exc:
-        if PARAM_SYNC_DEBUG:
-            logger.warning(
-                "langgraph_v2_parameters_patch_invalid_update",
-                exc_info=exc,
-                extra={
-                    "request_id": request_id,
-                    "chat_id": chat_id,
-                    "patch_keys": sorted(patch.keys()) if isinstance(patch, dict) else [],
-                },
-            )
-        raise HTTPException(
-            status_code=400,
-            detail=error_detail("invalid_as_node", request_id=request_id, message=str(exc)),
-        ) from exc
-    except Exception as exc:
-        if is_dependency_unavailable_error(exc):
-            raise HTTPException(
-                status_code=503,
-                detail=error_detail("dependency_unavailable", request_id=request_id),
-            ) from exc
-        logger.exception(
-            "langgraph_v2_parameters_patch_error",
-            extra={
-                "request_id": request_id,
-                "chat_id": chat_id,
-                "user": user.user_id,
-                "patch_keys": sorted(patch.keys()),
-            },
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=error_detail("internal_error", request_id=request_id),
-        ) from exc
+            message="Parameter patching is only supported on the canonical /api/agent runtime path.",
+        ),
+    )
 
 
 __all__ = ["LangGraphV2Request"]

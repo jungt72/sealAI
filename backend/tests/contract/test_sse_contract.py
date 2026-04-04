@@ -26,6 +26,19 @@ def _parse_sse_frames(frames: List[str]) -> List[Tuple[str, Dict[str, Any]]]:
     return parsed
 
 
+def _parse_agent_data_frames(frames: List[str]) -> List[Dict[str, Any]]:
+    parsed: List[Dict[str, Any]] = []
+    for frame in frames:
+        if not frame.startswith("data: "):
+            continue
+        raw = frame[6:].strip()
+        if raw == "[DONE]":
+            parsed.append({"type": "__DONE__"})
+            continue
+        parsed.append(json.loads(raw))
+    return parsed
+
+
 def _set_minimal_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # app.core.config.Settings has many required fields; set minimal dummy values so that
     # importing API endpoints does not fail during settings initialization.
@@ -81,126 +94,205 @@ async def _collect_async(gen: AsyncGenerator[str, None]) -> List[str]:
     return chunks
 
 
-def test_sse_stream_emits_done_once_and_is_last_for_normal_run(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_agent_stream_emits_done_once_and_is_last_for_normal_run(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_minimal_settings_env(monkeypatch)
-    from app.api.v1.endpoints import langgraph_v2 as endpoint
-    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
+    from app.agent.api import router as endpoint
+    from app.agent.api.models import ChatRequest
+    from app.services.auth.dependencies import RequestUser
 
-    dummy_events = [
+    class _EnumLike(str):
+        @property
+        def value(self) -> str:
+            return str(self)
+
+    decision = type(
+        "Decision",
+        (),
         {
-            "event": "on_node_start",
-            "name": "final_answer_node",
-            "data": {},
+            "path": _EnumLike("structured"),
+            "result_form": _EnumLike("state_update"),
+            "runtime_path": "STRUCTURED_QUALIFICATION",
+            "binding_level": "ORIENTATION",
         },
-        {
-            "event": "on_chat_model_stream",
-            "name": "final_answer_node",
-            "data": {"chunk": {"content": "Hallo "}},
-        },
-        {
-            "event": "on_chat_model_stream",
-            "name": "final_answer_node",
-            "data": {"chunk": {"content": "Welt"}},
-        },
-        {
-            "event": "on_node_end",
-            "name": "final_answer_node",
-            "data": {"output": {"parameters": {"temperature_C": 80}}},
-        },
-    ]
-    final_values = {"final_text": "Hallo Welt", "parameters": {"temperature_C": 80}}
-    dummy_graph = _DummyGraph(dummy_events, final_values)
+    )()
 
-    async def _get_graph() -> _DummyGraph:
-        return dummy_graph
-
-    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
-
-    request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(_event_stream_v2(request)))
-
-    events = _parse_sse_frames(frames)
-    assert events, "SSE produced no frames"
-
-    node_start = [payload for evt, payload in events if evt == "node_start"]
-    node_end = [payload for evt, payload in events if evt == "node_end"]
-    assert node_start, "expected at least one node_start event"
-    assert node_end, "expected at least one node_end event"
-    for payload in node_start + node_end:
-        node = payload.get("node")
-        assert isinstance(node, str) and node, f"expected node field in {payload}"
-        ts = payload.get("ts")
-        assert isinstance(ts, str) and ts, f"expected ts field in {payload}"
-        # iso parseable
-        dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
-
-    done_events = [evt for evt, payload in events if evt == "done"]
-    assert len(done_events) == 1, f"expected exactly one done event, got {len(done_events)}"
-    assert events[-1][0] == "done", f"expected last event to be done, got {events[-1][0]!r}"
-
-
-def test_sse_stream_emits_error_then_done_and_stops(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_minimal_settings_env(monkeypatch)
-    from app.api.v1.endpoints import langgraph_v2 as endpoint
-    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
-
-    async def _error_events() -> AsyncGenerator[Dict[str, Any], None]:
-        yield {"event": "on_error", "name": "final_answer_node", "data": {"error": "boom"}}
-
-    class _ErrorGraph(_DummyGraph):
-        async def astream_events(self, *_args: Any, **_kwargs: Any) -> AsyncGenerator[Dict[str, Any], None]:
-            async for item in _error_events():
-                yield item
-
-        async def aget_state(self, *_args: Any, **_kwargs: Any) -> _Snapshot:
-            return _Snapshot(values={})
-
-    async def _get_graph() -> _ErrorGraph:
-        return _ErrorGraph([], {})
-
-    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
-
-    request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(_event_stream_v2(request)))
-
-    events = _parse_sse_frames(frames)
-    event_names = [name for name, _ in events]
-    assert "error" in event_names, f"expected error event, got: {event_names}"
-    assert event_names[-1] == "done", f"expected stream to end with done, got: {event_names[-1]!r}"
-
-
-def test_sse_does_not_emit_duplicate_parameter_deltas(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_minimal_settings_env(monkeypatch)
-    from app.api.v1.endpoints import langgraph_v2 as endpoint
-    from app.api.tests.helpers.langgraph_v2_test_stream_helpers import _event_stream_v2
-
-    dummy_events = [
-        {
-            "event": "on_node_end",
-            "name": "calculator_node",
-            # Include a state-like marker so _extract_state_like picks it up.
-            "data": {"output": {"final_text": "ok", "parameters": {"temperature_C": 80}}},
+    async def _fake_prepare(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        return {
+            "messages": [],
+            "sealing_state": {"cycle": {"state_revision": 1, "analysis_cycle_id": "cycle-1"}},
+            "working_profile": {},
         }
-    ]
-    final_values = {"final_text": "ok", "parameters": {"temperature_C": 80}}
-    dummy_graph = _DummyGraph(dummy_events, final_values)
 
-    async def _get_graph() -> _DummyGraph:
-        return dummy_graph
+    async def _fake_policy(*_args: Any, **_kwargs: Any) -> Any:
+        return decision
 
-    monkeypatch.setattr(endpoint, "get_sealai_graph_v2", _get_graph)
+    async def _fake_sse_gen(*_args: Any, **_kwargs: Any) -> AsyncGenerator[str, None]:
+        yield 'data: {"type":"text_chunk","text":"Hallo"}\n\n'
+        yield (
+            'data: {"type":"state_update","reply":"Hallo","policy_path":"structured",'
+            '"run_meta":{"policy_version":"interaction_policy_v1"},'
+            '"response_class":"governed_state_update",'
+            '"structured_state":{"case_status":"withheld_review","output_status":"withheld_review",'
+            '"next_step":"human_review","primary_allowed_action":"await_review","active_blockers":["review_pending"]},'
+            '"case_state":{"case_meta":{"analysis_cycle_id":"cycle-1"}},'
+            '"working_profile":{"medium":"water"},"sealing_state":null}\n\n'
+        )
+        yield "data: [DONE]\n\n"
 
-    request = endpoint.LangGraphV2Request(input="Hi", thread_id="t1", user_id="u1")
-    frames = asyncio.run(_collect_async(_event_stream_v2(request)))
-    events = _parse_sse_frames(frames)
+    monkeypatch.setattr(endpoint, "prepare_structured_state", _fake_prepare)
+    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy)
+    monkeypatch.setattr(endpoint, "agent_sse_generator", _fake_sse_gen)
 
-    param_updates = [payload for evt, payload in events if evt == "parameter_update"]
-    state_updates = [payload for evt, payload in events if evt == "state_update"]
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1")
+    frames = asyncio.run(
+        _collect_async(
+            endpoint.event_generator(
+                ChatRequest(message="Hi", session_id="t1"),
+                current_user=user,
+            )
+        )
+    )
+    events = _parse_agent_data_frames(frames)
+    assert [evt["type"] for evt in events] == ["text_chunk", "state_update", "__DONE__"]
 
-    assert (
-        not param_updates
-    ), f"expected no per-key parameter_update when state_update is emitted, got {param_updates}"
-    assert state_updates, "expected a state_update event when parameters change"
-    assert (
-        state_updates[0].get("delta", {}).get("parameters", {}).get("temperature_C") == 80
-    ), f"expected state_update.delta.parameters.temperature_C=80, got {state_updates[0]}"
+
+def test_agent_stream_emits_error_then_done_and_stops(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_minimal_settings_env(monkeypatch)
+    from app.agent.api import router as endpoint
+    from app.agent.api.models import ChatRequest
+    from app.services.auth.dependencies import RequestUser
+
+    class _EnumLike(str):
+        @property
+        def value(self) -> str:
+            return str(self)
+
+    decision = type(
+        "Decision",
+        (),
+        {
+            "path": _EnumLike("structured"),
+            "result_form": _EnumLike("state_update"),
+            "runtime_path": "STRUCTURED_QUALIFICATION",
+            "binding_level": "ORIENTATION",
+        },
+    )()
+
+    async def _fake_prepare(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        return {
+            "messages": [],
+            "sealing_state": {"cycle": {"state_revision": 1, "analysis_cycle_id": "cycle-1"}},
+            "working_profile": {},
+        }
+
+    async def _fake_policy(*_args: Any, **_kwargs: Any) -> Any:
+        return decision
+
+    async def _fake_sse_gen(*_args: Any, **_kwargs: Any) -> AsyncGenerator[str, None]:
+        yield 'data: {"type":"error","message":"boom"}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(endpoint, "prepare_structured_state", _fake_prepare)
+    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy)
+    monkeypatch.setattr(endpoint, "agent_sse_generator", _fake_sse_gen)
+
+    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1")
+    frames = asyncio.run(
+        _collect_async(
+            endpoint.event_generator(
+                ChatRequest(message="Hi", session_id="t1"),
+                current_user=user,
+            )
+        )
+    )
+    events = _parse_agent_data_frames(frames)
+    assert [evt["type"] for evt in events] == ["error", "__DONE__"]
+
+
+def test_agent_stream_state_update_public_minimum_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_minimal_settings_env(monkeypatch)
+    from app.agent.api import router as endpoint
+    from app.agent.api.models import ChatRequest
+    from app.services.auth.dependencies import RequestUser
+
+    class _EnumLike(str):
+        @property
+        def value(self) -> str:
+            return str(self)
+
+    decision = type(
+        "Decision",
+        (),
+        {
+            "path": _EnumLike("structured"),
+            "result_form": _EnumLike("state_update"),
+            "runtime_path": "STRUCTURED_QUALIFICATION",
+            "binding_level": "ORIENTATION",
+        },
+    )()
+    state = {
+        "messages": [],
+        "sealing_state": {"cycle": {"state_revision": 1, "analysis_cycle_id": "cycle-1"}},
+        "working_profile": {},
+    }
+
+    async def _fake_sse_gen(*_args: Any, **_kwargs: Any) -> AsyncGenerator[str, None]:
+        yield 'data: {"type":"text_chunk","text":"Hallo"}\n\n'
+        yield (
+            'data: {"type":"state_update","reply":"Hallo","policy_path":"structured",'
+            '"run_meta":{"policy_version":"interaction_policy_v1"},'
+            '"response_class":"governed_state_update",'
+            '"structured_state":{"case_status":"withheld_review","output_status":"withheld_review",'
+            '"next_step":"human_review","primary_allowed_action":"await_review","active_blockers":["review_pending"]},'
+            '"case_state":{"case_meta":{"analysis_cycle_id":"cycle-1"}},'
+            '"working_profile":{"medium":"water"},"sealing_state":null}\n\n'
+        )
+        yield "data: [DONE]\n\n"
+
+    user = RequestUser(
+        user_id="user-1",
+        username="tester",
+        sub="user-1",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-1",
+    )
+
+    async def _fake_prepare(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        return state
+
+    async def _fake_policy(*_args: Any, **_kwargs: Any) -> Any:
+        return decision
+
+    monkeypatch.setattr(endpoint, "prepare_structured_state", _fake_prepare)
+    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy)
+    monkeypatch.setattr(endpoint, "agent_sse_generator", _fake_sse_gen)
+
+    frames = asyncio.run(
+        _collect_async(
+            endpoint.event_generator(
+                ChatRequest(message="Bitte prüfen", session_id="case-1"),
+                current_user=user,
+            )
+        )
+    )
+    parsed = _parse_agent_data_frames(frames)
+
+    assert [item["type"] for item in parsed] == ["text_chunk", "state_update", "__DONE__"]
+    assert parsed[0] == {"type": "text_chunk", "text": "Hallo"}
+    state_update = parsed[1]
+    assert set(state_update.keys()) == {
+        "type",
+        "reply",
+        "policy_path",
+        "run_meta",
+        "response_class",
+        "structured_state",
+        "case_state",
+        "working_profile",
+        "sealing_state",
+    }
+    assert state_update["response_class"] == "governed_state_update"
+    assert state_update["structured_state"]["primary_allowed_action"] == "await_review"
+    assert state_update["run_meta"]["policy_version"] == "interaction_policy_v1"
+    assert state_update["sealing_state"] is None
