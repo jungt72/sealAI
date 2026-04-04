@@ -33,7 +33,10 @@ See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, li
 - MIGRATION: Phase-2 - Full architecture.
 
 ## Monitoring Runbook (Phase 6)
-- Start stack: `docker-compose up -d`
+- Start dev stack: `./ops/up-dev.sh`
+- Start prod stack: `./ops/up-prod.sh`
+- Production Docker services are `backend` and `keycloak`; the public frontend remains host-managed with PM2.
+- Production uses a local `.env.prod` created from `.env.prod.example`; images must be pinned as immutable refs, not `:latest`.
 - API: `http://localhost:8000`
 - Health: `http://localhost:8000/health`
 - Metrics: `http://localhost:8000/metrics`
