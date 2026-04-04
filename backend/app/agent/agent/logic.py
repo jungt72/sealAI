@@ -35,6 +35,21 @@ _NORMATIVE_SPECIFICITY = {
     "compound_required",
     "product_family_required",
 }
+# ---------------------------------------------------------------------------
+# Named engineering gate codes (Phase 1A PATCH 2)
+#
+# These are the canonical string values written into governance["gate_failures"]
+# and governance["unknowns_release_blocking"].  Tests and monitoring should key
+# off these constants — never off raw inline strings.
+# ---------------------------------------------------------------------------
+GATE_INSUFFICIENT_REQUIRED_INPUTS = "insufficient_required_inputs"
+GATE_DEMO_DATA_IN_SCOPE = "demo_data_in_scope"
+GATE_REVIEW_REQUIRED = "review_required"
+GATE_EVIDENCE_MISSING = "evidence_missing"
+GATE_EVIDENCE_INSUFFICIENT = "evidence_insufficient"
+GATE_OUT_OF_SCOPE = "out_of_scope"
+GATE_BLOCKED_BY_BOUNDARY = "blocked_by_boundary"
+
 _BLOCKING_CONFLICT_SEVERITIES = {"CRITICAL", "BLOCKING_UNKNOWN"}
 _MANUFACTURER_CONFLICT_SEVERITIES = {"RESOLUTION_REQUIRES_MANUFACTURER_SCOPE"}
 _BLOCKING_CONFLICT_TYPES = {
@@ -659,11 +674,23 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
     """Blueprint Sections 06/08: deterministic admissibility only from normalized/asserted/conflicts."""
 
     governance = state["governance"]
+    asserted = state["asserted"]
     identity_records = state["normalized"].get("identity_records", {})
     conflicts = [_normalize_conflict_record(conflict) for conflict in governance.get("conflicts", [])]
     gate_failures: List[str] = []
     blocking_unknowns: List[str] = list(governance.get("unknowns_release_blocking", []))
     manufacturer_unknowns: List[str] = list(governance.get("unknowns_manufacturer_validation", []))
+
+    # Gate: INSUFFICIENT_REQUIRED_INPUTS — fire when NONE of the three core params
+    # (medium, pressure, temperature) are present in asserted_state.
+    # This makes the "empty case" explicit rather than falling through to precheck_only.
+    _oc = asserted.get("operating_conditions") or {}
+    _has_medium = bool((asserted.get("medium_profile") or {}).get("name"))
+    _has_pressure = _oc.get("pressure") is not None
+    _has_temperature = _oc.get("temperature") is not None
+    if not (_has_medium or _has_pressure or _has_temperature):
+        if GATE_INSUFFICIENT_REQUIRED_INPUTS not in blocking_unknowns:
+            blocking_unknowns.append(GATE_INSUFFICIENT_REQUIRED_INPUTS)
     scope_markers: List[str] = [
         "deterministic_agent_firewall",
         "observed_normalized_asserted_reducer",
@@ -711,7 +738,6 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
     governance["scope_of_validity"] = list(dict.fromkeys(scope_markers))
     governance["assumptions_active"] = list(dict.fromkeys(governance.get("assumptions_active", [])))
 
-    asserted = state["asserted"]
     has_asserted_signal = bool(asserted.get("medium_profile")) or bool(asserted.get("operating_conditions"))
 
     if governance["unknowns_release_blocking"] or governance["gate_failures"]:
@@ -800,27 +826,37 @@ def search_alternative_materials(p_req: float, t_req: float, all_fact_cards: Lis
     return alternatives
 
 def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_cards: List[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Phase H3/H8: Heuristische Extraktion technischer Parameter mittels zentraler Normalisierung.
+    """Heuristische Extraktion technischer Parameter mittels zentraler Normalisierung.
+
     Dient dem working_profile (Live-UI) und bereitet Claims vor.
     """
-    new_profile = deepcopy(current_profile)
+    # SSoT-Merge: Start from a copy of the existing profile so previously extracted
+    # parameters are never lost (Memory-Erhalt). Neue Extraktionen überschreiben
+    # nur die Keys, die tatsächlich im aktuellen Text erkannt wurden.
+    new_profile = deepcopy(current_profile) if current_profile else {}
     all_fact_cards = all_fact_cards or []
     extracted = norm_extract(text)
     if "speed_rpm" in extracted:
-        new_profile["speed"] = extracted["speed_rpm"]
+        new_profile["speed"]     = extracted["speed_rpm"]  # intern (calc.py liest "speed")
+        new_profile["speed_rpm"] = extracted["speed_rpm"]  # Frontend LABEL_MAP: "speed_rpm"
+        new_profile["rpm"]       = extracted["speed_rpm"]  # Frontend LABEL_MAP: "rpm"
     if "diameter_mm" in extracted:
-        new_profile["diameter"] = extracted["diameter_mm"]
+        new_profile["diameter"]       = extracted["diameter_mm"]  # intern (calc.py liest "diameter")
+        new_profile["shaft_diameter"] = extracted["diameter_mm"]  # Frontend LABEL_MAP: "shaft_diameter"
     if "pressure_bar" in extracted:
-        new_profile["pressure"] = extracted["pressure_bar"]
+        new_profile["pressure"]     = extracted["pressure_bar"]  # intern (calc_tribology liest "pressure")
+        new_profile["pressure_bar"] = extracted["pressure_bar"]  # Frontend LABEL_MAP: "pressure_bar"
     if "temperature_c" in extracted:
-        new_profile["temperature"] = extracted["temperature_c"]
+        new_profile["temperature"]       = extracted["temperature_c"]
+        new_profile["temperature_max_c"] = extracted["temperature_c"]  # Frontend LABEL_MAP: "temperature_max_c"
     if "medium_normalized" in extracted:
         new_profile["medium"] = extracted["medium_normalized"]
+    if "medium_properties" in extracted:
+        new_profile["medium_properties"] = extracted["medium_properties"]
     if "material_normalized" in extracted:
         new_profile["material"] = extracted["material_normalized"]
 
-    # Risiko-Checks und Alternativen (Phase H8 UI-Logic)
+    # Risiko-Checks und Alternativen
     risk_msg = validate_material_risk(new_profile)
     if risk_msg:
         new_profile["risk_warning"] = risk_msg
@@ -833,8 +869,25 @@ def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_card
         new_profile.pop("risk_warning", None)
         new_profile.pop("alternatives", None)
 
-    # Physik-Berechnungen (v_m_s, pv_value)
+    # Physik-Berechnungen (v_m_s, v_surface_m_s, pv_value, pv_value_mpa_m_s)
     new_profile = calculate_physics(new_profile)
+
+    # Live-Physik-Tile für Frontend assemblieren (LiveCalcTileData shape).
+    # Wird von ChatInterface.tsx via working_profile.live_calc_tile konsumiert.
+    new_profile["live_calc_tile"] = {
+        "v_surface_m_s":    new_profile.get("v_surface_m_s"),
+        "pv_value_mpa_m_s": new_profile.get("pv_value_mpa_m_s"),
+        "status": "ok" if new_profile.get("v_surface_m_s") else "insufficient_data",
+        "parameters": {
+            "medium":            new_profile.get("medium"),
+            "pressure_bar":      new_profile.get("pressure_bar"),
+            "temperature_max_c": new_profile.get("temperature_max_c"),
+            "speed_rpm":         new_profile.get("speed_rpm"),
+            "rpm":               new_profile.get("rpm"),
+            "shaft_diameter":    new_profile.get("shaft_diameter"),
+            "material":          new_profile.get("material"),
+        },
+    }
 
     return new_profile
 

@@ -84,6 +84,14 @@ def _make_state(**overrides) -> dict:
     return base
 
 
+def _mock_policy_route_for_query(query: str) -> str:
+    """Deterministic routing stub for tests that should not hit the real LLM."""
+    normalized = query.lower()
+    if "was ist" in normalized or "welche dichtung" in normalized:
+        return "Fast"
+    return "Structured"
+
+
 # ---------------------------------------------------------------------------
 # 1. route_by_policy — conditional entry edge
 # ---------------------------------------------------------------------------
@@ -110,6 +118,19 @@ class TestRouteByPolicy:
         state = _make_state(policy_path="unknown_future_value")
         assert route_by_policy(state) == "reasoning_node"
 
+    # Phase 0D paths
+    def test_meta_path_routes_to_meta_response_node(self):
+        state = _make_state(policy_path="meta")
+        assert route_by_policy(state) == "meta_response_node"
+
+    def test_blocked_path_routes_to_blocked_node(self):
+        state = _make_state(policy_path="blocked")
+        assert route_by_policy(state) == "blocked_node"
+
+    def test_greeting_path_routes_to_greeting_node(self):
+        state = _make_state(policy_path="greeting")
+        assert route_by_policy(state) == "greeting_node"
+
     @pytest.mark.parametrize("result_form, expected_path", [
         (ResultForm.DIRECT_ANSWER.value, RoutingPath.FAST_PATH.value),
         (ResultForm.GUIDED_RECOMMENDATION.value, RoutingPath.FAST_PATH.value),
@@ -125,10 +146,16 @@ class TestRouteByPolicy:
         form_to_query = {
             ResultForm.DIRECT_ANSWER.value: "Was ist FKM?",
             ResultForm.GUIDED_RECOMMENDATION.value: "Welche Dichtung für meine Pumpe?",
+            # These two use numeric+unit patterns — deterministically upgraded to Structured
+            # regardless of LLM classification (see _fast_path_upgrade_to_structured).
             ResultForm.DETERMINISTIC_RESULT.value: "Berechne RWDR 50mm 1500 rpm",
-            ResultForm.QUALIFIED_CASE.value: "FDA Freigabe für Anlage",
+            ResultForm.QUALIFIED_CASE.value: "FDA-konforme Applikation 80°C 10 bar",
         }
-        decision = evaluate_policy(form_to_query[result_form])
+        with patch(
+            "app.agent.agent.interaction_policy._call_routing_llm",
+            side_effect=_mock_policy_route_for_query,
+        ):
+            decision = evaluate_policy(form_to_query[result_form])
         state = _make_state(policy_path=decision.path.value)
         route = route_by_policy(state)
 
@@ -244,6 +271,37 @@ class TestFastGuidancePrompt:
 
 
 # ---------------------------------------------------------------------------
+# 3b. greeting_node — deterministic, no LLM, no RAG
+# ---------------------------------------------------------------------------
+
+class TestGreetingNode:
+    def test_returns_ai_message_with_greeting(self):
+        from app.agent.agent.graph import greeting_node
+        from langchain_core.messages import AIMessage, HumanMessage
+        state = _make_state(
+            messages=[HumanMessage(content="Hallo!")],
+            policy_path="greeting",
+        )
+        result = greeting_node(state)
+        msgs = result["messages"]
+        assert len(msgs) == 1
+        assert isinstance(msgs[0], AIMessage)
+        assert "SealAI" in msgs[0].content
+        assert "Betriebsparameter" in msgs[0].content
+
+    def test_does_not_modify_working_profile(self):
+        from app.agent.agent.graph import greeting_node
+        from langchain_core.messages import HumanMessage
+        state = _make_state(
+            messages=[HumanMessage(content="Hi")],
+            policy_path="greeting",
+        )
+        result = greeting_node(state)
+        assert "working_profile" not in result
+        assert "sealing_state" not in result
+
+
+# ---------------------------------------------------------------------------
 # 4. Integration: graph topology is correct
 # ---------------------------------------------------------------------------
 
@@ -263,12 +321,22 @@ class TestGraphTopology:
         assert "selection_node" in nodes
         assert "final_response_node" in nodes
 
-    def test_graph_has_five_user_nodes(self):
-        """Exactly the expected nodes — no accidental extras."""
+    def test_graph_has_greeting_node(self):
+        from app.agent.agent.graph import app as compiled_graph
+        assert "greeting_node" in compiled_graph.nodes
+
+    def test_graph_has_eight_user_nodes(self):
+        """Exactly the expected nodes after Phase 0D+ (greeting added) — no accidental extras."""
         from app.agent.agent.graph import app as compiled_graph
         user_nodes = {n for n in compiled_graph.nodes if not n.startswith("__")}
         assert user_nodes == {
+            # Fast path
             "fast_guidance_node",
+            # Phase 0D+: deterministic paths (no LLM)
+            "meta_response_node",
+            "blocked_node",
+            "greeting_node",
+            # Structured path
             "reasoning_node",
             "evidence_tool_node",
             "selection_node",
@@ -285,7 +353,11 @@ class TestRouterPolicyInjection:
         from app.agent.agent.interaction_policy import evaluate_policy
         from app.agent.agent.policy import RoutingPath
 
-        decision = evaluate_policy("Was ist FKM?")
+        with patch(
+            "app.agent.agent.interaction_policy._call_routing_llm",
+            side_effect=_mock_policy_route_for_query,
+        ):
+            decision = evaluate_policy("Was ist FKM?")
         assert decision.path == RoutingPath.FAST_PATH
         assert decision.path.value == "fast"
 
@@ -293,7 +365,11 @@ class TestRouterPolicyInjection:
         from app.agent.agent.interaction_policy import evaluate_policy
         from app.agent.agent.policy import RoutingPath
 
-        decision = evaluate_policy("FDA Freigabe benötigt")
+        with patch(
+            "app.agent.agent.interaction_policy._call_routing_llm",
+            side_effect=_mock_policy_route_for_query,
+        ):
+            decision = evaluate_policy("FDA Freigabe benötigt")
         assert decision.path == RoutingPath.STRUCTURED_PATH
         assert decision.path.value == "structured"
 

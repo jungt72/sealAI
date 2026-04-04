@@ -15,10 +15,34 @@ New API surface: MappingConfidence, NormalizedEntity, normalize_parameter().
 """
 from __future__ import annotations
 
+import json
+import logging
+import os
 import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
+
+from app.agent.domain.medium_registry import (
+    classify_medium_value,
+    extract_medium_mentions,
+    medium_registry_entries,
+)
+
+logger = logging.getLogger(__name__)
+
+# Fast/cheap model for the medium-extraction fallback.
+# Override via env var SEALAI_MEDIUM_FALLBACK_MODEL.
+_MEDIUM_LLM_FALLBACK_MODEL: str = os.environ.get(
+    "SEALAI_MEDIUM_FALLBACK_MODEL", "gpt-4o-mini"
+)
+
+# Phase 0C.2: LLM in a deterministic layer is an architecture violation.
+# The fallback is disabled by default; set SEALAI_ENABLE_MEDIUM_LLM_FALLBACK=1
+# to re-enable for offline diagnostics only.
+_MEDIUM_LLM_FALLBACK_ENABLED: bool = (
+    os.environ.get("SEALAI_ENABLE_MEDIUM_LLM_FALLBACK", "0").strip() == "1"
+)
 
 
 # ===========================================================================
@@ -67,6 +91,22 @@ class NormalizedEntity:
     warning_message: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class MediumSpecialistInput:
+    latest_user_message: str = ""
+    observed_notes: tuple[str, ...] = ()
+    candidate_media_tokens: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MediumSpecialistResult:
+    canonical_medium: Optional[str]
+    medium_confidence: MappingConfidence
+    medium_uncertainty_reason: Optional[str] = None
+    followup_question_if_needed: Optional[str] = None
+    candidate_media_token: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # V1 Mapping Tables
 # ---------------------------------------------------------------------------
@@ -105,55 +145,23 @@ _MAT_REQUIRES_CONFIRMATION: dict[str, tuple[str, str]] = {
 
 # ── Media ────────────────────────────────────────────────────────────────────
 
-_MED_CONFIRMED: dict[str, str] = {
-    "wasser":          "Wasser",
-    "water":           "Wasser",
-    "reinwasser":      "Wasser",
-    "druckluft":       "Druckluft",
-    "compressed air":  "Druckluft",
-    "luft":            "Luft",
-    "stickstoff":      "Stickstoff",
-    "nitrogen":        "Stickstoff",
-    "sauerstoff":      "Sauerstoff",
-    "oxygen":          "Sauerstoff",
-}
-
-_MED_ESTIMATED: dict[str, tuple[str, str]] = {
-    "öl":          ("Öl",     "generic_oil:Öltyp nicht spezifiziert — HLP/HEES/VG klären"),
-    "oil":         ("Öl",     "generic_oil:oil type not specified"),
-    "mineralöl":   ("Öl",     "mineral_oil:wahrscheinlich HLP/ISO VG"),
-    "hydrauliköl": ("Öl",     "hydraulic_oil:wahrscheinlich HLP"),
-    "hlp":         ("Öl",     "hydraulic_oil_hlp:HLP-Hydrauliköl"),
-    "bio-öl":      ("Bio-Öl", "bio_oil:HEES oder ähnlich"),
-    "hees":        ("Bio-Öl", "bio_oil_hees:HEES-Esteröl"),
-    "kraftstoff":  ("Kraftstoff", "fuel:Kraftstofftyp klären"),
-    "diesel":      ("Kraftstoff", "fuel_diesel"),
-    "benzin":      ("Kraftstoff", "fuel_petrol"),
-    "ethanol":     ("Kraftstoff", "fuel_ethanol"),
-}
-
-_MED_REQUIRES_CONFIRMATION: dict[str, tuple[str, str]] = {
-    # Phase-aware or inherently ambiguous media
-    "heißdampf":    ("Dampf", (
-        "medium_ambiguous:Heißdampf — überhitzter Dampf; "
-        "Temperatur und Druck sind zwingend für Materialauswahl; "
-        "gesättigter vs. überhitzter Dampf beeinflusst Materialwahl erheblich"
-    )),
-    "dampf":        ("Dampf", (
-        "medium_ambiguous:Dampf — Sattdampf vs. Heißdampf unklar; "
-        "Betriebstemperatur und -druck erforderlich"
-    )),
-    "steam":        ("Dampf",          "medium_ambiguous:steam — phase clarification required"),
-    "säure":        ("Säure",          "medium_ambiguous:Säure — Konzentration, Typ und Temperatur erforderlich"),
-    "acid":         ("Säure",          "medium_ambiguous:acid — concentration and type required"),
-    "lauge":        ("Lauge",          "medium_ambiguous:Lauge — Konzentration und NaOH/KOH-Typ erforderlich"),
-    "lösungsmittel":("Lösungsmittel",  "medium_ambiguous:Lösungsmittel — Typ erforderlich"),
-    "solvent":      ("Lösungsmittel",  "medium_ambiguous:solvent — type required"),
-    "kühlmittel":   ("Kühlmittel",     "medium_ambiguous:Kühlmittel — Typ und Konzentration erforderlich"),
-    "coolant":      ("Kühlmittel",     "medium_ambiguous:coolant — type and concentration required"),
-    "panolin":      ("Bio-Öl",         "trade_name_ambiguous:panolin — HEES-Bio-Öl-Marke; Typ bestätigen"),
-    "ester":        ("Bio-Öl",         "medium_ambiguous:ester — Esterbasis und Typ unklar"),
-}
+_MED_CONFIRMED: dict[str, str] = {}
+_MED_ESTIMATED: dict[str, tuple[str, str]] = {}
+_MED_REQUIRES_CONFIRMATION: dict[str, tuple[str, str]] = {}
+for _entry in medium_registry_entries():
+    for _alias in _entry.aliases:
+        if _entry.mapping_confidence == "confirmed":
+            _MED_CONFIRMED[_alias] = _entry.canonical_label
+        elif _entry.mapping_confidence == "estimated":
+            _MED_ESTIMATED[_alias] = (
+                _entry.canonical_label,
+                _entry.mapping_reason or f"medium_registry:{_entry.registry_key}",
+            )
+        else:
+            _MED_REQUIRES_CONFIRMATION[_alias] = (
+                _entry.canonical_label,
+                _entry.mapping_reason or f"medium_registry:{_entry.registry_key}",
+            )
 
 # ── Unit conversion tables ────────────────────────────────────────────────────
 
@@ -172,6 +180,164 @@ _PRESSURE_PATTERN = re.compile(
     r"^([+-]?\d+(?:[.,]\d+)?)\s*(bar|psi|mpa|kpa)\s*$",
     re.IGNORECASE,
 )
+
+_SHAFT_DIAMETER_KEYWORD_VALUE_PATTERN = re.compile(
+    r"\b(?:wellen?durchmesser|wellendurchmesser|durchmesser|diameter)\b"
+    r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
+    r"([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_SHAFT_DIAMETER_SYMBOL_PATTERN = re.compile(
+    r"\b(?:d|d1)\s*[:=]\s*([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_SHAFT_DIAMETER_MM_WITH_CONTEXT_PATTERN = re.compile(
+    r"([+-]?\d+(?:[.,]\d+)?)\s*mm\b",
+    re.IGNORECASE,
+)
+
+_SHAFT_DIAMETER_CONTEXT_RE = re.compile(
+    r"\b(?:welle|shaft|durchmesser|diameter|rwdr|radialwellendichtring)\b",
+    re.IGNORECASE,
+)
+
+_MEDIUM_FALLBACK_PATTERN = re.compile(
+    r"\b(?:mit|medium|fluid|flüssigkeit)(?:\s+(?:ist|is|liegt|sind))?\s+([\w\-äöüÄÖÜß]+)\b",
+    re.I,
+)
+
+_MEDIUM_FALLBACK_STOPWORDS: frozenset[str] = frozenset({"ist", "is", "liegt", "sind"})
+
+_MEDIUM_FOLLOWUP_QUESTIONS: dict[str, str] = {
+    "Dampf": "Handelt es sich um Sattdampf oder Heißdampf, und in welchem Druck- und Temperaturbereich arbeiten Sie?",
+    "Säure": "Um welche Säure handelt es sich genau, in welcher Konzentration und bei welcher Temperatur?",
+    "Lauge": "Welche Lauge liegt an, in welcher Konzentration und bei welcher Temperatur?",
+    "Lösungsmittel": "Welches Lösungsmittel liegt genau an?",
+    "Kühlmittel": "Welcher Kühlmitteltyp und welche Konzentration liegen an?",
+    "Öl": "Welcher Öltyp liegt genau an?",
+    "Bio-Öl": "Welcher Öltyp liegt genau an?",
+}
+
+
+def _mapping_confidence_rank(confidence: MappingConfidence) -> int:
+    return {
+        MappingConfidence.CONFIRMED: 4,
+        MappingConfidence.ESTIMATED: 3,
+        MappingConfidence.INFERRED: 2,
+        MappingConfidence.REQUIRES_CONFIRMATION: 1,
+    }[confidence]
+
+
+def _unique_nonempty(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        unique.append(text)
+    return unique
+
+
+def _extract_candidate_media_tokens(text: str) -> list[str]:
+    message = str(text or "").strip()
+    if not message:
+        return []
+    capture = extract_medium_mentions(message)
+    candidates = list(capture.raw_mentions)
+    fallback_match = _MEDIUM_FALLBACK_PATTERN.search(message)
+    if fallback_match:
+        raw_medium = str(fallback_match.group(1) or "").strip()
+        if (
+            raw_medium
+            and raw_medium.lower() not in _MEDIUM_FALLBACK_STOPWORDS
+            and not re.match(r"^\d", raw_medium)
+        ):
+            candidates.append(raw_medium)
+    return _unique_nonempty(candidates)
+
+
+def _followup_question_for_medium(
+    canonical_medium: Optional[str],
+    confidence: MappingConfidence,
+    reason: Optional[str],
+) -> Optional[str]:
+    if canonical_medium and canonical_medium in _MEDIUM_FOLLOWUP_QUESTIONS:
+        if confidence in {
+            MappingConfidence.ESTIMATED,
+            MappingConfidence.INFERRED,
+            MappingConfidence.REQUIRES_CONFIRMATION,
+        }:
+            return _MEDIUM_FOLLOWUP_QUESTIONS[canonical_medium]
+    if confidence not in {
+        MappingConfidence.INFERRED,
+        MappingConfidence.REQUIRES_CONFIRMATION,
+    }:
+        return None
+    if canonical_medium and canonical_medium in _MEDIUM_FOLLOWUP_QUESTIONS:
+        return _MEDIUM_FOLLOWUP_QUESTIONS[canonical_medium]
+    if reason and str(reason).startswith("medium_conflict:"):
+        return "Welches Medium liegt genau an?"
+    return "Welches Medium liegt genau an?"
+
+
+def _medium_result_from_token(token: str) -> MediumSpecialistResult:
+    entity = normalize_parameter("medium", token)
+    canonical_medium = entity.normalized_value
+    return MediumSpecialistResult(
+        canonical_medium=canonical_medium,
+        medium_confidence=entity.confidence,
+        medium_uncertainty_reason=entity.warning_message,
+        followup_question_if_needed=_followup_question_for_medium(
+            canonical_medium,
+            entity.confidence,
+            entity.warning_message,
+        ),
+        candidate_media_token=str(token or "").strip() or None,
+    )
+
+
+def run_medium_specialist(
+    specialist_input: MediumSpecialistInput,
+) -> MediumSpecialistResult:
+    """Bounded internal specialist for deterministic medium interpretation."""
+    candidates = list(specialist_input.candidate_media_tokens)
+    if not candidates and specialist_input.latest_user_message:
+        candidates.extend(_extract_candidate_media_tokens(specialist_input.latest_user_message))
+    for note in specialist_input.observed_notes:
+        candidates.extend(_extract_candidate_media_tokens(note))
+    candidates = _unique_nonempty(candidates)
+
+    if not candidates:
+        return MediumSpecialistResult(
+            canonical_medium=None,
+            medium_confidence=MappingConfidence.REQUIRES_CONFIRMATION,
+            medium_uncertainty_reason="no_medium_candidate_found",
+            followup_question_if_needed="Welches Medium liegt genau an?",
+        )
+
+    results = [_medium_result_from_token(token) for token in candidates]
+    canonicals = {
+        str(result.canonical_medium).strip().lower(): str(result.canonical_medium).strip()
+        for result in results
+        if str(result.canonical_medium or "").strip()
+    }
+    if len(canonicals) > 1:
+        return MediumSpecialistResult(
+            canonical_medium=None,
+            medium_confidence=MappingConfidence.REQUIRES_CONFIRMATION,
+            medium_uncertainty_reason="medium_conflict:" + " | ".join(sorted(canonicals.values())),
+            followup_question_if_needed="Welches Medium liegt genau an?",
+        )
+
+    selected = max(results, key=lambda item: _mapping_confidence_rank(item.medium_confidence))
+    return selected
 
 
 # ---------------------------------------------------------------------------
@@ -249,18 +415,16 @@ def _normalize_medium_entity(raw: Any) -> NormalizedEntity:
         return NormalizedEntity(None, None, "medium",
                                 MappingConfidence.REQUIRES_CONFIRMATION,
                                 "Kein Mediumwert übergeben")
-    key = str(raw).strip().lower()
-    if key in _MED_CONFIRMED:
-        return NormalizedEntity(raw, _MED_CONFIRMED[key], "medium",
-                                MappingConfidence.CONFIRMED)
-    if key in _MED_ESTIMATED:
-        canonical, reason = _MED_ESTIMATED[key]
-        return NormalizedEntity(raw, canonical, "medium",
-                                MappingConfidence.ESTIMATED, reason)
-    if key in _MED_REQUIRES_CONFIRMATION:
-        canonical, reason = _MED_REQUIRES_CONFIRMATION[key]
-        return NormalizedEntity(raw, canonical, "medium",
-                                MappingConfidence.REQUIRES_CONFIRMATION, reason)
+    decision = classify_medium_value(str(raw))
+    if decision.canonical_label and decision.mapping_confidence == "confirmed":
+        return NormalizedEntity(raw, decision.canonical_label, "medium",
+                                MappingConfidence.CONFIRMED, decision.mapping_reason)
+    if decision.canonical_label and decision.mapping_confidence == "estimated":
+        return NormalizedEntity(raw, decision.canonical_label, "medium",
+                                MappingConfidence.ESTIMATED, decision.mapping_reason)
+    if decision.canonical_label and decision.mapping_confidence == "requires_confirmation":
+        return NormalizedEntity(raw, decision.canonical_label, "medium",
+                                MappingConfidence.REQUIRES_CONFIRMATION, decision.mapping_reason)
     return NormalizedEntity(raw, None, "medium", MappingConfidence.INFERRED,
                             f"Medium nicht im V1-Mapping: {raw!r}")
 
@@ -351,35 +515,20 @@ _MATERIAL_CONFIRMATION = {
     "kalrez": ("FFKM", "trade_name_requires_confirmation:kalrez"),
 }
 
-_MEDIUM_DIRECT = {
-    "wasser": "Wasser",
-    "water": "Wasser",
-    "öl": "Öl",
-    "oil": "Öl",
-    "mineralöl": "Öl",
-    "hydrauliköl": "Öl",
-    "hlp": "Öl",
-    "bio-öl": "Bio-Öl",
-    "hees": "Bio-Öl",
-}
+_MEDIUM_DIRECT: dict[str, str] = {}
 _MEDIUM_INFERRED: dict[str, Any] = {}
-_MEDIUM_CONFIRMATION = {
-    "panolin": ("Bio-Öl", "trade_name_requires_confirmation:panolin"),
-    "ester": ("Bio-Öl", "trade_name_requires_confirmation:ester"),
-}
-_MEDIUM_ID = {
-    "bio-öl": "hees",
-    "panolin": "hees",
-    "ester": "hees",
-    "hees": "hees",
-    "öl": "hlp",
-    "oil": "hlp",
-    "mineralöl": "hlp",
-    "hydrauliköl": "hlp",
-    "hlp": "hlp",
-    "wasser": "wasser",
-    "water": "wasser",
-}
+_MEDIUM_CONFIRMATION: dict[str, tuple[str, str]] = {}
+_MEDIUM_ID: dict[str, str] = {}
+for _entry in medium_registry_entries():
+    for _alias in _entry.aliases:
+        if _entry.mapping_confidence in {"confirmed", "estimated"}:
+            _MEDIUM_DIRECT[_alias] = _entry.canonical_label
+        else:
+            _MEDIUM_CONFIRMATION[_alias] = (
+                _entry.canonical_label,
+                _entry.mapping_reason or f"medium_registry:{_entry.registry_key}",
+            )
+        _MEDIUM_ID[_alias] = _entry.registry_key
 
 
 def _lowered(value: Any) -> Optional[str]:
@@ -409,14 +558,25 @@ def normalize_medium_decision(value: Any) -> Optional[NormalizationDecision]:
     lowered = _lowered(value)
     if lowered is None:
         return None
-    if lowered in _MEDIUM_DIRECT:
-        return NormalizationDecision(_MEDIUM_DIRECT[lowered], "confirmed", f"normalized_medium:{lowered}")
-    if lowered in _MEDIUM_INFERRED:
-        canonical, reason = _MEDIUM_INFERRED[lowered]
-        return NormalizationDecision(canonical, "inferred", reason)
-    if lowered in _MEDIUM_CONFIRMATION:
-        canonical, reason = _MEDIUM_CONFIRMATION[lowered]
-        return NormalizationDecision(canonical, "confirmation_required", reason)
+    decision = classify_medium_value(lowered)
+    if decision.canonical_label and decision.mapping_confidence == "confirmed":
+        return NormalizationDecision(
+            decision.canonical_label,
+            "confirmed",
+            f"normalized_medium:{lowered}",
+        )
+    if decision.canonical_label and decision.mapping_confidence == "estimated":
+        return NormalizationDecision(
+            decision.canonical_label,
+            "inferred",
+            decision.mapping_reason or f"medium_registry:{decision.registry_key or lowered}",
+        )
+    if decision.canonical_label and decision.mapping_confidence == "requires_confirmation":
+        return NormalizationDecision(
+            decision.canonical_label,
+            "confirmation_required",
+            decision.mapping_reason or f"medium_registry:{decision.registry_key or lowered}",
+        )
     return NormalizationDecision(str(value), "unknown", "medium_unmapped")
 
 
@@ -448,48 +608,172 @@ def normalize_unit_value(value: float, unit: str) -> tuple[float, str]:
     normalized_unit = unit.strip().lower()
     if normalized_unit == "psi":
         return float(value) / 14.5038, "bar"
+    if normalized_unit == "mpa":
+        return float(value) * 10.0, "bar"
+    if normalized_unit == "kpa":
+        return float(value) * 0.01, "bar"
     if normalized_unit == "f":
         return (float(value) - 32.0) * 5.0 / 9.0, "C"
     if normalized_unit in {"bar", "c"}:
         return float(value), "C" if normalized_unit == "c" else "bar"
     return float(value), unit
 
+def extract_shaft_diameter_mm(text: str, *, allow_context_free_mm: bool = False) -> float | None:
+    message = str(text or "").strip()
+    if not message:
+        return None
+
+    for pattern in (_SHAFT_DIAMETER_KEYWORD_VALUE_PATTERN, _SHAFT_DIAMETER_SYMBOL_PATTERN):
+        match = pattern.search(message)
+        if match:
+            return float(match.group(1).replace(",", "."))
+
+    mm_match = _SHAFT_DIAMETER_MM_WITH_CONTEXT_PATTERN.search(message)
+    if not mm_match:
+        return None
+    if allow_context_free_mm or _SHAFT_DIAMETER_CONTEXT_RE.search(message):
+        return float(mm_match.group(1).replace(",", "."))
+    return None
+
+
+def _llm_extract_medium(text: str) -> Optional[dict[str, Any]]:
+    """LLM fallback for medium extraction when regex yields nothing.
+
+    Uses a fast, cheap model (default: gpt-4o-mini, overridable via
+    SEALAI_MEDIUM_FALLBACK_MODEL) via the synchronous OpenAI client.
+
+    Returns a dict with keys "medium" (str | None) and "properties" (list[str]),
+    or None when the call fails or no medium is found.
+    """
+    try:
+        from openai import OpenAI  # lazy import — not required for pure-regex path
+    except ImportError:
+        logger.debug("openai package not available — skipping LLM medium fallback")
+        return None
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        logger.debug("OPENAI_API_KEY not set — skipping LLM medium fallback")
+        return None
+
+    prompt = (
+        "Du bist ein technischer Assistent für Dichtungstechnik. "
+        "Extrahiere aus dem folgenden Text das Medium (die Flüssigkeit, das Gas oder das Material), "
+        "das abgedichtet werden soll. "
+        "Extrahiere außerdem relevante Eigenschaften (z.B. abrasiv, klebrig, aggressiv). "
+        'Antworte ausschließlich als JSON: {"medium": "Name oder null", "properties": ["klebrig", ...]}. '
+        f"Text: {text}"
+    )
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model=_MEDIUM_LLM_FALLBACK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=80,
+        )
+        raw_content = response.choices[0].message.content or ""
+        # Strip markdown code fences if present
+        raw_content = raw_content.strip()
+        if raw_content.startswith("```"):
+            raw_content = re.sub(r"^```[a-z]*\n?", "", raw_content)
+            raw_content = re.sub(r"\n?```$", "", raw_content)
+        result: dict[str, Any] = json.loads(raw_content)
+        medium = result.get("medium")
+        if medium and str(medium).lower() not in ("null", "none", ""):
+            return {
+                "medium": str(medium).strip(),
+                "properties": [str(p) for p in result.get("properties", []) if p],
+            }
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("LLM medium fallback failed: %s", exc)
+        return None
+
+
+# motion_type — ordered by specificity; first match wins
+_MOTION_TYPE_PATTERNS: list[tuple[str, str]] = [
+    (r'\b(?:linear|lineare?|hub(?:bewegung)?|hin[- ]?und[- ]?her|translat(?:ion|ions?bewegung)?)\b', 'linear'),
+    (r'\b(?:rotier(?:end)?|drehend|dreht|radial(?:welle)?|rotierende?\s+welle)\b', 'rotary'),
+    (r'\b(?:statisch|keine\s+bewegung|stillstand|flansch(?:abdichtung)?)\b', 'static'),
+]
+
+
+def _extract_motion_type(text: str) -> str | None:
+    """Return 'rotary', 'linear', or 'static' if motion type is detectable, else None."""
+    text_lower = text.lower()
+    for pattern, motion in _MOTION_TYPE_PATTERNS:
+        if re.search(pattern, text_lower):
+            return motion
+    return None
+
 
 def extract_parameters(text: str) -> dict[str, Any]:
     extracted: dict[str, Any] = {}
-    temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*°?\s*([CF])\b", text, re.I)
+    # Match "80°C", "80C", "80 Grad", "80 grad" — group(2) is None for bare "grad" → default Celsius
+    temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°?\s*([CF])\b|\bgrad\b)", text, re.I)
     if temp_match:
         raw = temp_match.group(0)
         value = float(temp_match.group(1).replace(",", "."))
-        temp_value, _ = normalize_unit_value(value, temp_match.group(2))
+        unit = temp_match.group(2) or "C"  # "grad" without explicit C/F → Celsius
+        temp_value, _ = normalize_unit_value(value, unit)
         extracted["temperature_raw"] = raw
         extracted["temperature_c"] = temp_value
-    pressure_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(bar|psi)\b", text, re.I)
+    pressure_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(bar|psi|mpa|kpa)\b", text, re.I)
     if pressure_match:
         raw = pressure_match.group(0)
         value = float(pressure_match.group(1).replace(",", "."))
         pressure_value, _ = normalize_unit_value(value, pressure_match.group(2))
         extracted["pressure_raw"] = raw
         extracted["pressure_bar"] = pressure_value
-    diameter_match = re.search(r"(\d+(?:[.,]\d+)?)\s*mm\b", text, re.I)
-    if diameter_match and re.search(r"\bwelle|\bshaft", text, re.I):
-        extracted["diameter_mm"] = float(diameter_match.group(1).replace(",", "."))
-    speed_match = re.search(r"(\d+(?:[.,]\d+)?)\s*rpm\b", text, re.I)
+    diameter_value = extract_shaft_diameter_mm(text)
+    if diameter_value is not None:
+        extracted["diameter_mm"] = diameter_value
+    speed_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:rpm|u[/.]?min)\b", text, re.I)
     if speed_match:
         extracted["speed_rpm"] = float(speed_match.group(1).replace(",", "."))
 
-    for raw in ("Panolin", "HEES", "Ester", "Bio-Öl", "Wasser", "water", "Öl", "oil", "Mineralöl", "HLP"):
-        if re.search(rf"\b{re.escape(raw)}\b", text, re.I):
-            decision = normalize_medium_decision(raw)
-            if decision and decision.status == "confirmation_required":
-                extracted["medium_confirmation_required"] = decision.canonical_value
-            elif decision and decision.status != "unknown":
-                extracted["medium_normalized"] = decision.canonical_value
-            if decision:
-                extracted["medium_normalization_status"] = decision.status
-                extracted["medium_mapping_reason"] = decision.mapping_reason
-                extracted["medium_raw"] = raw
-            break
+    motion_type = _extract_motion_type(text)
+    if motion_type is not None:
+        extracted["motion_type"] = motion_type
+
+    medium_result = run_medium_specialist(
+        MediumSpecialistInput(
+            latest_user_message=text,
+            candidate_media_tokens=tuple(_extract_candidate_media_tokens(text)),
+        )
+    )
+    if medium_result.canonical_medium:
+        if medium_result.medium_confidence == MappingConfidence.REQUIRES_CONFIRMATION:
+            extracted["medium_confirmation_required"] = medium_result.canonical_medium
+        else:
+            extracted["medium_normalized"] = medium_result.canonical_medium
+        extracted["medium_normalization_status"] = medium_result.medium_confidence.value
+        extracted["medium_mapping_reason"] = (
+            medium_result.medium_uncertainty_reason
+            or f"medium_specialist:{str(medium_result.candidate_media_token or medium_result.canonical_medium).lower()}"
+        )
+        extracted["medium_raw"] = medium_result.candidate_media_token or medium_result.canonical_medium
+        if medium_result.followup_question_if_needed:
+            extracted["medium_followup_question"] = medium_result.followup_question_if_needed
+
+    # LLM fallback: fires only when regex + whitelist both found nothing.
+    # Disabled by default (Phase 0C.2 — LLM must not run inside a deterministic node).
+    # Enable via SEALAI_ENABLE_MEDIUM_LLM_FALLBACK=1 for offline diagnostics only.
+    if (
+        _MEDIUM_LLM_FALLBACK_ENABLED
+        and "medium_normalized" not in extracted
+        and "medium_confirmation_required" not in extracted
+    ):
+        llm_result = _llm_extract_medium(text)
+        if llm_result:
+            extracted["medium_normalized"] = llm_result["medium"].capitalize()
+            extracted["medium_normalization_status"] = "llm_fallback"
+            extracted["medium_mapping_reason"] = f"llm_fallback:{llm_result['medium'].lower()}"
+            extracted["medium_raw"] = llm_result["medium"]
+            if llm_result["properties"]:
+                extracted["medium_properties"] = llm_result["properties"]
 
     for raw in ("Viton", "Kalrez", "Teflon", "Nitril", "NBR", "PTFE", "FKM"):
         if re.search(rf"\b{re.escape(raw)}\b", text, re.I):

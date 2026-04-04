@@ -1,9 +1,16 @@
 from typing import Dict, Any
 
+# NOTE (Phase 0E): sync_working_profile_to_state is NOT called in the agent hot path.
+# The function exists for PATCH-based state merges (external tooling / tests).
+# In-graph state updates go through evidence_tool_node → process_cycle_update only.
+
 def sync_working_profile_to_state(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Synchronisiert das working_profile mit dem sealing_state und generiert das LiveCalcTile (Phase H8).
-    Wird nach jedem Agent-Turn oder manuellen User-Update (PATCH) aufgerufen.
+    Back-sync: asserted_state → working_profile for Live-UI tiles (Phase H8/K17).
+    Used externally (PATCH endpoints, test tooling) — NOT called inside the agent graph.
+
+    Wave-1 protection: the wp → asserted direction was removed.
+    Heuristic wp values do NOT flow into asserted_state here.
     """
     wp = state.get("working_profile", {})
     ss = state.get("sealing_state", {})

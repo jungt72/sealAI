@@ -135,11 +135,15 @@ def _build_missing_inputs_text(
 
     parts: List[str] = []
     if missing:
-        items = "\n".join(f"- {m}" for m in missing)
-        parts.append(f"Das hilft schon deutlich. Der nächste wichtige Punkt:\n{items}")
+        primary_focus = missing[0]
+        parts.append(
+            f"Als Naechstes sollten wir {primary_focus} sauber klaeren."
+        )
     if pending:
-        items = "\n".join(f"- {p}" for p in pending)
-        parts.append(f"Ausstehende Bestätigung (erfasst, aber noch nicht freigegeben):\n{items}")
+        parts.append(
+            "Ein Teil der Betriebsdaten ist bereits erfasst und sollte anschliessend nur "
+            "noch kurz bestaetigt werden."
+        )
     if not parts:
         return "Lassen Sie uns die Betriebsbedingungen gemeinsam eingrenzen — das ist der nächste sinnvolle Schritt."
     return "\n\n".join(parts)

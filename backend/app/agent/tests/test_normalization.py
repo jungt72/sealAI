@@ -18,10 +18,14 @@ from __future__ import annotations
 import math
 import pytest
 
+from app.agent.domain.medium_registry import classify_medium_text, classify_medium_value
 from app.agent.domain.normalization import (
     MappingConfidence,
+    MediumSpecialistInput,
+    MediumSpecialistResult,
     NormalizedEntity,
     normalize_parameter,
+    run_medium_specialist,
     confidence_to_identity_class,
     confidence_to_normalization_certainty,
     # backward-compat
@@ -254,6 +258,9 @@ class TestMaterialNormalization:
 
 class TestMediumNormalization:
     @pytest.mark.parametrize("raw, expected_canonical", [
+        ("Salzwasser", "Salzwasser"),
+        ("Meerwasser", "Meerwasser"),
+        ("Seewasser",  "Meerwasser"),
         ("Wasser",    "Wasser"),
         ("water",     "Wasser"),
         ("Druckluft", "Druckluft"),
@@ -272,6 +279,11 @@ class TestMediumNormalization:
 
     def test_hydraulikoel_is_estimated(self):
         e = normalize_parameter("medium", "Hydrauliköl")
+        assert e.confidence == MappingConfidence.ESTIMATED
+
+    def test_getriebeoel_is_estimated_as_oil(self):
+        e = normalize_parameter("medium", "Getriebeöl")
+        assert e.normalized_value == "Öl"
         assert e.confidence == MappingConfidence.ESTIMATED
 
     def test_heissdampf_requires_confirmation(self):
@@ -302,6 +314,84 @@ class TestMediumNormalization:
         e = normalize_parameter("medium", "Flüssigkristall")
         assert e.confidence == MappingConfidence.INFERRED
         assert e.normalized_value is None
+
+    def test_family_only_medium_is_not_falsely_canonicalized(self):
+        decision = classify_medium_value("alkalische reinigungsloesung")
+
+        assert decision.status == "family_only"
+        assert decision.family == "chemisch_aggressiv"
+        assert decision.canonical_label is None
+
+    def test_mentioned_unclassified_medium_keeps_raw_capture(self):
+        capture, classification = classify_medium_text("medium ist XY-Compound 4711")
+
+        assert capture.primary_raw_text == "XY-Compound 4711"
+        assert classification.status == "mentioned_unclassified"
+        assert classification.canonical_label is None
+        assert classification.family == "unknown"
+
+
+class TestMediumSpecialist:
+    def test_clear_medium_is_canonicalized(self):
+        result = run_medium_specialist(
+            MediumSpecialistInput(candidate_media_tokens=("Wasser",))
+        )
+
+        assert isinstance(result, MediumSpecialistResult)
+        assert result.canonical_medium == "Wasser"
+        assert result.medium_confidence == MappingConfidence.CONFIRMED
+        assert result.followup_question_if_needed is None
+
+    def test_alias_maps_to_canonical_medium(self):
+        result = run_medium_specialist(
+            MediumSpecialistInput(candidate_media_tokens=("water",))
+        )
+
+        assert result.canonical_medium == "Wasser"
+        assert result.medium_confidence == MappingConfidence.CONFIRMED
+
+    def test_salzwasser_maps_to_canonical_medium(self):
+        result = run_medium_specialist(
+            MediumSpecialistInput(candidate_media_tokens=("salzwasser",))
+        )
+
+        assert result.canonical_medium == "Salzwasser"
+        assert result.medium_confidence == MappingConfidence.CONFIRMED
+
+    def test_seewasser_maps_to_meerwasser(self):
+        result = run_medium_specialist(
+            MediumSpecialistInput(candidate_media_tokens=("seewasser",))
+        )
+
+        assert result.canonical_medium == "Meerwasser"
+        assert result.medium_confidence == MappingConfidence.CONFIRMED
+
+    def test_ambiguous_medium_requires_followup(self):
+        result = run_medium_specialist(
+            MediumSpecialistInput(candidate_media_tokens=("Dampf",))
+        )
+
+        assert result.canonical_medium == "Dampf"
+        assert result.medium_confidence == MappingConfidence.REQUIRES_CONFIRMATION
+        assert result.followup_question_if_needed is not None
+
+    def test_conflicting_candidates_return_uncertainty(self):
+        result = run_medium_specialist(
+            MediumSpecialistInput(candidate_media_tokens=("Wasser", "Dampf"))
+        )
+
+        assert result.canonical_medium is None
+        assert result.medium_confidence == MappingConfidence.REQUIRES_CONFIRMATION
+        assert "medium_conflict" in str(result.medium_uncertainty_reason)
+
+    def test_unknown_candidate_stays_inferred_with_generic_followup(self):
+        result = run_medium_specialist(
+            MediumSpecialistInput(candidate_media_tokens=("Spezialkraftstoff",))
+        )
+
+        assert result.canonical_medium is None
+        assert result.medium_confidence == MappingConfidence.INFERRED
+        assert result.followup_question_if_needed is not None
 
 
 # ---------------------------------------------------------------------------
@@ -403,10 +493,69 @@ class TestBackwardCompatLayer:
         assert "pressure_bar" in result
         assert abs(result["pressure_bar"] - 200.0) < 0.1
 
+    def test_extract_parameters_pressure_mpa(self):
+        result = extract_parameters("Betriebsdruck 1.5 MPa")
+        assert "pressure_bar" in result
+        assert abs(result["pressure_bar"] - 15.0) < 0.1
+
+    def test_extract_parameters_temperature_grad_keeps_raw_unit_form(self):
+        result = extract_parameters("Temperatur 80 grad")
+        assert result["temperature_raw"].lower() == "80 grad"
+        assert abs(result["temperature_c"] - 80.0) < 0.1
+
     def test_extract_parameters_viton_confirmation(self):
         result = extract_parameters("Wir verwenden Viton als Dichtungswerkstoff")
         assert "material_confirmation_required" in result
         assert result["material_confirmation_required"] == "FKM"
+
+    def test_extract_parameters_uses_medium_specialist_for_aliases(self):
+        result = extract_parameters("Das Medium ist water")
+        assert result["medium_normalized"] == "Wasser"
+        assert result["medium_normalization_status"] == "confirmed"
+
+    def test_extract_parameters_detects_salzwasser_in_free_text(self):
+        result = extract_parameters("ich muss salzwasser trennen")
+        assert result["medium_normalized"] == "Salzwasser"
+        assert result["medium_normalization_status"] == "confirmed"
+
+    def test_extract_parameters_detects_meerwasser_in_free_text(self):
+        result = extract_parameters("es geht um meerwasser")
+        assert result["medium_normalized"] == "Meerwasser"
+        assert result["medium_normalization_status"] == "confirmed"
+
+    def test_extract_parameters_maps_seewasser_to_meerwasser(self):
+        result = extract_parameters("seewasser")
+        assert result["medium_normalized"] == "Meerwasser"
+
+    def test_extract_parameters_does_not_fake_exact_medium_for_family_only_capture(self):
+        result = extract_parameters("ich muss alkalische reinigungsloesung abdichten")
+        assert "medium_normalized" not in result
+        assert "medium_confirmation_required" not in result
+        assert "medium_normalization_status" not in result
+
+    def test_extract_parameters_preserves_getriebeoel_as_generic_oil(self):
+        result = extract_parameters("Getriebeöl, 2 bar, 40 mm, 4000 U/min")
+        assert result["medium_normalized"] == "Öl"
+        assert result["medium_normalization_status"] == "estimated"
+        assert result["medium_followup_question"] == "Welcher Öltyp liegt genau an?"
+
+    def test_extract_parameters_detects_shaft_diameter_from_durchmesser_phrase(self):
+        result = extract_parameters("der durchmesser liegt bei 40 mm")
+        assert result["diameter_mm"] == 40.0
+
+    def test_extract_parameters_detects_shaft_diameter_from_keyword_without_unit(self):
+        result = extract_parameters("durchmesser 40")
+        assert result["diameter_mm"] == 40.0
+
+    def test_extract_parameters_detects_shaft_diameter_from_symbol_notation(self):
+        result = extract_parameters("d=40")
+        assert result["diameter_mm"] == 40.0
+
+    def test_extract_parameters_uses_medium_specialist_for_ambiguous_media(self):
+        result = extract_parameters("Das Medium ist Dampf")
+        assert result["medium_confirmation_required"] == "Dampf"
+        assert result["medium_normalization_status"] == "requires_confirmation"
+        assert result["medium_followup_question"]
 
 
 # ---------------------------------------------------------------------------
@@ -446,3 +595,63 @@ class TestDomainScenarios:
         e = normalize_parameter("material", "Nitril")
         assert e.normalized_value == "NBR"
         assert e.confidence == MappingConfidence.ESTIMATED
+
+
+# ---------------------------------------------------------------------------
+# 11. Phase 0C.2 — LLM fallback disabled by default (architecture guard)
+# ---------------------------------------------------------------------------
+
+class TestLLMFallbackDisabledByDefault:
+    """Verify that _MEDIUM_LLM_FALLBACK_ENABLED is False in the default
+    environment (SEALAI_ENABLE_MEDIUM_LLM_FALLBACK unset or "0").
+
+    This is an architecture contract test: the deterministic normalization
+    layer must not make LLM calls under normal operation.
+    """
+
+    def test_flag_is_false_without_env_override(self, monkeypatch):
+        """Re-importing the module with the env var absent must yield False."""
+        import importlib
+        import sys
+        import app.agent.domain.normalization as norm_mod
+
+        monkeypatch.delenv("SEALAI_ENABLE_MEDIUM_LLM_FALLBACK", raising=False)
+        # Force reload to re-evaluate the module-level constant
+        importlib.reload(norm_mod)
+        assert norm_mod._MEDIUM_LLM_FALLBACK_ENABLED is False
+
+    def test_flag_is_false_when_set_to_zero(self, monkeypatch):
+        import importlib
+        import app.agent.domain.normalization as norm_mod
+
+        monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_LLM_FALLBACK", "0")
+        importlib.reload(norm_mod)
+        assert norm_mod._MEDIUM_LLM_FALLBACK_ENABLED is False
+
+    def test_flag_is_true_when_explicitly_enabled(self, monkeypatch):
+        import importlib
+        import app.agent.domain.normalization as norm_mod
+
+        monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_LLM_FALLBACK", "1")
+        importlib.reload(norm_mod)
+        assert norm_mod._MEDIUM_LLM_FALLBACK_ENABLED is True
+        # Restore default so subsequent tests are unaffected
+        monkeypatch.delenv("SEALAI_ENABLE_MEDIUM_LLM_FALLBACK", raising=False)
+        importlib.reload(norm_mod)
+
+    def test_unknown_medium_does_not_call_llm_by_default(self, monkeypatch):
+        """An unrecognised medium must NOT fire the LLM fallback in default env."""
+        import app.agent.domain.normalization as norm_mod
+
+        monkeypatch.setattr(norm_mod, "_MEDIUM_LLM_FALLBACK_ENABLED", False)
+        called = []
+        original = norm_mod._llm_extract_medium
+
+        def _spy(text: str):
+            called.append(text)
+            return original(text)
+
+        monkeypatch.setattr(norm_mod, "_llm_extract_medium", _spy)
+        result = norm_mod.extract_parameters("Das Medium ist Spezialkraftstoff XY-99")
+        assert called == [], "LLM fallback must not be called when flag is False"
+        assert "medium_normalized" not in result or result.get("medium_normalization_status") != "llm_fallback"

@@ -36,6 +36,16 @@ class RoutingPath(str, Enum):
     STRUCTURED_PATH = "structured"
     """Full structured pipeline with case state and persistence."""
 
+    META_PATH = "meta"
+    """Deterministic state-status response — no LLM involved."""
+
+    BLOCKED_PATH = "blocked"
+    """Request explicitly asks for content SealAI is forbidden to provide.
+    Returns a deterministic safe refusal. No LLM, no pipeline."""
+
+    GREETING_PATH = "greeting"
+    """Trivial smalltalk / greeting — deterministic response, no LLM, no RAG."""
+
 
 INTERACTION_POLICY_VERSION = "interaction_policy_v2"
 
@@ -56,7 +66,7 @@ class InteractionPolicyDecision:
     stream_mode: str  # "reply_only" | "structured_progress_stream"
 
     # Kept for backwards-compatibility with router payload and persistence layer
-    interaction_class: str   # e.g. "DIRECT_ANSWER", "GUIDED_RECOMMENDATION"
+    interaction_class: str   # e.g. "DIRECT_ANSWER", "DETERMINISTIC_RESULT", "META_STATUS", "BLOCKED"
     runtime_path: str        # e.g. "FAST_DIRECT", "STRUCTURED_QUALIFICATION"
     binding_level: str       # "KNOWLEDGE" | "ORIENTATION"
     has_case_state: bool     # whether structured case persistence is activated

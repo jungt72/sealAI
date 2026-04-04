@@ -90,6 +90,7 @@ class GovernanceLayer(TypedDict):
 
 
 ReviewState = Literal["none", "pending", "approved", "rejected"]
+CriticalReviewStatus = Literal["not_run", "passed", "failed"]
 
 
 class ReviewLayer(TypedDict, total=False):
@@ -104,6 +105,11 @@ class ReviewLayer(TypedDict, total=False):
     reviewed_by: Optional[str]      # set by operator after review
     review_decision: Optional[str]  # operator decision text
     review_note: Optional[str]      # optional annotation by reviewer
+    critical_review_status: CriticalReviewStatus
+    critical_review_passed: bool
+    blocking_findings: List[str]
+    soft_findings: List[str]
+    required_corrections: List[str]
 
 class CycleLayer(TypedDict):
     """
@@ -136,15 +142,229 @@ class RecommendationArtifact(TypedDict):
 
     selection_status: str
     winner_candidate_id: Optional[str]
+    candidate_projection: Optional[Dict[str, Any]]
     candidate_ids: List[str]
     viable_candidate_ids: List[str]
     blocked_candidates: List[Dict[str, str]]
     evidence_basis: List[str]
+    evidence_status: str
+    provenance_refs: List[str]
+    rationale_basis: List[str]
+    conflict_status: str
+    integrity_status: str
+    domain_scope_status: str
+    threshold_status: str
     release_status: ReleaseStatus
     rfq_admissibility: RFQAdmissibility
     specificity_level: SpecificityLevel
     output_blocked: bool
+    binding_level: str
+    readiness_status: str
+    blocking_reason: str
+    rationale_summary: str
     trace_provenance_refs: List[str]
+
+class EvidenceProvenanceProjection(TypedDict):
+    """
+    Deterministic projection of the current evidence/provenance footing.
+    """
+
+    status: str
+    provenance_refs: List[str]
+    evidence_basis: List[str]
+
+class ConflictStatusProjection(TypedDict):
+    """
+    Deterministic projection of parameter conflict/correction state.
+    """
+
+    status: str
+    affected_keys: List[str]
+    previous_value_summary: str
+    current_value_summary: str
+    correction_applied: bool
+    conflict_still_open: bool
+
+class UnitNormalizationProjection(TypedDict):
+    """
+    Deterministic projection of normalization/unit plausibility status.
+    """
+
+    statuses: Dict[str, str]
+    affected_keys: List[str]
+    warning_keys: List[str]
+    blocking_keys: List[str]
+
+class ParameterIntegrityProjection(TypedDict):
+    """
+    Compact projection of whether current parameters are usable for structured steps.
+    """
+
+    affected_keys: List[str]
+    integrity_status: str
+    warning_keys: List[str]
+    blocking_keys: List[str]
+    usable_for_structured_step: bool
+
+class ThresholdProjection(TypedDict):
+    """
+    Compact projection of triggered deterministic threshold checks.
+    """
+
+    triggered_thresholds: List[str]
+    warning_thresholds: List[str]
+    blocking_thresholds: List[str]
+    threshold_status: str
+    usable_for_governed_step: bool
+
+class DomainScopeProjection(TypedDict):
+    """
+    Deterministic domain-scope status for the current structured case.
+    """
+
+    status: str
+    triggered_thresholds: List[str]
+    warning_thresholds: List[str]
+    blocking_thresholds: List[str]
+    threshold_status: str
+    usable_for_governed_step: bool
+
+class CorrectionProjection(TypedDict):
+    """
+    Compact projection for user-visible correction/conflict state.
+    """
+
+    affected_keys: List[str]
+    previous_value_summary: str
+    current_value_summary: str
+    correction_applied: bool
+    conflict_still_open: bool
+
+class ReviewEscalationProjection(TypedDict):
+    """
+    Deterministic projection for the next human-facing step when governed output
+    is withheld or requires further validation.
+    """
+
+    status: str
+    reason: str
+    missing_items: List[str]
+    ambiguous_candidate_ids: List[str]
+    evidence_status: str
+    provenance_refs: List[str]
+    conflict_status: str
+    integrity_status: str
+    affected_keys: List[str]
+    review_meaningful: bool
+    handover_possible: bool
+    human_validation_ready: bool
+
+class ClarificationProjection(TypedDict):
+    """
+    Deterministic clarification projection for incomplete structured cases.
+    """
+
+    missing_items: List[str]
+    next_question_key: Optional[str]
+    next_question_label: Optional[str]
+    evidence_status: str
+    provenance_refs: List[str]
+    conflict_status: str
+    integrity_status: str
+    affected_keys: List[str]
+    clarification_still_meaningful: bool
+    reason_if_not: str
+
+class UserFacingOutputProjection(TypedDict):
+    """
+    Deterministic user-facing result type for the current structured state.
+    """
+
+    status: str
+
+class OutputContractProjection(TypedDict):
+    """
+    Compact output contract for structured user-facing projection.
+    """
+
+    output_status: str
+    allowed_surface_claims: List[str]
+    next_user_action: str
+    visible_warning_flags: List[str]
+    suppress_recommendation_details: bool
+
+class ProjectionInvariantProjection(TypedDict):
+    """
+    Explicit projection-invariant status across the structured user-facing slices.
+    """
+
+    invariant_ok: bool
+    invariant_violations: List[str]
+
+class StateTraceAuditProjection(TypedDict):
+    """
+    Compact deterministic trace/audit summary for the current structured state.
+    """
+
+    primary_status_reason: str
+    contributing_reasons: List[str]
+    blocking_reasons: List[str]
+    trace_flags: List[str]
+
+class CaseSummaryProjection(TypedDict):
+    """
+    Compact deterministic case summary for the current structured state.
+    """
+
+    current_case_status: str
+    confirmed_core_fields: List[str]
+    missing_core_fields: List[str]
+    active_blockers: List[str]
+    next_step: str
+
+class ActionabilityProjection(TypedDict):
+    """
+    Compact deterministic projection of the currently allowed structured action space.
+    """
+
+    actionability_status: str
+    primary_allowed_action: str
+    blocked_actions: List[str]
+    next_expected_user_action: str
+
+class StateDeltaProjection(TypedDict):
+    """
+    Compact deterministic comparison of two structured states.
+    """
+
+    changed_keys: List[str]
+    changed_statuses: Dict[str, Dict[str, Any]]
+    primary_delta_reason: str
+    delta_direction: str
+
+class StructuredSnapshotContract(TypedDict):
+    """
+    Stable compact snapshot of the relevant structured state.
+    """
+
+    case_status: str
+    output_status: str
+    primary_reason: str
+    next_step: str
+    primary_allowed_action: str
+    active_blockers: List[str]
+
+class StructuredSnapshotComparisonContract(TypedDict):
+    """
+    Stable compact comparison contract between two structured snapshots.
+    """
+
+    from_status: str
+    to_status: str
+    changed_actions: Dict[str, Any]
+    changed_blockers: Dict[str, List[str]]
+    primary_delta_reason: str
+    delta_direction: str
 
 class SelectionLayer(TypedDict):
     """
@@ -158,6 +378,22 @@ class SelectionLayer(TypedDict):
     blocked_candidates: List[Dict[str, str]]
     winner_candidate_id: Optional[str]
     recommendation_artifact: Optional[RecommendationArtifact]
+    evidence_provenance_projection: NotRequired[Optional[EvidenceProvenanceProjection]]
+    conflict_status_projection: NotRequired[Optional[ConflictStatusProjection]]
+    unit_normalization_projection: NotRequired[Optional[UnitNormalizationProjection]]
+    parameter_integrity_projection: NotRequired[Optional[ParameterIntegrityProjection]]
+    threshold_projection: NotRequired[Optional[ThresholdProjection]]
+    domain_scope_projection: NotRequired[Optional[DomainScopeProjection]]
+    correction_projection: NotRequired[Optional[CorrectionProjection]]
+    review_escalation_projection: NotRequired[Optional[ReviewEscalationProjection]]
+    clarification_projection: NotRequired[Optional[ClarificationProjection]]
+    user_facing_output_projection: NotRequired[Optional[UserFacingOutputProjection]]
+    output_contract_projection: NotRequired[Optional[OutputContractProjection]]
+    projection_invariant_projection: NotRequired[Optional[ProjectionInvariantProjection]]
+    state_trace_audit_projection: NotRequired[Optional[StateTraceAuditProjection]]
+    case_summary_projection: NotRequired[Optional[CaseSummaryProjection]]
+    actionability_projection: NotRequired[Optional[ActionabilityProjection]]
+    structured_snapshot_contract: NotRequired[Optional[StructuredSnapshotContract]]
     candidate_clusters: NotRequired[List[Dict[str, Any]]]
     release_status: ReleaseStatus
     rfq_admissibility: RFQAdmissibility
@@ -172,16 +408,19 @@ class HandoverLayer(TypedDict, total=False):
     state, no reasoning artefacts, no demo-data flags.
     """
     is_handover_ready: bool            # True only when rfq_ready + no pending HITL review
+    handover_status: str               # releasable | handoverable | reviewable | not_handoverable
+    handover_reason: str               # deterministic explanation for the status
     target_system: Optional[str]       # e.g. "rfq_portal" | "shop" | None
     handover_payload: Optional[Dict[str, Any]]  # sanitised order-profile for the target system
 
 
 class OutcomeLayer(TypedDict, total=False):
     """
-    Outcome-Feedback Layer — Phase A7.
+    Outcome-Feedback Layer.
     Populated asynchronously by external feedback loops after the case is closed.
     NEVER written by the agent graph or LLM during a run.
     All fields are optional — the layer starts empty and is filled post-deployment.
+    Schema is defined here so downstream consumers have a stable contract.
     """
     implemented: bool       # Recommendation was implemented as-is
     failed: bool            # Implementation failed in the field
@@ -213,16 +452,20 @@ class SealingAIState(TypedDict):
 class AgentState(TypedDict):
     """
     LangGraph Orchestration Layer State.
-    Integriert LLM-Kontext (messages) und fachlichen State (sealing_state).
+    Integriert LLM-Kontext (messages) und den aktiven Orchestrierungszustand.
+
+    During the migration, `case_state` is the canonical productive authority for
+    persisted governed truth. `sealing_state` and `working_profile` remain as
+    orchestration/compat surfaces until the legacy graph-state is collapsed.
     """
     messages: Annotated[List[AnyMessage], add_messages]
     sealing_state: SealingAIState
     relevant_fact_cards: List[Dict[str, Any]]  # Speichert FactCards für Tool-Nodes (Phase H6)
-    working_profile: Dict[str, Any]  # Extrahiertes Live-Profil (Druck, Temperatur, etc.)
+    working_profile: Dict[str, Any]  # Transitional projection / compat slice
     tenant_id: Optional[str]
     owner_id: NotRequired[Optional[str]]
     loaded_state_revision: NotRequired[int]
-    case_state: NotRequired[CaseState]
+    case_state: NotRequired[CaseState]  # Canonical productive authority
     result_form: NotRequired[Optional[str]]   # ResultForm value, e.g. "direct_answer"
     policy_path: NotRequired[Optional[str]]   # "fast" | "structured" — set by router (Phase 0A.3)
     run_meta: NotRequired[Optional[Dict[str, Any]]]  # model_id, prompt_version, policy_version (Phase 0A.5)

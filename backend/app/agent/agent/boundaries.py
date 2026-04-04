@@ -30,8 +30,8 @@ _STRUCTURED_PREAMBLE = "ℹ️ Technischer Hinweis zum Gültigkeitsbereich:"
 
 _COVERAGE_NOTES: dict[str | None, str] = {
     "full": "Alle Kernparameter vorhanden.",
-    "partial": "Teilweise abgedeckt — einige Parameter noch offen.",
-    "limited": "Eingeschränkte Datenbasis — wichtige Parameter ausstehend.",
+    "partial": "Die technische Basis steht in Teilen; als Naechstes sollten die offenen Einsatzdaten bestaetigt werden.",
+    "limited": "Es gibt bereits einen ersten technischen Rahmen; der naechste sinnvolle Schritt ist die Einsatzbasis sauber zu klaeren.",
 }
 
 _DEMO_DATA_NOTE = (
@@ -98,7 +98,7 @@ def build_boundary_block(
 
     if known_unknowns:
         unknowns_str = ", ".join(known_unknowns)
-        parts.append(f"Fehlende / ungeklärte Parameter: {unknowns_str}.")
+        parts.append(f"Als Naechstes sollten wir diese Punkte sauber klaeren: {unknowns_str}.")
 
     if demo_data_present:
         parts.append(_DEMO_DATA_NOTE)

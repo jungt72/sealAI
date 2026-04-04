@@ -27,7 +27,7 @@ from app.agent.agent.review import (
     REASON_MANUFACTURER_VALIDATION,
     evaluate_review_trigger,
 )
-from app.agent.agent.selection import build_final_reply
+from app.agent.agent.selection import build_final_reply, NO_CANDIDATES_REPLY
 from app.agent.agent.state import ReviewLayer, SealingAIState
 
 
@@ -267,7 +267,7 @@ class TestBuildFinalReplyReview:
             review_required=True,
             review_reason="Demo-Daten.",
         )
-        core_pos = reply.index("No governed")
+        core_pos = reply.index(NO_CANDIDATES_REPLY)
         notice_pos = reply.index(REVIEW_PENDING_PREFIX)
         assert core_pos < notice_pos
 

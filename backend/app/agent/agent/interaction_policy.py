@@ -1,18 +1,35 @@
 """
-Interaction Policy V1 — Deterministic Evaluation Logic
-Phase 0A.2
+Interaction Policy V2 — Semantic Routing via Nano-LLM
+Phase 0A.3 / 0D / 0D+
 
-The LLM may supply an extracted intent string as a soft hint.
-This function makes the final, binding routing decision via deterministic rules.
+Four-tier deterministic pre-check runs BEFORE any LLM call:
+
+  1. META check     → State-status questions ("Was fehlt?") → meta path (no LLM)
+  2. BLOCK check    → Explicitly forbidden requests → blocked path (no LLM, safe refusal)
+  3. GREETING check → Trivial smalltalk ("Hallo", "Danke") → greeting path (no LLM, no RAG)
+  4. FAST capability check → Fast-path ineligible inputs are upgraded to structured
+
+Then the Nano-LLM classifies remaining messages into "Fast" or "Structured".
+
+Fail-safe: Any LLM error falls back to the Structured path.
 
 Architecture rule (Umbauplan R1):
-  - LLM provides intent pre-structuring (optional, passed as `extracted_intent`)
-  - This function makes the hard policy decision — never the LLM directly
+  - LLM provides the routing signal only for the narrow fast/structured split
+  - All policy-critical decisions (meta, blocked, greeting, fast upgrade) are deterministic
+  - The decision object is never produced by free LLM generation
+
+Performance:
+  - evaluate_policy_async() is the preferred entry point from async FastAPI endpoints
+  - Uses openai.AsyncOpenAI for non-blocking routing LLM calls
+  - evaluate_policy() (sync) is kept for tests and CLI usage
 """
 from __future__ import annotations
 
+import json
+import logging
+import os
 import re
-from typing import Any
+from typing import Any, Optional
 
 from app.agent.agent.policy import (
     INTERACTION_POLICY_VERSION,
@@ -20,99 +37,119 @@ from app.agent.agent.policy import (
     ResultForm,
     RoutingPath,
 )
+from app.agent.agent.selection import STRUCTURED_REQUIRED_CORE_PARAMS
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Pattern banks for intent scoring
+# Routing model configuration
 # ---------------------------------------------------------------------------
 
-_GLOSSARY_PATTERNS = [
-    r"\bwas ist\b",
-    r"\bwas sind\b",
-    r"\bwas bedeutet\b",
-    r"\bwas versteht man\b",
-    r"\bwas heißt\b",
-    r"\bdefiniere\b",
-    r"\berkläre\b",
-    r"\berklärung\b",
-    r"\bwhat is\b",
-    r"\bwhat are\b",
-    r"\bbegriff\b",
-    r"\bdefinition\b",
-    r"\bwozu dient\b",
-    r"\bwofür steht\b",
-]
+_ROUTING_MODEL = os.environ.get("SEALAI_ROUTING_MODEL", "gpt-4o-mini")
 
-_COMPARISON_PATTERNS = [
-    r"\bvergleich\b",
-    r"\bvergleiche\b",
-    r"\bunterschied\b",
-    r"\bvs\b",
-    r"\bversus\b",
-    r"\boder\b.*\bbetter\b",
-    r"\bbesser als\b",
-    r"\bschlechter als\b",
-    r"\bgeeigneter\b",
-    r"\bwelches material\b",
-    r"\bwelcher werkstoff\b",
-    r"\bgegenüber\b",
-    r"\bvor- und nachteile\b",
-]
-
-_CALCULATION_PATTERNS = [
-    r"\bberechne\b",
-    r"\bberechnung\b",
-    r"\brechne\b",
-    r"\bumlaufgeschwindigkeit\b",
-    r"\bgleitgeschwindigkeit\b",
-    r"\bu/min\b",
-    r"\brpm\b",
-    r"\bdrehzahl\b",
-    r"\bwellendurchmesser\b",
-    r"\bdruckaufbaurate\b",
-    r"\bdp/dt\b",
-    r"\bpv.?wert\b",
-    r"\breibungsleistung\b",
-    r"\bv_s\b",
-    r"\bv_surface\b",
-]
-
-# numeric value followed immediately by a technical unit
-_NUMERIC_UNIT_RE = re.compile(
-    r"\d[\d\.,]*\s*(?:mm|bar|°c|rpm|u/min|m/s|kn|°f|mpa|hrc|μm)",
-    re.IGNORECASE,
+_SYSTEM_PROMPT = (
+    "Du bist der Türsteher (Router) für einen Dichtungs-Engineering-Agenten. "
+    "Analysiere die Nachricht des Users. "
+    "Antworte AUSSCHLIESSLICH mit JSON im Format: "
+    '{\"route\": \"Structured\"} oder {\"route\": \"Fast\"}. '
+    "- 'Structured': Der User nennt technische Parameter (z.B. '50 mm', '2 bar', "
+    "'für Teig'), fordert eine Auslegung an oder reicht technische Daten nach. "
+    "- 'Fast': Reiner Smalltalk ('Hallo', 'Danke', 'Wie gehts?'), allgemeine "
+    "Begrüßungen oder reine Wissensfragen ohne Auslegungsbezug."
 )
 
-# Strong qualification/certification signals
-_QUALIFICATION_PATTERNS = [
-    r"\bfreigabe\b",
-    r"\bzulassung\b",
-    r"\bzertifikat\b",
-    r"\bzertifizierung\b",
-    r"\bkonformitätserklärung\b",
-    r"\bfda\b",
-    r"\batex\b",
-    r"\bnorsok\b",
-    r"\bprüfzeugnis\b",
-    r"\bwerkstoffzeugnis\b",
-    r"\bfreigabeliste\b",
-    r"\brfq\b",
-    r"\bausschreibung\b",
-    r"\bfreigegeben\b",
-    r"\bherstellerfreigabe\b",
-    r"\bnachweispflichtig\b",
-]
 
 # ---------------------------------------------------------------------------
-# Helper: intent score map
+# Phase 0D: Deterministic pre-check patterns
 # ---------------------------------------------------------------------------
 
-def _score(text: str, patterns: list[str]) -> int:
-    lowered = text.lower()
-    return sum(1 for p in patterns if re.search(p, lowered))
+# Inputs that must be BLOCKED — user explicitly requests what SealAI cannot provide
+_INPUT_BLOCK_PATTERNS: tuple[str, ...] = (
+    r"\bwelch\w*\s+hersteller\b",                              # "welchen/welchem/welche Hersteller"
+    r"\bhersteller[- ]?empfehlung\b",                          # "Herstellerempfehlung"
+    r"\b(empfiehl|empfehle)\s+mir\b",                          # "empfiehl mir"
+    r"\bwas\s+empfiehlst\s+du\b",                              # "was empfiehlst du"
+    r"\bwelche[rs]?\s+(werkstoff|material|dichtring)\s+soll\b", # "welches Material soll ich"
+    r"\bwelche\s+dichtung\s+soll\b",                           # "welche Dichtung soll ich"
+)
+
+# Inputs where a Fast-LLM decision must be upgraded to Structured
+# (technical specificity detected — fast path is not appropriate)
+_FAST_PATH_FORCE_STRUCTURED_PATTERNS: tuple[str, ...] = (
+    r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|psi|°?\s*[cCfF]|rpm|u\.?/?min)\b",  # numeric+unit
+    r"\b(geeignet|eignet\s+sich|taugt\s+für)\b",               # suitability framing
+    r"\b(PTFE|NBR|FKM|EPDM|HNBR|FFKM|SILIKON|VMQ)\b.*\b(für|bei|in)\b",  # material + context
+)
+
+# Inputs that are meta-queries about current session state
+_META_QUERY_PATTERNS: tuple[str, ...] = (
+    r"\b(was\s+fehlt\s+(noch|mir|dir)?|welche\s+(angaben|parameter|daten)\s+fehlen)\b",
+    r"\b(wie\s+ist\s+der\s+(aktuelle\s+)?(stand|fortschritt))\b",
+    r"\b(was\s+(hast\s+du|haben\s+sie)\s+(schon\s+)?(verstanden|erfasst|gespeichert))\b",
+    r"\b(welche\s+(angaben|parameter)\s+(brauche|benötige)\s+ich\s+noch)\b",
+    r"\bzeig\s+(mir\s+)?(den\s+)?(fortschritt|stand|übersicht|status)\b",
+    r"\bwas\s+fehlt\b",
+    r"\bwas\s+hast\s+du\s+(bisher|schon)\b",
+)
+
+# Trivial greetings / smalltalk — deterministic P0, no LLM, no RAG
+_GREETING_PATTERNS: tuple[str, ...] = (
+    r"^(hallo|hi|hey|moin|servus|grüß\s*(gott|dich)|guten\s*(morgen|tag|abend))[\s!.?,]*$",
+    r"^(danke|vielen\s+dank|dankeschön|merci|thanks)[\s!.?,]*$",
+    r"^(tschüss|auf\s+wiedersehen|bis\s+dann|ciao|bye)[\s!.?,]*$",
+    r"^wie\s+geht('?s|\s+es\s+dir)[\s?!.]*$",
+    r"^(wer\s+bist\s+du|was\s+bist\s+du|was\s+kannst\s+du)[\s?!.]*$",
+)
 
 
-def _has_numeric_units(text: str) -> bool:
-    return bool(_NUMERIC_UNIT_RE.search(text))
+def _check_input_blocked(user_input: str) -> Optional[str]:
+    """Return a block reason string if the input explicitly requests forbidden content.
+
+    Returns None if the input is not blocked.
+    Deterministic — no LLM involved.
+    """
+    for pattern in _INPUT_BLOCK_PATTERNS:
+        if re.search(pattern, user_input, re.IGNORECASE | re.UNICODE):
+            return f"input_policy_block:{pattern}"
+    return None
+
+
+def _is_greeting(user_input: str) -> bool:
+    """True when the input is trivial smalltalk / greeting.
+
+    These are answered with a deterministic canned response — no LLM, no RAG.
+    Deterministic — no LLM involved.
+    """
+    stripped = user_input.strip()
+    for pattern in _GREETING_PATTERNS:
+        if re.search(pattern, stripped, re.IGNORECASE | re.UNICODE):
+            return True
+    return False
+
+
+def _is_meta_query(user_input: str) -> bool:
+    """True when the input is a state-status / progress question.
+
+    These must be answered deterministically from session state — not by the LLM.
+    Deterministic — no LLM involved.
+    """
+    for pattern in _META_QUERY_PATTERNS:
+        if re.search(pattern, user_input, re.IGNORECASE | re.UNICODE):
+            return True
+    return False
+
+
+def _fast_path_upgrade_to_structured(user_input: str) -> bool:
+    """True when a Fast-LLM decision must be upgraded to Structured.
+
+    Detects technical specificity that belongs in the structured pipeline
+    regardless of what the nano-LLM decided.
+    Deterministic — no LLM involved.
+    """
+    for pattern in _FAST_PATH_FORCE_STRUCTURED_PATTERNS:
+        if re.search(pattern, user_input, re.IGNORECASE | re.UNICODE):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -131,8 +168,13 @@ def _has_active_case(current_state: dict[str, Any] | None) -> bool:
 
 
 def _missing_critical_params(current_state: dict[str, Any] | None) -> tuple[str, ...]:
+    """Return which STRUCTURED_REQUIRED_CORE_PARAMS are absent from asserted_state.
+
+    Mirrors the canonical parameter list from selection.STRUCTURED_REQUIRED_CORE_PARAMS.
+    Both lists must stay in sync — selection.py is the authoritative source.
+    """
     if not current_state:
-        return ("medium", "pressure", "temperature")
+        return STRUCTURED_REQUIRED_CORE_PARAMS  # all missing
     asserted = ((current_state.get("sealing_state") or {}).get("asserted") or {})
     missing: list[str] = []
     if not (asserted.get("medium_profile") or {}).get("name"):
@@ -146,34 +188,7 @@ def _missing_critical_params(current_state: dict[str, Any] | None) -> tuple[str,
 
 
 # ---------------------------------------------------------------------------
-# Intent hint normalizer (optional LLM input)
-# ---------------------------------------------------------------------------
-
-_INTENT_MAP: dict[str, str] = {
-    "glossary": "glossary",
-    "concept_explanation": "glossary",
-    "terminology": "glossary",
-    "definition": "glossary",
-    "comparison": "comparison",
-    "material_comparison": "comparison",
-    "calculation": "calculation",
-    "deterministic": "calculation",
-    "rwdr": "calculation",
-    "qualification": "qualification",
-    "certification": "qualification",
-    "compliance": "qualification",
-    "guidance": "guidance",
-    "recommendation": "guidance",
-}
-
-
-def _normalize_intent(raw: str) -> str:
-    """Map a raw LLM-provided intent string to a canonical category."""
-    return _INTENT_MAP.get(raw.lower().strip(), "")
-
-
-# ---------------------------------------------------------------------------
-# Core factory helpers
+# Core factory helpers  (return types MUST remain exactly as defined)
 # ---------------------------------------------------------------------------
 
 def _direct_answer(*, coverage: str = "in_scope") -> InteractionPolicyDecision:
@@ -191,27 +206,9 @@ def _direct_answer(*, coverage: str = "in_scope") -> InteractionPolicyDecision:
     )
 
 
-def _guided_recommendation(
-    *,
-    missing: tuple[str, ...] = (),
-    escalation: str | None = None,
-) -> InteractionPolicyDecision:
-    flags: list[str] = ["orientation_only", "not_a_manufacturer_release"]
-    if missing:
-        flags.append("parameters_incomplete")
-    return InteractionPolicyDecision(
-        result_form=ResultForm.GUIDED_RECOMMENDATION,
-        path=RoutingPath.FAST_PATH,
-        stream_mode="reply_only",
-        interaction_class="GUIDED_RECOMMENDATION",
-        runtime_path="FAST_GUIDANCE",
-        binding_level="ORIENTATION",
-        has_case_state=False,
-        coverage_status="partial" if missing else "in_scope",
-        boundary_flags=tuple(flags),
-        escalation_reason=escalation,
-        required_fields=missing,
-    )
+# _guided_recommendation() removed (Phase 0D): FAST_PATH always returns DIRECT_ANSWER now.
+# GUIDED_RECOMMENDATION form is deprecated — kept in ResultForm enum for serialisation
+# compatibility only, but never returned by evaluate_policy().
 
 
 def _deterministic_result(
@@ -232,27 +229,169 @@ def _deterministic_result(
     )
 
 
-def _qualified_case(
-    *,
-    missing: tuple[str, ...] = (),
-) -> InteractionPolicyDecision:
+# _qualified_case() removed (Phase 0D): STRUCTURED_PATH always returns DETERMINISTIC_RESULT.
+# QUALIFIED_CASE form is deprecated — kept in ResultForm enum for serialisation
+# compatibility only, but never returned by evaluate_policy().
+
+
+def _meta_path() -> InteractionPolicyDecision:
+    """State-status query — answered deterministically, no LLM."""
     return InteractionPolicyDecision(
-        result_form=ResultForm.QUALIFIED_CASE,
-        path=RoutingPath.STRUCTURED_PATH,
-        stream_mode="structured_progress_stream",
-        interaction_class="QUALIFIED_CASE",
-        runtime_path="STRUCTURED_QUALIFICATION",
-        binding_level="ORIENTATION",
-        has_case_state=True,
+        result_form=ResultForm.DIRECT_ANSWER,
+        path=RoutingPath.META_PATH,
+        stream_mode="reply_only",
+        interaction_class="META_STATUS",
+        runtime_path="META_DETERMINISTIC",
+        binding_level="KNOWLEDGE",
+        has_case_state=False,
         coverage_status="in_scope",
-        boundary_flags=("manufacturer_validation_may_be_required",),
-        required_fields=missing,
+        boundary_flags=("not_a_manufacturer_release",),
+        required_fields=(),
     )
+
+
+def _greeting_path() -> InteractionPolicyDecision:
+    """Trivial greeting / smalltalk — deterministic response, no LLM, no RAG."""
+    return InteractionPolicyDecision(
+        result_form=ResultForm.DIRECT_ANSWER,
+        path=RoutingPath.GREETING_PATH,
+        stream_mode="reply_only",
+        interaction_class="GREETING",
+        runtime_path="GREETING_DETERMINISTIC",
+        binding_level="KNOWLEDGE",
+        has_case_state=False,
+        coverage_status="in_scope",
+        boundary_flags=(),
+        required_fields=(),
+    )
+
+
+def _blocked_path(*, reason: str) -> InteractionPolicyDecision:
+    """Explicitly forbidden request — deterministic safe refusal, no LLM, no pipeline."""
+    return InteractionPolicyDecision(
+        result_form=ResultForm.DIRECT_ANSWER,
+        path=RoutingPath.BLOCKED_PATH,
+        stream_mode="reply_only",
+        interaction_class="BLOCKED",
+        runtime_path="BLOCKED_POLICY",
+        binding_level="BLOCKED",
+        has_case_state=False,
+        coverage_status="out_of_scope",
+        boundary_flags=("policy_block", "not_a_manufacturer_release"),
+        escalation_reason=reason,
+        required_fields=(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Semantic routing via Nano-LLM
+# ---------------------------------------------------------------------------
+
+def _call_routing_llm(user_input: str) -> str:
+    """
+    Call the routing LLM synchronously and return "Fast" or "Structured".
+
+    Kept for backwards-compatibility (tests patch this name).
+    Production callers should use _call_routing_llm_async().
+    """
+    import openai  # lazy import — keeps startup lean when routing is unused
+
+    client = openai.OpenAI()  # picks up OPENAI_API_KEY from environment
+    response = client.chat.completions.create(
+        model=_ROUTING_MODEL,
+        messages=[
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_input},
+        ],
+        max_tokens=16,
+        temperature=0,
+    )
+    raw = response.choices[0].message.content or ""
+    payload = json.loads(raw.strip())
+    route = payload.get("route", "")
+    if route not in ("Fast", "Structured"):
+        raise ValueError(f"Unexpected route value from LLM: {route!r}")
+    return route
+
+
+async def _call_routing_llm_async(user_input: str) -> str:
+    """Non-blocking routing LLM call — does not block the event loop.
+
+    Uses openai.AsyncOpenAI so FastAPI can serve other requests while waiting.
+    """
+    import openai  # lazy import
+
+    client = openai.AsyncOpenAI()
+    response = await client.chat.completions.create(
+        model=_ROUTING_MODEL,
+        messages=[
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_input},
+        ],
+        max_tokens=16,
+        temperature=0,
+    )
+    raw = response.choices[0].message.content or ""
+    payload = json.loads(raw.strip())
+    route = payload.get("route", "")
+    if route not in ("Fast", "Structured"):
+        raise ValueError(f"Unexpected route value from LLM: {route!r}")
+    return route
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def _evaluate_deterministic_tiers(
+    user_input: str,
+    current_state: dict[str, Any] | None = None,
+) -> InteractionPolicyDecision | None:
+    """Run all deterministic pre-checks (no LLM, no I/O).
+
+    Returns a decision if a deterministic tier matches, else None.
+    Shared by both sync and async evaluate_policy variants.
+    """
+    # ── Tier 0a: Meta queries ──────────────────────────────────────────────
+    if _is_meta_query(user_input):
+        log.debug("Policy decision: META (state-status query)")
+        return _meta_path()
+
+    # ── Tier 0b: Blocked requests ──────────────────────────────────────────
+    block_reason = _check_input_blocked(user_input)
+    if block_reason:
+        log.info("Policy decision: BLOCKED (%s)", block_reason)
+        return _blocked_path(reason=block_reason)
+
+    # ── Tier 0c: Greeting / trivial smalltalk (no LLM, no RAG) ─────────────
+    if _is_greeting(user_input):
+        log.debug("Policy decision: GREETING (trivial smalltalk)")
+        return _greeting_path()
+
+    return None
+
+
+def _resolve_llm_route(
+    route: str,
+    user_input: str,
+    current_state: dict[str, Any] | None,
+) -> InteractionPolicyDecision:
+    """Given an LLM route result ("Fast" / "Structured"), produce the decision."""
+    if route == "Fast":
+        if _fast_path_upgrade_to_structured(user_input):
+            log.debug(
+                "Policy decision: STRUCTURED (fast→structured upgrade: "
+                "technical specificity detected)"
+            )
+            missing = _missing_critical_params(current_state)
+            return _deterministic_result(missing=missing)
+        log.debug("Policy decision: FAST (chit-chat / knowledge question)")
+        return _direct_answer()
+
+    log.debug("Policy decision: STRUCTURED (technical input / assessment)")
+    missing = _missing_critical_params(current_state)
+    return _deterministic_result(missing=missing)
+
 
 def evaluate_policy(
     user_input: str,
@@ -260,7 +399,16 @@ def evaluate_policy(
     extracted_intent: str = "",
 ) -> InteractionPolicyDecision:
     """
-    Deterministic interaction policy gate.
+    Authoritative interaction policy gate — Phase 0D.
+
+    Four-tier deterministic pre-check runs first (no LLM, no I/O):
+      1. META: state-status questions → meta path
+      2. BLOCK: explicitly forbidden requests → blocked path
+      3. GREETING: trivial smalltalk → greeting path (no LLM, no RAG)
+      4. After LLM "Fast" decision: technical-specificity upgrade to Structured
+
+    Then the Nano-LLM classifies remaining messages into "Fast" or "Structured".
+    Fail-safe: any LLM error falls back to Structured.
 
     Parameters
     ----------
@@ -269,56 +417,54 @@ def evaluate_policy(
     current_state:
         Optional current AgentState dict for context-aware decisions.
     extracted_intent:
-        Optional LLM-pre-classified intent string (soft hint only).
-        The final routing decision is always made by this function.
+        Accepted for API compatibility; not used in routing logic.
 
     Returns
     -------
     InteractionPolicyDecision
-        Authoritative routing decision. Never produced by free LLM generation.
+        Authoritative routing decision — one of: meta, blocked, greeting, fast, structured.
     """
-    # --- Score text signals ---
-    glossary_score = _score(user_input, _GLOSSARY_PATTERNS)
-    comparison_score = _score(user_input, _COMPARISON_PATTERNS)
-    calc_score = _score(user_input, _CALCULATION_PATTERNS)
-    qual_score = _score(user_input, _QUALIFICATION_PATTERNS)
-    has_units = _has_numeric_units(user_input)
+    # ── Deterministic tiers (no LLM) ──────────────────────────────────────
+    deterministic = _evaluate_deterministic_tiers(user_input, current_state)
+    if deterministic is not None:
+        return deterministic
 
-    # --- Boost from optional LLM intent hint ---
-    intent = _normalize_intent(extracted_intent)
-    if intent == "glossary":
-        glossary_score += 2
-    elif intent == "comparison":
-        comparison_score += 2
-    elif intent == "calculation":
-        calc_score += 2
-    elif intent == "qualification":
-        qual_score += 3  # strong: LLM confirmed
+    # ── Tier 1: Nano-LLM routing (fast vs structured) ─────────────────────
+    try:
+        route = _call_routing_llm(user_input)
+    except Exception as exc:
+        log.warning(
+            "Routing LLM call failed (%s: %s) — falling back to Structured path",
+            type(exc).__name__,
+            exc,
+        )
+        route = "Structured"
 
-    # --- Hard gates (order matters: most specific first) ---
+    return _resolve_llm_route(route, user_input, current_state)
 
-    # 1. Qualification/certification — always structured
-    if qual_score >= 1:
-        missing = _missing_critical_params(current_state)
-        return _qualified_case(missing=missing)
 
-    # 2. Calculation with numeric evidence — structured deterministic
-    if calc_score >= 1 and has_units:
-        return _deterministic_result()
+async def evaluate_policy_async(
+    user_input: str,
+    current_state: dict[str, Any] | None = None,
+    extracted_intent: str = "",
+) -> InteractionPolicyDecision:
+    """Async variant of evaluate_policy — does not block the event loop.
 
-    # 3. Calculation keyword only (no numbers yet) — ask for params via guidance
-    if calc_score >= 2:
-        return _deterministic_result(missing=("shaft_diameter_mm", "rpm"))
+    Identical logic to evaluate_policy but uses _call_routing_llm_async
+    for the nano-LLM call. Use this from async FastAPI endpoints.
+    """
+    deterministic = _evaluate_deterministic_tiers(user_input, current_state)
+    if deterministic is not None:
+        return deterministic
 
-    # 4. Glossary / concept explanation — direct answer, fast path
-    if glossary_score >= 1 and comparison_score == 0 and calc_score == 0:
-        return _direct_answer()
+    try:
+        route = await _call_routing_llm_async(user_input)
+    except Exception as exc:
+        log.warning(
+            "Routing LLM call failed (%s: %s) — falling back to Structured path",
+            type(exc).__name__,
+            exc,
+        )
+        route = "Structured"
 
-    # 5. Material/concept comparison — direct answer, fast path
-    if comparison_score >= 1:
-        return _direct_answer()
-
-    # 6. Default: guided recommendation — NOT heavy qualification
-    #    (This is the key fix: don't blast every open question into structured path)
-    missing = _missing_critical_params(current_state)
-    return _guided_recommendation(missing=missing)
+    return _resolve_llm_route(route, user_input, current_state)
