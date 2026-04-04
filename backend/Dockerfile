@@ -57,6 +57,7 @@ COPY app ./app
 COPY agents ./agents
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
+COPY prompts ./prompts
 
 # Rechte & Run-User
 RUN chown -R appuser:appuser /app
