@@ -1,6 +1,7 @@
 # Envs
 .env*
 !.env.example
+!.env.prod.example
 backend/.env
 frontend/.env
 
@@ -83,6 +84,7 @@ code_dump_*.txt
 *.log
 *.env
 .env.*
+!.env.prod.example
 
 # runtime data
 /data/
@@ -102,6 +104,18 @@ paperless/media/
 
 # Next generated
 frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+frontend/public/robots.txt
+frontend/public/sitemap*.xml
+
+# Restore / diagnostics artefacts
+nginx/*.pre-restore-*
+/serverinfo.json
+/401
+/BFF-
+/Backend-Auth-Flow
+/Session-
+/Token-Pfad
 
 # Local concept material
 konzept/
