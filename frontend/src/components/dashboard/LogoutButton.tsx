@@ -5,9 +5,10 @@ import { signOut, useSession } from "next-auth/react";
 
 interface LogoutButtonProps {
     showLabel?: boolean;
+    className?: string;
 }
 
-export default function LogoutButton({ showLabel = true }: LogoutButtonProps) {
+export default function LogoutButton({ showLabel = true, className }: LogoutButtonProps) {
     const { data: session } = useSession();
 
     const handleLogout = async () => {
@@ -46,7 +47,7 @@ export default function LogoutButton({ showLabel = true }: LogoutButtonProps) {
             className={`flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all group relative ${showLabel
                     ? "text-seal-ylnmn hover:text-red-500 hover:bg-red-50"
                     : "justify-center text-seal-ylnmn hover:text-red-500 hover:bg-red-50"
-                }`}
+                } ${className ?? ""}`}
             title={!showLabel ? "Logout" : undefined}
         >
             <LogOut className={`${showLabel ? "mr-3" : ""} h-5 w-5 shrink-0`} />

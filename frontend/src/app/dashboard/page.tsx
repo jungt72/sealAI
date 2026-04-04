@@ -1,11 +1,5 @@
-import ChatInterface from "@/components/dashboard/ChatInterface";
+import { redirect } from "next/navigation";
 
 export default function DashboardPage() {
-    return (
-        <div className="flex h-full w-full overflow-hidden bg-white">
-            <div className="w-full h-full flex flex-col">
-                <ChatInterface />
-            </div>
-        </div>
-    );
+  redirect("/dashboard/new");
 }

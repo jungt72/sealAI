@@ -10,11 +10,11 @@ import {
   Factory,
   Layers,
 } from "lucide-react";
-import type { CaseWorkspaceProjection } from "@/lib/workspaceApi";
+import type { WorkspaceView } from "@/lib/contracts/workspace";
 import { deriveLifecycleSteps, type LifecycleStep } from "@/lib/lifecycleSteps";
 
 type Props = {
-  workspace: CaseWorkspaceProjection;
+  workspace: WorkspaceView;
 };
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -34,9 +34,9 @@ const STATUS_STYLE = {
 } as const;
 
 export default function CaseLifecyclePanel({ workspace: ws }: Props) {
-  const { cycle_info: cycle } = ws;
+  const { summary } = ws;
   const steps = deriveLifecycleSteps(ws);
-  const isStale = cycle.derived_artifacts_stale;
+  const isStale = summary.derivedArtifactsStale;
 
   return (
     <div className="rounded-2xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-4 space-y-3">
@@ -46,9 +46,9 @@ export default function CaseLifecyclePanel({ workspace: ws }: Props) {
           Case Lifecycle
         </p>
         <div className="flex items-center gap-2 text-[10px] text-slate-400">
-          <span>C{cycle.current_assertion_cycle_id}</span>
+          <span>C{summary.analysisCycleId}</span>
           <span className="text-slate-300">·</span>
-          <span>R{cycle.state_revision}</span>
+          <span>R{summary.stateRevision}</span>
         </div>
       </div>
 
@@ -59,9 +59,9 @@ export default function CaseLifecyclePanel({ workspace: ws }: Props) {
           <span className="text-[11px] font-semibold text-amber-700">
             Artifacts stale
           </span>
-          {cycle.stale_reason && (
+          {summary.staleReason && (
             <span className="text-[10px] text-amber-500 ml-auto truncate max-w-[120px]">
-              {cycle.stale_reason.replace(/_/g, " ")}
+              {summary.staleReason.replace(/_/g, " ")}
             </span>
           )}
         </div>
@@ -104,7 +104,7 @@ export default function CaseLifecyclePanel({ workspace: ws }: Props) {
       {/* Footer: Profile revision binding */}
       <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-100 pt-2">
         <span>
-          Profile rev. {cycle.asserted_profile_revision}
+          Profile rev. {summary.assertedProfileRevision}
         </span>
         <span className={isStale ? "text-amber-500 font-semibold" : "text-emerald-500"}>
           {isStale ? "Needs revalidation" : "Fresh"}

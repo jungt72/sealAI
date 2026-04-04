@@ -1,0 +1,458 @@
+import type { WorkspaceView, WorkspaceLifecycleStep } from "@/lib/contracts/workspace";
+import { buildRfqDocumentReadPath } from "@/lib/bff/workspace";
+
+type LegacyWorkspaceProjection = {
+  communication_context?: {
+    conversation_phase?: string | null;
+    turn_goal?: string | null;
+    primary_question?: string | null;
+    supporting_reason?: string | null;
+    response_mode?: string | null;
+    confirmed_facts_summary?: string[];
+    open_points_summary?: string[];
+  };
+  medium_context?: {
+    medium_label?: string | null;
+    status?: string;
+    scope?: string;
+    summary?: string | null;
+    properties?: string[];
+    challenges?: string[];
+    followup_points?: string[];
+    confidence?: string | null;
+    source_type?: string | null;
+    not_for_release_decisions?: boolean;
+    disclaimer?: string | null;
+  };
+  technical_derivations?: Array<{
+    calc_type?: string;
+    status?: string;
+    v_surface_m_s?: number | null;
+    pv_value_mpa_m_s?: number | null;
+    dn_value?: number | null;
+    notes?: string[];
+  }>;
+  medium_capture?: {
+    raw_mentions?: string[];
+    primary_raw_text?: string | null;
+    source_turn_ref?: string | null;
+    source_turn_index?: number | null;
+  };
+  medium_classification?: {
+    canonical_label?: string | null;
+    family?: string;
+    confidence?: string;
+    status?: string;
+    normalization_source?: string | null;
+    mapping_confidence?: string | null;
+    matched_alias?: string | null;
+    source_registry_key?: string | null;
+    followup_question?: string | null;
+  };
+  case_summary: {
+    thread_id: string | null;
+    turn_count: number;
+    max_turns: number;
+  };
+  completeness: {
+    coverage_score: number;
+    coverage_gaps: string[];
+    completeness_depth: string;
+    missing_critical_parameters: string[];
+    analysis_complete: boolean;
+    recommendation_ready: boolean;
+  };
+  governance_status: {
+    release_status: string;
+    scope_of_validity: string[];
+    assumptions_active: string[];
+    unknowns_release_blocking: string[];
+    unknowns_manufacturer_validation: string[];
+    gate_failures: string[];
+    governance_notes: string[];
+    required_disclaimers: string[];
+    verification_passed: boolean;
+  };
+  specificity: {
+    material_specificity_required: string;
+    completeness_depth: string;
+    elevation_possible?: boolean;
+    elevation_hints?: Array<{
+      label: string;
+      field_key: string | null;
+      reason: string;
+      priority: number;
+      action_type: string;
+    }>;
+    elevation_target?: string | null;
+  };
+  candidate_clusters: {
+    plausibly_viable: Record<string, unknown>[];
+    manufacturer_validation_required: Record<string, unknown>[];
+    inadmissible_or_excluded: Record<string, unknown>[];
+    total_candidates: number;
+  };
+  conflicts: {
+    total: number;
+    open: number;
+    resolved: number;
+    by_severity: Record<string, number>;
+    items: Array<{
+      conflict_type: string;
+      severity: string;
+      summary: string;
+      resolution_status: string;
+    }>;
+  };
+  claims_summary: {
+    total: number;
+    by_type: Record<string, number>;
+    by_origin: Record<string, number>;
+    items: Array<{
+      value: string | null;
+      claim_type: string;
+      claim_origin: string;
+    }>;
+  };
+  manufacturer_questions: {
+    mandatory: string[];
+    open_questions: Array<{
+      id: string;
+      question: string;
+      reason: string;
+      priority: string;
+      category: string;
+    }>;
+    total_open: number;
+  };
+  partner_matching: {
+    matching_ready: boolean;
+    not_ready_reasons: string[];
+    material_fit_items: Array<{
+      material: string;
+      cluster: string;
+      specificity: string;
+      requires_validation: boolean;
+      fit_basis: string;
+      grounded_facts?: Array<{
+        name: string;
+        value: string;
+        unit: string | null;
+        source: string;
+        source_rank: number;
+        grounding_basis: string;
+        is_divergent: boolean;
+        variants?: Array<{
+          value: string;
+          source: string;
+          source_rank: number;
+        }>;
+      }>;
+    }>;
+    open_manufacturer_questions: string[];
+    selected_partner_id?: string | null;
+    data_source: string;
+  };
+  rfq_status: {
+    release_status: string;
+    rfq_confirmed: boolean;
+    rfq_ready?: boolean;
+    blockers: string[];
+    open_points: string[];
+    has_pdf: boolean;
+    has_html_report: boolean;
+    handover_ready?: boolean;
+    handover_initiated?: boolean;
+  };
+  rfq_package: {
+    has_draft: boolean;
+    rfq_id: string | null;
+    rfq_basis_status: string;
+    operating_context_redacted: Record<string, unknown>;
+    manufacturer_questions_mandatory: string[];
+    conflicts_visible_count: number;
+    buyer_assumptions_acknowledged: string[];
+  };
+  cycle_info: {
+    current_assertion_cycle_id: number;
+    state_revision: number;
+    asserted_profile_revision: number;
+    derived_artifacts_stale: boolean;
+    stale_reason: string | null;
+  };
+};
+
+function releaseClassFromStatus(status: string): "A" | "B" | "C" | "D" | null {
+  switch (status) {
+    case "rfq_ready":
+      return "A";
+    case "precheck_only":
+      return "B";
+    case "manufacturer_validation_required":
+      return "C";
+    case "inadmissible":
+      return "D";
+    default:
+      return null;
+  }
+}
+
+function buildLifecycleSteps(projection: LegacyWorkspaceProjection): WorkspaceLifecycleStep[] {
+  const { case_summary, rfq_status, governance_status, partner_matching, rfq_package } = projection;
+  const steps: WorkspaceLifecycleStep[] = [];
+
+  const turnCount = case_summary.turn_count ?? 0;
+  steps.push({
+    label: "Case Started",
+    status: turnCount > 0 ? "done" : "pending",
+    detail: turnCount > 0 ? `Turn ${turnCount}/${case_summary.max_turns}` : undefined,
+    iconName: "Layers",
+  });
+
+  const releaseStatus = governance_status.release_status;
+  steps.push({
+    label: "Governed Review",
+    status: releaseStatus === "inadmissible" ? "active" : "done",
+    detail: releaseStatus.replace(/_/g, " "),
+    iconName: "Shield",
+  });
+
+  steps.push({
+    label: "RFQ Draft",
+    status: rfq_package.has_draft ? "done" : "pending",
+    detail: rfq_package.has_draft ? rfq_status.release_status.replace(/_/g, " ") : undefined,
+    iconName: "FileText",
+  });
+
+  steps.push({
+    label: "Document Generated",
+    status: rfq_status.has_html_report ? "done" : rfq_package.has_draft ? "active" : "pending",
+    detail: rfq_status.has_pdf ? "PDF available" : rfq_status.has_html_report ? "HTML report" : undefined,
+    iconName: "FileDown",
+  });
+
+  steps.push({
+    label: "Partner Matching",
+    status: partner_matching.matching_ready ? "active" : "pending",
+    detail: partner_matching.material_fit_items.length > 0
+      ? `${partner_matching.material_fit_items.length} candidate${partner_matching.material_fit_items.length === 1 ? "" : "s"}`
+      : undefined,
+    iconName: "Factory",
+  });
+
+  if (rfq_status.handover_initiated) {
+    steps.push({
+      label: "RFQ Submitted",
+      status: "done",
+      detail: partner_matching.selected_partner_id || undefined,
+      iconName: "Zap",
+    });
+  }
+
+  return steps;
+}
+
+export function mapWorkspaceView(
+  caseId: string,
+  projection: LegacyWorkspaceProjection,
+): WorkspaceView {
+  const lifecycleSteps = buildLifecycleSteps(projection);
+  const releaseStatus = projection.governance_status.release_status;
+  const hasDocument = Boolean(projection.rfq_status.has_html_report || projection.rfq_status.has_pdf);
+  const rfqReady = Boolean(projection.rfq_status.rfq_ready);
+
+  return {
+    caseId,
+    communication: projection.communication_context
+      ? {
+          conversationPhase: projection.communication_context.conversation_phase || null,
+          turnGoal: projection.communication_context.turn_goal || null,
+          primaryQuestion: projection.communication_context.primary_question || null,
+          supportingReason: projection.communication_context.supporting_reason || null,
+          responseMode: projection.communication_context.response_mode || null,
+          confirmedFactsSummary: projection.communication_context.confirmed_facts_summary || [],
+          openPointsSummary: projection.communication_context.open_points_summary || [],
+        }
+      : undefined,
+    lifecycle: {
+      currentStep: lifecycleSteps.find((step) => step.status === "active")?.label || null,
+      completedSteps: lifecycleSteps.filter((step) => step.status === "done").map((step) => step.label),
+      steps: lifecycleSteps,
+    },
+    summary: {
+      turnCount: projection.case_summary.turn_count,
+      maxTurns: projection.case_summary.max_turns,
+      analysisCycleId: projection.cycle_info.current_assertion_cycle_id,
+      stateRevision: projection.cycle_info.state_revision,
+      assertedProfileRevision: projection.cycle_info.asserted_profile_revision,
+      derivedArtifactsStale: projection.cycle_info.derived_artifacts_stale,
+      staleReason: projection.cycle_info.stale_reason,
+    },
+    completeness: {
+      coverageScore: projection.completeness.coverage_score,
+      coveragePercent: Math.round(projection.completeness.coverage_score * 100),
+      coverageGaps: projection.completeness.coverage_gaps,
+      completenessDepth: projection.completeness.completeness_depth,
+      missingCriticalParameters: projection.completeness.missing_critical_parameters,
+      analysisComplete: projection.completeness.analysis_complete,
+      recommendationReady: projection.completeness.recommendation_ready,
+    },
+    governance: {
+      releaseStatus,
+      releaseClass: releaseClassFromStatus(releaseStatus),
+      scopeOfValidity: projection.governance_status.scope_of_validity,
+      assumptions: projection.governance_status.assumptions_active,
+      unknownsBlocking: projection.governance_status.unknowns_release_blocking,
+      unknownsManufacturerValidation: projection.governance_status.unknowns_manufacturer_validation,
+      gateFailures: projection.governance_status.gate_failures,
+      notes: projection.governance_status.governance_notes,
+      requiredDisclaimers: projection.governance_status.required_disclaimers,
+      verificationPassed: projection.governance_status.verification_passed,
+    },
+    mediumCapture: {
+      rawMentions: projection.medium_capture?.raw_mentions || [],
+      primaryRawText: projection.medium_capture?.primary_raw_text || null,
+      sourceTurnRef: projection.medium_capture?.source_turn_ref || null,
+      sourceTurnIndex:
+        typeof projection.medium_capture?.source_turn_index === "number"
+          ? projection.medium_capture.source_turn_index
+          : null,
+    },
+    mediumClassification: {
+      canonicalLabel: projection.medium_classification?.canonical_label || null,
+      family: projection.medium_classification?.family || "unknown",
+      confidence: projection.medium_classification?.confidence || "low",
+      status: projection.medium_classification?.status || "unavailable",
+      normalizationSource: projection.medium_classification?.normalization_source || null,
+      mappingConfidence: projection.medium_classification?.mapping_confidence || null,
+      matchedAlias: projection.medium_classification?.matched_alias || null,
+      sourceRegistryKey: projection.medium_classification?.source_registry_key || null,
+      followupQuestion: projection.medium_classification?.followup_question || null,
+    },
+    mediumContext: {
+      mediumLabel: projection.medium_context?.medium_label || null,
+      status: projection.medium_context?.status || "unavailable",
+      scope: projection.medium_context?.scope || "orientierend",
+      summary: projection.medium_context?.summary || null,
+      properties: projection.medium_context?.properties || [],
+      challenges: projection.medium_context?.challenges || [],
+      followupPoints: projection.medium_context?.followup_points || [],
+      confidence: projection.medium_context?.confidence || null,
+      sourceType: projection.medium_context?.source_type || null,
+      notForReleaseDecisions:
+        projection.medium_context?.not_for_release_decisions !== false,
+      disclaimer: projection.medium_context?.disclaimer || null,
+    },
+    technicalDerivations: (projection.technical_derivations || []).map((item) => ({
+      calcType: item.calc_type || "unknown",
+      status: item.status || "insufficient_data",
+      vSurfaceMPerS:
+        typeof item.v_surface_m_s === "number" ? item.v_surface_m_s : null,
+      pvValueMpaMPerS:
+        typeof item.pv_value_mpa_m_s === "number" ? item.pv_value_mpa_m_s : null,
+      dnValue: typeof item.dn_value === "number" ? item.dn_value : null,
+      notes: item.notes || [],
+    })),
+    specificity: {
+      materialSpecificityRequired: projection.specificity.material_specificity_required,
+      completenessDepth: projection.specificity.completeness_depth,
+      elevationPossible: Boolean(projection.specificity.elevation_possible),
+      elevationTarget: projection.specificity.elevation_target || null,
+      elevationHints: (projection.specificity.elevation_hints || []).map((hint) => ({
+        label: hint.label,
+        fieldKey: hint.field_key,
+        reason: hint.reason,
+        priority: hint.priority,
+        actionType: hint.action_type,
+      })),
+    },
+    candidates: {
+      viable: projection.candidate_clusters.plausibly_viable,
+      manufacturerValidationRequired: projection.candidate_clusters.manufacturer_validation_required,
+      excluded: projection.candidate_clusters.inadmissible_or_excluded,
+      total: projection.candidate_clusters.total_candidates,
+    },
+    conflicts: {
+      total: projection.conflicts.total,
+      open: projection.conflicts.open,
+      resolved: projection.conflicts.resolved,
+      bySeverity: projection.conflicts.by_severity,
+      items: projection.conflicts.items.map((item) => ({
+        conflictType: item.conflict_type,
+        severity: item.severity,
+        summary: item.summary,
+        resolutionStatus: item.resolution_status,
+      })),
+    },
+    claims: {
+      total: projection.claims_summary.total,
+      byType: projection.claims_summary.by_type,
+      byOrigin: projection.claims_summary.by_origin,
+      items: projection.claims_summary.items.map((item) => ({
+        value: item.value,
+        claimType: item.claim_type,
+        claimOrigin: item.claim_origin,
+      })),
+    },
+    manufacturerQuestions: {
+      mandatory: projection.manufacturer_questions.mandatory,
+      openQuestions: projection.manufacturer_questions.open_questions.map((item) => ({
+        id: item.id,
+        question: item.question,
+        reason: item.reason,
+        priority: item.priority,
+        category: item.category,
+      })),
+      totalOpen: projection.manufacturer_questions.total_open,
+    },
+    matching: {
+      ready: projection.partner_matching.matching_ready,
+      notReadyReasons: projection.partner_matching.not_ready_reasons,
+      items: projection.partner_matching.material_fit_items.map((item) => ({
+        material: item.material,
+        cluster: item.cluster,
+        specificity: item.specificity,
+        requiresValidation: item.requires_validation,
+        fitBasis: item.fit_basis,
+        groundedFacts: (item.grounded_facts || []).map((fact) => ({
+          name: fact.name,
+          value: fact.value,
+          unit: fact.unit,
+          source: fact.source,
+          sourceRank: fact.source_rank,
+          groundingBasis: fact.grounding_basis,
+          isDivergent: fact.is_divergent,
+          variants: (fact.variants || []).map((variant) => ({
+            value: variant.value,
+            source: variant.source,
+            sourceRank: variant.source_rank,
+          })),
+        })),
+      })),
+      openManufacturerQuestions: projection.partner_matching.open_manufacturer_questions,
+      selectedPartnerId: projection.partner_matching.selected_partner_id || null,
+      dataSource: projection.partner_matching.data_source,
+    },
+    rfq: {
+      status: rfqReady ? "ready" : projection.rfq_package.has_draft ? "draft" : "unavailable",
+      releaseStatus,
+      confirmed: projection.rfq_status.rfq_confirmed,
+      blockers: projection.rfq_status.blockers,
+      openPoints: projection.rfq_status.open_points,
+      hasPdf: projection.rfq_status.has_pdf,
+      hasHtmlReport: hasDocument,
+      hasDraft: projection.rfq_package.has_draft,
+      documentUrl: hasDocument ? buildRfqDocumentReadPath(caseId) : null,
+      handoverReady: Boolean(projection.rfq_status.handover_ready),
+      handoverInitiated: Boolean(projection.rfq_status.handover_initiated),
+      package: {
+        rfqId: projection.rfq_package.rfq_id,
+        basisStatus: projection.rfq_package.rfq_basis_status,
+        operatingContextRedacted: projection.rfq_package.operating_context_redacted,
+        manufacturerQuestionsMandatory: projection.rfq_package.manufacturer_questions_mandatory,
+        conflictsVisibleCount: projection.rfq_package.conflicts_visible_count,
+        buyerAssumptionsAcknowledged: projection.rfq_package.buyer_assumptions_acknowledged,
+      },
+    },
+  };
+}

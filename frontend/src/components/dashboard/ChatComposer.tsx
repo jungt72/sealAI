@@ -1,7 +1,15 @@
 'use client';
 
+/**
+ * ChatComposer — Texteingabe mit Attachment-Stub und Send-Button.
+ * Hex-Literale durch Tailwind-Tokens ersetzt; Send-Button nutzt <Button>.
+ */
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, ArrowUp, Paperclip, X } from 'lucide-react';
+import { Plus, ArrowUp } from 'lucide-react';
+
+import Button from '@/components/ui/Button';
+import { cn } from '@/lib/utils';
 
 interface ChatComposerProps {
     onSend: (message: string) => void;
@@ -17,11 +25,11 @@ export default function ChatComposer({ onSend, isLoading, autoFocus, externalVal
     // Patch C4: Handle external value setting
     useEffect(() => {
         if (externalValue !== undefined && externalValue !== null) {
-            setMessage(externalValue);
-            // Focus and move cursor to end
-            if (textareaRef.current) {
-                textareaRef.current.focus();
-            }
+            const frame = window.requestAnimationFrame(() => {
+                setMessage(externalValue);
+                textareaRef.current?.focus();
+            });
+            return () => window.cancelAnimationFrame(frame);
         }
     }, [externalValue]);
 
@@ -48,20 +56,24 @@ export default function ChatComposer({ onSend, isLoading, autoFocus, externalVal
         }
     };
 
+    const canSend = Boolean(message.trim()) && !isLoading;
+
     return (
         <div className="w-full">
-
             <form
                 onSubmit={handleSubmit}
                 className="bg-white/90 backdrop-blur-md rounded-[32px] shadow-[0_20px_70px_-20px_rgba(0,0,0,0.1)] border border-gray-200/50 p-2 flex items-end gap-2 transition-all duration-300 focus-within:shadow-[0_20px_70px_-10px_rgba(0,122,255,0.1)]"
             >
-                {/* Attachment Button */}
-                <button
+                {/* Attachment Button — Ghost-Variante mit rundem Override */}
+                <Button
                     type="button"
-                    className="w-10 h-10 rounded-full bg-[#F5F5F7] hover:bg-[#E5E5EA] flex items-center justify-center text-gray-500 transition-all duration-200 cursor-pointer active:scale-95 flex-shrink-0"
+                    variant="ghost"
+                    size="md"
+                    className="w-10 h-10 rounded-full p-0 flex-shrink-0 bg-seal-surface hover:bg-seal-surface-hover text-gray-500"
+                    aria-label="Datei anhängen"
                 >
                     <Plus size={20} />
-                </button>
+                </Button>
 
                 {/* Textarea Input */}
                 <textarea
@@ -76,17 +88,21 @@ export default function ChatComposer({ onSend, isLoading, autoFocus, externalVal
                     autoFocus={autoFocus}
                 />
 
-                {/* Send Button */}
-                <button
+                {/* Send Button — Primary-Variante mit rundem Override */}
+                <Button
                     type="submit"
-                    disabled={!message.trim() || isLoading}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-white shadow-sm transition-all duration-300 active:scale-90 flex-shrink-0 ${message.trim()
-                        ? 'bg-[#007AFF] hover:bg-[#0066CC] shadow-[#007AFF]/20'
-                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        }`}
+                    variant="primary"
+                    size="md"
+                    loading={isLoading}
+                    disabled={!canSend}
+                    className={cn(
+                        'w-10 h-10 rounded-full p-0 flex-shrink-0',
+                        !canSend && 'bg-gray-200 text-gray-400 hover:bg-gray-200',
+                    )}
+                    aria-label="Nachricht senden"
                 >
-                    <ArrowUp size={20} strokeWidth={2.5} />
-                </button>
+                    {!isLoading && <ArrowUp size={20} strokeWidth={2.5} />}
+                </Button>
             </form>
         </div>
     );
