@@ -89,12 +89,13 @@ def _auth(monkeypatch: pytest.MonkeyPatch, *, user: str = "test-user") -> None:
     monkeypatch.setattr(deps, "verify_access_token", lambda _t: {"preferred_username": user})
 
 
-def test_health_200_no_auth_required() -> None:
+def test_agent_health_200_no_auth_required() -> None:
     async def _case():
         async with _async_client() as client:
-            res = await client.get("/api/v1/langgraph/health")
+            res = await client.get("/api/agent/health")
             assert res.status_code == 200
             assert res.json().get("status") == "ok"
+            assert res.json().get("service") == "sealai-agent"
 
     _run(_case())
 

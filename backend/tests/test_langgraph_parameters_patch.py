@@ -3,6 +3,7 @@ import importlib
 import os
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
@@ -31,6 +32,24 @@ _ENV_DEFAULTS = {
 def _ensure_env() -> None:
     for key, value in _ENV_DEFAULTS.items():
         os.environ.setdefault(key, value)
+    os.environ.setdefault("postgres_user", _ENV_DEFAULTS["POSTGRES_USER"])
+    os.environ.setdefault("postgres_password", _ENV_DEFAULTS["POSTGRES_PASSWORD"])
+    os.environ.setdefault("postgres_host", _ENV_DEFAULTS["POSTGRES_HOST"])
+    os.environ.setdefault("postgres_port", _ENV_DEFAULTS["POSTGRES_PORT"])
+    os.environ.setdefault("postgres_db", _ENV_DEFAULTS["POSTGRES_DB"])
+    os.environ.setdefault("database_url", "sqlite+aiosqlite:///tmp.db")
+    os.environ.setdefault("POSTGRES_SYNC_URL", "sqlite:///tmp.db")
+    os.environ.setdefault("openai_api_key", _ENV_DEFAULTS["OPENAI_API_KEY"])
+    os.environ.setdefault("qdrant_url", _ENV_DEFAULTS["QDRANT_URL"])
+    os.environ.setdefault("qdrant_collection", _ENV_DEFAULTS["QDRANT_COLLECTION"])
+    os.environ.setdefault("redis_url", _ENV_DEFAULTS["REDIS_URL"])
+    os.environ.setdefault("nextauth_url", _ENV_DEFAULTS["NEXTAUTH_URL"])
+    os.environ.setdefault("nextauth_secret", _ENV_DEFAULTS["NEXTAUTH_SECRET"])
+    os.environ.setdefault("keycloak_issuer", _ENV_DEFAULTS["KEYCLOAK_ISSUER"])
+    os.environ.setdefault("keycloak_jwks_url", _ENV_DEFAULTS["KEYCLOAK_JWKS_URL"])
+    os.environ.setdefault("keycloak_client_id", _ENV_DEFAULTS["KEYCLOAK_CLIENT_ID"])
+    os.environ.setdefault("keycloak_client_secret", _ENV_DEFAULTS["KEYCLOAK_CLIENT_SECRET"])
+    os.environ.setdefault("keycloak_expected_azp", _ENV_DEFAULTS["KEYCLOAK_EXPECTED_AZP"])
 
 
 class _FakeSnapshot:
@@ -65,160 +84,124 @@ class _FakeGraph:
         self.calls.append({"patch": patch, "as_node": as_node})
 
 
+def _build_test_client() -> TestClient:
+    app = FastAPI()
+    endpoint_mod = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
+    app.include_router(getattr(endpoint_mod, "router"))
+    return TestClient(app)
+
+
 def test_patch_unauthorized_returns_401() -> None:
     _ensure_env()
-    app_mod = importlib.import_module("app.main")
-    client = TestClient(getattr(app_mod, "app"))
+    client = _build_test_client()
 
     res = client.post(
-        "/api/v1/langgraph/parameters/patch",
+        "/parameters/patch",
         json={"chat_id": "default", "parameters": {"medium": "oil"}},
     )
 
     assert res.status_code == 401
 
 
-def test_patch_works_with_stable_node_returns_200(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patch_returns_501_with_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     _ensure_env()
-
+    endpoint_mod = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     auth_deps = importlib.import_module("app.services.auth.dependencies")
-    monkeypatch.setattr(auth_deps, "verify_access_token", lambda _t: {"preferred_username": "alice"})
-
-    lg_endpoints = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
-    fake_graph = _FakeGraph()
-
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
-        assert thread_id == "default"
-        assert user_id == "alice"
-        return fake_graph, {"configurable": {}, "metadata": {}}
-
-    monkeypatch.setattr(lg_endpoints, "_build_graph_config", _fake_build_graph_config)
-
-    app_mod = importlib.import_module("app.main")
-    client = TestClient(getattr(app_mod, "app"))
+    app = FastAPI()
+    app.include_router(getattr(endpoint_mod, "router"))
+    app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+        user_id="alice",
+        username="alice",
+        sub="alice",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-a",
+    )
+    client = TestClient(app)
 
     res = client.post(
-        "/api/v1/langgraph/parameters/patch",
-        headers={"Authorization": "Bearer test-token"},
+        "/parameters/patch",
         json={"chat_id": "default", "parameters": {"medium": "oil"}},
     )
 
-    assert res.status_code == 200
+    assert res.status_code == 501
     body = res.json()
-    assert body["ok"] is True
-    assert body["chat_id"] == "default"
-    assert body["applied_fields"] == ["medium"]
-    assert body["asserted_fields"] == ["medium"]
-    assert body["rejected_fields"] == []
-    assert body["versions"]["medium"] == 1
-    assert isinstance(body["updated_at"]["medium"], float)
-
-    assert len(fake_graph.calls) == 1
-    assert fake_graph.calls[0]["as_node"] == "supervisor_logic_node"
-    patch = fake_graph.calls[0]["patch"]
-    assert patch["working_profile"]["normalized_profile"]["medium"] == "oil"
-    assert patch["working_profile"]["engineering_profile"]["medium"] == "oil"
-    assert patch["reasoning"]["observed_inputs"]["medium"]["raw"] == "oil"
+    assert body["detail"]["error"] == "endpoint_removed"
 
 
-def test_patch_missing_chat_id_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patch_missing_chat_id_returns_501(monkeypatch: pytest.MonkeyPatch) -> None:
     _ensure_env()
-
+    endpoint_mod = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     auth_deps = importlib.import_module("app.services.auth.dependencies")
-    monkeypatch.setattr(auth_deps, "verify_access_token", lambda _t: {"preferred_username": "alice"})
-
-    lg_endpoints = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
-    fake_graph = _FakeGraph()
-
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
-        return fake_graph, {"configurable": {}, "metadata": {}}
-
-    monkeypatch.setattr(lg_endpoints, "_build_graph_config", _fake_build_graph_config)
-
-    app_mod = importlib.import_module("app.main")
-    client = TestClient(getattr(app_mod, "app"))
+    app = FastAPI()
+    app.include_router(getattr(endpoint_mod, "router"))
+    app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+        user_id="alice",
+        username="alice",
+        sub="alice",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-a",
+    )
+    client = TestClient(app)
 
     res = client.post(
-        "/api/v1/langgraph/parameters/patch",
-        headers={"Authorization": "Bearer test-token"},
+        "/parameters/patch",
         json={"parameters": {"medium": "oil"}},
     )
 
-    assert res.status_code == 400
+    assert res.status_code == 501
     body = res.json()
-    assert body["detail"]["code"] == "missing_chat_id"
+    assert body["detail"]["error"] == "endpoint_removed"
 
 
-def test_patch_rejects_unknown_as_node_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patch_rejects_unknown_as_node_returns_501(monkeypatch: pytest.MonkeyPatch) -> None:
     _ensure_env()
-
+    endpoint_mod = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     auth_deps = importlib.import_module("app.services.auth.dependencies")
-    monkeypatch.setattr(auth_deps, "verify_access_token", lambda _t: {"preferred_username": "alice"})
-
-    lg_endpoints = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
-    fake_graph = _FakeGraph()
-
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
-        return fake_graph, {"configurable": {}, "metadata": {}}
-
-    monkeypatch.setattr(lg_endpoints, "_build_graph_config", _fake_build_graph_config)
-    monkeypatch.setattr(lg_endpoints, "PARAMETERS_PATCH_AS_NODE", "parameter_patch_ui")
-
-    app_mod = importlib.import_module("app.main")
-    client = TestClient(getattr(app_mod, "app"))
+    app = FastAPI()
+    app.include_router(getattr(endpoint_mod, "router"))
+    app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+        user_id="alice",
+        username="alice",
+        sub="alice",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-a",
+    )
+    client = TestClient(app)
 
     res = client.post(
-        "/api/v1/langgraph/parameters/patch",
-        headers={"Authorization": "Bearer test-token"},
+        "/parameters/patch",
         json={"chat_id": "default", "parameters": {"medium": "oil"}},
     )
 
-    assert res.status_code == 400
+    assert res.status_code == 501
     body = res.json()
-    assert body["detail"]["code"] == "invalid_as_node"
-    assert body["detail"]["as_node"] == "parameter_patch_ui"
+    assert body["detail"]["error"] == "endpoint_removed"
 
 
-def test_patch_rejects_unknown_keys_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patch_rejects_unknown_keys_returns_501(monkeypatch: pytest.MonkeyPatch) -> None:
     _ensure_env()
-
+    endpoint_mod = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
     auth_deps = importlib.import_module("app.services.auth.dependencies")
-    monkeypatch.setattr(auth_deps, "verify_access_token", lambda _t: {"preferred_username": "alice"})
-
-    lg_endpoints = importlib.import_module("app.api.v1.endpoints.langgraph_v2")
-    fake_graph = _FakeGraph()
-
-    async def _fake_build_graph_config(*, thread_id: str, user_id: str, **_kwargs):
-        return fake_graph, {"configurable": {}, "metadata": {}}
-
-    monkeypatch.setattr(lg_endpoints, "_build_graph_config", _fake_build_graph_config)
-
-    app_mod = importlib.import_module("app.main")
-    client = TestClient(getattr(app_mod, "app"))
+    app = FastAPI()
+    app.include_router(getattr(endpoint_mod, "router"))
+    app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+        user_id="alice",
+        username="alice",
+        sub="alice",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-a",
+    )
+    client = TestClient(app)
 
     res = client.post(
-        "/api/v1/langgraph/parameters/patch",
-        headers={"Authorization": "Bearer test-token"},
+        "/parameters/patch",
         json={"chat_id": "default", "parameters": {"unknown_key": "x"}},
     )
 
-    assert res.status_code == 400
+    assert res.status_code == 501
     body = res.json()
-    assert body["detail"]["code"] == "invalid_parameters"
-    assert "Unknown parameter key" in (body["detail"].get("message") or "")
-
-
-def test_langgraph_v2_node_contract_contains_stable_nodes(monkeypatch: pytest.MonkeyPatch) -> None:
-    _ensure_env()
-    monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
-    monkeypatch.delenv("REDIS_URL", raising=False)
-    monkeypatch.delenv("LANGGRAPH_V2_REDIS_URL", raising=False)
-
-    contracts = importlib.import_module("app.langgraph_v2.contracts")
-    graph_mod = importlib.import_module("app.langgraph_v2.sealai_graph_v2")
-    monkeypatch.setattr(graph_mod, "_GRAPH_CACHE", None)
-
-    graph = asyncio.run(graph_mod.get_sealai_graph_v2())
-    nodes = contracts.get_compiled_graph_node_names(graph)
-
-    assert set(contracts.STABLE_V2_NODE_CONTRACT).issubset(nodes)
+    assert body["detail"]["error"] == "endpoint_removed"
