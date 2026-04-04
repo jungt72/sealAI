@@ -42,3 +42,79 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .sealai-markdown {
+    color: #0f172a;
+    font-size: 0.995rem;
+    line-height: 1.78;
+  }
+
+  .sealai-markdown > :first-child {
+    margin-top: 0;
+  }
+
+  .sealai-markdown > :last-child {
+    margin-bottom: 0;
+  }
+
+  .sealai-markdown-paragraph {
+    margin-bottom: 1rem;
+    white-space: pre-wrap;
+  }
+
+  .sealai-markdown-link {
+    color: #0369a1;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .sealai-markdown-link:hover {
+    text-decoration: underline;
+  }
+
+  .sealai-markdown-h1,
+  .sealai-markdown-h2,
+  .sealai-markdown-h3 {
+    color: #020617;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .sealai-markdown-h1 {
+    margin: 1.5rem 0 0.85rem;
+    font-size: 1.45rem;
+    line-height: 1.2;
+  }
+
+  .sealai-markdown-h2 {
+    margin: 1.35rem 0 0.75rem;
+    font-size: 1.2rem;
+    line-height: 1.3;
+  }
+
+  .sealai-markdown-h3 {
+    margin: 1.15rem 0 0.65rem;
+    font-size: 1.05rem;
+    line-height: 1.35;
+  }
+
+  .sealai-markdown-list {
+    margin-bottom: 1rem;
+    padding-left: 1.25rem;
+  }
+
+  .sealai-markdown-list-disc {
+    list-style: disc;
+  }
+
+  .sealai-markdown-list-decimal {
+    list-style: decimal;
+  }
+
+  .sealai-markdown-list-item {
+    margin: 0.35rem 0;
+    padding-left: 0.25rem;
+    white-space: pre-wrap;
+  }
+}

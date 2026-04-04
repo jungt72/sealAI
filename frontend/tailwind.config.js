@@ -4,9 +4,18 @@ module.exports = {
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/login/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
+      fontFamily: {
+        // Dashboard — Inter via next/font
+        sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
+        // Landing Page Headlines — Syne via next/font
+        syne: ["var(--font-syne)", "ui-sans-serif", "sans-serif"],
+        // Landing Page Body — DM Sans via next/font
+        body: ["var(--font-dm-sans)", "ui-sans-serif", "sans-serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -45,7 +54,17 @@ module.exports = {
         'seal-silver': '#778DA9',
         'seal-ylnmn': '#415A77',
         'seal-oxford': '#1B263B',
+        'seal-command': '#0f1923',
         'seal-rich': '#0D1B2A',
+        // Interaktive Palette (iOS-Blau + Surface + Layout)
+        'seal-action':        '#007AFF',
+        'seal-action-hover':  '#0066CC',
+        'seal-heading':       '#1D1D1F',
+        'seal-surface':       '#F5F5F7',
+        'seal-surface-hover': '#E5E5EA',
+        'seal-bg':            '#eef4fb',
+        'seal-bg-light':      '#f7fbff',
+        'gemini-bg':          '#EAF0F9',
         platinum: {
           50: "#f8fafc",
           100: "#f1f5f9",
@@ -69,6 +88,19 @@ module.exports = {
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "industrial-gradient": "linear-gradient(to bottom right, #0f172a, #1e293b)",
+        // Dashboard-Hintergrund: sanfter Verlauf von seal-bg-light nach seal-bg
+        "seal-dashboard": "radial-gradient(ellipse at top, #f7fbff 0%, #eef4fb 100%)",
+        // CaseScreen-Hintergrund: blauer Radial-Glow (#007AFF, 9% opacity) über linearem Verlauf
+        "seal-overlay": "radial-gradient(circle at top left, rgba(0,122,255,0.09), transparent 34%), linear-gradient(180deg, #f7fbff 0%, #eef4fb 100%)",
+      },
+      keyframes: {
+        fadeIn: {
+          "0%": { opacity: "0", transform: "translateY(4px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        fadeIn: "fadeIn 0.25s ease-out both",
       },
     },
   },
