@@ -45,6 +45,10 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 logger = structlog.get_logger("api.rag")
 
 
+def _request_tenant_id(current_user: RequestUser) -> str:
+    return str(current_user.tenant_id or current_user.user_id)
+
+
 async def _check_upload_rate_limit(tenant_id: str) -> None:
     """Sliding-window rate limit using Redis incr/expire (no extra dependencies).
 
@@ -191,7 +195,7 @@ async def upload_rag_document(
         tenant_id = RAG_SHARED_TENANT_ID
         visibility = RAG_VISIBILITY_PUBLIC
     else:
-        tenant_id = current_user.user_id
+        tenant_id = _request_tenant_id(current_user)
 
     await _check_upload_rate_limit(tenant_id)
     if visibility not in ALLOWED_VISIBILITY:
@@ -354,7 +358,8 @@ async def get_rag_document(
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
 
-    if doc.tenant_id != current_user.user_id:
+    request_tenant_id = _request_tenant_id(current_user)
+    if doc.tenant_id != request_tenant_id:
         if not (doc.visibility == "public" and _is_admin(current_user)):
             raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
@@ -375,7 +380,8 @@ async def rag_document_health_check(
     doc = await session.get(RagDocument, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    if doc.tenant_id != current_user.user_id:
+    request_tenant_id = _request_tenant_id(current_user)
+    if doc.tenant_id != request_tenant_id:
         raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     file_exists = Path(doc.path).exists()
@@ -426,7 +432,8 @@ async def reingest_rag_document(
     doc = await session.get(RagDocument, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    if doc.tenant_id != current_user.user_id:
+    request_tenant_id = _request_tenant_id(current_user)
+    if doc.tenant_id != request_tenant_id:
         if doc.tenant_id == RAG_SHARED_TENANT_ID and is_rag_admin(current_user):
             pass
         else:
@@ -456,7 +463,8 @@ async def delete_rag_document(
     doc = await session.get(RagDocument, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    if doc.tenant_id != current_user.user_id:
+    request_tenant_id = _request_tenant_id(current_user)
+    if doc.tenant_id != request_tenant_id:
         if doc.tenant_id == RAG_SHARED_TENANT_ID and is_rag_admin(current_user):
             pass
         else:
@@ -488,7 +496,7 @@ async def list_rag_documents(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    stmt = select(RagDocument).where(RagDocument.tenant_id == current_user.user_id)
+    stmt = select(RagDocument).where(RagDocument.tenant_id == _request_tenant_id(current_user))
     if status:
         stmt = stmt.where(RagDocument.status == status)
     if category:

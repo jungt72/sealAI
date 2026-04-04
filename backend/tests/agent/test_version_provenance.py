@@ -23,7 +23,8 @@ for key, value in {
     os.environ.setdefault(key, value)
 
 from app.agent.agent.graph import _VISIBLE_REPLY_SYSTEM_PROMPT, VISIBLE_REPLY_PROMPT_HASH
-from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION, SYSTEM_PROMPT_TEMPLATE
+from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
+from prompts.builder import PromptBuilder
 from app.agent.api.router import _build_fast_path_version_provenance, _build_structured_version_provenance
 from app.agent.case_state import (
     CASE_STATE_BUILDER_VERSION,
@@ -35,8 +36,10 @@ from app.agent.case_state import (
 from app.agent.runtime import INTERACTION_POLICY_VERSION, evaluate_interaction_policy
 
 
-def test_reasoning_prompt_hash_is_deterministic():
-    assert REASONING_PROMPT_HASH == hashlib.sha256(SYSTEM_PROMPT_TEMPLATE.encode()).hexdigest()[:12]
+def test_reasoning_prompt_version_matches_builder():
+    """Hash is now derived from PromptBuilder.PROMPT_VERSION, not the raw template string."""
+    assert REASONING_PROMPT_VERSION == PromptBuilder.PROMPT_VERSION
+    assert REASONING_PROMPT_HASH == hashlib.sha256(REASONING_PROMPT_VERSION.encode()).hexdigest()[:12]
 
 
 def test_visible_reply_prompt_hash_is_deterministic():

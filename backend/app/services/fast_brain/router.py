@@ -13,12 +13,26 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.mcp.calculations.material_limits import check as check_material_limits
 from app.mcp.knowledge_tool import aquery_deterministic_norms
-from app._legacy_v2.utils.jinja import render_template
-from app._legacy_v2.utils.messages import flatten_message_content, sanitize_message_history
+from app.api.v1.utils.state_access import _flatten_message_content as flatten_message_content
+from prompts.builder import PromptBuilder as _PromptBuilderCls
+
+_fast_brain_builder = _PromptBuilderCls()
+
+
+def sanitize_message_history(messages: List[Any], *, include_system: bool = True) -> List[BaseMessage]:
+    """Return valid BaseMessage instances, optionally dropping SystemMessages."""
+    result = []
+    for msg in (messages or []):
+        if not isinstance(msg, BaseMessage):
+            continue
+        if not include_system and isinstance(msg, SystemMessage):
+            continue
+        result.append(msg)
+    return result
 
 logger = structlog.get_logger("fast_brain.router")
 
-_HANDOFF_TOKEN = "TRIGGER_SLOW_BRAIN"
+# _HANDOFF_TOKEN removed — binary Gate handles routing, not LLM output tokens
 _MAX_HISTORY_MESSAGES = 8
 _MAX_TOOL_ROUNDS = 2
 _FAST_BRAIN_TOOL_FAILURE_HANDOFF_TEXT = (
@@ -332,8 +346,20 @@ class FastBrainRouter:
         self._tool_by_name = {tool_.name: tool_ for tool_ in self.tools}
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
-    async def chat(self, user_input: str, history: List[Any]) -> Dict[str, Any]:
-        messages = self._build_messages(user_input=user_input, history=history)
+    async def chat(
+        self,
+        user_input: str,
+        history: List[Any],
+        *,
+        parameters: Optional[Dict[str, Any]] = None,
+        missing_params: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        messages = self._build_messages(
+            user_input=user_input,
+            history=history,
+            parameters=parameters or {},
+            missing_params=missing_params or [],
+        )
         if _should_force_knowledge_handoff(user_input):
             logger.info("fast_brain_knowledge_handoff", user_input=user_input[:160])
             return {
@@ -371,26 +397,26 @@ class FastBrainRouter:
             messages.append(response)
 
         content = flatten_message_content(getattr(response, "content", "")).strip()
-        handoff_to_slow_brain = _HANDOFF_TOKEN in content
-        if handoff_to_slow_brain:
-            content = content.replace(_HANDOFF_TOKEN, "").strip()
-        status = "handoff_to_langgraph" if handoff_to_slow_brain else "chat_continue"
-
+        # Routing to governed path is Gate's responsibility, not LLM-output token detection.
         return {
-            "status": status,
+            "status": "chat_continue",
             "content": content,
             "messages": messages,
             "tool_executions": tool_executions,
             "state_patch": self._build_state_patch(tool_executions),
-            "handoff_to_slow_brain": handoff_to_slow_brain,
-            "route": "slow_brain" if handoff_to_slow_brain else "fast_brain",
+            "handoff_to_slow_brain": False,
+            "route": "fast_brain",
         }
 
-    def _build_messages(self, *, user_input: str, history: List[Any]) -> List[BaseMessage]:
-        system_prompt = render_template(
-            "fast_brain_system.j2",
-            {"handoff_token": _HANDOFF_TOKEN},
-        )
+    def _build_messages(
+        self,
+        *,
+        user_input: str,
+        history: List[Any],
+        parameters: Dict[str, Any],
+        missing_params: List[str],
+    ) -> List[BaseMessage]:
+        system_prompt = _fast_brain_builder.fast_brain(parameters, missing_params=missing_params)
         messages: List[BaseMessage] = [SystemMessage(content=system_prompt)]
         messages.extend(sanitize_message_history(history, include_system=False)[-_MAX_HISTORY_MESSAGES:])
 

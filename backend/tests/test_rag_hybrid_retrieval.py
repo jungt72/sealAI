@@ -228,3 +228,83 @@ def test_hybrid_retrieve_filters_zero_scores(monkeypatch: pytest.MonkeyPatch) ->
     assert hits == []
     assert meta.get("k_returned") == 0
     assert meta.get("top_scores") == []
+
+
+def test_hybrid_retrieve_does_not_use_external_fallback_hits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.rag import rag_orchestrator as ro
+
+    monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
+    monkeypatch.setattr(
+        ro,
+        "_qdrant_search_with_retry",
+        lambda *_args, **_kwargs: (
+            [],
+            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+        ),
+    )
+    monkeypatch.setattr(ro, "_bm25_search", lambda *_args, **_kwargs: ([], None))
+    monkeypatch.setattr(
+        ro,
+        "_fallback_external_search",
+        lambda *_args, **_kwargs: [
+            {
+                "text": "unsafe external fallback hit",
+                "vector_score": 0.9,
+                "metadata": {"tenant_id": "other-tenant"},
+            }
+        ],
+    )
+    monkeypatch.setattr(ro, "USE_BM25", True)
+
+    hits, meta = ro.hybrid_retrieve(
+        query="tenant scoped query",
+        tenant="tenant-1",
+        k=3,
+        use_rerank=False,
+        return_metrics=True,
+    )
+
+    assert hits == []
+    assert meta.get("k_returned") == 0
+
+
+def test_hybrid_retrieve_applies_configured_score_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.rag import rag_orchestrator as ro
+
+    monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
+    monkeypatch.setattr(
+        ro,
+        "_qdrant_search_with_retry",
+        lambda *_args, **_kwargs: (
+            [
+                {
+                    "text": "below-threshold",
+                    "vector_score": 0.04,
+                    "metadata": {"document_id": "doc-low", "tenant_id": "tenant-1"},
+                },
+                {
+                    "text": "kept-hit",
+                    "vector_score": 0.08,
+                    "metadata": {"document_id": "doc-keep", "tenant_id": "tenant-1"},
+                },
+            ],
+            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+        ),
+    )
+    monkeypatch.setattr(ro, "_bm25_search", lambda *_args, **_kwargs: ([], None))
+    monkeypatch.setattr(ro, "_fallback_external_search", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(ro, "USE_BM25", False)
+    monkeypatch.setattr(ro, "SCORE_THRESHOLD", 0.05)
+
+    hits, meta = ro.hybrid_retrieve(
+        query="tenant scoped query",
+        tenant="tenant-1",
+        k=3,
+        use_rerank=False,
+        return_metrics=True,
+    )
+
+    assert len(hits) == 1
+    assert hits[0]["metadata"]["document_id"] == "doc-keep"
+    assert meta.get("threshold") == 0.05
+    assert meta.get("threshold_applied") is True

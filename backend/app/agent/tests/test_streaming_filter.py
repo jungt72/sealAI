@@ -19,6 +19,7 @@ import pytest
 
 from app.agent.api.sse_runtime import (
     AGENT_SPEAKING_NODES,
+    _emit_legacy_visible_text_chunk,
     _node_name_from_event,
     agent_sse_generator,
 )
@@ -121,6 +122,10 @@ class TestNodeNameFromEvent:
 # ---------------------------------------------------------------------------
 
 class TestTokenStreamFilter:
+    def test_legacy_visible_text_chunk_helper_is_canonical_exit_seam(self):
+        frame = _emit_legacy_visible_text_chunk("sichtbarer Text")
+        assert frame == 'data: {"type": "text_chunk", "text": "sichtbarer Text"}\n\n'
+
     @pytest.mark.asyncio
     async def test_reasoning_node_tokens_are_blocked(self):
         """Tokens from reasoning_node must NOT appear in the stream."""
@@ -255,7 +260,19 @@ class TestStreamStructure:
     @pytest.mark.asyncio
     async def test_state_update_emitted_on_completion(self):
         output = {
-            "sealing_state": {"governance": {}},
+            "sealing_state": {
+                "selection": {
+                    "structured_snapshot_contract": {
+                        "case_status": "withheld_review",
+                        "output_status": "withheld_review",
+                        "primary_reason": "review_pending",
+                        "next_step": "human_review",
+                        "primary_allowed_action": "await_review",
+                        "active_blockers": ["review_pending"],
+                    }
+                },
+            },
+            "case_state": {"case_meta": {"phase": "final"}},
             "working_profile": {"medium": "water"},
             "run_meta": {"model_id": "gpt-4o-mini", "path": "fast"},
         }
@@ -270,6 +287,18 @@ class TestStreamStructure:
         sf = state_frames[0]
         assert sf["run_meta"]["model_id"] == "gpt-4o-mini"
         assert sf["run_meta"]["path"] == "fast"
+        assert sf["policy_path"] is None
+        assert sf["response_class"] == "governed_state_update"
+        assert sf["sealing_state"] is None
+        assert sf["case_state"] == {"case_meta": {"phase": "final"}}
+        assert sf["structured_state"] == {
+            "case_status": "withheld_review",
+            "output_status": "withheld_review",
+            "next_step": "human_review",
+            "primary_allowed_action": "await_review",
+            "active_blockers": ["review_pending"],
+        }
+        assert "state_trace_audit_projection" not in sf["structured_state"]
 
     @pytest.mark.asyncio
     async def test_run_meta_forwarded_in_state_update(self):
@@ -292,6 +321,123 @@ class TestStreamStructure:
         run_meta = state_frames[0]["run_meta"]
         assert run_meta["prompt_version"] == "fast_guidance_prompt_v1"
         assert run_meta["policy_version"] == "interaction_policy_v2"
+        assert state_frames[0]["response_class"] == "conversational_answer"
+        assert state_frames[0]["reply"] is None
+        assert state_frames[0]["structured_state"] is None
+
+    @pytest.mark.asyncio
+    async def test_state_update_omits_structured_state_without_structured_context(self):
+        output = {
+            "sealing_state": {"governance": {}},
+            "case_state": {"case_meta": {"phase": "reasoning"}},
+            "working_profile": {"medium": "water"},
+            "run_meta": {"model_id": "gpt-4o-mini", "path": "fast"},
+        }
+        events = [
+            _make_stream_event(event="on_chain_end", name="LangGraph", output=output),
+        ]
+        graph = _make_graph_mock(events)
+        frames = await _collect_frames(agent_sse_generator({}, graph=graph))
+
+        state_frames = [f for f in frames if f.get("type") == "state_update"]
+        assert len(state_frames) == 1
+        assert state_frames[0]["response_class"] == "conversational_answer"
+        assert state_frames[0]["structured_state"] is None
+        assert state_frames[0]["sealing_state"] is None
+        assert state_frames[0]["case_state"] is not None
+
+    @pytest.mark.asyncio
+    async def test_state_update_shared_core_fields_remain_present(self):
+        output = {
+            "sealing_state": {},
+            "working_profile": {},
+            "run_meta": None,
+            "policy_path": "fast",
+        }
+        events = [
+            _make_stream_event(event="on_chain_end", name="LangGraph", output=output),
+        ]
+        graph = _make_graph_mock(events)
+        frames = await _collect_frames(agent_sse_generator({}, graph=graph))
+
+        state_frames = [f for f in frames if f.get("type") == "state_update"]
+        assert len(state_frames) == 1
+        assert set(("reply", "structured_state", "policy_path", "run_meta", "response_class")).issubset(state_frames[0].keys())
+        assert state_frames[0]["policy_path"] == "fast"
+
+    @pytest.mark.asyncio
+    async def test_state_update_ignores_internal_selection_projections_without_snapshot(self):
+        output = {
+            "sealing_state": {
+                "selection": {
+                    "case_summary_projection": {
+                        "current_case_status": "withheld_review",
+                        "confirmed_core_fields": ["medium", "pressure", "temperature"],
+                        "missing_core_fields": [],
+                        "active_blockers": ["review_pending"],
+                        "next_step": "human_review",
+                    },
+                    "actionability_projection": {
+                        "actionability_status": "review_pending",
+                        "primary_allowed_action": "await_review",
+                        "blocked_actions": ["consume_governed_result"],
+                        "next_expected_user_action": "human_review",
+                    },
+                },
+            },
+            "working_profile": {"medium": "water"},
+            "run_meta": {"model_id": "gpt-4o-mini", "path": "fast"},
+        }
+        events = [
+            _make_stream_event(event="on_chain_end", name="LangGraph", output=output),
+        ]
+        graph = _make_graph_mock(events)
+        frames = await _collect_frames(agent_sse_generator({}, graph=graph))
+
+        state_frames = [f for f in frames if f.get("type") == "state_update"]
+        assert len(state_frames) == 1
+        assert state_frames[0]["response_class"] == "conversational_answer"
+        assert state_frames[0]["structured_state"] is None
+
+    @pytest.mark.asyncio
+    async def test_state_update_can_build_structured_state_from_case_state_without_selection_snapshot(self):
+        output = {
+            "sealing_state": {
+                "selection": {
+                    "case_summary_projection": {
+                        "current_case_status": "withheld_review",
+                    }
+                }
+            },
+            "case_state": {
+                "governance_state": {
+                    "release_status": "manufacturer_validation_required",
+                    "rfq_admissibility": "provisional",
+                    "review_required": True,
+                },
+                "rfq_state": {
+                    "blocking_reasons": ["review_required"],
+                    "blockers": ["review_required"],
+                },
+            },
+            "working_profile": {"medium": "water"},
+        }
+        events = [
+            _make_stream_event(event="on_chain_end", name="LangGraph", output=output),
+        ]
+        graph = _make_graph_mock(events)
+        frames = await _collect_frames(agent_sse_generator({}, graph=graph))
+
+        state_frames = [f for f in frames if f.get("type") == "state_update"]
+        assert len(state_frames) == 1
+        assert state_frames[0]["response_class"] == "governed_state_update"
+        assert state_frames[0]["structured_state"] == {
+            "case_status": "withheld_review",
+            "output_status": "withheld_review",
+            "next_step": "human_review",
+            "primary_allowed_action": "await_review",
+            "active_blockers": ["review_pending", "review_required"],
+        }
 
     @pytest.mark.asyncio
     async def test_error_still_sends_done(self):

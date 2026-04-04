@@ -292,3 +292,53 @@ async def test_rag_upload_retry_failed(monkeypatch: pytest.MonkeyPatch, tmp_path
     stored = dummy_session.docs[existing_id]
     assert stored.status == "processing"
     assert stored.error is None
+
+
+@pytest.mark.anyio
+async def test_rag_upload_prefers_tenant_claim_over_user_id(tmp_path: Path) -> None:
+    _configure_upload_root(tmp_path)
+    dummy_session = DummySession()
+
+    user = RequestUser(user_id="user-1", username="user", sub="user-1", roles=[], tenant_id="tenant-1")
+    file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
+    payload = await rag_endpoint.upload_rag_document(
+        file=file_obj,
+        category=None,
+        tags=None,
+        visibility="private",
+        current_user=user,
+        session=dummy_session,
+    )
+
+    stored = dummy_session.docs[payload["document_id"]]
+    assert stored.tenant_id == "tenant-1"
+
+
+@pytest.mark.anyio
+async def test_rag_document_access_prefers_tenant_claim_over_user_id(tmp_path: Path) -> None:
+    _configure_upload_root(tmp_path)
+    dummy_session = DummySession()
+
+    doc = RagDocument(
+        document_id="doc-1",
+        tenant_id="tenant-1",
+        status="indexed",
+        visibility="private",
+        filename="doc.txt",
+        content_type="text/plain",
+        size_bytes=5,
+        category=None,
+        tags=None,
+        sha256=hashlib.sha256(b"hello").hexdigest(),
+        path=str(tmp_path / "tenant-1" / "doc-1" / "original.txt"),
+    )
+    dummy_session.add(doc)
+
+    user = RequestUser(user_id="user-1", username="user", sub="user-1", roles=[], tenant_id="tenant-1")
+    payload = await rag_endpoint.get_rag_document(
+        document_id="doc-1",
+        current_user=user,
+        session=dummy_session,
+    )
+
+    assert payload["document_id"] == "doc-1"

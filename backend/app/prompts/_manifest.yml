@@ -40,3 +40,9 @@ rag_metadata_extractor:
 rag_platinum_extractor:
   file: "rag_platinum_extractor.j2"
   version: "1.0.0"
+phase_rapport:
+  file: "phase_rapport.j2"
+  version: "1.0.0"
+phase_exploration:
+  file: "phase_exploration.j2"
+  version: "1.0.0"

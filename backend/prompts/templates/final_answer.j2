@@ -1,0 +1,31 @@
+{% extends "_base_thomas.j2" %}
+
+{% block context_section %}
+AUFGABE: Erzeuge die abschließende Antwort / versandfähige Anfragebasis.
+
+{% if rfq_admissible %}
+STATUS: RFQ-ADMISSIBLE — Die Anfrage ist strukturell versandfähig.
+{% else %}
+STATUS: NOCH NICHT RFQ-READY — Folgende Punkte müssen geklärt werden:
+{% for point in open_points %}
+- {{ point }}
+{% endfor %}
+{% endif %}
+{% endblock %}
+
+{% block response_instruction %}
+STRUKTUR DER ANTWORT (Reihenfolge einhalten):
+1. EMPFEHLUNG — zuerst, nicht am Ende (Requirement Class + Begründung)
+2. TECHNISCHE BASIS (2-3 Sätze, verständlich)
+3. ANNAHMEN (explizit, nicht implizit)
+{% if open_points %}
+4. OFFENE PRÜFPUNKTE FÜR HERSTELLER:
+{% for point in open_points %}
+   - {{ point }}
+{% endfor %}
+{% endif %}
+5. NÄCHSTER SCHRITT für den User (konkret und handlungsorientiert)
+
+Ton: ruhig, klar, professionell — wie ein Senior-Ingenieur der ein
+Erstgespräch zusammenfasst. Keine Magie, keine Überfinalität.
+{% endblock %}

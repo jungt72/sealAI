@@ -58,40 +58,44 @@ async def check_qdrant() -> Dict[str, Any]:
         return {"status": "unhealthy", "error": str(exc)}
 
 
-async def check_graph_compilation() -> Dict[str, Any]:
-    """Check whether LangGraph v2 can be built/retrieved."""
+async def check_agent_runtime() -> Dict[str, Any]:
+    """Check whether the canonical /api/agent runtime surface is available."""
     start = time.perf_counter()
     try:
-        from app._legacy_v2.sealai_graph_v2 import get_sealai_graph_v2
+        from app.agent.api.router import agent_health, router as agent_router
 
-        graph = await asyncio.wait_for(get_sealai_graph_v2(), timeout=10)
-
-        node_count = None
-        if hasattr(graph, "nodes"):
-            try:
-                node_count = len(getattr(graph, "nodes"))
-            except Exception:
-                node_count = None
-        if node_count is None and hasattr(graph, "get_graph"):
-            try:
-                compiled_view = graph.get_graph()
-                nodes = getattr(compiled_view, "nodes", None)
-                if nodes is not None:
-                    node_count = len(nodes)
-            except Exception:
-                node_count = None
+        required_paths = {"/chat", "/chat/stream", "/review", "/health"}
+        available_paths = {
+            str(getattr(route, "path", "") or "")
+            for route in getattr(agent_router, "routes", [])
+            if getattr(route, "path", None)
+        }
+        missing_paths = sorted(required_paths - available_paths)
+        health_payload = await agent_health()
 
         latency_ms = (time.perf_counter() - start) * 1000
-        DEPENDENCY_UP.labels(dependency="graph").set(1)
+        if missing_paths:
+            DEPENDENCY_UP.labels(dependency="agent_runtime").set(0)
+            return {
+                "status": "unhealthy",
+                "error": f"missing_agent_routes:{','.join(missing_paths)}",
+            }
+        if health_payload.get("status") != "ok" or health_payload.get("service") != "sealai-agent":
+            DEPENDENCY_UP.labels(dependency="agent_runtime").set(0)
+            return {
+                "status": "unhealthy",
+                "error": "agent_health_payload_invalid",
+            }
+        DEPENDENCY_UP.labels(dependency="agent_runtime").set(1)
         return {
             "status": "healthy",
             "latency_ms": round(latency_ms, 2),
-            "nodes": node_count,
-            "version": "v2",
+            "service": health_payload.get("service"),
+            "routes_checked": sorted(required_paths),
         }
     except Exception as exc:
-        DEPENDENCY_UP.labels(dependency="graph").set(0)
-        log.error("health.graph_compilation_failed", error=str(exc))
+        DEPENDENCY_UP.labels(dependency="agent_runtime").set(0)
+        log.error("health.agent_runtime_check_failed", error=str(exc))
         return {"status": "unhealthy", "error": str(exc)}
 
 
@@ -100,12 +104,12 @@ async def run_all_health_checks() -> Dict[str, Any]:
     results = await asyncio.gather(
         check_redis(),
         check_qdrant(),
-        check_graph_compilation(),
+        check_agent_runtime(),
         return_exceptions=True,
     )
 
     checks: Dict[str, Any] = {}
-    names = ["redis", "qdrant", "graph"]
+    names = ["redis", "qdrant", "agent_runtime"]
 
     for idx, name in enumerate(names):
         result = results[idx]
@@ -125,6 +129,6 @@ async def run_all_health_checks() -> Dict[str, Any]:
 __all__ = [
     "check_redis",
     "check_qdrant",
-    "check_graph_compilation",
+    "check_agent_runtime",
     "run_all_health_checks",
 ]

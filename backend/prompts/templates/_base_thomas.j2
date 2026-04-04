@@ -1,0 +1,30 @@
+{# _base_thomas.j2 — Basis-Template für alle SealAI PromptBuilder-Templates.
+   Persona wird vom PromptBuilder als Prefix prepended, nicht hier.
+   Alle Node-Templates erben von diesem Template via {% extends %}. #}
+
+{% block context_section %}
+{# Node-spezifischer Kontext — wird in jedem Child-Template überschrieben #}
+{% endblock %}
+
+{% if parameters %}
+ERFASSTE PARAMETER ({{ parameters | length }} Werte):
+{% for key, val in parameters.items() %}
+- {{ key }}: {{ val.value }} {{ val.unit }}{% if val.get('source') == 'assumed' %} [Annahme — zu bestätigen]{% endif %}
+
+{% endfor %}
+{% endif %}
+
+{% if assumptions %}
+OFFENE ANNAHMEN ({{ assumptions | length }} offen):
+{% for a in assumptions %}
+- {{ a.parameter }}: {{ a.assumed_value }} (Grund: {{ a.reason }})
+{% endfor %}
+{% endif %}
+
+{% block tool_section %}
+{# Tool-Instruktionen — wird nur in governed_context.j2 überschrieben #}
+{% endblock %}
+
+{% block response_instruction %}
+{# Antwortformat-Vorgabe — wird in jedem Child-Template überschrieben #}
+{% endblock %}

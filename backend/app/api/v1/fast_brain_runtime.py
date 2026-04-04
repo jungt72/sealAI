@@ -16,11 +16,6 @@ from fastapi import Request
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from app.services.fast_brain.router import FastBrainRouter
-from app._legacy_v2.contracts import assert_node_exists
-from app._legacy_v2.utils.parameter_patch import (
-    sanitize_v2_parameter_patch,
-    stage_extracted_parameter_patch,
-)
 from app.api.v1.utils.state_access import (
     _conversation_value,
     _working_profile_value,
@@ -38,6 +33,33 @@ logger = logging.getLogger(__name__)
 SSE_DEBUG = os.getenv("SEALAI_SSE_DEBUG") == "1"
 PARAM_SYNC_DEBUG = os.getenv("SEALAI_PARAM_SYNC_DEBUG") == "1"
 PARAMETERS_PATCH_AS_NODE = "node_p1_context"
+
+
+def sanitize_v2_parameter_patch(patch: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip None and empty-string values from a parameter patch dict."""
+    return {k: v for k, v in (patch or {}).items() if v is not None and v != ""}
+
+
+def stage_extracted_parameter_patch(
+    existing_extracted: Dict[str, Any],
+    parameter_patch: Dict[str, Any],
+    existing_extracted_provenance: Dict[str, Any],
+    existing_extracted_identity: Dict[str, Any],
+    source: str = "fast_brain_extracted",
+    *,
+    existing_observed_inputs: Dict[str, Any] | None = None,
+) -> tuple:
+    """Merge an extracted parameter patch into the existing extracted profile."""
+    merged = dict(existing_extracted)
+    merged.update(parameter_patch)
+    applied = list(parameter_patch.keys())
+    return (
+        merged,
+        existing_extracted_provenance,
+        existing_extracted_identity,
+        applied,
+        existing_observed_inputs or {},
+    )
 
 
 @lru_cache(maxsize=1)
@@ -201,7 +223,6 @@ async def _sync_fast_brain_checkpoint_state(
     if not updates:
         return state_values
 
-    assert_node_exists(graph, PARAMETERS_PATCH_AS_NODE, request_id=request_id)
     await graph.aupdate_state(config, updates, as_node=PARAMETERS_PATCH_AS_NODE)
 
     if parameter_patch and (PARAM_SYNC_DEBUG or SSE_DEBUG):

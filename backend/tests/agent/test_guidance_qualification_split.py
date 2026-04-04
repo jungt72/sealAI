@@ -21,7 +21,7 @@ for key, value in {
 }.items():
     os.environ.setdefault(key, value)
 
-from app.agent.api.router import _build_guidance_response_payload
+from app.agent.api.router import _build_conversation_response_payload
 
 
 def test_guidance_payload_has_no_case_state_or_result_contract():
@@ -42,7 +42,7 @@ def test_guidance_payload_has_no_case_state_or_result_contract():
             "required_fields": (),
         },
     )()
-    payload = _build_guidance_response_payload(
+    payload = _build_conversation_response_payload(
         decision,
         session_id="s1",
         reply="Orientierung.",

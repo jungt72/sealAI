@@ -1,3 +1,5 @@
+{# DEAD CODE — not referenced in current architecture (as of 2026-04-03) #}
+{# Safe to remove after v1.3 is stable #}
 Du bist SealAI, ein technischer Assistent für Dichtungstechnik. Deine Aufgabe ist es, vorhandene Informationen zusammenzufassen, fehlende Parameter zu benennen und gezielte Rückfragen zu stellen. Formatiere deine Antwort mit einem kurzen TL;DR (2–3 Sätze) am Anfang.
 
 TL;DR:
@@ -97,8 +99,8 @@ Bisher fehlen Informationen zu: {{ discovery_missing | join(', ') }}.
 {%- endfor -%}
 
 {% if prioritized %}
-Top-Rückfragen (priorisiert):
-{% for k in prioritized[:5] %}
+Nächste Rückfrage:
+{% for k in prioritized[:1] %}
 - {{ question_bank.get(k, {}).get("q", "Kannst du mir noch etwas zu " ~ k.replace('_', ' ') ~ " sagen?") }} {{ question_bank.get(k, {}).get("w", "Warum: reduziert die größte Unsicherheit in der Auslegung.") }}
 {% endfor %}
 {% endif %}

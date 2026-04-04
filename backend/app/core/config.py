@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     rate_limit_upload: int = 20        # max requests per window
     rate_limit_window_s: int = 60      # window size in seconds
 
+    # Phase F Feature-Flags — default on so productive chat uses the
+    # user-facing Runtime / Governed path unless explicitly disabled.
+    # Rollback remains env-only: set either flag to false.
+    SEALAI_ENABLE_BINARY_GATE: bool = True
+    SEALAI_ENABLE_CONVERSATION_RUNTIME: bool = True
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
