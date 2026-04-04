@@ -181,7 +181,15 @@ async def _bootstrap_audit_log() -> None:
         from app.services.audit import AuditLogger
         from app.services.audit.audit_logger import set_global_audit_logger
 
-        dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        dsn = settings.database_url
+        if dsn.startswith("postgresql+asyncpg://"):
+            dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+        elif dsn.startswith("postgresql+psycopg://"):
+            dsn = dsn.replace("postgresql+psycopg://", "postgresql://", 1)
+        elif dsn.startswith("postgres+asyncpg://"):
+            dsn = dsn.replace("postgres+asyncpg://", "postgres://", 1)
+        elif dsn.startswith("postgres+psycopg://"):
+            dsn = dsn.replace("postgres+psycopg://", "postgres://", 1)
         pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3)
         al = AuditLogger(pool)
         await al.ensure_table()
