@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import { useSession } from "next-auth/react";
 import {
   deleteRagDocument,
   healthCheckRagDocument,
@@ -11,6 +10,8 @@ import {
   type RagDocumentItem,
   type RagHealthCheck,
 } from "@/lib/ragApi";
+import Button from "@/components/ui/Button";
+import Badge from "@/components/ui/Badge";
 
 type HealthMap = Record<string, RagHealthCheck | undefined>;
 type BusyMap = Record<string, boolean>;
@@ -73,9 +74,6 @@ const dotClass: Record<string, string> = {
 };
 
 export default function RagDocumentGrid() {
-  const { data: session } = useSession();
-  const token = (session as { accessToken?: string } | null)?.accessToken;
-
   const [documents, setDocuments] = useState<RagDocumentItem[]>([]);
   const [healthById, setHealthById] = useState<HealthMap>({});
   const [busyById, setBusyById] = useState<BusyMap>({});
@@ -122,18 +120,17 @@ export default function RagDocumentGrid() {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!token) return;
     setLoading(true);
     setError(null);
     try {
-      const list = await listRagDocuments(token, { limit: 100 });
+      const list = await listRagDocuments({ limit: 100 });
       const docs = list.items || [];
       setDocuments(docs);
 
       const checks = await Promise.all(
         docs.map(async (doc) => {
           try {
-            const health = await healthCheckRagDocument(token, doc.document_id);
+            const health = await healthCheckRagDocument(doc.document_id);
             return [doc.document_id, health] as const;
           } catch {
             return [doc.document_id, undefined] as const;
@@ -151,7 +148,7 @@ export default function RagDocumentGrid() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -171,11 +168,10 @@ export default function RagDocumentGrid() {
   }, [hasActiveItems, refresh]);
 
   const handleReingest = async (documentId: string) => {
-    if (!token) return;
     withBusy(documentId, true);
     setError(null);
     try {
-      await reingestRagDocument(token, documentId);
+      await reingestRagDocument(documentId);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Re-Ingest fehlgeschlagen.");
@@ -185,14 +181,13 @@ export default function RagDocumentGrid() {
   };
 
   const handleDelete = async (documentId: string, filename?: string | null) => {
-    if (!token) return;
     const display = filename || documentId;
     if (!window.confirm(`Dokument wirklich löschen?\n${display}`)) return;
 
     withBusy(documentId, true);
     setError(null);
     try {
-      await deleteRagDocument(token, documentId);
+      await deleteRagDocument(documentId);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Löschen fehlgeschlagen.");
@@ -203,7 +198,6 @@ export default function RagDocumentGrid() {
 
   const handleUploadFiles = useCallback(
     async (incomingFiles: FileList | File[]) => {
-      if (!token) return;
       const files = Array.from(incomingFiles || []);
       if (files.length === 0) return;
 
@@ -213,7 +207,7 @@ export default function RagDocumentGrid() {
       try {
         let uploaded = 0;
         for (const file of files) {
-          await uploadRagDocument(token, file);
+          await uploadRagDocument(file);
           uploaded += 1;
         }
         if (uploaded > 0) {
@@ -241,7 +235,7 @@ export default function RagDocumentGrid() {
         }
       }
     },
-    [refresh, token],
+    [refresh, showToast],
   );
 
   const handleInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -259,14 +253,6 @@ export default function RagDocumentGrid() {
     if (!files || files.length === 0) return;
     await handleUploadFiles(files);
   };
-
-  if (!token) {
-    return (
-      <section className="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-slate-300 backdrop-blur">
-        Anmeldung erforderlich, um das RAG-Dokumenten-Dashboard zu laden.
-      </section>
-    );
-  }
 
   return (
     <section>
@@ -302,14 +288,16 @@ export default function RagDocumentGrid() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">RAG Management</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Document Grid</h1>
         </div>
-        <button
+        <Button
           type="button"
           onClick={refresh}
-          className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
-          disabled={loading}
+          variant="ghost"
+          size="sm"
+          loading={loading}
+          className="rounded-full border border-white/20 bg-white/10 px-4 text-white hover:bg-white/20"
         >
-          {loading ? "Aktualisieren..." : "Refresh"}
-        </button>
+          Refresh
+        </Button>
       </div>
 
       {error ? (
@@ -377,10 +365,10 @@ export default function RagDocumentGrid() {
                   <p className="truncate text-sm font-semibold text-white">{doc.filename || doc.document_id}</p>
                   <p className="mt-1 truncate text-xs text-slate-300">{doc.document_id}</p>
                 </div>
-                <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-medium ${statusClass[normalized]}`}>
+                <Badge className={`gap-2 px-2.5 py-1 font-medium normal-case tracking-normal ${statusClass[normalized]}`}>
                   <span className={`h-2.5 w-2.5 rounded-full ${dotClass[normalized]}`} />
                   {normalized}
-                </span>
+                </Badge>
               </div>
 
               <dl className="space-y-2 text-xs text-slate-200/90">

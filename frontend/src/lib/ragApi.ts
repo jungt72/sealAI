@@ -30,26 +30,8 @@ export type RagHealthCheck = {
   issues: string[];
 };
 
-function resolveApiUrl(path: string): string {
-  const apiBase = (process.env.NEXT_PUBLIC_API_BASE || "").trim();
-  if (!apiBase || apiBase.startsWith("http://backend")) {
-    return path;
-  }
-  return `${apiBase}${path}`;
-}
-
-async function authFetch<T>(
-  path: string,
-  token: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const res = await fetch(resolveApiUrl(path), {
-    ...init,
-    headers: {
-      ...(init.headers || {}),
-      Authorization: `Bearer ${token}`,
-    },
-  });
+async function bffFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(path, init);
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`rag_request_failed:${res.status}:${body || ""}`);
@@ -61,53 +43,42 @@ async function authFetch<T>(
 }
 
 export async function listRagDocuments(
-  token: string,
   params: { limit?: number; status?: string } = {},
 ): Promise<{ items: RagDocumentItem[] }> {
   const search = new URLSearchParams();
   if (params.limit) search.set("limit", String(params.limit));
   if (params.status) search.set("status", params.status);
   const query = search.toString();
-  return authFetch<{ items: RagDocumentItem[] }>(
-    `/api/v1/rag/documents${query ? `?${query}` : ""}`,
-    token,
+  return bffFetch<{ items: RagDocumentItem[] }>(
+    `/api/bff/rag/documents${query ? `?${query}` : ""}`,
   );
 }
 
 export async function healthCheckRagDocument(
-  token: string,
   documentId: string,
 ): Promise<RagHealthCheck> {
-  return authFetch<RagHealthCheck>(
-    `/api/v1/rag/documents/${documentId}/health-check`,
-    token,
-  );
+  return bffFetch<RagHealthCheck>(`/api/bff/rag/documents/${documentId}/health-check`);
 }
 
 export async function reingestRagDocument(
-  token: string,
   documentId: string,
 ): Promise<{ document_id: string; status: string }> {
-  return authFetch<{ document_id: string; status: string }>(
-    `/api/v1/rag/documents/${documentId}/reingest`,
-    token,
+  return bffFetch<{ document_id: string; status: string }>(
+    `/api/bff/rag/documents/${documentId}/reingest`,
     { method: "POST" },
   );
 }
 
 export async function deleteRagDocument(
-  token: string,
   documentId: string,
 ): Promise<{ document_id: string; deleted: boolean }> {
-  return authFetch<{ document_id: string; deleted: boolean }>(
-    `/api/v1/rag/documents/${documentId}`,
-    token,
+  return bffFetch<{ document_id: string; deleted: boolean }>(
+    `/api/bff/rag/documents/${documentId}`,
     { method: "DELETE" },
   );
 }
 
 export async function uploadRagDocument(
-  token: string,
   file: File,
   params: { category?: string; tags?: string; visibility?: "private" | "public" } = {},
 ): Promise<{ document_id: string; status: string }> {
@@ -117,9 +88,8 @@ export async function uploadRagDocument(
   if (params.tags) formData.append("tags", params.tags);
   if (params.visibility) formData.append("visibility", params.visibility);
 
-  return authFetch<{ document_id: string; status: string }>(
-    "/api/v1/rag/upload",
-    token,
+  return bffFetch<{ document_id: string; status: string }>(
+    "/api/bff/rag/documents",
     {
       method: "POST",
       body: formData,
