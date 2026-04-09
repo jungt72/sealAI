@@ -131,21 +131,25 @@ class TestEmptyStateEndToEnd:
         assert isinstance(result, dict)
 
     @pytest.mark.asyncio
-    async def test_empty_state_response_class_set(self):
+    async def test_empty_state_interrupt_contains_response_class(self):
         raw = await GOVERNED_GRAPH.ainvoke(GraphState())
-        result = GraphState.model_validate(raw)
+        assert "__interrupt__" in raw
+        payload = list(raw["__interrupt__"])[0].value
+        result = GraphState.model_validate(payload["state"])
         assert result.output_response_class != ""
 
     @pytest.mark.asyncio
     async def test_empty_state_is_structured_clarification(self):
         raw = await GOVERNED_GRAPH.ainvoke(GraphState())
-        result = GraphState.model_validate(raw)
+        payload = list(raw["__interrupt__"])[0].value
+        result = GraphState.model_validate(payload["state"])
         assert result.output_response_class == "structured_clarification"
 
     @pytest.mark.asyncio
-    async def test_empty_state_output_public_has_keys(self):
+    async def test_empty_state_interrupt_output_public_has_keys(self):
         raw = await GOVERNED_GRAPH.ainvoke(GraphState())
-        result = GraphState.model_validate(raw)
+        payload = list(raw["__interrupt__"])[0].value
+        result = GraphState.model_validate(payload["state"])
         assert _REQUIRED_OUTPUT_KEYS.issubset(result.output_public.keys())
 
 
@@ -163,9 +167,9 @@ class TestPreloadedExtractionsEndToEnd:
             temperature_c=(180.0, 0.95),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
-            return_value=[],
+            return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -175,16 +179,18 @@ class TestPreloadedExtractionsEndToEnd:
 
     @pytest.mark.asyncio
     async def test_three_core_fields_response_class_state_update(self):
-        """Class A without compute → governed_state_update."""
+        """Class A without compute → governed_state_update.
+        Uses 'Öl' medium (not in demo records' allowed_media) to prevent matching.
+        """
         state = _state_with_extractions(
-            medium=("Dampf", 0.95),
-            pressure_bar=(12.0, 0.95),
-            temperature_c=(180.0, 0.95),
+            medium=("Öl", 0.95),
+            pressure_bar=(6.0, 0.95),
+            temperature_c=(80.0, 0.95),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
-            return_value=[],
+            return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -192,7 +198,7 @@ class TestPreloadedExtractionsEndToEnd:
         assert result.output_response_class == "governed_state_update"
 
     @pytest.mark.asyncio
-    async def test_class_a_with_material_can_reach_rfq_ready(self):
+    async def test_class_a_with_material_can_reach_inquiry_ready(self):
         state = _state_with_extractions(
             medium=("Wasser", 0.95),
             pressure_bar=(12.0, 0.95),
@@ -200,14 +206,14 @@ class TestPreloadedExtractionsEndToEnd:
             material=("PTFE", 0.95),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
-            return_value=[],
+            return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
         result = GraphState.model_validate(raw)
-        assert result.output_response_class == "rfq_ready"
+        assert result.output_response_class == "inquiry_ready"
         assert result.rfq.rfq_ready is True
         assert result.dispatch.dispatch_ready is True
 
@@ -218,8 +224,8 @@ class TestPreloadedExtractionsEndToEnd:
         state = _state_with_extractions(medium=("Dampf", 0.95))
         state = state.model_copy(update={"max_cycles": 1, "analysis_cycle": 1})
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
-            new_callable=AsyncMock, return_value=[],
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
+            new_callable=AsyncMock, return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -231,8 +237,8 @@ class TestPreloadedExtractionsEndToEnd:
         state = _state_with_extractions(medium=("Dampf", 0.95))
         state = state.model_copy(update={"max_cycles": 1, "analysis_cycle": 1})
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
-            new_callable=AsyncMock, return_value=[],
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
+            new_callable=AsyncMock, return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -247,8 +253,8 @@ class TestPreloadedExtractionsEndToEnd:
             temperature_c=(180.0, 0.95),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
-            new_callable=AsyncMock, return_value=[],
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
+            new_callable=AsyncMock, return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -256,7 +262,7 @@ class TestPreloadedExtractionsEndToEnd:
         assert result.output_reply != ""
 
     @pytest.mark.asyncio
-    async def test_material_based_rfq_ready_visible_in_full_graph(self):
+    async def test_material_based_inquiry_ready_visible_in_full_graph(self):
         state = _state_with_extractions(
             medium=("Dampf", 0.95),
             pressure_bar=(12.0, 0.95),
@@ -264,13 +270,13 @@ class TestPreloadedExtractionsEndToEnd:
             material=("PTFE", 0.95),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
-            new_callable=AsyncMock, return_value=[],
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
+            new_callable=AsyncMock, return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
         result = GraphState.model_validate(raw)
-        assert result.output_response_class == "rfq_ready"
+        assert result.output_response_class == "inquiry_ready"
         assert result.matching.status == "matched_primary_candidate"
         assert result.matching.selected_manufacturer_ref is not None
         assert result.rfq.rfq_ready is True
@@ -292,6 +298,7 @@ class TestRegexMessageEndToEnd:
         state = GraphState(
             pending_message="12 bar, 180°C, Medium Dampf",
             tenant_id="test_tenant",
+            max_cycles=1,
         )
         with (
             patch(
@@ -299,9 +306,9 @@ class TestRegexMessageEndToEnd:
                 False,
             ),
             patch(
-                "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+                "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
-                return_value=[],
+                return_value=([], {}),
             ),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
@@ -323,9 +330,9 @@ class TestRegexMessageEndToEnd:
                 False,
             ),
             patch(
-                "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+                "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
-                return_value=[],
+                return_value=([], {}),
             ),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
@@ -346,9 +353,9 @@ class TestRegexMessageEndToEnd:
         with (
             patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False),
             patch(
-                "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+                "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
-                return_value=[],
+                return_value=([], {}),
             ),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
@@ -370,9 +377,9 @@ class TestRegexMessageEndToEnd:
         with (
             patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False),
             patch(
-                "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+                "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
-                return_value=[],
+                return_value=([], {}),
             ),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
@@ -393,14 +400,15 @@ class TestRegexMessageEndToEnd:
         with (
             patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False),
             patch(
-                "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+                "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
-                return_value=[],
+                return_value=([], {}),
             ),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
-        result = GraphState.model_validate(raw)
+        payload = list(raw["__interrupt__"])[0].value
+        result = GraphState.model_validate(payload["state"])
         assert result.medium_classification.status == "unavailable"
         assert "Welches Medium soll abgedichtet werden?" in result.output_reply
 
@@ -426,9 +434,9 @@ class TestGraphOrdering:
             patch.object(topology_module, "normalize_node", _record_normalize),
             patch.object(topology_module, "output_contract_node", _record_output),
             patch(
-                "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+                "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
-                return_value=[],
+                return_value=([], {}),
             ),
             patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False),
         ):

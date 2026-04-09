@@ -89,7 +89,7 @@ def test_build_governed_turn_context_stays_small_and_compatible() -> None:
     assert any("Konflikt" in item or "Betriebsdruck" in item for item in context.open_points_summary)
 
 
-def test_build_governed_turn_context_uses_governance_open_points_for_recommendation() -> None:
+def test_build_governed_turn_context_uses_governance_open_points_for_technical_preselection() -> None:
     strategy = ConversationStrategyContract(
         conversation_phase="recommendation",
         turn_goal="explain_governed_result",
@@ -109,7 +109,7 @@ def test_build_governed_turn_context_uses_governance_open_points_for_recommendat
     context = build_governed_turn_context(
         state=state,
         strategy=strategy,
-        response_class="governed_recommendation",
+        response_class="technical_preselection",
     )
 
     assert context.open_points_summary == ["Werkstoffgrenze pruefen", "Temperaturfenster pruefen"]
@@ -389,7 +389,28 @@ def test_build_governed_turn_context_uses_persisted_rotary_hint_after_reload() -
     assert "Betriebsdruck" in context.open_points_summary
 
 
-def test_build_governed_turn_context_uses_contract_points_for_rfq() -> None:
+def test_build_governed_turn_context_uses_contract_points_for_inquiry_ready() -> None:
+    strategy = ConversationStrategyContract(
+        conversation_phase="rfq_handover",
+        turn_goal="prepare_handover",
+        response_mode="handover_summary",
+    )
+    state = GraphState(
+        dispatch_contract=DispatchContractState(
+            unresolved_points=["Zeichnung pruefen", "Empfaengerliste bestaetigen"]
+        ),
+    )
+
+    context = build_governed_turn_context(
+        state=state,
+        strategy=strategy,
+        response_class="inquiry_ready",
+    )
+
+    assert context.open_points_summary == ["Zeichnung pruefen", "Empfaengerliste bestaetigen"]
+
+
+def test_build_governed_turn_context_accepts_old_outward_aliases() -> None:
     strategy = ConversationStrategyContract(
         conversation_phase="rfq_handover",
         turn_goal="prepare_handover",

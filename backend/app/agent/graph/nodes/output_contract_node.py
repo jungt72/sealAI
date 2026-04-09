@@ -14,13 +14,13 @@ Architecture invariants enforced here:
     - LLM does NOT call here. All text is template-generated.
     - The response class is derived from GovernanceState — the LLM cannot
       produce a class that the deterministic state has not reached.
-    - No class may be skipped (Blaupause: conversational_answer → … → rfq_ready).
+    - No class may be skipped (Blaupause: conversational_answer → … → inquiry_ready).
 
 Response class selection (deterministic from GovernanceState.gov_class):
 
-    rfq.rfq_ready is True            → rfq_ready
+    rfq.rfq_ready is True            → inquiry_ready
         (bounded RFQ handover basis is available)
-    matching.status indicates match  → manufacturer_match_result
+    matching.status indicates match  → candidate_shortlist
         (bounded manufacturer candidate is available)
     gov_class is None / D           → structured_clarification
         (nothing useful asserted — ask for core parameters)
@@ -28,18 +28,18 @@ Response class selection (deterministic from GovernanceState.gov_class):
         (cycle exhausted or unresolvable conflict)
     gov_class B                     → structured_clarification
         (blocking unknowns — ask for the missing fields)
-    gov_class A + compute_results   → governed_recommendation
+    gov_class A + compute_results   → technical_preselection
         (full technical specification with calc output)
     gov_class A + no compute        → governed_state_update
         (all core parameters confirmed — state visible, no calc needed)
 
-    Phase G Block 1 may now produce manufacturer_match_result.
-    rfq_ready remains reserved for a later phase.
+    Phase G Block 1 may now produce candidate_shortlist.
+    inquiry_ready remains reserved for a later phase.
 
 output_public shape (Invariant 8 — no internal artefacts):
     response_class      — one of the 6 outward classes
     gov_class           — "A"|"B"|"C"|"D" (derived summary, not raw object)
-    rfq_admissible      — bool
+    inquiry_admissible  — bool
     parameters          — {field: {value, confidence, source_turn}}
     missing_fields      — list[str] of blocking unknowns
     conflicts           — list[str] of conflict field names
@@ -61,8 +61,11 @@ import logging
 import os
 from typing import Any
 
+from langgraph.types import Command, interrupt
+
 from app.agent.graph import GraphState
 from app.agent.runtime.clarification_priority import prioritized_open_point_labels, select_clarification_priority
+from app.agent.runtime.outward_names import build_admissibility_payload
 from app.agent.runtime.reply_composition import compose_clarification_reply, compose_result_reply
 from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.state.models import ConversationStrategyContract
@@ -167,9 +170,9 @@ async def _humanize_reply(
 # Outward response classes (Blaupause V1.1)
 _STRUCTURED_CLARIFICATION = "structured_clarification"
 _GOVERNED_STATE_UPDATE     = "governed_state_update"
-_GOVERNED_RECOMMENDATION   = "governed_recommendation"
-_MANUFACTURER_MATCH_RESULT = "manufacturer_match_result"
-_RFQ_READY                 = "rfq_ready"
+_TECHNICAL_PRESELECTION = "technical_preselection"
+_CANDIDATE_SHORTLIST = "candidate_shortlist"
+_INQUIRY_READY = "inquiry_ready"
 
 # Core fields the system always asks for when missing
 _CORE_FIELD_LABELS: dict[str, str] = {
@@ -350,13 +353,13 @@ def build_governed_conversation_strategy_contract(
             primary_question_reason=str(hints["primary_question_reason"]) if hints.get("primary_question_reason") else "",
             response_mode="single_question",
         )
-    if response_class == _MANUFACTURER_MATCH_RESULT:
+    if response_class == _CANDIDATE_SHORTLIST:
         return ConversationStrategyContract(
             conversation_phase="matching",
             turn_goal="explain_matching_result",
             response_mode="result_summary",
         )
-    if response_class == _RFQ_READY:
+    if response_class == _INQUIRY_READY:
         return ConversationStrategyContract(
             conversation_phase="rfq_handover",
             turn_goal="prepare_handover",
@@ -376,9 +379,9 @@ def build_governed_conversation_strategy_contract(
 def _determine_response_class(state: GraphState) -> str:
     """Select the outward response class deterministically from GovernanceState."""
     if state.rfq.rfq_ready and state.rfq.status == "rfq_ready":
-        return _RFQ_READY
+        return _INQUIRY_READY
     if state.matching.status == "matched_primary_candidate":
-        return _MANUFACTURER_MATCH_RESULT
+        return _CANDIDATE_SHORTLIST
 
     gov_class = state.governance.gov_class
 
@@ -390,7 +393,7 @@ def _determine_response_class(state: GraphState) -> str:
         return _STRUCTURED_CLARIFICATION
     # gov_class == "A"
     if state.compute_results or _is_recommendation_ready(state):
-        return _GOVERNED_RECOMMENDATION
+        return _TECHNICAL_PRESELECTION
     return _GOVERNED_STATE_UPDATE
 
 
@@ -440,7 +443,7 @@ def _build_output_public_base(state: GraphState, response_class: str) -> dict[st
     return {
         "response_class":  response_class,
         "gov_class":       state.governance.gov_class,
-        "rfq_admissible":  state.governance.rfq_admissible,
+        **build_admissibility_payload(state.governance.rfq_admissible),
         "parameters":      _parameters_public(state),
         "missing_fields":  list(state.asserted.blocking_unknowns),
         "conflicts":       list(state.asserted.conflict_flags),
@@ -479,7 +482,7 @@ def _rfq_public(state: GraphState) -> dict[str, Any]:
     return {
         "status": state.rfq.status,
         "rfq_ready": state.rfq.rfq_ready,
-        "rfq_admissible": state.rfq.rfq_admissible,
+        **build_admissibility_payload(state.rfq.rfq_admissible),
         "handover_status": state.rfq.handover_status,
         "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
         "recipient_count": len(state.rfq.recipient_refs),
@@ -614,13 +617,13 @@ async def _build_reply(state: GraphState, response_class: str) -> str:
     strategy = build_governed_conversation_strategy_contract(state, response_class)
     if response_class == _STRUCTURED_CLARIFICATION:
         mechanical = _reply_clarification(state, strategy)
-    elif response_class == _RFQ_READY:
+    elif response_class == _INQUIRY_READY:
         mechanical = _reply_rfq_ready(state, strategy)
-    elif response_class == _MANUFACTURER_MATCH_RESULT:
+    elif response_class == _CANDIDATE_SHORTLIST:
         mechanical = _reply_matching(state, strategy)
     elif response_class == _GOVERNED_STATE_UPDATE:
         mechanical = _reply_state_update(state)
-    elif response_class == _GOVERNED_RECOMMENDATION:
+    elif response_class == _TECHNICAL_PRESELECTION:
         mechanical = _reply_recommendation(state, strategy)
     else:
         mechanical = "Bitte geben Sie die technischen Parameter Ihrer Anwendung an."
@@ -753,8 +756,8 @@ def _reply_recommendation(
     fallback = "\n".join(lines)
     turn_context = build_governed_turn_context(
         state=state,
-        strategy=strategy or build_governed_conversation_strategy_contract(state, _GOVERNED_RECOMMENDATION),
-        response_class=_GOVERNED_RECOMMENDATION,
+        strategy=strategy or build_governed_conversation_strategy_contract(state, _TECHNICAL_PRESELECTION),
+        response_class=_TECHNICAL_PRESELECTION,
     )
     return compose_result_reply(
         turn_context,
@@ -781,8 +784,8 @@ def _reply_matching(
         line += " " + notes[-1]
     turn_context = build_governed_turn_context(
         state=state,
-        strategy=strategy or build_governed_conversation_strategy_contract(state, _MANUFACTURER_MATCH_RESULT),
-        response_class=_MANUFACTURER_MATCH_RESULT,
+        strategy=strategy or build_governed_conversation_strategy_contract(state, _CANDIDATE_SHORTLIST),
+        response_class=_CANDIDATE_SHORTLIST,
     )
     return compose_result_reply(
         turn_context,
@@ -800,7 +803,7 @@ def _reply_rfq_ready(
     manufacturer = selected.manufacturer_name if selected is not None else "dem ausgewählten Hersteller"
     req = state.rfq.requirement_class.class_id if state.rfq.requirement_class is not None else "ohne Requirement Class"
     line = (
-        f"Die Anfragebasis ist RFQ-ready. "
+        f"Die Anfragebasis ist inquiry-ready. "
         f"Requirement Class: {req}. "
         f"Herstellerbezug: {manufacturer}."
     )
@@ -808,8 +811,8 @@ def _reply_rfq_ready(
         line += " Die spätere Partnerübergabe ist vorbereitet."
     turn_context = build_governed_turn_context(
         state=state,
-        strategy=strategy or build_governed_conversation_strategy_contract(state, _RFQ_READY),
-        response_class=_RFQ_READY,
+        strategy=strategy or build_governed_conversation_strategy_contract(state, _INQUIRY_READY),
+        response_class=_INQUIRY_READY,
     )
     return compose_result_reply(
         turn_context,
@@ -844,8 +847,28 @@ async def output_contract_node(state: GraphState) -> GraphState:
         os.getenv("SEALAI_HUMANIZE_REPLY", "true"),
     )
 
-    return state.model_copy(update={
+    result_state = state.model_copy(update={
         "output_response_class": response_class,
         "output_public":         output_public,
         "output_reply":          reply,
     })
+    if response_class == _STRUCTURED_CLARIFICATION:
+        try:
+            resumed_message = interrupt(
+                {
+                    "kind": "structured_clarification",
+                    "message": reply,
+                    "response_class": response_class,
+                    "output_public": output_public,
+                    "state": result_state.model_dump(mode="python"),
+                }
+            )
+        except RuntimeError:
+            return result_state
+        resumed_text = str(resumed_message or "").strip()
+        if resumed_text:
+            return Command(
+                update={"pending_message": resumed_text},
+                goto="intake_observe",
+            )
+    return result_state

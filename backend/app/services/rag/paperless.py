@@ -10,6 +10,7 @@ import httpx
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.rag.paperless_tags import evaluate_paperless_tag_readiness
 from app.core.config import settings
 from app.models.rag_document import RagDocument
 from app.services.rag.constants import (
@@ -71,6 +72,9 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
     queued = 0
     skipped = 0
     errors = 0
+    ingest_ready = 0
+    pilot_ready = 0
+    missing_pilot_tags = 0
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -89,6 +93,13 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                 p_title = pdoc.get("title")
                 p_filename = pdoc.get("original_file_name") or f"{p_title}.pdf"
                 p_tags = coerce_tag_strings(pdoc.get("tag_names") or pdoc.get("tags"))
+                readiness = evaluate_paperless_tag_readiness(p_tags)
+                if readiness["ingest_ready"]:
+                    ingest_ready += 1
+                if readiness["pilot_ready"]:
+                    pilot_ready += 1
+                else:
+                    missing_pilot_tags += 1
                 p_source_document_id = str(p_id) if p_id is not None else ""
                 p_source_modified_at = _parse_source_modified_at(
                     pdoc.get("modified")
@@ -205,7 +216,10 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
             "scanned": scanned,
             "queued": queued,
             "skipped": skipped,
-            "errors": errors
+            "errors": errors,
+            "ingest_ready": ingest_ready,
+            "pilot_ready": pilot_ready,
+            "missing_pilot_tags": missing_pilot_tags,
         }
 
     return {
@@ -214,4 +228,7 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
         "queued": queued,
         "skipped": skipped,
         "errors": errors,
+        "ingest_ready": ingest_ready,
+        "pilot_ready": pilot_ready,
+        "missing_pilot_tags": missing_pilot_tags,
     }

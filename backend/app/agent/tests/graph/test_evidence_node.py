@@ -34,6 +34,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.agent.evidence.evidence_query import EvidenceQuery
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.evidence_node import _build_evidence_query, evidence_node
 from app.agent.state.models import AssertedClaim, AssertedState, NormalizedState
@@ -65,8 +66,18 @@ def _state_with_assertions(tenant_id: str = "tenant_abc", **kwargs) -> GraphStat
 
 
 _MOCK_CARDS = [
-    {"id": "card_1", "content": "PTFE eignet sich für Dampf bis 260°C.", "retrieval_rank": 0},
-    {"id": "card_2", "content": "FKM-Dichtung für Drücke bis 20 bar.", "retrieval_rank": 1},
+    {
+        "id": "card_1",
+        "content": "PTFE eignet sich für Dampf bis 260°C.",
+        "retrieval_rank": 0,
+        "metadata": {"checksum": "chk-1"},
+    },
+    {
+        "id": "card_2",
+        "content": "FKM-Dichtung für Drücke bis 20 bar.",
+        "retrieval_rank": 1,
+        "metadata": {"doc_version": "v2"},
+    },
 ]
 
 
@@ -78,7 +89,7 @@ class TestEmptyAssertions:
     @pytest.mark.asyncio
     async def test_no_retrieval_called(self):
         state = GraphState(tenant_id="tenant_abc")  # no assertions
-        with patch("app.agent.graph.nodes.evidence_node.retrieve_with_tenant") as mock_rag:
+        with patch("app.agent.graph.nodes.evidence_node.retrieve_evidence") as mock_rag:
             result = await evidence_node(state)
         mock_rag.assert_not_called()
 
@@ -106,7 +117,7 @@ class TestMissingTenantId:
             tenant_id="",  # empty
             medium=("Dampf", "confirmed"),
         )
-        with patch("app.agent.graph.nodes.evidence_node.retrieve_with_tenant") as mock_rag:
+        with patch("app.agent.graph.nodes.evidence_node.retrieve_evidence") as mock_rag:
             result = await evidence_node(state)
         mock_rag.assert_not_called()
 
@@ -133,7 +144,7 @@ class TestSuccessfulRetrieval:
             temperature_c=(180.0, "confirmed"),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=(
                 _MOCK_CARDS,
@@ -151,9 +162,16 @@ class TestSuccessfulRetrieval:
             result = await evidence_node(state)
 
         assert result.rag_evidence == _MOCK_CARDS
+        assert result.evidence.evidence_results == _MOCK_CARDS
+        assert result.evidence.source_versions == {"card_1": "chk-1", "card_2": "v2"}
+        assert result.evidence.retrieval_query == "Dampf 12.0 bar 180.0 °C Dichtung"
         assert result.rag_evidence_audit["tier"] == "tier1_hybrid"
         assert result.rag_evidence_audit["top_scores"] == [0.91, 0.73]
         assert result.rag_evidence_audit["top_documents"][0]["id"] == "card_1"
+        assert result.rag_evidence_audit["event"] == {
+            "event_type": "evidence_retrieved",
+            "sources_count": 2,
+        }
 
     @pytest.mark.asyncio
     async def test_retrieve_called_with_tenant_id(self):
@@ -162,14 +180,16 @@ class TestSuccessfulRetrieval:
             medium=("Dampf", "confirmed"),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=([], {"tier": "tier3_empty", "k_requested": 5, "k_returned": 0}),
         ) as mock_rag:
             await evidence_node(state)
 
         mock_rag.assert_called_once()
-        _, kwargs = mock_rag.call_args
+        args, kwargs = mock_rag.call_args
+        assert isinstance(args[0], EvidenceQuery)
+        assert args[0].topic == "Dampf Dichtung"
         assert kwargs.get("tenant_id") == "t42"
 
     @pytest.mark.asyncio
@@ -180,7 +200,7 @@ class TestSuccessfulRetrieval:
             temperature_c=(180.0, "confirmed"),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=(_MOCK_CARDS, {}),
         ) as mock_rag:
@@ -202,15 +222,21 @@ class TestRetrievalFailOpen:
             temperature_c=(180.0, "confirmed"),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             side_effect=RuntimeError("Qdrant unavailable"),
         ):
             result = await evidence_node(state)
 
         assert result.rag_evidence == []
+        assert result.evidence.evidence_results == []
+        assert result.evidence.source_versions == {}
         assert result.rag_evidence_audit["k_returned"] == 0
         assert "RuntimeError" in result.rag_evidence_audit["error"]
+        assert result.rag_evidence_audit["event"] == {
+            "event_type": "evidence_retrieved",
+            "sources_count": 0,
+        }
 
     @pytest.mark.asyncio
     async def test_state_still_returned_on_exception(self):
@@ -218,7 +244,7 @@ class TestRetrievalFailOpen:
             medium=("Dampf", "confirmed"),
         )
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             side_effect=ConnectionError("network timeout"),
         ):
@@ -239,24 +265,25 @@ class TestQueryConstruction:
     def test_query_contains_medium(self):
         state = _state_with_assertions(medium=("Dampf", "confirmed"))
         query = _build_evidence_query(state)
-        assert "Dampf" in query
+        assert isinstance(query, EvidenceQuery)
+        assert "Dampf" in query.topic
 
     def test_query_contains_pressure_with_unit(self):
         state = _state_with_assertions(pressure_bar=(12.0, "confirmed"))
         query = _build_evidence_query(state)
-        assert "12.0" in query
-        assert "bar" in query
+        assert "12.0" in query.topic
+        assert "bar" in query.topic
 
     def test_query_contains_temperature_with_unit(self):
         state = _state_with_assertions(temperature_c=(180.0, "confirmed"))
         query = _build_evidence_query(state)
-        assert "180.0" in query
-        assert "°C" in query
+        assert "180.0" in query.topic
+        assert "°C" in query.topic
 
     def test_query_ends_with_dichtung(self):
         state = _state_with_assertions(medium=("Wasser", "confirmed"))
         query = _build_evidence_query(state)
-        assert query.endswith("Dichtung")
+        assert query.topic.endswith("Dichtung")
 
     def test_empty_assertions_returns_none(self):
         state = GraphState(tenant_id="t1")
@@ -271,6 +298,7 @@ class TestQueryConstruction:
         q1 = _build_evidence_query(state)
         q2 = _build_evidence_query(state)
         assert q1 == q2
+        assert q1.topic == q2.topic
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +311,7 @@ class TestImmutability:
         state = _state_with_assertions(medium=("Dampf", "confirmed"))
         original_extractions = list(state.observed.raw_extractions)
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=(_MOCK_CARDS, {}),
         ):
@@ -299,7 +327,7 @@ class TestImmutability:
         )
         original_keys = set(state.asserted.assertions.keys())
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=(_MOCK_CARDS, {}),
         ):
@@ -310,7 +338,7 @@ class TestImmutability:
     async def test_governance_unchanged(self):
         state = _state_with_assertions(medium=("Dampf", "confirmed"))
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=([], {}),
         ):
@@ -323,9 +351,9 @@ class TestImmutability:
         state = _state_with_assertions(medium=("Dampf", "confirmed"))
         state = state.model_copy(update={"analysis_cycle": 2})
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
-            return_value=[],
+            return_value=([], {}),
         ):
             result = await evidence_node(state)
         assert result.analysis_cycle == 2
@@ -348,7 +376,7 @@ class TestNoLLM:
                 side_effect=AssertionError("LLM must not be called in evidence_node")
             )
             with patch(
-                "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+                "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
                 return_value=(_MOCK_CARDS, {}),
             ):
@@ -366,7 +394,7 @@ class TestSingleAssertion:
     async def test_single_assertion_triggers_retrieval(self):
         state = _state_with_assertions(medium=("Öl", "confirmed"))
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=(_MOCK_CARDS, {}),
         ) as mock_rag:
@@ -388,7 +416,7 @@ class TestCardsStoredUnchanged:
         ]
         state = _state_with_assertions(medium=("Dampf", "confirmed"))
         with patch(
-            "app.agent.graph.nodes.evidence_node.retrieve_with_tenant",
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=(cards, {}),
         ):

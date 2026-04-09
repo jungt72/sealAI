@@ -14,20 +14,20 @@ Coverage:
     3.  gov_class C → structured_clarification
     4.  gov_class B → structured_clarification
     5.  gov_class A + no compute → governed_state_update
-    6.  gov_class A + compute → governed_recommendation
+    6.  gov_class A + compute → technical_preselection
     7.  output_public["response_class"] matches output_response_class
     8.  output_public has required keys (Invariant 8 shape)
     9.  output_public["parameters"] contains asserted field values
     10. output_public["missing_fields"] = blocking_unknowns
     11. output_public["conflicts"] = conflict_flags
-    12. output_public["rfq_admissible"] correct per gov_class
+    12. output_public["inquiry_admissible"] correct per gov_class
     13. output_public["compute"] is a list
     14. RWDR compute result trimmed (no raw internal fields in compute entry)
     15. output_reply non-empty for all gov_classes
     16. structured_clarification reply mentions missing field
     17. structured_clarification reply mentions conflict field
     18. governed_state_update reply mentions captured parameters
-    19. governed_recommendation reply contains technical header
+    19. technical_preselection reply contains technical header
     20. ObservedState, NormalizedState, AssertedState, GovernanceState unchanged
     21. No LLM call (openai never invoked)
     22. output_public does NOT contain 'raw_extractions' key (Invariant 8)
@@ -125,7 +125,7 @@ def _b_state(missing: list[str] | None = None) -> GraphState:
 
 
 _REQUIRED_KEYS = {
-    "response_class", "gov_class", "rfq_admissible",
+    "response_class", "gov_class", "inquiry_admissible", "rfq_admissible",
     "parameters", "missing_fields", "conflicts",
     "validity_notes", "open_points", "compute", "matching", "rfq", "dispatch", "norm", "export_profile", "manufacturer_mapping", "dispatch_contract", "message",
 }
@@ -158,9 +158,9 @@ class TestResponseClassSelection:
 
     def test_class_a_with_compute_recommendation(self):
         state = _full_a_state(with_compute=True)
-        assert _determine_response_class(state) == "governed_recommendation"
+        assert _determine_response_class(state) == "technical_preselection"
 
-    def test_matching_result_overrides_to_manufacturer_match_result(self):
+    def test_matching_result_overrides_to_candidate_shortlist(self):
         state = _full_a_state(with_compute=True).model_copy(
             update={
                 "matching": MatchingState(
@@ -170,7 +170,7 @@ class TestResponseClassSelection:
                 )
             }
         )
-        assert _determine_response_class(state) == "manufacturer_match_result"
+        assert _determine_response_class(state) == "candidate_shortlist"
 
     def test_rfq_ready_overrides_matching_result(self):
         state = _full_a_state(with_compute=True).model_copy(
@@ -187,7 +187,7 @@ class TestResponseClassSelection:
                 ),
             }
         )
-        assert _determine_response_class(state) == "rfq_ready"
+        assert _determine_response_class(state) == "inquiry_ready"
 
     def test_class_a_with_requirement_class_and_boundary_anchor_becomes_recommendation(self):
         state = _full_a_state(with_compute=False).model_copy(
@@ -211,7 +211,7 @@ class TestResponseClassSelection:
                 ),
             }
         )
-        assert _determine_response_class(state) == "governed_recommendation"
+        assert _determine_response_class(state) == "technical_preselection"
 
     def test_class_a_without_boundary_anchor_stays_state_update(self):
         state = _full_a_state(with_compute=False).model_copy(
@@ -772,17 +772,20 @@ class TestRfqAdmissible:
     async def test_class_a_rfq_admissible_true(self):
         state = _full_a_state()
         result = await output_contract_node(state)
+        assert result.output_public["inquiry_admissible"] is True
         assert result.output_public["rfq_admissible"] is True
 
     @pytest.mark.asyncio
     async def test_class_b_rfq_admissible_false(self):
         state = _b_state()
         result = await output_contract_node(state)
+        assert result.output_public["inquiry_admissible"] is False
         assert result.output_public["rfq_admissible"] is False
 
     @pytest.mark.asyncio
     async def test_empty_state_rfq_admissible_false(self):
         result = await output_contract_node(GraphState())
+        assert result.output_public["inquiry_admissible"] is False
         assert result.output_public["rfq_admissible"] is False
 
 
@@ -1053,4 +1056,4 @@ class TestNoLLM:
             )
             result = await output_contract_node(state)
         mock_cls.assert_not_called()
-        assert result.output_response_class == "governed_recommendation"
+        assert result.output_response_class == "technical_preselection"

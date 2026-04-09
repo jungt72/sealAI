@@ -4,6 +4,7 @@ from typing import Iterable, Literal
 
 from app.agent.graph import GraphState
 from app.agent.runtime.clarification_priority import prioritized_open_point_labels
+from app.agent.runtime.outward_names import normalize_outward_response_class
 from app.agent.state.models import ConversationStrategyContract, TurnContextContract
 
 _MAX_TURN_CONTEXT_ITEMS = 3
@@ -106,12 +107,13 @@ def build_governed_turn_context(
     response_class: Literal[
         "structured_clarification",
         "governed_state_update",
-        "governed_recommendation",
-        "manufacturer_match_result",
-        "rfq_ready",
+        "technical_preselection",
+        "candidate_shortlist",
+        "inquiry_ready",
     ] | str = "structured_clarification",
 ) -> TurnContextContract:
     """Build a compact governed turn-context from existing deterministic state."""
+    response_class = normalize_outward_response_class(response_class)
     current_turn_index = state.analysis_cycle
     confirmed_facts_current_turn: list[str] = []
     confirmed_facts_stable: list[str] = []
@@ -149,7 +151,7 @@ def build_governed_turn_context(
             f"Konflikt bei {_FIELD_LABELS.get(field_name, field_name)}"
             for field_name in state.asserted.conflict_flags
         )
-    elif response_class == "rfq_ready":
+    elif response_class == "inquiry_ready":
         open_points = list(state.dispatch_contract.unresolved_points or state.export_profile.unresolved_points)
     else:
         open_points = prioritized_open_point_labels(state, state.governance.open_validation_points)

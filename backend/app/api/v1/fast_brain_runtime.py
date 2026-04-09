@@ -15,7 +15,6 @@ from typing import Any, AsyncIterator, Dict
 from fastapi import Request
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from app.services.fast_brain.router import FastBrainRouter
 from app.api.v1.utils.state_access import (
     _conversation_value,
     _working_profile_value,
@@ -63,7 +62,11 @@ def stage_extracted_parameter_patch(
 
 
 @lru_cache(maxsize=1)
-def _get_fast_brain_router() -> FastBrainRouter:
+def _get_fast_brain_router() -> Any:
+    # Residual compat only: FastBrain is constructed lazily so the productive
+    # stack does not depend on it at module-import time.
+    from app.services.fast_brain.router import FastBrainRouter  # noqa: PLC0415
+
     model = os.getenv("SEALAI_FAST_BRAIN_MODEL", "gpt-4o-mini")
     try:
         temperature = float(os.getenv("SEALAI_FAST_BRAIN_TEMPERATURE", "0"))

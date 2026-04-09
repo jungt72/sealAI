@@ -31,7 +31,7 @@ _STRUCTURED_PREAMBLE = "ℹ️ Technischer Hinweis zum Gültigkeitsbereich:"
 _COVERAGE_NOTES: dict[str | None, str] = {
     "full": "Alle Kernparameter vorhanden.",
     "partial": "Die technische Basis steht in Teilen; als Naechstes sollten die offenen Einsatzdaten bestaetigt werden.",
-    "limited": "Es gibt bereits einen ersten technischen Rahmen; der naechste sinnvolle Schritt ist die Einsatzbasis sauber zu klaeren.",
+    "limited": "Eingeschränkte Datenbasis — Es gibt bereits einen ersten technischen Rahmen; der naechste sinnvolle Schritt ist die Einsatzbasis sauber zu klaeren.",
 }
 
 _DEMO_DATA_NOTE = (

@@ -1,0 +1,165 @@
+{
+  "STS-MAT-SIC-A1": {
+    "canonical_name": "Siliziumkarbid, gesintert (SSiC)",
+    "material_family": "ceramic",
+    "temperature_max_c": 500,
+    "pv_limit_mpa_ms": 3.0,
+    "hardness_mohs": 9.5,
+    "media_resistance": ["acids", "bases", "solvents", "saltwater", "hydrocarbons"],
+    "media_not_suitable": ["fluorine", "hf_acid"],
+    "norm_references": ["ISO 21049", "EN 12756"],
+    "sealing_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D", "STS-TYPE-GS-GAS"]
+  },
+  "STS-MAT-SIC-B1": {
+    "canonical_name": "Siliziumkarbid, reaktionsgebunden (RBSiC/SiSiC)",
+    "material_family": "ceramic",
+    "temperature_max_c": 400,
+    "pv_limit_mpa_ms": 2.5,
+    "hardness_mohs": 9.0,
+    "media_resistance": ["acids", "bases", "solvents", "saltwater", "hydrocarbons"],
+    "media_not_suitable": ["fluorine", "hf_acid", "strong_caustic_above_80c"],
+    "norm_references": ["ISO 21049", "EN 12756"],
+    "sealing_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"]
+  },
+  "STS-MAT-WC-A1": {
+    "canonical_name": "Wolframkarbid (WC), kobaltgebunden",
+    "material_family": "cermet",
+    "temperature_max_c": 350,
+    "pv_limit_mpa_ms": 2.0,
+    "hardness_mohs": 9.0,
+    "media_resistance": ["hydrocarbons", "crude_oil", "saltwater", "mild_acids"],
+    "media_not_suitable": ["strong_acids", "strong_bases"],
+    "norm_references": ["ISO 21049"],
+    "sealing_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"]
+  },
+  "STS-MAT-FKM-A1": {
+    "canonical_name": "FKM Standard (Viton-Typ)",
+    "material_family": "elastomer",
+    "temperature_max_c": 200,
+    "pv_limit_mpa_ms": null,
+    "hardness_shore_a": 75,
+    "media_resistance": ["hydrocarbons", "fuels", "mineral_oils", "mild_acids", "mild_bases"],
+    "media_not_suitable": ["ketones", "esters", "amines", "hot_water_above_130c"],
+    "norm_references": ["ISO 1629", "ASTM D1418"],
+    "sealing_types": ["STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B", "STS-TYPE-OR-A", "STS-TYPE-GS-S", "STS-TYPE-GS-CART"]
+  },
+  "STS-MAT-FKM-HT": {
+    "canonical_name": "FKM Hochtemperatur (Perfluorkautschuk-Basis)",
+    "material_family": "elastomer",
+    "temperature_max_c": 300,
+    "pv_limit_mpa_ms": null,
+    "hardness_shore_a": 75,
+    "media_resistance": ["hydrocarbons", "fuels", "mineral_oils", "acids", "bases", "steam_low_pressure"],
+    "media_not_suitable": ["ketones", "esters", "amines"],
+    "norm_references": ["ISO 1629", "ASTM D1418"],
+    "sealing_types": ["STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B", "STS-TYPE-OR-A", "STS-TYPE-GS-S"]
+  },
+  "STS-MAT-EPDM-A1": {
+    "canonical_name": "EPDM Standard",
+    "material_family": "elastomer",
+    "temperature_max_c": 150,
+    "pv_limit_mpa_ms": null,
+    "hardness_shore_a": 70,
+    "media_resistance": ["hot_water", "steam", "mild_acids", "mild_bases", "phosphate_esters", "glycols"],
+    "media_not_suitable": ["hydrocarbons", "mineral_oils", "fuels"],
+    "norm_references": ["ISO 1629", "ASTM D1418", "FDA_21CFR177.2600"],
+    "sealing_types": ["STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B", "STS-TYPE-OR-A", "STS-TYPE-FLAT-A"]
+  },
+  "STS-MAT-NBR-A1": {
+    "canonical_name": "NBR Standard (Nitrilkautschuk)",
+    "material_family": "elastomer",
+    "temperature_max_c": 100,
+    "pv_limit_mpa_ms": null,
+    "hardness_shore_a": 70,
+    "media_resistance": ["hydrocarbons", "mineral_oils", "fuels", "mild_acids"],
+    "media_not_suitable": ["ketones", "esters", "strong_acids", "ozone"],
+    "norm_references": ["ISO 1629", "ASTM D1418"],
+    "sealing_types": ["STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B", "STS-TYPE-OR-A"]
+  },
+  "STS-MAT-PTFE-A1": {
+    "canonical_name": "PTFE ungefuellt (Virgin PTFE)",
+    "material_family": "polymer",
+    "temperature_max_c": 260,
+    "pv_limit_mpa_ms": 0.1,
+    "media_resistance": ["acids", "bases", "solvents", "hydrocarbons", "saltwater", "fluorine", "hf_acid"],
+    "media_not_suitable": ["molten_alkali_metals"],
+    "norm_references": ["ISO 12764", "ASTM D4894"],
+    "sealing_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-FLAT-A", "STS-TYPE-OR-A"]
+  },
+  "STS-MAT-PTFE-B1": {
+    "canonical_name": "PTFE gefuellt (Glas-/Kohlefaser-/Graphit-Compound)",
+    "material_family": "polymer",
+    "temperature_max_c": 260,
+    "pv_limit_mpa_ms": 0.5,
+    "media_resistance": ["acids", "bases", "solvents", "hydrocarbons", "saltwater"],
+    "media_not_suitable": ["molten_alkali_metals", "fluorine"],
+    "norm_references": ["ISO 12764", "ASTM D4894"],
+    "sealing_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-FLAT-A", "STS-TYPE-SPIRAL-A"]
+  },
+  "STS-MAT-GRAPH-A1": {
+    "canonical_name": "Grafit, antimongefuellt",
+    "material_family": "carbon",
+    "temperature_max_c": 400,
+    "pv_limit_mpa_ms": 1.5,
+    "hardness_shore_d": 65,
+    "media_resistance": ["hydrocarbons", "mild_acids", "mild_bases", "hot_water", "steam"],
+    "media_not_suitable": ["strong_oxidizers", "fluorine"],
+    "norm_references": ["ISO 21049", "EN 12756"],
+    "sealing_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"]
+  },
+  "STS-MAT-VMQ-A1": {
+    "canonical_name": "Silikon VMQ Standard",
+    "material_family": "elastomer",
+    "temperature_max_c": 200,
+    "pv_limit_mpa_ms": null,
+    "hardness_shore_a": 60,
+    "media_resistance": ["hot_water", "steam_low_pressure", "mild_acids", "mild_bases", "food_contact"],
+    "media_not_suitable": ["hydrocarbons", "fuels", "mineral_oils", "strong_acids"],
+    "norm_references": ["ISO 1629", "FDA_21CFR177.2600"],
+    "sealing_types": ["STS-TYPE-OR-A", "STS-TYPE-FLAT-A"]
+  },
+  "STS-MAT-CR-A1": {
+    "canonical_name": "Chloroprenkautschuk (CR/Neoprene)",
+    "material_family": "elastomer",
+    "temperature_max_c": 120,
+    "pv_limit_mpa_ms": null,
+    "hardness_shore_a": 65,
+    "media_resistance": ["mild_acids", "mild_bases", "refrigerants", "ozone", "weathering"],
+    "media_not_suitable": ["hydrocarbons", "ketones", "esters", "strong_acids"],
+    "norm_references": ["ISO 1629"],
+    "sealing_types": ["STS-TYPE-RWDR-A", "STS-TYPE-OR-A", "STS-TYPE-FLAT-A"]
+  },
+  "STS-MAT-FFKM-A1": {
+    "canonical_name": "Perfluorkautschuk (FFKM/Kalrez-Typ)",
+    "material_family": "elastomer",
+    "temperature_max_c": 325,
+    "pv_limit_mpa_ms": null,
+    "hardness_shore_a": 75,
+    "media_resistance": ["acids", "bases", "solvents", "hydrocarbons", "fuels", "steam", "amines", "ketones"],
+    "media_not_suitable": ["molten_alkali_metals"],
+    "norm_references": ["ISO 1629", "ASTM D1418"],
+    "sealing_types": ["STS-TYPE-OR-A", "STS-TYPE-GS-S", "STS-TYPE-GS-CART"]
+  },
+  "STS-MAT-HNBR-A1": {
+    "canonical_name": "HNBR (Hydrierter Nitrilkautschuk)",
+    "material_family": "elastomer",
+    "temperature_max_c": 150,
+    "pv_limit_mpa_ms": null,
+    "hardness_shore_a": 70,
+    "media_resistance": ["hydrocarbons", "mineral_oils", "fuels", "ozone", "mild_acids", "h2s"],
+    "media_not_suitable": ["ketones", "esters", "strong_acids", "chlorinated_solvents"],
+    "norm_references": ["ISO 1629", "NACE MR0175"],
+    "sealing_types": ["STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B", "STS-TYPE-OR-A"]
+  },
+  "STS-MAT-AL2O3-A1": {
+    "canonical_name": "Aluminiumoxid (Al2O3), 99.5%",
+    "material_family": "ceramic",
+    "temperature_max_c": 600,
+    "pv_limit_mpa_ms": 1.0,
+    "hardness_mohs": 9.0,
+    "media_resistance": ["acids", "bases", "saltwater", "hot_water"],
+    "media_not_suitable": ["hf_acid", "strong_caustic_above_80c"],
+    "norm_references": ["ISO 21049"],
+    "sealing_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART"]
+  }
+}

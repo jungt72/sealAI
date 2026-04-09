@@ -77,8 +77,8 @@ class GraphState(GovernedSessionState):
         default="",
         description=(
             "Outward response class. One of: conversational_answer, "
-            "structured_clarification, governed_state_update, governed_recommendation, "
-            "manufacturer_match_result, rfq_ready."
+            "structured_clarification, governed_state_update, technical_preselection, "
+            "candidate_shortlist, inquiry_ready."
         ),
     )
     output_public: dict[str, Any] = Field(

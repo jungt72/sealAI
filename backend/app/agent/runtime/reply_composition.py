@@ -4,6 +4,7 @@ import re
 from typing import TypedDict
 
 from app.core.prompts import PromptLoader
+from app.agent.runtime.outward_names import normalize_outward_response_class
 from app.agent.state.models import TurnContextContract
 from app.agent.runtime.surface_claims import SurfaceClaimsSpec
 
@@ -26,6 +27,7 @@ def _select_governed_render_mode(
     response_class: str,
     turn_context: TurnContextContract | None,
 ) -> str:
+    response_class = normalize_outward_response_class(response_class)
     if response_class != "structured_clarification" or turn_context is None:
         return "standard_governed"
 
@@ -124,6 +126,7 @@ def build_reflection_prefix(
     *,
     response_class: str = "conversational_answer",
 ) -> str | None:
+    response_class = normalize_outward_response_class(response_class, default="conversational_answer")
     if turn_context is None:
         return None
 
@@ -142,13 +145,13 @@ def build_reflection_prefix(
             if open_points:
                 return f"Damit ist die Lage schon enger: {facts_text}."
             return f"Stand jetzt: {facts_text}."
-        if response_class == "governed_recommendation":
+        if response_class == "technical_preselection":
             if open_points:
                 return f"Die technische Richtung ist jetzt belastbarer: {facts_text}."
             return f"Die technische Richtung ist jetzt enger: {facts_text}."
-        if response_class == "manufacturer_match_result":
+        if response_class == "candidate_shortlist":
             return f"Auf dieser Grundlage steht jetzt: {facts_text}."
-        if response_class == "rfq_ready":
+        if response_class == "inquiry_ready":
             return f"Die Anfragebasis steht jetzt auf: {facts_text}."
         if turn_context.conversation_phase in {"recommendation", "matching", "rfq_handover", "review"}:
             return f"Bisher steht: {facts_text}."
@@ -157,7 +160,7 @@ def build_reflection_prefix(
         return f"Ich habe bisher {facts_text} verstanden."
 
     if open_points and turn_context.conversation_phase in {"narrowing", "clarification", "recommendation"}:
-        if response_class == "governed_recommendation":
+        if response_class == "technical_preselection":
             return f"Die Richtung steht, jetzt pruefe ich noch {open_points[0]}."
         return f"Der naechste Hebel liegt jetzt bei {open_points[0]}."
 
@@ -170,6 +173,7 @@ def compose_user_facing_mouth_reply(
     *,
     response_class: str = "conversational_answer",
 ) -> str:
+    response_class = normalize_outward_response_class(response_class, default="conversational_answer")
     reply = str(reply_text or "").strip()
     if not reply:
         return reply
@@ -207,6 +211,7 @@ def build_governed_render_prompt(
     allowed_surface_claims: GovernedAllowedSurfaceClaims | list[str] | None = None,
 ) -> str:
     """Render a compact controlled prompt for governed visible chat replies."""
+    response_class = normalize_outward_response_class(response_class)
     render_mode = _select_governed_render_mode(
         response_class=response_class,
         turn_context=turn_context,
@@ -353,19 +358,19 @@ _CLASS_GUARD_FRAGMENTS: dict[str, tuple[str, ...]] = {
         "passender hersteller",
         "herstellerkandidat",
     ),
-    "governed_recommendation": (
+    "technical_preselection": (
         "bestellt",
         "beauftragt",
         "versendet",
     ),
-    "manufacturer_match_result": (
+    "candidate_shortlist": (
         "finaler hersteller",
         "verbindlich ausgewaehlt",
         "verbindlich ausgewählt",
         "lieferfaehig",
         "lieferfähig",
     ),
-    "rfq_ready": (
+    "inquiry_ready": (
         "bestellt",
         "beauftragt",
         "automatisch versendet",
@@ -375,6 +380,7 @@ _CLASS_GUARD_FRAGMENTS: dict[str, tuple[str, ...]] = {
 
 
 def _violates_one_question_rule(text: str, response_class: str) -> bool:
+    response_class = normalize_outward_response_class(response_class)
     if response_class != "structured_clarification":
         return False
     question_count = len(re.findall(r"\?", text))
@@ -386,12 +392,13 @@ def _violates_no_final_certainty_rule(lowered_text: str) -> bool:
 
 
 def _violates_no_unauthorized_rfq_rule(lowered_text: str, response_class: str) -> bool:
-    if response_class == "rfq_ready":
+    if normalize_outward_response_class(response_class) == "inquiry_ready":
         return False
     return any(fragment in lowered_text for fragment in _UNAUTHORIZED_RFQ_FRAGMENTS)
 
 
 def _violates_class_guard(lowered_text: str, response_class: str) -> bool:
+    response_class = normalize_outward_response_class(response_class, default="conversational_answer")
     return any(
         fragment in lowered_text
         for fragment in _CLASS_GUARD_FRAGMENTS.get(response_class, ())

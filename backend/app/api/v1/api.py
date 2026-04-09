@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from app.core.config import settings
 
 # REST-/Service-Endpunkte
 from app.api.v1.endpoints import (
@@ -27,11 +28,11 @@ api_router.include_router(ping.router)
 api_router.include_router(chat_history.router)  # <-- /api/v1/chat/...
 
 # [DEPRECATED — Phase F-A.5 / residual compat only] Legacy LangGraph HTTP/SSE-API (v2)
-# The router stays mounted for narrow compatibility and health inspection only.
-# Productive chat authority lives on /api/agent; the compat chat facade is
-# opt-in inside langgraph_v2.py and disabled by default.
+# Health stays mounted for diagnostics. The compat chat/router is mounted only
+# when ENABLE_LEGACY_V2_ENDPOINT=true so new deployments do not expose it.
 api_router.include_router(langgraph_health.router, prefix="/langgraph", tags=["health"])
-api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph"])
+if settings.ENABLE_LEGACY_V2_ENDPOINT:
+    api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph"])
 api_router.include_router(state.router, tags=["state"])
 
 # Model Context Protocol (MCP)

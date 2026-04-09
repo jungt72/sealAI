@@ -28,11 +28,22 @@ Relation to existing state.py:
 from __future__ import annotations
 
 import re
+import uuid
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.agent.services.medium_context import MediumContext
+
+try:
+    import ulid
+except ModuleNotFoundError:  # pragma: no cover - compatibility fallback for local test envs
+    class _UlidCompat:
+        @staticmethod
+        def new() -> str:
+            return uuid.uuid4().hex
+
+    ulid = _UlidCompat()
 
 # ---------------------------------------------------------------------------
 # Shared sub-types
@@ -56,6 +67,14 @@ ConfidenceLevel = Literal[
     "estimated",
     "inferred",
     "requires_confirmation",
+]
+
+FieldLifecycleStatus = Literal[
+    "observed",
+    "assumed",
+    "derived",
+    "stale",
+    "contradicted",
 ]
 
 MediumClassificationStatus = Literal[
@@ -229,6 +248,9 @@ class NormalizedState(BaseModel):
     assumptions: list[AssumptionRef] = Field(default_factory=list)
     """Implicit assumptions introduced during normalization."""
 
+    parameter_status: dict[str, FieldLifecycleStatus] = Field(default_factory=dict)
+    """Per-field canonical status for downstream consumers."""
+
 
 # ---------------------------------------------------------------------------
 # AssertedState — Phase F-B.1
@@ -262,6 +284,35 @@ class AssertedState(BaseModel):
 
     conflict_flags: list[str] = Field(default_factory=list)
     """Field names with unresolved conflicts that block assertions."""
+
+
+# ---------------------------------------------------------------------------
+# DerivedState / EvidenceState — W2.1 additive six-layer mapping
+# ---------------------------------------------------------------------------
+
+class DerivedState(AssertedState):
+    """Six-layer deterministic state based on AssertedState.
+
+    Additive mapping only: legacy AssertedState remains authoritative for
+    existing code paths, while DerivedState provides the target six-layer slot.
+    """
+
+    rwdr_result: dict[str, Any] = Field(default_factory=dict)
+    pv_value: float | None = None
+    velocity: float | None = None
+    suitability: dict[str, Any] = Field(default_factory=dict)
+    material_suitability: dict[str, Any] = Field(default_factory=dict)
+    applicable_norms: list[str] = Field(default_factory=list)
+    requirement_class: Optional["RequirementClass"] = None
+    field_status: dict[str, FieldLifecycleStatus] = Field(default_factory=dict)
+
+
+class EvidenceState(BaseModel):
+    """Dedicated evidence layer separated from derived and decision state."""
+
+    evidence_results: list[Any] = Field(default_factory=list)
+    source_versions: dict[str, str] = Field(default_factory=dict)
+    retrieval_query: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +365,17 @@ class GovernanceState(BaseModel):
 
     open_validation_points: list[str] = Field(default_factory=list)
     """Items that require manufacturer validation before final release."""
+
+
+class DecisionState(GovernanceState):
+    """Six-layer deterministic decision layer based on GovernanceState."""
+
+    outward_class: str | None = None
+    preselection: dict[str, Any] | None = None
+    decision_basis_hash: str | None = None
+    assumptions: list[str] = Field(default_factory=list)
+    blocking_reasons: list[str] = Field(default_factory=list)
+    field_status: dict[str, FieldLifecycleStatus] = Field(default_factory=dict)
 
 
 class MediumCaptureState(BaseModel):
@@ -435,6 +497,19 @@ class DispatchState(BaseModel):
     transport_channel: Optional[str] = None
     handover_summary: Optional[str] = None
     dispatch_notes: list[str] = Field(default_factory=list)
+
+
+class ActionReadinessState(BaseModel):
+    """Six-layer readiness layer derived from RFQ and dispatch-adjacent slices."""
+
+    pdf_ready: bool = False
+    pdf_url: str | None = None
+    inquiry_sent: bool = False
+    idempotency_key: str = Field(default_factory=lambda: str(ulid.new()))
+    missing_for_inquiry: list[str] = Field(default_factory=list)
+    dispatch_ready: bool = False
+    dispatch_status: str | None = None
+    handover_status: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -655,7 +730,7 @@ class ConversationMessage(BaseModel):
 # ---------------------------------------------------------------------------
 
 class GovernedSessionState(BaseModel):
-    """Full four-layer state for one governed session turn.
+    """Full governed session state with legacy and six-layer slices.
 
     Used as the input/output type for the governed graph nodes (Phase F-C).
     Kept separate from AgentState (LangGraph orchestration layer) to prevent
@@ -665,7 +740,10 @@ class GovernedSessionState(BaseModel):
     observed: ObservedState = Field(default_factory=ObservedState)
     normalized: NormalizedState = Field(default_factory=NormalizedState)
     asserted: AssertedState = Field(default_factory=AssertedState)
+    derived: DerivedState = Field(default_factory=DerivedState)
+    evidence: EvidenceState = Field(default_factory=EvidenceState)
     governance: GovernanceState = Field(default_factory=GovernanceState)
+    decision: DecisionState = Field(default_factory=DecisionState)
     medium_capture: MediumCaptureState = Field(default_factory=MediumCaptureState)
     medium_classification: MediumClassificationState = Field(default_factory=MediumClassificationState)
     application_hint: ContextHintState = Field(default_factory=ContextHintState)
@@ -673,6 +751,7 @@ class GovernedSessionState(BaseModel):
     matching: MatchingState = Field(default_factory=MatchingState)
     rfq: RfqState = Field(default_factory=RfqState)
     dispatch: DispatchState = Field(default_factory=DispatchState)
+    action_readiness: ActionReadinessState = Field(default_factory=ActionReadinessState)
     sealai_norm: SealaiNormState = Field(default_factory=SealaiNormState)
     export_profile: ExportProfileState = Field(default_factory=ExportProfileState)
     manufacturer_mapping: ManufacturerMappingState = Field(default_factory=ManufacturerMappingState)
@@ -685,3 +764,51 @@ class GovernedSessionState(BaseModel):
 
     max_cycles: int = Field(default=3, ge=1)
     """Configured cycle limit. When exceeded → auto Class C."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hydrate_six_layers_from_legacy_inputs(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        payload = dict(data)
+
+        def _dump_model(value: Any) -> Any:
+            return value.model_dump() if isinstance(value, BaseModel) else value
+
+        if "derived" not in payload and "asserted" in payload:
+            payload["derived"] = _dump_model(payload["asserted"])
+        if "asserted" not in payload and "derived" in payload:
+            payload["asserted"] = _dump_model(payload["derived"])
+
+        if "decision" not in payload and "governance" in payload:
+            payload["decision"] = _dump_model(payload["governance"])
+        if "governance" not in payload and "decision" in payload:
+            payload["governance"] = _dump_model(payload["decision"])
+
+        if "evidence" not in payload:
+            payload["evidence"] = {}
+
+        if "action_readiness" not in payload:
+            rfq_payload = payload.get("rfq")
+            dispatch_payload = payload.get("dispatch")
+            action_payload: dict[str, Any] = {}
+
+            if isinstance(rfq_payload, (dict, RfqState)):
+                rfq_state = rfq_payload if isinstance(rfq_payload, RfqState) else RfqState.model_validate(rfq_payload)
+                action_payload["inquiry_sent"] = bool(rfq_state.rfq_send_payload)
+                action_payload["missing_for_inquiry"] = list(rfq_state.required_corrections)
+                action_payload["handover_status"] = rfq_state.handover_status
+
+            if isinstance(dispatch_payload, (dict, DispatchState)):
+                dispatch_state = (
+                    dispatch_payload
+                    if isinstance(dispatch_payload, DispatchState)
+                    else DispatchState.model_validate(dispatch_payload)
+                )
+                action_payload["dispatch_ready"] = dispatch_state.dispatch_ready
+                action_payload["dispatch_status"] = dispatch_state.dispatch_status
+
+            payload["action_readiness"] = action_payload
+
+        return payload

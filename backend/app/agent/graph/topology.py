@@ -66,21 +66,18 @@ Usage:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from langgraph.graph import END, StateGraph
 
 from app.agent.graph import GraphState
-from app.agent.graph.cycle_control import (
-    CycleDecision,
-    cycle_increment_node,
-    decide_cycle,
-)
+from app.agent.graph.cycle_control import cycle_increment_node
 from app.agent.graph.nodes.assert_node import assert_node
 from app.agent.graph.nodes.compute_node import compute_node
 from app.agent.graph.nodes.dispatch_contract_node import dispatch_contract_node
 from app.agent.graph.nodes.evidence_node import evidence_node
 from app.agent.graph.nodes.export_profile_node import export_profile_node
-from app.agent.graph.nodes.governance_node import governance_node
+from app.agent.graph.nodes.governance_node import governance_routing_node
 from app.agent.graph.nodes.intake_observe_node import intake_observe_node
 from app.agent.graph.nodes.manufacturer_mapping_node import manufacturer_mapping_node
 from app.agent.graph.nodes.matching_node import matching_node
@@ -117,7 +114,7 @@ NODE_OUTPUT_CONTRACT = "output_contract"
 # Graph factory
 # ---------------------------------------------------------------------------
 
-def build_governed_graph() -> StateGraph:
+def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
     """Build and compile the governed execution graph.
 
     Returns a compiled LangGraph StateGraph ready for ainvoke().
@@ -137,7 +134,7 @@ def build_governed_graph() -> StateGraph:
     graph.add_node(NODE_ASSERT,          assert_node)
     graph.add_node(NODE_EVIDENCE,        evidence_node)
     graph.add_node(NODE_COMPUTE,         compute_node)
-    graph.add_node(NODE_GOVERNANCE,      governance_node)
+    graph.add_node(NODE_GOVERNANCE,      governance_routing_node)
     graph.add_node(NODE_CYCLE_INCREMENT, cycle_increment_node)
     graph.add_node(NODE_MATCHING,        matching_node)
     graph.add_node(NODE_RFQ_HANDOVER,    rfq_handover_node)
@@ -158,17 +155,7 @@ def build_governed_graph() -> StateGraph:
     graph.add_edge(NODE_EVIDENCE,       NODE_COMPUTE)
     graph.add_edge(NODE_COMPUTE,        NODE_GOVERNANCE)
 
-    # ── Conditional edge: governance → cycle gate ─────────────────────────
-    graph.add_conditional_edges(
-        NODE_GOVERNANCE,
-        decide_cycle,
-        {
-            CycleDecision.CONTINUE:  NODE_CYCLE_INCREMENT,
-            CycleDecision.TERMINATE: NODE_MATCHING,
-        },
-    )
-
-    # ── CONTINUE path: cycle_increment loops back to intake_observe ───────
+    # ── Command-routed path: governance decides CONTINUE vs TERMINATE ─────
     graph.add_edge(NODE_CYCLE_INCREMENT, NODE_INTAKE_OBSERVE)
 
     # ── TERMINATE path: matching → rfq_handover → dispatch → norm → export_profile → manufacturer_mapping → dispatch_contract → output_contract → END ─
@@ -194,7 +181,7 @@ def build_governed_graph() -> StateGraph:
         NODE_OUTPUT_CONTRACT,
     )
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
 # ---------------------------------------------------------------------------

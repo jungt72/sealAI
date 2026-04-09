@@ -17,7 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.api.v1.api import api_router
-from app.api.v1.endpoints.rag import ensure_upload_directory
+from app.api.v1.endpoints.rag import ensure_upload_directory, internal_router as rag_internal_router
 from app.observability.health import run_all_health_checks
 from app.services.rag.qdrant_bootstrap import bootstrap_rag_collection
 from app.services.jobs.worker import start_job_worker
@@ -279,6 +279,7 @@ def create_app() -> FastAPI:
 
     # Legacy v1-API mounten
     app.include_router(api_router, prefix="/api/v1")
+    app.include_router(rag_internal_router)
     
     # 🚀 Neuen Agent Router mounten
     app.include_router(agent_router, prefix="/api/agent", tags=["Agent"])

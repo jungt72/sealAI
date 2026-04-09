@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import re
 import time
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import structlog
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +43,7 @@ from app.services.rag.utils import (
 )
 
 router = APIRouter(prefix="/rag", tags=["rag"])
+internal_router = APIRouter(prefix="/internal/rag", tags=["rag-internal"])
 logger = structlog.get_logger("api.rag")
 
 
@@ -100,6 +102,20 @@ QDRANT_COLLECTION = (os.getenv("QDRANT_COLLECTION") or "sealai_knowledge").strip
 
 def _is_admin(user: RequestUser) -> bool:
     return "admin" in (user.roles or [])
+
+
+def _require_paperless_webhook_token(received_token: str | None) -> None:
+    expected = (settings.paperless_webhook_token or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail=error_detail("paperless_webhook_not_configured"),
+        )
+    if not received_token or not hmac.compare_digest(received_token, expected):
+        raise HTTPException(
+            status_code=403,
+            detail=error_detail("paperless_webhook_forbidden"),
+        )
 
 
 def _qdrant_client():
@@ -346,6 +362,33 @@ async def sync_paperless(
 
     from app.services.rag.paperless import sync_paperless_to_rag
     return await sync_paperless_to_rag(session)
+
+
+@internal_router.post("/ingest")
+async def ingest_paperless_webhook(
+    payload: Optional[Dict[str, Any]] = Body(default=None),
+    x_sealai_webhook_token: Optional[str] = Header(default=None, alias="X-SeaLAI-Webhook-Token"),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Minimal internal webhook entry for the first Paperless ingest pilot."""
+    _require_paperless_webhook_token(x_sealai_webhook_token)
+
+    payload = payload or {}
+    document_id = payload.get("document_id")
+    if document_id in (None, ""):
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail("paperless_webhook_invalid_payload", field="document_id"),
+        )
+
+    from app.services.rag.paperless import sync_paperless_to_rag
+
+    result = await sync_paperless_to_rag(session)
+    return {
+        "status": "accepted",
+        "document_id": str(document_id),
+        "sync": result,
+    }
 
 
 @router.get("/documents/{document_id}")

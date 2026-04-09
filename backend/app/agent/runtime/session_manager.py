@@ -227,7 +227,7 @@ async def get_or_create_session_async(
 async def apply_gate_decision_and_persist_async(
     envelope: SessionEnvelope,
     *,
-    gate_route: Literal["instant_light_reply", "light_exploration", "governed_needed"],
+    gate_route: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"],
     gate_reason: str,
     turn: int = 0,  # kept for API compatibility; internal turn_count is used instead
     redis_client: object,
@@ -243,7 +243,7 @@ async def apply_gate_decision_and_persist_async(
     """
     current_turn = envelope.turn_count + 1
 
-    if gate_route == "governed_needed" and envelope.session_zone != "governed":
+    if gate_route == "GOVERNED" and envelope.session_zone != "governed":
         # Fresh escalation: record origin reason + accurate turn
         updated = envelope.escalate_to_governed(
             turn=current_turn,
@@ -273,14 +273,14 @@ async def apply_gate_decision_and_persist_async(
 def apply_gate_decision_and_persist(
     envelope: SessionEnvelope,
     *,
-    gate_route: Literal["instant_light_reply", "light_exploration", "governed_needed"],
+    gate_route: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"],
     gate_reason: str,
     turn: int = 0,  # kept for API compatibility; internal turn_count is used instead
     redis_client: object,
 ) -> SessionEnvelope:
     """Update session zone based on gate decision and persist.
 
-    Escalates to governed if gate says governed_needed. Zone can never be downgraded.
+    Escalates to governed if gate says GOVERNED. Zone can never be downgraded.
 
     Fix 1 — audit log: original escalation reason preserved for governed sessions.
     Fix 2 — turn tracking: turn_count incremented on every call.
@@ -289,7 +289,7 @@ def apply_gate_decision_and_persist(
     """
     current_turn = envelope.turn_count + 1
 
-    if gate_route == "governed_needed" and envelope.session_zone != "governed":
+    if gate_route == "GOVERNED" and envelope.session_zone != "governed":
         updated = envelope.escalate_to_governed(
             turn=current_turn,
             gate_decision_reason=gate_reason,

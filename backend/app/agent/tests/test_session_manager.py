@@ -224,12 +224,12 @@ class TestApplyGateDecisionAndPersist:
         return SessionEnvelope(session_id=session_id, tenant_id="t1", user_id="u1")
 
     def test_session_escalates_to_governed(self):
-        """Gate says governed_needed → zone becomes governed (Umbauplan F-A.2 test 2)."""
+        """Gate says GOVERNED → zone becomes governed (Umbauplan F-A.2 test 2)."""
         redis = FakeRedis()
         env = self._conv_env()
         updated = apply_gate_decision_and_persist(
             env,
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason="hard_override:numeric_unit",
             turn=1,
             redis_client=redis,
@@ -245,7 +245,7 @@ class TestApplyGateDecisionAndPersist:
         # First request escalates
         gov = apply_gate_decision_and_persist(
             env,
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason="hard_override:numeric_unit",
             turn=1,
             redis_client=redis,
@@ -255,7 +255,7 @@ class TestApplyGateDecisionAndPersist:
         # Second request — gate might say a light mode but session stays governed
         still_gov = apply_gate_decision_and_persist(
             gov,
-            gate_route="instant_light_reply",
+            gate_route="CONVERSATION",
             gate_reason="deterministic_instant:greeting_or_smalltalk",
             turn=2,
             redis_client=redis,
@@ -267,7 +267,7 @@ class TestApplyGateDecisionAndPersist:
         env = self._conv_env()
         updated = apply_gate_decision_and_persist(
             env,
-            gate_route="instant_light_reply",
+            gate_route="CONVERSATION",
             gate_reason="deterministic_instant:greeting_or_smalltalk",
             turn=1,
             redis_client=redis,
@@ -279,7 +279,7 @@ class TestApplyGateDecisionAndPersist:
         env = self._conv_env()
         updated = apply_gate_decision_and_persist(
             env,
-            gate_route="instant_light_reply",
+            gate_route="CONVERSATION",
             gate_reason="deterministic_instant:greeting_or_smalltalk",
             turn=1,
             redis_client=redis,
@@ -291,7 +291,7 @@ class TestApplyGateDecisionAndPersist:
         env = self._conv_env()
         apply_gate_decision_and_persist(
             env,
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason="x",
             turn=1,
             redis_client=redis,
@@ -308,7 +308,7 @@ class TestApplyGateDecisionAndPersist:
         # Calling again with GOVERNED on already-governed session
         result = apply_gate_decision_and_persist(
             gov,
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason="sticky_governed_session",
             turn=5,
             redis_client=redis,
@@ -327,7 +327,7 @@ class TestApplyGateDecisionAndPersist:
         # Escalate with a meaningful origin reason
         gov = apply_gate_decision_and_persist(
             env,
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason="hard_override:numeric_unit",
             turn=1,
             redis_client=redis,
@@ -337,7 +337,7 @@ class TestApplyGateDecisionAndPersist:
         # Subsequent call with sticky reason must NOT overwrite origin
         after_sticky = apply_gate_decision_and_persist(
             gov,
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason="sticky_governed_session",
             turn=2,
             redis_client=redis,
@@ -354,7 +354,7 @@ class TestApplyGateDecisionAndPersist:
         )
         result = apply_gate_decision_and_persist(
             gov,
-            gate_route="instant_light_reply",
+            gate_route="CONVERSATION",
             gate_reason="governed_instant_override",
             turn=3,
             redis_client=redis,
@@ -371,13 +371,13 @@ class TestApplyGateDecisionAndPersist:
         assert env.turn_count == 0
 
         e1 = apply_gate_decision_and_persist(
-            env, gate_route="instant_light_reply", gate_reason="deterministic_instant:greeting_or_smalltalk",
+            env, gate_route="CONVERSATION", gate_reason="deterministic_instant:greeting_or_smalltalk",
             turn=1, redis_client=redis,
         )
         assert e1.turn_count == 1
 
         e2 = apply_gate_decision_and_persist(
-            e1, gate_route="instant_light_reply", gate_reason="deterministic_instant:greeting_or_smalltalk",
+            e1, gate_route="CONVERSATION", gate_reason="deterministic_instant:greeting_or_smalltalk",
             turn=2, redis_client=redis,
         )
         assert e2.turn_count == 2
@@ -388,18 +388,18 @@ class TestApplyGateDecisionAndPersist:
         # Pre-warm: 2 conversation turns first
         env = self._conv_env()
         e1 = apply_gate_decision_and_persist(
-            env, gate_route="instant_light_reply", gate_reason="deterministic_instant:greeting_or_smalltalk",
+            env, gate_route="CONVERSATION", gate_reason="deterministic_instant:greeting_or_smalltalk",
             turn=0, redis_client=redis,
         )
         e2 = apply_gate_decision_and_persist(
-            e1, gate_route="instant_light_reply", gate_reason="deterministic_instant:greeting_or_smalltalk",
+            e1, gate_route="CONVERSATION", gate_reason="deterministic_instant:greeting_or_smalltalk",
             turn=0, redis_client=redis,
         )
         assert e2.turn_count == 2
 
         # Now escalate — entered_governed_at_turn must be 3 (internal), not 0 (caller)
         gov = apply_gate_decision_and_persist(
-            e2, gate_route="governed_needed", gate_reason="hard_override:numeric_unit",
+            e2, gate_route="GOVERNED", gate_reason="hard_override:numeric_unit",
             turn=0, redis_client=redis,
         )
         assert gov.entered_governed_at_turn == 3
@@ -413,7 +413,7 @@ class TestApplyGateDecisionAndPersist:
             session_zone="governed", turn_count=5,
         )
         result = apply_gate_decision_and_persist(
-            gov, gate_route="governed_needed", gate_reason="sticky_governed_session",
+            gov, gate_route="GOVERNED", gate_reason="sticky_governed_session",
             turn=0, redis_client=redis,
         )
         assert result.turn_count == 6
@@ -429,7 +429,7 @@ class TestApplyGateDecisionAndPersistAsync:
         updated = asyncio.run(
             apply_gate_decision_and_persist_async(
                 env,
-                gate_route="governed_needed",
+                gate_route="GOVERNED",
                 gate_reason="hard_override:numeric_unit",
                 turn=1,
                 redis_client=redis,
@@ -443,7 +443,7 @@ class TestApplyGateDecisionAndPersistAsync:
         updated = asyncio.run(
             apply_gate_decision_and_persist_async(
                 env,
-                gate_route="instant_light_reply",
+                gate_route="CONVERSATION",
                 gate_reason="deterministic_instant:greeting_or_smalltalk",
                 turn=1,
                 redis_client=redis,
@@ -467,9 +467,9 @@ class TestGateSessionIntegration:
         env = get_or_create_session("t1", "s1", "u1", redis_client=redis)
         assert env.session_zone == "conversation"
 
-        # Gate decides governed_needed (hard override — LLM not called)
+        # Gate decides GOVERNED (hard override — LLM not called)
         decision = decide_route("PTFE-Dichtung für 180°C Dampf", env)
-        assert decision.route == "governed_needed"
+        assert decision.route == "GOVERNED"
 
         # Apply decision to session
         updated = apply_gate_decision_and_persist(
@@ -488,10 +488,10 @@ class TestGateSessionIntegration:
         redis = FakeRedis()
         env = get_or_create_session("t1", "s1", "u1", redis_client=redis)
 
-        llm_result = LLMGateResult(routing="instant_light_reply", confidence=0.92)
+        llm_result = LLMGateResult(routing="CONVERSATION", confidence=0.92)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Was ist ein O-Ring?", env)
-        assert decision.route == "instant_light_reply"
+        assert decision.route == "CONVERSATION"
 
         updated = apply_gate_decision_and_persist(
             env,

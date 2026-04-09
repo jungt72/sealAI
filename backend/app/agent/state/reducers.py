@@ -39,7 +39,10 @@ from app.agent.state.models import (
     AssumptionRef,
     ConflictRef,
     ConfidenceLevel,
+    DecisionState,
+    DerivedState,
     GovernanceState,
+    GovernedSessionState,
     GovClass,
     NormalizedParameter,
     NormalizedState,
@@ -49,6 +52,19 @@ from app.agent.state.models import (
 )
 
 log = logging.getLogger(__name__)
+
+
+DEPENDENCY_MAP: dict[str, list[str]] = {
+    "temperature_max": ["material_suitability", "requirement_class", "preselection"],
+    "temperature_c": ["material_suitability", "requirement_class", "preselection"],
+    "medium": ["material_suitability", "requirement_class", "applicable_norms"],
+    "rpm": ["pv_value", "velocity", "material_suitability"],
+    "shaft_diameter": ["pv_value", "velocity"],
+    "shaft_diameter_mm": ["pv_value", "velocity"],
+    "pressure": ["requirement_class", "material_suitability"],
+    "pressure_bar": ["requirement_class", "material_suitability"],
+    "medium_confidence": ["material_suitability"],
+}
 
 
 def _float_to_confidence(value: float) -> ConfidenceLevel:
@@ -175,6 +191,7 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
     parameters: dict[str, NormalizedParameter] = {}
     conflicts: list[ConflictRef] = []
     assumptions: list[AssumptionRef] = []
+    parameter_status: dict[str, str] = {}
 
     # Collect all field names from both overrides and extractions
     all_fields = set(override_by_field) | set(extractions_by_field)
@@ -191,6 +208,7 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
                 source="user_override",
                 source_turn=ov.turn_index,
             )
+            parameter_status[field_name] = "observed"
             log.debug("[reducer] field=%s source=user_override value=%r", field_name, ov.override_value)
             continue
 
@@ -228,6 +246,9 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
                 field_name=field_name,
                 description=f"'{field_name}' requires user confirmation (value: {best.raw_value!r})",
             ))
+            parameter_status[field_name] = "assumed"
+        else:
+            parameter_status[field_name] = "observed"
 
         parameters[field_name] = NormalizedParameter(
             field_name=field_name,
@@ -243,6 +264,7 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
         unit_system="SI",
         conflicts=conflicts,
         assumptions=assumptions,
+        parameter_status=parameter_status,
     )
 
 
@@ -418,12 +440,13 @@ def reduce_asserted_to_governance(
         requirement_class_open_points = list(requirement_result.open_points)
         requirement_class_scope = list(requirement_result.scope_of_validity)
 
-    for item in requirement_class_open_points:
-        if item not in open_validation_points:
-            open_validation_points.append(item)
-    for item in requirement_class_scope:
-        if item not in validity_limits:
-            validity_limits.append(item)
+    if gov_class == "B":
+        for item in requirement_class_open_points:
+            if item not in open_validation_points:
+                open_validation_points.append(item)
+        for item in requirement_class_scope:
+            if item not in validity_limits:
+                validity_limits.append(item)
 
     log.debug(
         "[reducer] governance class=%s rfq_admissible=%s "
@@ -443,4 +466,82 @@ def reduce_asserted_to_governance(
         rfq_admissible=rfq_admissible,
         validity_limits=validity_limits,
         open_validation_points=open_validation_points,
+    )
+
+
+def determine_changed_parameter_fields(
+    previous: NormalizedState,
+    current: NormalizedState,
+) -> set[str]:
+    """Return canonical upstream fields whose normalized value changed."""
+
+    changed_fields: set[str] = set()
+    all_fields = set(previous.parameters) | set(current.parameters)
+
+    for field_name in all_fields:
+        before = previous.parameters.get(field_name)
+        after = current.parameters.get(field_name)
+
+        if before is None or after is None:
+            changed_fields.add(field_name)
+            continue
+
+        if (
+            before.value != after.value
+            or before.unit != after.unit
+            or before.source != after.source
+        ):
+            changed_fields.add(field_name)
+
+        if field_name == "medium" and before.confidence != after.confidence:
+            changed_fields.add("medium_confidence")
+
+    return changed_fields
+
+
+def invalidate_downstream(
+    changed_field: str,
+    state: GovernedSessionState,
+) -> GovernedSessionState:
+    """Mark dependent downstream artefacts as stale for one changed upstream field."""
+
+    affected = DEPENDENCY_MAP.get(changed_field, [])
+    if not affected:
+        return state
+
+    derived_status = dict(state.derived.field_status)
+    decision_status = dict(state.decision.field_status)
+
+    for field_name in affected:
+        if field_name == "preselection":
+            decision_status["preselection"] = "stale"
+            continue
+
+        if field_name == "requirement_class":
+            derived_status["requirement_class"] = "stale"
+            decision_status["requirement_class"] = "stale"
+            continue
+
+        derived_status[field_name] = "stale"
+
+    derived = state.derived.model_copy(update={"field_status": derived_status})
+    decision = state.decision.model_copy(
+        update={
+            "preselection": None,
+            "field_status": decision_status,
+        }
+    )
+    action_readiness = state.action_readiness.model_copy(
+        update={
+            "pdf_ready": False,
+            "pdf_url": None,
+        }
+    )
+
+    return state.model_copy(
+        update={
+            "derived": derived,
+            "decision": decision,
+            "action_readiness": action_readiness,
+        }
     )

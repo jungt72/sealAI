@@ -70,7 +70,7 @@ def test_governed_stream_payload_scrubs_internal_transport_and_event_fields() ->
         return_value=_FakeProjection(),
     ):
         payload = _build_governed_stream_payload(
-            result_state=GraphState(output_reply="ok", output_response_class="rfq_ready"),
+            result_state=GraphState(output_reply="ok", output_response_class="inquiry_ready"),
             persisted_state=GovernedSessionState(),
         )
 
@@ -152,7 +152,7 @@ def test_governed_state_update_payload_uses_visible_reply_without_prefix_injecti
     assert payload["response_class"] == "governed_state_update"
 
 
-def test_governed_recommendation_payload_uses_fallback_without_prefix_injection() -> None:
+def test_technical_preselection_payload_uses_fallback_without_prefix_injection() -> None:
     with patch(
         "app.agent.api.router.project_for_ui",
         return_value=_FakeProjection(),
@@ -160,24 +160,24 @@ def test_governed_recommendation_payload_uses_fallback_without_prefix_injection(
         payload = _build_governed_stream_payload(
             result_state=GraphState(
                 output_reply="Technische Einengung auf Basis bestaetigter Parameter.",
-                output_response_class="governed_recommendation",
+                output_response_class="technical_preselection",
             ),
             persisted_state=GovernedSessionState(),
             visible_reply="",
         )
 
     assert payload["reply"] == "Ich kann die technische Richtung belastbar einordnen und die offenen Pruefpunkte klar benennen."
-    assert payload["response_class"] == "governed_recommendation"
+    assert payload["response_class"] == "technical_preselection"
 
 
-def test_rfq_ready_payload_uses_result_class_specific_facts_prefix() -> None:
+def test_inquiry_ready_payload_uses_result_class_specific_facts_prefix() -> None:
     with patch(
         "app.agent.api.router.project_for_ui",
         return_value=_FakeProjection(),
     ):
         state = GraphState(
             output_reply="Die Anfragebasis ist jetzt strukturiert vorbereitet.",
-            output_response_class="rfq_ready",
+            output_response_class="inquiry_ready",
         )
         state.asserted.assertions["medium"] = AssertedClaim(
             field_name="medium",
@@ -196,7 +196,7 @@ def test_rfq_ready_payload_uses_result_class_specific_facts_prefix() -> None:
         )
 
     assert "RFQ-Basis:" in payload["reply"]
-    assert payload["response_class"] == "rfq_ready"
+    assert payload["response_class"] == "inquiry_ready"
 
 
 def test_governed_stream_payload_uses_central_user_facing_reply_assembly() -> None:
@@ -350,9 +350,9 @@ def test_surface_claims_cover_all_outward_classes() -> None:
         "conversational_answer",
         "structured_clarification",
         "governed_state_update",
-        "governed_recommendation",
-        "manufacturer_match_result",
-        "rfq_ready",
+        "technical_preselection",
+        "candidate_shortlist",
+        "inquiry_ready",
     ):
         claims = _build_governed_allowed_surface_claims(response_class)
         assert claims["response_class"] == response_class
@@ -371,8 +371,8 @@ def test_structured_clarification_blocks_recommendation_manufacturer_and_rfq_lan
     ) == claims["fallback_text"]
 
 
-def test_governed_recommendation_allows_requirement_class_but_blocks_final_release() -> None:
-    claims = _build_governed_allowed_surface_claims("governed_recommendation")
+def test_technical_preselection_allows_requirement_class_but_blocks_final_release() -> None:
+    claims = _build_governed_allowed_surface_claims("technical_preselection")
 
     assert guard_governed_rendered_text(
         "Requirement Class: PTFE10. Scope of Validity: bis 180 C. Offene Pruefpunkte bleiben bestehen.",
@@ -386,8 +386,8 @@ def test_governed_recommendation_allows_requirement_class_but_blocks_final_relea
     ) == claims["fallback_text"]
 
 
-def test_manufacturer_match_result_blocks_final_manufacturer_release() -> None:
-    claims = _build_governed_allowed_surface_claims("manufacturer_match_result")
+def test_candidate_shortlist_blocks_final_manufacturer_release() -> None:
+    claims = _build_governed_allowed_surface_claims("candidate_shortlist")
 
     assert guard_governed_rendered_text(
         "Acme ist der technisch passende Kandidatenrahmen. Offene Herstellerpruefung bleibt bestehen.",
@@ -401,8 +401,8 @@ def test_manufacturer_match_result_blocks_final_manufacturer_release() -> None:
     ) == claims["fallback_text"]
 
 
-def test_rfq_ready_blocks_order_or_send_execution_language() -> None:
-    claims = _build_governed_allowed_surface_claims("rfq_ready")
+def test_inquiry_ready_blocks_order_or_send_execution_language() -> None:
+    claims = _build_governed_allowed_surface_claims("inquiry_ready")
 
     assert guard_governed_rendered_text(
         "Die Anfragebasis ist versandfaehig vorbereitet. Offene Herstellerpruefpunkte bleiben sichtbar.",
@@ -427,7 +427,7 @@ def test_one_question_rule_blocks_multiple_questions_in_structured_clarification
 
 
 def test_no_final_certainty_rule_blocks_simulated_finality() -> None:
-    claims = _build_governed_allowed_surface_claims("governed_recommendation")
+    claims = _build_governed_allowed_surface_claims("technical_preselection")
 
     assert guard_governed_rendered_text(
         "Die technische Richtung ist sicher geeignet.",
@@ -436,7 +436,7 @@ def test_no_final_certainty_rule_blocks_simulated_finality() -> None:
     ) == claims["fallback_text"]
 
 
-def test_no_unauthorized_rfq_rule_blocks_rfq_language_outside_rfq_ready() -> None:
+def test_no_unauthorized_rfq_rule_blocks_rfq_language_outside_inquiry_ready() -> None:
     claims = _build_governed_allowed_surface_claims("governed_state_update")
 
     assert guard_governed_rendered_text(
@@ -444,6 +444,12 @@ def test_no_unauthorized_rfq_rule_blocks_rfq_language_outside_rfq_ready() -> Non
         fallback_text="Status wurde aktualisiert.",
         allowed_surface_claims=claims,
     ) == claims["fallback_text"]
+
+
+def test_old_outward_aliases_normalize_to_new_surface_claims() -> None:
+    assert _build_governed_allowed_surface_claims("governed_recommendation")["response_class"] == "technical_preselection"
+    assert _build_governed_allowed_surface_claims("manufacturer_match_result")["response_class"] == "candidate_shortlist"
+    assert _build_governed_allowed_surface_claims("rfq_ready")["response_class"] == "inquiry_ready"
 
 
 def test_class_guard_blocks_semantic_breakout_for_structured_clarification() -> None:
@@ -537,11 +543,20 @@ async def test_stream_governed_graph_state_update_reply_uses_controlled_turn_con
         captured.update(kwargs)
         return "Gerne. Welches Medium soll abgedichtet werden?"
 
+    async def _fake_astream(*_args, **_kwargs):
+        yield ("custom", {"event_type": "evidence_retrieved", "sources_count": 2})
+        yield ("values", {})
+        yield ("values", GraphState(
+            output_reply="Bitte Medium angeben.",
+            output_response_class="structured_clarification",
+        ).model_dump(mode="python"))
+
     with (
         patch.dict("os.environ", {"REDIS_URL": ""}),
         patch(
             "app.agent.api.router.GOVERNED_GRAPH",
             new=SimpleNamespace(
+                astream=_fake_astream,
                 ainvoke=AsyncMock(
                     return_value=GraphState(
                         output_reply="Bitte Medium angeben.",
@@ -560,6 +575,9 @@ async def test_stream_governed_graph_state_update_reply_uses_controlled_turn_con
             )
         )
 
+    progress = next(payload for payload in payloads if payload.get("type") == "progress")
+    assert progress["event_type"] == "evidence_retrieved"
+    assert progress["sources_count"] == 2
     state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
     assert state_update["reply"] == "Gerne. Welches Medium soll abgedichtet werden?"
     assert state_update["response_class"] == "structured_clarification"
@@ -573,11 +591,19 @@ async def test_stream_governed_graph_state_update_reply_uses_controlled_turn_con
 
 @pytest.mark.asyncio
 async def test_stream_governed_graph_state_update_reply_falls_back_to_deterministic_text_when_rendering_yields_nothing() -> None:
+    async def _fake_astream(*_args, **_kwargs):
+        yield ("values", {})
+        yield ("values", GraphState(
+            output_reply="Bitte Medium angeben.",
+            output_response_class="structured_clarification",
+        ).model_dump(mode="python"))
+
     with (
         patch.dict("os.environ", {"REDIS_URL": ""}),
         patch(
             "app.agent.api.router.GOVERNED_GRAPH",
             new=SimpleNamespace(
+                astream=_fake_astream,
                 ainvoke=AsyncMock(
                     return_value=GraphState(
                         output_reply="Bitte Medium angeben.",
@@ -733,9 +759,9 @@ async def test_chat_endpoint_uses_governed_json_renderer_for_governed_dispatch()
             "app.agent.api.router._resolve_runtime_dispatch",
             AsyncMock(
                 return_value=RuntimeDispatchResolution(
-                    gate_route="governed_needed",
+                    gate_route="GOVERNED",
                     gate_reason="test",
-                    runtime_mode="governed_needed",
+                    runtime_mode="GOVERNED",
                     gate_applied=True,
                 )
             ),
@@ -764,29 +790,18 @@ async def test_chat_endpoint_uses_governed_json_renderer_for_governed_dispatch()
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_uses_governed_graph_for_structured_legacy_fallback() -> None:
+async def test_chat_endpoint_fails_closed_to_governed_on_unexpected_runtime_mode() -> None:
     legacy_resolution = RuntimeDispatchResolution(
-        gate_route="governed_needed",
-        gate_reason="legacy_fallback",
+        gate_route="GOVERNED",
+        gate_reason="unexpected_runtime_mode",
         runtime_mode="legacy_fallback",
         gate_applied=False,
-    )
-    structured_decision = SimpleNamespace(
-        path=SimpleNamespace(value="reasoning"),
-        result_form=SimpleNamespace(value="structured_reply"),
-        has_case_state=True,
-        runtime_path="STRUCTURED_GUIDANCE",
-        binding_level="ORIENTATION",
     )
 
     with (
         patch(
             "app.agent.api.router._resolve_runtime_dispatch",
             AsyncMock(return_value=legacy_resolution),
-        ),
-        patch(
-            "app.agent.api.router.evaluate_interaction_policy_async",
-            AsyncMock(return_value=structured_decision),
         ),
         patch(
             "app.agent.api.router._run_governed_chat_response",
@@ -814,19 +829,12 @@ async def test_chat_endpoint_uses_governed_graph_for_structured_legacy_fallback(
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_uses_conversation_runtime_for_light_legacy_fallback() -> None:
+async def test_chat_endpoint_fails_closed_to_governed_instead_of_light_legacy_fallback() -> None:
     legacy_resolution = RuntimeDispatchResolution(
-        gate_route="governed_needed",
-        gate_reason="legacy_fallback",
+        gate_route="GOVERNED",
+        gate_reason="unexpected_runtime_mode",
         runtime_mode="legacy_fallback",
         gate_applied=False,
-    )
-    light_decision = SimpleNamespace(
-        path=SimpleNamespace(value="fast"),
-        result_form=SimpleNamespace(value="direct_answer"),
-        has_case_state=False,
-        runtime_path="FAST_GUIDANCE",
-        binding_level="ORIENTATION",
     )
 
     with (
@@ -835,9 +843,18 @@ async def test_chat_endpoint_uses_conversation_runtime_for_light_legacy_fallback
             AsyncMock(return_value=legacy_resolution),
         ),
         patch(
-            "app.agent.api.router.evaluate_interaction_policy_async",
-            AsyncMock(return_value=light_decision),
-        ),
+            "app.agent.api.router._run_governed_chat_response",
+            AsyncMock(
+                return_value=SimpleNamespace(
+                    session_id="case-fallback-light-1",
+                    reply="Welcher Druck liegt an?",
+                    response_class="structured_clarification",
+                    structured_state={"output_status": "clarification_needed"},
+                    policy_path="governed",
+                    run_meta={"path": "governed_graph"},
+                )
+            ),
+        ) as mock_governed,
         patch(
             "app.agent.api.router._run_light_chat_response",
             AsyncMock(
@@ -853,32 +870,26 @@ async def test_chat_endpoint_uses_conversation_runtime_for_light_legacy_fallback
         ) as mock_light,
         patch("app.agent.api.router.prepare_structured_state", new=AsyncMock()) as mock_prepare,
         patch("app.agent.api.router.execute_agent", new=AsyncMock()) as mock_execute,
-    ):
+        ):
         response = await chat_endpoint(
             SimpleNamespace(session_id="case-fallback-light-1", message="Hallo"),
             current_user=_request_user(),
         )
 
-    assert response.reply == "Gerne, schildern Sie kurz die Anwendung."
-    mock_light.assert_awaited_once()
+    assert response.reply == "Welcher Druck liegt an?"
+    mock_governed.assert_awaited_once()
+    mock_light.assert_not_awaited()
     mock_prepare.assert_not_called()
     mock_execute.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_stream_event_generator_uses_governed_graph_for_structured_legacy_fallback() -> None:
+async def test_stream_event_generator_fails_closed_to_governed_on_unexpected_runtime_mode() -> None:
     legacy_resolution = RuntimeDispatchResolution(
-        gate_route="governed_needed",
-        gate_reason="legacy_fallback",
+        gate_route="GOVERNED",
+        gate_reason="unexpected_runtime_mode",
         runtime_mode="legacy_fallback",
         gate_applied=False,
-    )
-    structured_decision = SimpleNamespace(
-        path=SimpleNamespace(value="reasoning"),
-        result_form=SimpleNamespace(value="structured_reply"),
-        has_case_state=True,
-        runtime_path="STRUCTURED_GUIDANCE",
-        binding_level="ORIENTATION",
     )
 
     async def _fake_stream_governed_graph(*_args, **_kwargs):
@@ -889,10 +900,6 @@ async def test_stream_event_generator_uses_governed_graph_for_structured_legacy_
         patch(
             "app.agent.api.router._resolve_runtime_dispatch",
             AsyncMock(return_value=legacy_resolution),
-        ),
-        patch(
-            "app.agent.api.router.evaluate_interaction_policy_async",
-            AsyncMock(return_value=structured_decision),
         ),
         patch(
             "app.agent.api.router._stream_governed_graph",

@@ -80,7 +80,7 @@ class _FakeRedis:
 
 
 # ---------------------------------------------------------------------------
-# 1. Flag off → interaction_policy is called, gate is NOT called
+# 1. Flag off → productive SSE fails closed to governed, no legacy policy fallback
 # ---------------------------------------------------------------------------
 
 class TestFlagOffUsesGovernedAuthority:
@@ -133,7 +133,7 @@ class TestGateFlagOnConvFlagOffUsesGovernedAuthority:
         mock_envelope = SessionEnvelope(
             session_id="sess-1", tenant_id="tenant-1", user_id="user-1"
         )
-        mock_gate_decision = GateDecision(route="instant_light_reply", reason="deterministic_instant:greeting_or_smalltalk")
+        mock_gate_decision = GateDecision(route="CONVERSATION", reason="deterministic_instant:greeting_or_smalltalk")
 
         governed_called = []
 
@@ -175,7 +175,7 @@ class TestBothFlagsOnConversationUsesNewRuntime:
         mock_envelope = SessionEnvelope(
             session_id="sess-1", tenant_id="tenant-1", user_id="user-1"
         )
-        mock_gate_decision = GateDecision(route="instant_light_reply", reason="deterministic_instant:greeting_or_smalltalk")
+        mock_gate_decision = GateDecision(route="CONVERSATION", reason="deterministic_instant:greeting_or_smalltalk")
 
         stream_conv_called = []
         agent_sse_called = []
@@ -209,7 +209,7 @@ class TestBothFlagsOnConversationUsesNewRuntime:
             )
 
         assert stream_conv_called, "stream_conversation must be called for light route"
-        assert stream_conv_called[0]["mode"] == "instant_light_reply"
+        assert stream_conv_called[0]["mode"] == "CONVERSATION"
         assert not agent_sse_called, "agent_sse_generator must NOT be called for light route"
         assert any("text_chunk" in f for f in frames), "text_chunk frames must be forwarded"
 
@@ -221,7 +221,7 @@ class TestBothFlagsOnConversationUsesNewRuntime:
 class TestGovernedUsesNewGraphPath:
     @pytest.mark.asyncio
     async def test_governed_uses_new_graph_and_no_legacy_sse_path(self):
-        """Gate decides governed_needed → GOVERNED_GRAPH is used, not agent_sse_generator."""
+        """Gate decides GOVERNED → GOVERNED_GRAPH is used, not agent_sse_generator."""
         import app.agent.api.router as router_module
 
         from app.agent.runtime.gate import GateDecision
@@ -230,7 +230,7 @@ class TestGovernedUsesNewGraphPath:
         mock_envelope = SessionEnvelope(
             session_id="sess-1", tenant_id="tenant-1", user_id="user-1"
         )
-        mock_gate_decision = GateDecision(route="governed_needed", reason="hard_override:numeric_unit")
+        mock_gate_decision = GateDecision(route="GOVERNED", reason="hard_override:numeric_unit")
 
         stream_conv_called = []
         agent_sse_called = []
@@ -257,6 +257,20 @@ class TestGovernedUsesNewGraphPath:
             payload["output_public"] = {"response_class": "structured_clarification"}
             return GraphState.model_validate(payload)
 
+        async def _fake_governed_astream(state, *_, **__):
+            governed_graph_called.append(state)
+            payload = state.model_dump(mode="python")
+            payload["governance"] = {
+                "gov_class": "B",
+                "rfq_admissible": False,
+                "open_validation_points": ["medium"],
+            }
+            payload["output_response_class"] = "structured_clarification"
+            payload["output_reply"] = "Bitte Medium angeben."
+            payload["output_public"] = {"response_class": "structured_clarification"}
+            yield ("values", {})
+            yield ("values", payload)
+
         fake_redis = _FakeRedis()
 
         with patch.object(router_module, "_ENABLE_BINARY_GATE", True), \
@@ -270,6 +284,7 @@ class TestGovernedUsesNewGraphPath:
              patch("app.agent.api.router.agent_sse_generator", side_effect=_fake_sse_gen), \
              patch("app.agent.api.router.get_or_create_governed_state_async", AsyncMock(return_value=GovernedSessionState())), \
              patch("app.agent.api.router.save_governed_state_async", AsyncMock()), \
+             patch.object(router_module.GOVERNED_GRAPH, "astream", side_effect=_fake_governed_astream), \
              patch.object(router_module.GOVERNED_GRAPH, "ainvoke", side_effect=_fake_governed_ainvoke):
 
             frames = await _collect_frames(
@@ -353,31 +368,20 @@ class TestLegacyPolicyFallbackUsesConversationRuntime:
             (),
             {
                 "runtime_mode": "legacy_fallback",
-                "gate_route": "governed_needed",
+                "gate_route": "GOVERNED",
                 "gate_reason": "legacy_router_state",
                 "gate_applied": False,
                 "session_zone": None,
             },
         )()
-        decision = MagicMock()
-        decision.has_case_state = False
-        decision.path.value = "fast"
-
-        stream_conv_called = []
         agent_sse_called = []
-
-        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None):
-            stream_conv_called.append(mode)
-            yield "data: [DONE]\n\n"
 
         async def _fake_sse_gen(*_args, **_kwargs):
             agent_sse_called.append(True)
             yield "data: [DONE]\n\n"
 
         with patch.object(router_module, "_resolve_runtime_dispatch", AsyncMock(return_value=legacy_resolution)), \
-             patch("app.agent.api.router.evaluate_interaction_policy_async", AsyncMock(return_value=decision)), \
-             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
-             patch("app.agent.api.router.agent_sse_generator", side_effect=_fake_sse_gen):
+             patch("app.agent.api.router._stream_governed_graph", side_effect=_fake_sse_gen):
             frames = await _collect_frames(
                 router_module.event_generator(
                     _make_request(message="Hallo"),
@@ -386,8 +390,7 @@ class TestLegacyPolicyFallbackUsesConversationRuntime:
             )
 
         assert frames == ["data: [DONE]\n\n"]
-        assert stream_conv_called == ["instant_light_reply"]
-        assert not agent_sse_called
+        assert agent_sse_called == [True]
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +424,7 @@ class TestGateRoutesConversationToStreamConversation:
         mock_envelope = SessionEnvelope(
             session_id="sess-1", tenant_id="tenant-1", user_id="user-1"
         )
-        mock_gate_decision = GateDecision(route="light_exploration", reason="deterministic_light:goal_problem_or_uncertainty")
+        mock_gate_decision = GateDecision(route="EXPLORATION", reason="deterministic_light:goal_problem_or_uncertainty")
         fake_redis = _FakeRedis()
 
         with patch.object(router_module, "_ENABLE_BINARY_GATE", True), \
@@ -441,7 +444,7 @@ class TestGateRoutesConversationToStreamConversation:
                 )
             )
 
-        assert stream_conv_called == ["light_exploration"], (
+        assert stream_conv_called == ["EXPLORATION"], (
             "Light route must reach stream_conversation with the routed mode"
         )
         assert not agent_sse_called, (
@@ -480,7 +483,7 @@ class TestPolicyViolationSafeFallbackVisibleAsStateUpdate:
         mock_envelope = SessionEnvelope(
             session_id="sess-1", tenant_id="tenant-1", user_id="user-1"
         )
-        mock_gate_decision = GateDecision(route="instant_light_reply", reason="deterministic_instant:greeting_or_smalltalk")
+        mock_gate_decision = GateDecision(route="CONVERSATION", reason="deterministic_instant:greeting_or_smalltalk")
         fake_redis = _FakeRedis()
 
         FALLBACK_TEXT = "Diese Anfrage kann ich im Gesprächsmodus nicht vollständig beantworten."
@@ -548,7 +551,7 @@ class TestPhase1LiveCanon:
         mock_envelope = SessionEnvelope(
             session_id="sess-1", tenant_id="tenant-1", user_id="user-1"
         )
-        mock_gate_decision = GateDecision(route="light_exploration", reason="deterministic_light:goal_problem_or_uncertainty")
+        mock_gate_decision = GateDecision(route="EXPLORATION", reason="deterministic_light:goal_problem_or_uncertainty")
         fake_redis = _FakeRedis()
 
         governed_state = GovernedSessionState(

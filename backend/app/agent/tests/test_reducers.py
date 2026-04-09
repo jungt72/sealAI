@@ -626,6 +626,7 @@ class TestNoDirectWriteToNormalized:
         "models.py",
         # graph/tests — test helpers that build NormalizedState for assertion setup
         "test_assert_node.py",
+        "test_turn_context.py",
     }
 
     def _collect_violations(self) -> list[Path]:
@@ -660,8 +661,11 @@ class TestNoDirectWriteToGovernance:
         "models.py",
         # graph/tests — test helpers that build GovernanceState for assertion setup
         "test_output_contract_node.py",
-        "test_governance_node.py",
         "test_cycle_control.py",
+        "test_turn_context.py",
+        "test_case_workspace_projection.py",
+        "test_projections.py",
+        "test_api_router.py",
     }
 
     def _collect_violations(self) -> list[Path]:

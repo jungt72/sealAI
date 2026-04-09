@@ -1,0 +1,122 @@
+{
+  "STS-TYPE-GS-S": {
+    "canonical_name": "Gleitringdichtung, einfachwirkend",
+    "category": "mechanical_seal",
+    "sub_category": "single",
+    "typical_pressure_max_bar": 25,
+    "typical_speed_max_rpm": 15000,
+    "typical_shaft_diameter_range_mm": [10, 200],
+    "norm_references": ["ISO 21049", "EN 12756", "API 682"],
+    "requires_flush": false,
+    "typical_materials_rotating": ["STS-MAT-SIC-A1", "STS-MAT-SIC-B1", "STS-MAT-WC-A1"],
+    "typical_materials_stationary": ["STS-MAT-SIC-A1", "STS-MAT-GRAPH-A1", "STS-MAT-AL2O3-A1"],
+    "typical_materials_secondary": ["STS-MAT-FKM-A1", "STS-MAT-EPDM-A1", "STS-MAT-PTFE-A1"]
+  },
+  "STS-TYPE-GS-CART": {
+    "canonical_name": "Gleitringdichtung, Cartridge-Bauweise",
+    "category": "mechanical_seal",
+    "sub_category": "cartridge",
+    "typical_pressure_max_bar": 40,
+    "typical_speed_max_rpm": 12000,
+    "typical_shaft_diameter_range_mm": [20, 150],
+    "norm_references": ["ISO 21049", "EN 12756", "API 682"],
+    "requires_flush": false,
+    "typical_materials_rotating": ["STS-MAT-SIC-A1", "STS-MAT-SIC-B1", "STS-MAT-WC-A1"],
+    "typical_materials_stationary": ["STS-MAT-SIC-A1", "STS-MAT-GRAPH-A1"],
+    "typical_materials_secondary": ["STS-MAT-FKM-A1", "STS-MAT-EPDM-A1", "STS-MAT-FKM-HT"]
+  },
+  "STS-TYPE-GS-D": {
+    "canonical_name": "Gleitringdichtung, doppeltwirkend",
+    "category": "mechanical_seal",
+    "sub_category": "double",
+    "typical_pressure_max_bar": 40,
+    "typical_speed_max_rpm": 10000,
+    "typical_shaft_diameter_range_mm": [20, 250],
+    "norm_references": ["ISO 21049", "EN 12756", "API 682"],
+    "requires_flush": true,
+    "flush_types": ["Plan 53A", "Plan 53B", "Plan 54"],
+    "typical_materials_rotating": ["STS-MAT-SIC-A1", "STS-MAT-WC-A1"],
+    "typical_materials_stationary": ["STS-MAT-SIC-A1", "STS-MAT-GRAPH-A1"],
+    "typical_materials_secondary": ["STS-MAT-FKM-A1", "STS-MAT-FKM-HT", "STS-MAT-FFKM-A1"]
+  },
+  "STS-TYPE-GS-GAS": {
+    "canonical_name": "Gleitringdichtung, gasgeschmiert (Trockenlaufend)",
+    "category": "mechanical_seal",
+    "sub_category": "gas_lubricated",
+    "typical_pressure_max_bar": 20,
+    "typical_speed_max_rpm": 30000,
+    "typical_shaft_diameter_range_mm": [30, 300],
+    "norm_references": ["ISO 21049", "API 682", "API 692"],
+    "requires_flush": false,
+    "typical_materials_rotating": ["STS-MAT-SIC-A1", "STS-MAT-WC-A1"],
+    "typical_materials_stationary": ["STS-MAT-GRAPH-A1", "STS-MAT-SIC-A1"],
+    "typical_materials_secondary": ["STS-MAT-PTFE-A1", "STS-MAT-FKM-A1"]
+  },
+  "STS-TYPE-RWDR-A": {
+    "canonical_name": "Radialwellendichtring, Typ A (Standardlippe)",
+    "category": "lip_seal",
+    "sub_category": "standard",
+    "typical_pressure_max_bar": 0.5,
+    "typical_speed_max_rpm": 5000,
+    "typical_shaft_diameter_range_mm": [6, 500],
+    "norm_references": ["DIN 3760", "DIN 3761", "ISO 6194"],
+    "requires_flush": false,
+    "typical_materials_primary": ["STS-MAT-FKM-A1", "STS-MAT-NBR-A1", "STS-MAT-EPDM-A1", "STS-MAT-HNBR-A1"]
+  },
+  "STS-TYPE-RWDR-B": {
+    "canonical_name": "Radialwellendichtring, Typ B (Doppellippe/Staublippe)",
+    "category": "lip_seal",
+    "sub_category": "double_lip",
+    "typical_pressure_max_bar": 0.5,
+    "typical_speed_max_rpm": 4000,
+    "typical_shaft_diameter_range_mm": [10, 500],
+    "norm_references": ["DIN 3760", "DIN 3761", "ISO 6194"],
+    "requires_flush": false,
+    "typical_materials_primary": ["STS-MAT-FKM-A1", "STS-MAT-NBR-A1", "STS-MAT-HNBR-A1"]
+  },
+  "STS-TYPE-OR-A": {
+    "canonical_name": "O-Ring, statisch/dynamisch",
+    "category": "static_seal",
+    "sub_category": "o_ring",
+    "typical_pressure_max_bar": 250,
+    "typical_speed_max_rpm": null,
+    "typical_shaft_diameter_range_mm": null,
+    "norm_references": ["ISO 3601", "AS568"],
+    "requires_flush": false,
+    "typical_materials_primary": ["STS-MAT-FKM-A1", "STS-MAT-NBR-A1", "STS-MAT-EPDM-A1", "STS-MAT-FFKM-A1", "STS-MAT-VMQ-A1"]
+  },
+  "STS-TYPE-FLAT-A": {
+    "canonical_name": "Flachdichtung, Standard",
+    "category": "static_seal",
+    "sub_category": "flat_gasket",
+    "typical_pressure_max_bar": 40,
+    "typical_speed_max_rpm": null,
+    "typical_shaft_diameter_range_mm": null,
+    "norm_references": ["EN 1514", "DIN 2690", "ASME B16.21"],
+    "requires_flush": false,
+    "typical_materials_primary": ["STS-MAT-PTFE-A1", "STS-MAT-PTFE-B1", "STS-MAT-EPDM-A1", "STS-MAT-CR-A1"]
+  },
+  "STS-TYPE-SPIRAL-A": {
+    "canonical_name": "Spiraldichtung (Spiral Wound Gasket)",
+    "category": "static_seal",
+    "sub_category": "spiral_wound",
+    "typical_pressure_max_bar": 250,
+    "typical_speed_max_rpm": null,
+    "typical_shaft_diameter_range_mm": null,
+    "norm_references": ["EN 1514-2", "ASME B16.20", "API 601"],
+    "requires_flush": false,
+    "typical_materials_filler": ["STS-MAT-PTFE-B1", "STS-MAT-GRAPH-A1"],
+    "typical_materials_winding": ["316L", "321", "Hastelloy_C276"]
+  },
+  "STS-TYPE-PACK-A": {
+    "canonical_name": "Stopfbuchspackung, Standard",
+    "category": "compression_packing",
+    "sub_category": "standard",
+    "typical_pressure_max_bar": 30,
+    "typical_speed_max_rpm": 3000,
+    "typical_shaft_diameter_range_mm": [10, 500],
+    "norm_references": ["DIN 3535", "EN 14772", "API 622"],
+    "requires_flush": true,
+    "typical_materials_primary": ["STS-MAT-GRAPH-A1", "STS-MAT-PTFE-B1"]
+  }
+}

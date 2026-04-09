@@ -1,0 +1,177 @@
+{
+  "STS-MED-WATER-A1": {
+    "canonical_name": "Wasser, Trinkwasser / Reinwasser",
+    "category": "aqueous",
+    "ph_range": [6.5, 8.5],
+    "temperature_typical_c": [5, 60],
+    "corrosivity": "low",
+    "compatible_material_families": ["elastomer", "ceramic", "polymer", "carbon"],
+    "norm_references": ["DIN 2001"]
+  },
+  "STS-MED-WATER-B1": {
+    "canonical_name": "Wasser, heiss (> 80 Grad C)",
+    "category": "aqueous",
+    "ph_range": [5.0, 9.0],
+    "temperature_typical_c": [80, 150],
+    "corrosivity": "medium",
+    "compatible_material_families": ["ceramic", "polymer", "carbon"],
+    "incompatible_materials": ["STS-MAT-NBR-A1"],
+    "norm_references": []
+  },
+  "STS-MED-SALTWATER-A1": {
+    "canonical_name": "Salzwasser / Meerwasser",
+    "category": "aqueous",
+    "ph_range": [7.5, 8.5],
+    "temperature_typical_c": [0, 40],
+    "corrosivity": "high",
+    "compatible_material_families": ["ceramic", "polymer"],
+    "incompatible_materials": ["STS-MAT-WC-A1"],
+    "norm_references": ["NORSOK M-710"]
+  },
+  "STS-MED-STEAM-A1": {
+    "canonical_name": "Dampf, Niederdruck (< 6 bar)",
+    "category": "aqueous",
+    "ph_range": null,
+    "temperature_typical_c": [100, 165],
+    "corrosivity": "medium",
+    "compatible_material_families": ["ceramic", "carbon", "polymer"],
+    "incompatible_materials": ["STS-MAT-NBR-A1", "STS-MAT-CR-A1"],
+    "norm_references": ["AD 2000"]
+  },
+  "STS-MED-STEAM-B1": {
+    "canonical_name": "Dampf, Hochdruck (>= 6 bar)",
+    "category": "aqueous",
+    "ph_range": null,
+    "temperature_typical_c": [165, 300],
+    "corrosivity": "high",
+    "compatible_material_families": ["ceramic", "carbon"],
+    "incompatible_materials": ["STS-MAT-NBR-A1", "STS-MAT-CR-A1", "STS-MAT-EPDM-A1"],
+    "norm_references": ["AD 2000", "TRD"]
+  },
+  "STS-MED-MINOIL-A1": {
+    "canonical_name": "Mineraloele, Standard",
+    "category": "hydrocarbon",
+    "ph_range": null,
+    "temperature_typical_c": [0, 120],
+    "corrosivity": "low",
+    "compatible_material_families": ["elastomer", "ceramic", "cermet", "carbon"],
+    "incompatible_materials": ["STS-MAT-EPDM-A1"],
+    "norm_references": []
+  },
+  "STS-MED-FUEL-A1": {
+    "canonical_name": "Kraftstoffe (Benzin, Diesel)",
+    "category": "hydrocarbon",
+    "ph_range": null,
+    "temperature_typical_c": [-30, 80],
+    "corrosivity": "low",
+    "compatible_material_families": ["cermet", "ceramic", "carbon"],
+    "incompatible_materials": ["STS-MAT-EPDM-A1", "STS-MAT-VMQ-A1"],
+    "norm_references": ["EN 228", "EN 590"]
+  },
+  "STS-MED-CRUDEOIL-A1": {
+    "canonical_name": "Rohoel",
+    "category": "hydrocarbon",
+    "ph_range": null,
+    "temperature_typical_c": [10, 150],
+    "corrosivity": "medium",
+    "compatible_material_families": ["cermet", "ceramic", "carbon"],
+    "incompatible_materials": ["STS-MAT-EPDM-A1", "STS-MAT-VMQ-A1"],
+    "norm_references": ["API 682", "NACE MR0175"]
+  },
+  "STS-MED-GLYCOL-A1": {
+    "canonical_name": "Glykol / Kuehlfluessigkeit",
+    "category": "aqueous",
+    "ph_range": [7.0, 9.0],
+    "temperature_typical_c": [-40, 120],
+    "corrosivity": "low",
+    "compatible_material_families": ["elastomer", "ceramic", "polymer", "carbon"],
+    "norm_references": []
+  },
+  "STS-MED-ACID-A1": {
+    "canonical_name": "Schwache Saeuren (pH 3-6)",
+    "category": "chemical",
+    "ph_range": [3.0, 6.0],
+    "temperature_typical_c": [0, 80],
+    "corrosivity": "medium",
+    "compatible_material_families": ["ceramic", "polymer"],
+    "incompatible_materials": ["STS-MAT-WC-A1", "STS-MAT-GRAPH-A1"],
+    "norm_references": []
+  },
+  "STS-MED-ACID-B1": {
+    "canonical_name": "Starke Saeuren (pH < 3, z.B. H2SO4, HCl, HNO3)",
+    "category": "chemical",
+    "ph_range": [0.0, 3.0],
+    "temperature_typical_c": [0, 120],
+    "corrosivity": "very_high",
+    "compatible_material_families": ["ceramic", "polymer"],
+    "incompatible_materials": ["STS-MAT-WC-A1", "STS-MAT-GRAPH-A1", "STS-MAT-NBR-A1"],
+    "norm_references": []
+  },
+  "STS-MED-BASE-A1": {
+    "canonical_name": "Schwache Laugen (pH 8-11)",
+    "category": "chemical",
+    "ph_range": [8.0, 11.0],
+    "temperature_typical_c": [0, 80],
+    "corrosivity": "medium",
+    "compatible_material_families": ["ceramic", "polymer", "elastomer"],
+    "norm_references": []
+  },
+  "STS-MED-BASE-B1": {
+    "canonical_name": "Starke Laugen (pH > 11, z.B. NaOH, KOH)",
+    "category": "chemical",
+    "ph_range": [11.0, 14.0],
+    "temperature_typical_c": [0, 120],
+    "corrosivity": "very_high",
+    "compatible_material_families": ["ceramic", "polymer"],
+    "incompatible_materials": ["STS-MAT-SIC-B1", "STS-MAT-AL2O3-A1"],
+    "norm_references": []
+  },
+  "STS-MED-SOLVENT-A1": {
+    "canonical_name": "Loesemittel, allgemein (Aceton, Toluol, Xylol)",
+    "category": "chemical",
+    "ph_range": null,
+    "temperature_typical_c": [0, 80],
+    "corrosivity": "medium",
+    "compatible_material_families": ["ceramic", "polymer"],
+    "incompatible_materials": ["STS-MAT-NBR-A1", "STS-MAT-CR-A1", "STS-MAT-EPDM-A1"],
+    "norm_references": []
+  },
+  "STS-MED-H2S-A1": {
+    "canonical_name": "Schwefelwasserstoff (H2S) / Sauergas",
+    "category": "chemical",
+    "ph_range": null,
+    "temperature_typical_c": [0, 200],
+    "corrosivity": "very_high",
+    "compatible_material_families": ["ceramic", "cermet"],
+    "incompatible_materials": ["STS-MAT-NBR-A1", "STS-MAT-CR-A1"],
+    "norm_references": ["NACE MR0175", "ISO 15156"]
+  },
+  "STS-MED-FOOD-A1": {
+    "canonical_name": "Lebensmittelkontakt (FDA / EG 1935/2004)",
+    "category": "food_pharma",
+    "ph_range": [2.0, 12.0],
+    "temperature_typical_c": [0, 150],
+    "corrosivity": "low",
+    "compatible_material_families": ["elastomer", "polymer", "ceramic"],
+    "norm_references": ["FDA_21CFR177.2600", "EG_1935_2004", "EHEDG"]
+  },
+  "STS-MED-CIP-A1": {
+    "canonical_name": "CIP/SIP-Medien (NaOH 2%, HNO3 1.5%, Dampf 134 Grad C)",
+    "category": "food_pharma",
+    "ph_range": [1.5, 14.0],
+    "temperature_typical_c": [20, 140],
+    "corrosivity": "high",
+    "compatible_material_families": ["ceramic", "polymer"],
+    "incompatible_materials": ["STS-MAT-NBR-A1", "STS-MAT-CR-A1"],
+    "norm_references": ["EHEDG", "3-A_SSI"]
+  },
+  "STS-MED-NITROGEN-A1": {
+    "canonical_name": "Stickstoff (N2), gasfoermig",
+    "category": "gas",
+    "ph_range": null,
+    "temperature_typical_c": [-196, 200],
+    "corrosivity": "none",
+    "compatible_material_families": ["ceramic", "polymer", "cermet", "carbon", "elastomer"],
+    "norm_references": []
+  }
+}

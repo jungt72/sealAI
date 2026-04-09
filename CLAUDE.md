@@ -1,152 +1,250 @@
 # SealAI — Claude Code Arbeitsanweisung
-
-Du bist ein Senior Software Architect. Deine Aufgabe ist die schrittweise Migration
-des bestehenden SealAI-Stacks auf die Zielblaupause.
+**Letzte Aktualisierung:** 2026-04-07
+**Status:** Phase F — Foundation Cut AKTIV
 
 ---
 
 ## Verbindliche Dokumente
 
-| Dokument | Pfad | Funktion |
-|---|---|---|
-| **Blaupause V1.1** | `konzept/01_SealAI_Blaupause_v1.1` | **Normative Zielreferenz (aktuell).** Im Zweifel gilt die Blaupause V1.1 über alle anderen Dokumente. |
-| **Umbauplan V1** | `konzept/SEALAI_UMBAUPLAN_V1.md` | Operativer Migrationsplan. Verbindlich für alle Codeänderungen — außer im Konflikt mit Blaupause V1.1. |
-| **Kommunikations-Zielbild** | `konzept/SEALAI_KOMMUNIKATION_ZIELBILD.md` | Normatives Zielbild für Kommunikationsverhalten und Chat-Oberfläche. Maßstab für alle Kommunikations-Audits und Response-Renderer-Entscheidungen. |
-| **Blaupause V1** | `konzept/SealAI_Blaupause_v1` | Vorgängerversion. Nur noch als Referenz, nicht normativ. |
-| **Audit-Ergebnisse** | `konzept/audit/` | IST-Analyse, Delta-Tabelle, alter Umbauplan. Nur noch als Referenz. |
-| **Umsetzungsdoku** | `konzept/sealai_umsetzung.md` | Bestehende Umsetzungsdokumentation. |
+| Priorität | Dokument | Pfad | Funktion |
+|---|---|---|---|
+| 1 | **Finales Konzept** | `konzept/SEALAI_KONZEPT_FINAL` | Produkt, UX, Geschäftsmodell |
+| 1 | **Stack-Architektur** | `konzept/SEALAI_STACK_ARCHITEKTUR` | Vollständiger technischer Stack |
+| 2 | **Umbauplan V2** | `konzept/SEALAI_UMBAUPLAN_V2` | Operativer Migrationsplan (aktuell) |
+| 2 | **Kommunikations-Zielbild** | `konzept/SEALAI_KOMMUNIKATION_ZIELBILD.md` | Normatives Kommunikationsverhalten |
+| 3 | **Architekturnachtrag** | `konzept/audit/ARCHITEKTURNACHTRAG_2026-04-04.md` | Gate-Entscheidung (3-stufig) |
+| 3 | **IST-Audit** | `konzept/audit/AUDIT_IST_2026-04-06.md` | Aktueller IST-Zustand der Codebase |
 
-**Dokumentenhierarchie bei Konflikten:**
-> Blaupause V1.1 > Umbauplan V1 > Kommunikations-Zielbild > Blaupause V1 > Audit / Umsetzungsdoku
+> Bei Konflikten: Finales Konzept + Stack-Architektur > Umbauplan V2 > Kommunikations-Zielbild > Architekturnachtrag > IST-Audit
 
-**Lies den Umbauplan V1 vollständig, bevor du mit einer Aufgabe beginnst.
-Bei Widersprüchen zum Umbauplan gilt immer die Blaupause V1.1.**
+**Lies vor jeder Aufgabe mindestens Umbauplan V2 vollständig.**
 
 ---
 
-## Aktuelle Phase
+## Was SeaLAI ist (bindend)
 
-**Phase F — Foundation Cut** (noch nicht begonnen)
+SeaLAI ist der schnellste Weg von einem unklaren Dichtungsproblem
+zu einer belastbaren, herstellerfähigen Anfrage.
 
-Phase F ist ein zusammenhängender Architekturschnitt, kein inkrementelles Patching.
-Die drei internen Cuts (F-A, F-B, F-C) hängen zusammen und ergeben nur gemeinsam
-einen stabilen Zustand.
+**User (kostenlos):** Strukturierte Bedarfsanalyse ohne Fachwissen.
+Neutrale technische Vorauswahl. PDF + JSON-Payload für Hersteller.
 
-### Done-Kriterium Phase F
+**Hersteller (zahlt für Listing):** Nur qualifizierte Leads die passen.
+Alle technischen Daten strukturiert — kein Pre-Sales-Aufwand.
 
-Kein Domain Buildout (Phase G/H) starten, bevor dieses Kriterium bestanden ist:
-
-> Eine technische Anfrage (z.B. "PTFE-Dichtung für 180°C Dampf") durchläuft den
-> kompletten neuen Pfad:
-> 1. Gate entscheidet GOVERNED
-> 2. Session wird sticky (session_zone = governed)
-> 3. State durchläuft Observed → Normalized → Asserted → Governance
-> 4. Response kommt durch den Outward Contract sauber raus
-> 5. Kein Request landet in langgraph_v2/
->
-> Zusätzlich: Eine triviale Anfrage ("Was ist ein O-Ring?") bleibt im
-> Conversation Layer ohne Graph-Overhead.
-
-### Empfohlene Reihenfolge innerhalb Phase F
-```
-Cut F-A: Runtime Foundation
-  F-A.1  Binäres Gate               → runtime/gate.py
-  F-A.2  Session-Zonenbindung       → runtime/session_manager.py
-  F-A.3  Response Renderer          → runtime/response_renderer.py
-  F-A.4  Conversation Runtime       → runtime/conversation_runtime.py
-  F-A.5  langgraph_v2 entkoppeln
-
-Cut F-B: Governed State Foundation
-  F-B.1  State-Modelle zentralisieren → state/models.py
-  F-B.2  Deterministische Reducer     → state/reducers.py
-  F-B.3  Override-Endpoint härten
-  F-B.4  Persistenz aufteilen         → state/persistence.py
-
-Cut F-C: Governed Execution Foundation
-  F-C.1  Graph-Topologie (6 logische Zonen) → graph/nodes/*
-  F-C.2  Cycle Control                       → graph/cycle_control.py
-  F-C.3  State-Projektionen für UI           → state/projections.py
-```
-
-Details zu jedem Schritt stehen im Umbauplan V1.
+**Haftung:** Liegt beim Hersteller. SeaLAI gibt Vorauswahl auf Basis
+von Parametern und `fit_score` — nie "Wahrscheinlichkeit".
+Finale Freigabe: Hersteller.
 
 ---
 
-## Architektur-Invarianten (nicht verhandelbar)
+## Architektur-Kernentscheidungen (alle bindend)
 
-Jede Codeänderung muss gegen diese Regeln geprüft werden:
+### Gate: 3-stufig
+```
+CONVERSATION  kein Domänenparameter → 1 LLM-Call, < 1s
+EXPLORATION   Domänenkontext, keine vollst. Parameter → 1 RAG + 1 LLM, < 3s
+GOVERNED      vollst./teilw. Parameter für RWDR/RC → 8-Node Subgraph
+```
+Bias zu GOVERNED bei Unsicherheit. Zone-Stickiness: nur aufsteigend.
+
+### State: 6 Schichten (TypedDict + Pydantic V2)
+```
+ObservedState      LLM schreibt NUR hier
+NormalizedState    deterministisch — Terminologie, Einheiten
+DerivedState       deterministisch — RWDR, PV-Wert, RC, Suitability
+EvidenceState      RAG — source + doc_version + trust_level
+DecisionState      deterministisch — outward_class, preselection, assumptions
+ActionReadiness    PDF-Status, idempotency_key, inquiry_sent
+```
+Stale-State via DEPENDENCY_MAP. Idempotency Keys für alle Side Effects.
+Revisionsbindung aller Artefakte an `decision_basis_hash`.
+
+### Governed Subgraph: 8 Kern-Nodes
+```
+intake_observe → normalize_node → assert_node → evidence_node →
+compute_node → governance_node → output_contract → cycle_control/renderer
+```
+MAX_CYCLES = 3. Nach Limit: `incomplete_analysis` oder
+`assumptions_require_confirmation` — kein stilles Weiterlaufen.
+
+### Prompts: Jinja2 (PromptRegistry Singleton)
+Kein f-string in Python. Alle Prompts unter `agent/prompts/`.
+LLM bekommt State-Snapshot via `build_renderer_context()` — nie rohen Chat.
+
+### STS: internes Canonical Model
+STS-MAT-* / STS-TYPE-* / STS-RS-* / STS-MED-* / STS-OPEN-*
+Intern für Matching + Payload. Nach außen: Fachsprache + Normbezüge.
+Niemals als "Standard" vermarktet oder so benannt.
+
+### PDF: via Gotenberg
+Jinja2 HTML-Template → Gotenberg → PDF.
+Idempotency Key verhindert Doppel-Erzeugung.
+Jedes PDF an exakten `state_hash` gebunden.
+
+### RAG: Paperless-ngx → Qdrant
+Admin taggt Datenblätter in Paperless (`doc_type:datasheet`, `sts_mat:STS-MAT-SIC-A1` etc.)
+→ Webhook → Ingest-Service → Chunking + Embedding (384-dim MiniLM) → Qdrant.
+Collection: `sealai_technical_docs`, Hybrid BM25 + Semantic.
+
+### Outward Response Classes (6)
+```
+conversational_answer      CONVERSATION + EXPLORATION
+structured_clarification   alle Pfade
+governed_state_update      GOVERNED
+technical_preselection     GOVERNED  ← nie "governed_recommendation"
+candidate_shortlist        GOVERNED
+inquiry_ready              GOVERNED  ← nie "rfq_ready"
+```
+`fit_score` — nie "Wahrscheinlichkeit".
+Kein "ist geeignet für". Kein "garantiert". Kein "wird funktionieren".
+
+---
+
+## Stack
+
+```
+Service               Version       Rolle
+──────────────────────────────────────────────────────────
+backend (FastAPI)     aktuell       KI-Kern + LangGraph 1.1.6
+nginx                 1.29.4        Reverse Proxy + TLS + SSE
+keycloak              2026.04.03    Auth (OIDC/JWT)
+redis-stack-server    7.4.0-v8      Checkpoint v3 + Session + Cache
+postgres:15           15            Cases + Audit + State Snapshots
+qdrant                v1.16.0       Vector DB (RAG, Hybrid)
+paperless-ngx         2.20.10       RAG-Admin (Upload + Tag + Webhook)
+tika                  2.9.2.1       OCR + Extraktion
+gotenberg             8.15.0        PDF-Erzeugung
+prometheus            latest        Metrics
+grafana               latest        Dashboards
+──────────────────────────────────────────────────────────
+ERPNext               —             NICHT in Scope
+```
+
+LLM: `gpt-4o-mini` (Gate/Classify) · `gpt-4o` (Observe/Render)
+
+---
+
+## Invarianten (nicht verhandelbar)
 
 1. `backend/app/agent/` ist die einzige produktive Zielarchitektur.
-2. `backend/app/langgraph_v2/` ist read-only Legacy. Keine Erweiterungen, keine neuen Imports.
-3. Gate ist binär: `CONVERSATION | GOVERNED`. Kein Mehrpfad-Routing.
-4. LLM darf nur in `ObservedState` schreiben — alles Weitere deterministisch.
-5. RAG nur über strukturierte `EvidenceQuery`, nie auf rohem Nutzertext.
-6. Matching nie vor technischer Einengung (mindestens Governance-Klasse B).
-7. RFQ nie ohne deterministische Admissibility.
-8. Keine internen State-/Governance-Artefakte im API-Response.
-9. User-Override schreibt immer in `ObservedState`, nie direkt nach Normalized/Governance.
+2. `backend/app/langgraph_v2/` ist read-only Legacy. Nicht anfassen.
+3. Gate ist 3-stufig: `CONVERSATION | EXPLORATION | GOVERNED`.
+4. LLM schreibt nur in `ObservedState`.
+5. RAG nur über `EvidenceQuery` / `ExplorationQuery` — nie roher Text.
+6. Matching nie vor technischer Einengung (mind. Governance-Klasse B).
+7. Inquiry nie ohne deterministische Admissibility.
+8. Keine internen State-Artefakte im API-Response.
+9. User-Override schreibt immer in `ObservedState`.
 10. Kein Multi-Agenten-Theater, keine freie Node-Generierung.
+11. `FastBrainRouter` nicht in EXPLORATION.
+12. `selection.py` nur zerlegen — nicht erweitern.
+13. `technical_preselection` statt `governed_recommendation`.
+14. `fit_score` statt "Wahrscheinlichkeit" in allen Outputs.
+15. `inquiry_ready` statt `rfq_ready`.
+16. Jinja2 für alle Prompts — kein f-string in Python.
 
 ---
 
-## Outward Response Classes
+## Aktuelle Phase: F — Foundation Cut
 
-Jede Antwort nach außen muss einer dieser Klassen zugeordnet sein.
-Das LLM darf keine Klasse simulieren, die deterministisch nicht erreicht wurde.
+Audit abgeschlossen (2026-04-07). Umbauplan V2 liegt vor.
+Phase F beginnt jetzt mit W1.1.
 
-| Klasse | Bedeutung | Erlaubte Autorität |
-|---|---|---|
-| `conversational_answer` | Freie Kommunikation, Orientierung | Keine technische Autorität |
-| `structured_clarification` | Gezielte Rückfrage | Fehlende/widersprüchliche Kerndaten |
-| `governed_state_update` | Sichtbare Strukturierung | Belastbar erfasste Parameter und Annahmen |
-| `governed_recommendation` | Technische Einengung | Requirement Class, Scope of Validity, offene Prüfpunkte |
-| `manufacturer_match_result` | Kandidatenliste | Begründete Herstellerreihenfolge, keine finale Produktfreigabe |
-| `rfq_ready` | Versandfähige Anfragebasis | Strukturierter Anfragekörper für Herstellerfreigabe |
+### Phase F Done-Kriterium
 
-**Keine Klasse darf übersprungen werden. Kein freier Chattext führt direkt zu `rfq_ready`.**
+```
+✓ "Gleitring für 80°C Salzwasser, 50mm, 6000 U/min"
+  → Gate: GOVERNED → 8 Nodes → technical_preselection
+  → Token-Stream am Frontend sichtbar
+  → Cockpit: Parameter + PV-Wert + Vorauswahl
+  → PDF via Gotenberg erzeugbar
+  → Audit-Log in PostgreSQL
+
+✓ "Welche Materialien für Salzwasser?"
+  → Gate: EXPLORATION → 1 RAG + 1 LLM → conversational_answer
+
+✓ "Hallo, wie geht es dir?"
+  → Gate: CONVERSATION → direkt, < 1s
+
+✓ Kein Request in langgraph_v2/
+✓ Alle 1.573 Tests grün
+✓ LangSmith zeigt Traces
+✓ Gotenberg + Tika Container laufen
+```
+
+### Reihenfolge innerhalb Phase F
+
+```
+Woche 1 — Daten + Fundament
+  W1.1  STS-Seed-Files anlegen         → agent/data/sts/*.json
+  W1.2  Qdrant Collection fixen        → sealai_technical_docs, 384-dim
+  W1.3  PromptRegistry implementieren  → agent/prompts/__init__.py
+  W1.4  Gate-Routen umbenennen         → CONVERSATION/EXPLORATION/GOVERNED
+  W1.5  25 fehlgeschlagene Tests fixen
+
+Woche 2 — State + RAG
+  W2.1  State auf 6 Schichten mappen   → DerivedState, EvidenceState, etc.
+  W2.2  DEPENDENCY_MAP implementieren  → reducers.py
+  W2.3  Idempotency + basis_hash       → models.py, persistence.py
+  W2.4  EvidenceQuery + ExplorationQuery → evidence/
+  W2.5  evidence_node verbinden
+  W2.6  Pilot-Datenblätter in Paperless laden
+
+Woche 3 — Naming + Legacy
+  W3.1  Outward-Class-Rename (atomar)  → technical_preselection, inquiry_ready
+  W3.2  Legacy-Import-Entkopplung      → 15+ Dateien
+  W3.3  V2-Endpoint Feature-Flag
+  W3.4  interaction_policy + FastBrainRouter entfernen
+  W3.5  Keycloak-Rollen anlegen
+
+Woche 4 — Pipeline + Integration
+  W4.1  Gotenberg + Tika Container starten
+  W4.2  Gotenberg-Client implementieren
+  W4.3  Inquiry HTML-Template (Jinja2)
+  W4.4  interrupt() für Clarification
+  W4.5  StreamWriter Progress-Events
+  W4.6  PostgreSQL Cases + State-Snapshots
+```
+
+Details zu jedem Schritt: `konzept/SEALAI_UMBAUPLAN_V2`
 
 ---
 
 ## Arbeitsregeln
 
 ### Vor jeder Aufgabe
-- Lies den Umbauplan V1 (`konzept/SEALAI_UMBAUPLAN_V1.md`), mindestens den relevanten Abschnitt.
-- Lies bei Unklarheit die Blaupause V1.1 (`konzept/01_SealAI_Blaupause_v1.1`).
-- Prüfe: Welche Phase? Ist das Done-Kriterium der Vorphase bestanden?
-- Prüfe: Welche bestehenden Dateien werden angefasst? Welche neuen entstehen?
-- Prüfe: Verstößt die geplante Änderung gegen eine der Architektur-Invarianten?
+- Lies `konzept/SEALAI_UMBAUPLAN_V2` vollständig (mind. relevanten Abschnitt).
+- Prüfe: Welche Woche? Welcher Schritt?
+- Prüfe: Verstößt die Änderung gegen eine der 16 Invarianten?
+- Prüfe: Welche bestehenden Dateien werden angefasst?
+- Prüfe: Bleiben alle 1.573 Tests grün?
 
 ### Während der Arbeit
-- Kleine, testbare Schritte. Jeder Commit muss die bestehenden Tests grün lassen.
-- Tests schreiben, bevor oder parallel zum Code.
-- Keine Imports aus `langgraph_v2/`.
-- Keine direkten Writes in NormalizedState/AssertedState/GovernanceState außer über Reducer.
+- Kleine, testbare Schritte. Tests grün nach jedem Commit.
+- Tests parallel zum Code schreiben.
+- Keine Imports aus `langgraph_v2/` oder `_legacy_v2/`.
+- Keine direkten State-Writes außer über Reducer.
+- `fit_score` statt Wahrscheinlichkeit.
+- `technical_preselection` statt `governed_recommendation`.
+- `inquiry_ready` statt `rfq_ready`.
+- Jinja2 für alle Prompts — kein f-string.
 
 ### Nach jeder Aufgabe
-- Alle bestehenden Tests grün?
+- Alle Tests grün?
 - Neue Tests grün?
-- Wenn Phase F: End-to-End-Smoketest (technische Anfrage → GOVERNED → clean Response)?
+- Wenn Phase F: End-to-End Smoketest möglich?
 
 ### Was du NICHT tun sollst
-- Phase G/H-Aufgaben starten, bevor Phase F Done-Kriterium bestanden ist.
-- Bestehende funktionierende Domänenlogik (RWDR-Calc, Normalization, Boundaries) neu erfinden — verschieben und einbetten, nicht ersetzen.
-- `langgraph_v2/` weiterentwickeln oder neue Features darin bauen.
-- Architekturentscheidungen treffen, die nicht im Umbauplan oder der Blaupause stehen — stattdessen Frage stellen.
-- Eine höhere Outward Response Class ausgeben, als der deterministische State erlaubt.
-
----
-
-## Audit-Aufgaben (read-only)
-
-Wenn eine Aufgabe explizit als **Audit** markiert ist, gelten zusätzlich:
-
-- Kein Refactoring, keine Codeänderungen, keine neuen Dateien außer dem Report.
-- Audit-Reports werden unter `konzept/audit/` abgelegt.
-- Bewertungsmaßstab für Kommunikations-Audits ist das **Kommunikations-Zielbild**
-  (`konzept/SEALAI_KOMMUNIKATION_ZIELBILD.md`).
-- Bewertungsmaßstab für Architektur-Audits ist die **Blaupause V1.1**.
-- Der Report dokumentiert ausschließlich den IST-Zustand — keine SOLL-Empfehlungen,
-  es sei denn explizit angefordert.
+- Phase G/H starten bevor Phase F Done-Kriterium bestanden ist.
+- `selection.py` erweitern (nur zerlegen).
+- `langgraph_v2/` oder `_legacy_v2/` weiterentwickeln.
+- STS als externen Standard benennen.
+- conservative assumptions nach MAX_CYCLES.
+- f-strings für Prompts verwenden.
+- `governed_recommendation`, `rfq_ready` oder "Wahrscheinlichkeit" einführen.
+- Architekturentscheidungen treffen die nicht im Umbauplan stehen
+  — stattdessen Frage stellen.
 
 ---
 
@@ -157,45 +255,115 @@ Wenn eine Aufgabe explizit als **Audit** markiert ist, gelten zusätzlich:
 backend/app/agent/          ← Single Source of Truth
 ```
 
-### Legacy (read-only, wird abgeschaltet)
+### Legacy (read-only, wird schrittweise entfernt)
 ```
-backend/app/langgraph_v2/   ← Nicht anfassen, wird in Phase F-A.5 deprecated
-```
-
-### Referenzdokumente
-```
-konzept/01_SealAI_Blaupause_v1.1          ← Normative Zielreferenz (aktuell)
-konzept/SEALAI_UMBAUPLAN_V1.md            ← Operativer Migrationsplan
-konzept/SEALAI_KOMMUNIKATION_ZIELBILD.md  ← Kommunikations-Zielbild (normativ)
-konzept/SealAI_Blaupause_v1               ← Vorgänger (nur Referenz)
-konzept/audit/                             ← Audit-Ergebnisse
+backend/app/langgraph_v2/   ← Feature-Flag, wird deaktiviert (W3.3)
+backend/app/_legacy_v2/     ← Adapter, wird nach Entkopplung entfernt (W3.2)
 ```
 
-### Ziel-Ordnerstruktur (Endzustand nach Phase F)
+### Ziel-Ordnerstruktur nach Phase F
 ```
 backend/app/agent/
-├── api/              # FastAPI-Einstieg, SSE, Models
-├── runtime/          # Gate, Session, Conversation Runtime, Response Renderer
-├── state/            # 4-Schicht-Modelle, Reducer, Persistenz, Projektionen
-├── graph/            # LangGraph-Topologie, Nodes, Cycle Control
-├── domain/           # Normalization, Rules, RequirementClass, Recommendation
-├── evidence/         # Evidence-Modelle, Query Builder, Retrieval, Claims
-├── compute/          # Compute-Dispatch, Sandbox, Calculators
-├── matching/         # Hersteller-Profile, Eligibility, Filter, Ranking
-├── rfq/              # RFQ-Domain, Admissibility, Builder, Exporter
-├── review/           # HITL Review Service
-├── data/             # Seed-Daten (Hersteller etc.)
-└── tests/
+├── api/
+│   ├── handlers/           chat_handler, upload_handler, inquiry_handler
+│   └── sse/                stream.py
+├── prompts/                PromptRegistry + alle Jinja2-Templates
+│   ├── renderer/           base.j2, conversational.j2, clarification.j2,
+│   │                       state_update.j2, preselection.j2,
+│   │                       candidate_list.j2, inquiry_ready.j2
+│   ├── gate/               gate_classify.j2
+│   ├── intake/             observe.j2
+│   ├── exploration/        explore.j2, compare.j2, detail.j2
+│   └── pdf/                inquiry.html.j2, styles.css
+├── runtime/
+│   ├── gate.py             3-Way Gate + Command
+│   ├── session_manager.py  thread_id v3, Stickiness
+│   ├── conversation_runtime.py
+│   ├── exploration_runtime.py
+│   └── response_renderer.py
+├── graph/
+│   ├── main_graph.py
+│   ├── governed_subgraph.py
+│   ├── nodes/              8 Kern-Nodes + StreamWriter
+│   └── topology.py
+├── state/
+│   ├── models.py           6 Schichten
+│   ├── reducers.py         + DEPENDENCY_MAP
+│   ├── persistence.py      Redis Checkpoint v3
+│   └── projections.py      Cockpit-Tiles
+├── evidence/
+│   ├── evidence_query.py
+│   ├── exploration_query.py
+│   └── retrieval.py        Qdrant Hybrid Search
+├── domain/
+│   ├── normalization.py
+│   ├── rwdr_calc.py
+│   ├── requirement_class.py
+│   ├── threshold.py
+│   └── fit_score.py
+├── sts/
+│   ├── loader.py
+│   └── codes.py
+├── manufacturers/
+│   ├── capability_db.py
+│   ├── matching_engine.py
+│   └── payload_builder.py
+├── documents/
+│   ├── tika_client.py
+│   └── pdf_generator.py    → Gotenberg
+├── rag/
+│   ├── ingest_service.py   Paperless-Webhook → Qdrant
+│   └── setup_collections.py
+└── data/
+    ├── sts/                materials.json, sealing_types.json,
+    │                       requirement_classes.json, media.json,
+    │                       open_points.json
+    ├── manufacturers/      pilot_manufacturers.json
+    └── ontology/           failure_modes.json, norm_map.json
 ```
 
 ---
 
 ## Phasenübersicht
 
-| Phase | Name | Status | Charakter |
+| Phase | Name | Status | Startet nach |
 |---|---|---|---|
-| **F** | Foundation Cut | **AKTIV** | Zusammenhängender Architekturschnitt |
-| **G** | Domain Buildout | WARTET | Inkrementell, erst nach Phase F Done |
-| **H** | Commercial Buildout | WARTET | Inkrementell, erst nach Phase G Teilabschluss |
+| AUDIT | IST-Analyse | ERLEDIGT 2026-04-07 | — |
+| **F** | Foundation Cut | **AKTIV** | Audit ✓ |
+| G | Domain Buildout | WARTET | Phase F Done |
+| H | Commercial Buildout | WARTET | Phase G Teilabschluss |
 
-Aktualisiere diese Tabelle, wenn eine Phase abgeschlossen wird.
+---
+
+## Erster Prompt für Phase F
+
+```
+Lies konzept/SEALAI_UMBAUPLAN_V2 vollständig.
+
+Starte W1.1: Erstelle die STS-Seed-Files.
+
+Neue Dateien:
+  backend/app/agent/data/sts/materials.json
+  backend/app/agent/data/sts/sealing_types.json
+  backend/app/agent/data/sts/requirement_classes.json
+  backend/app/agent/data/sts/media.json
+  backend/app/agent/data/sts/open_points.json
+
+Dann:
+  backend/app/agent/sts/__init__.py
+  backend/app/agent/sts/loader.py
+  backend/app/agent/sts/codes.py
+
+Dann:
+  backend/app/agent/tests/test_sts_loader.py
+
+Anforderungen:
+- Mindestens 15 Materialcodes (STS-MAT-*) inkl. SiC, FKM, PTFE, EPDM, NBR, FKM-HT, WC, Grafit
+- Mindestens 10 Dichtungstypen (STS-TYPE-*) inkl. GS-S, GS-CART, GS-D, RWDR-A, RWDR-B, OR-A, FLAT-A
+- Mindestens 6 Requirement Classes (STS-RS-*)
+- Mindestens 15 Mediumcodes (STS-MED-*)
+- Mindestens 10 offene Prüfpunkte (STS-OPEN-*)
+- loader.py: JSON laden + validieren (keine Duplikate, Pflichtfelder)
+- codes.py: get_material(code), get_sealing_type(code), is_valid_code(code)
+- Alle bestehenden 1.548 Tests müssen weiter grün bleiben.
+```

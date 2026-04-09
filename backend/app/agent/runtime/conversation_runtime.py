@@ -88,7 +88,7 @@ _MEDIUM_MENTION_RE = re.compile(
     re.IGNORECASE,
 )
 
-ConversationLightMode = Literal["instant_light_reply", "light_exploration"]
+ConversationLightMode = Literal["CONVERSATION", "EXPLORATION"]
 
 # ---------------------------------------------------------------------------
 # SSE helpers
@@ -154,7 +154,7 @@ def _build_messages(
     )
     phase_prompt = (
         None
-        if mode == "instant_light_reply"
+        if mode == "CONVERSATION"
         else build_conversation_phase_prompt(
             turn_context=turn_context,
             latest_user_text=_last_user_turn_text(message, history),
@@ -163,7 +163,7 @@ def _build_messages(
     )
     system_prompt = (
         None
-        if mode == "instant_light_reply"
+        if mode == "CONVERSATION"
         else phase_prompt or _prompt_builder.conversation(case_summary=case_summary)
     )
     msgs: list[dict[str, str]] = []
@@ -374,7 +374,7 @@ def _build_conversation_strategy_contract(
         rotary_context_detected=bool({"speed_rpm", "shaft_diameter_mm"} & known_fields),
     )
 
-    if mode == "instant_light_reply":
+    if mode == "CONVERSATION":
         return ConversationStrategyContract(
             conversation_phase="rapport" if turn_index == 1 else "exploration",
             turn_goal="answer_light_request",
@@ -383,7 +383,7 @@ def _build_conversation_strategy_contract(
             primary_question_reason="",
             response_mode="guided_explanation",
         )
-    if mode == "light_exploration":
+    if mode == "EXPLORATION":
         conversation_phase = "exploration"
     else:
         if turn_index == 1 and not has_case_context:

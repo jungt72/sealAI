@@ -55,6 +55,23 @@ services:
       timeout: 5s
       retries: 3
 
+  gotenberg:
+    image: gotenberg/gotenberg:8.15.0
+    container_name: gotenberg
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --chromium-allow-list=file:///tmp/.*
+    expose:
+      - "3000"
+
+  tika:
+    image: apache/tika:2.9.2.1
+    container_name: tika
+    restart: unless-stopped
+    expose:
+      - "9998"
+
   keycloak:
     container_name: keycloak
     depends_on:
@@ -84,6 +101,8 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       qdrant: { condition: service_started }
+      gotenberg: { condition: service_started }
+      tika: { condition: service_started }
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-sealai}
@@ -94,6 +113,8 @@ services:
       POSTGRES_SYNC_URL: ${POSTGRES_SYNC_URL:-postgresql://${POSTGRES_USER:-sealai}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-sealai}}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION}
+      GOTENBERG_URL: ${GOTENBERG_URL:-http://gotenberg:3000}
+      TIKA_URL: ${TIKA_URL:-http://tika:9998}
       REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
       RAG_UPLOAD_DIR: "/app/data/uploads"
       HF_HOME: "/app/data/models"

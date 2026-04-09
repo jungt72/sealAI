@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from typing import Literal, TypedDict
 
+from app.agent.runtime.outward_names import normalize_outward_response_class
+
 
 OutwardResponseClass = Literal[
     "conversational_answer",
     "structured_clarification",
     "governed_state_update",
-    "governed_recommendation",
-    "manufacturer_match_result",
-    "rfq_ready",
+    "technical_preselection",
+    "candidate_shortlist",
+    "inquiry_ready",
 ]
 
 
@@ -135,8 +137,8 @@ SURFACE_CLAIMS_SPECS: dict[OutwardResponseClass, SurfaceClaimsSpec] = {
         "class_guard": "Beschreibe nur den belastbaren Status, aber keine finale Empfehlung und keine Hersteller- oder RFQ-Freigabe.",
         "fallback_text": "Ich habe die belastbaren Parameter und offenen Pruefpunkte strukturiert zusammengefasst.",
     },
-    "governed_recommendation": {
-        "response_class": "governed_recommendation",
+    "technical_preselection": {
+        "response_class": "technical_preselection",
         "allowed_claims": [
             "Requirement Class",
             "Scope of Validity",
@@ -163,8 +165,8 @@ SURFACE_CLAIMS_SPECS: dict[OutwardResponseClass, SurfaceClaimsSpec] = {
         "class_guard": "Beschreibe Requirement Class, Scope und offene Pruefpunkte, aber keine finale Freigabe, Garantie oder Versandfreigabe.",
         "fallback_text": "Ich kann die technische Richtung belastbar einordnen und die offenen Pruefpunkte klar benennen.",
     },
-    "manufacturer_match_result": {
-        "response_class": "manufacturer_match_result",
+    "candidate_shortlist": {
+        "response_class": "candidate_shortlist",
         "allowed_claims": [
             "Kandidatenrahmen",
             "Fit-Begruendung",
@@ -190,8 +192,8 @@ SURFACE_CLAIMS_SPECS: dict[OutwardResponseClass, SurfaceClaimsSpec] = {
         "class_guard": "Bleibe beim Kandidatenrahmen, der Fit-Begruendung und offenen Herstellerpruefung.",
         "fallback_text": "Ich kann den Herstellerkandidatenrahmen technisch begruenden, aber keine finale Herstellerfreigabe vorwegnehmen.",
     },
-    "rfq_ready": {
-        "response_class": "rfq_ready",
+    "inquiry_ready": {
+        "response_class": "inquiry_ready",
         "allowed_claims": [
             "versandfaehige Anfragebasis",
             "offene Herstellerpruefpunkte",
@@ -226,8 +228,9 @@ def get_surface_claims_spec(
     fallback_text: str | None = None,
 ) -> SurfaceClaimsSpec:
     resolved_class: OutwardResponseClass
-    if response_class in SURFACE_CLAIMS_SPECS:
-        resolved_class = response_class  # type: ignore[assignment]
+    normalized = normalize_outward_response_class(response_class)
+    if normalized in SURFACE_CLAIMS_SPECS:
+        resolved_class = normalized  # type: ignore[assignment]
     else:
         resolved_class = "structured_clarification"
     spec = dict(SURFACE_CLAIMS_SPECS[resolved_class])

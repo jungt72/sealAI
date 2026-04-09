@@ -27,10 +27,28 @@ from __future__ import annotations
 
 import logging
 
+from langgraph.config import get_stream_writer
+from langgraph.types import Command
+
 from app.agent.graph import GraphState
+from app.agent.graph.cycle_control import CycleDecision, decide_cycle
 from app.agent.state.reducers import reduce_asserted_to_governance
 
 log = logging.getLogger(__name__)
+
+
+def _emit_progress_event(payload: dict) -> None:
+    try:
+        get_stream_writer()(payload)
+    except RuntimeError:
+        return
+
+
+def _governance_command_goto(state: GraphState) -> str:
+    decision = decide_cycle(state)
+    if decision == CycleDecision.CONTINUE:
+        return "cycle_increment"
+    return "matching"
 
 
 async def governance_node(state: GraphState) -> GraphState:
@@ -54,5 +72,22 @@ async def governance_node(state: GraphState) -> GraphState:
         state.analysis_cycle,
         state.max_cycles,
     )
+    from app.agent.graph.nodes.output_contract_node import _determine_response_class
 
-    return state.model_copy(update={"governance": governance})
+    governed_state = state.model_copy(update={"governance": governance})
+    _emit_progress_event(
+        {
+            "event_type": "governance_ready",
+            "outward_class": _determine_response_class(governed_state),
+        }
+    )
+
+    return governed_state
+
+
+async def governance_routing_node(state: GraphState) -> Command:
+    governed_state = await governance_node(state)
+    return Command(
+        update={"governance": governed_state.governance},
+        goto=_governance_command_goto(governed_state),
+    )

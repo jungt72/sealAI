@@ -24,5 +24,5 @@ echo ">> Validating .env.prod and pinned production image refs"
 
 cd "$REPO_ROOT"
 prepare_backend_volume
-docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml pull backend keycloak
-docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml up -d --remove-orphans backend keycloak
+docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml pull backend keycloak gotenberg tika
+docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml up -d --remove-orphans backend keycloak gotenberg tika

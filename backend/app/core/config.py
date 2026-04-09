@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     qdrant_collection: str = "sealai_knowledge"
     qdrant_collection_ltm: Optional[str] = "sealai_ltm"
     rag_k: int = 4
+    gotenberg_url: Optional[str] = None
+    tika_url: Optional[str] = None
+    paperless_url: Optional[str] = None
+    paperless_token: Optional[str] = None
+    paperless_webhook_token: Optional[str] = None
 
     # Weiteres (Redis, Auth, Memory etc.)
     redis_url: str
@@ -59,6 +64,7 @@ class Settings(BaseSettings):
     # Rollback remains env-only: set either flag to false.
     SEALAI_ENABLE_BINARY_GATE: bool = True
     SEALAI_ENABLE_CONVERSATION_RUNTIME: bool = True
+    ENABLE_LEGACY_V2_ENDPOINT: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

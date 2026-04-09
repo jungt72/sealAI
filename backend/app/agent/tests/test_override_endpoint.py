@@ -71,6 +71,7 @@ async def test_session_override_endpoint_persists_structured_override(monkeypatc
     assert response.session_id == "case-123"
     assert response.applied_fields == ["medium", "pressure_bar", "temperature_c"]
     assert response.governance.gov_class == "A"
+    assert response.governance.inquiry_admissible is True
     assert response.governance.rfq_admissible is True
 
     persisted = await load_governed_state_async(

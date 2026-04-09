@@ -34,8 +34,11 @@ from __future__ import annotations
 
 import logging
 
+from langgraph.config import get_stream_writer
+
+from app.agent.evidence.evidence_query import EvidenceQuery
+from app.agent.evidence.retrieval import retrieve_evidence
 from app.agent.graph import GraphState
-from app.agent.services.real_rag import retrieve_with_tenant
 
 log = logging.getLogger(__name__)
 
@@ -51,9 +54,16 @@ _FIELD_UNIT: dict[str, str] = {
 }
 
 
+def _emit_progress_event(payload: dict) -> None:
+    try:
+        get_stream_writer()(payload)
+    except RuntimeError:
+        return
+
+
 def _build_retrieval_audit(
     *,
-    query: str,
+    query: EvidenceQuery,
     cards: list[dict],
     metrics: dict | None,
 ) -> dict:
@@ -69,7 +79,18 @@ def _build_retrieval_audit(
             }
         )
     return {
-        "query": query,
+        "query": query.topic,
+        "query_contract": {
+            "topic": query.topic,
+            "detected_sts_codes": list(query.detected_sts_codes),
+            "query_intent": query.query_intent,
+            "language": query.language,
+            "max_results": query.max_results,
+        },
+        "event": {
+            "event_type": "evidence_retrieved",
+            "sources_count": len(cards),
+        },
         "k_requested": metrics.get("k_requested") if isinstance(metrics, dict) else None,
         "k_returned": metrics.get("k_returned") if isinstance(metrics, dict) else len(cards),
         "threshold": metrics.get("threshold") if isinstance(metrics, dict) else None,
@@ -81,8 +102,8 @@ def _build_retrieval_audit(
     }
 
 
-def _build_evidence_query(state: GraphState) -> str | None:
-    """Build a structured query string from AssertedState.
+def _build_evidence_query(state: GraphState) -> EvidenceQuery | None:
+    """Build a structured query contract from derived/asserted state.
 
     Returns None if there are no asserted parameters to query on.
     The query is deterministic — no LLM, no randomness.
@@ -112,9 +133,42 @@ def _build_evidence_query(state: GraphState) -> str | None:
     if not parts:
         return None
 
-    query = " ".join(parts) + " Dichtung"
-    log.debug("[evidence_node] built query: %r (from %d assertions)", query, len(assertions))
+    topic = " ".join(parts) + " Dichtung"
+    detected_sts_codes: list[str] = []
+    requirement_class = state.derived.requirement_class or state.governance.requirement_class
+    if requirement_class is not None and requirement_class.class_id:
+        detected_sts_codes.append(requirement_class.class_id)
+
+    query = EvidenceQuery(
+        topic=topic,
+        detected_sts_codes=detected_sts_codes,
+        query_intent="material_suitability",
+        max_results=_EVIDENCE_K,
+    )
+    log.debug("[evidence_node] built EvidenceQuery topic=%r assertions=%d", topic, len(assertions))
     return query
+
+
+def _extract_source_versions(cards: list[dict]) -> dict[str, str]:
+    source_versions: dict[str, str] = {}
+    for card in cards:
+        metadata = card.get("metadata") if isinstance(card.get("metadata"), dict) else {}
+        source_key = (
+            card.get("evidence_id")
+            or card.get("id")
+            or card.get("source_ref")
+            or metadata.get("doc_id")
+            or metadata.get("id")
+        )
+        version_value = (
+            metadata.get("checksum")
+            or metadata.get("source_version")
+            or metadata.get("doc_version")
+            or metadata.get("version")
+        )
+        if source_key and version_value:
+            source_versions[str(source_key)] = str(version_value)
+    return source_versions
 
 
 async def evidence_node(state: GraphState) -> GraphState:
@@ -141,25 +195,43 @@ async def evidence_node(state: GraphState) -> GraphState:
         )
         return state
 
-    query = _build_evidence_query(state)
-    if query is None:
+    evidence_query = _build_evidence_query(state)
+    if evidence_query is None:
         log.debug("[evidence_node] empty query — skipping retrieval")
         return state
 
     try:
-        cards, metrics = await retrieve_with_tenant(
-            query=query,
+        cards, metrics = await retrieve_evidence(
+            evidence_query,
             tenant_id=state.tenant_id,
-            k=_EVIDENCE_K,
             return_metrics=True,
         )
-        audit = _build_retrieval_audit(query=query, cards=cards, metrics=metrics)
+        audit = _build_retrieval_audit(query=evidence_query, cards=cards, metrics=metrics)
+        source_versions = _extract_source_versions(cards)
         log.debug(
             "[evidence_node] retrieved %d evidence cards (tenant=%s)",
             len(cards),
             state.tenant_id,
         )
-        return state.model_copy(update={"rag_evidence": cards, "rag_evidence_audit": audit})
+        _emit_progress_event(
+            {
+                "event_type": "evidence_retrieved",
+                "sources_count": len(cards),
+            }
+        )
+        return state.model_copy(
+            update={
+                "rag_evidence": cards,
+                "rag_evidence_audit": audit,
+                "evidence": state.evidence.model_copy(
+                    update={
+                        "evidence_results": cards,
+                        "source_versions": source_versions,
+                        "retrieval_query": evidence_query.topic,
+                    }
+                ),
+            }
+        )
 
     except Exception as exc:
         log.warning(
@@ -167,13 +239,37 @@ async def evidence_node(state: GraphState) -> GraphState:
             type(exc).__name__,
             exc,
         )
+        _emit_progress_event(
+            {
+                "event_type": "evidence_retrieved",
+                "sources_count": 0,
+            }
+        )
         return state.model_copy(
             update={
                 "rag_evidence": [],
+                "evidence": state.evidence.model_copy(
+                    update={
+                        "evidence_results": [],
+                        "source_versions": {},
+                        "retrieval_query": evidence_query.topic,
+                    }
+                ),
                 "rag_evidence_audit": {
-                    "query": query,
+                    "query": evidence_query.topic,
+                    "query_contract": {
+                        "topic": evidence_query.topic,
+                        "detected_sts_codes": list(evidence_query.detected_sts_codes),
+                        "query_intent": evidence_query.query_intent,
+                        "language": evidence_query.language,
+                        "max_results": evidence_query.max_results,
+                    },
+                    "event": {
+                        "event_type": "evidence_retrieved",
+                        "sources_count": 0,
+                    },
                     "error": f"{type(exc).__name__}: {exc}",
-                    "k_requested": _EVIDENCE_K,
+                    "k_requested": evidence_query.max_results,
                     "k_returned": 0,
                 },
             }

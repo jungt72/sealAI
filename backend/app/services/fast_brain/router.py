@@ -46,7 +46,7 @@ _FAST_BRAIN_KNOWLEDGE_HANDOFF_TEXT = (
 _STANDARD_MATERIALS = ("NBR", "FKM", "PTFE")
 _GENERAL_KNOWLEDGE_PATTERNS = (
     re.compile(
-        r"\b(?:was\s+ist|wer\s+ist|erkl[aä]r(?:e|mir)|was\s+kannst\s+du\s+mir\s+(?:ueber|über|zu)\s+sagen|"
+        r"\b(?:was\s+ist|wer\s+ist|erkl[aä]r(?:e|mir)|was\s+kannst\s+du\s+mir\s+(?:ueber|über|zu)|"
         r"was\s+wei(?:ss|ß)t\s+du\s+(?:ueber|über)|tell\s+me\s+about|what\s+is)\b",
         re.IGNORECASE,
     ),
@@ -105,19 +105,6 @@ def _should_force_knowledge_handoff(user_input: str) -> bool:
     if not text:
         return False
 
-    try:
-        from app._legacy_v2.nodes.nodes_frontdoor import (
-            detect_material_or_trade_query,
-            detect_sources_request,
-        )
-    except Exception:
-        detect_material_or_trade_query = None
-        detect_sources_request = None
-
-    if callable(detect_material_or_trade_query) and detect_material_or_trade_query(text):
-        return True
-    if callable(detect_sources_request) and detect_sources_request(text):
-        return True
     return any(pattern.search(text) for pattern in _GENERAL_KNOWLEDGE_PATTERNS)
 
 

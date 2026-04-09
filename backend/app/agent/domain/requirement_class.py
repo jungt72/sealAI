@@ -51,6 +51,7 @@ def _specialist_value(payload: RequirementClassSpecialistInput, field_name: str)
 
 
 def _has_rotary_install_hint(payload: RequirementClassSpecialistInput) -> bool:
+    """Checks asserted state AND geometry_install_hints — use for scope notes only."""
     dynamic_type = str(_specialist_value(payload, "dynamic_type") or "").strip().lower()
     if dynamic_type in {"dynamic", "rotary", "rotierend"}:
         return True
@@ -59,6 +60,23 @@ def _has_rotary_install_hint(payload: RequirementClassSpecialistInput) -> bool:
             return True
     geometry_hints = payload.geometry_install_hints or {}
     return any(geometry_hints.get(field_name) is not None for field_name in ("shaft_diameter_mm", "speed_rpm"))
+
+
+def _has_rotary_hint_asserted_only(payload: RequirementClassSpecialistInput) -> bool:
+    """Checks asserted state only — use for class selection."""
+    asserted = payload.asserted_state
+    if asserted is None:
+        return False
+    claim = asserted.assertions.get("dynamic_type")
+    if claim is not None:
+        dynamic_type = str(claim.asserted_value or "").strip().lower()
+        if dynamic_type in {"dynamic", "rotary", "rotierend"}:
+            return True
+    for field_name in ("shaft_diameter_mm", "speed_rpm"):
+        claim = asserted.assertions.get(field_name)
+        if claim is not None and claim.asserted_value is not None:
+            return True
+    return False
 
 
 def _installation_text(payload: RequirementClassSpecialistInput) -> str:
@@ -111,7 +129,8 @@ def run_requirement_class_specialist(
             scope_of_validity=("Requirement-class derivation requires a resolved medium.",),
         )
 
-    rotary_hint = _has_rotary_install_hint(payload)
+    rotary_hint = _has_rotary_install_hint(payload)  # includes geometry hints — scope notes only
+    rotary_hint_asserted = _has_rotary_hint_asserted_only(payload)  # asserted only — class selection
     if rotary_hint:
         _append_unique(
             scope_of_validity,
@@ -122,18 +141,6 @@ def run_requirement_class_specialist(
             scope_of_validity,
             "Installation hints indicate a static or flange-style sealing context; seal-type context stays bounded.",
         )
-
-    if not _has_geometry_context(payload):
-        _append_unique(open_points, "installation")
-        _append_unique(
-            scope_of_validity,
-            "Requirement-class narrowing remains limited until the installation geometry is described.",
-        )
-    elif rotary_hint:
-        if _specialist_value(payload, "shaft_diameter_mm") is None:
-            _append_unique(open_points, "shaft_diameter_mm")
-        if _specialist_value(payload, "speed_rpm") is None:
-            _append_unique(open_points, "speed_rpm")
 
     preferred: RequirementClass | None = None
 
@@ -191,9 +198,9 @@ def run_requirement_class_specialist(
         )
     elif pressure_bar is not None and pressure_bar >= 10:
         preferred = _class(
-            "ROTARY-P1" if rotary_hint else "GENERAL-P1",
+            "ROTARY-P1" if rotary_hint_asserted else "GENERAL-P1",
             "Pressure-led sealing class pending material-family confirmation.",
-            "radial_shaft_seal" if rotary_hint else "gasket",
+            "radial_shaft_seal" if rotary_hint_asserted else "gasket",
         )
         _append_unique(open_points, "material")
         _append_unique(
@@ -201,10 +208,22 @@ def run_requirement_class_specialist(
             "Pressure-led requirement class inferred without a confirmed material family.",
         )
     else:
+        # GENERAL fallback — only here add installation if no geometry context
+        if not _has_geometry_context(payload):
+            _append_unique(open_points, "installation")
+            _append_unique(
+                scope_of_validity,
+                "Requirement-class narrowing remains limited until the installation geometry is described.",
+            )
+        elif rotary_hint_asserted:
+            if _specialist_value(payload, "shaft_diameter_mm") is None:
+                _append_unique(open_points, "shaft_diameter_mm")
+            if _specialist_value(payload, "speed_rpm") is None:
+                _append_unique(open_points, "speed_rpm")
         preferred = _class(
-            "ROTARY-B1" if rotary_hint else "STATIC-B1" if _has_static_install_hint(payload) else "GENERAL-B1",
+            "ROTARY-B1" if rotary_hint_asserted else "STATIC-B1" if _has_static_install_hint(payload) else "GENERAL-B1",
             "General sealing requirement — further qualification required.",
-            "radial_shaft_seal" if rotary_hint else "gasket",
+            "radial_shaft_seal" if rotary_hint_asserted else "gasket",
         )
         _append_unique(open_points, "material")
         _append_unique(

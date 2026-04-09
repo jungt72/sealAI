@@ -188,7 +188,7 @@ class TestConversationStrategyContract:
             "Hallo",
             history=None,
             case_summary=None,
-            mode="instant_light_reply",
+            mode="CONVERSATION",
         )
 
         assert strategy is not None
@@ -196,12 +196,12 @@ class TestConversationStrategyContract:
         assert strategy.response_mode == "guided_explanation"
         assert strategy.primary_question is None
 
-    def test_explicit_light_exploration_mode_forces_exploration_focus(self):
+    def test_explicit_EXPLORATION_mode_forces_exploration_focus(self):
         strategy = _build_conversation_strategy_contract(
             "Wir haben immer wieder Leckageprobleme.",
             history=None,
             case_summary=None,
-            mode="light_exploration",
+            mode="EXPLORATION",
         )
 
         assert strategy is not None
@@ -243,7 +243,7 @@ class TestConversationStrategyContract:
             "Ich korrigiere: Der Druck liegt nicht bei 12, sondern bei 18 bar.",
             history=[{"role": "user", "content": "Der Druck liegt bei 12 bar."}],
             case_summary="- Druck: 12 bar",
-            mode="light_exploration",
+            mode="EXPLORATION",
         )
 
         assert strategy is not None
@@ -257,7 +257,7 @@ class TestConversationStrategyContract:
                 {"role": "assistant", "content": "Wo genau tritt sie auf?"},
             ],
             case_summary="- Medium: Wasser\n- Druck: 12 bar",
-            mode="light_exploration",
+            mode="EXPLORATION",
         )
 
         assert turn_context is not None
@@ -413,7 +413,7 @@ class TestStreamConversation:
                     "Ich korrigiere: Der Druck liegt bei 18 bar.",
                     history=[{"role": "user", "content": "Wir haben Leckage am Wellenaustritt."}],
                     case_summary="- Medium: Wasser\n- Druck: 12 bar",
-                    mode="light_exploration",
+                    mode="EXPLORATION",
                 )
             )
         parsed = _parse_events(events)
@@ -431,26 +431,26 @@ class TestStreamConversation:
         assert state_update["response_class"] == "conversational_answer"
 
     @pytest.mark.asyncio
-    async def test_instant_light_reply_hallo_keeps_natural_llm_greeting_without_template_prefix(self):
+    async def test_CONVERSATION_hallo_keeps_natural_llm_greeting_without_template_prefix(self):
         with _patch_openai(["Hallo, womit kann ich Ihnen helfen?"]):
-            events = await _collect(stream_conversation("Hallo", mode="instant_light_reply"))
+            events = await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"] == "Hallo, womit kann ich Ihnen helfen?"
 
     @pytest.mark.asyncio
-    async def test_instant_light_reply_smalltalk_keeps_human_llm_answer_without_template_prefix(self):
+    async def test_CONVERSATION_smalltalk_keeps_human_llm_answer_without_template_prefix(self):
         with _patch_openai(["Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"]):
-            events = await _collect(stream_conversation("Wie geht es dir?", mode="instant_light_reply"))
+            events = await _collect(stream_conversation("Wie geht es dir?", mode="CONVERSATION"))
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"] == "Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"
 
     @pytest.mark.asyncio
-    async def test_light_exploration_phase_prompt_keeps_domain_entry_natural(self):
+    async def test_EXPLORATION_phase_prompt_keeps_domain_entry_natural(self):
         with _patch_openai(["Dann ordnen wir das Problem zuerst nach der konkreten Betriebssituation. Wann zeigt sich die Leckage am deutlichsten?"]):
             events = await _collect(
-                stream_conversation("Wir haben immer wieder Leckageprobleme.", mode="light_exploration")
+                stream_conversation("Wir haben immer wieder Leckageprobleme.", mode="EXPLORATION")
             )
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
@@ -478,7 +478,7 @@ class TestStreamConversation:
         assert "Welche Drehzahl liegt ungefähr an?" in state_update["reply"]
 
     @pytest.mark.asyncio
-    async def test_instant_light_reply_mode_avoids_primary_question_prompting(self):
+    async def test_CONVERSATION_mode_avoids_primary_question_prompting(self):
         captured_messages = []
         mock_client = MagicMock()
 
@@ -491,13 +491,13 @@ class TestStreamConversation:
         mock_openai.AsyncOpenAI.return_value = mock_client
 
         with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
-            await _collect(stream_conversation("Hallo", mode="instant_light_reply"))
+            await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
 
         joined = "\n".join(m["content"] for m in captured_messages if m["role"] == "system")
         assert "Stelle genau diese eine priorisierte Frage" not in joined
 
     @pytest.mark.asyncio
-    async def test_light_exploration_mode_keeps_single_focus_prompting(self):
+    async def test_EXPLORATION_mode_keeps_single_focus_prompting(self):
         captured_messages = []
         mock_client = MagicMock()
 
@@ -510,7 +510,7 @@ class TestStreamConversation:
         mock_openai.AsyncOpenAI.return_value = mock_client
 
         with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
-            await _collect(stream_conversation("Wir haben immer wieder Leckageprobleme.", mode="light_exploration"))
+            await _collect(stream_conversation("Wir haben immer wieder Leckageprobleme.", mode="EXPLORATION"))
 
         joined = "\n".join(m["content"] for m in captured_messages if m["role"] == "system")
         assert "Relevanter offener Fokus" in joined

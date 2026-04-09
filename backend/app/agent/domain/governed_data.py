@@ -134,7 +134,7 @@ def _build_demo_records() -> tuple[GovernedMaterialRecord, ...]:
             source_version="v2025.1-demo",
             valid_from=None,
             valid_until=None,
-            release_status="active",
+            release_status="draft",
             conflict_status="none",
             coverage_metadata={
                 "max_temp_c": 260,
@@ -155,7 +155,7 @@ def _build_demo_records() -> tuple[GovernedMaterialRecord, ...]:
             source_version="v2025.1-demo",
             valid_from=None,
             valid_until=None,
-            release_status="active",
+            release_status="draft",
             conflict_status="none",
             coverage_metadata={
                 "max_temp_c": 210,

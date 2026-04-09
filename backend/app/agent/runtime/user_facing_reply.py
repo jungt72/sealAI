@@ -11,6 +11,7 @@ from app.agent.runtime.reply_composition import (
     build_governed_render_prompt,
     guard_governed_rendered_text,
 )
+from app.agent.runtime.outward_names import normalize_outward_response_class, normalize_outward_status
 from app.agent.runtime.response_renderer import render_chunk, render_response
 from app.agent.runtime.surface_claims import get_surface_claims_spec
 from app.agent.state.models import TurnContextContract
@@ -117,22 +118,20 @@ def derive_public_response_class(
     state_update: bool,
 ) -> str:
     response_class = "conversational_answer"
-    output_status = str((structured_state or {}).get("output_status") or "")
+    output_status = normalize_outward_status((structured_state or {}).get("output_status"), default="")
 
     if state_update and structured_state is not None:
         return "governed_state_update"
     if structured_state is None:
         return response_class
-    if output_status == "rfq_ready":
-        return "rfq_ready"
-    if output_status == "manufacturer_match_result":
-        return "manufacturer_match_result"
-    if output_status == "governed_non_binding_result":
-        return "governed_recommendation"
+    if output_status == "inquiry_ready":
+        return "inquiry_ready"
+    if output_status == "candidate_shortlist":
+        return "candidate_shortlist"
+    if output_status == "technical_preselection":
+        return "technical_preselection"
     if output_status == "clarification_needed":
         return "structured_clarification"
-    if output_status == "withheld_review":
-        return "governed_recommendation"
     return "structured_clarification"
 
 
@@ -146,7 +145,7 @@ def assemble_user_facing_reply(
     response_class: str | None = None,
     fallback_text: str | None = None,
 ) -> UserFacingReplyPayload:
-    resolved_response_class = str(
+    resolved_response_class = normalize_outward_response_class(
         response_class
         or derive_public_response_class(
             structured_state=structured_state,

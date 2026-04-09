@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
+from app.agent.runtime.outward_names import normalize_outward_response_class
 from app.agent.runtime.user_facing_reply import (
     assemble_user_facing_reply,
     derive_public_response_class,
@@ -15,17 +16,17 @@ BindingLevel = Literal["KNOWLEDGE", "ORIENTATION", "CALCULATION", "QUALIFIED_PRE
 # Legacy -> blueprint v1.1 outward class mapping:
 # - legacy "guidance" + "_response"          -> conversational_answer
 # - legacy structured_clarification          -> structured_clarification
-# - legacy "structured" + "_review"          -> governed_recommendation
+# - legacy "structured" + "_review"          -> technical_preselection
 # - legacy "structured" + "_escalation"      -> structured_clarification
-# - legacy "structured_governed" + "_result" -> governed_recommendation
+# - legacy "structured_governed" + "_result" -> technical_preselection
 # - legacy "structured_state" + "_update"    -> governed_state_update
 ResponseClass = Literal[
     "conversational_answer",
     "structured_clarification",
     "governed_state_update",
-    "governed_recommendation",
-    "manufacturer_match_result",
-    "rfq_ready",
+    "technical_preselection",
+    "candidate_shortlist",
+    "inquiry_ready",
 ]
 _NON_STRUCTURED_POLICY_PATHS: frozenset[str] = frozenset({"fast", "blocked", "meta", "greeting"})
 
@@ -65,13 +66,21 @@ class OverrideGovernanceResult(BaseModel):
     """Governance outcome after applying overrides."""
 
     gov_class: Optional[str] = None
-    rfq_admissible: bool = False
+    inquiry_admissible: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("inquiry_admissible", "rfq_admissible"),
+        serialization_alias="inquiry_admissible",
+    )
     blocking_unknowns: list[str] = Field(default_factory=list)
     conflict_flags: list[str] = Field(default_factory=list)
     validity_limits: list[str] = Field(default_factory=list)
     open_validation_points: list[str] = Field(default_factory=list)
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    @property
+    def rfq_admissible(self) -> bool:
+        return self.inquiry_admissible
 
 
 class OverrideResponse(BaseModel):
@@ -250,3 +259,10 @@ class ChatResponse(BaseModel):
     structured_state: Optional[StructuredStateExposureResponse | Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("response_class", mode="before")
+    @classmethod
+    def _normalize_response_class(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        return normalize_outward_response_class(value, default="structured_clarification")

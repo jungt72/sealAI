@@ -102,7 +102,7 @@ class TestAnonPathPolicyInjection:
 
         with (
             patch(
-                "app.agent.api.router.evaluate_interaction_policy_async",
+                "app.agent.agent.interaction_policy.evaluate_policy_async",
                 AsyncMock(return_value=structured_decision),
             ),
             patch("app.agent.api.router.execute_agent", AsyncMock()) as mock_execute,

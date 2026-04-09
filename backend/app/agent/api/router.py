@@ -60,6 +60,10 @@ from app.agent.runtime.reply_composition import (
     compose_clarification_reply,
     compose_result_reply,
 )
+from app.agent.runtime.outward_names import (
+    build_admissibility_payload,
+    normalize_outward_response_class,
+)
 from app.agent.runtime.surface_claims import get_surface_claims_spec
 from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.runtime.user_facing_reply import (
@@ -74,9 +78,12 @@ from app.agent.state.medium_derivation import (
 from app.agent.state.persistence import (
     get_or_create_governed_state_async,
     load_governed_state_async,
+    save_governed_state_snapshot_async,
     save_governed_state_async,
 )
 from app.agent.state.reducers import (
+    determine_changed_parameter_fields,
+    invalidate_downstream,
     reduce_observed_to_normalized,
     reduce_normalized_to_asserted,
     reduce_asserted_to_governance,
@@ -108,10 +115,6 @@ from app.agent.domain.critical_review import (
     run_critical_review_specialist,
 )
 from app.agent.cli import create_initial_state
-from app.agent.agent.interaction_policy import (
-    evaluate_policy as evaluate_interaction_policy,
-    evaluate_policy_async as evaluate_interaction_policy_async,
-)
 from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
 from app.services.history.persist import ConcurrencyConflictError, load_structured_case, save_structured_case
 
@@ -217,20 +220,33 @@ async def _persist_live_governed_state(
     current_user: RequestUser,
     session_id: str,
     state: GovernedSessionState,
+    redis_client: object | None = None,
 ) -> None:
-    tenant_id, _, _ = _canonical_scope(current_user, case_id=session_id)
-    redis_url = os.getenv("REDIS_URL", "")
-    if not redis_url:
-        return
-    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
-
-    async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
+    if redis_client is not None:
         await save_governed_state_async(
             state,
             tenant_id=tenant_id,
             session_id=session_id,
             redis_client=redis_client,
         )
+    else:
+        redis_url = os.getenv("REDIS_URL", "")
+        if redis_url:
+            from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+            async with AsyncRedis.from_url(redis_url, decode_responses=True) as managed_redis_client:
+                await save_governed_state_async(
+                    state,
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    redis_client=managed_redis_client,
+                )
+    await save_governed_state_snapshot_async(
+        state,
+        case_number=session_id,
+        user_id=owner_id,
+    )
 
 
 async def _build_light_runtime_context(
@@ -625,9 +641,9 @@ _ENABLE_GOVERNED_REDUCERS: bool = (
 
 @dataclass(frozen=True)
 class RuntimeDispatchResolution:
-    gate_route: Literal["instant_light_reply", "light_exploration", "governed_needed"]
+    gate_route: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"]
     gate_reason: str
-    runtime_mode: Literal["instant_light_reply", "light_exploration", "governed_needed"]
+    runtime_mode: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"]
     gate_applied: bool
     session_zone: str | None = None
 
@@ -650,17 +666,17 @@ async def _resolve_runtime_dispatch(
 ) -> RuntimeDispatchResolution:
     if current_user is None:
         return RuntimeDispatchResolution(
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason="missing_current_user",
-            runtime_mode="governed_needed",
+            runtime_mode="GOVERNED",
             gate_applied=False,
         )
 
     if not _ENABLE_BINARY_GATE:
         return RuntimeDispatchResolution(
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason="binary_gate_disabled",
-            runtime_mode="governed_needed",
+            runtime_mode="GOVERNED",
             gate_applied=False,
         )
 
@@ -690,10 +706,10 @@ async def _resolve_runtime_dispatch(
                 redis_client=redis_client,
             )
 
-        runtime_mode: Literal["instant_light_reply", "light_exploration", "governed_needed"] = (
+        runtime_mode: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"] = (
             gate.route
-            if _ENABLE_CONVERSATION_RUNTIME and gate.route in {"instant_light_reply", "light_exploration"}
-            else "governed_needed"
+            if _ENABLE_CONVERSATION_RUNTIME and gate.route in {"CONVERSATION", "EXPLORATION"}
+            else "GOVERNED"
         )
         _log.debug(
             "[runtime_dispatch] gate=%s reason=%s session_zone=%s runtime_mode=%s",
@@ -716,9 +732,9 @@ async def _resolve_runtime_dispatch(
             exc,
         )
         return RuntimeDispatchResolution(
-            gate_route="governed_needed",
+            gate_route="GOVERNED",
             gate_reason=f"gate_session_fail_open:{type(exc).__name__}",
-            runtime_mode="governed_needed",
+            runtime_mode="GOVERNED",
             gate_applied=False,
         )
 
@@ -1140,6 +1156,7 @@ async def _update_governed_state_post_graph(
         observed = observed.with_extraction(extraction)
 
     # Run the full deterministic reducer chain (no LLM, no I/O)
+    previous_normalized = governed_state.normalized
     normalized = reduce_observed_to_normalized(observed)
     medium_capture = derive_medium_capture(
         message=str(final_agent_state.get("input_text") or final_agent_state.get("user_message") or ""),
@@ -1157,6 +1174,7 @@ async def _update_governed_state_post_graph(
         analysis_cycle=governed_state.analysis_cycle + 1,
         max_cycles=governed_state.max_cycles,
     )
+    changed_fields = determine_changed_parameter_fields(previous_normalized, normalized)
 
     updated = governed_state.model_copy(update={
         "observed": observed,
@@ -1164,9 +1182,24 @@ async def _update_governed_state_post_graph(
         "medium_capture": medium_capture,
         "medium_classification": medium_classification,
         "asserted": asserted,
+        "derived": governed_state.derived.model_copy(update={
+            "assertions": asserted.assertions,
+            "blocking_unknowns": asserted.blocking_unknowns,
+            "conflict_flags": asserted.conflict_flags,
+            "requirement_class": governance.requirement_class,
+        }),
         "governance": governance,
+        "decision": governed_state.decision.model_copy(update={
+            "requirement_class": governance.requirement_class,
+            "gov_class": governance.gov_class,
+            "rfq_admissible": governance.rfq_admissible,
+            "validity_limits": governance.validity_limits,
+            "open_validation_points": governance.open_validation_points,
+        }),
         "analysis_cycle": governed_state.analysis_cycle + 1,
     })
+    for changed_field in sorted(changed_fields):
+        updated = invalidate_downstream(changed_field, updated)
 
     # Persist updated state to Redis (fail-safe — SSE stream is already done)
     from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
@@ -1174,10 +1207,10 @@ async def _update_governed_state_post_graph(
     if redis_url:
         try:
             async with AsyncRedis.from_url(redis_url, decode_responses=True) as _rc:
-                await save_governed_state_async(
-                    updated,
-                    tenant_id=tenant_id,
+                await _persist_live_governed_state(
+                    current_user=current_user,
                     session_id=session_id,
+                    state=updated,
                     redis_client=_rc,
                 )
         except Exception as _exc:  # noqa: BLE001
@@ -1203,17 +1236,19 @@ async def _update_governed_state_post_graph(
 
 
 def _governed_structured_state(state: GovernedSessionState, response_class: str) -> dict[str, Any]:
+    response_class = normalize_outward_response_class(response_class)
     active_blockers = list(state.asserted.blocking_unknowns) + list(state.asserted.conflict_flags)
     medium_status = state.medium_classification.status
     medium_family = state.medium_classification.family
-    if response_class == "rfq_ready":
+    if response_class == "inquiry_ready":
         selected = state.rfq.selected_manufacturer_ref
         return {
-            "case_status": "rfq_ready",
-            "output_status": "rfq_ready",
+            "case_status": "inquiry_ready",
+            "output_status": "inquiry_ready",
             "next_step": "review_rfq_handover",
             "primary_allowed_action": "inspect_rfq_basis",
             "active_blockers": active_blockers,
+            **build_admissibility_payload(state.governance.rfq_admissible),
             "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
             "dispatch_ready": state.dispatch.dispatch_ready,
             "dispatch_status": state.dispatch.dispatch_status,
@@ -1224,14 +1259,15 @@ def _governed_structured_state(state: GovernedSessionState, response_class: str)
             "mapping_status": state.manufacturer_mapping.status,
             "contract_status": state.dispatch_contract.status,
         }
-    if response_class == "manufacturer_match_result":
+    if response_class == "candidate_shortlist":
         selected = state.matching.selected_manufacturer_ref
         return {
             "case_status": "matching_available",
-            "output_status": "manufacturer_match_result",
+            "output_status": "candidate_shortlist",
             "next_step": "review_matching_result",
             "primary_allowed_action": "inspect_manufacturer_candidates",
             "active_blockers": active_blockers,
+            **build_admissibility_payload(state.governance.rfq_admissible),
             "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
             "medium_classification_status": medium_status,
             "medium_family": medium_family,
@@ -1247,6 +1283,7 @@ def _governed_structured_state(state: GovernedSessionState, response_class: str)
             "next_step": "provide_missing_parameters",
             "primary_allowed_action": "answer_open_points",
             "active_blockers": active_blockers,
+            **build_admissibility_payload(state.governance.rfq_admissible),
             "medium_classification_status": medium_status,
             "medium_family": medium_family,
             "norm_status": state.sealai_norm.status,
@@ -1256,10 +1293,11 @@ def _governed_structured_state(state: GovernedSessionState, response_class: str)
         }
     return {
         "case_status": "governed_visible",
-        "output_status": "governed_non_binding_result",
+        "output_status": response_class,
         "next_step": "review_governed_result",
         "primary_allowed_action": "continue_governed_session",
         "active_blockers": active_blockers,
+        **build_admissibility_payload(state.governance.rfq_admissible),
         "medium_classification_status": medium_status,
         "medium_family": medium_family,
         "norm_status": state.sealai_norm.status,
@@ -1275,6 +1313,7 @@ def _compose_deterministic_governed_reply(
     turn_context: TurnContextContract,
     fallback_text: str,
 ) -> str:
+    response_class = normalize_outward_response_class(response_class)
     if response_class == "structured_clarification":
         return compose_clarification_reply(
             turn_context,
@@ -1288,7 +1327,7 @@ def _compose_deterministic_governed_reply(
             facts_prefix="Bisher steht",
             open_points_prefix="Zur Absicherung noch offen",
         )
-    if response_class == "governed_recommendation":
+    if response_class == "technical_preselection":
         return compose_result_reply(
             turn_context,
             fallback_text=fallback_text,
@@ -1296,7 +1335,7 @@ def _compose_deterministic_governed_reply(
             facts_prefix="Technische Richtung",
             open_points_prefix="Im Scope jetzt noch pruefen",
         )
-    if response_class == "manufacturer_match_result":
+    if response_class == "candidate_shortlist":
         return compose_result_reply(
             turn_context,
             fallback_text=fallback_text,
@@ -1304,7 +1343,7 @@ def _compose_deterministic_governed_reply(
             facts_prefix="Belastbarer Rahmen",
             open_points_prefix="Vor Herstellerfreigabe noch offen",
         )
-    if response_class == "rfq_ready":
+    if response_class == "inquiry_ready":
         return compose_result_reply(
             turn_context,
             fallback_text=fallback_text,
@@ -1464,21 +1503,12 @@ def _build_governed_allowed_surface_claims(response_class: str) -> GovernedAllow
 
 
 def _is_light_runtime_mode(runtime_mode: str | None) -> bool:
-    return runtime_mode in {"instant_light_reply", "light_exploration"}
+    return runtime_mode in {"CONVERSATION", "EXPLORATION"}
 
 
 def _legacy_decision_requires_governed_authority(decision: Any) -> bool:
     """Structured/case-state turns must never fall back to the legacy graph."""
     return bool(getattr(decision, "has_case_state", False))
-
-
-def _legacy_decision_conversation_mode(
-    decision: Any,
-) -> Literal["instant_light_reply", "light_exploration"]:
-    path = str(getattr(getattr(decision, "path", None), "value", getattr(decision, "path", "")) or "").strip().lower()
-    if path == "fast":
-        return "instant_light_reply"
-    return "light_exploration"
 
 
 def _block_residual_legacy_structured_usage(*, session_id: str, decision: Any) -> None:
@@ -1505,7 +1535,7 @@ async def _stream_light_runtime(
     message: str,
     request: ChatRequest,
     current_user: RequestUser,
-    mode: Literal["instant_light_reply", "light_exploration"],
+    mode: Literal["CONVERSATION", "EXPLORATION"],
 ) -> AsyncGenerator[str, None]:
     from app.agent.runtime.conversation_runtime import stream_conversation  # noqa: PLC0415
 
@@ -1548,7 +1578,7 @@ async def _run_light_chat_response(
     message: str,
     request: ChatRequest,
     current_user: RequestUser,
-    mode: Literal["instant_light_reply", "light_exploration"],
+    mode: Literal["CONVERSATION", "EXPLORATION"],
 ) -> ChatResponse:
     from app.agent.runtime.conversation_runtime import run_conversation  # noqa: PLC0415
 
@@ -1613,16 +1643,16 @@ async def _run_governed_graph_once(
                 }
             )
             raw_result = await GOVERNED_GRAPH.ainvoke(graph_input)
-            result_state = GraphState.model_validate(raw_result)
+            result_state = _materialize_graph_result(raw_result)
             persisted_state = GovernedSessionState.model_validate(result_state.model_dump())
             result_state, persisted_state = _enrich_medium_context_state(
                 result_state=result_state,
                 persisted_state=persisted_state,
             )
-            await save_governed_state_async(
-                persisted_state,
-                tenant_id=tenant_id,
+            await _persist_live_governed_state(
+                current_user=current_user,
                 session_id=request.session_id,
+                state=persisted_state,
                 redis_client=redis_client,
             )
             return result_state, persisted_state
@@ -1636,7 +1666,7 @@ async def _run_governed_graph_once(
         }
     )
     raw_result = await GOVERNED_GRAPH.ainvoke(graph_input)
-    result_state = GraphState.model_validate(raw_result)
+    result_state = _materialize_graph_result(raw_result)
     persisted_state = GovernedSessionState.model_validate(result_state.model_dump())
     result_state, persisted_state = _enrich_medium_context_state(
         result_state=result_state,
@@ -1645,11 +1675,113 @@ async def _run_governed_graph_once(
     return result_state, persisted_state
 
 
+def _materialize_governed_graph_result(raw_result: object) -> GraphState:
+    if isinstance(raw_result, dict) and "__interrupt__" in raw_result:
+        interrupts = list(raw_result.get("__interrupt__") or [])
+        if not interrupts:
+            raise RuntimeError("governed graph returned empty interrupt payload")
+        payload = getattr(interrupts[0], "value", None)
+        if not isinstance(payload, dict) or "state" not in payload:
+            raise RuntimeError("governed graph returned malformed interrupt payload")
+        return GraphState.model_validate(payload["state"])
+    return GraphState.model_validate(raw_result)
+
+
 async def _stream_governed_graph(
     request: ChatRequest,
     *,
     current_user: RequestUser,
 ) -> AsyncGenerator[str, None]:
+    if hasattr(GOVERNED_GRAPH, "astream"):
+        tenant_id, _, _ = _canonical_scope(current_user, case_id=request.session_id)
+        redis_url = os.getenv("REDIS_URL", "")
+        governed_state = GovernedSessionState()
+
+        async def _run_stream(redis_client=None):
+            nonlocal governed_state
+            if redis_client is not None:
+                governed_state = await get_or_create_governed_state_async(
+                    tenant_id=tenant_id,
+                    session_id=request.session_id,
+                    redis_client=redis_client,
+                )
+
+            graph_input = GraphState.model_validate(
+                {
+                    **governed_state.model_dump(),
+                    "tenant_id": tenant_id,
+                    "session_id": request.session_id,
+                    "pending_message": request.message,
+                }
+            )
+
+            latest_values: object = graph_input.model_dump(mode="python")
+            async for mode, data in GOVERNED_GRAPH.astream(
+                graph_input,
+                stream_mode=["custom", "values"],
+            ):
+                if mode == "custom" and isinstance(data, dict):
+                    yield f"data: {json.dumps({'type': 'progress', **data}, default=str)}\n\n"
+                elif mode == "values":
+                    latest_values = data
+
+            result_state = _materialize_governed_graph_result(latest_values)
+            persisted_state = GovernedSessionState.model_validate(result_state.model_dump())
+            result_state, persisted_state = _enrich_medium_context_state(
+                result_state=result_state,
+                persisted_state=persisted_state,
+            )
+
+            if redis_client is not None:
+                await _persist_live_governed_state(
+                    current_user=current_user,
+                    session_id=request.session_id,
+                    state=persisted_state,
+                    redis_client=redis_client,
+                )
+
+            context = _build_governed_reply_context(
+                result_state=result_state,
+                persisted_state=persisted_state,
+            )
+            visible_reply: str | None = None
+            if context.deterministic_reply:
+                visible_reply = await collect_governed_visible_reply(
+                    response_class=context.response_class,
+                    turn_context=context.turn_context,
+                    fallback_text=context.deterministic_reply,
+                    allowed_surface_claims=_build_governed_allowed_surface_claims(context.response_class),
+                )
+            if request.session_id and visible_reply:
+                persisted_state = _with_governed_conversation_turn(
+                    persisted_state,
+                    user_message=request.message,
+                    assistant_reply=visible_reply,
+                )
+                await _persist_live_governed_state(
+                    current_user=current_user,
+                    session_id=request.session_id,
+                    state=persisted_state,
+                )
+            payload = _assemble_governed_stream_payload(
+                context=context,
+                visible_reply=visible_reply,
+            )
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        if redis_url:
+            from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+            async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+                async for frame in _run_stream(redis_client):
+                    yield frame
+            return
+
+        async for frame in _run_stream():
+            yield frame
+        return
+
     result_state, persisted_state = await _run_governed_graph_once(
         request,
         current_user=current_user,
@@ -1748,7 +1880,7 @@ async def event_generator(
     the Gate + SessionEnvelope layer runs first. If SEALAI_ENABLE_CONVERSATION_RUNTIME
     is also true and gate decides CONVERSATION, stream_conversation() is used
     instead of the governed path. On any gate/session exception the dispatch
-    fails closed to governed_needed.
+    fails closed to GOVERNED.
     """
     dispatch = await _resolve_runtime_dispatch(
         request,
@@ -1764,7 +1896,7 @@ async def event_generator(
             yield frame
         return
 
-    if dispatch.runtime_mode == "governed_needed":
+    if dispatch.runtime_mode == "GOVERNED":
         _log.debug(
             "[runtime_authority] stream session=%s authority=governed_graph reason=%s",
             request.session_id,
@@ -1774,28 +1906,12 @@ async def event_generator(
             yield frame
         return
 
-    legacy_decision = await evaluate_interaction_policy_async(request.message)
-    if _legacy_decision_requires_governed_authority(legacy_decision):
-        _log.warning(
-            "[runtime_authority] stream session=%s authority=governed_graph via legacy policy fallback",
-            request.session_id,
-        )
-        async for frame in _stream_governed_graph(request, current_user=current_user):
-            yield frame
-        return
-
-    light_mode = _legacy_decision_conversation_mode(legacy_decision)
     _log.warning(
-        "[runtime_authority] stream session=%s authority=conversation_runtime via legacy policy fallback mode=%s",
+        "[runtime_authority] stream session=%s unexpected runtime_mode=%s — fail-closed to governed",
         request.session_id,
-        light_mode,
+        dispatch.runtime_mode,
     )
-    async for frame in _stream_light_runtime(
-        message=request.message,
-        request=request,
-        current_user=current_user,
-        mode=light_mode,
-    ):
+    async for frame in _stream_governed_graph(request, current_user=current_user):
         yield frame
 
 
@@ -1810,7 +1926,9 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
         current_state["messages"].append(HumanMessage(content=request.message))
         # Phase 0E: apply policy routing for unauthenticated sessions too —
         # meta/blocked paths must fire consistently regardless of auth state.
-        _anon_decision = await evaluate_interaction_policy_async(request.message)
+        from app.agent.agent.interaction_policy import evaluate_policy_async as _compat_evaluate_interaction_policy_async  # noqa: PLC0415
+
+        _anon_decision = await _compat_evaluate_interaction_policy_async(request.message)
         _block_residual_legacy_structured_usage(
             session_id=session_id,
             decision=_anon_decision,
@@ -1848,7 +1966,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
             mode=dispatch.runtime_mode,
         )
 
-    if dispatch.runtime_mode == "governed_needed":
+    if dispatch.runtime_mode == "GOVERNED":
         _log.debug(
             "[runtime_authority] json session=%s authority=governed_graph reason=%s",
             request.session_id,
@@ -1859,28 +1977,14 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
             current_user=current_user,
         )
 
-    legacy_decision = await evaluate_interaction_policy_async(request.message)
-    if _legacy_decision_requires_governed_authority(legacy_decision):
-        _log.warning(
-            "[runtime_authority] json session=%s authority=governed_graph via legacy policy fallback",
-            request.session_id,
-        )
-        return await _run_governed_chat_response(
-            request,
-            current_user=current_user,
-        )
-
-    light_mode = _legacy_decision_conversation_mode(legacy_decision)
     _log.warning(
-        "[runtime_authority] json session=%s authority=conversation_runtime via legacy policy fallback mode=%s",
+        "[runtime_authority] json session=%s unexpected runtime_mode=%s — fail-closed to governed",
         request.session_id,
-        light_mode,
+        dispatch.runtime_mode,
     )
-    return await _run_light_chat_response(
-        message=request.message,
-        request=request,
+    return await _run_governed_chat_response(
+        request,
         current_user=current_user,
-        mode=light_mode,
     )
 
 
@@ -2515,6 +2619,7 @@ async def session_override_endpoint(
                 observed = observed.with_override(override)
 
             # 3. Re-evaluate deterministically through the full reducer chain
+            previous_normalized = state.normalized
             normalized = reduce_observed_to_normalized(observed)
             asserted = reduce_normalized_to_asserted(normalized)
             governance = reduce_asserted_to_governance(
@@ -2522,18 +2627,34 @@ async def session_override_endpoint(
                 analysis_cycle=state.analysis_cycle,
                 max_cycles=state.max_cycles,
             )
+            changed_fields = determine_changed_parameter_fields(previous_normalized, normalized)
 
             # 4. Persist updated state
             updated_state = state.model_copy(update={
                 "observed": observed,
                 "normalized": normalized,
                 "asserted": asserted,
+                "derived": state.derived.model_copy(update={
+                    "assertions": asserted.assertions,
+                    "blocking_unknowns": asserted.blocking_unknowns,
+                    "conflict_flags": asserted.conflict_flags,
+                    "requirement_class": governance.requirement_class,
+                }),
                 "governance": governance,
+                "decision": state.decision.model_copy(update={
+                    "requirement_class": governance.requirement_class,
+                    "gov_class": governance.gov_class,
+                    "rfq_admissible": governance.rfq_admissible,
+                    "validity_limits": governance.validity_limits,
+                    "open_validation_points": governance.open_validation_points,
+                }),
             })
-            await save_governed_state_async(
-                updated_state,
-                tenant_id=tenant_id,
+            for changed_field in sorted(changed_fields):
+                updated_state = invalidate_downstream(changed_field, updated_state)
+            await _persist_live_governed_state(
+                current_user=current_user,
                 session_id=session_id,
+                state=updated_state,
                 redis_client=redis_client,
             )
 
@@ -2547,7 +2668,7 @@ async def session_override_endpoint(
         applied_fields=[item.field_name for item in request.overrides],
         governance=OverrideGovernanceResult(
             gov_class=governance.gov_class,
-            rfq_admissible=governance.rfq_admissible,
+            inquiry_admissible=governance.rfq_admissible,
             blocking_unknowns=list(asserted.blocking_unknowns),
             conflict_flags=list(asserted.conflict_flags),
             validity_limits=list(governance.validity_limits),

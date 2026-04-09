@@ -40,10 +40,19 @@ import dataclasses
 import logging
 from typing import Any
 
+from langgraph.config import get_stream_writer
+
 from app.agent.domain.rwdr_calc import RwdrCalcInput, calculate_rwdr
 from app.agent.graph import GraphState
 
 log = logging.getLogger(__name__)
+
+
+def _emit_progress_event(payload: dict) -> None:
+    try:
+        get_stream_writer()(payload)
+    except RuntimeError:
+        return
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +131,13 @@ async def compute_node(state: GraphState) -> GraphState:
                 rwdr_result.v_surface_m_s or 0.0,
                 rwdr_result.pv_value_mpa_m_s or 0.0,
                 len(rwdr_result.notes),
+            )
+            _emit_progress_event(
+                {
+                    "event_type": "compute_complete",
+                    "calc_type": "rwdr",
+                    "status": result_dict.get("status"),
+                }
             )
         except Exception as exc:
             log.warning(

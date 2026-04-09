@@ -16,12 +16,8 @@ from typing import Optional
 from fastapi import Depends, HTTPException, WebSocket, status, Header
 
 from app.core.config import settings              # <-- korrekter Pfad!
+from app.common.errors import error_detail
 import app.services.auth.token as auth_token
-try:
-    from app._legacy_v2.contracts import error_detail
-except Exception:  # pragma: no cover - minimal import repair for bounded tests
-    def error_detail(code: str, **kwargs: object) -> str:
-        return code
 
 
 # --------------------------------------------------------------------------- #

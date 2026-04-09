@@ -1,0 +1,98 @@
+{
+  "STS-RS-A": {
+    "canonical_name": "Standard-Anforderung",
+    "description": "Betriebsbedingungen innerhalb gaengiger Standardwerte. Keine besonderen Risiken.",
+    "severity": "low",
+    "temperature_range_c": [-20, 120],
+    "pressure_max_bar": 16,
+    "speed_max_rpm": 3600,
+    "typical_media": ["water", "glycol", "mineral_oil"],
+    "governance_level": "minimal",
+    "requires_evidence": false,
+    "norm_references": []
+  },
+  "STS-RS-B": {
+    "canonical_name": "Erweiterte Anforderung",
+    "description": "Mindestens ein Parameter ausserhalb Standardbereich. Technische Einengung erforderlich.",
+    "severity": "medium",
+    "temperature_range_c": [-40, 200],
+    "pressure_max_bar": 40,
+    "speed_max_rpm": 8000,
+    "typical_media": ["saltwater", "mild_acids", "mild_bases", "hydrocarbons"],
+    "governance_level": "standard",
+    "requires_evidence": true,
+    "norm_references": ["EN 12756"]
+  },
+  "STS-RS-C": {
+    "canonical_name": "Hohe Anforderung",
+    "description": "Mehrere Parameter im oberen Grenzbereich oder korrosive Medien. Sorgfaeltige Materialauswahl noetig.",
+    "severity": "high",
+    "temperature_range_c": [-60, 300],
+    "pressure_max_bar": 100,
+    "speed_max_rpm": 15000,
+    "typical_media": ["acids", "bases", "hot_water", "steam", "solvents"],
+    "governance_level": "extended",
+    "requires_evidence": true,
+    "norm_references": ["ISO 21049", "EN 12756", "API 682"]
+  },
+  "STS-RS-D": {
+    "canonical_name": "Kritische Anforderung",
+    "description": "Extreme Betriebsbedingungen oder gefaehrliche Medien. Vollstaendige Governance und Herstellerfreigabe zwingend.",
+    "severity": "critical",
+    "temperature_range_c": [-100, 500],
+    "pressure_max_bar": 250,
+    "speed_max_rpm": 30000,
+    "typical_media": ["strong_acids", "strong_bases", "fluorine", "h2s", "hf_acid"],
+    "governance_level": "full",
+    "requires_evidence": true,
+    "norm_references": ["ISO 21049", "API 682", "NACE MR0175", "ATEX"]
+  },
+  "STS-RS-E": {
+    "canonical_name": "Lebensmittel- / Pharma-Anforderung",
+    "description": "Hygienische Anforderungen (FDA, EG 1935/2004). Materialzulassungen und Reinigbarkeit entscheidend.",
+    "severity": "medium",
+    "temperature_range_c": [-20, 150],
+    "pressure_max_bar": 16,
+    "speed_max_rpm": 5000,
+    "typical_media": ["food_contact", "cip_sip", "hot_water", "steam_low_pressure"],
+    "governance_level": "extended",
+    "requires_evidence": true,
+    "norm_references": ["FDA_21CFR177.2600", "EG_1935_2004", "EHEDG", "3-A_SSI"]
+  },
+  "STS-RS-F": {
+    "canonical_name": "ATEX / Explosionsschutz-Anforderung",
+    "description": "Einsatz in explosionsgefaehrdeten Bereichen. Zuendschutzart und Temperaturklasse zu beachten.",
+    "severity": "critical",
+    "temperature_range_c": [-40, 200],
+    "pressure_max_bar": 40,
+    "speed_max_rpm": 8000,
+    "typical_media": ["hydrocarbons", "fuels", "solvents", "gases"],
+    "governance_level": "full",
+    "requires_evidence": true,
+    "norm_references": ["ATEX_2014_34_EU", "IECEx", "ISO 80079-36", "EN 13463"]
+  },
+  "STS-RS-G": {
+    "canonical_name": "Kryogen-Anforderung",
+    "description": "Tieftemperaturanwendungen unter -60 Grad C. Spezielle Materialeignung und Schrumpfverhalten relevant.",
+    "severity": "high",
+    "temperature_range_c": [-200, 0],
+    "pressure_max_bar": 40,
+    "speed_max_rpm": 3600,
+    "typical_media": ["lng", "nitrogen", "oxygen", "argon"],
+    "governance_level": "extended",
+    "requires_evidence": true,
+    "norm_references": ["ISO 21049", "EN 12756", "API 682"]
+  },
+  "STS-RS-H": {
+    "canonical_name": "Trockenlauf-Anforderung",
+    "description": "Betrieb ohne fluessige Schmierung. Erhoehter Verschleiss und Waermeentwicklung. Gasgeschmierte Loesungen bevorzugt.",
+    "severity": "high",
+    "temperature_range_c": [-20, 300],
+    "pressure_max_bar": 20,
+    "speed_max_rpm": 30000,
+    "typical_media": ["gas", "dry_air", "nitrogen", "process_gas"],
+    "governance_level": "extended",
+    "requires_evidence": true,
+    "norm_references": ["ISO 21049", "API 682", "API 692"]
+  }
+}

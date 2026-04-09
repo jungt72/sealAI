@@ -91,13 +91,26 @@ $kc update "clients/$( $kc get clients -r $REALM -q clientId=$CLIENT_ID --fields
 ## 5) Rollen & Test-User
 
 ```bash
-$kc create roles -r $REALM -s name=app:user 2>/dev/null || true
-$kc create roles -r $REALM -s name=app:admin 2>/dev/null || true
+$kc create roles -r $REALM -s name=user_basic 2>/dev/null || true
+$kc create roles -r $REALM -s name=user_pro 2>/dev/null || true
+$kc create roles -r $REALM -s name=manufacturer 2>/dev/null || true
+$kc create roles -r $REALM -s name=admin 2>/dev/null || true
 
 $kc create users -r $REALM -s username=admin -s enabled=true -s email=admin@example.com 2>/dev/null || true
 $kc set-password -r $REALM --username admin --new-password admin
-$kc add-roles -r $REALM --uusername admin --rolename app:admin --rolename app:user || true
+$kc add-roles -r $REALM --uusername admin --rolename admin --rolename user_basic || true
 ```
+
+Für den produktiven Realm mit persistenter Datenbank ist der repo-konforme
+Kurzweg:
+
+```bash
+./ops/keycloak_ensure_roles.sh
+```
+
+Der Helper liest standardmäßig `.env.prod`, zielt auf den realen Realm
+`sealAI` und legt genau diese Realm-Rollen idempotent an:
+`user_basic`, `user_pro`, `manufacturer`, `admin`.
 
 ## 6) SMTP (Transaktions-Mails)
 

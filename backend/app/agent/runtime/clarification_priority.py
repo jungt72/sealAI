@@ -345,18 +345,19 @@ def select_clarification_priority(
         application_anchor_present=_application_anchor_present(state),
         rotary_context_detected=_rotary_context_detected(state),
     )
+    contextual_override_fields = {
+        "application_context",
+        "installation",
+        "geometry_context",
+        "clearance_gap_mm",
+        "counterface_surface",
+        "counterface_material",
+        "speed_rpm",
+        "shaft_diameter_mm",
+    }
     if priority is not None and (
         priority.focus_key in field_set
-        or priority.focus_key in {
-            "application_context",
-            "installation",
-            "geometry_context",
-            "clearance_gap_mm",
-            "counterface_surface",
-            "counterface_material",
-            "speed_rpm",
-            "shaft_diameter_mm",
-        }
+        or (len(field_set) > 1 and priority.focus_key in contextual_override_fields)
     ):
         return priority
 
@@ -381,7 +382,12 @@ def prioritized_open_point_labels(
         seen.add(priority.open_point_label)
 
     for field_name in fields:
-        if field_name == "medium" and _has_value(state, "medium") and medium_status_primary_question(state) is None:
+        if (
+            field_name == "medium"
+            and field_name in state.asserted.assertions
+            and _has_value(state, "medium")
+            and medium_status_primary_question(state) is None
+        ):
             continue
         if field_name in {"speed_rpm", "shaft_diameter_mm"} and not _rotary_context_detected(state):
             continue
