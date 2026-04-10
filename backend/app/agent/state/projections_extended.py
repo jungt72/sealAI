@@ -7,7 +7,7 @@ from app.agent.agent.clarification import (
     STRUCTURED_REQUIRED_CORE_PARAMS,
     _missing_core_input_items,
 )
-from app.agent.agent.readiness import (
+from app.agent.domain.readiness import (
     evaluate_output_readiness,
 )
 from app.agent.domain.threshold import compare_threshold_scope, project_threshold_status
