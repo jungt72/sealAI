@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from app.agent.agent.clarification import (
+from app.agent.runtime.clarification import (
     STRUCTURED_REQUIRED_CORE_PARAMS,
     _missing_core_input_items,
 )
