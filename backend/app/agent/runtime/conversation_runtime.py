@@ -33,7 +33,7 @@ from typing import Any, AsyncGenerator, Literal
 
 import openai
 
-from app.agent.agent.boundaries import FAST_PATH_DISCLAIMER
+from app.agent.runtime.boundaries import FAST_PATH_DISCLAIMER
 from app.agent.runtime.user_facing_reply import assemble_user_facing_reply
 from app.agent.runtime.clarification_priority import select_next_focus_from_known_context
 from app.agent.runtime.reply_composition import (
