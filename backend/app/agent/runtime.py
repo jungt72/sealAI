@@ -6,7 +6,7 @@ W3.4: interaction_policy is no longer called from production routing paths.
       INTERACTION_POLICY_VERSION or InteractionPolicyDecision from here.
       Production frontdoor routing: app.agent.runtime.gate.decide_route_async
 """
-from app.agent.agent.policy import (  # noqa: F401 — public re-export
+from app.agent.runtime.policy import (  # noqa: F401 — public re-export
     INTERACTION_POLICY_VERSION,
     InteractionPolicyDecision,
     ResultForm,
