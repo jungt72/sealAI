@@ -1,5 +1,10 @@
 """
-Interaction Policy V2 — Semantic Routing via Nano-LLM
+Interaction Policy V2 — DEPRECATED (W3.4)
+
+Production routing is handled by app.agent.runtime.gate (decide_route / decide_route_async).
+This module is kept only for test backward-compat. Do not call from production paths.
+
+Original: Semantic Routing via Nano-LLM
 Phase 0A.3 / 0D / 0D+
 
 Four-tier deterministic pre-check runs BEFORE any LLM call:

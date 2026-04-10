@@ -2032,23 +2032,35 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
             SESSION_STORE[session_id] = {"messages": [], "sealing_state": initial_sealing_state, "working_profile": {}}
         current_state = SESSION_STORE[session_id]
         current_state["messages"].append(HumanMessage(content=request.message))
-        # Phase 0E: apply policy routing for unauthenticated sessions too —
-        # meta/blocked paths must fire consistently regardless of auth state.
-        from app.agent.agent.interaction_policy import evaluate_policy_async as _compat_evaluate_interaction_policy_async  # noqa: PLC0415
+        # Phase W3.4: gate.py is the canonical routing authority for all paths.
+        from app.agent.runtime.gate import decide_route_async as _gate_decide_route_async  # noqa: PLC0415
 
-        _anon_decision = await _compat_evaluate_interaction_policy_async(request.message)
-        _block_residual_legacy_structured_usage(
-            session_id=session_id,
-            decision=_anon_decision,
-        )
+        class _AnonSession:
+            session_zone = "conversation"
+
+        _anon_gate = await _gate_decide_route_async(request.message, _AnonSession())
+        if _anon_gate.route == "GOVERNED":
+            _log.error(
+                "[%s] blocked structured unauthenticated usage session=%s gate_reason=%s",
+                _RESIDUAL_LEGACY_RUNTIME_LABEL,
+                session_id,
+                _anon_gate.reason,
+            )
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Structured technical turns require the authenticated governed runtime. "
+                    "Residual legacy helper paths are compat-only."
+                ),
+            )
         _log.warning(
-            "[%s] unauthenticated JSON helper path used session=%s policy_path=%s",
+            "[%s] unauthenticated JSON helper path used session=%s gate_route=%s",
             _RESIDUAL_LEGACY_RUNTIME_LABEL,
             session_id,
-            _anon_decision.path.value,
+            _anon_gate.route,
         )
-        current_state["policy_path"] = _anon_decision.path.value
-        current_state["result_form"] = _anon_decision.result_form.value
+        current_state["policy_path"] = _anon_gate.route.lower()
+        current_state["result_form"] = "direct_answer" if _anon_gate.route == "CONVERSATION" else "exploration"
         current_state["inquiry_id"] = session_id
         current_state.setdefault("turn_count", 0)
         current_state.setdefault("max_turns", 12)

@@ -1,8 +1,10 @@
 """
 Agent Runtime — Legacy interaction-policy shim.
 
-Residual compat only. The productive frontdoor routing authority lives in
-app.agent.runtime.gate and the agent API router dispatch.
+W3.4: interaction_policy is no longer called from production routing paths.
+      This shim exists only for backward-compat with tests that still import
+      INTERACTION_POLICY_VERSION or InteractionPolicyDecision from here.
+      Production frontdoor routing: app.agent.runtime.gate.decide_route_async
 """
 from app.agent.agent.policy import (  # noqa: F401 — public re-export
     INTERACTION_POLICY_VERSION,
@@ -10,11 +12,12 @@ from app.agent.agent.policy import (  # noqa: F401 — public re-export
     ResultForm,
     RoutingPath,
 )
+
+
 def evaluate_interaction_policy(message: str) -> InteractionPolicyDecision:
     """
-    Backwards-compatible shim for residual callers.
-    Delegates lazily so importing this module does not keep the legacy policy
-    on the productive router import path.
+    Backwards-compatible shim. DEPRECATED — use app.agent.runtime.gate instead.
+    Kept for test backward-compat only.
     """
     from app.agent.agent.interaction_policy import evaluate_policy  # noqa: PLC0415
 

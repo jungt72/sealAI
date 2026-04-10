@@ -28,10 +28,30 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Metrics (optional — gate works without Prometheus)
+# ---------------------------------------------------------------------------
+
+def _observe_gate_decision(decision: "GateDecision", started_at: float) -> "GateDecision":
+    """Record gate decision metrics and return the decision unchanged.
+
+    Instruments Prometheus counters when available; silently skips otherwise.
+    Called by decide_route and decide_route_async after every routing decision.
+    """
+    latency = time.monotonic() - started_at
+    try:
+        from app.observability.metrics import track_gate_route_decision  # noqa: PLC0415
+        track_gate_route_decision(decision.route, latency)
+    except Exception:  # metrics unavailable (tests, offline) — fail-open
+        pass
+    log.debug("[gate] route=%s reason=%s latency_ms=%.1f", decision.route, decision.reason, latency * 1000)
+    return decision
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -128,8 +148,11 @@ _SMALLTALK_PATTERN = re.compile(
 _META_PROCESS_PATTERN = re.compile(
     r"\b(wie\s+laeuft\s+das|wie\s+läuft\s+das|wie\s+funktioniert\s+das|wie\s+gehen\s+wir\s+vor"
     r"|wie\s+gehen\s+wir\s+dabei\s+vor"
-     r"|was\s+brauchst\s+du\s+von\s+mir|welche\s+infos\s+brauchst\s+du|was\s+ist\s+der\s+naechste\s+schritt"
-     r"|was\s+ist\s+der\s+nächste\s+schritt|erklaer\s+mir\s+den\s+ablauf|erklär\s+mir\s+den\s+ablauf)\b",
+    r"|was\s+brauchst\s+du\s+von\s+mir|welche\s+infos\s+brauchst\s+du|was\s+ist\s+der\s+naechste\s+schritt"
+    r"|was\s+ist\s+der\s+nächste\s+schritt|erklaer\s+mir\s+den\s+ablauf|erklär\s+mir\s+den\s+ablauf"
+    r"|was\s+fehlt(\s+noch)?|welche\s+(angaben|parameter|daten)\s+fehlen"
+    r"|was\s+(hast\s+du|haben\s+sie)\s+(schon\s+)?(verstanden|erfasst|gespeichert)"
+    r"|wie\s+ist\s+der\s+(aktuelle\s+)?(stand|fortschritt))\b",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -348,14 +371,16 @@ def decide_route(message: str, session: HasSessionZone) -> GateDecision:
       The session zone remains governed. Only clearly non-technical light turns
       may use a light reply mode; everything uncertain stays GOVERNED.
     """
+    started_at = time.monotonic()
+
     # 1. Governed session
     if session.session_zone == "governed":
         hard = check_hard_overrides(message)
         if hard:
-            return GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}")
+            return _observe_gate_decision(GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"), started_at)
         instant = classify_light_route(message)
         if instant is not None and instant.route == "CONVERSATION":
-            return GateDecision(route="CONVERSATION", reason="governed_instant_override")
+            return _observe_gate_decision(GateDecision(route="CONVERSATION", reason="governed_instant_override"), started_at)
         try:
             result = _call_gate_llm(message)
         except Exception as exc:
@@ -364,25 +389,25 @@ def decide_route(message: str, session: HasSessionZone) -> GateDecision:
                 type(exc).__name__,
                 exc,
             )
-            return GateDecision(route="GOVERNED", reason="sticky_governed_session")
+            return _observe_gate_decision(GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at)
         if (
             not result.parse_error
             and not result.timeout
             and result.routing != "GOVERNED"
             and result.confidence >= _GOVERNED_LIGHT_THRESHOLD
         ):
-            return GateDecision(route=result.routing, reason="governed_light_override")
-        return GateDecision(route="GOVERNED", reason="sticky_governed_session")
+            return _observe_gate_decision(GateDecision(route=result.routing, reason="governed_light_override"), started_at)
+        return _observe_gate_decision(GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at)
 
     # 2. Deterministic hard overrides (fresh session)
     hard = check_hard_overrides(message)
     if hard:
-        return GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}")
+        return _observe_gate_decision(GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"), started_at)
 
     # 3. Deterministic light routing
     light = classify_light_route(message)
     if light is not None:
-        return light
+        return _observe_gate_decision(light, started_at)
 
     # 4. Mini-LLM classification
     try:
@@ -395,13 +420,13 @@ def decide_route(message: str, session: HasSessionZone) -> GateDecision:
         )
         deterministic = check_hard_overrides(message)
         if deterministic:
-            return GateDecision(
-                route="GOVERNED",
-                reason=f"timeout_with_deterministic_signal:{deterministic.trigger}",
+            return _observe_gate_decision(
+                GateDecision(route="GOVERNED", reason=f"timeout_with_deterministic_signal:{deterministic.trigger}"),
+                started_at,
             )
-        return GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed")
+        return _observe_gate_decision(GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed"), started_at)
 
-    return _apply_llm_result(result, message)
+    return _observe_gate_decision(_apply_llm_result(result, message), started_at)
 
 
 async def decide_route_async(message: str, session: HasSessionZone) -> GateDecision:
@@ -410,14 +435,16 @@ async def decide_route_async(message: str, session: HasSessionZone) -> GateDecis
     Identical logic to decide_route but uses _call_gate_llm_async.
     Use this from async FastAPI endpoints.
     """
+    started_at = time.monotonic()
+
     # 1. Governed session (mirrors decide_route exactly)
     if session.session_zone == "governed":
         hard = check_hard_overrides(message)
         if hard:
-            return GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}")
+            return _observe_gate_decision(GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"), started_at)
         instant = classify_light_route(message)
         if instant is not None and instant.route == "CONVERSATION":
-            return GateDecision(route="CONVERSATION", reason="governed_instant_override")
+            return _observe_gate_decision(GateDecision(route="CONVERSATION", reason="governed_instant_override"), started_at)
         try:
             result = await _call_gate_llm_async(message)
         except Exception as exc:
@@ -426,25 +453,25 @@ async def decide_route_async(message: str, session: HasSessionZone) -> GateDecis
                 type(exc).__name__,
                 exc,
             )
-            return GateDecision(route="GOVERNED", reason="sticky_governed_session")
+            return _observe_gate_decision(GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at)
         if (
             not result.parse_error
             and not result.timeout
             and result.routing != "GOVERNED"
             and result.confidence >= _GOVERNED_LIGHT_THRESHOLD
         ):
-            return GateDecision(route=result.routing, reason="governed_light_override")
-        return GateDecision(route="GOVERNED", reason="sticky_governed_session")
+            return _observe_gate_decision(GateDecision(route=result.routing, reason="governed_light_override"), started_at)
+        return _observe_gate_decision(GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at)
 
     # 2. Deterministic hard overrides (fresh session)
     hard = check_hard_overrides(message)
     if hard:
-        return GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}")
+        return _observe_gate_decision(GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"), started_at)
 
     # 3. Deterministic light routing
     light = classify_light_route(message)
     if light is not None:
-        return light
+        return _observe_gate_decision(light, started_at)
 
     # 4. Mini-LLM classification
     try:
@@ -457,10 +484,10 @@ async def decide_route_async(message: str, session: HasSessionZone) -> GateDecis
         )
         deterministic = check_hard_overrides(message)
         if deterministic:
-            return GateDecision(
-                route="GOVERNED",
-                reason=f"timeout_with_deterministic_signal:{deterministic.trigger}",
+            return _observe_gate_decision(
+                GateDecision(route="GOVERNED", reason=f"timeout_with_deterministic_signal:{deterministic.trigger}"),
+                started_at,
             )
-        return GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed")
+        return _observe_gate_decision(GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed"), started_at)
 
-    return _apply_llm_result(result, message)
+    return _observe_gate_decision(_apply_llm_result(result, message), started_at)

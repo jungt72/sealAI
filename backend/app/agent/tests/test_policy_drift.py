@@ -24,23 +24,21 @@ from langchain_core.messages import AIMessage, HumanMessage
 # ---------------------------------------------------------------------------
 
 class TestAnonPathPolicyInjection:
-    """The unauthenticated chat_endpoint must apply evaluate_interaction_policy."""
+    """The unauthenticated chat_endpoint must apply gate routing (W3.4)."""
 
     @pytest.mark.asyncio
-    async def test_anon_meta_query_sets_meta_policy_path(self):
-        """A meta query on the unauthenticated path must set policy_path='meta'."""
+    async def test_anon_meta_query_sets_conversation_policy_path(self):
+        """A meta/status query on the unauthenticated path must route to CONVERSATION."""
         from app.agent.api.router import chat_endpoint, SESSION_STORE
         from app.agent.api.models import ChatRequest
 
         session_id = "test-anon-meta-001"
-        # Clear any pre-existing session
         SESSION_STORE.pop(session_id, None)
 
         captured_state = {}
 
         async def mock_execute(state):
             captured_state.update(state)
-            # Simulate meta_response_node output
             from langchain_core.messages import AIMessage
             return {
                 **state,
@@ -52,59 +50,42 @@ class TestAnonPathPolicyInjection:
         with patch("app.agent.api.router.execute_agent", side_effect=mock_execute):
             await chat_endpoint(request, current_user=None)
 
-        assert captured_state.get("policy_path") == "meta", (
-            "Unauthenticated meta query must inject policy_path='meta'"
+        assert captured_state.get("policy_path") == "conversation", (
+            "Unauthenticated meta query must inject policy_path='conversation' (gate: CONVERSATION)"
         )
 
     @pytest.mark.asyncio
-    async def test_anon_blocked_query_sets_blocked_policy_path(self):
-        """A blocked request on the unauthenticated path must set policy_path='blocked'."""
+    async def test_anon_recommendation_request_is_blocked_as_governed(self):
+        """Explicit recommendation requests go to GOVERNED → 401 on the unauthenticated path."""
         from app.agent.api.router import chat_endpoint, SESSION_STORE
         from app.agent.api.models import ChatRequest
 
         session_id = "test-anon-blocked-001"
         SESSION_STORE.pop(session_id, None)
 
-        captured_state = {}
-
-        async def mock_execute(state):
-            captured_state.update(state)
-            from langchain_core.messages import AIMessage
-            return {
-                **state,
-                "messages": state["messages"] + [AIMessage(content="Blocked refusal.")],
-            }
-
         request = ChatRequest(message="Welchen Hersteller empfiehlst du?", session_id=session_id)
 
-        with patch("app.agent.api.router.execute_agent", side_effect=mock_execute):
-            await chat_endpoint(request, current_user=None)
+        with patch("app.agent.api.router.execute_agent", AsyncMock()) as mock_execute:
+            with pytest.raises(HTTPException) as exc_info:
+                await chat_endpoint(request, current_user=None)
 
-        assert captured_state.get("policy_path") == "blocked", (
-            "Unauthenticated blocked request must inject policy_path='blocked'"
-        )
+        assert exc_info.value.status_code == 401
+        mock_execute.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_anon_structured_turn_is_blocked_as_compat_only(self):
-        """Structured technical turns must not use the unauthenticated legacy helper path."""
+    async def test_anon_governed_turn_is_blocked_as_compat_only(self):
+        """Technical governed turns must not use the unauthenticated legacy helper path."""
         from app.agent.api.router import chat_endpoint, SESSION_STORE
         from app.agent.api.models import ChatRequest
+        from app.agent.runtime.gate import GateDecision
 
         session_id = "test-anon-structured-block-001"
         SESSION_STORE.pop(session_id, None)
 
-        structured_decision = MagicMock()
-        structured_decision.has_case_state = True
-        structured_decision.path.value = "structured"
-        structured_decision.result_form.value = "structured_reply"
-
-        request = ChatRequest(message="ich muss salzwasser draussen halten", session_id=session_id)
+        request = ChatRequest(message="Berechne RWDR fuer 50mm Welle bei 3000rpm", session_id=session_id)
 
         with (
-            patch(
-                "app.agent.agent.interaction_policy.evaluate_policy_async",
-                AsyncMock(return_value=structured_decision),
-            ),
+            patch("app.agent.runtime.gate.decide_route_async", AsyncMock(return_value=GateDecision(route="GOVERNED", reason="hard_override:numeric_unit"))),
             patch("app.agent.api.router.execute_agent", AsyncMock()) as mock_execute,
         ):
             with pytest.raises(HTTPException) as exc_info:
