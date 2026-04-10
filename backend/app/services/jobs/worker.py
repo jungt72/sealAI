@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.models.rag_document import RagDocument
+from app.observability.metrics import track_rag_ingest
 
 IngestFunc = Callable[..., Any]
 
@@ -86,11 +87,13 @@ async def process_rag_document(
         doc.status = "indexed"
         doc.ingest_stats = stats
         doc.error = None
+        track_rag_ingest(doc.source_system or "upload", "indexed", elapsed_ms / 1000.0)
         if doc.size_bytes is None and file_size is not None:
             doc.size_bytes = file_size
     except Exception as exc:
         doc.status = "error"
         doc.error = f"{type(exc).__name__}: {exc}"
+        track_rag_ingest(doc.source_system or "upload", "error", time.perf_counter() - started)
     session.add(doc)
     await session.commit()
 

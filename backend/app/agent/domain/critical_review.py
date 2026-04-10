@@ -92,9 +92,9 @@ def run_critical_review_specialist(
     soft_findings: list[str] = []
     required_corrections: list[str] = []
 
-    if governance.release_status != "rfq_ready":
-        _append_unique(blocking_findings, "release_status_not_rfq_ready")
-        _append_unique(required_corrections, "Release status must reach rfq_ready before RFQ handover.")
+    if governance.release_status != "inquiry_ready":
+        _append_unique(blocking_findings, "release_status_not_inquiry_ready")
+        _append_unique(required_corrections, "Release status must reach inquiry_ready before RFQ handover.")
     if governance.rfq_admissibility != "ready":
         _append_unique(blocking_findings, "rfq_admissibility_not_ready")
         _append_unique(required_corrections, "RFQ admissibility must be ready before RFQ handover.")

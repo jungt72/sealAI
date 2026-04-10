@@ -38,7 +38,15 @@ from app.agent.state.models import (
     NormalizedParameter,
     NormalizedState,
 )
-from app.agent.state.persistence import REASONING_PROMPT_VERSION, save_governed_state_snapshot_async
+from app.agent.state.persistence import (
+    REASONING_PROMPT_VERSION,
+    get_case_by_number_async,
+    get_governed_case_snapshot_by_revision_async,
+    get_latest_governed_case_snapshot_async,
+    list_cases_async,
+    list_governed_case_snapshots_async,
+    save_governed_state_snapshot_async,
+)
 from app.services.auth.dependencies import RequestUser
 
 
@@ -133,13 +141,15 @@ class _Store:
 class _FakeCaseRecord:
     case_number = _Attr("case_number")
     user_id = _Attr("user_id")
+    updated_at = _Attr("updated_at")
 
-    def __init__(self, *, case_number, user_id, subsegment=None, status="active", id=None):
+    def __init__(self, *, case_number, user_id, subsegment=None, status="active", id=None, updated_at=None):
         self.id = id or str(uuid.uuid4())
         self.case_number = case_number
         self.user_id = user_id
         self.subsegment = subsegment
         self.status = status
+        self.updated_at = updated_at or f"updated:{case_number}"
 
 
 class _FakeCaseStateSnapshot:
@@ -289,6 +299,87 @@ async def test_save_governed_state_snapshot_advances_revision_when_cycle_stalls(
         )
 
     assert [snapshot.revision for snapshot in store.snapshots] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_get_case_and_latest_snapshot_reads_latest_revision() -> None:
+    store, fake_modules = _install_fake_snapshot_backend()
+
+    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-read", user_id="user-1")
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=1, medium="Dampf"),
+            case_number="case-read",
+            user_id="user-1",
+        )
+        case_row = await get_case_by_number_async(case_number="case-read", user_id="user-1")
+        snapshot = await get_latest_governed_case_snapshot_async(case_number="case-read", user_id="user-1")
+
+    assert case_row is not None
+    assert case_row["case_number"] == "case-read"
+    assert case_row["user_id"] == "user-1"
+    assert snapshot is not None
+    assert snapshot.case_number == "case-read"
+    assert snapshot.revision == 2
+    assert snapshot.state_json["analysis_cycle"] == 1
+    assert snapshot.state_json["normalized"]["parameters"]["medium"]["value"] == "Dampf"
+    assert snapshot.basis_hash
+
+
+@pytest.mark.asyncio
+async def test_get_governed_snapshot_by_revision_reads_targeted_revision() -> None:
+    store, fake_modules = _install_fake_snapshot_backend()
+
+    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-rev-read", user_id="user-1")
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=1, medium="Dampf"),
+            case_number="case-rev-read",
+            user_id="user-1",
+        )
+        snapshot = await get_governed_case_snapshot_by_revision_async(
+            case_number="case-rev-read",
+            revision=1,
+            user_id="user-1",
+        )
+
+    assert snapshot is not None
+    assert snapshot.revision == 1
+    assert snapshot.state_json["normalized"]["parameters"]["medium"]["value"] == "Wasser"
+
+
+@pytest.mark.asyncio
+async def test_list_cases_reads_owned_cases_newest_first_with_latest_revision() -> None:
+    store, fake_modules = _install_fake_snapshot_backend()
+
+    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-a", user_id="user-1")
+        await save_governed_state_snapshot_async(_state(analysis_cycle=3), case_number="case-b", user_id="user-1")
+        await save_governed_state_snapshot_async(_state(analysis_cycle=2), case_number="case-c", user_id="user-2")
+        store.cases[0].updated_at = "2026-04-08T00:00:00+00:00"
+        store.cases[1].updated_at = "2026-04-09T00:00:00+00:00"
+        store.cases[2].updated_at = "2026-04-10T00:00:00+00:00"
+        items = await list_cases_async(user_id="user-1")
+
+    assert [item["case_number"] for item in items] == ["case-b", "case-a"]
+    assert [item["latest_revision"] for item in items] == [3, 1]
+
+
+@pytest.mark.asyncio
+async def test_list_case_snapshots_reads_revisions_newest_first() -> None:
+    store, fake_modules = _install_fake_snapshot_backend()
+
+    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-list", user_id="user-1")
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=1, medium="Dampf"),
+            case_number="case-list",
+            user_id="user-1",
+        )
+        items = await list_governed_case_snapshots_async(case_number="case-list", user_id="user-1")
+
+    assert [item.revision for item in items] == [2, 1]
+    assert items[0].basis_hash is not None
 
 
 @pytest.mark.asyncio

@@ -249,7 +249,7 @@ def _minimal_structured_snapshot_from_case_state(
             "active_blockers": blockers,
         }
 
-    if rfq_admissibility == "ready" and release_status == "rfq_ready":
+    if rfq_admissibility == "ready" and release_status == "inquiry_ready":
         return {
             "case_status": "governed_non_binding_result",
             "output_status": "governed_non_binding_result",
@@ -295,7 +295,7 @@ def _can_surface_governed_rationale_reply(
         return False
     if bool(output_contract.get("suppress_recommendation_details")):
         return False
-    if str(selection_state.get("release_status") or "") != "rfq_ready":
+    if str(selection_state.get("release_status") or "") != "inquiry_ready":
         return False
     if str(selection_state.get("rfq_admissibility") or "") != "ready":
         return False
@@ -605,7 +605,7 @@ def build_final_reply(
             not output_blocked
             and (
                 (
-                    release_status == "rfq_ready"
+                    release_status == "inquiry_ready"
                     and rfq_admissibility == "ready"
                     and specificity_level == "compound_required"
                 )

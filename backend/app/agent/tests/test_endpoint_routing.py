@@ -68,6 +68,46 @@ class TestAgentRouterRoutes:
         paths = _route_paths_and_methods(agent_router)
         assert "GET" in paths.get("/workspace/{case_id}", set()), "/workspace/{case_id} must accept GET"
 
+    def test_case_metadata_route_registered(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "/cases/{case_id}" in paths, "GET /cases/{case_id} must be registered on agent router"
+
+    def test_case_metadata_route_is_get(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "GET" in paths.get("/cases/{case_id}", set()), "/cases/{case_id} must accept GET"
+
+    def test_case_list_route_registered(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "/cases" in paths, "GET /cases must be registered on agent router"
+
+    def test_case_list_route_is_get(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "GET" in paths.get("/cases", set()), "/cases must accept GET"
+
+    def test_case_latest_snapshot_route_registered(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "/cases/{case_id}/snapshots/latest" in paths, "GET /cases/{case_id}/snapshots/latest must be registered on agent router"
+
+    def test_case_latest_snapshot_route_is_get(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "GET" in paths.get("/cases/{case_id}/snapshots/latest", set()), "/cases/{case_id}/snapshots/latest must accept GET"
+
+    def test_case_revision_snapshot_route_registered(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "/cases/{case_id}/snapshots/{revision}" in paths, "GET /cases/{case_id}/snapshots/{revision} must be registered on agent router"
+
+    def test_case_revision_snapshot_route_is_get(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "GET" in paths.get("/cases/{case_id}/snapshots/{revision}", set()), "/cases/{case_id}/snapshots/{revision} must accept GET"
+
+    def test_case_snapshot_list_route_registered(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "/cases/{case_id}/snapshots" in paths, "GET /cases/{case_id}/snapshots must be registered on agent router"
+
+    def test_case_snapshot_list_route_is_get(self, agent_router):
+        paths = _route_paths_and_methods(agent_router)
+        assert "GET" in paths.get("/cases/{case_id}/snapshots", set()), "/cases/{case_id}/snapshots must accept GET"
+
     def test_workspace_rfq_document_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
         assert "/workspace/{case_id}/rfq-document" in paths, "GET /workspace/{case_id}/rfq-document must be registered on agent router"

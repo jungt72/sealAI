@@ -1,0 +1,76 @@
+{
+  "id": null,
+  "uid": "sealai-business",
+  "title": "SeaLAI Business",
+  "tags": ["sealai", "business", "prometheus"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Chat Requests/s",
+      "id": 1,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{
+        "expr": "sum by (path) (rate(sealai_http_requests_total{path=~\"/api/agent/chat|/api/agent/chat/stream\"}[5m]))",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Workspace Requests/s",
+      "id": 2,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{
+        "expr": "sum by (path) (rate(sealai_http_requests_total{path=~\".*/workspace/.*|.*/state/workspace.*\"}[5m]))",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Review Requests/s",
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{
+        "expr": "sum by (path) (rate(sealai_http_requests_total{path=~\"/api/agent/review|/api/agent/review/seed\"}[5m]))",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "RFQ Surface Requests/s",
+      "id": 4,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{
+        "expr": "sum by (path) (rate(sealai_http_requests_total{path=~\".*/rfq-document.*|.*/rfq-generate-pdf.*|.*/rfq-handover.*|.*/rfq-confirm.*|/api/v1/rfq/download\"}[5m]))",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Business Surface 5xx/s",
+      "id": 5,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{
+        "expr": "sum(rate(sealai_http_requests_total{status=~\"5..\",path=~\"/api/agent/chat|/api/agent/chat/stream|.*/workspace/.*|.*/state/workspace.*|/api/agent/review|/api/agent/review/seed|.*/rfq-document.*|.*/rfq-generate-pdf.*|.*/rfq-handover.*|.*/rfq-confirm.*|/api/v1/rfq/download\"}[5m]))",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Business Surface Latency p95 (s)",
+      "id": 6,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (le) (rate(sealai_http_request_duration_seconds_bucket{path=~\"/api/agent/chat|/api/agent/chat/stream|.*/workspace/.*|.*/state/workspace.*|/api/agent/review|/api/agent/review/seed|.*/rfq-document.*|.*/rfq-generate-pdf.*|.*/rfq-handover.*|.*/rfq-confirm.*|/api/v1/rfq/download\"}[5m])))",
+        "refId": "A"
+      }]
+    }
+  ]
+}

@@ -434,7 +434,7 @@ def _derive_matchability_status(
         return "blocked_review_required"
     if not has_matching_basis:
         return "not_ready_no_matching_basis"
-    if release_status in {"manufacturer_validation_required", "rfq_ready", "approved"} and not blocking_reasons:
+    if release_status in {"manufacturer_validation_required", "rfq_ready", "inquiry_ready", "approved"} and not blocking_reasons:
         return "ready_for_matching"
     if release_status == "precheck_only":
         return "not_ready_precheck"

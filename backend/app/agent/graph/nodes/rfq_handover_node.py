@@ -184,7 +184,7 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
     critical_review = run_critical_review_specialist(
         CriticalReviewSpecialistInput(
             governance_summary=CriticalReviewGovernanceSummary(
-                release_status="rfq_ready" if state.governance.rfq_admissible else "inadmissible",
+                release_status="inquiry_ready" if state.governance.rfq_admissible else "inadmissible",
                 rfq_admissibility="ready" if state.governance.rfq_admissible else "inadmissible",
                 unknowns_release_blocking=tuple(str(item) for item in list(state.asserted.blocking_unknowns or []) if item is not None),
                 unknowns_manufacturer_validation=tuple(str(item) for item in list(state.governance.open_validation_points or []) if item is not None),
@@ -266,7 +266,7 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
     handover = build_handover_payload(
         {
             "governance": {
-                "release_status": "rfq_ready",
+                "release_status": "inquiry_ready",
                 "rfq_admissibility": "ready",
             },
             "review": {

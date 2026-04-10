@@ -835,7 +835,7 @@ def project_projection_invariants(
     ):
         violations.append("clarification_output_conflicts_with_blocking_projection")
     if conflict_open and (output_status == "governed_non_binding_result" or candidate_projection):
-        violations.append("unresolved_conflict_cannot_surface_governed_recommendation")
+        violations.append("unresolved_conflict_cannot_surface_technical_preselection")
     if readiness_status == "releasable" and (
         review_status != "releasable"
         or evidence_status == "no_evidence"

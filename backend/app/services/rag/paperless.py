@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.rag.paperless_tags import evaluate_paperless_tag_readiness
 from app.core.config import settings
 from app.models.rag_document import RagDocument
+from app.observability.metrics import track_rag_sync
 from app.services.rag.constants import (
     RAG_SHARED_TENANT_ID,
     RAG_VISIBILITY_PUBLIC,
@@ -211,7 +212,7 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
 
     except Exception as exc:
         logger.exception("paperless_sync_error", error=str(exc))
-        return {
+        result = {
             "error": str(exc),
             "scanned": scanned,
             "queued": queued,
@@ -221,8 +222,10 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
             "pilot_ready": pilot_ready,
             "missing_pilot_tags": missing_pilot_tags,
         }
+        track_rag_sync(_PAPERLESS_SOURCE_SYSTEM, "error", result)
+        return result
 
-    return {
+    result = {
         "status": "success",
         "scanned": scanned,
         "queued": queued,
@@ -232,3 +235,5 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
         "pilot_ready": pilot_ready,
         "missing_pilot_tags": missing_pilot_tags,
     }
+    track_rag_sync(_PAPERLESS_SOURCE_SYSTEM, "success", result)
+    return result

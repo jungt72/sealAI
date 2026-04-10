@@ -45,6 +45,14 @@ except ModuleNotFoundError:  # pragma: no cover - compatibility fallback for loc
 
     ulid = _UlidCompat()
 
+
+def _new_idempotency_key() -> str:
+    if hasattr(ulid, "new"):
+        return str(ulid.new())  # type: ignore[call-arg]
+    if hasattr(ulid, "ULID"):
+        return str(ulid.ULID())  # type: ignore[call-arg]
+    return uuid.uuid4().hex
+
 # ---------------------------------------------------------------------------
 # Shared sub-types
 # ---------------------------------------------------------------------------
@@ -505,7 +513,7 @@ class ActionReadinessState(BaseModel):
     pdf_ready: bool = False
     pdf_url: str | None = None
     inquiry_sent: bool = False
-    idempotency_key: str = Field(default_factory=lambda: str(ulid.new()))
+    idempotency_key: str = Field(default_factory=_new_idempotency_key)
     missing_for_inquiry: list[str] = Field(default_factory=list)
     dispatch_ready: bool = False
     dispatch_status: str | None = None

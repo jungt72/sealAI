@@ -1,0 +1,99 @@
+{
+  "id": null,
+  "uid": "sealai-rag-intelligence",
+  "title": "SeaLAI RAG Intelligence",
+  "tags": ["sealai", "rag", "prometheus"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Qdrant Dependency Up",
+      "id": 1,
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "max(sealai_dependency_up{dependency=\"qdrant\"})", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAG Retrievals/s by Method",
+      "id": 2,
+      "gridPos": {"h": 6, "w": 9, "x": 6, "y": 0},
+      "targets": [{"expr": "sum by (method) (rate(sealai_rag_retrievals_total[5m]))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Qdrant Collection Points",
+      "id": 7,
+      "gridPos": {"h": 6, "w": 9, "x": 15, "y": 0},
+      "targets": [{"expr": "sealai_qdrant_collection_points", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAG Retrievals/s by Tier",
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "targets": [{"expr": "sum by (tier) (rate(sealai_rag_retrievals_total[5m]))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAG Latency p95 (s) by Method",
+      "id": 4,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, method) (rate(sealai_rag_latency_seconds_bucket[5m])))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAG Cache Hit Ratio",
+      "id": 5,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+      "targets": [{
+        "expr": "sum(rate(sealai_rag_cache_hits_total[5m])) / clamp_min(sum(rate(sealai_rag_cache_hits_total[5m])) + sum(rate(sealai_rag_cache_misses_total[5m])), 1e-9)",
+        "refId": "A"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAG Errors/s by Type",
+      "id": 6,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "targets": [{"expr": "sum by (error_type) (rate(sealai_errors_total{component=\"rag\"}[5m]))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAG Ingests/s by Source and Status",
+      "id": 8,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+      "targets": [{"expr": "sum by (source, status) (rate(sealai_rag_ingest_documents_total[5m]))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAG Ingest Duration p95 (s) by Source",
+      "id": 9,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, source) (rate(sealai_rag_ingest_duration_seconds_bucket[5m])))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Paperless Sync Last Run Counts",
+      "id": 10,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 30},
+      "targets": [{"expr": "sealai_rag_sync_last_documents{source=\"paperless\"}", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Last Successful Ingest Age (s)",
+      "id": 11,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 30},
+      "targets": [{
+        "expr": "clamp_min(time() - max by (source) (sealai_rag_last_successful_ingest_timestamp_seconds), 0)",
+        "refId": "A"
+      }]
+    }
+  ]
+}

@@ -816,7 +816,6 @@ async def test_chat_endpoint_fails_closed_to_governed_on_unexpected_runtime_mode
                 )
             ),
         ) as mock_governed,
-        patch("app.agent.api.router.prepare_structured_state", new=AsyncMock()) as mock_prepare,
     ):
         response = await chat_endpoint(
             SimpleNamespace(session_id="case-fallback-1", message="ich muss salzwasser draussen halten"),
@@ -825,7 +824,6 @@ async def test_chat_endpoint_fails_closed_to_governed_on_unexpected_runtime_mode
 
     assert response.reply == "Welcher Druck liegt an?"
     mock_governed.assert_awaited_once()
-    mock_prepare.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -868,7 +866,6 @@ async def test_chat_endpoint_fails_closed_to_governed_instead_of_light_legacy_fa
                 )
             ),
         ) as mock_light,
-        patch("app.agent.api.router.prepare_structured_state", new=AsyncMock()) as mock_prepare,
         patch("app.agent.api.router.execute_agent", new=AsyncMock()) as mock_execute,
         ):
         response = await chat_endpoint(
@@ -879,7 +876,6 @@ async def test_chat_endpoint_fails_closed_to_governed_instead_of_light_legacy_fa
     assert response.reply == "Welcher Druck liegt an?"
     mock_governed.assert_awaited_once()
     mock_light.assert_not_awaited()
-    mock_prepare.assert_not_called()
     mock_execute.assert_not_called()
 
 
@@ -905,7 +901,6 @@ async def test_stream_event_generator_fails_closed_to_governed_on_unexpected_run
             "app.agent.api.router._stream_governed_graph",
             side_effect=_fake_stream_governed_graph,
         ) as mock_governed_stream,
-        patch("app.agent.api.router.prepare_structured_state", new=AsyncMock()) as mock_prepare,
     ):
         frames = []
         async for frame in event_generator(
@@ -919,4 +914,3 @@ async def test_stream_event_generator_fails_closed_to_governed_on_unexpected_run
         "data: [DONE]\n\n",
     ]
     assert mock_governed_stream.call_count == 1
-    mock_prepare.assert_not_called()

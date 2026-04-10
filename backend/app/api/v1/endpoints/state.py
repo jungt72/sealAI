@@ -13,7 +13,9 @@ from pydantic import BaseModel, Field
 
 from app.api.v1.projections.case_workspace import (
     project_case_workspace,
+    project_case_workspace_from_governed_state,
     project_case_workspace_from_ssot,
+    synthesize_workspace_state_from_governed,
     synthesize_workspace_state_from_ssot,
 )
 from app.api.v1.schemas.case_workspace import CaseWorkspaceProjection
@@ -92,15 +94,28 @@ async def get_case_workspace(
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
 
-    from app.agent.api.router import load_canonical_state
+    from app.agent.api.router import (
+        _load_preferred_governed_workspace_source,
+        load_structured_residual_state,
+    )
 
-    ssot_state = await load_canonical_state(current_user=user, session_id=thread_id)
-    if ssot_state is None:
-        raise HTTPException(
-            status_code=404,
-            detail=error_detail("session_not_found", request_id=request_id),
+    governed_state = await _load_preferred_governed_workspace_source(
+        current_user=user,
+        session_id=thread_id,
+    )
+    if governed_state is not None:
+        projection = project_case_workspace_from_governed_state(governed_state, chat_id=thread_id)
+    else:
+        ssot_state = await load_structured_residual_state(
+            current_user=user,
+            session_id=thread_id,
         )
-    projection = project_case_workspace_from_ssot(ssot_state, chat_id=thread_id)
+        if ssot_state is None:
+            raise HTTPException(
+                status_code=404,
+                detail=error_detail("session_not_found", request_id=request_id),
+            )
+        projection = project_case_workspace_from_ssot(ssot_state, chat_id=thread_id)
     logger.info(
         "state_workspace_get_success_ssot",
         extra={
@@ -270,9 +285,12 @@ async def get_rfq_document(
         or raw_request.headers.get("X-Request-ID")
     )
 
-    from app.agent.api.router import load_canonical_state
+    from app.agent.api.router import load_structured_handover_state
 
-    ssot_state = await load_canonical_state(current_user=user, session_id=thread_id)
+    ssot_state = await load_structured_handover_state(
+        current_user=user,
+        session_id=thread_id,
+    )
     if ssot_state is None:
         raise HTTPException(
             status_code=404,
@@ -393,6 +411,50 @@ def _synthesize_state_response_from_ssot(state: Any, *, chat_id: str) -> Dict[st
     }
 
 
+def _synthesize_state_response_from_governed(state: Any, *, chat_id: str) -> Dict[str, Any]:
+    """Build the legacy-format state response dict directly from governed state."""
+    synthesized_state = synthesize_workspace_state_from_governed(state, chat_id=chat_id)
+    working_profile_block: Dict[str, Any] = dict(synthesized_state.get("working_profile") or {})
+    reasoning: Dict[str, Any] = dict(synthesized_state.get("reasoning") or {})
+    system: Dict[str, Any] = dict(synthesized_state.get("system") or {})
+    answer_contract: Dict[str, Any] = dict(system.get("answer_contract") or {})
+    governance_metadata: Dict[str, Any] = dict(system.get("governance_metadata") or {})
+    matching_state: Dict[str, Any] = dict(system.get("matching_state") or {})
+    rfq_state: Dict[str, Any] = dict(system.get("rfq_state") or {})
+    rfq_admissibility_payload: Dict[str, Any] = dict(system.get("rfq_admissibility") or {})
+    requirement_class = answer_contract.get("requirement_class")
+
+    return {
+        "state": synthesized_state,
+        "working_profile": dict(
+            working_profile_block.get("engineering_profile")
+            or working_profile_block.get("extracted_params")
+            or {}
+        ),
+        "parameter_provenance": {},
+        "recommendation_contract": answer_contract,
+        "requirement_class": requirement_class,
+        "recipient_selection": None,
+        "requirement_class_hint": answer_contract.get("requirement_class_hint"),
+        "matching_state": matching_state,
+        "matching_outcome": matching_state.get("matching_outcome"),
+        "rfq_state": rfq_state,
+        "manufacturer_state": dict(system.get("manufacturer_state") or {}),
+        "sealing_requirement_spec": {},
+        "metadata": {
+            "thread_id": chat_id,
+            "phase": reasoning.get("phase"),
+            "last_node": "facade_hydration",
+            "recommendation_ready": governance_metadata.get("release_status") in ("approved", "rfq_ready"),
+        },
+        "governance_metadata": governance_metadata,
+        "rfq_admissibility": rfq_admissibility_payload.get("status"),
+        "is_handover_ready": bool(rfq_state.get("handover_ready")),
+        "next": [],
+        "config": {},
+    }
+
+
 @router.get("/state/{chat_id}")
 async def get_graph_state_endpoint(
     chat_id: str,
@@ -405,16 +467,29 @@ async def get_graph_state_endpoint(
     """
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
 
-    from app.agent.api.router import load_canonical_state
+    from app.agent.api.router import (
+        _load_preferred_governed_workspace_source,
+        load_structured_residual_state,
+    )
 
-    ssot_state = await load_canonical_state(current_user=user, session_id=chat_id)
+    governed_state = await _load_preferred_governed_workspace_source(
+        current_user=user,
+        session_id=chat_id,
+    )
+    logger.info(
+        "state_facade_hydration",
+        extra={"chat_id": chat_id, "request_id": request_id},
+    )
+    if governed_state is not None:
+        return _synthesize_state_response_from_governed(governed_state, chat_id=chat_id)
+
+    ssot_state = await load_structured_residual_state(
+        current_user=user,
+        session_id=chat_id,
+    )
     if ssot_state is None:
         raise HTTPException(
             status_code=404,
             detail=error_detail("session_not_found", request_id=request_id),
         )
-    logger.info(
-        "state_facade_hydration",
-        extra={"chat_id": chat_id, "request_id": request_id},
-    )
     return _synthesize_state_response_from_ssot(ssot_state, chat_id=chat_id)

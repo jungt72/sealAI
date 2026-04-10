@@ -19,7 +19,7 @@ def is_sufficient_for_structured(asserted_state: Optional[Dict[str, Any]]) -> bo
 
 
 def _governance_projection_blocks_output(governance_state: Dict[str, Any]) -> bool:
-    if governance_state.get("release_status") != "rfq_ready":
+    if governance_state.get("release_status") != "inquiry_ready":
         return True
     if governance_state.get("rfq_admissibility") != "ready":
         return True

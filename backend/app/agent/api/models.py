@@ -131,6 +131,55 @@ class ReviewSeedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CaseMetadataResponse(BaseModel):
+    id: str
+    case_number: str
+    user_id: str
+    subsegment: Optional[str] = None
+    status: str
+    created_at: Optional[Any] = None
+    updated_at: Optional[Any] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GovernedSnapshotResponse(BaseModel):
+    case_id: str
+    case_number: str
+    user_id: str
+    revision: int
+    state_json: Dict[str, Any]
+    basis_hash: Optional[str] = None
+    ontology_version: Optional[str] = None
+    prompt_version: Optional[str] = None
+    model_version: Optional[str] = None
+    created_at: Optional[Any] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CaseListItemResponse(BaseModel):
+    id: str
+    case_number: str
+    status: str
+    subsegment: Optional[str] = None
+    updated_at: Optional[Any] = None
+    latest_revision: Optional[int] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GovernedSnapshotRevisionListItemResponse(BaseModel):
+    revision: int
+    basis_hash: Optional[str] = None
+    ontology_version: Optional[str] = None
+    prompt_version: Optional[str] = None
+    model_version: Optional[str] = None
+    created_at: Optional[Any] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: Optional[str] = Field(default="default")

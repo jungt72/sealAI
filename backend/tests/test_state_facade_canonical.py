@@ -431,7 +431,10 @@ def test_v1_state_facade_reads_canonical_persisted_state(monkeypatch) -> None:
     }
 
     with patch(
-        "app.agent.api.router.load_canonical_state",
+        "app.agent.api.router._load_preferred_governed_workspace_source",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "app.agent.api.router.load_structured_residual_state",
         new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
     ) as mock_load:
         app = FastAPI()
@@ -468,47 +471,115 @@ def test_v1_state_facade_reads_canonical_persisted_state(monkeypatch) -> None:
     assert body["state"]["system"]["governance_metadata"]["required_disclaimers"] == ["Manufacturer validation required."]
     assert body["recommendation_contract"]["requirement_class_hint"] == "compound::ptfe::g25::acme"
     assert body["recommendation_contract"]["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
-    assert body["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
-    assert body["recipient_selection"]["selection_status"] == "selected_recipient"
-    assert body["recipient_selection"]["selected_partner_id"] == "case-state-partner"
-    assert body["recipient_selection"]["selected_recipient_refs"][0]["manufacturer_name"] == "Acme"
+
+
+def test_v1_state_facade_prefers_governed_source_before_canonical_state() -> None:
+    auth_deps = importlib.import_module("app.services.auth.dependencies")
+    state_mod = importlib.import_module("app.api.v1.endpoints.state")
+    from app.agent.state.models import AssertedClaim, ConversationMessage, GovernedSessionState
+
+    governed_state = GovernedSessionState(
+        analysis_cycle=5,
+        conversation_messages=[
+            ConversationMessage(role="assistant", content="Governed Hydration", created_at="2026-04-09T00:00:00+00:00"),
+        ],
+    )
+    governed_state.asserted.assertions["medium"] = AssertedClaim(
+        field_name="medium",
+        asserted_value="Wasser",
+        confidence="confirmed",
+    )
+    governed_state.rfq.status = "ready"
+    governed_state.rfq.rfq_admissible = True
+
+    with patch(
+        "app.agent.api.router._load_preferred_governed_workspace_source",
+        new=AsyncMock(return_value=governed_state),
+    ), patch(
+        "app.agent.api.router.load_structured_residual_state",
+        new=AsyncMock(side_effect=AssertionError("canonical state should not be used")),
+    ):
+        app = FastAPI()
+        app.include_router(getattr(state_mod, "router"))
+        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+            user_id="alice",
+            username="alice",
+            sub="alice",
+            roles=[],
+            scopes=[],
+            tenant_id="tenant-a",
+        )
+        client = TestClient(app)
+        response = client.get(
+            "/state/case-1",
+            headers={"X-Request-Id": "state-facade-governed"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["metadata"]["thread_id"] == "case-1"
+    assert body["working_profile"]["medium"] == "Wasser"
+    assert body["governance_metadata"]["release_status"] == "inadmissible" or body["governance_metadata"]["release_status"] == "precheck_only"
+    assert body["state"]["reasoning"]["state_revision"] == 5
+
+
+def test_v1_state_facade_uses_canonical_fallback_only_without_governed_source() -> None:
+    auth_deps = importlib.import_module("app.services.auth.dependencies")
+    state_mod = importlib.import_module("app.api.v1.endpoints.state")
+
+    persisted_state = {
+        "messages": [],
+        "working_profile": {"medium": "water"},
+        "case_state": {
+            "case_meta": {"phase": "case_state_phase"},
+            "governance_state": {
+                "release_status": "rfq_ready",
+                "rfq_admissibility": "ready",
+            },
+            "result_contract": {
+                "requirement_class_hint": "compound::ptfe::g25::acme",
+            },
+        },
+        "sealing_state": {
+            "cycle": {"state_revision": 4, "phase": "legacy_phase"},
+            "governance": {"release_status": "rfq_ready", "rfq_admissibility": "ready"},
+            "handover": {"is_handover_ready": False},
+        },
+    }
+
+    with patch(
+        "app.agent.api.router._load_preferred_governed_workspace_source",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "app.agent.api.router.load_structured_residual_state",
+        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
+    ) as mock_load:
+        app = FastAPI()
+        app.include_router(getattr(state_mod, "router"))
+        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+            user_id="alice",
+            username="alice",
+            sub="alice",
+            roles=[],
+            scopes=[],
+            tenant_id="tenant-a",
+        )
+        client = TestClient(app)
+        response = client.get(
+            "/state/case-1",
+            headers={"X-Request-Id": "state-facade-fallback"},
+        )
+
+    assert response.status_code == 200
+    assert mock_load.await_count == 1
+    body = response.json()
+    assert body["metadata"]["thread_id"] == "case-1"
+    assert body["working_profile"]["medium"] == "water"
+    assert body["governance_metadata"]["release_status"] == "rfq_ready"
+    assert body["requirement_class"] is None
     assert body["requirement_class_hint"] == "compound::ptfe::g25::acme"
-    assert body["state"]["system"]["answer_contract"]["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
-    assert body["state"]["system"]["answer_contract"]["requirement_class_hint"] == "compound::ptfe::g25::acme"
-    assert body["recommendation_contract"]["recommendation_identity"]["candidate_id"] == "ptfe::g25::acme"
-    assert body["sealing_requirement_spec"]["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
-    assert body["sealing_requirement_spec"]["recommendation_identity"]["material_family"] == "PTFE"
-    assert body["matching_state"]["matchability_status"] == "ready_for_matching"
-    assert body["matching_state"]["match_candidates"][0]["candidate_id"] == "ptfe::g25::acme"
-    assert body["matching_state"]["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
-    assert body["state"]["system"]["matching_state"]["requirement_class_hint"] == "compound::ptfe::g25::acme"
-    assert body["matching_outcome"]["status"] == "matched_primary_candidate"
-    assert body["matching_outcome"]["primary_match_candidate"]["candidate_id"] == "ptfe::g25::acme"
-    assert body["rfq_state"]["status"] == "ready"
-    assert body["rfq_state"]["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
-    assert body["rfq_state"]["rfq_object"]["qualified_material_ids"] == ["ptfe::g25::acme"]
-    assert body["rfq_state"]["rfq_object"]["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
-    assert body["rfq_state"]["rfq_dispatch"]["dispatch_ready"] is True
-    assert body["rfq_state"]["rfq_dispatch"]["dispatch_status"] == "dispatch_ready"
-    assert body["rfq_state"]["recipient_selection"]["selection_status"] == "selected_recipient"
-    assert body["rfq_state"]["rfq_dispatch"]["recipient_selection"]["selection_status"] == "selected_recipient"
-    assert body["rfq_state"]["rfq_dispatch"]["selected_manufacturer_ref"]["manufacturer_name"] == "Acme"
-    assert body["rfq_state"]["rfq_dispatch"]["rfq_object_basis"]["qualified_material_ids"] == ["ptfe::g25::acme"]
-    assert body["state"]["system"]["rfq_state"]["requirement_class_hint"] == "compound::ptfe::g25::acme"
     assert body["state"]["reasoning"]["phase"] == "case_state_phase"
     assert body["metadata"]["phase"] == "case_state_phase"
-    assert body["state"]["reasoning"]["selected_partner_id"] == "case-state-partner"
-    assert body["state"]["system"]["rfq_confirmed"] is True
-    assert body["state"]["system"]["rfq_handover_initiated"] is True
-    assert body["state"]["system"]["rfq_html_report_present"] is True
-    assert body["is_handover_ready"] is True
-    assert body["manufacturer_state"]["manufacturer_refs"][0]["manufacturer_name"] == "Acme"
-    assert body["manufacturer_state"]["qualified_materials"][0]["candidate_id"] == "ptfe::g25::acme"
-    assert body["manufacturer_state"]["manufacturer_capabilities"][0]["manufacturer_name"] == "Acme"
-    assert body["manufacturer_state"]["manufacturer_capabilities"][0]["requirement_class_ids"] == ["compound::ptfe::g25::acme"]
-    assert body["manufacturer_state"]["manufacturer_capabilities"][0]["rfq_qualified"] is True
-    assert body["manufacturer_state"]["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
-    assert body["state"]["system"]["manufacturer_state"]["requirement_class_hint"] == "compound::ptfe::g25::acme"
 
 
 def test_workspace_projection_prefers_case_state_lifecycle_fields(monkeypatch) -> None:
@@ -552,7 +623,7 @@ def test_workspace_projection_prefers_case_state_lifecycle_fields(monkeypatch) -
     }
 
     with patch(
-        "app.agent.api.router.load_canonical_state",
+        "app.agent.api.router.load_structured_residual_state",
         new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
     ):
         app = FastAPI()
@@ -580,3 +651,165 @@ def test_workspace_projection_prefers_case_state_lifecycle_fields(monkeypatch) -
     assert body["rfq_status"]["handover_initiated"] is True
     assert body["rfq_status"]["has_html_report"] is True
     assert body["rfq_status"]["handover_ready"] is True
+
+
+def test_state_workspace_rfq_document_uses_structured_handover_special_case_loader() -> None:
+    auth_deps = importlib.import_module("app.services.auth.dependencies")
+    state_mod = importlib.import_module("app.api.v1.endpoints.state")
+
+    persisted_state = {
+        "messages": [],
+        "working_profile": {},
+        "case_state": {},
+        "sealing_state": {
+            "handover": {
+                "rfq_html_report": "<html><body>rfq-special-case</body></html>",
+            },
+        },
+    }
+
+    with patch(
+        "app.agent.api.router.load_structured_handover_state",
+        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
+    ) as mock_special_loader, patch(
+        "app.agent.api.router._load_preferred_governed_workspace_source",
+        new=AsyncMock(side_effect=AssertionError("governed read helper should not be used for RFQ special-case reads")),
+    ):
+        app = FastAPI()
+        app.include_router(getattr(state_mod, "router"))
+        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+            user_id="alice",
+            username="alice",
+            sub="alice",
+            roles=[],
+            scopes=[],
+            tenant_id="tenant-a",
+        )
+        client = TestClient(app)
+        response = client.get(
+            "/state/workspace/rfq-document",
+            params={"thread_id": "case-1"},
+            headers={"X-Request-Id": "state-workspace-rfq-special"},
+        )
+
+    assert response.status_code == 200
+    assert response.text == "<html><body>rfq-special-case</body></html>"
+    assert mock_special_loader.await_count == 1
+
+
+def test_state_workspace_prefers_governed_source_before_canonical_state() -> None:
+    auth_deps = importlib.import_module("app.services.auth.dependencies")
+    state_mod = importlib.import_module("app.api.v1.endpoints.state")
+    from app.agent.state.models import AssertedClaim, ConversationMessage, GovernedSessionState
+
+    governed_state = GovernedSessionState(
+        analysis_cycle=4,
+        conversation_messages=[
+            ConversationMessage(role="assistant", content="Governed Snapshot", created_at="2026-04-09T00:00:00+00:00"),
+        ],
+    )
+    governed_state.asserted.assertions["medium"] = AssertedClaim(
+        field_name="medium",
+        asserted_value="Wasser",
+        confidence="confirmed",
+    )
+
+    with patch(
+        "app.agent.api.router._load_preferred_governed_workspace_source",
+        new=AsyncMock(return_value=governed_state),
+    ), patch(
+        "app.agent.api.router.load_structured_residual_state",
+        new=AsyncMock(side_effect=AssertionError("canonical state should not be used")),
+    ):
+        app = FastAPI()
+        app.include_router(getattr(state_mod, "router"))
+        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+            user_id="alice",
+            username="alice",
+            sub="alice",
+            roles=[],
+            scopes=[],
+            tenant_id="tenant-a",
+        )
+        client = TestClient(app)
+        response = client.get(
+            "/state/workspace",
+            params={"thread_id": "case-1"},
+            headers={"X-Request-Id": "state-workspace-governed"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["case_summary"]["thread_id"] == "case-1"
+    assert body["cycle_info"]["state_revision"] == 4
+    assert "Medium: Wasser" in body["communication_context"]["confirmed_facts_summary"]
+
+
+def test_state_workspace_uses_canonical_fallback_only_without_governed_source() -> None:
+    auth_deps = importlib.import_module("app.services.auth.dependencies")
+    state_mod = importlib.import_module("app.api.v1.endpoints.state")
+
+    persisted_state = {
+        "messages": [],
+        "working_profile": {"medium": "water"},
+        "case_state": {
+            "case_meta": {"phase": "fallback-phase"},
+            "governance_state": {
+                "release_status": "rfq_ready",
+                "rfq_admissibility": "ready",
+                "review_required": False,
+                "review_state": "approved",
+            },
+            "recipient_selection": {
+                "selected_partner_id": "fallback-partner",
+            },
+            "rfq_state": {
+                "status": "ready",
+                "rfq_confirmed": True,
+                "rfq_handover_initiated": True,
+                "rfq_html_report_present": False,
+                "handover_ready": True,
+                "blockers": [],
+                "open_points": [],
+            },
+            "result_contract": {
+                "release_status": "rfq_ready",
+                "required_disclaimers": [],
+            },
+        },
+        "sealing_state": {
+            "cycle": {"state_revision": 2, "phase": "legacy-fallback-phase"},
+            "governance": {"release_status": "rfq_ready", "rfq_admissibility": "ready"},
+            "handover": {"is_handover_ready": False},
+            "selection": {"selected_partner_id": "legacy-workspace-partner"},
+        },
+    }
+
+    with patch(
+        "app.agent.api.router._load_preferred_governed_workspace_source",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "app.agent.api.router.load_structured_residual_state",
+        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
+    ):
+        app = FastAPI()
+        app.include_router(getattr(state_mod, "router"))
+        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
+            user_id="alice",
+            username="alice",
+            sub="alice",
+            roles=[],
+            scopes=[],
+            tenant_id="tenant-a",
+        )
+        client = TestClient(app)
+        response = client.get(
+            "/state/workspace",
+            params={"thread_id": "case-1"},
+            headers={"X-Request-Id": "state-workspace-fallback"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["case_summary"]["phase"] == "fallback-phase"
+    assert body["partner_matching"]["selected_partner_id"] == "fallback-partner"

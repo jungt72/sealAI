@@ -12,7 +12,7 @@ from qdrant_client import QdrantClient
 from redis.asyncio import Redis
 
 from app.core.config import settings
-from app.observability.metrics import DEPENDENCY_UP
+from app.observability.metrics import DEPENDENCY_UP, refresh_qdrant_collection_metrics
 
 log = structlog.get_logger("observability.health")
 
@@ -47,6 +47,7 @@ async def check_qdrant() -> Dict[str, Any]:
         collections = await asyncio.to_thread(client.get_collections)
         latency_ms = (time.perf_counter() - start) * 1000
         DEPENDENCY_UP.labels(dependency="qdrant").set(1)
+        refresh_qdrant_collection_metrics(force=True)
         return {
             "status": "healthy",
             "latency_ms": round(latency_ms, 2),

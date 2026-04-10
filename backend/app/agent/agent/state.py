@@ -8,7 +8,7 @@ ReleaseStatus = Literal[
     "inadmissible",
     "precheck_only",
     "manufacturer_validation_required",
-    "rfq_ready",
+    "inquiry_ready",
     "not_applicable",
 ]
 RFQAdmissibility = Literal["inadmissible", "provisional", "ready", "not_applicable"]
@@ -407,7 +407,7 @@ class HandoverLayer(TypedDict, total=False):
     Contains only clean, ERP-ready order-profile data — no internal governance
     state, no reasoning artefacts, no demo-data flags.
     """
-    is_handover_ready: bool            # True only when rfq_ready + no pending HITL review
+    is_handover_ready: bool            # True only when inquiry_ready + no pending HITL review
     handover_status: str               # releasable | handoverable | reviewable | not_handoverable
     handover_reason: str               # deterministic explanation for the status
     target_system: Optional[str]       # e.g. "rfq_portal" | "shop" | None

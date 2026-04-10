@@ -198,6 +198,16 @@ class TestClassifyLightRoute:
         assert decision is not None
         assert decision.route == "EXPLORATION"
 
+    def test_smalltalk_phrase_with_wie_geht_es_dir_routes_to_CONVERSATION(self):
+        decision = classify_light_route("hallo, wie geht es dir heute?")
+        assert decision is not None
+        assert decision.route == "CONVERSATION"
+
+    def test_open_goal_with_benoetige_routes_to_EXPLORATION(self):
+        decision = classify_light_route("ich benötige eine dichtungslösung")
+        assert decision is not None
+        assert decision.route == "EXPLORATION"
+
 
 # ---------------------------------------------------------------------------
 # decide_route integration tests (LLM mocked)
@@ -405,13 +415,14 @@ class TestDecideRoute:
         assert decision.reason == "timeout_fallback_to_governed"
 
     def test_gate_llm_network_error_falls_back(self):
-        """Any LLM exception without hard signal → GOVERNED fallback."""
+        """Deterministic smalltalk must bypass the LLM fallback path entirely."""
         with patch(
             "app.agent.runtime.gate._call_gate_llm",
             side_effect=ConnectionError("network error"),
         ):
             decision = decide_route("Hallo, wie geht es dir?", CONV_SESSION)
-        assert decision.route == "GOVERNED"
+        assert decision.route == "CONVERSATION"
+        assert decision.reason == "deterministic_instant:greeting_or_smalltalk"
 
 
 # ---------------------------------------------------------------------------

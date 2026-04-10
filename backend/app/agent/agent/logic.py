@@ -25,7 +25,7 @@ _NORMATIVE_RELEASE_STATUSES = {
     "inadmissible",
     "precheck_only",
     "manufacturer_validation_required",
-    "rfq_ready",
+    "inquiry_ready",
     "not_applicable",
 }
 _NORMATIVE_RFQ_ADMISSIBILITY = {"inadmissible", "provisional", "ready", "not_applicable"}
@@ -750,7 +750,7 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
         governance["release_status"] = "manufacturer_validation_required"
         governance["rfq_admissibility"] = "provisional"
     else:
-        governance["release_status"] = "rfq_ready"
+        governance["release_status"] = "inquiry_ready"
         governance["rfq_admissibility"] = "ready"
 
     governance["release_status"] = _normalize_release_status(governance["release_status"])

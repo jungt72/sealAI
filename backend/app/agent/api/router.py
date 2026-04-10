@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Literal, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,8 +34,12 @@ from app.agent.agent.selection import build_final_reply, build_structured_api_ex
 from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.agent.state import AgentState
 from app.agent.api.models import (
+    CaseListItemResponse,
+    CaseMetadataResponse,
     ChatRequest,
     ChatResponse,
+    GovernedSnapshotResponse,
+    GovernedSnapshotRevisionListItemResponse,
     OverrideRequest,
     OverrideResponse,
     OverrideGovernanceResult,
@@ -76,7 +80,12 @@ from app.agent.state.medium_derivation import (
     derive_medium_classification,
 )
 from app.agent.state.persistence import (
+    get_case_by_number_async,
+    get_governed_case_snapshot_by_revision_async,
+    get_latest_governed_case_snapshot_async,
     get_or_create_governed_state_async,
+    list_cases_async,
+    list_governed_case_snapshots_async,
     load_governed_state_async,
     save_governed_state_snapshot_async,
     save_governed_state_async,
@@ -333,7 +342,7 @@ def _governed_messages_as_langchain(
 
 def _governed_release_status_snapshot(state: GovernedSessionState) -> str:
     if state.rfq.rfq_ready or (state.governance.rfq_admissible and state.rfq.critical_review_passed):
-        return "rfq_ready"
+        return "inquiry_ready"
     if state.matching.status == "matched_primary_candidate" or state.governance.gov_class == "A":
         return "manufacturer_validation_required"
     if state.governance.gov_class == "B":
@@ -857,36 +866,28 @@ def _advance_case_state_only_revision(
     return updated_state
 
 
-async def prepare_structured_state(request: ChatRequest, *, current_user: RequestUser) -> AgentState:
-    """Residual compat state loader; no longer part of productive structured authority."""
-    _log.warning(
-        "[%s] prepare_structured_state invoked session=%s",
-        _RESIDUAL_LEGACY_RUNTIME_LABEL,
-        request.session_id,
-    )
-    tenant_id, owner_id, cache_key = _canonical_scope(current_user, case_id=request.session_id)
-    current_state = await load_structured_case(tenant_id=tenant_id, owner_id=owner_id, case_id=request.session_id)
-    if current_state is None:
-        initial_sealing_state = create_initial_state()
-        initial_sealing_state["cycle"]["analysis_cycle_id"] = f"session_{request.session_id}_1"
-        current_state = {
-            "messages": [],
-            "sealing_state": initial_sealing_state,
-            "working_profile": {},
-            "relevant_fact_cards": [],
-            "tenant_id": tenant_id,
-            "owner_id": owner_id,
-            "loaded_state_revision": int(initial_sealing_state["cycle"].get("state_revision", 0) or 0),
-        }
-    current_state["owner_id"] = owner_id
-    current_state["tenant_id"] = tenant_id
-    current_state["loaded_state_revision"] = _canonical_state_revision(current_state)
-    current_state["messages"].append(HumanMessage(content=request.message))
-    SESSION_STORE[cache_key] = current_state
-    return current_state
+# ---------------------------------------------------------------------------
+# Residual structured/canonical surface
+# ---------------------------------------------------------------------------
+# Active residual truth:
+# - load_structured_residual_state(...)
+# - require_structured_residual_state(...)
+# - persist_structured_residual_commit(...)
+#
+# Explicit residual special-case entry points:
+# - load/require_structured_handover_state(...)
+# - load/require_structured_review_state(...)
+# - persist_structured_review_commit(...)
+#
+# Normal governed authority remains Redis live state + Postgres governed snapshots.
 
 
-async def load_canonical_state(*, current_user: RequestUser, session_id: str) -> AgentState | None:
+async def load_structured_residual_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> AgentState | None:
+    """Residual structured read core for non-governed fallback and special cases."""
     tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
     state = await load_structured_case(tenant_id=tenant_id, owner_id=owner_id, case_id=session_id)
     if state is None:
@@ -904,14 +905,118 @@ async def load_canonical_state(*, current_user: RequestUser, session_id: str) ->
     return _cache_loaded_state(state=state, current_user=current_user, session_id=session_id)
 
 
-async def require_canonical_state(*, current_user: RequestUser, session_id: str) -> AgentState:
-    state = await load_canonical_state(current_user=current_user, session_id=session_id)
+async def require_structured_residual_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> AgentState:
+    state = await load_structured_residual_state(
+        current_user=current_user,
+        session_id=session_id,
+    )
     if state is None:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return state
 
 
-async def persist_canonical_state(
+async def load_structured_handover_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> AgentState | None:
+    """Residual structured read reserved for RFQ/handover special cases."""
+    return await load_structured_residual_state(
+        current_user=current_user,
+        session_id=session_id,
+    )
+
+
+async def require_structured_handover_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> AgentState:
+    state = await load_structured_handover_state(
+        current_user=current_user,
+        session_id=session_id,
+    )
+    if state is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    return state
+
+
+async def load_structured_review_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> AgentState | None:
+    """Residual structured read reserved for review and handover commit special cases."""
+    return await load_structured_residual_state(
+        current_user=current_user,
+        session_id=session_id,
+    )
+
+
+async def require_structured_review_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> AgentState:
+    state = await load_structured_review_state(
+        current_user=current_user,
+        session_id=session_id,
+    )
+    if state is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    return state
+
+
+async def _load_governed_state_snapshot_projection_source(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> GovernedSessionState | None:
+    """Load the latest governed Postgres snapshot as additive workspace read source."""
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
+    del tenant_id  # current snapshot rows are keyed by case_number + owner
+    snapshot = await get_latest_governed_case_snapshot_async(
+        case_number=session_id,
+        user_id=owner_id,
+    )
+    if snapshot is None:
+        return None
+    try:
+        return GovernedSessionState.model_validate(snapshot.state_json)
+    except Exception:
+        _log.warning(
+            "[workspace] failed to validate governed snapshot projection source case=%s revision=%s",
+            session_id,
+            snapshot.revision,
+            exc_info=True,
+        )
+        return None
+
+
+async def _load_preferred_governed_workspace_source(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> GovernedSessionState | None:
+    """Prefer live Redis state, then persisted Postgres snapshot, for governed read projections."""
+    live_state = await _load_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        create_if_missing=False,
+    )
+    if live_state is not None:
+        return live_state
+    return await _load_governed_state_snapshot_projection_source(
+        current_user=current_user,
+        session_id=session_id,
+    )
+
+
+async def persist_structured_residual_commit(
     *,
     current_user: RequestUser,
     session_id: str,
@@ -919,6 +1024,7 @@ async def persist_canonical_state(
     runtime_path: str,
     binding_level: str,
 ) -> AgentState:
+    """Residual structured write core for fallback and special-case commits."""
     tenant_id, owner_id, cache_key = _canonical_scope(current_user, case_id=session_id)
     current_revision = _canonical_state_revision(state)
     loaded_revision = int(state.get("loaded_state_revision", current_revision) or 0)
@@ -942,19 +1048,21 @@ async def persist_canonical_state(
     return state
 
 
-async def persist_structured_state(
+async def persist_structured_review_commit(
     *,
     current_user: RequestUser,
     session_id: str,
     state: AgentState,
-    decision: Any,
-) -> None:
-    await persist_canonical_state(
+    runtime_path: str,
+    binding_level: str,
+) -> AgentState:
+    """Residual structured write reserved for review and handover commit special cases."""
+    return await persist_structured_residual_commit(
         current_user=current_user,
         session_id=session_id,
         state=state,
-        runtime_path=decision.runtime_path,
-        binding_level=_resolve_payload_binding_level(decision.binding_level, case_state=state.get("case_state")),
+        runtime_path=runtime_path,
+        binding_level=binding_level,
     )
 
 
@@ -1998,20 +2106,126 @@ async def chat_stream_endpoint(request: ChatRequest, current_user: RequestUser =
     return StreamingResponse(event_generator(request, current_user=current_user), media_type="text/event-stream")
 
 
+@router.get("/cases", response_model=list[CaseListItemResponse])
+async def list_cases(
+    limit: int = Query(50, ge=1, le=200),
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> list[CaseListItemResponse]:
+    _, owner_id, _ = _canonical_scope(current_user, case_id="")
+    items = await list_cases_async(user_id=owner_id, limit=limit)
+    return [CaseListItemResponse(**item) for item in items]
+
+
+@router.get("/cases/{case_id}", response_model=CaseMetadataResponse)
+async def get_case_metadata(
+    case_id: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> CaseMetadataResponse:
+    _, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
+    case_row = await get_case_by_number_async(case_number=case_id, user_id=owner_id)
+    if case_row is None:
+        raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found")
+    return CaseMetadataResponse(**case_row)
+
+
+@router.get("/cases/{case_id}/snapshots/latest", response_model=GovernedSnapshotResponse)
+async def get_latest_case_snapshot(
+    case_id: str,
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> GovernedSnapshotResponse:
+    _, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
+    snapshot = await get_latest_governed_case_snapshot_async(case_number=case_id, user_id=owner_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"Latest snapshot for case '{case_id}' not found")
+    return GovernedSnapshotResponse(
+        case_id=snapshot.case_id,
+        case_number=snapshot.case_number,
+        user_id=snapshot.user_id,
+        revision=snapshot.revision,
+        state_json=snapshot.state_json,
+        basis_hash=snapshot.basis_hash,
+        ontology_version=snapshot.ontology_version,
+        prompt_version=snapshot.prompt_version,
+        model_version=snapshot.model_version,
+        created_at=snapshot.created_at,
+    )
+
+
+@router.get("/cases/{case_id}/snapshots", response_model=list[GovernedSnapshotRevisionListItemResponse])
+async def list_case_snapshots(
+    case_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> list[GovernedSnapshotRevisionListItemResponse]:
+    _, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
+    case_row = await get_case_by_number_async(case_number=case_id, user_id=owner_id)
+    if case_row is None:
+        raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found")
+    items = await list_governed_case_snapshots_async(
+        case_number=case_id,
+        user_id=owner_id,
+        limit=limit,
+    )
+    return [
+        GovernedSnapshotRevisionListItemResponse(
+            revision=item.revision,
+            basis_hash=item.basis_hash,
+            ontology_version=item.ontology_version,
+            prompt_version=item.prompt_version,
+            model_version=item.model_version,
+            created_at=item.created_at,
+        )
+        for item in items
+    ]
+
+
+@router.get("/cases/{case_id}/snapshots/{revision}", response_model=GovernedSnapshotResponse)
+async def get_case_snapshot_by_revision(
+    case_id: str,
+    revision: int = Path(..., ge=1),
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> GovernedSnapshotResponse:
+    _, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
+    snapshot = await get_governed_case_snapshot_by_revision_async(
+        case_number=case_id,
+        revision=revision,
+        user_id=owner_id,
+    )
+    if snapshot is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Snapshot revision {revision} for case '{case_id}' not found",
+        )
+    return GovernedSnapshotResponse(
+        case_id=snapshot.case_id,
+        case_number=snapshot.case_number,
+        user_id=snapshot.user_id,
+        revision=snapshot.revision,
+        state_json=snapshot.state_json,
+        basis_hash=snapshot.basis_hash,
+        ontology_version=snapshot.ontology_version,
+        prompt_version=snapshot.prompt_version,
+        model_version=snapshot.model_version,
+        created_at=snapshot.created_at,
+    )
+
+
 @router.get("/workspace/{case_id}", response_model=CaseWorkspaceProjection)
 async def get_workspace_projection(
     case_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
 ) -> CaseWorkspaceProjection:
     """Canonical workspace read contract backed by persisted agent state."""
-    governed_state = await _load_live_governed_state(
+    governed_state = await _load_preferred_governed_workspace_source(
         current_user=current_user,
         session_id=case_id,
-        create_if_missing=False,
     )
     if governed_state is not None:
         return project_case_workspace_from_governed_state(governed_state, chat_id=case_id)
-    state = await require_canonical_state(current_user=current_user, session_id=case_id)
+    state = await require_structured_residual_state(
+        current_user=current_user,
+        session_id=case_id,
+    )
     return project_case_workspace_from_ssot(state, chat_id=case_id)
 
 
@@ -2020,17 +2234,19 @@ async def get_live_chat_history(
     case_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
 ) -> dict[str, Any]:
-    governed_state = await _load_live_governed_state(
+    governed_state = await _load_preferred_governed_workspace_source(
         current_user=current_user,
         session_id=case_id,
-        create_if_missing=False,
     )
     if governed_state is not None and governed_state.conversation_messages:
         return _serialize_governed_history_payload(
             conversation_id=case_id,
             governed_state=governed_state,
         )
-    state = await require_canonical_state(current_user=current_user, session_id=case_id)
+    state = await require_structured_residual_state(
+        current_user=current_user,
+        session_id=case_id,
+    )
     raw_messages = (state or {}).get("messages") or []
     return {
         "conversation_id": case_id,
@@ -2055,8 +2271,11 @@ async def get_workspace_rfq_document(
     case_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
 ) -> HTMLResponse:
-    """Return an RFQ HTML representation derived from canonical persisted RFQ state."""
-    state = await require_canonical_state(current_user=current_user, session_id=case_id)
+    """Return an RFQ HTML representation from the residual structured handover state."""
+    state = await require_structured_handover_state(
+        current_user=current_user,
+        session_id=case_id,
+    )
     case_state = dict(state.get("case_state") or {})
     rfq_state = dict(case_state.get("rfq_state") or {})
     rfq_object = dict(rfq_state.get("rfq_object") or {})
@@ -2188,7 +2407,7 @@ def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentSt
     now_iso = datetime.now(timezone.utc).isoformat()
 
     if request.action == "approve":
-        governance_state["release_status"] = "rfq_ready"
+        governance_state["release_status"] = "inquiry_ready"
         governance_state["rfq_admissibility"] = "ready"
         governance_state["review_required"] = False
         governance_state["review_state"] = "approved"
@@ -2205,13 +2424,13 @@ def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentSt
         review["reviewed_at"] = now_iso
         # Selection projection — keep aligned with governance so build_final_reply
         # can produce a meaningful response (not just SAFEGUARDED_WITHHELD_REPLY).
-        selection["release_status"] = "rfq_ready"
+        selection["release_status"] = "inquiry_ready"
         selection["rfq_admissibility"] = "ready"
         selection["output_blocked"] = False
         selection.setdefault("specificity_level", "compound_required")
         artifact = dict(selection.get("recommendation_artifact") or {})
         if artifact:
-            artifact["release_status"] = "rfq_ready"
+            artifact["release_status"] = "inquiry_ready"
             artifact["rfq_admissibility"] = "ready"
             artifact["output_blocked"] = False
             selection["recommendation_artifact"] = artifact
@@ -2439,7 +2658,10 @@ async def review_endpoint(
     The review path stays deterministic and does not re-run the graph end-to-end.
     Phase 4 removes the legacy final_response_node handover commit dependency.
     """
-    state = await require_canonical_state(current_user=current_user, session_id=request.session_id)
+    state = await require_structured_review_state(
+        current_user=current_user,
+        session_id=request.session_id,
+    )
 
     # 2. Guard: only process sessions that have a pending review
     sealing_state: dict = state.get("sealing_state") or {}
@@ -2460,7 +2682,7 @@ async def review_endpoint(
     patched_state, reply_text = _governed_native_review_commit(patched_state)
 
     # 5. Persist canonical state
-    patched_state = await persist_canonical_state(
+    patched_state = await persist_structured_review_commit(
         current_user=current_user,
         session_id=request.session_id,
         state=patched_state,

@@ -139,8 +139,7 @@ def test_agent_stream_emits_done_once_and_is_last_for_normal_run(monkeypatch: py
         )
         yield "data: [DONE]\n\n"
 
-    monkeypatch.setattr(endpoint, "prepare_structured_state", _fake_prepare)
-    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy)
+    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy, raising=False)
     monkeypatch.setattr(endpoint, "agent_sse_generator", _fake_sse_gen)
 
     user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1")
@@ -192,8 +191,7 @@ def test_agent_stream_emits_error_then_done_and_stops(monkeypatch: pytest.Monkey
         yield 'data: {"type":"error","message":"boom"}\n\n'
         yield "data: [DONE]\n\n"
 
-    monkeypatch.setattr(endpoint, "prepare_structured_state", _fake_prepare)
-    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy)
+    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy, raising=False)
     monkeypatch.setattr(endpoint, "agent_sse_generator", _fake_sse_gen)
 
     user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1")
@@ -264,8 +262,7 @@ def test_agent_stream_state_update_public_minimum_shape(monkeypatch: pytest.Monk
     async def _fake_policy(*_args: Any, **_kwargs: Any) -> Any:
         return decision
 
-    monkeypatch.setattr(endpoint, "prepare_structured_state", _fake_prepare)
-    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy)
+    monkeypatch.setattr(endpoint, "evaluate_interaction_policy_async", _fake_policy, raising=False)
     monkeypatch.setattr(endpoint, "agent_sse_generator", _fake_sse_gen)
 
     frames = asyncio.run(

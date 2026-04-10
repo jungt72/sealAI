@@ -121,7 +121,7 @@ _GREETING_PATTERN = re.compile(
 )
 
 _SMALLTALK_PATTERN = re.compile(
-    r"\b(wie\s+geht'?s|danke\b|vielen\s+dank|alles\s+gut|schoenen?\s+tag|schönen?\s+tag)\b",
+    r"\b(wie\s+geht'?s|wie\s+geht\s+es(?:\s+dir)?(?:\s+heute)?|danke\b|vielen\s+dank|alles\s+gut|schoenen?\s+tag|schönen?\s+tag)\b",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -139,7 +139,7 @@ _ORIENTATION_PATTERN = re.compile(
 )
 
 _OPEN_GOAL_PATTERN = re.compile(
-    r"\b(moechte|möchte|will|wir\s+suchen|suche|brauche|hilfe|unterstuetzung|unterstützung|ersatz|bestandsfall|neuauslegung)\b",
+    r"\b(moechte|möchte|will|wir\s+suchen|suche|brauche|benoetige|benötige|benoetigen|benötigen|hilfe|unterstuetzung|unterstützung|ersatz|bestandsfall|neuauslegung)\b",
     re.IGNORECASE | re.UNICODE,
 )
 

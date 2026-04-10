@@ -6,7 +6,7 @@ downstream commercial process (RFQ portal, ERP, shop, etc.).
 
 Rules:
 - build_handover_payload() reads from the completed SealingAIState.
-- is_handover_ready = True IFF governance.release_status == "rfq_ready"
+- is_handover_ready = True IFF governance.release_status == "inquiry_ready"
   AND review.review_required is not True (no pending HITL review)
   AND review.critical_review_passed is True.
 - The returned handover_payload contains ONLY clean order-profile data:
@@ -36,7 +36,7 @@ def _is_handover_ready(
     """Return True only when the case is technically qualified and has no pending review.
 
     Conditions (all must hold):
-    1. governance.release_status == "rfq_ready"
+    1. governance.release_status == "inquiry_ready"
     2. review.review_required is not True
     3. review.critical_review_passed is True and has no blocking findings
     """
@@ -45,7 +45,7 @@ def _is_handover_ready(
     critical_review_passed: bool = bool(review_state.get("critical_review_passed", False))
     blocking_findings = list(review_state.get("blocking_findings") or [])
     return (
-        release_status == "rfq_ready"
+        release_status == "inquiry_ready"
         and not review_required
         and critical_review_passed
         and not blocking_findings
@@ -951,7 +951,7 @@ def build_handover_payload(
         qualified_materials      list[{candidate_id, material_family, grade_name, …}]
         confirmed_parameters     dict  (temperature, pressure, medium)
         dimensions               dict  (optional, only when present in asserted)
-        rfq_admissibility        str   ("ready" when rfq_ready)
+        rfq_admissibility        str   ("ready" when inquiry_ready)
 
     What is NEVER included:
         gate_failures, conflicts, unknowns_*, cycle state,

@@ -43,7 +43,7 @@ from app.agent.case_state import build_dispatch_intent
 # ---------------------------------------------------------------------------
 
 def _governance(
-    release_status: str = "rfq_ready",
+    release_status: str = "inquiry_ready",
     rfq_admissibility: str = "ready",
     *,
     unknowns_release_blocking: list[str] | None = None,
@@ -109,13 +109,13 @@ def _selection(viable_ids: list | None = None) -> dict:
         "blocked_candidates": [],
         "winner_candidate_id": viable_ids[0] if viable_ids else None,
         "selection_status": "viable_candidates_available",
-        "release_status": "rfq_ready",
+        "release_status": "inquiry_ready",
         "rfq_admissibility": "ready",
         "specificity_level": "compound_required",
         "output_blocked": False,
         "recommendation_artifact": {
             "candidate_projection": dict(candidates[0]) if candidates else {},
-            "release_status": "rfq_ready",
+            "release_status": "inquiry_ready",
             "rfq_admissibility": "ready",
             "specificity_level": "compound_required",
             "output_blocked": False,
@@ -160,7 +160,7 @@ def _asserted(with_dimensions: bool = False) -> dict:
 
 def _sealing_state(
     *,
-    release_status: str = "rfq_ready",
+    release_status: str = "inquiry_ready",
     review_required: bool = False,
     review_state_str: str = "none",
     with_dimensions: bool = False,
@@ -215,10 +215,10 @@ class TestHandoverLayerStructure:
 
 class TestIsHandoverReady:
     def test_rfq_ready_no_review_is_ready(self):
-        assert _is_handover_ready(_governance("rfq_ready"), _review(False)) is True
+        assert _is_handover_ready(_governance("inquiry_ready"), _review(False)) is True
 
     def test_rfq_ready_with_pending_review_is_not_ready(self):
-        assert _is_handover_ready(_governance("rfq_ready"), _review(True, "pending")) is False
+        assert _is_handover_ready(_governance("inquiry_ready"), _review(True, "pending")) is False
 
     @pytest.mark.parametrize("rs", [
         "inadmissible",
@@ -233,23 +233,23 @@ class TestIsHandoverReady:
         assert _is_handover_ready({}, {}) is False
 
     def test_review_required_true_blocks_even_rfq_ready(self):
-        gov = _governance("rfq_ready")
+        gov = _governance("inquiry_ready")
         rev = _review(True, "pending")
         assert _is_handover_ready(gov, rev) is False
 
     def test_review_approved_does_not_block(self):
         """Once a review is resolved (review_required reset to False), handover may proceed."""
-        gov = _governance("rfq_ready")
+        gov = _governance("inquiry_ready")
         rev = _review(False, "approved")
         assert _is_handover_ready(gov, rev) is True
 
     def test_missing_critical_review_blocks_even_rfq_ready(self):
-        gov = _governance("rfq_ready")
+        gov = _governance("inquiry_ready")
         rev = {"review_required": False, "review_state": "none"}
         assert _is_handover_ready(gov, rev) is False
 
     def test_failed_critical_review_blocks_even_without_pending_review(self):
-        gov = _governance("rfq_ready")
+        gov = _governance("inquiry_ready")
         rev = _review(
             False,
             "none",
@@ -302,7 +302,7 @@ class TestProjectHandoverStatus:
 
     def test_releasable_and_handoverable(self):
         status, _ = _project_handover_status(
-            _governance("rfq_ready"),
+            _governance("inquiry_ready"),
             _review(False),
             _selection(),
         )
@@ -409,7 +409,7 @@ class TestBuildHandoverPayloadContent:
             _sealing_state(release_status="inadmissible", review_required=True, review_state_str="pending"),
             canonical_case_state={
                 "governance_state": {
-                    "release_status": "rfq_ready",
+                    "release_status": "inquiry_ready",
                     "review_required": False,
                     "review_state": "approved",
                     "rfq_admissibility": "ready",
@@ -433,7 +433,7 @@ class TestBuildHandoverPayloadContent:
             sealing_state,
             canonical_case_state={
                 "governance_state": {
-                    "release_status": "rfq_ready",
+                    "release_status": "inquiry_ready",
                     "review_required": False,
                     "review_state": "approved",
                     "rfq_admissibility": "ready",
@@ -599,7 +599,7 @@ class TestFinalResponseNodeHandoverIntegration:
             ),
         )
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = _selection()
         sealing_state["review"] = _review(False)
 
@@ -629,7 +629,7 @@ class TestFinalResponseNodeHandoverIntegration:
         sealing_state = _sealing_state()
         # Inject selection so final_response_node has something to work with
         sealing_state["selection"] = _selection()
-        sealing_state["governance"] = _governance("rfq_ready")
+        sealing_state["governance"] = _governance("inquiry_ready")
         sealing_state["review"] = _review(False)
 
         state = _make_state(
@@ -652,7 +652,7 @@ class TestFinalResponseNodeHandoverIntegration:
         from app.agent.agent.graph import final_response_node
         from app.agent.tests.test_graph_routing import _make_state
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = _selection()
         sealing_state["review"] = _review(False)
 
@@ -704,7 +704,7 @@ class TestFinalResponseNodeHandoverIntegration:
         from app.agent.agent.graph import final_response_node
         from app.agent.tests.test_graph_routing import _make_state
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = _selection()
         sealing_state["review"] = _review(False)
 
@@ -743,7 +743,7 @@ class TestFinalResponseNodeHandoverIntegration:
         from app.agent.agent.graph import final_response_node
         from app.agent.tests.test_graph_routing import _make_state
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = _selection()
         sealing_state["review"] = _review(False)
 
@@ -1031,7 +1031,7 @@ class TestFinalResponseNodeHandoverIntegration:
         from app.agent.agent.graph import final_response_node
         from app.agent.tests.test_graph_routing import _make_state
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = _selection()
         sealing_state["review"] = _review(False)
 
@@ -1097,7 +1097,7 @@ class TestFinalResponseNodeHandoverIntegration:
             },
         )
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = _selection()
         sealing_state["review"] = _review(False)
 
@@ -1117,7 +1117,7 @@ class TestFinalResponseNodeHandoverIntegration:
         import asyncio
         from langchain_core.messages import HumanMessage
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = _selection()
         sealing_state["review"] = _review(False)
 
@@ -1199,7 +1199,7 @@ class TestFinalResponseNodeHandoverIntegration:
             },
         )
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = _selection()
         sealing_state["review"] = _review(False)
 
@@ -1221,7 +1221,7 @@ class TestFinalResponseNodeHandoverIntegration:
         from app.agent.agent.graph import final_response_node
         from app.agent.tests.test_graph_routing import _make_state
 
-        sealing_state = _sealing_state(release_status="rfq_ready")
+        sealing_state = _sealing_state(release_status="inquiry_ready")
         sealing_state["selection"] = {
             **_selection(),
             "release_status": "manufacturer_validation_required",
@@ -1810,7 +1810,7 @@ def test_final_response_node_backfills_dispatch_trigger_when_selection_node_not_
     from app.agent.agent.graph import final_response_node
     from app.agent.tests.test_graph_routing import _make_state
 
-    sealing_state = _sealing_state(release_status="rfq_ready")
+    sealing_state = _sealing_state(release_status="inquiry_ready")
     sealing_state["selection"] = _selection()
     sealing_state["review"] = _review(False)
 
@@ -1865,7 +1865,7 @@ def test_final_response_node_realigns_existing_dispatch_surface_from_sealing_sta
     from app.agent.agent.graph import final_response_node
     from app.agent.tests.test_graph_routing import _make_state
 
-    sealing_state = _sealing_state(release_status="rfq_ready")
+    sealing_state = _sealing_state(release_status="inquiry_ready")
     sealing_state["selection"] = _selection()
     sealing_state["review"] = _review(False)
     sealing_state["dispatch_intent"] = {

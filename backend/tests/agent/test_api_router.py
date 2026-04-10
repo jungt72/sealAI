@@ -38,11 +38,9 @@ from app.agent.api.router import (
     event_generator,
     build_runtime_payload,
     chat_endpoint,
-    persist_canonical_state,
-    persist_structured_state,
     router,
 )
-from app.agent.api.models import ChatRequest
+from app.agent.api.models import ChatRequest, ChatResponse
 from app.agent.api.models import ReviewRequest
 from app.agent.state.models import (
     AssertedClaim,
@@ -122,9 +120,7 @@ def test_api_chat_endpoint_success():
         runtime_path="FAST_GUIDANCE",
         binding_level="ORIENTATION",
     )
-    with patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(return_value=mock_updated_state)), \
-         patch("app.agent.api.router.execute_agent", return_value=mock_updated_state), \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock(return_value=None)), \
+    with patch("app.agent.api.router.execute_agent", return_value=mock_updated_state), \
          patch("app.agent.api.router._resolve_runtime_dispatch", new=AsyncMock(return_value=legacy_dispatch)), \
          patch("app.agent.api.router.evaluate_interaction_policy_async", new=AsyncMock(return_value=legacy_decision)):
         response = client.post("/chat", json={"message": "Hallo Agent", "session_id": "test_session"})
@@ -161,9 +157,7 @@ def test_api_chat_endpoint_uses_central_user_facing_reply_assembly():
         runtime_path="FAST_GUIDANCE",
         binding_level="ORIENTATION",
     )
-    with patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(return_value=mock_updated_state)), \
-         patch("app.agent.api.router.execute_agent", return_value=mock_updated_state), \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock(return_value=None)), \
+    with patch("app.agent.api.router.execute_agent", return_value=mock_updated_state), \
          patch("app.agent.api.router._resolve_runtime_dispatch", new=AsyncMock(return_value=legacy_dispatch)), \
          patch("app.agent.api.router.evaluate_interaction_policy_async", new=AsyncMock(return_value=legacy_decision)), \
          patch("app.agent.api.models.assemble_user_facing_reply", return_value=assembled) as mock_assemble:
@@ -181,18 +175,21 @@ def test_chat_route_uses_injected_current_user():
         "sealing_state": {"cycle": {"state_revision": 1, "analysis_cycle_id": "session_x_1"}},
         "working_profile": {},
     }
-    captured = {}
+    async def _fake_chat_endpoint(request, *, current_user):
+        assert current_user is _TEST_USER
+        return SimpleNamespace(
+            session_id=request.session_id,
+            reply="pong",
+            response_class="conversational_answer",
+            structured_state=None,
+            policy_path="fast",
+            run_meta=None,
+        )
 
-    async def _fake_prepare(req, *, current_user):
-        captured["current_user"] = current_user
-        return mock_updated_state
-
-    with patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(side_effect=_fake_prepare)), \
-         patch("app.agent.api.router.execute_agent", return_value=mock_updated_state), \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock(return_value=None)):
+    with patch("app.agent.api.router.chat_endpoint", new=AsyncMock(side_effect=_fake_chat_endpoint)):
         response = client.post("/chat", json={"message": "ping", "session_id": "x"})
     assert response.status_code == 200
-    assert captured.get("current_user") is _TEST_USER
+    assert response.json()["reply"] == "pong"
 
 
 def test_chat_route_uses_evaluate_interaction_policy():
@@ -221,8 +218,6 @@ def test_chat_route_uses_evaluate_interaction_policy():
     }
     mock_policy = AsyncMock(return_value=decision)
     with patch("app.agent.api.router.evaluate_interaction_policy_async", mock_policy), \
-         patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(return_value=mock_updated_state)), \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock(return_value=None)), \
          patch("app.agent.api.router.execute_agent", return_value=mock_updated_state), \
          patch("app.agent.api.router.create_initial_state", return_value={"cycle": {"state_revision": 0, "analysis_cycle_id": ""}}):
         response = client.post("/chat", json={"message": "was ist FKM", "session_id": "y"})
@@ -231,89 +226,65 @@ def test_chat_route_uses_evaluate_interaction_policy():
 
 
 def test_chat_endpoint_fast_path_with_current_user():
-    """Messages triggering fast-path still run through canonical persisted state."""
+    """Fast-path messages are routed through the light runtime, not legacy structured helpers."""
     request = ChatRequest(message="was ist FKM", session_id="fast-1")
-    decision = type(
-        "Decision",
+    resolution = type(
+        "Resolution",
         (),
         {
-            "path": _EnumLike("fast"),
-            "result_form": _EnumLike("direct_answer"),
-            "stream_mode": "token_stream",
-            "interaction_class": "GUIDANCE",
-            "runtime_path": "FAST_GUIDANCE",
-            "binding_level": "ORIENTATION",
-            "has_case_state": False,
-            "coverage_status": None,
-            "boundary_flags": (),
-            "escalation_reason": None,
-            "required_fields": (),
+            "runtime_mode": "instant_light_reply",
+            "gate_route": "CONVERSATION",
+            "gate_reason": "deterministic_instant:greeting_or_smalltalk",
+            "gate_applied": True,
+            "session_zone": "conversation",
         },
     )()
-    mock_updated_state = {
-        "messages": [HumanMessage(content="was ist FKM"), AIMessage(content="FKM ist...")],
-        "sealing_state": {"cycle": {"state_revision": 0, "analysis_cycle_id": ""}},
-        "working_profile": {},
-    }
-    with patch("app.agent.api.router.evaluate_interaction_policy_async", AsyncMock(return_value=decision)), \
-         patch("app.agent.api.router.execute_agent", return_value=mock_updated_state), \
-         patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(return_value=mock_updated_state)) as mock_prepare, \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock()) as mock_persist:
-        asyncio.run(chat_endpoint(request, current_user=_TEST_USER))
-    mock_prepare.assert_called_once()
-    mock_persist.assert_called_once()
+    light_response = ChatResponse(
+        session_id="fast-1",
+        reply="FKM ist ein Regelwerk.",
+        response_class="conversational_answer",
+        structured_state=None,
+        policy_path="fast",
+        run_meta=None,
+    )
+    with patch("app.agent.api.router._resolve_runtime_dispatch", AsyncMock(return_value=resolution)), \
+         patch("app.agent.api.router._is_light_runtime_mode", return_value=True), \
+         patch("app.agent.api.router._run_light_chat_response", AsyncMock(return_value=light_response)) as mock_light:
+        response = asyncio.run(chat_endpoint(request, current_user=_TEST_USER))
+
+    assert response.reply == "FKM ist ein Regelwerk."
+    assert response.response_class == "conversational_answer"
+    mock_light.assert_awaited_once()
 
 
-def test_chat_endpoint_structured_path_reachable_with_current_user():
-    """Messages triggering structured path call prepare and persist."""
+def test_chat_endpoint_structured_path_no_longer_uses_legacy_structured_helpers():
+    """Authenticated /chat must not route back through legacy structured compat helpers."""
     request = ChatRequest(message="Bitte Dichtung auslegen", session_id="struct-1")
-    mock_state = {
-        "messages": [HumanMessage(content="Bitte Dichtung auslegen"), AIMessage(content="Analyse...")],
-        "sealing_state": {"cycle": {"state_revision": 1, "analysis_cycle_id": "cycle-1"}},
-        "working_profile": {},
-        "case_state": {"case_meta": {"binding_level": "ORIENTATION"}, "result_contract": {}, "qualified_action_gate": {"allowed": False}},
-    }
-    with patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(return_value=mock_state)) as mock_prepare, \
-         patch("app.agent.api.router.execute_agent", return_value=mock_state), \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock(return_value=None)) as mock_persist:
-        asyncio.run(chat_endpoint(request, current_user=_TEST_USER))
-    mock_prepare.assert_called_once()
-    mock_persist.assert_called_once()
-
-
-def test_persist_structured_state_advances_revision_when_request_did_not():
-    user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1")
-    state = {
-        "messages": [HumanMessage(content="Bitte weiter")],
-        "sealing_state": {"cycle": {"state_revision": 5, "analysis_cycle_id": "cycle-5"}},
-        "working_profile": {},
-        "relevant_fact_cards": [],
-        "owner_id": "user-1",
-        "tenant_id": "tenant-1",
-        "loaded_state_revision": 5,
-        "case_state": {
-            "case_meta": {"state_revision": 5, "version": 5, "analysis_cycle_id": "cycle-5"},
-            "result_contract": {"state_revision": 5, "analysis_cycle_id": "cycle-5"},
-            "sealing_requirement_spec": {"state_revision": 5, "analysis_cycle_id": "cycle-5"},
+    resolution = type(
+        "Resolution",
+        (),
+        {
+            "runtime_mode": "GOVERNED",
+            "gate_route": "GOVERNED",
+            "gate_reason": "governed_required",
+            "gate_applied": True,
+            "session_zone": "governed",
         },
-    }
-    decision = type("Decision", (), {"runtime_path": "STRUCTURED_GUIDANCE", "binding_level": "ORIENTATION"})()
-    captured = {}
+    )()
 
-    async def _fake_save_structured_case(*, tenant_id, owner_id, case_id, state, runtime_path, binding_level):
-        captured["state"] = copy.deepcopy(state)
+    with patch("app.agent.api.router._resolve_runtime_dispatch", new=AsyncMock(return_value=resolution)), \
+         patch("app.agent.api.router._run_governed_chat_response", new=AsyncMock(return_value=SimpleNamespace(
+             session_id="struct-1",
+             reply="Bitte nennen Sie Druck und Temperatur.",
+             response_class="structured_clarification",
+             structured_state={"output_status": "clarification_needed"},
+             policy_path="governed",
+             run_meta={"path": "governed_graph"},
+         ))) as mock_governed:
+        response = asyncio.run(chat_endpoint(request, current_user=_TEST_USER))
 
-    with patch("app.agent.api.router.save_structured_case", new=AsyncMock(side_effect=_fake_save_structured_case)):
-        asyncio.run(persist_structured_state(current_user=user, session_id="case-1", state=state, decision=decision))
-
-    saved_state = captured["state"]
-    assert saved_state["sealing_state"]["cycle"]["snapshot_parent_revision"] == 5
-    assert saved_state["sealing_state"]["cycle"]["state_revision"] == 6
-    assert "::structured_persist::rev6::" in saved_state["sealing_state"]["cycle"]["analysis_cycle_id"]
-    assert saved_state["case_state"]["case_meta"]["snapshot_parent_revision"] == 5
-    assert saved_state["case_state"]["case_meta"]["state_revision"] == 6
-    assert saved_state["case_state"]["case_meta"]["analysis_cycle_id"] == saved_state["sealing_state"]["cycle"]["analysis_cycle_id"]
-    assert saved_state["case_state"]["case_meta"]["version"] == 6
+    assert response.response_class == "structured_clarification"
+    mock_governed.assert_awaited_once()
 
 
 def test_cache_loaded_state_uses_case_state_revision_as_loaded_authority():
@@ -329,7 +300,7 @@ def test_cache_loaded_state_uses_case_state_revision_as_loaded_authority():
     assert cached["loaded_state_revision"] == 9
 
 
-def test_persist_canonical_state_uses_case_state_revision_as_primary_authority():
+def test_persist_structured_residual_commit_uses_case_state_revision_as_primary_authority():
     user = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1")
     state = {
         "messages": [HumanMessage(content="Bitte weiter")],
@@ -352,7 +323,7 @@ def test_persist_canonical_state_uses_case_state_revision_as_primary_authority()
 
     with patch("app.agent.api.router.save_structured_case", new=AsyncMock(side_effect=_fake_save_structured_case)):
         saved = asyncio.run(
-            persist_canonical_state(
+            __import__("app.agent.api.router", fromlist=["persist_structured_residual_commit"]).persist_structured_residual_commit(
                 current_user=user,
                 session_id="case-1",
                 state=state,
@@ -395,9 +366,7 @@ def test_chat_endpoint_with_current_user_returns_structured_payload():
         "relevant_fact_cards": [],
         "case_state": {"case_meta": {"binding_level": "ORIENTATION"}, "result_contract": {}, "qualified_action_gate": {"allowed": False}},
     }
-    with patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(return_value=state)), \
-         patch("app.agent.api.router.execute_agent", return_value=state), \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock(return_value=None)):
+    with patch("app.agent.api.router.execute_agent", return_value=state):
         response = asyncio.run(chat_endpoint(request, current_user=user))
     dumped = response.model_dump()
     assert set(dumped.keys()) == _PUBLIC_CHAT_RESPONSE_KEYS
@@ -417,33 +386,28 @@ def test_chat_endpoint_with_current_user_returns_structured_payload():
 
 def test_chat_endpoint_fast_path_keeps_structured_state_none():
     request = ChatRequest(message="was ist FKM", session_id="fast-2")
-    decision = type(
-        "Decision",
+    resolution = type(
+        "Resolution",
         (),
         {
-            "path": _EnumLike("fast"),
-            "result_form": _EnumLike("direct_answer"),
-            "stream_mode": "token_stream",
-            "interaction_class": "GUIDANCE",
-            "runtime_path": "FAST_GUIDANCE",
-            "binding_level": "ORIENTATION",
-            "has_case_state": False,
-            "coverage_status": None,
-            "boundary_flags": (),
-            "escalation_reason": None,
-            "required_fields": (),
+            "runtime_mode": "instant_light_reply",
+            "gate_route": "CONVERSATION",
+            "gate_reason": "deterministic_instant:greeting_or_smalltalk",
+            "gate_applied": True,
+            "session_zone": "conversation",
         },
     )()
-    state = {
-        "messages": [HumanMessage(content="was ist FKM"), AIMessage(content="FKM ist...")],
-        "sealing_state": {"cycle": {"state_revision": 0, "analysis_cycle_id": ""}},
-        "working_profile": {},
-    }
-    with patch("app.agent.api.router.evaluate_interaction_policy_async", AsyncMock(return_value=decision)), \
-         patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(return_value=state)), \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock(return_value=None)), \
-         patch("app.agent.api.router.execute_agent", return_value=state), \
-         patch("app.agent.api.router.create_initial_state", return_value={"cycle": {"state_revision": 0, "analysis_cycle_id": ""}}):
+    light_response = ChatResponse(
+        session_id="fast-2",
+        reply="FKM ist ein Regelwerk.",
+        response_class="conversational_answer",
+        structured_state=None,
+        policy_path="fast",
+        run_meta=None,
+    )
+    with patch("app.agent.api.router._resolve_runtime_dispatch", AsyncMock(return_value=resolution)), \
+         patch("app.agent.api.router._is_light_runtime_mode", return_value=True), \
+         patch("app.agent.api.router._run_light_chat_response", AsyncMock(return_value=light_response)):
         response = asyncio.run(chat_endpoint(request, current_user=_TEST_USER))
     dumped = response.model_dump()
     assert set(dumped.keys()) == _PUBLIC_CHAT_RESPONSE_KEYS
@@ -503,6 +467,193 @@ def test_workspace_read_contract_projects_canonical_state() -> None:
     assert body["rfq_status"]["rfq_confirmed"] is True
     assert body["rfq_status"]["handover_initiated"] is True
     assert body["rfq_status"]["has_html_report"] is True
+
+
+def test_case_metadata_endpoint_reads_governed_case_row() -> None:
+    case_row = {
+        "id": "case-row-1",
+        "case_number": "case-1",
+        "user_id": "user-1",
+        "subsegment": "chemie",
+        "status": "active",
+        "created_at": "2026-04-09T00:00:00+00:00",
+        "updated_at": "2026-04-09T01:00:00+00:00",
+    }
+
+    with patch(
+        "app.agent.api.router.get_case_by_number_async",
+        new=AsyncMock(return_value=copy.deepcopy(case_row)),
+    ):
+        response = client.get("/cases/case-1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == case_row
+
+
+def test_case_list_endpoint_reads_owned_cases_newest_first() -> None:
+    case_rows = [
+        {
+            "id": "case-row-2",
+            "case_number": "case-2",
+            "status": "active",
+            "subsegment": "wasser",
+            "updated_at": "2026-04-09T02:00:00+00:00",
+            "latest_revision": 4,
+        },
+        {
+            "id": "case-row-1",
+            "case_number": "case-1",
+            "status": "archived",
+            "subsegment": "dampf",
+            "updated_at": "2026-04-08T02:00:00+00:00",
+            "latest_revision": 2,
+        },
+    ]
+
+    with patch(
+        "app.agent.api.router.list_cases_async",
+        new=AsyncMock(return_value=copy.deepcopy(case_rows)),
+    ):
+        response = client.get("/cases")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["case_number"] for item in body] == ["case-2", "case-1"]
+    assert body[0]["latest_revision"] == 4
+    assert body[1]["status"] == "archived"
+
+
+def test_case_metadata_endpoint_returns_404_when_case_missing() -> None:
+    with patch(
+        "app.agent.api.router.get_case_by_number_async",
+        new=AsyncMock(return_value=None),
+    ):
+        response = client.get("/cases/missing-case")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Case 'missing-case' not found"
+
+
+def test_latest_snapshot_endpoint_reads_governed_snapshot() -> None:
+    snapshot = SimpleNamespace(
+        case_id="case-row-1",
+        case_number="case-1",
+        user_id="user-1",
+        revision=3,
+        state_json={"analysis_cycle": 3, "normalized": {"parameters": {"medium": {"value": "Wasser"}}}},
+        basis_hash="abc123def4567890",
+        ontology_version="sealai_norm_v1",
+        prompt_version="reasoning_v1",
+        model_version="gpt-4o-mini",
+        created_at="2026-04-09T00:00:00+00:00",
+    )
+
+    with patch(
+        "app.agent.api.router.get_latest_governed_case_snapshot_async",
+        new=AsyncMock(return_value=snapshot),
+    ):
+        response = client.get("/cases/case-1/snapshots/latest")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["case_id"] == "case-row-1"
+    assert body["revision"] == 3
+    assert body["basis_hash"] == "abc123def4567890"
+    assert body["state_json"]["normalized"]["parameters"]["medium"]["value"] == "Wasser"
+
+
+def test_snapshot_list_endpoint_reads_revisions_newest_first() -> None:
+    case_row = {
+        "id": "case-row-1",
+        "case_number": "case-1",
+        "user_id": "user-1",
+        "subsegment": "chemie",
+        "status": "active",
+        "created_at": "2026-04-09T00:00:00+00:00",
+        "updated_at": "2026-04-09T01:00:00+00:00",
+    }
+    snapshot_items = [
+        SimpleNamespace(
+            revision=4,
+            basis_hash="hash4",
+            ontology_version="sealai_norm_v1",
+            prompt_version="reasoning_v1",
+            model_version="gpt-4o-mini",
+            created_at="2026-04-09T04:00:00+00:00",
+        ),
+        SimpleNamespace(
+            revision=2,
+            basis_hash="hash2",
+            ontology_version="sealai_norm_v1",
+            prompt_version="reasoning_v1",
+            model_version="gpt-4o-mini",
+            created_at="2026-04-09T02:00:00+00:00",
+        ),
+    ]
+
+    with patch(
+        "app.agent.api.router.get_case_by_number_async",
+        new=AsyncMock(return_value=copy.deepcopy(case_row)),
+    ), patch(
+        "app.agent.api.router.list_governed_case_snapshots_async",
+        new=AsyncMock(return_value=snapshot_items),
+    ):
+        response = client.get("/cases/case-1/snapshots")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["revision"] for item in body] == [4, 2]
+    assert body[0]["basis_hash"] == "hash4"
+
+
+def test_snapshot_list_endpoint_returns_404_when_case_missing() -> None:
+    with patch(
+        "app.agent.api.router.get_case_by_number_async",
+        new=AsyncMock(return_value=None),
+    ):
+        response = client.get("/cases/missing-case/snapshots")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Case 'missing-case' not found"
+
+
+def test_revision_snapshot_endpoint_reads_targeted_governed_snapshot() -> None:
+    snapshot = SimpleNamespace(
+        case_id="case-row-1",
+        case_number="case-1",
+        user_id="user-1",
+        revision=2,
+        state_json={"analysis_cycle": 1, "normalized": {"parameters": {"medium": {"value": "Dampf"}}}},
+        basis_hash="rev2hash00000000",
+        ontology_version="sealai_norm_v1",
+        prompt_version="reasoning_v1",
+        model_version="gpt-4o-mini",
+        created_at="2026-04-08T00:00:00+00:00",
+    )
+
+    with patch(
+        "app.agent.api.router.get_governed_case_snapshot_by_revision_async",
+        new=AsyncMock(return_value=snapshot),
+    ):
+        response = client.get("/cases/case-1/snapshots/2")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    assert body["basis_hash"] == "rev2hash00000000"
+    assert body["state_json"]["normalized"]["parameters"]["medium"]["value"] == "Dampf"
+
+
+def test_revision_snapshot_endpoint_returns_404_when_revision_missing() -> None:
+    with patch(
+        "app.agent.api.router.get_governed_case_snapshot_by_revision_async",
+        new=AsyncMock(return_value=None),
+    ):
+        response = client.get("/cases/case-1/snapshots/9")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Snapshot revision 9 for case 'case-1' not found"
 
 
 def test_workspace_rfq_document_reads_canonical_html_report() -> None:
@@ -587,6 +738,33 @@ def test_workspace_rfq_document_returns_404_without_generated_html_report() -> N
 
     assert response.status_code == 404
     assert response.json()["detail"] == "No RFQ document has been generated yet."
+
+
+def test_workspace_rfq_document_uses_structured_handover_special_case_loader() -> None:
+    persisted_state = {
+        "messages": [],
+        "working_profile": {},
+        "case_state": {},
+        "sealing_state": {
+            "handover": {
+                "is_handover_ready": True,
+                "rfq_html_report": "<html><body>handover</body></html>",
+            },
+        },
+    }
+
+    with patch(
+        "app.agent.api.router.require_structured_handover_state",
+        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
+    ) as mock_special_loader, patch(
+        "app.agent.api.router._load_preferred_governed_workspace_source",
+        new=AsyncMock(side_effect=AssertionError("governed read helper should not be used for RFQ special-case reads")),
+    ):
+        response = client.get("/workspace/case-1/rfq-document")
+
+    assert response.status_code == 200
+    assert response.text == "<html><body>handover</body></html>"
+    mock_special_loader.assert_awaited_once()
 
 
 def test_workspace_projection_prefers_canonical_rfq_object_and_matching_state() -> None:
@@ -759,14 +937,12 @@ def test_chat_and_stream_use_shared_runtime_dispatcher() -> None:
     )()
 
     with patch("app.agent.api.router._resolve_runtime_dispatch", new=AsyncMock(side_effect=_fake_dispatch)), \
-         patch("app.agent.api.router.prepare_structured_state", new=AsyncMock(side_effect=_fake_prepare)), \
          patch("app.agent.api.router.evaluate_interaction_policy_async", new=AsyncMock(return_value=decision)), \
          patch("app.agent.api.router.execute_agent", new=AsyncMock(return_value={
              "messages": [HumanMessage(content="Hallo"), AIMessage(content="Antwort")],
              "sealing_state": {"cycle": {"state_revision": 1, "analysis_cycle_id": "cycle-1"}},
              "working_profile": {},
          })), \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock(return_value=None)), \
          patch("app.agent.api.router.agent_sse_generator", side_effect=_fake_sse_gen):
         asyncio.run(chat_endpoint(request, current_user=_TEST_USER))
         asyncio.run(_collect_stream_frames(event_generator(request, current_user=_TEST_USER)))
@@ -793,17 +969,13 @@ def test_chat_endpoint_uses_conversation_runtime_when_dispatcher_routes_conversa
 
     with patch("app.agent.api.router._resolve_runtime_dispatch", new=AsyncMock(return_value=resolution)), \
          patch("app.agent.runtime.conversation_runtime.run_conversation", new=AsyncMock(return_value=type("ConversationResult", (), {"reply_text": "Konversationsantwort"})())) as mock_run, \
-         patch("app.agent.api.router.prepare_structured_state", new=AsyncMock()) as mock_prepare, \
-         patch("app.agent.api.router.execute_agent") as mock_execute, \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock()) as mock_persist:
+         patch("app.agent.api.router.execute_agent") as mock_execute:
         response = asyncio.run(chat_endpoint(request, current_user=_TEST_USER))
 
     assert response.reply == "Konversationsantwort"
     assert response.response_class == "conversational_answer"
     assert response.policy_path == "fast"
-    mock_prepare.assert_not_called()
     mock_execute.assert_not_called()
-    mock_persist.assert_not_called()
     assert mock_run.await_args.kwargs["mode"] == "instant_light_reply"
 
 
@@ -829,12 +1001,10 @@ def test_stream_endpoint_uses_conversation_runtime_when_dispatcher_routes_conver
         yield "data: [DONE]\n\n"
 
     with patch("app.agent.api.router._resolve_runtime_dispatch", new=AsyncMock(return_value=resolution)), \
-         patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_conversation), \
-         patch("app.agent.api.router.prepare_structured_state", new=AsyncMock()) as mock_prepare:
+         patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_conversation):
         frames = asyncio.run(_collect_stream_frames(event_generator(request, current_user=_TEST_USER)))
 
     assert frames == ['data: {"type":"text_chunk","text":"Hallo"}\n\n', "data: [DONE]\n\n"]
-    mock_prepare.assert_not_called()
     assert captured_stream["mode"] == "light_exploration"
 
 
@@ -862,17 +1032,13 @@ def test_conversation_json_and_sse_share_runtime_without_governed_side_effects()
     with patch("app.agent.api.router._resolve_runtime_dispatch", new=AsyncMock(return_value=resolution)), \
          patch("app.agent.runtime.conversation_runtime.run_conversation", side_effect=_fake_run_conversation), \
          patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conversation), \
-         patch("app.agent.api.router.prepare_structured_state", new=AsyncMock()) as mock_prepare, \
-         patch("app.agent.api.router.execute_agent", new=AsyncMock()) as mock_execute, \
-         patch("app.agent.api.router.persist_structured_state", new=AsyncMock()) as mock_persist:
+         patch("app.agent.api.router.execute_agent", new=AsyncMock()) as mock_execute:
         response = asyncio.run(chat_endpoint(request, current_user=_TEST_USER))
         frames = asyncio.run(_collect_stream_frames(event_generator(request, current_user=_TEST_USER)))
 
     assert response.reply == "Gemeinsame Antwort"
     assert frames == ['data: {"type":"text_chunk","text":"Gemeinsame Antwort"}\n\n', "data: [DONE]\n\n"]
-    mock_prepare.assert_not_called()
     mock_execute.assert_not_called()
-    mock_persist.assert_not_called()
 
 
 def test_runtime_dispatch_fails_open_to_governed_when_gate_resolution_errors() -> None:
@@ -994,6 +1160,58 @@ def test_review_route_loads_and_persists_canonical_state() -> None:
     assert response.json()["handover"]["is_handover_ready"] is True
     assert response.json()["handover"]["handover_status"] == "releasable"
     assert response.json()["handover"]["handover_payload"]["qualified_material_ids"] == ["ptfe::g25::acme"]
+
+
+def test_review_route_uses_structured_review_special_case_helpers() -> None:
+    state = {
+        "messages": [HumanMessage(content="Bitte prüfen")],
+        "sealing_state": {
+            "cycle": {"state_revision": 2, "analysis_cycle_id": "cycle-2"},
+            "review": {"review_required": True, "review_state": "pending"},
+            "governance": {"release_status": "manufacturer_validation_required", "rfq_admissibility": "provisional"},
+            "selection": {},
+        },
+        "working_profile": {},
+        "relevant_fact_cards": [],
+        "case_state": {"case_meta": {"binding_level": "ORIENTATION"}, "result_contract": {}},
+    }
+    node_result = {
+        "sealing_state": {
+            "cycle": {"state_revision": 3, "analysis_cycle_id": "cycle-3"},
+            "review": {"review_required": False, "review_state": "approved"},
+            "governance": {"release_status": "rfq_ready", "rfq_admissibility": "ready"},
+            "handover": {"is_handover_ready": False},
+            "selection": {},
+        },
+        "case_state": {
+            "governance_state": {"review_state": "case-approved", "release_status": "rfq_ready"},
+            "rfq_state": {"handover_ready": False},
+        },
+        "messages": [AIMessage(content="Review abgeschlossen")],
+    }
+
+    with patch(
+        "app.agent.api.router.require_structured_review_state",
+        new=AsyncMock(return_value=copy.deepcopy(state)),
+    ) as mock_review_load, patch(
+        "app.agent.api.router.persist_structured_review_commit",
+        new=AsyncMock(return_value=copy.deepcopy(state) | node_result),
+    ) as mock_review_persist, patch(
+        "app.agent.api.router.require_structured_residual_state",
+        new=AsyncMock(side_effect=AssertionError("general canonical review loader should not be used")),
+    ), patch(
+        "app.agent.api.router.persist_structured_residual_commit",
+        new=AsyncMock(side_effect=AssertionError("general canonical review persist should not be used")),
+    ), patch(
+        "app.agent.api.router._governed_native_review_commit",
+        return_value=(copy.deepcopy(state) | node_result, "Review abgeschlossen"),
+    ):
+        response = client.post("/review", json={"session_id": "case-1", "action": "approve"})
+
+    assert response.status_code == 200
+    mock_review_load.assert_awaited_once()
+    mock_review_persist.assert_awaited_once()
+    assert response.json()["review_state"] == "case-approved"
 
 
 def test_review_route_falls_back_to_raw_handover_when_case_state_lacks_payload() -> None:

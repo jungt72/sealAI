@@ -2,9 +2,14 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
-scrape_configs: []
+scrape_configs:
+  - job_name: "sealai-backend"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8000"]
 
-# The current production backend image does not register a Prometheus
-# `/metrics` route, so scraping it only produces persistent 404 noise.
-# Re-enable a backend scrape job when a backend release explicitly exposes
-# a supported metrics endpoint.
+# Current stack note:
+# - backend exposes /metrics when ENABLE_METRICS=true (set in docker-compose.yml)
+# - qdrant/redis exporter scrape targets from the target architecture are not
+#   added here yet because they are not provisioned as stable metrics endpoints
+#   in the current compose stack

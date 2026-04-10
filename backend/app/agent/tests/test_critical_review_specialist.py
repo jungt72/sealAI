@@ -15,7 +15,7 @@ _DEFAULT_REQUIREMENT_CLASS = object()
 
 def _payload(
     *,
-    release_status: str = "rfq_ready",
+    release_status: str = "inquiry_ready",
     rfq_admissibility: str = "ready",
     review_required: bool = False,
     unknowns_release_blocking: tuple[str, ...] = (),

@@ -516,7 +516,7 @@ def _full_asserted() -> dict:
 def _releasable_governance() -> dict:
     """Governance state that does NOT block output (all gates green)."""
     return {
-        "release_status": "rfq_ready",
+        "release_status": "inquiry_ready",
         "rfq_admissibility": "ready",
         "specificity_level": "compound_required",
         "unknowns_release_blocking": [],
@@ -528,7 +528,7 @@ def _releasable_governance() -> dict:
 def _blocking_governance(reason: str = "review_required") -> dict:
     """Governance state that blocks output via unknowns_release_blocking."""
     return {
-        "release_status": "rfq_ready",
+        "release_status": "inquiry_ready",
         "rfq_admissibility": "ready",
         "specificity_level": "compound_required",
         "unknowns_release_blocking": [reason],

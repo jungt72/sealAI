@@ -348,7 +348,7 @@ def _full_asserted() -> dict:
 
 def _green_governance() -> dict:
     return {
-        "release_status": "rfq_ready",
+        "release_status": "inquiry_ready",
         "rfq_admissibility": "ready",
         "specificity_level": "compound_required",
         "unknowns_release_blocking": [],
@@ -1315,7 +1315,7 @@ class TestProjectionInvariants:
         assert projection["invariant_violations"] == [
             "governed_result_cannot_suppress_recommendation_details",
             "governed_result_conflicts_with_blocking_projection",
-            "unresolved_conflict_cannot_surface_governed_recommendation",
+            "unresolved_conflict_cannot_surface_technical_preselection",
             "releasable_readiness_conflicts_with_blocking_projection",
         ]
 

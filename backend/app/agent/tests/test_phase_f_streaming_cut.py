@@ -15,6 +15,7 @@ from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 from app.agent.graph import GraphState
 from app.agent.state.models import (
@@ -619,7 +620,7 @@ class TestPhase1LiveCanon:
         live_state.governance.gov_class = "B"
 
         with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=live_state)), \
-             patch("app.agent.api.router.require_canonical_state", AsyncMock(side_effect=AssertionError("legacy canonical state should not be used"))):
+             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(side_effect=AssertionError("legacy canonical state should not be used"))):
             projection = await router_module.get_workspace_projection(
                 "sess-1",
                 current_user=_make_current_user(),
@@ -628,6 +629,46 @@ class TestPhase1LiveCanon:
         assert projection.case_summary.thread_id == "sess-1"
         assert projection.case_summary.turn_count == 1
         assert projection.governance_status.release_status == "precheck_only"
+
+    @pytest.mark.asyncio
+    async def test_workspace_projection_prefers_live_governed_state_over_postgres_snapshot(self):
+        import app.agent.api.router as router_module
+
+        live_state = GovernedSessionState(
+            analysis_cycle=5,
+            conversation_messages=[
+                ConversationMessage(role="user", content="Live Zustand", created_at="2026-04-02T00:00:00+00:00"),
+            ],
+        )
+        live_state.asserted.assertions["medium"] = AssertedClaim(
+            field_name="medium",
+            asserted_value="Wasser",
+            confidence="confirmed",
+        )
+
+        snapshot_state = GovernedSessionState(
+            analysis_cycle=3,
+            conversation_messages=[
+                ConversationMessage(role="user", content="Persistierter Zustand", created_at="2026-04-01T00:00:00+00:00"),
+            ],
+        )
+        snapshot_state.asserted.assertions["medium"] = AssertedClaim(
+            field_name="medium",
+            asserted_value="Dampf",
+            confidence="confirmed",
+        )
+
+        with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=live_state)), \
+             patch("app.agent.api.router._load_governed_state_snapshot_projection_source", AsyncMock(return_value=snapshot_state)), \
+             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(side_effect=AssertionError("canonical state should not be used"))):
+            projection = await router_module.get_workspace_projection(
+                "sess-1",
+                current_user=_make_current_user(),
+            )
+
+        assert projection.case_summary.thread_id == "sess-1"
+        assert projection.cycle_info.state_revision == 5
+        assert "Medium: Wasser" in projection.communication_context.confirmed_facts_summary
 
     @pytest.mark.asyncio
     async def test_live_chat_history_prefers_governed_transcript(self):
@@ -641,7 +682,7 @@ class TestPhase1LiveCanon:
         )
 
         with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=live_state)), \
-             patch("app.agent.api.router.require_canonical_state", AsyncMock(side_effect=AssertionError("legacy canonical state should not be used"))):
+             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(side_effect=AssertionError("legacy canonical state should not be used"))):
             payload = await router_module.get_live_chat_history(
                 "sess-1",
                 current_user=_make_current_user(),
@@ -649,6 +690,48 @@ class TestPhase1LiveCanon:
 
         assert [item["role"] for item in payload["messages"]] == ["user", "assistant"]
         assert payload["messages"][1]["content"] == "Wo genau?"
+
+    @pytest.mark.asyncio
+    async def test_live_chat_history_falls_back_to_postgres_governed_snapshot_before_structured_case(self):
+        import app.agent.api.router as router_module
+
+        snapshot_state = GovernedSessionState(
+            conversation_messages=[
+                ConversationMessage(role="assistant", content="Persistierte Governed-Antwort", created_at="2026-04-02T00:00:01+00:00"),
+            ]
+        )
+
+        with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=None)), \
+             patch("app.agent.api.router._load_governed_state_snapshot_projection_source", AsyncMock(return_value=snapshot_state)), \
+             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(side_effect=AssertionError("canonical state should not be used"))):
+            payload = await router_module.get_live_chat_history(
+                "sess-pg",
+                current_user=_make_current_user(),
+            )
+
+        assert [item["role"] for item in payload["messages"]] == ["assistant"]
+        assert payload["messages"][0]["content"] == "Persistierte Governed-Antwort"
+
+    @pytest.mark.asyncio
+    async def test_live_chat_history_uses_structured_case_only_when_no_governed_source_exists(self):
+        import app.agent.api.router as router_module
+
+        canonical_state = {
+            "messages": [
+                HumanMessage(content="Historische Structured-Frage"),
+            ],
+        }
+
+        with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=None)), \
+             patch("app.agent.api.router._load_governed_state_snapshot_projection_source", AsyncMock(return_value=None)), \
+             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(return_value=canonical_state)):
+            payload = await router_module.get_live_chat_history(
+                "sess-legacy",
+                current_user=_make_current_user(),
+            )
+
+        assert [item["role"] for item in payload["messages"]] == ["user"]
+        assert payload["messages"][0]["content"] == "Historische Structured-Frage"
 
     @pytest.mark.asyncio
     async def test_canonical_state_load_applies_live_governed_snapshot_for_review_near_readers(self):
@@ -690,7 +773,7 @@ class TestPhase1LiveCanon:
 
         with patch("app.agent.api.router.load_structured_case", AsyncMock(return_value=canonical_state)), \
              patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=governed_state)):
-            loaded = await router_module.load_canonical_state(
+            loaded = await router_module.load_structured_residual_state(
                 current_user=_make_current_user(),
                 session_id="sess-1",
             )
@@ -701,6 +784,39 @@ class TestPhase1LiveCanon:
         assert loaded["case_state"]["governance_state"]["review_required"] is True
         assert loaded["case_state"]["governance_state"]["review_state"] == "pending"
         assert loaded["case_state"]["governance_state"]["unknowns_release_blocking"] == ["pressure_bar"]
+
+    @pytest.mark.asyncio
+    async def test_workspace_projection_falls_back_to_postgres_governed_snapshot(self):
+        import app.agent.api.router as router_module
+
+        governed_state = GovernedSessionState(
+            analysis_cycle=4,
+            conversation_messages=[
+                ConversationMessage(
+                    role="assistant",
+                    content="Belastbarer Rahmen liegt vor.",
+                    created_at="2026-04-02T00:00:01+00:00",
+                ),
+            ],
+        )
+        governed_state.asserted.assertions["medium"] = AssertedClaim(
+            field_name="medium",
+            asserted_value="Wasser",
+            confidence="confirmed",
+        )
+        governed_state.governance.gov_class = "B"
+
+        with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=None)), \
+             patch("app.agent.api.router._load_governed_state_snapshot_projection_source", AsyncMock(return_value=governed_state)), \
+             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(side_effect=AssertionError("canonical state should not be used"))):
+            projection = await router_module.get_workspace_projection(
+                "sess-pg",
+                current_user=_make_current_user(),
+            )
+
+        assert projection.case_summary.thread_id == "sess-pg"
+        assert projection.cycle_info.state_revision == 4
+        assert "Medium: Wasser" in projection.communication_context.confirmed_facts_summary
 
     @pytest.mark.asyncio
     async def test_review_outcome_syncs_into_live_governed_state(self):
@@ -750,7 +866,7 @@ class TestPhase1LiveCanon:
             "messages": [],
             "case_state": {
                 "governance_state": {
-                    "release_status": "rfq_ready",
+                    "release_status": "inquiry_ready",
                     "rfq_admissibility": "ready",
                     "unknowns_release_blocking": [],
                     "unknowns_manufacturer_validation": [],
@@ -790,13 +906,13 @@ class TestPhase1LiveCanon:
                 "selection": {
                     "selection_status": "releasable",
                     "recommendation_artifact": {
-                        "release_status": "rfq_ready",
+                        "release_status": "inquiry_ready",
                         "rfq_admissibility": "ready",
                         "output_blocked": False,
                         "rationale_summary": "Der Loesungsraum ist belastbar eingeengt.",
                     },
                     "output_contract_projection": {
-                        "response_class": "rfq_ready",
+                        "response_class": "inquiry_ready",
                     },
                 },
                 "review": {
@@ -804,7 +920,7 @@ class TestPhase1LiveCanon:
                     "review_state": "approved",
                 },
                 "governance": {
-                    "release_status": "rfq_ready",
+                    "release_status": "inquiry_ready",
                     "rfq_admissibility": "ready",
                 },
             },

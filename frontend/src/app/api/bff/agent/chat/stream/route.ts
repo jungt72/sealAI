@@ -254,6 +254,8 @@ export async function POST(request: Request) {
       );
     }
 
+    console.error("[api/bff/agent/chat/stream] failed", error);
+
     return NextResponse.json(
       { error: { code: "agent_stream_failed", message: "Agent stream could not be started." } },
       { status: 500 },
