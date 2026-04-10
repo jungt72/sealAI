@@ -79,11 +79,18 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
+            # 0. Build tag ID → name map so we can resolve IDs returned by the docs endpoint
+            tag_id_to_name: dict[int, str] = {}
+            tag_response = await client.get(f"{url}/api/tags/?page_size=500", headers=headers)
+            if tag_response.status_code == 200:
+                for tag in tag_response.json().get("results", []):
+                    tag_id_to_name[tag["id"]] = tag["name"]
+
             # 1. Fetch documents from Paperless (limited to 100 recent for now)
             response = await client.get(f"{url}/api/documents/?page_size=100", headers=headers)
             response.raise_for_status()
             data = response.json()
-            
+
             paperless_docs = data.get("results", [])
             scanned = len(paperless_docs)
 
@@ -93,7 +100,13 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                 p_id = pdoc.get("id")
                 p_title = pdoc.get("title")
                 p_filename = pdoc.get("original_file_name") or f"{p_title}.pdf"
-                p_tags = coerce_tag_strings(pdoc.get("tag_names") or pdoc.get("tags"))
+                # Paperless returns tag IDs (integers) — resolve to names via the map
+                raw_tag_field = pdoc.get("tag_names") or pdoc.get("tags") or []
+                resolved_tags = [
+                    tag_id_to_name[t] if isinstance(t, int) and t in tag_id_to_name else t
+                    for t in (raw_tag_field if isinstance(raw_tag_field, list) else [raw_tag_field])
+                ]
+                p_tags = coerce_tag_strings(resolved_tags)
                 readiness = evaluate_paperless_tag_readiness(p_tags)
                 if readiness["ingest_ready"]:
                     ingest_ready += 1
