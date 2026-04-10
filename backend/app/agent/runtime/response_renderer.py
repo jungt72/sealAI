@@ -38,7 +38,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-from app.agent.agent.output_guard import (
+from app.agent.runtime.output_guard import (
     FAST_PATH_GUARD_FALLBACK,
     check_fast_path_output,
 )
