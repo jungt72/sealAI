@@ -1,0 +1,192 @@
+{
+  "DIN-EN-12756": {
+    "title": "Gleitringdichtungen — Hauptabmessungen, Bezeichnungen und Werkstoffe",
+    "issuer": "DIN / CEN",
+    "publication_year": 2000,
+    "scope": [
+      "STS-TYPE-GS-S",
+      "STS-TYPE-GS-CART",
+      "STS-TYPE-GS-D",
+      "STS-TYPE-GS-DGS",
+      "STS-TYPE-GS-GAS"
+    ],
+    "industries": ["chemie", "prozess", "wasser", "lebensmittel"],
+    "relevant_parameters": [
+      "shaft_diameter_mm",
+      "housing_bore_mm",
+      "shaft_tolerance",
+      "surface_roughness_ra"
+    ],
+    "supersedes": ["DIN 24960"],
+    "norm_family": "Gleitringdichtungen",
+    "mandatory_for_ce": false
+  },
+  "API-682": {
+    "title": "Pumps — Shaft Sealing Systems for Centrifugal and Rotary Pumps",
+    "issuer": "American Petroleum Institute",
+    "publication_year": 2014,
+    "edition": 4,
+    "scope": [
+      "STS-TYPE-GS-CART",
+      "STS-TYPE-GS-DGS",
+      "STS-TYPE-GS-S",
+      "STS-TYPE-GS-D",
+      "STS-TYPE-GS-TANDEM"
+    ],
+    "industries": ["oil_gas", "chemie", "petrochemie", "prozess"],
+    "relevant_parameters": [
+      "pressure_max_bar",
+      "temperature_max_c",
+      "shaft_diameter_mm",
+      "speed_max_rpm",
+      "flush_plan"
+    ],
+    "flush_plans_defined": [
+      "Plan 11", "Plan 13", "Plan 21", "Plan 23",
+      "Plan 31", "Plan 32", "Plan 41",
+      "Plan 52", "Plan 53A", "Plan 53B", "Plan 53C", "Plan 54",
+      "Plan 62", "Plan 65", "Plan 72", "Plan 74", "Plan 75", "Plan 76"
+    ],
+    "seal_categories": ["Category 1", "Category 2", "Category 3"],
+    "norm_family": "Prozessdichtungen",
+    "mandatory_for_ce": false
+  },
+  "ISO-21049": {
+    "title": "Pumps — Shaft Sealing Systems for Centrifugal and Rotary Pumps",
+    "issuer": "ISO",
+    "publication_year": 2004,
+    "scope": [
+      "STS-TYPE-GS-S",
+      "STS-TYPE-GS-CART",
+      "STS-TYPE-GS-D",
+      "STS-TYPE-GS-DGS",
+      "STS-TYPE-GS-GAS",
+      "STS-TYPE-GS-TANDEM"
+    ],
+    "industries": ["chemie", "prozess", "wasser", "marine"],
+    "relevant_parameters": [
+      "pressure_max_bar",
+      "temperature_max_c",
+      "shaft_diameter_mm",
+      "speed_max_rpm"
+    ],
+    "note": "Internationale Entsprechung zu API 682 (weitgehend harmonisiert seit Edition 4)",
+    "norm_family": "Prozessdichtungen",
+    "mandatory_for_ce": false
+  },
+  "DIN-3761": {
+    "title": "Radialwellendichtringe für Kraftfahrzeuge — Begriffe, Maße, Prüfung",
+    "issuer": "DIN",
+    "publication_year": 1984,
+    "scope": [
+      "STS-TYPE-RWDR-A",
+      "STS-TYPE-RWDR-B",
+      "STS-TYPE-RWDR-C",
+      "STS-TYPE-RWDR-V"
+    ],
+    "industries": ["automotive", "maschinenbau", "allgemein"],
+    "relevant_parameters": [
+      "shaft_diameter_mm",
+      "housing_bore_mm",
+      "shaft_surface_roughness_ra",
+      "shaft_speed_max_rpm"
+    ],
+    "note": "Gilt für Radialwellendichtringe bis 400 mm Wellendurchmesser; Nachfolgestandard: ISO 6194",
+    "related_norms": ["ISO 6194", "DIN 3760"],
+    "norm_family": "Radialwellendichtringe",
+    "mandatory_for_ce": false
+  },
+  "DIN-EN-13160": {
+    "title": "Leckanzeigesysteme — Anforderungen, Prüfung und Kennzeichnung",
+    "issuer": "DIN / CEN",
+    "publication_year": 2014,
+    "scope": [
+      "STS-TYPE-GS-D",
+      "STS-TYPE-GS-DGS",
+      "STS-TYPE-GS-TANDEM"
+    ],
+    "industries": ["chemie", "prozess", "umwelt"],
+    "relevant_parameters": [
+      "pressure_differential",
+      "leak_detection_method"
+    ],
+    "note": "Mehrteilige Norm (Teil 1–7); Teil 2 betrifft Doppeldichtungen mit Drucküberwachung",
+    "norm_family": "Dichtheitsprüfung / Leckage",
+    "mandatory_for_ce": false
+  },
+  "ATEX-2014-34-EU": {
+    "title": "ATEX — Richtlinie 2014/34/EU (Geräte und Schutzsysteme in explosionsgefährdeten Bereichen)",
+    "issuer": "Europäische Kommission",
+    "publication_year": 2014,
+    "replaces": "94/9/EG",
+    "scope": [
+      "STS-TYPE-GS-S",
+      "STS-TYPE-GS-CART",
+      "STS-TYPE-GS-D",
+      "STS-TYPE-GS-DGS",
+      "STS-TYPE-GS-GAS",
+      "STS-TYPE-MAG"
+    ],
+    "industries": ["oil_gas", "chemie", "petrochemie", "bergbau", "lebensmittel"],
+    "relevant_parameters": [
+      "temperature_max_c",
+      "ignition_temperature",
+      "equipment_category",
+      "zone_classification"
+    ],
+    "equipment_groups": ["I (Bergbau)", "II (Übertage, Gas/Staub)"],
+    "categories": ["1G/1D", "2G/2D", "3G/3D"],
+    "note": "Dichtungen in Zone 0/1/2 (Gas) bzw. 20/21/22 (Staub) müssen ATEX-Konformität des Gesamtsystems sicherstellen",
+    "norm_family": "Explosionsschutz",
+    "mandatory_for_ce": true
+  },
+  "FDA-21-CFR-177": {
+    "title": "FDA 21 CFR Part 177 — Indirect Food Additives: Polymers",
+    "issuer": "U.S. Food and Drug Administration",
+    "publication_year": 2023,
+    "scope": [
+      "STS-TYPE-OR-A",
+      "STS-TYPE-FLAT-A",
+      "STS-TYPE-GS-CART",
+      "STS-TYPE-GS-S",
+      "STS-TYPE-LIP-A",
+      "STS-TYPE-LIP-B"
+    ],
+    "industries": ["lebensmittel", "pharma", "getränke", "dairy"],
+    "relevant_parameters": [
+      "material_fda_status",
+      "extractables",
+      "temperature_max_c"
+    ],
+    "relevant_subsections": [
+      "177.1550 (PTFE)",
+      "177.2600 (Rubber articles)",
+      "177.1460 (Nylon)"
+    ],
+    "note": "Für Lebensmittelkontakt in USA; Europa: EC 1935/2004 + spezifische Werkstoffverordnungen",
+    "related_norms": ["EC 1935/2004", "3-A Sanitary Standards", "EHEDG"],
+    "norm_family": "Lebensmittelkontakt",
+    "mandatory_for_ce": false
+  },
+  "ISO-15156": {
+    "title": "Petroleum and natural gas industries — Materials for use in H2S-containing environments (NACE MR0175)",
+    "issuer": "ISO / NACE",
+    "publication_year": 2015,
+    "scope": [
+      "STS-TYPE-GS-S",
+      "STS-TYPE-GS-CART",
+      "STS-TYPE-GS-D",
+      "STS-TYPE-OR-A",
+      "STS-TYPE-RWDR-A"
+    ],
+    "industries": ["oil_gas", "petrochemie", "offshore"],
+    "relevant_parameters": [
+      "h2s_partial_pressure_kpa",
+      "temperature_max_c",
+      "hardness_max_hrc"
+    ],
+    "note": "Dreiteilige Norm (Teile 1–3); Teil 3 betrifft Elastomere und Polymere; Schlüsselwerkstoff HNBR-B1",
+    "norm_family": "Sauergas / Sour Service",
+    "mandatory_for_ce": false
+  }
+}

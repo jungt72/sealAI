@@ -515,6 +515,81 @@ _MATERIAL_CONFIRMATION = {
     "kalrez": ("FFKM", "trade_name_requires_confirmation:kalrez"),
 }
 
+# ---------------------------------------------------------------------------
+# STS-code direct lookup (used by normalize_material() — not decision layer)
+# Maps lowercased input → canonical STS-MAT-* code.
+# normalize_material_decision() is intentionally untouched (backward compat).
+# ---------------------------------------------------------------------------
+_GENERIC_TO_STS: dict[str, str] = {
+    "NBR":    "STS-MAT-NBR-A1",
+    "PTFE":   "STS-MAT-PTFE-A1",
+    "FKM":    "STS-MAT-FKM-A1",
+    "FFKM":   "STS-MAT-FFKM-A1",
+    "EPDM":   "STS-MAT-EPDM-A1",
+    "SILIKON": "STS-MAT-SI-A1",
+    "HNBR":   "STS-MAT-HNBR-A1",
+    "ACM":    "STS-MAT-ACM-A1",
+    "AU":     "STS-MAT-AU-A1",
+    "EU":     "STS-MAT-EU-A1",
+}
+
+_MAT_DIRECT_STS: dict[str, str] = {
+    # Ceramic / cermet
+    "sic":                      "STS-MAT-SIC-A1",
+    "ssic":                     "STS-MAT-SIC-A1",
+    "siliziumkarbid":           "STS-MAT-SIC-A1",
+    "siliziumcarbid":           "STS-MAT-SIC-A1",
+    "silicon carbide":          "STS-MAT-SIC-A1",
+    "siliciumcarbide":          "STS-MAT-SIC-A1",
+    "rbsic":                    "STS-MAT-SIC-B1",
+    "sisic":                    "STS-MAT-SIC-B1",
+    "reaktionsgebundenes sic":  "STS-MAT-SIC-B1",
+    "wc":                       "STS-MAT-WC-A1",
+    "wolframkarbid":            "STS-MAT-WC-A1",
+    "tungsten carbide":         "STS-MAT-WC-A1",
+    "al2o3":                    "STS-MAT-AL2O3-A1",
+    "aluminiumoxid":            "STS-MAT-AL2O3-A1",
+    "alumina":                  "STS-MAT-AL2O3-A1",
+    # Elastomers
+    "nbr":                      "STS-MAT-NBR-A1",
+    "nitrilkautschuk":          "STS-MAT-NBR-A1",
+    "buna n":                   "STS-MAT-NBR-A1",
+    "buna-n":                   "STS-MAT-NBR-A1",
+    "nitril":                   "STS-MAT-NBR-A1",
+    "fkm":                      "STS-MAT-FKM-A1",
+    "viton":                    "STS-MAT-FKM-A1",
+    "fluorokautschuk":          "STS-MAT-FKM-A1",
+    "fluorkautschuk":           "STS-MAT-FKM-A1",
+    "ffkm":                     "STS-MAT-FFKM-A1",
+    "kalrez":                   "STS-MAT-FFKM-A1",
+    "perfluorkautschuk":        "STS-MAT-FFKM-A1",
+    "epdm":                     "STS-MAT-EPDM-A1",
+    "hnbr":                     "STS-MAT-HNBR-A1",
+    "hydrierter nitrilkautschuk": "STS-MAT-HNBR-A1",
+    "cr":                       "STS-MAT-CR-A1",
+    "neopren":                  "STS-MAT-CR-A1",
+    "chloropren":               "STS-MAT-CR-A1",
+    "chloroprenkautschuk":      "STS-MAT-CR-A1",
+    "silikon":                  "STS-MAT-SI-A1",
+    "vmq":                      "STS-MAT-SI-A1",
+    "silikonkautschuk":         "STS-MAT-SI-A1",
+    "silicon":                  "STS-MAT-SI-A1",
+    # Polymers
+    "ptfe":                     "STS-MAT-PTFE-A1",
+    "teflon":                   "STS-MAT-PTFE-A1",
+    "polytetrafluorethylen":    "STS-MAT-PTFE-A1",
+    "peek":                     "STS-MAT-PEEK-A1",
+    "polyetheretherketon":      "STS-MAT-PEEK-A1",
+    "pvdf":                     "STS-MAT-PVDF-A1",
+    "polyvinylidenfluorid":     "STS-MAT-PVDF-A1",
+    # Carbon / graphite
+    "grafit":                   "STS-MAT-GRAFIT-A1",
+    "graphit":                  "STS-MAT-GRAFIT-A1",
+    "graphite":                 "STS-MAT-GRAFIT-A1",
+    "carbon":                   "STS-MAT-CARBON-A1",
+    "kohle":                    "STS-MAT-CARBON-A1",
+}
+
 _MEDIUM_DIRECT: dict[str, str] = {}
 _MEDIUM_INFERRED: dict[str, Any] = {}
 _MEDIUM_CONFIRMATION: dict[str, tuple[str, str]] = {}
@@ -581,8 +656,28 @@ def normalize_medium_decision(value: Any) -> Optional[NormalizationDecision]:
 
 
 def normalize_material(value: Any) -> Any:
+    """Normalize a material term to its canonical STS-MAT-* code.
+
+    Returns a STS code string (e.g. ``"STS-MAT-FKM-A1"``) when the input can
+    be resolved, otherwise the generic canonical name or the raw input.
+
+    Note: ``normalize_material_decision()`` still returns generic names
+    (``"FKM"``, ``"PTFE"`` …) for backward compatibility.
+    """
+    lowered = _lowered(value)
+    if lowered is None:
+        return None
+    # 1. Direct STS-code lookup (covers ceramics, trade names, synonyms)
+    if lowered in _MAT_DIRECT_STS:
+        return _MAT_DIRECT_STS[lowered]
+    # 2. Generic-name → STS-code via decision layer
     decision = normalize_material_decision(value)
-    return None if decision is None else decision.canonical_value
+    if decision is None:
+        return None
+    generic = decision.canonical_value
+    if isinstance(generic, str) and generic in _GENERIC_TO_STS:
+        return _GENERIC_TO_STS[generic]
+    return generic
 
 
 def normalize_medium(value: Any) -> Any:
@@ -699,6 +794,77 @@ _MOTION_TYPE_PATTERNS: list[tuple[str, str]] = [
     (r'\b(?:statisch|keine\s+bewegung|stillstand|flansch(?:abdichtung)?)\b', 'static'),
 ]
 
+_SEALING_TYPE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:gleitringdichtung|gleitring|mechanical\s+seal)\b", "mechanical_seal"),
+    (r"\b(?:rwdr|radialwellendichtring|simmerring|wellendichtring)\b", "rwdr"),
+    (r"\b(?:o[- ]?ring|oring)\b", "o_ring"),
+    (r"\b(?:flachdichtung|gasket)\b", "gasket"),
+    (r"\b(?:packung|stopfbuchse)\b", "packing"),
+]
+
+_PRESSURE_DIRECTION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:beidseitig|wechselnd\w*\s+druck|druck\s+wechselnd|bidirectional)\b", "bidirectional"),
+    (r"\b(?:von\s+innen\s+nach\s+aussen|von\s+innen\s+nach\s+außen|innen\s+nach\s+aussen|innen\s+nach\s+außen)\b", "inside_out"),
+    (r"\b(?:von\s+aussen\s+nach\s+innen|von\s+außen\s+nach\s+innen|aussen\s+nach\s+innen|außen\s+nach\s+innen)\b", "outside_in"),
+    (r"\b(?:drucklos|atmosphaerisch|atmosphärisch)\b", "pressureless_or_atmospheric"),
+]
+
+_DUTY_PROFILE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:24\s*/\s*7|dauerbetrieb|kontinuierlich|permanent|continuous)\b", "continuous"),
+    (r"\b(?:gelegentlich\w*|intermittierend|zeitweise|batch|taktbetrieb|anlaufbetrieb)\b", "intermittent"),
+    (r"\b(?:trockenlauf|dry\s*run(?:ning)?)\b", "dry_running_risk"),
+]
+
+_INSTALLATION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:pumpe|kreiselpumpe|pump)\b", "pump"),
+    (r"\b(?:ventil|valve)\b", "valve"),
+    (r"\b(?:flansch|flange)\b", "flange"),
+    (r"\b(?:gehaeuse|gehäuse|housing)\b", "housing"),
+    (r"\b(?:einbauraum|bauraum|radialer\s+bauraum|axialer\s+bauraum|nur\s+\d+(?:[.,]\d+)?\s*mm)\b", "limited_installation_space"),
+]
+
+_GEOMETRY_CONTEXT_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:nut|nute|nutgeometrie|groove)\b", "groove"),
+    (r"\b(?:bohrung|dichtsitz|dichtstelle|bauform|geometrie)\b", "geometry_context"),
+    (r"\b(?:cartouche|cartridge|kartusche)\b", "cartridge_geometry"),
+]
+
+_CONTAMINATION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:schmutz|verschmutz\w*|partikel|feststoff\w*|solids?)\b", "solids_or_particles"),
+    (r"\b(?:abrasiv\w*|sand|slurry|schlamm)\b", "abrasive"),
+]
+
+_COUNTERFACE_SURFACE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:gegenlauf(?:flaeche|fläche|partner)|wellenzustand|wellenoberflaeche|wellenoberfläche|laufpartner)\b", "counterface_condition"),
+    (r"\b(?:rauheit|ra\s*\d|oberflaeche|oberfläche|verschlissen|riefen)\b", "surface_quality_context"),
+    (r"\b(?:huelse|hülse|buchse|wellenwerkstoff)\b", "counterface_material_context"),
+]
+
+_TOLERANCE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:rundlauf|runout|exzentrizitaet|exzentrizität)\b", "runout_or_eccentricity"),
+    (r"\b(?:toleranz\w*|spiel|spalt|clearance)\b", "tolerance_or_clearance"),
+]
+
+_INDUSTRY_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:lebensmittel\w*|food|pharma|hygien\w*)\b", "food_pharma"),
+    (r"\b(?:chemie|chemisch\w*|chemical|prozess(?:technik|industrie)?)\b", "chemical_process"),
+    (r"\b(?:wasser|abwasser|marine|schiff)\b", "water_or_marine"),
+]
+
+_COMPLIANCE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:fda|eu\s*10/2011|lebensmittelkonform)\b", "food_contact"),
+    (r"\b(?:atex|explosionsschutz|ex[- ]?zone)\b", "atex"),
+    (r"\b(?:ta[- ]?luft|api\s*682|din\s+en\s+12756|din\s+3760)\b", "norm_or_regulatory"),
+]
+
+_MEDIUM_QUALIFIER_PATTERNS: list[tuple[str, str]] = [
+    (r"(?:\b(?:konzentration|konzentriert|prozent)\b|\d+(?:[.,]\d+)?\s*%)", "concentration_context"),
+    (r"\b(?:chlorid(?:e|gehalt)?|chlorides?|salzgehalt|nacl)\b", "chlorides_or_salinity"),
+    (r"\b(?:abrasiv\w*|partikel|feststoff\w*|solids?|slurry|schlamm)\b", "solids_or_abrasives"),
+    (r"\b(?:sattdampf|heissdampf|heißdampf|dampfqualitaet|dampfqualität)\b", "steam_detail"),
+    (r"\b(?:saeure|säure|salzsaeure|salzsäure|lauge|loesungsmittel|lösungsmittel)\b", "chemistry_detail"),
+]
+
 
 def _extract_motion_type(text: str) -> str | None:
     """Return 'rotary', 'linear', or 'static' if motion type is detectable, else None."""
@@ -707,6 +873,21 @@ def _extract_motion_type(text: str) -> str | None:
         if re.search(pattern, text_lower):
             return motion
     return None
+
+
+def _first_pattern_value(text: str, patterns: list[tuple[str, str]]) -> str | None:
+    for pattern, value in patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return value
+    return None
+
+
+def _all_pattern_values(text: str, patterns: list[tuple[str, str]]) -> list[str]:
+    values: list[str] = []
+    for pattern, value in patterns:
+        if re.search(pattern, text, re.IGNORECASE) and value not in values:
+            values.append(value)
+    return values
 
 
 def extract_parameters(text: str) -> dict[str, Any]:
@@ -737,6 +918,29 @@ def extract_parameters(text: str) -> dict[str, Any]:
     motion_type = _extract_motion_type(text)
     if motion_type is not None:
         extracted["motion_type"] = motion_type
+
+    for field_name, patterns in (
+        ("sealing_type", _SEALING_TYPE_PATTERNS),
+        ("pressure_direction", _PRESSURE_DIRECTION_PATTERNS),
+        ("duty_profile", _DUTY_PROFILE_PATTERNS),
+        ("installation", _INSTALLATION_PATTERNS),
+        ("geometry_context", _GEOMETRY_CONTEXT_PATTERNS),
+        ("contamination", _CONTAMINATION_PATTERNS),
+        ("counterface_surface", _COUNTERFACE_SURFACE_PATTERNS),
+        ("tolerances", _TOLERANCE_PATTERNS),
+        ("industry", _INDUSTRY_PATTERNS),
+    ):
+        value = _first_pattern_value(text, patterns)
+        if value is not None:
+            extracted[field_name] = value
+
+    compliance = _all_pattern_values(text, _COMPLIANCE_PATTERNS)
+    if compliance:
+        extracted["compliance"] = compliance
+
+    medium_qualifiers = _all_pattern_values(text, _MEDIUM_QUALIFIER_PATTERNS)
+    if medium_qualifiers:
+        extracted["medium_qualifiers"] = medium_qualifiers
 
     medium_result = run_medium_specialist(
         MediumSpecialistInput(

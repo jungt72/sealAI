@@ -1,0 +1,294 @@
+{
+  "FM-LEAK-STAT-01": {
+    "name": "Leckage an statischer Dichtfläche",
+    "category": "leakage",
+    "sub_category": "static",
+    "symptoms": [
+      "Leckage im Stillstand",
+      "Tropfenbildung an Flansch oder Gehäuse",
+      "Druckverlust bei abgesperrter Anlage"
+    ],
+    "causes": [
+      "Oberflächenfehler an Dichtfläche",
+      "Überpressung / Verpressung zu gering",
+      "Wärmedehnung führt zu Spaltbildung",
+      "Setzkraft durch Kriechneigung des Dichtungswerkstoffs"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-FLAT-A", "STS-TYPE-OR-A", "STS-TYPE-SPIRAL-A"],
+    "recommended_open_points": ["STS-OPEN-SURFACE", "STS-OPEN-PRESSURE", "STS-OPEN-TEMP"]
+  },
+  "FM-LEAK-DYN-01": {
+    "name": "Leckage an dynamischer Dichtfläche (rotativ)",
+    "category": "leakage",
+    "sub_category": "dynamic_rotary",
+    "symptoms": [
+      "Sichtbare Leckage am Wellenausgang",
+      "Erhöhter Sperrflüssigkeitsverbrauch",
+      "Druckabfall im Sperrkreis"
+    ],
+    "causes": [
+      "Verschleiß der Gleitflächen",
+      "Überhitzung durch mangelhafte Schmierung",
+      "Kavitation im Dichtraum",
+      "Fremdkörper im Dichtraum",
+      "Wellenrundlauffehler über Toleranz"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D", "STS-TYPE-GS-GAS", "STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B"],
+    "recommended_open_points": ["STS-OPEN-SPEED", "STS-OPEN-RUNOUT", "STS-OPEN-FLUSH"]
+  },
+  "FM-LEAK-THERM-01": {
+    "name": "Thermisch bedingte Leckage (Thermoschock / Wärmedehnung)",
+    "category": "leakage",
+    "sub_category": "thermal",
+    "symptoms": [
+      "Leckage nur beim Anfahren oder Abkühlen",
+      "Leckage bei Temperaturwechseln",
+      "Rissbildung in Gleitringen"
+    ],
+    "causes": [
+      "Thermischer Schock durch schnelles Anfahren",
+      "Unterschiedliche Wärmedehnungskoeffizienten der Komponenten",
+      "Unzureichende Wärmeabfuhr bei Heißmedien"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"],
+    "recommended_open_points": ["STS-OPEN-TEMP", "STS-OPEN-STARTUP", "STS-OPEN-MATERIAL"]
+  },
+  "FM-WEAR-ABRAS-01": {
+    "name": "Abrasiver Verschleiß der Gleitflächen",
+    "category": "wear",
+    "sub_category": "abrasive",
+    "symptoms": [
+      "Erhöhte Leckagerate im Betrieb",
+      "Riefen auf Gleitflächen",
+      "Verkürzte Standzeit",
+      "Partikel im Leckagefluid"
+    ],
+    "causes": [
+      "Feststoffpartikel im Medium",
+      "Unzureichende Filtrierung der Spülflüssigkeit",
+      "Zu weiche Gleitwerkstoffkombination für Medium",
+      "Kavitationserosion"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D", "STS-TYPE-RWDR-A"],
+    "recommended_open_points": ["STS-OPEN-SOLIDS", "STS-OPEN-FLUSH", "STS-OPEN-MATERIAL"]
+  },
+  "FM-WEAR-ADHES-01": {
+    "name": "Adhäsiver Verschleiß (Fressen / Scuffing)",
+    "category": "wear",
+    "sub_category": "adhesive",
+    "symptoms": [
+      "Plötzliche Leckage nach kurzer Betriebszeit",
+      "Verschweißung der Gleitflächen",
+      "Starke Erwärmung der Dichtung",
+      "Rauheitserhöhung auf Gleitflächen"
+    ],
+    "causes": [
+      "Gleiche oder ähnliche Werkstoffpaarung",
+      "Unzureichende Schmierung",
+      "Trockenlauf auch kurzzeitig",
+      "Überlastung durch zu hohen pv-Wert"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"],
+    "recommended_open_points": ["STS-OPEN-PV", "STS-OPEN-MATERIAL", "STS-OPEN-FLUSH"]
+  },
+  "FM-WEAR-TRIBO-01": {
+    "name": "Tribochemischer Verschleiß (Reaktionsschichten)",
+    "category": "wear",
+    "sub_category": "tribochemical",
+    "symptoms": [
+      "Dunkle Verfärbungen auf Gleitflächen",
+      "Schleifgeräusche im Betrieb",
+      "Erhöhte Leckage nach längerer Betriebszeit"
+    ],
+    "causes": [
+      "Chemische Reaktion zwischen Werkstoff und Medium unter Reibungswärme",
+      "Oxidationsschichten auf Metalldichtflächen",
+      "Carbonisierung organischer Medien"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART"],
+    "recommended_open_points": ["STS-OPEN-TEMP", "STS-OPEN-MATERIAL", "STS-OPEN-MEDIUM"]
+  },
+  "FM-THERM-OVERHEAT-01": {
+    "name": "Überhitzung der Gleitflächen",
+    "category": "thermal",
+    "sub_category": "overheating",
+    "symptoms": [
+      "Verfärbung der Dichtungskomponenten",
+      "Blasenbildung oder Carbonisierung an Gleitringen",
+      "Schmelzspuren an Elastomeren",
+      "Starke Geruchsbildung"
+    ],
+    "causes": [
+      "Unzureichende Kühlung / Spülung",
+      "Blockierter Spülplan",
+      "Zu hohe Drehzahl über Auslegungsgrenze",
+      "Mangelhafter Wärmeübergang"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D", "STS-TYPE-GS-GAS"],
+    "recommended_open_points": ["STS-OPEN-TEMP", "STS-OPEN-SPEED", "STS-OPEN-FLUSH"]
+  },
+  "FM-THERM-VAPORIZE-01": {
+    "name": "Dampfbildung / Flash-Verdampfung im Dichtraum",
+    "category": "thermal",
+    "sub_category": "vaporization",
+    "symptoms": [
+      "Intermittierende Leckage (Knallen, Zischen)",
+      "Kavitationsgeräusche an der Dichtung",
+      "Druckschwankungen im Spülkreis",
+      "Fehlender Schmierfilm an Gleitflächen"
+    ],
+    "causes": [
+      "Dampfdruck des Mediums unterschritten (Siedeverzug)",
+      "Unzureichender NPSH / Vordruck",
+      "Zu geringe Einspritztemperatur bei Heißwasser",
+      "Spülplan unzureichend für Heißwasseranwendung"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART"],
+    "recommended_open_points": ["STS-OPEN-TEMP", "STS-OPEN-PRESSURE", "STS-OPEN-FLUSH"]
+  },
+  "FM-CHEM-SWELL-01": {
+    "name": "Chemische Quellung des Sekundärdichtelements",
+    "category": "chemical",
+    "sub_category": "swelling",
+    "symptoms": [
+      "Kompressionsrückgang des O-Rings",
+      "Querschnittsvergrößerung der Elastomere",
+      "Weichwerden und Ausquetschen",
+      "Erhöhte statische Leckage"
+    ],
+    "causes": [
+      "Chemische Unverträglichkeit Elastomer / Medium",
+      "Falsche Werkstoffauswahl bei Lösungsmitteln",
+      "Erhöhte Temperatur beschleunigt Quellprozess"
+    ],
+    "affected_types": ["STS-TYPE-OR-A", "STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-RWDR-A"],
+    "recommended_open_points": ["STS-OPEN-MATERIAL", "STS-OPEN-MEDIUM", "STS-OPEN-TEMP"]
+  },
+  "FM-CHEM-EMBRIT-01": {
+    "name": "Versprödung des Dichtungswerkstoffs",
+    "category": "chemical",
+    "sub_category": "embrittlement",
+    "symptoms": [
+      "Rissbildung bei Druckwechsel",
+      "Brüchige, spröde Dichtungsteile",
+      "Plötzlicher Ausfall ohne Vorwarnung"
+    ],
+    "causes": [
+      "Ozonversprödung (NBR, CR)",
+      "Chemischer Angriff bei erhöhter Temperatur",
+      "Alterung bei Temperaturlangzeitbelastung",
+      "Strahlungsversprödung (bei entsprechenden Einsatzbedingungen)"
+    ],
+    "affected_types": ["STS-TYPE-OR-A", "STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B", "STS-TYPE-FLAT-A"],
+    "recommended_open_points": ["STS-OPEN-MATERIAL", "STS-OPEN-MEDIUM", "STS-OPEN-LIFECYCLE"]
+  },
+  "FM-CHEM-CORR-01": {
+    "name": "Korrosion metallischer Dichtungskomponenten",
+    "category": "chemical",
+    "sub_category": "corrosion",
+    "symptoms": [
+      "Rostflecken oder Lochfraß an Federteilen",
+      "Spaltkorrosion zwischen Gleitring und Träger",
+      "Schwächung und Bruch von Federn"
+    ],
+    "causes": [
+      "Mediumangriff auf Metallkomponenten (Feder, Gehäuse)",
+      "Galvanische Korrosion bei Werkstoffpaarungen",
+      "Spaltkorrosion unter Dichtflächen bei chloridhaltigen Medien"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"],
+    "recommended_open_points": ["STS-OPEN-MATERIAL", "STS-OPEN-MEDIUM", "STS-OPEN-CHLORIDE"]
+  },
+  "FM-MECH-VIB-01": {
+    "name": "Schwingungsschäden (axial / radial)",
+    "category": "mechanical",
+    "sub_category": "vibration",
+    "symptoms": [
+      "Ausbrüche an Gleitringkanten",
+      "Risse durch Schwingungsermüdung",
+      "Intermittierende Leckage bei bestimmten Drehzahlen",
+      "Erhöhter Lärmpegel"
+    ],
+    "causes": [
+      "Resonanzfrequenz der Anlage im Betriebsbereich",
+      "Unwucht der Rotoren",
+      "Kavitation in der Pumpe überträgt Schwingungen"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D", "STS-TYPE-GS-BELLOW"],
+    "recommended_open_points": ["STS-OPEN-VIBRATION", "STS-OPEN-SPEED", "STS-OPEN-RUNOUT"]
+  },
+  "FM-MECH-SHAFT-01": {
+    "name": "Wellenschlag und Exzentrizität über Toleranz",
+    "category": "mechanical",
+    "sub_category": "shaft_runout",
+    "symptoms": [
+      "Periodische Leckage im Takt der Umdrehungsfrequenz",
+      "Einseitige Abnutzung der Gleitflächen",
+      "Riefen in Laufrichtung"
+    ],
+    "causes": [
+      "Unzureichende Wellensteifigkeit",
+      "Lagerluft oder Lagerschaden",
+      "Axialschub nicht kompensiert",
+      "Montagefehler (Dichtung nicht mittig)"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B"],
+    "recommended_open_points": ["STS-OPEN-RUNOUT", "STS-OPEN-SHAFT", "STS-OPEN-BEARING"]
+  },
+  "FM-MECH-ALIGN-01": {
+    "name": "Fehlausrichtung (Winkel- und Parallelversatz)",
+    "category": "mechanical",
+    "sub_category": "misalignment",
+    "symptoms": [
+      "Erhöhte Leckage nach kurzer Betriebszeit",
+      "Asymmetrischer Verschleiß der Gleitflächen",
+      "Erhöhte Lagertemperaturen"
+    ],
+    "causes": [
+      "Kupplungsversatz über Toleranz",
+      "Wärmedehnung der Rohrleitung (Rohrkräfte)",
+      "Ungenügende Fundamentsteifigkeit",
+      "Montagefehler"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"],
+    "recommended_open_points": ["STS-OPEN-ALIGNMENT", "STS-OPEN-SHAFT", "STS-OPEN-INSTALLATION"]
+  },
+  "FM-HYDRO-CAVIT-01": {
+    "name": "Kavitationsschäden",
+    "category": "hydraulic",
+    "sub_category": "cavitation",
+    "symptoms": [
+      "Prasselnde Geräusche an Dichtung oder Pumpe",
+      "Erosionsgrübchen auf Gleitflächen (Pitching)",
+      "Schwankende Leckagemengen",
+      "Druckschwankungen im Betrieb"
+    ],
+    "causes": [
+      "Unterschreitung des Dampfdrucks lokal im Dichtraum",
+      "Zu hohe Strömungsgeschwindigkeit",
+      "Unzureichender Vordruck (NPSH)",
+      "Spülplan ungeeignet für Siedenähe"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"],
+    "recommended_open_points": ["STS-OPEN-PRESSURE", "STS-OPEN-TEMP", "STS-OPEN-FLUSH"]
+  },
+  "FM-WEAR-DRY-01": {
+    "name": "Trockenlauf (fehlende Schmierung der Gleitflächen)",
+    "category": "wear",
+    "sub_category": "dry_running",
+    "symptoms": [
+      "Rauchentwicklung oder Brandgeruch",
+      "Plötzliche hohe Leckage",
+      "Bruch von Gleitringen",
+      "Starke Verfärbung der Bauteile"
+    ],
+    "causes": [
+      "Anlauf ohne Medium (Trockenstart)",
+      "Gasansammlung im Dichtraum (Entlüftung fehlt)",
+      "Fördermedium reißt ab (Kavitation, Leerförderung)",
+      "Spülplan ausgefallen oder nicht aktiv"
+    ],
+    "affected_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D", "STS-TYPE-RWDR-A", "STS-TYPE-RWDR-B"],
+    "recommended_open_points": ["STS-OPEN-FLUSH", "STS-OPEN-STARTUP", "STS-OPEN-INSTALLATION"]
+  }
+}
