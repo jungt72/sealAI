@@ -43,6 +43,7 @@ from app.agent.domain.normalization import (
     extract_shaft_diameter_mm,
 )
 from app.agent.graph import GraphState
+from app.agent.prompts import prompts
 from app.agent.state.models import ObservedExtraction, UserOverride
 
 log = logging.getLogger(__name__)
@@ -71,6 +72,17 @@ _ALLOWED_FIELD_NAMES: frozenset[str] = frozenset({
     "shaft_diameter_mm",
     "speed_rpm",
     "motion_type",
+    "sealing_type",
+    "pressure_direction",
+    "duty_profile",
+    "installation",
+    "geometry_context",
+    "contamination",
+    "counterface_surface",
+    "tolerances",
+    "industry",
+    "compliance",
+    "medium_qualifiers",
 })
 
 # Confidence assigned to regex-sourced extractions (high, but user-unconfirmed)
@@ -204,6 +216,22 @@ def _regex_params_to_extractions(
     if "motion_type" in params:
         _add("motion_type", params["motion_type"], 0.88)
 
+    for field_name in (
+        "sealing_type",
+        "pressure_direction",
+        "duty_profile",
+        "installation",
+        "geometry_context",
+        "contamination",
+        "counterface_surface",
+        "tolerances",
+        "industry",
+        "compliance",
+        "medium_qualifiers",
+    ):
+        if field_name in params:
+            _add(field_name, params[field_name], 0.82)
+
     return results
 
 
@@ -241,32 +269,6 @@ def _apply_contextual_regex_fallbacks(state: GraphState, params: dict[str, Any])
 # LLM extraction
 # ---------------------------------------------------------------------------
 
-_LLM_SYSTEM_PROMPT = """\
-You are a parameter extraction engine for sealing technology (Dichtungstechnik).
-Extract technical parameters from the user message.
-
-Return a JSON array. Each element has:
-  field_name  — one of: medium, pressure_bar, temperature_c, material, \
-shaft_diameter_mm, speed_rpm
-  raw_value   — extracted value (number or string as found in text)
-  raw_unit    — unit string if present (e.g. "°C", "bar", "mm", "rpm"), else null
-  confidence  — float 0.0–1.0 (how certain the extraction is)
-
-Rules:
-- Only return fields from the allowed list above.
-- Do NOT invent values not present in the message.
-- Do NOT infer governance decisions, material recommendations, or fitness statements.
-- If nothing found, return [].
-
-Example input:  "PTFE-Dichtung für 180°C Dampf bei 12 bar"
-Example output: [
-  {"field_name": "material",       "raw_value": "PTFE",  "raw_unit": null, "confidence": 0.95},
-  {"field_name": "temperature_c",  "raw_value": 180,     "raw_unit": "°C", "confidence": 0.95},
-  {"field_name": "medium",         "raw_value": "Dampf", "raw_unit": null, "confidence": 0.80},
-  {"field_name": "pressure_bar",   "raw_value": 12,      "raw_unit": "bar","confidence": 0.95}
-]
-"""
-
 
 async def _llm_extract_params(
     message: str,
@@ -279,10 +281,11 @@ async def _llm_extract_params(
     """
     try:
         client = openai.AsyncOpenAI()
+        system_prompt = prompts.render("intake/observe.j2", {})
         response = await client.chat.completions.create(
             model=_EXTRACTION_MODEL,
             messages=[
-                {"role": "system", "content": _LLM_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": message},
             ],
             response_format={"type": "json_object"},
@@ -399,7 +402,7 @@ async def intake_observe_node(state: GraphState) -> GraphState:
     # ── Pass 2: LLM semantic extraction (feature-flag guarded) ───────────
     if _ENABLE_LLM_EXTRACTION:
         llm_extractions = await _llm_extract_params(state.pending_message, turn_index)
-        already_covered: frozenset[str] = frozenset(e.field_name for e in observed.raw_extractions)
+        already_covered: frozenset[str] = frozenset(e.field_name for e in regex_extractions)
         appended_llm_extractions: list[ObservedExtraction] = []
         for extraction in llm_extractions:
             if extraction.field_name not in already_covered:
