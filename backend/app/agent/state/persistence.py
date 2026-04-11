@@ -25,7 +25,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from app.agent.agent.prompts import REASONING_PROMPT_VERSION
+from app.agent.prompts import REASONING_PROMPT_VERSION
 from app.agent.state.models import GovernedSessionState
 
 log = logging.getLogger(__name__)

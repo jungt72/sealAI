@@ -31,7 +31,7 @@ from app.agent.manufacturers.commercial import (
 )
 from app.agent.api.sse_runtime import agent_sse_generator
 from app.agent.runtime.selection import build_final_reply, build_structured_api_exposure
-from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
+from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.state.agent_state import AgentState
 from app.agent.api.models import (
     CaseListItemResponse,
