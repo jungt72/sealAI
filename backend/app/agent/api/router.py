@@ -19,7 +19,7 @@ from app.api.v1.projections.case_workspace import (
 from app.api.v1.renderers.rfq_html import render_rfq_html
 from app.api.v1.schemas.case_workspace import CaseWorkspaceProjection
 
-from app.agent.agent.graph import app, final_response_node, _GRAPH_MODEL_ID, VISIBLE_REPLY_PROMPT_HASH, VISIBLE_REPLY_PROMPT_VERSION
+from app.agent.graph.legacy_graph import app, final_response_node, _GRAPH_MODEL_ID, VISIBLE_REPLY_PROMPT_HASH, VISIBLE_REPLY_PROMPT_VERSION
 from app.agent.manufacturers.commercial import (
     build_dispatch_bridge,
     build_dispatch_dry_run,

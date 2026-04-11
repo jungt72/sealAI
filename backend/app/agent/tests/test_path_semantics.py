@@ -178,8 +178,8 @@ class TestFastPathSemantics:
         llm_mock.ainvoke = AsyncMock(
             return_value=AIMessage(content="FKM ist ein Fluorkautschuk.")
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         text = result["messages"][0].content
@@ -198,8 +198,8 @@ class TestFastPathSemantics:
         llm_mock.ainvoke = AsyncMock(
             return_value=AIMessage(content="NBR ist ein Synthesekautschuk.")
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         text = result["messages"][0].content

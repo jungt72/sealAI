@@ -187,8 +187,8 @@ class TestFastGuidanceNode:
             result_form="direct_answer",
             messages=[HumanMessage(content="Was ist FKM?")],
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=mock_llm_response), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=mock_llm_response), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         assert "messages" in result
@@ -205,8 +205,8 @@ class TestFastGuidanceNode:
             result_form="guided_recommendation",
             messages=[HumanMessage(content="Welche Dichtung für Hydrauliköl?")],
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=mock_llm_response), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=mock_llm_response), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         assert "sealing_state" not in result, (
@@ -223,8 +223,8 @@ class TestFastGuidanceNode:
             result_form="direct_answer",
             messages=[HumanMessage(content="Was ist NBR?")],
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=mock_llm_response), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=mock_llm_response), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         assert "working_profile" not in result, (
@@ -241,8 +241,8 @@ class TestFastGuidanceNode:
             result_form="direct_answer",
             messages=[HumanMessage(content="Was ist PTFE?")],
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=mock_llm_response), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=mock_llm_response), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             await fast_guidance_node(state)
 
         # ainvoke is called directly on the LLM (not on llm.bind_tools(...))
@@ -396,8 +396,8 @@ class TestRunMetaVersioning:
         response = AIMessage(content="FKM ist ein Fluorelastomer.")
         llm_mock.ainvoke = AsyncMock(return_value=response)
 
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         assert "run_meta" in result, "fast_guidance_node must write run_meta"
@@ -417,8 +417,8 @@ class TestRunMetaVersioning:
         llm_mock = MagicMock()
         llm_mock.ainvoke = AsyncMock(return_value=AIMessage(content="NBR ist..."))
 
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         assert result["run_meta"]["path"] == "fast"
@@ -441,8 +441,8 @@ class TestRunMetaVersioning:
         llm_mock.ainvoke = AsyncMock(return_value=AIMessage(content="PTFE ist..."))
 
         async def _run():
-            with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-                 patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+            with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+                 patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
                 return await fast_guidance_node(state)
 
         result = asyncio.run(_run())
@@ -465,8 +465,8 @@ class TestRunMetaVersioning:
         llm_mock.ainvoke = AsyncMock(return_value=AIMessage(content="FKM hat ..."))
 
         async def _run():
-            with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-                 patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+            with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+                 patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
                 return await fast_guidance_node(state)
 
         result = asyncio.run(_run())

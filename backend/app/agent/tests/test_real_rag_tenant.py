@@ -114,7 +114,7 @@ class TestTier2AlwaysFiltered:
 class TestActiveRuntimeFallbackHardening:
     def test_graph_fetch_rag_cards_contract_has_no_local_fallback(self):
         import inspect
-        from app.agent.agent import graph as graph_mod
+        from app.agent.graph import legacy_graph as graph_mod
 
         src = inspect.getsource(graph_mod._fetch_rag_cards)
         assert "pseudo_rag_fallback" not in src

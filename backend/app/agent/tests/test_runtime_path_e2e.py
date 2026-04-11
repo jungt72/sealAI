@@ -116,8 +116,8 @@ class TestFastPathE2E:
         llm_mock.ainvoke = AsyncMock(
             return_value=AIMessage(content="FKM ist ein Fluorelastomer.")
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await compiled_graph.ainvoke(state)
 
         reply = _get_last_ai_message(result)
@@ -137,8 +137,8 @@ class TestFastPathE2E:
         llm_mock.ainvoke = AsyncMock(
             return_value=AIMessage(content="NBR ist ein Nitrilkautschuk.")
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await compiled_graph.ainvoke(state)
 
         reply = _get_last_ai_message(result)
@@ -159,8 +159,8 @@ class TestFastPathE2E:
         llm_mock.ainvoke = AsyncMock(
             return_value=AIMessage(content="Ich empfehle Trelleborg für diese Anwendung.")
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await compiled_graph.ainvoke(state)
 
         reply = _get_last_ai_message(result)
@@ -319,8 +319,8 @@ class TestStructuredPathE2E:
         llm_mock.ainvoke = AsyncMock(
             return_value=AIMessage(content="Parameter erfasst.")
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await compiled_graph.ainvoke(state)
 
         reply = _get_last_ai_message(result)
@@ -340,8 +340,8 @@ class TestStructuredPathE2E:
         llm_mock.ainvoke = AsyncMock(
             return_value=AIMessage(content="Kein Hinweis.")
         )
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await compiled_graph.ainvoke(state)
 
         reply = _get_last_ai_message(result)
@@ -364,8 +364,8 @@ class TestStructuredPathE2E:
             return_value=AIMessage(content="Keine Referenzdaten.")
         )
         # RAG returns nothing → evidence_available=False
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await compiled_graph.ainvoke(state)
 
         reply = _get_last_ai_message(result)
@@ -403,9 +403,9 @@ class TestFinalResponseNodeCloseout:
         llm_mock.bind_tools = MagicMock(return_value=llm_mock)
         llm_mock.ainvoke = AsyncMock(return_value=AIMessage(content="Vorläufige Beurteilung."))
         _fake_cards = [{"id": "card-test", "material_family": "NBR", "evidence_id": "card-test"}]
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=(_fake_cards, "tier1")), \
-             patch("app.agent.agent.graph.REGISTRY_IS_DEMO_ONLY", False):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=(_fake_cards, "tier1")), \
+             patch("app.agent.graph.legacy_graph.REGISTRY_IS_DEMO_ONLY", False):
             result = await compiled_graph.ainvoke(state)
 
         reply = _get_last_ai_message(result)
@@ -421,8 +421,8 @@ class TestFinalResponseNodeCloseout:
         llm_mock = MagicMock()
         llm_mock.bind_tools = MagicMock(return_value=llm_mock)
         llm_mock.ainvoke = AsyncMock(return_value=AIMessage(content="Analyse abgeschlossen."))
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await compiled_graph.ainvoke(state)
 
         handover = result["sealing_state"].get("handover")

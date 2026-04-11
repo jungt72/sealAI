@@ -283,8 +283,8 @@ class TestFastGuidanceNodeBoundary:
             return_value=AIMessage(content="FKM ist ein Fluorelastomer.")
         )
 
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         content = result["messages"][0].content
@@ -306,8 +306,8 @@ class TestFastGuidanceNodeBoundary:
         llm_mock = MagicMock()
         llm_mock.ainvoke = AsyncMock(return_value=AIMessage(content=llm_text))
 
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         content = result["messages"][0].content
@@ -329,8 +329,8 @@ class TestFastGuidanceNodeBoundary:
         llm_mock = MagicMock()
         llm_mock.ainvoke = AsyncMock(return_value=AIMessage(content=""))
 
-        with patch("app.agent.agent.graph.get_llm", return_value=llm_mock), \
-             patch("app.agent.agent.graph._fetch_rag_cards", return_value=([], "stub")):
+        with patch("app.agent.graph.legacy_graph.get_llm", return_value=llm_mock), \
+             patch("app.agent.graph.legacy_graph._fetch_rag_cards", return_value=([], "stub")):
             result = await fast_guidance_node(state)
 
         content = result["messages"][0].content
@@ -370,7 +370,7 @@ class TestSelectionNodeDemoFlag:
     def test_registry_demo_only_triggers_review_without_contract(self, monkeypatch):
         """When REGISTRY_IS_DEMO_ONLY=True, review trigger fires even with
         result_contract.demo_data_in_scope=False (the normal wiring gap)."""
-        from app.agent.agent import graph as graph_mod
+        from app.agent.graph import legacy_graph as graph_mod
         from app.agent.agent.graph import selection_node
 
         # Ensure the constant seen by selection_node is True (it always is in prod)
@@ -386,7 +386,7 @@ class TestSelectionNodeDemoFlag:
 
     def test_registry_not_demo_only_and_no_contract_flag_no_review(self, monkeypatch):
         """When REGISTRY_IS_DEMO_ONLY=False and contract flag=False → no forced review."""
-        from app.agent.agent import graph as graph_mod
+        from app.agent.graph import legacy_graph as graph_mod
         from app.agent.agent.graph import selection_node
         from app.agent.agent.review import evaluate_review_trigger
 
@@ -404,7 +404,7 @@ class TestSelectionNodeDemoFlag:
 
     def test_contract_flag_true_alone_also_triggers_review(self, monkeypatch):
         """When result_contract.demo_data_in_scope=True (fallback wiring works), review fires."""
-        from app.agent.agent import graph as graph_mod
+        from app.agent.graph import legacy_graph as graph_mod
         from app.agent.agent.graph import selection_node
 
         monkeypatch.setattr(graph_mod, "REGISTRY_IS_DEMO_ONLY", False)

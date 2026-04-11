@@ -584,7 +584,7 @@ class TestFinalResponseNodeHandoverIntegration:
     def test_final_response_node_uses_critical_review_specialist_anchor(self, monkeypatch):
         import asyncio
         from langchain_core.messages import HumanMessage
-        import app.agent.agent.graph as graph_module
+        import app.agent.graph.legacy_graph as graph_module
         from app.agent.tests.test_graph_routing import _make_state
 
         monkeypatch.setattr(
@@ -1082,7 +1082,7 @@ class TestFinalResponseNodeHandoverIntegration:
     def test_final_response_node_uses_bounded_manufacturer_rfq_matching_anchor(self, monkeypatch):
         import asyncio
         from langchain_core.messages import HumanMessage
-        import app.agent.agent.graph as graph_module
+        import app.agent.graph.legacy_graph as graph_module
         from app.agent.tests.test_graph_routing import _make_state
 
         monkeypatch.setattr(
@@ -1184,7 +1184,7 @@ class TestFinalResponseNodeHandoverIntegration:
         assert dispatch_event["source"] == "dispatch_trigger"
 
     def test_selection_node_uses_bounded_manufacturer_rfq_matching_anchor(self, monkeypatch):
-        import app.agent.agent.graph as graph_module
+        import app.agent.graph.legacy_graph as graph_module
         from app.agent.tests.test_graph_routing import _make_state
         from langchain_core.messages import HumanMessage
 
@@ -1244,7 +1244,7 @@ class TestFinalResponseNodeHandoverIntegration:
             seen["case_state"] = kwargs.get("case_state")
             return "canonical-case-state-reply"
 
-        with patch("app.agent.agent.graph.build_final_reply", side_effect=_fake_build_final_reply):
+        with patch("app.agent.graph.legacy_graph.build_final_reply", side_effect=_fake_build_final_reply):
             result = asyncio.run(final_response_node(state))
 
         assert result["messages"][0].content == "canonical-case-state-reply"

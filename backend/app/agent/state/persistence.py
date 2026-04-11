@@ -192,7 +192,7 @@ async def save_governed_state_snapshot_async(
     from sqlalchemy import select  # noqa: PLC0415
 
     try:
-        from app.agent.agent.graph import _GRAPH_MODEL_ID  # noqa: PLC0415
+        from app.agent.graph.legacy_graph import _GRAPH_MODEL_ID  # noqa: PLC0415
         from app.database import AsyncSessionLocal  # noqa: PLC0415
         from app.models.case_record import CaseRecord  # noqa: PLC0415
         from app.models.case_state_snapshot import CaseStateSnapshot  # noqa: PLC0415
