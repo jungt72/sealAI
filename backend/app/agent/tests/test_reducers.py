@@ -97,6 +97,36 @@ def _full_asserted(
                 asserted_value=temperature,
                 confidence=confidence,
             ),
+            "sealing_type": AssertedClaim(
+                field_name="sealing_type",
+                asserted_value="general_seal",
+                confidence=confidence,
+            ),
+            "pressure_direction": AssertedClaim(
+                field_name="pressure_direction",
+                asserted_value="bidirectional",
+                confidence=confidence,
+            ),
+            "contamination": AssertedClaim(
+                field_name="contamination",
+                asserted_value="none_reported",
+                confidence=confidence,
+            ),
+            "counterface_surface": AssertedClaim(
+                field_name="counterface_surface",
+                asserted_value="not_critical_for_test",
+                confidence=confidence,
+            ),
+            "tolerances": AssertedClaim(
+                field_name="tolerances",
+                asserted_value="not_critical_for_test",
+                confidence=confidence,
+            ),
+            "medium_qualifiers": AssertedClaim(
+                field_name="medium_qualifiers",
+                asserted_value=["not_critical_for_test"],
+                confidence=confidence,
+            ),
         },
         blocking_unknowns=[],
         conflict_flags=[],
@@ -280,7 +310,7 @@ class TestReducerNormalizedToAsserted:
             temperature_c=(80.0, "confirmed"),
         )
         result = reduce_normalized_to_asserted(norm)
-        assert result.blocking_unknowns == []
+        assert "sealing_type" in result.blocking_unknowns
 
     def test_evidence_upgrades_inferred_to_confirmed(self):
         norm = self._normalized_with(pressure_bar=(6.0, "inferred"))
@@ -436,8 +466,46 @@ class TestReducerAssertedToGovernanceClassB:
         )
         result = reduce_asserted_to_governance(asserted)
 
-        assert result.gov_class == "A"
+        assert result.gov_class == "B"
+        assert "sealing_type" in result.preselection_blockers
         assert "medium" not in result.open_validation_points
+
+    def test_mechanical_seal_requires_duty_and_installation_before_preselection(self):
+        asserted = AssertedState(
+            assertions={
+                "medium": AssertedClaim(field_name="medium", asserted_value="Salzwasser", confidence="confirmed"),
+                "pressure_bar": AssertedClaim(field_name="pressure_bar", asserted_value=10.0, confidence="confirmed"),
+                "temperature_c": AssertedClaim(field_name="temperature_c", asserted_value=80.0, confidence="confirmed"),
+                "sealing_type": AssertedClaim(field_name="sealing_type", asserted_value="mechanical_seal", confidence="confirmed"),
+            },
+            blocking_unknowns=[],
+            conflict_flags=[],
+        )
+        result = reduce_asserted_to_governance(asserted)
+
+        assert result.gov_class == "B"
+        assert result.rfq_admissible is False
+        assert result.type_sensitive_required == ["duty_profile", "installation"]
+        assert "duty_profile" in result.preselection_blockers
+        assert "installation" in result.preselection_blockers
+
+    def test_regulated_industry_requires_compliance_qualifier(self):
+        asserted = AssertedState(
+            assertions={
+                "medium": AssertedClaim(field_name="medium", asserted_value="Wasser", confidence="confirmed"),
+                "pressure_bar": AssertedClaim(field_name="pressure_bar", asserted_value=3.0, confidence="confirmed"),
+                "temperature_c": AssertedClaim(field_name="temperature_c", asserted_value=120.0, confidence="confirmed"),
+                "sealing_type": AssertedClaim(field_name="sealing_type", asserted_value="general_seal", confidence="confirmed"),
+                "industry": AssertedClaim(field_name="industry", asserted_value="food_pharma", confidence="confirmed"),
+            },
+            blocking_unknowns=[],
+            conflict_flags=[],
+        )
+        result = reduce_asserted_to_governance(asserted)
+
+        assert result.gov_class == "B"
+        assert result.compliance_blockers == ["compliance"]
+        assert "compliance" in result.preselection_blockers
 
 
 class TestReducerAssertedToGovernanceClassC:
@@ -627,6 +695,8 @@ class TestNoDirectWriteToNormalized:
         # graph/tests — test helpers that build NormalizedState for assertion setup
         "test_assert_node.py",
         "test_turn_context.py",
+        # H1.1 — admissibility test builds NormalizedState fixtures
+        "test_inquiry_admissibility.py",
     }
 
     def _collect_violations(self) -> list[Path]:
@@ -694,7 +764,7 @@ class TestNoDirectWriteToGovernance:
 
 class TestFullPipeline:
 
-    def test_pipeline_class_a_from_clean_observations(self):
+    def test_pipeline_class_b_from_legacy_three_field_observations(self):
         obs = ObservedState()
         for field, value in [("medium", "Wasser"), ("pressure_bar", 6.0), ("temperature_c", 80.0)]:
             obs = obs.with_extraction(ObservedExtraction(
@@ -705,8 +775,9 @@ class TestFullPipeline:
         asserted = reduce_normalized_to_asserted(normalized)
         governance = reduce_asserted_to_governance(asserted)
 
-        assert governance.gov_class == "A"
-        assert governance.rfq_admissible is True
+        assert governance.gov_class == "B"
+        assert governance.rfq_admissible is False
+        assert "sealing_type" in governance.preselection_blockers
 
     def test_pipeline_class_b_missing_two_core_fields(self):
         obs = ObservedState().with_extraction(
