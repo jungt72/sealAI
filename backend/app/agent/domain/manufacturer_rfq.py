@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.agent.agent.commercial import (
+from app.agent.manufacturers.commercial import (
     build_handover_payload_basis_from_rfq_object,
     build_matching_outcome,
 )

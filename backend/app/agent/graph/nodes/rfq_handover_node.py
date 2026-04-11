@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.agent.agent.commercial import build_handover_payload
+from app.agent.manufacturers.commercial import build_handover_payload
 from app.agent.domain.critical_review import (
     CriticalReviewGovernanceSummary,
     CriticalReviewMatchingPackage,

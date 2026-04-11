@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from app.agent.agent.commercial import (
+from app.agent.manufacturers.commercial import (
     build_dispatch_bridge,
     build_dispatch_dry_run,
     build_dispatch_handoff,
