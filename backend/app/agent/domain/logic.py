@@ -19,7 +19,7 @@ from app.agent.domain.parameters import PhysicalParameter
 from app.agent.domain.limits import OperatingLimit
 from app.agent.domain.material import MaterialValidator, MaterialPhysicalProfile, normalize_fact_card_evidence
 from app.agent.domain.physics import calculate_physics
-from app.agent.agent.utils import validate_material_risk
+
 from app.agent.domain.normalization import (
     extract_parameters as norm_extract,
     normalize_parameter,
@@ -56,6 +56,15 @@ GATE_EVIDENCE_MISSING = "evidence_missing"
 GATE_EVIDENCE_INSUFFICIENT = "evidence_insufficient"
 GATE_OUT_OF_SCOPE = "out_of_scope"
 GATE_BLOCKED_BY_BOUNDARY = "blocked_by_boundary"
+
+def validate_material_risk(working_profile: Dict[str, Any]) -> str:
+    """Validates material risk based on pressure and material type."""
+    pressure = working_profile.get("pressure", 0)
+    material = working_profile.get("material", "").upper()
+    if pressure > 200 and "PTFE" in material:
+        return "Material Risk: Hoher Druck (> 200 bar) bei PTFE-Dichtung festgestellt!"
+    return ""
+
 
 _BLOCKING_CONFLICT_SEVERITIES = {"CRITICAL", "BLOCKING_UNKNOWN"}
 _MANUFACTURER_CONFLICT_SEVERITIES = {"RESOLUTION_REQUIRES_MANUFACTURER_SCOPE"}
