@@ -10,7 +10,7 @@ from copy import deepcopy
 
 from app.agent.evidence.models import Claim, ClaimType
 from app.agent.state.agent_state import SealingAIState
-from app.agent.case_state import (
+from app.agent.state.case_state import (
     build_default_candidate_clusters,
     build_default_result_contract,
     build_default_sealing_requirement_spec,

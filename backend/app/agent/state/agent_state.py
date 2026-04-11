@@ -2,7 +2,7 @@ from typing import Annotated, Any, Dict, List, Optional, TypedDict, Literal, Not
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 
-from app.agent.case_state import CaseState
+from app.agent.state.case_state import CaseState
 
 ReleaseStatus = Literal[
     "inadmissible",

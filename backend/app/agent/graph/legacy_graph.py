@@ -78,7 +78,7 @@ from app.agent.manufacturers.commercial import (
     build_dispatch_trigger,
     build_handover_payload,
 )
-from app.agent.case_state import build_dispatch_intent, ensure_case_state
+from app.agent.state.case_state import build_dispatch_intent, ensure_case_state
 from app.agent.domain.review import evaluate_review_trigger
 from app.agent.domain.critical_review import (
     CriticalReviewGovernanceSummary,

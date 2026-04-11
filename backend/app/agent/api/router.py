@@ -104,7 +104,7 @@ from app.agent.runtime.response_renderer import render_response
 from prompts.builder import PromptBuilder
 
 _prompt_builder = PromptBuilder()
-from app.agent.case_state import (
+from app.agent.state.case_state import (
     CASE_STATE_BUILDER_VERSION,
     DETERMINISTIC_DATA_VERSION,
     DETERMINISTIC_SERVICE_VERSION,

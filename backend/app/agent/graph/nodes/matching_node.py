@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from app.agent.case_state import _build_manufacturer_capabilities, _build_manufacturer_refs
+from app.agent.state.case_state import _build_manufacturer_capabilities, _build_manufacturer_refs
 from app.agent.domain.governed_data import get_default_domain_data_provider
 from app.agent.domain.manufacturer_rfq import (
     ManufacturerCapabilityPackage,
