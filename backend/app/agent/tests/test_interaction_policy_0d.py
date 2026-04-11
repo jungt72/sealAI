@@ -138,7 +138,7 @@ class TestRoutingPathEnum:
 class TestEvaluatePolicyPreChecks:
     def test_meta_query_returns_meta_path_without_llm(self, monkeypatch):
         """Meta queries must not reach the LLM routing call."""
-        import app.agent.agent.interaction_policy as ip_mod
+        import app.agent.runtime.interaction_policy as ip_mod
         called = []
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: called.append(x) or "Fast")
 
@@ -148,7 +148,7 @@ class TestEvaluatePolicyPreChecks:
 
     def test_blocked_query_returns_blocked_path_without_llm(self, monkeypatch):
         """Blocked queries must not reach the LLM routing call."""
-        import app.agent.agent.interaction_policy as ip_mod
+        import app.agent.runtime.interaction_policy as ip_mod
         called = []
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: called.append(x) or "Fast")
 
@@ -158,7 +158,7 @@ class TestEvaluatePolicyPreChecks:
 
     def test_technical_fast_is_upgraded_to_structured(self, monkeypatch):
         """Fast LLM decision for technical input must be upgraded to Structured."""
-        import app.agent.agent.interaction_policy as ip_mod
+        import app.agent.runtime.interaction_policy as ip_mod
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: "Fast")
 
         decision = ip_mod.evaluate_policy("Druck 5 bar, Temperatur 80°C")
@@ -166,7 +166,7 @@ class TestEvaluatePolicyPreChecks:
 
     def test_clean_fast_stays_fast(self, monkeypatch):
         """Harmless greeting classified as Fast by LLM must stay on fast path."""
-        import app.agent.agent.interaction_policy as ip_mod
+        import app.agent.runtime.interaction_policy as ip_mod
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: "Fast")
 
         decision = ip_mod.evaluate_policy("Hallo, wer bist du?")
@@ -174,7 +174,7 @@ class TestEvaluatePolicyPreChecks:
 
     def test_llm_error_falls_back_to_structured(self, monkeypatch):
         """LLM failure must fall back to Structured, never to Fast or Blocked."""
-        import app.agent.agent.interaction_policy as ip_mod
+        import app.agent.runtime.interaction_policy as ip_mod
         monkeypatch.setattr(
             ip_mod, "_call_routing_llm",
             lambda x: (_ for _ in ()).throw(RuntimeError("network error"))
@@ -185,7 +185,7 @@ class TestEvaluatePolicyPreChecks:
 
     def test_blocked_decision_has_escalation_reason(self, monkeypatch):
         """Blocked decision must carry a non-empty escalation_reason."""
-        import app.agent.agent.interaction_policy as ip_mod
+        import app.agent.runtime.interaction_policy as ip_mod
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: "Fast")
 
         decision = ip_mod.evaluate_policy("Welchen Hersteller soll ich nehmen?")

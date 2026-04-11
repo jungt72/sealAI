@@ -65,7 +65,7 @@ def _rule_based_routing(user_input: str) -> str:
 def deterministic_routing(monkeypatch):
     """Patch _call_routing_llm so all interaction_policy tests are deterministic."""
     monkeypatch.setattr(
-        "app.agent.agent.interaction_policy._call_routing_llm",
+        "app.agent.runtime.interaction_policy._call_routing_llm",
         _rule_based_routing,
     )
 
@@ -237,7 +237,7 @@ def test_meta_query_bypasses_llm_entirely():
         call_count.append(user_input)
         return original_mock(user_input)
 
-    with patch("app.agent.agent.interaction_policy._call_routing_llm", counting_mock):
+    with patch("app.agent.runtime.interaction_policy._call_routing_llm", counting_mock):
         decision = evaluate_policy("Was fehlt noch?")
 
     assert decision.path == RoutingPath.META_PATH
@@ -256,7 +256,7 @@ def test_blocked_query_bypasses_llm_entirely():
         call_count.append(user_input)
         return original_mock(user_input)
 
-    with patch("app.agent.agent.interaction_policy._call_routing_llm", counting_mock):
+    with patch("app.agent.runtime.interaction_policy._call_routing_llm", counting_mock):
         decision = evaluate_policy("Welchen Hersteller empfiehlst du?")
 
     assert decision.path == RoutingPath.BLOCKED_PATH
@@ -269,7 +269,7 @@ def test_blocked_query_bypasses_llm_entirely():
 def test_fast_to_structured_upgrade_overrides_llm_fast_decision():
     """Numeric+unit input is upgraded to Structured even if LLM would say Fast."""
     # Force mock to return "Fast" even for a numeric input
-    with patch("app.agent.agent.interaction_policy._call_routing_llm", return_value="Fast"):
+    with patch("app.agent.runtime.interaction_policy._call_routing_llm", return_value="Fast"):
         decision = evaluate_policy("Welle 50mm, 3000 rpm")
 
     # The fast→structured upgrade must fire and override the LLM "Fast" decision
@@ -285,7 +285,7 @@ def test_llm_error_falls_back_to_structured():
     def _raise(*args, **kwargs):
         raise ConnectionError("LLM unavailable")
 
-    with patch("app.agent.agent.interaction_policy._call_routing_llm", _raise):
+    with patch("app.agent.runtime.interaction_policy._call_routing_llm", _raise):
         decision = evaluate_policy("Dichtung für Pumpe?")
 
     assert decision.path == RoutingPath.STRUCTURED_PATH, (
@@ -419,7 +419,7 @@ def test_greeting_bypasses_llm_entirely():
         call_count.append(user_input)
         return original_mock(user_input)
 
-    with patch("app.agent.agent.interaction_policy._call_routing_llm", counting_mock):
+    with patch("app.agent.runtime.interaction_policy._call_routing_llm", counting_mock):
         decision = evaluate_policy("Hallo!")
 
     assert decision.path == RoutingPath.GREETING_PATH

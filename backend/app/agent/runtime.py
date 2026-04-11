@@ -19,6 +19,6 @@ def evaluate_interaction_policy(message: str) -> InteractionPolicyDecision:
     Backwards-compatible shim. DEPRECATED — use app.agent.runtime.gate instead.
     Kept for test backward-compat only.
     """
-    from app.agent.agent.interaction_policy import evaluate_policy  # noqa: PLC0415
+    from app.agent.runtime.interaction_policy import evaluate_policy  # noqa: PLC0415
 
     return evaluate_policy(message)

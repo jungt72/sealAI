@@ -152,7 +152,7 @@ class TestRouteByPolicy:
             ResultForm.QUALIFIED_CASE.value: "FDA-konforme Applikation 80°C 10 bar",
         }
         with patch(
-            "app.agent.agent.interaction_policy._call_routing_llm",
+            "app.agent.runtime.interaction_policy._call_routing_llm",
             side_effect=_mock_policy_route_for_query,
         ):
             decision = evaluate_policy(form_to_query[result_form])
@@ -354,7 +354,7 @@ class TestRouterPolicyInjection:
         from app.agent.agent.policy import RoutingPath
 
         with patch(
-            "app.agent.agent.interaction_policy._call_routing_llm",
+            "app.agent.runtime.interaction_policy._call_routing_llm",
             side_effect=_mock_policy_route_for_query,
         ):
             decision = evaluate_policy("Was ist FKM?")
@@ -366,7 +366,7 @@ class TestRouterPolicyInjection:
         from app.agent.agent.policy import RoutingPath
 
         with patch(
-            "app.agent.agent.interaction_policy._call_routing_llm",
+            "app.agent.runtime.interaction_policy._call_routing_llm",
             side_effect=_mock_policy_route_for_query,
         ):
             decision = evaluate_policy("FDA Freigabe benötigt")
