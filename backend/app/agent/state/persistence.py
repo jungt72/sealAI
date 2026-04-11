@@ -510,6 +510,137 @@ async def load_governed_state_async(
 # get_or_create helper
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# H1.3 — Case management (session-scoped)
+# ---------------------------------------------------------------------------
+
+async def get_or_create_case(
+    session_id: str,
+    user_id: str,
+    db: Any,  # AsyncSession
+    *,
+    subsegment: str | None = None,
+) -> Any:  # CaseRecord
+    """Get or create a governed cases row keyed by session_id.
+
+    One session → one case.  case_number is auto-generated in STS-INQ format.
+    """
+    from sqlalchemy import func, select  # noqa: PLC0415
+
+    try:
+        from app.models.case_record import CaseRecord  # noqa: PLC0415
+    except ModuleNotFoundError as exc:  # pragma: no cover
+        log.warning("[persistence] CaseRecord unavailable: %s", exc)
+        raise
+
+    # Fast path — existing case
+    result = await db.execute(
+        select(CaseRecord).where(CaseRecord.session_id == session_id).limit(1)
+    )
+    case = result.scalar_one_or_none()
+    if case is not None:
+        return case
+
+    # Create new case with sequential case_number
+    case_number = await _generate_case_number(db)
+    case = CaseRecord(
+        case_number=case_number,
+        session_id=session_id,
+        user_id=user_id,
+        subsegment=subsegment,
+        status="active",
+    )
+    db.add(case)
+    await db.commit()
+    await db.refresh(case)
+    log.info(
+        "[persistence] created case case_number=%s session=%s user=%s",
+        case_number,
+        session_id,
+        user_id,
+    )
+    return case
+
+
+async def _generate_case_number(db: Any) -> str:  # AsyncSession
+    """Generate next sequential case number: STS-INQ-YYYY-MM-NNN."""
+    from datetime import date  # noqa: PLC0415
+
+    from sqlalchemy import func, select  # noqa: PLC0415
+
+    from app.models.case_record import CaseRecord  # noqa: PLC0415
+
+    today = date.today()
+    prefix = f"STS-INQ-{today.year}-{today.month:02d}"
+    result = await db.execute(
+        select(func.count()).select_from(CaseRecord).where(
+            CaseRecord.case_number.like(f"{prefix}-%")
+        )
+    )
+    n = (result.scalar() or 0) + 1
+    return f"{prefix}-{n:03d}"
+
+
+async def write_state_snapshot(
+    case_id: str,
+    state: GovernedSessionState,
+    db: Any,  # AsyncSession
+) -> Any:  # CaseStateSnapshot
+    """Append a new state snapshot revision for a case.
+
+    Skips write if the latest snapshot has the same basis_hash and state_json.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    try:
+        from app.agent.graph.legacy_graph import _GRAPH_MODEL_ID  # noqa: PLC0415
+    except Exception:
+        _GRAPH_MODEL_ID = "unknown"
+
+    try:
+        from app.models.case_state_snapshot import CaseStateSnapshot  # noqa: PLC0415
+    except ModuleNotFoundError as exc:  # pragma: no cover
+        log.warning("[persistence] CaseStateSnapshot unavailable: %s", exc)
+        raise
+
+    persisted = _with_decision_basis_hash(state)
+    basis_hash = persisted.decision.decision_basis_hash
+    snapshot_payload = persisted.model_dump(mode="json")
+
+    # Dedup: skip if identical to latest
+    latest_result = await db.execute(
+        select(CaseStateSnapshot)
+        .where(CaseStateSnapshot.case_id == case_id)
+        .order_by(CaseStateSnapshot.revision.desc())
+        .limit(1)
+    )
+    latest = latest_result.scalar_one_or_none()
+    if latest is not None and latest.basis_hash == basis_hash and latest.state_json == snapshot_payload:
+        return latest
+
+    next_revision = (int(latest.revision) + 1) if latest is not None else 1
+
+    snapshot = CaseStateSnapshot(
+        case_id=case_id,
+        revision=next_revision,
+        state_json=snapshot_payload,
+        basis_hash=basis_hash,
+        ontology_version=_ontology_version(persisted),
+        prompt_version=REASONING_PROMPT_VERSION,
+        model_version=_GRAPH_MODEL_ID,
+    )
+    db.add(snapshot)
+    await db.commit()
+    await db.refresh(snapshot)
+    log.debug(
+        "[persistence] wrote state snapshot case_id=%s revision=%d basis_hash=%s",
+        case_id,
+        next_revision,
+        basis_hash,
+    )
+    return snapshot
+
+
 async def get_or_create_governed_state_async(
     *,
     tenant_id: str,

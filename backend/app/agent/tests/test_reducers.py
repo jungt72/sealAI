@@ -699,6 +699,8 @@ class TestNoDirectWriteToNormalized:
         "test_inquiry_admissibility.py",
         # H1.2 — confirmation test builds NormalizedState fixtures
         "test_inquiry_confirmation.py",
+        # H1.3-H1.5 — pipeline smoke test builds NormalizedState fixtures
+        "test_inquiry_pipeline.py",
     }
 
     def _collect_violations(self) -> list[Path]:

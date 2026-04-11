@@ -117,6 +117,103 @@ def build_inquiry_payload(
     }
 
 
+class IdempotencyError(Exception):
+    """Raised when an inquiry with the same idempotency_key has already been sent."""
+
+
+async def send_inquiry_payload(
+    state: Any,
+    manufacturer: dict[str, Any],
+    case_id: str,
+    db: Any,  # AsyncSession
+    redis_client: Any | None = None,
+) -> Any:  # InquiryDelivery
+    """Build and log an inquiry payload for a manufacturer.
+
+    Phase H1 pilot: payload is written to inquiry_deliveries and
+    inquiry_audit (status="logged").  No external delivery occurs yet.
+
+    Idempotency: keyed by "inquiry:{case_id}:{manufacturer_id}".
+    If the key is already present (Redis or DB), raises IdempotencyError.
+
+    Args:
+        state:          GovernedSessionState (or duck-typed equivalent).
+        manufacturer:   Entry from pilot_manufacturers.json.
+        case_id:        UUID string of the cases row.
+        db:             SQLAlchemy AsyncSession.
+        redis_client:   Optional async Redis client for idempotency check.
+
+    Returns:
+        InquiryDelivery ORM instance.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.models.inquiry_audit import InquiryAudit  # noqa: PLC0415
+    from app.models.inquiry_delivery import InquiryDelivery  # noqa: PLC0415
+
+    manufacturer_id = str(manufacturer.get("id") or manufacturer.get("slug") or "unknown")
+    idempotency_key = f"inquiry:{case_id}:{manufacturer_id}"
+
+    # ---- Idempotency check (Redis fast path) ----
+    if redis_client is not None:
+        try:
+            existing = await redis_client.get(idempotency_key)
+            if existing:
+                raise IdempotencyError(f"Inquiry bereits gesendet: {idempotency_key}")
+        except IdempotencyError:
+            raise
+        except Exception:
+            pass  # Redis unavailable — fall through to DB check
+
+    # ---- Idempotency check (DB fallback) ----
+    existing_row = await db.execute(
+        select(InquiryDelivery).where(
+            InquiryDelivery.idempotency_key == idempotency_key
+        ).limit(1)
+    )
+    if existing_row.scalar_one_or_none() is not None:
+        raise IdempotencyError(f"Inquiry bereits gesendet: {idempotency_key}")
+
+    # ---- Build payload ----
+    payload = build_inquiry_payload(state, manufacturer)
+    basis_hash = str(payload.get("basis_hash") or "")
+
+    # ---- Write to inquiry_deliveries ----
+    delivery = InquiryDelivery(
+        case_id=case_id,
+        manufacturer_id=manufacturer_id,
+        payload_json=payload,
+        idempotency_key=idempotency_key,
+        status="logged",
+    )
+    db.add(delivery)
+
+    # ---- Write to inquiry_audit (append-only) ----
+    action = _section(state, "action_readiness")
+    pdf_url = _get(action, "pdf_url")
+    audit = InquiryAudit(
+        case_id=case_id,
+        idempotency_key=idempotency_key,
+        decision_basis_hash=basis_hash,
+        pdf_url=pdf_url,
+        disclaimer_text=INQUIRY_DISCLAIMER,
+        payload_json=payload,
+    )
+    db.add(audit)
+
+    await db.commit()
+    await db.refresh(delivery)
+
+    # ---- Set idempotency key in Redis (7-day TTL) ----
+    if redis_client is not None:
+        try:
+            await redis_client.setex(idempotency_key, 86400 * 7, "sent")
+        except Exception:
+            pass  # Redis unavailable — DB idempotency remains authoritative
+
+    return delivery
+
+
 def build_inquiry_payload_from_flat(
     *,
     case_number: str | None = None,

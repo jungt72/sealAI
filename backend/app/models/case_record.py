@@ -12,6 +12,7 @@ class CaseRecord(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     case_number = Column(String(50), nullable=False, unique=True, index=True)
+    session_id = Column(String(255), nullable=True, unique=True, index=True)
     user_id = Column(String(255), nullable=False, index=True)
     subsegment = Column(String(100), nullable=True)
     status = Column(String(50), nullable=False, server_default="active", default="active")
