@@ -44,6 +44,18 @@ GATE_ROUTE_DECISION_SECONDS = Histogram(
     buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0),
 )
 
+GATE_DECISION_REASONS_TOTAL = Counter(
+    "sealai_gate_decision_reasons_total",
+    "Frontdoor gate decisions by normalized reason category",
+    ["reason"],
+)
+
+GATE_DIRECT_REPLIES_TOTAL = Counter(
+    "sealai_gate_direct_replies_total",
+    "Direct replies emitted by the frontdoor gate fast path",
+    ["route"],
+)
+
 # ============================================================================
 # LLM METRICS
 # ============================================================================
@@ -195,6 +207,45 @@ RAG_SYNC_LAST_DOCUMENTS = Gauge(
 )
 
 
+# ============================================================================
+# EVIDENCE RETRIEVAL METRICS
+# ============================================================================
+
+EVIDENCE_RETRIEVAL_SCORE = Histogram(
+    "sealai_evidence_retrieval_score",
+    "Semantic similarity score of evidence retrieval results",
+    buckets=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
+)
+
+EVIDENCE_RETRIEVAL_LATENCY_SECONDS = Histogram(
+    "sealai_evidence_retrieval_latency_seconds",
+    "Latency of evidence retrieval calls",
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0),
+)
+
+# ============================================================================
+# INQUIRY / BUSINESS METRICS
+# ============================================================================
+
+INQUIRY_CREATED_TOTAL = Counter(
+    "sealai_inquiry_created_total",
+    "Total inquiry payloads created",
+    ["status"],
+)
+
+INQUIRY_SENT_TOTAL = Counter(
+    "sealai_inquiry_sent_total",
+    "Total inquiries sent to manufacturers",
+    ["status"],
+)
+
+FIT_SCORE_HISTOGRAM = Histogram(
+    "sealai_fit_score",
+    "Distribution of fit_score values for manufacturer matching",
+    buckets=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
+)
+
+
 _QDRANT_COLLECTION_METRICS_LOCK = threading.Lock()
 _QDRANT_COLLECTION_METRICS_LAST_REFRESH = 0.0
 _QDRANT_COLLECTION_METRICS_MIN_INTERVAL_SECONDS = 30.0
@@ -221,6 +272,20 @@ def track_gate_route_decision(route: str, latency_seconds: float) -> None:
     GATE_ROUTE_DECISIONS_TOTAL.labels(route=canonical).inc()
     if latency_seconds >= 0:
         GATE_ROUTE_DECISION_SECONDS.labels(route=canonical).observe(latency_seconds)
+
+
+def track_gate_decision_reason(reason: str) -> None:
+    """Track normalized gate decision reason categories."""
+    normalized = (reason or "unknown").strip() or "unknown"
+    GATE_DECISION_REASONS_TOTAL.labels(reason=normalized).inc()
+
+
+def track_gate_direct_reply(route: str) -> None:
+    """Track direct-reply usage on the gate fast path."""
+    normalized = (route or "CONVERSATION").strip() or "CONVERSATION"
+    if normalized not in {"CONVERSATION", "EXPLORATION", "GOVERNED"}:
+        normalized = "CONVERSATION"
+    GATE_DIRECT_REPLIES_TOTAL.labels(route=normalized).inc()
 
 
 def _default_qdrant_collection() -> str:
@@ -362,6 +427,32 @@ def track_quality_gate_block(check_id: str, severity: str) -> None:
     QUALITY_GATE_BLOCKS_TOTAL.labels(check_id=cid, severity=sev).inc()
 
 
+def track_evidence_retrieval(score: float, latency_seconds: float) -> None:
+    """Track evidence retrieval score and latency."""
+    if 0.0 <= score <= 1.0:
+        EVIDENCE_RETRIEVAL_SCORE.observe(score)
+    if latency_seconds >= 0:
+        EVIDENCE_RETRIEVAL_LATENCY_SECONDS.observe(latency_seconds)
+
+
+def track_inquiry_created(status: str = "success") -> None:
+    """Track inquiry payload creation."""
+    st = (status or "success").strip() or "success"
+    INQUIRY_CREATED_TOTAL.labels(status=st).inc()
+
+
+def track_inquiry_sent(status: str = "success") -> None:
+    """Track inquiry sent to manufacturer."""
+    st = (status or "success").strip() or "success"
+    INQUIRY_SENT_TOTAL.labels(status=st).inc()
+
+
+def track_fit_score(score: float) -> None:
+    """Track fit_score distribution."""
+    clamped = max(0.0, min(1.0, float(score)))
+    FIT_SCORE_HISTOGRAM.observe(clamped)
+
+
 __all__ = [
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
@@ -390,6 +481,11 @@ __all__ = [
     "RAG_LAST_SUCCESSFUL_INGEST_TIMESTAMP_SECONDS",
     "RAG_SYNC_RUNS_TOTAL",
     "RAG_SYNC_LAST_DOCUMENTS",
+    "EVIDENCE_RETRIEVAL_SCORE",
+    "EVIDENCE_RETRIEVAL_LATENCY_SECONDS",
+    "INQUIRY_CREATED_TOTAL",
+    "INQUIRY_SENT_TOTAL",
+    "FIT_SCORE_HISTOGRAM",
     "refresh_qdrant_collection_metrics",
     "track_gate_route_decision",
     "track_pattern_execution",
@@ -400,4 +496,8 @@ __all__ = [
     "track_node_execution",
     "track_error",
     "track_quality_gate_block",
+    "track_evidence_retrieval",
+    "track_inquiry_created",
+    "track_inquiry_sent",
+    "track_fit_score",
 ]
