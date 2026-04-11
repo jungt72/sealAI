@@ -44,6 +44,7 @@ from app.agent.graph import GraphState
 from app.agent.graph.nodes.output_contract_node import (
     _determine_response_class,
     _reply_clarification,
+    _reply_state_update,
     build_governed_conversation_strategy_contract,
     output_contract_node,
 )
@@ -59,6 +60,7 @@ from app.agent.state.models import (
     ManufacturerMappingState,
     MediumCaptureState,
     MediumClassificationState,
+    EvidenceState,
     MatchingState,
     RequirementClass,
     RfqState,
@@ -125,7 +127,7 @@ def _b_state(missing: list[str] | None = None) -> GraphState:
 
 
 _REQUIRED_KEYS = {
-    "response_class", "gov_class", "inquiry_admissible", "rfq_admissible",
+    "response_class", "gov_class", "inquiry_admissible",
     "parameters", "missing_fields", "conflicts",
     "validity_notes", "open_points", "compute", "matching", "rfq", "dispatch", "norm", "export_profile", "manufacturer_mapping", "dispatch_contract", "message",
 }
@@ -160,12 +162,27 @@ class TestResponseClassSelection:
         state = _full_a_state(with_compute=True)
         assert _determine_response_class(state) == "technical_preselection"
 
+    def test_class_a_with_compute_and_blocking_evidence_gap_stays_state_update(self):
+        state = _full_a_state(with_compute=True).model_copy(
+            update={
+                "evidence": EvidenceState(
+                    evidence_present=True,
+                    evidence_count=1,
+                    deterministic_findings=["pressure_bar", "temperature_c"],
+                    evidence_gaps=["missing_source_for_medium"],
+                    unresolved_open_points=["missing_source_for_medium"],
+                )
+            }
+        )
+        assert _determine_response_class(state) == "governed_state_update"
+
     def test_matching_result_overrides_to_candidate_shortlist(self):
         state = _full_a_state(with_compute=True).model_copy(
             update={
                 "matching": MatchingState(
                     status="matched_primary_candidate",
                     matchability_status="ready_for_matching",
+                    shortlist_ready=True,
                     selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
                 )
             }
@@ -178,6 +195,8 @@ class TestResponseClassSelection:
                 "matching": MatchingState(
                     status="matched_primary_candidate",
                     matchability_status="ready_for_matching",
+                    shortlist_ready=True,
+                    inquiry_ready=True,
                     selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
                 ),
                 "rfq": RfqState(
@@ -188,6 +207,19 @@ class TestResponseClassSelection:
             }
         )
         assert _determine_response_class(state) == "inquiry_ready"
+
+    def test_matching_result_without_release_stays_preselection(self):
+        state = _full_a_state(with_compute=True).model_copy(
+            update={
+                "matching": MatchingState(
+                    status="matched_primary_candidate",
+                    matchability_status="not_released",
+                    release_blockers=["demo_matching_catalog"],
+                    selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
+                )
+            }
+        )
+        assert _determine_response_class(state) == "technical_preselection"
 
     def test_class_a_with_requirement_class_and_boundary_anchor_becomes_recommendation(self):
         state = _full_a_state(with_compute=False).model_copy(
@@ -228,6 +260,23 @@ class TestResponseClassSelection:
             }
         )
         assert _determine_response_class(state) == "governed_state_update"
+
+    def test_class_a_with_preselection_blocker_stays_structured_clarification(self):
+        state = _full_a_state(with_compute=True).model_copy(
+            update={
+                "governance": GovernanceState(
+                    gov_class="A",
+                    rfq_admissible=True,
+                    requirement_class=RequirementClass(
+                        class_id="PTFE10",
+                        description="Steam sealing class",
+                    ),
+                    preselection_blockers=["duty_profile"],
+                    type_sensitive_required=["duty_profile"],
+                ),
+            }
+        )
+        assert _determine_response_class(state) == "structured_clarification"
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +548,30 @@ class TestOutputPublicShape:
         assert _REQUIRED_KEYS.issubset(result.output_public.keys())
 
     @pytest.mark.asyncio
+    async def test_output_public_contains_evidence_classification(self):
+        state = _full_a_state(with_compute=True).model_copy(
+            update={
+                "evidence": EvidenceState(
+                    evidence_present=True,
+                    evidence_count=1,
+                    trusted_sources_present=True,
+                    source_backed_findings=["medium"],
+                    deterministic_findings=["pressure_bar", "temperature_c"],
+                    assumption_based_findings=["installation"],
+                    evidence_gaps=["missing_source_for_compliance"],
+                )
+            }
+        )
+        result = await output_contract_node(state)
+        evidence = result.output_public["evidence"]
+
+        assert evidence["evidence_present"] is True
+        assert evidence["source_backed_findings"] == ["medium"]
+        assert evidence["deterministic_findings"] == ["pressure_bar", "temperature_c"]
+        assert evidence["assumption_based_findings"] == ["installation"]
+        assert evidence["blocking_evidence_gaps"] == ["missing_source_for_compliance"]
+
+    @pytest.mark.asyncio
     async def test_no_raw_extractions_key(self):
         """Invariant 8: raw ObservedState must not leak."""
         result = await output_contract_node(_full_a_state())
@@ -548,6 +621,13 @@ class TestOutputPublicShape:
     async def test_rfq_public_contains_only_clean_summary(self):
         state = _full_a_state().model_copy(
             update={
+                "matching": MatchingState(
+                    status="matched_primary_candidate",
+                    matchability_status="ready_for_matching",
+                    shortlist_ready=True,
+                    inquiry_ready=True,
+                    selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
+                ),
                 "rfq": RfqState(
                     status="rfq_ready",
                     rfq_ready=True,
@@ -764,29 +844,29 @@ class TestOutputPublicContent:
 
 
 # ---------------------------------------------------------------------------
-# 12. rfq_admissible
+# 12. inquiry_admissible
 # ---------------------------------------------------------------------------
 
-class TestRfqAdmissible:
+class TestInquiryAdmissible:
     @pytest.mark.asyncio
-    async def test_class_a_rfq_admissible_true(self):
+    async def test_class_a_inquiry_admissible_true(self):
         state = _full_a_state()
         result = await output_contract_node(state)
         assert result.output_public["inquiry_admissible"] is True
-        assert result.output_public["rfq_admissible"] is True
+        assert "rfq_admissible" not in result.output_public
 
     @pytest.mark.asyncio
-    async def test_class_b_rfq_admissible_false(self):
+    async def test_class_b_inquiry_admissible_false(self):
         state = _b_state()
         result = await output_contract_node(state)
         assert result.output_public["inquiry_admissible"] is False
-        assert result.output_public["rfq_admissible"] is False
+        assert "rfq_admissible" not in result.output_public
 
     @pytest.mark.asyncio
-    async def test_empty_state_rfq_admissible_false(self):
+    async def test_empty_state_inquiry_admissible_false(self):
         result = await output_contract_node(GraphState())
         assert result.output_public["inquiry_admissible"] is False
-        assert result.output_public["rfq_admissible"] is False
+        assert "rfq_admissible" not in result.output_public
 
 
 # ---------------------------------------------------------------------------
@@ -890,6 +970,25 @@ class TestReplyText:
         assert strategy.primary_question_reason not in reply
         assert reply.count("?") == 1
 
+    @pytest.mark.asyncio
+    async def test_preselection_blocker_uses_prioritized_single_question(self):
+        state = _full_a_state(with_compute=True).model_copy(
+            update={
+                "governance": GovernanceState(
+                    gov_class="A",
+                    rfq_admissible=True,
+                    preselection_blockers=["sealing_type", "duty_profile"],
+                )
+            }
+        )
+
+        result = await output_contract_node(state)
+
+        assert result.output_response_class == "structured_clarification"
+        assert result.output_reply.count("?") == 1
+        assert "Dichtungstyp" in result.output_reply or "Dichtprinzip" in result.output_reply
+        assert result.output_public["preselection_blockers"] == ["sealing_type", "duty_profile"]
+
     def test_clarification_reply_falls_back_cleanly_without_strategy(self):
         state = _b_state(missing=["temperature_c"])
 
@@ -897,6 +996,27 @@ class TestReplyText:
 
         assert "temperatur" in reply.lower()
         assert "einsatzfenster" not in reply.lower()
+
+    def test_governed_state_update_uses_priority_question_when_one_decisive_field_is_missing(self):
+        state = GraphState(
+            asserted=AssertedState(
+                assertions={
+                    "medium": _claim("medium", "Salzwasser"),
+                    "pressure_bar": _claim("pressure_bar", 10.0),
+                    "temperature_c": _claim("temperature_c", 80.0),
+                    "shaft_diameter_mm": _claim("shaft_diameter_mm", 50.0),
+                },
+                blocking_unknowns=["speed_rpm"],
+            ),
+            governance=_gov(gov_class="A"),
+            motion_hint=ContextHintState(label="rotary", confidence="high", source_turn_index=1),
+        )
+
+        reply = _reply_state_update(state)
+
+        assert "Betriebsparameter erfasst:" in reply
+        assert "Drehzahl" in reply
+        assert "Die technischen Grenzen werden geprüft." not in reply
 
     @pytest.mark.asyncio
     async def test_recommendation_reply_uses_turn_context_summaries(self):
@@ -922,6 +1042,7 @@ class TestReplyText:
                 "matching": MatchingState(
                     status="matched_primary_candidate",
                     matchability_status="ready_for_matching",
+                    shortlist_ready=True,
                     selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
                     matching_notes=["Kandidat liegt im gueltigen Eignungsraum."],
                 ),
@@ -940,8 +1061,17 @@ class TestReplyText:
 
     @pytest.mark.asyncio
     async def test_rfq_reply_uses_turn_context_summaries(self):
+        from unittest.mock import patch as _patch
+        from app.agent.domain.admissibility import AdmissibilityResult
         state = _full_a_state(with_compute=True).model_copy(
             update={
+                "matching": MatchingState(
+                    status="matched_primary_candidate",
+                    matchability_status="ready_for_matching",
+                    shortlist_ready=True,
+                    inquiry_ready=True,
+                    selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
+                ),
                 "rfq": RfqState(
                     status="rfq_ready",
                     rfq_ready=True,
@@ -958,7 +1088,18 @@ class TestReplyText:
                 ),
             }
         )
-        result = await output_contract_node(state)
+        _admissible = AdmissibilityResult(admissible=True, blocking_reasons=(), basis_hash="test")
+        with (
+            _patch(
+                "app.agent.graph.nodes.output_contract_node.check_inquiry_admissibility",
+                return_value=_admissible,
+            ),
+            _patch(
+                "app.agent.graph.nodes.output_contract_node.interrupt",
+                return_value={"confirmed": True},
+            ),
+        ):
+            result = await output_contract_node(state)
 
         assert "Anfragebasis:" in result.output_reply
         assert "Medium: Dampf" in result.output_reply

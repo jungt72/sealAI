@@ -321,6 +321,15 @@ class EvidenceState(BaseModel):
     evidence_results: list[Any] = Field(default_factory=list)
     source_versions: dict[str, str] = Field(default_factory=dict)
     retrieval_query: str | None = None
+    evidence_present: bool = False
+    evidence_count: int = 0
+    trusted_sources_present: bool = False
+    evidence_supported_topics: list[str] = Field(default_factory=list)
+    deterministic_findings: list[str] = Field(default_factory=list)
+    source_backed_findings: list[str] = Field(default_factory=list)
+    assumption_based_findings: list[str] = Field(default_factory=list)
+    unresolved_open_points: list[str] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +382,21 @@ class GovernanceState(BaseModel):
 
     open_validation_points: list[str] = Field(default_factory=list)
     """Items that require manufacturer validation before final release."""
+
+    preselection_blockers: list[str] = Field(default_factory=list)
+    """Missing fields that block a belastbare technical_preselection."""
+
+    missing_but_assumable: list[str] = Field(default_factory=list)
+    """Missing fields that may remain as explicit assumptions/open points."""
+
+    optional_context: list[str] = Field(default_factory=list)
+    """Missing context fields that improve the case but do not block narrowing."""
+
+    compliance_blockers: list[str] = Field(default_factory=list)
+    """Regulatory/industry qualifiers that block preselection until clarified."""
+
+    type_sensitive_required: list[str] = Field(default_factory=list)
+    """Missing fields required only for the detected seal/application scenario."""
 
 
 class DecisionState(GovernanceState):
@@ -447,6 +471,10 @@ class MatchingState(BaseModel):
 
     matchability_status: str = "not_ready"
     status: str = "pending"
+    shortlist_ready: bool = False
+    inquiry_ready: bool = False
+    release_blockers: list[str] = Field(default_factory=list)
+    data_source: str = "candidate_derived"
     selected_manufacturer_ref: Optional[ManufacturerRef] = None
     manufacturer_refs: list[ManufacturerRef] = Field(default_factory=list)
     manufacturer_capabilities: list[ManufacturerCapability] = Field(default_factory=list)
@@ -513,6 +541,8 @@ class ActionReadinessState(BaseModel):
     pdf_ready: bool = False
     pdf_url: str | None = None
     inquiry_sent: bool = False
+    inquiry_confirmed: bool = False
+    """True after the user explicitly confirmed the inquiry via interrupt()."""
     idempotency_key: str = Field(default_factory=_new_idempotency_key)
     missing_for_inquiry: list[str] = Field(default_factory=list)
     dispatch_ready: bool = False
@@ -733,6 +763,23 @@ class ConversationMessage(BaseModel):
     created_at: Optional[str] = None
 
 
+class ExplorationProgressState(BaseModel):
+    """Lightweight per-case progress for conversation/exploration turns.
+
+    Non-authoritative slice used to keep the case moving between light turns
+    without bypassing the governed reducers.
+    """
+
+    observed_topic: Optional[str] = None
+    tentative_domain_signals: list[str] = Field(default_factory=list)
+    missing_critical_fields: list[str] = Field(default_factory=list)
+    next_best_question_candidate: Optional[str] = None
+    next_best_question_reason: Optional[str] = None
+    last_route: Optional[str] = None
+    case_active: bool = False
+    updated_at: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Combined governed session state (convenience wrapper)
 # ---------------------------------------------------------------------------
@@ -766,6 +813,7 @@ class GovernedSessionState(BaseModel):
     dispatch_contract: DispatchContractState = Field(default_factory=DispatchContractState)
     medium_context: MediumContext = Field(default_factory=MediumContext)
     conversation_messages: list[ConversationMessage] = Field(default_factory=list)
+    exploration_progress: ExplorationProgressState = Field(default_factory=ExplorationProgressState)
 
     analysis_cycle: int = Field(default=0, ge=0)
     """Number of completed analysis cycles in this session."""

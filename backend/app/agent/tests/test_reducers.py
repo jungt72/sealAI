@@ -697,6 +697,8 @@ class TestNoDirectWriteToNormalized:
         "test_turn_context.py",
         # H1.1 — admissibility test builds NormalizedState fixtures
         "test_inquiry_admissibility.py",
+        # H1.2 — confirmation test builds NormalizedState fixtures
+        "test_inquiry_confirmation.py",
     }
 
     def _collect_violations(self) -> list[Path]:
@@ -736,6 +738,8 @@ class TestNoDirectWriteToGovernance:
         "test_case_workspace_projection.py",
         "test_projections.py",
         "test_api_router.py",
+        # H1.2 — confirmation test builds GovernanceState fixtures
+        "test_inquiry_confirmation.py",
     }
 
     def _collect_violations(self) -> list[Path]:

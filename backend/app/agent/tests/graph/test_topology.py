@@ -86,6 +86,13 @@ _REQUIRED_OUTPUT_KEYS = {
 }
 
 
+def _result_state(raw: dict) -> GraphState:
+    if "__interrupt__" not in raw:
+        return GraphState.model_validate(raw)
+    payload = list(raw["__interrupt__"])[0].value
+    return GraphState.model_validate(payload["state"])
+
+
 # ---------------------------------------------------------------------------
 # 1–3. Graph compilation
 # ---------------------------------------------------------------------------
@@ -160,7 +167,7 @@ class TestEmptyStateEndToEnd:
 class TestPreloadedExtractionsEndToEnd:
     @pytest.mark.asyncio
     async def test_three_core_fields_confirmed_class_a(self):
-        """Pre-load high-confidence extractions → expect Class A after full run."""
+        """Three legacy core fields alone stay blocked until seal type is known."""
         state = _state_with_extractions(
             medium=("Dampf", 0.95),
             pressure_bar=(12.0, 0.95),
@@ -173,19 +180,23 @@ class TestPreloadedExtractionsEndToEnd:
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
-        result = GraphState.model_validate(raw)
-        assert result.governance.gov_class == "A"
-        assert result.governance.rfq_admissible is True
+        result = _result_state(raw)
+        assert result.governance.gov_class == "B"
+        assert result.governance.rfq_admissible is False
+        assert result.governance.preselection_blockers == ["sealing_type"]
+        assert result.output_response_class == "structured_clarification"
 
     @pytest.mark.asyncio
     async def test_three_core_fields_response_class_state_update(self):
-        """Class A without compute → governed_state_update.
+        """Complete static seal basis without compute → governed_state_update.
         Uses 'Öl' medium (not in demo records' allowed_media) to prevent matching.
         """
         state = _state_with_extractions(
             medium=("Öl", 0.95),
             pressure_bar=(6.0, 0.95),
             temperature_c=(80.0, 0.95),
+            sealing_type=("gasket", 0.95),
+            geometry_context=("static_groove", 0.95),
         )
         with patch(
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
@@ -194,16 +205,19 @@ class TestPreloadedExtractionsEndToEnd:
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
-        result = GraphState.model_validate(raw)
+        result = _result_state(raw)
         assert result.output_response_class == "governed_state_update"
 
     @pytest.mark.asyncio
-    async def test_class_a_with_material_can_reach_inquiry_ready(self):
+    async def test_class_a_with_material_and_no_evidence_stays_conservative(self):
         state = _state_with_extractions(
             medium=("Wasser", 0.95),
             pressure_bar=(12.0, 0.95),
             temperature_c=(180.0, 0.95),
             material=("PTFE", 0.95),
+            sealing_type=("rwdr", 0.95),
+            shaft_diameter_mm=(50, 0.95),
+            speed_rpm=(1500, 0.95),
         )
         with patch(
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
@@ -212,10 +226,10 @@ class TestPreloadedExtractionsEndToEnd:
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
-        result = GraphState.model_validate(raw)
-        assert result.output_response_class == "inquiry_ready"
-        assert result.rfq.rfq_ready is True
-        assert result.dispatch.dispatch_ready is True
+        result = _result_state(raw)
+        assert result.output_response_class == "governed_state_update"
+        assert result.rfq.rfq_ready is False
+        assert "demo_matching_catalog" in result.matching.release_blockers
 
     @pytest.mark.asyncio
     async def test_output_public_no_raw_extractions(self):
@@ -258,16 +272,19 @@ class TestPreloadedExtractionsEndToEnd:
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
-        result = GraphState.model_validate(raw)
+        result = _result_state(raw)
         assert result.output_reply != ""
 
     @pytest.mark.asyncio
-    async def test_material_based_inquiry_ready_visible_in_full_graph(self):
+    async def test_material_based_full_graph_keeps_demo_matching_unreleased(self):
         state = _state_with_extractions(
             medium=("Dampf", 0.95),
             pressure_bar=(12.0, 0.95),
             temperature_c=(180.0, 0.95),
             material=("PTFE", 0.95),
+            sealing_type=("rwdr", 0.95),
+            shaft_diameter_mm=(50, 0.95),
+            speed_rpm=(1500, 0.95),
         )
         with patch(
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
@@ -275,14 +292,15 @@ class TestPreloadedExtractionsEndToEnd:
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
-        result = GraphState.model_validate(raw)
-        assert result.output_response_class == "inquiry_ready"
-        assert result.matching.status == "matched_primary_candidate"
-        assert result.matching.selected_manufacturer_ref is not None
-        assert result.rfq.rfq_ready is True
+        result = _result_state(raw)
+        assert result.output_response_class == "governed_state_update"
+        assert result.matching.status == "candidate_not_released"
+        assert result.matching.selected_manufacturer_ref is None
+        assert result.matching.shortlist_ready is False
+        assert result.rfq.rfq_ready is False
         assert result.sealai_norm.identity.norm_version == "sealai_norm_v1"
         assert result.export_profile.export_profile_version == "sealai_export_profile_v1"
-        assert result.export_profile.rfq_ready is True
+        assert result.export_profile.rfq_ready is False
         assert result.manufacturer_mapping.mapping_version == "manufacturer_mapping_v1"
         assert result.dispatch_contract.contract_version == "dispatch_contract_v1"
 
@@ -313,7 +331,7 @@ class TestRegexMessageEndToEnd:
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
-        result = GraphState.model_validate(raw)
+        result = _result_state(raw)
         # At minimum, regex should have captured pressure and temperature
         assert result.output_public["response_class"] != ""
 

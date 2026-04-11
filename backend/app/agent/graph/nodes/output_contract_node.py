@@ -58,11 +58,11 @@ output_public shape (Invariant 8 — no internal artefacts):
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from langgraph.types import Command, interrupt
 
+from app.agent.domain.admissibility import check_inquiry_admissibility
 from app.agent.graph import GraphState
 from app.agent.runtime.clarification_priority import prioritized_open_point_labels, select_clarification_priority
 from app.agent.runtime.outward_names import build_admissibility_payload
@@ -71,101 +71,6 @@ from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.state.models import ConversationStrategyContract
 
 log = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Conversational humanizer — wraps deterministic template text with one LLM
-# call that adds natural engineer tone while preserving all factual content.
-# Disable via SEALAI_HUMANIZE_REPLY=false for testing/debugging.
-# ---------------------------------------------------------------------------
-
-_HUMANIZE_SYSTEM_PROMPT = """Du bist SealAI — ein erfahrener Dichtungsingenieur mit 20+ Jahren Praxis.
-Du führst ein Beratungsgespräch. Du denkst und antwortest wie ein Mensch, nicht wie ein Formular.
-
-DEINE AUFGABE:
-Du bekommst eine strukturierte Systemnachricht (was technisch zu sagen ist)
-und formulierst daraus eine natürliche, menschliche Antwort.
-
-KOMMUNIKATIONSREGELN:
-1. Gehe ZUERST auf das ein, was der Kunde gerade gesagt hat — zeige dass du es gehört hast
-2. Wenn neue Werte genannt wurden: bestätige sie kurz und positiv
-3. Füge wenn sinnvoll eine kurze fachliche Einschätzung ein (1 Satz)
-4. Stelle genau EINE Folgefrage — die wichtigste offene
-5. Erkläre in einem Halbsatz WARUM du diese Information brauchst
-6. NIEMALS nach bereits bekannten Parametern fragen
-7. Kein Formularjargon. Kein "Ich habe folgende Parameter erfasst:". Natürlich sprechen wie ein Kollege.
-8. Maximale Länge: 4 Sätze
-
-TON: Kollegial, kompetent, direkt. Deutsche Sprache."""
-
-
-async def _humanize_reply(
-    *,
-    mechanical_reply: str,
-    state: GraphState,
-    response_class: str,
-) -> str:
-    """Transform a deterministic template reply into natural conversational text.
-
-    The mechanical_reply is used as structured input (what to say), not as
-    visible output. The LLM reformulates it in engineer voice.
-    On any failure, falls back to mechanical_reply (fail-open).
-    """
-    try:
-        from langchain_openai import ChatOpenAI  # local import — not available in all envs
-
-        # Build conversation history (last 10 turns, exclude current)
-        messages = list(state.conversation_messages or [])
-        history_lines: list[str] = []
-        for msg in messages[:-1]:
-            role = "SealAI" if msg.role == "assistant" else "Kunde"
-            history_lines.append(f"{role}: {msg.content.strip()}")
-        history_text = "\n".join(history_lines) if history_lines else "Erstes Gespräch."
-
-        # Current user message
-        current_msg = ""
-        if messages and messages[-1].role == "user":
-            current_msg = messages[-1].content.strip()
-
-        # Known parameters — must not be asked again
-        assertions = state.asserted.assertions if state.asserted else {}
-        _param_labels = {
-            "medium": "Medium",
-            "temperature_c": "Temperatur",
-            "pressure_bar": "Druck",
-            "shaft_diameter_mm": "Wellen-Ø",
-            "speed_rpm": "Drehzahl",
-            "motion_type": "Bewegungsart",
-            "installation": "Einbau",
-        }
-        known = [
-            f"{lbl}: {assertions[k].asserted_value}"
-            for k, lbl in _param_labels.items()
-            if k in assertions
-        ]
-        known_text = ", ".join(known) if known else "Noch keine Parameter."
-
-        user_prompt = (
-            f"BISHERIGER GESPRÄCHSVERLAUF:\n{history_text}\n\n"
-            f"LETZTE NACHRICHT DES KUNDEN:\n{current_msg}\n\n"
-            f"BEREITS BEKANNTE PARAMETER (NICHT ERNEUT FRAGEN):\n{known_text}\n\n"
-            f"STRUKTURIERTE VORGABE (was inhaltlich gesagt werden soll):\n{mechanical_reply}\n\n"
-            "Formuliere jetzt eine natürliche Antwort basierend auf der strukturierten Vorgabe.\n"
-            "Antworte NUR mit dem Text der Antwort — kein Präfix, keine Erklärung."
-        )
-
-        model_id = os.getenv("SEALAI_REPLY_MODEL", "gpt-4o-mini")
-        llm = ChatOpenAI(model=model_id, temperature=0.4, max_tokens=300)
-        response = await llm.ainvoke([
-            {"role": "system", "content": _HUMANIZE_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ])
-        humanized = str(response.content).strip()
-        if len(humanized) < 10:
-            return mechanical_reply
-        return humanized
-    except Exception as exc:
-        log.warning("[output_contract_node] _humanize_reply failed (%s) — using mechanical reply", exc)
-        return mechanical_reply
 
 # Outward response classes (Blaupause V1.1)
 _STRUCTURED_CLARIFICATION = "structured_clarification"
@@ -179,6 +84,17 @@ _CORE_FIELD_LABELS: dict[str, str] = {
     "medium":        "Medium (Fluid/Gas)",
     "pressure_bar":  "Betriebsdruck [bar]",
     "temperature_c": "Betriebstemperatur [°C]",
+    "sealing_type": "Dichtungstyp / Dichtprinzip",
+    "duty_profile": "Betriebsprofil",
+    "installation": "Einbausituation",
+    "geometry_context": "Geometrie / Bauform",
+    "pressure_direction": "Druckrichtung",
+    "contamination": "Schmutz / Partikel",
+    "counterface_surface": "Gegenlaufpartner / Oberflaeche",
+    "tolerances": "Rundlauf / Toleranzen",
+    "industry": "Branche",
+    "compliance": "regulatorische Anforderungen",
+    "medium_qualifiers": "Mediumdetails",
 }
 
 _CLARIFICATION_FIELD_META: dict[str, dict[str, str | int]] = {
@@ -203,7 +119,87 @@ _CLARIFICATION_FIELD_META: dict[str, dict[str, str | int]] = {
         "reason": "Die Temperatur grenzt Werkstoff und Einsatzfenster ein.",
         "priority": 2,
     },
+    "sealing_type": {
+        "label": "Dichtungstyp / Dichtprinzip",
+        "question": "Um welchen Dichtungstyp oder welches Dichtprinzip geht es?",
+        "conflict_question": "Welcher Dichtungstyp ist hier der richtige Wert?",
+        "reason": "Ohne Dichtungstyp bleibt der technische Loesungsraum zu breit fuer eine belastbare Vorauswahl.",
+        "priority": 3,
+    },
+    "duty_profile": {
+        "label": "Betriebsprofil",
+        "question": "Ist der Betrieb kontinuierlich, intermittierend oder nur gelegentlich?",
+        "conflict_question": "Welches Betriebsprofil ist hier der richtige Wert?",
+        "reason": "Das Betriebsprofil entscheidet mit, wie robust die Vorauswahl ausgelegt werden muss.",
+        "priority": 4,
+    },
+    "installation": {
+        "label": "Einbausituation",
+        "question": "Wie ist die Einbausituation bei Ihnen genau ausgeführt?",
+        "conflict_question": "Welche Einbausituation ist hier der richtige Stand?",
+        "reason": "Die Einbausituation bestimmt, wie der Dichtungsfall technisch eingegrenzt werden kann.",
+        "priority": 5,
+    },
+    "geometry_context": {
+        "label": "Geometrie / Bauform",
+        "question": "Welche Geometrie oder vorhandene Bauform liegt an der Dichtstelle vor?",
+        "conflict_question": "Welche Geometrie oder Bauform ist hier der richtige Stand?",
+        "reason": "Die Geometrie grenzt den Dichtprinzipraum und den Requirement-Class-Raum deutlich ein.",
+        "priority": 6,
+    },
+    "compliance": {
+        "label": "regulatorische Anforderungen",
+        "question": "Welche regulatorischen Anforderungen gelten hier, zum Beispiel FDA, ATEX oder eine Normvorgabe?",
+        "conflict_question": "Welche regulatorische Anforderung ist hier der richtige Stand?",
+        "reason": "Regulatorische Anforderungen duerfen nicht als technischer Fit mitgeraten werden.",
+        "priority": 7,
+    },
+    "pressure_direction": {
+        "label": "Druckrichtung",
+        "question": "Aus welcher Richtung wirkt der Druck an der Dichtung?",
+        "conflict_question": "Welche Druckrichtung ist hier der richtige Stand?",
+        "reason": "Die Druckrichtung beeinflusst Dichtprinzip und Belastungsfall.",
+        "priority": 8,
+    },
+    "medium_qualifiers": {
+        "label": "Mediumdetails",
+        "question": "Welche Mediumdetails sind bekannt, zum Beispiel Konzentration, Chloride oder Feststoffanteile?",
+        "conflict_question": "Welche Mediumdetails sind hier der richtige Stand?",
+        "reason": "Diese Mediumdetails koennen die Werkstoff- und Korrosionsgrenzen entscheidend veraendern.",
+        "priority": 9,
+    },
+    "contamination": {
+        "label": "Schmutz / Partikel",
+        "question": "Gibt es Schmutz, Partikel oder abrasive Anteile im Umfeld oder Medium?",
+        "conflict_question": "Welche Angabe zu Schmutz oder Partikeln ist hier der richtige Stand?",
+        "reason": "Partikel und abrasive Anteile koennen Werkstoff- und Bauartgrenzen frueh verschieben.",
+        "priority": 10,
+    },
+    "counterface_surface": {
+        "label": "Gegenlaufpartner / Oberflaeche",
+        "question": "Wie sehen Gegenlaufpartner und Oberflaechen an der Dichtstelle aus?",
+        "conflict_question": "Welche Angabe zu Gegenlaufpartner oder Oberflaeche ist hier der richtige Stand?",
+        "reason": "Oberflaeche und Gegenlaufpartner beeinflussen Dichtverhalten und Verschleiss stark mit.",
+        "priority": 11,
+    },
+    "tolerances": {
+        "label": "Rundlauf / Toleranzen",
+        "question": "Gibt es Angaben zu Rundlauf, Exzentrizitaet, Spalt oder Toleranzen?",
+        "conflict_question": "Welche Toleranzangabe ist hier der richtige Stand?",
+        "reason": "Toleranzen und Rundlauf bestimmen, wie belastbar die Dichtstelle technisch einzuordnen ist.",
+        "priority": 12,
+    },
 }
+
+
+def _preselection_blocker_fields(state: GraphState) -> list[str]:
+    return list(
+        dict.fromkeys(
+            list(getattr(state.governance, "preselection_blockers", []) or [])
+            + list(getattr(state.governance, "compliance_blockers", []) or [])
+            + list(getattr(state.governance, "type_sensitive_required", []) or [])
+        )
+    )
 
 
 def _has_asserted_value(state: GraphState, field_name: str) -> bool:
@@ -235,6 +231,12 @@ def _has_recommendation_boundary_anchor(state: GraphState) -> bool:
 
 
 def _is_recommendation_ready(state: GraphState) -> bool:
+    if _blocking_evidence_gaps_for_preselection(state):
+        return False
+
+    if _preselection_blocker_fields(state):
+        return False
+
     requirement_class = state.governance.requirement_class
     class_id = str(getattr(requirement_class, "class_id", "") or "").strip()
     if not class_id:
@@ -255,6 +257,42 @@ def _is_recommendation_ready(state: GraphState) -> bool:
         return False
 
     return _has_recommendation_boundary_anchor(state)
+
+
+def _blocking_evidence_gaps_for_preselection(state: GraphState) -> list[str]:
+    """Return evidence gaps that make technical_preselection too strong."""
+
+    blocking: list[str] = []
+    for gap in list(getattr(state.evidence, "evidence_gaps", []) or []):
+        text = str(gap or "").strip()
+        if not text:
+            continue
+        if text.startswith("missing_source_for_") or text in {"retrieval_failed", "no_evidence_retrieved"}:
+            blocking.append(text)
+    return list(dict.fromkeys(blocking))
+
+
+def _shortlist_release_blockers(state: GraphState) -> list[str]:
+    blockers: list[str] = []
+    if not state.matching.shortlist_ready:
+        blockers.append("shortlist_not_released")
+    blockers.extend(list(state.matching.release_blockers))
+    blockers.extend(_preselection_blocker_fields(state))
+    blockers.extend(_blocking_evidence_gaps_for_preselection(state))
+    blockers.extend(str(item) for item in list(state.asserted.blocking_unknowns or []) if item)
+    blockers.extend(f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item)
+    return list(dict.fromkeys(blockers))
+
+
+def _inquiry_release_blockers(state: GraphState) -> list[str]:
+    blockers = _shortlist_release_blockers(state)
+    if not state.matching.inquiry_ready:
+        blockers.append("matching_not_inquiry_ready")
+    blockers.extend(str(item) for item in list(state.rfq.blocking_findings or []) if item)
+    blockers.extend(f"open_point:{item}" for item in list(state.governance.open_validation_points or []) if item)
+    if not state.rfq.rfq_ready or state.rfq.status != "rfq_ready":
+        blockers.append("rfq_not_ready")
+    return list(dict.fromkeys(blockers))
 
 
 def _pick_priority_clarification_field(fields: list[str]) -> str | None:
@@ -284,7 +322,12 @@ def _clarification_field_meta(field_name: str | None) -> dict[str, str | int]:
 def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | None]:
     """Return small deterministic communication hints for clarification turns."""
     conflicts = state.asserted.conflict_flags
-    missing = state.asserted.blocking_unknowns
+    missing = list(
+        dict.fromkeys(
+            list(state.asserted.blocking_unknowns)
+            + _preselection_blocker_fields(state)
+        )
+    )
     pending_message = str(getattr(state, "pending_message", "") or "").strip().lower()
     is_correction_turn = any(marker in pending_message for marker in ("korrig", "statt", "sondern"))
     motion_label = getattr(state.motion_hint, "label", None)
@@ -378,12 +421,8 @@ def build_governed_conversation_strategy_contract(
 
 def _determine_response_class(state: GraphState) -> str:
     """Select the outward response class deterministically from GovernanceState."""
-    if state.rfq.rfq_ready and state.rfq.status == "rfq_ready":
-        return _INQUIRY_READY
-    if state.matching.status == "matched_primary_candidate":
-        return _CANDIDATE_SHORTLIST
-
     gov_class = state.governance.gov_class
+    preselection_blockers = _preselection_blocker_fields(state)
 
     if gov_class is None or gov_class == "D":
         return _STRUCTURED_CLARIFICATION
@@ -392,7 +431,15 @@ def _determine_response_class(state: GraphState) -> str:
     if gov_class == "B":
         return _STRUCTURED_CLARIFICATION
     # gov_class == "A"
+    if preselection_blockers:
+        return _STRUCTURED_CLARIFICATION
+    if state.rfq.rfq_ready and state.rfq.status == "rfq_ready" and not _inquiry_release_blockers(state):
+        return _INQUIRY_READY
+    if state.matching.status == "matched_primary_candidate" and not _shortlist_release_blockers(state):
+        return _CANDIDATE_SHORTLIST
     if state.compute_results or _is_recommendation_ready(state):
+        if _blocking_evidence_gaps_for_preselection(state):
+            return _GOVERNED_STATE_UPDATE
         return _TECHNICAL_PRESELECTION
     return _GOVERNED_STATE_UPDATE
 
@@ -445,10 +492,38 @@ def _build_output_public_base(state: GraphState, response_class: str) -> dict[st
         "gov_class":       state.governance.gov_class,
         **build_admissibility_payload(state.governance.rfq_admissible),
         "parameters":      _parameters_public(state),
-        "missing_fields":  list(state.asserted.blocking_unknowns),
+        "missing_fields":  list(
+            dict.fromkeys(
+                list(state.asserted.blocking_unknowns)
+                + _preselection_blocker_fields(state)
+            )
+        ),
         "conflicts":       list(state.asserted.conflict_flags),
         "validity_notes":  list(state.governance.validity_limits),
         "open_points":     prioritized_open_point_labels(state, state.governance.open_validation_points),
+        "evidence": {
+            "evidence_present": state.evidence.evidence_present,
+            "evidence_count": state.evidence.evidence_count,
+            "trusted_sources_present": state.evidence.trusted_sources_present,
+            "evidence_supported_topics": list(state.evidence.evidence_supported_topics),
+            "source_backed_findings": list(state.evidence.source_backed_findings),
+            "deterministic_findings": list(state.evidence.deterministic_findings),
+            "assumption_based_findings": list(state.evidence.assumption_based_findings),
+            "unresolved_open_points": list(state.evidence.unresolved_open_points),
+            "evidence_gaps": list(state.evidence.evidence_gaps),
+            "blocking_evidence_gaps": _blocking_evidence_gaps_for_preselection(state),
+        },
+        "readiness": {
+            "shortlist_ready": state.matching.shortlist_ready and not _shortlist_release_blockers(state),
+            "inquiry_ready": state.matching.inquiry_ready and state.rfq.rfq_ready and not _inquiry_release_blockers(state),
+            "shortlist_blockers": _shortlist_release_blockers(state),
+            "inquiry_blockers": _inquiry_release_blockers(state),
+        },
+        "preselection_blockers": _preselection_blocker_fields(state),
+        "missing_but_assumable": list(getattr(state.governance, "missing_but_assumable", []) or []),
+        "optional_context": list(getattr(state.governance, "optional_context", []) or []),
+        "compliance_blockers": list(getattr(state.governance, "compliance_blockers", []) or []),
+        "type_sensitive_required": list(getattr(state.governance, "type_sensitive_required", []) or []),
         "compute":         _compute_public(state),
         "matching":        _matching_public(state),
         "rfq":             _rfq_public(state),
@@ -465,6 +540,10 @@ def _matching_public(state: GraphState) -> dict[str, Any]:
     return {
         "status": state.matching.status,
         "matchability_status": state.matching.matchability_status,
+        "shortlist_ready": state.matching.shortlist_ready and not _shortlist_release_blockers(state),
+        "inquiry_ready": state.matching.inquiry_ready and not _inquiry_release_blockers(state),
+        "release_blockers": _shortlist_release_blockers(state),
+        "data_source": state.matching.data_source,
         "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
         "manufacturer_count": len(state.matching.manufacturer_refs),
         "manufacturers": [
@@ -481,7 +560,8 @@ def _rfq_public(state: GraphState) -> dict[str, Any]:
     requirement_class = state.rfq.requirement_class
     return {
         "status": state.rfq.status,
-        "rfq_ready": state.rfq.rfq_ready,
+        "rfq_ready": state.rfq.rfq_ready and not _inquiry_release_blockers(state),
+        "release_blockers": _inquiry_release_blockers(state),
         **build_admissibility_payload(state.rfq.rfq_admissible),
         "handover_status": state.rfq.handover_status,
         "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
@@ -608,40 +688,36 @@ def _dispatch_contract_public(state: GraphState) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 async def _build_reply(state: GraphState, response_class: str) -> str:
-    """Generate deterministic template reply text, then humanize via LLM.
+    """Generate the deterministic governed reply basis.
 
-    Step 1 (deterministic): build a structured mechanical reply from state.
-    Step 2 (LLM, optional): pass it through _humanize_reply() for natural tone.
-    Step 2 can be disabled via SEALAI_HUMANIZE_REPLY=false.
+    This node owns the structured output contract. The final user-visible
+    wording is assembled later through the canonical user-facing reply layer,
+    so this node must not introduce an additional LLM speaking authority.
     """
     strategy = build_governed_conversation_strategy_contract(state, response_class)
     if response_class == _STRUCTURED_CLARIFICATION:
-        mechanical = _reply_clarification(state, strategy)
+        return _reply_clarification(state, strategy)
     elif response_class == _INQUIRY_READY:
-        mechanical = _reply_rfq_ready(state, strategy)
+        return _reply_rfq_ready(state, strategy)
     elif response_class == _CANDIDATE_SHORTLIST:
-        mechanical = _reply_matching(state, strategy)
+        return _reply_matching(state, strategy)
     elif response_class == _GOVERNED_STATE_UPDATE:
-        mechanical = _reply_state_update(state)
+        return _reply_state_update(state)
     elif response_class == _TECHNICAL_PRESELECTION:
-        mechanical = _reply_recommendation(state, strategy)
-    else:
-        mechanical = "Bitte geben Sie die technischen Parameter Ihrer Anwendung an."
-
-    if os.getenv("SEALAI_HUMANIZE_REPLY", "true").lower() == "true":
-        return await _humanize_reply(
-            mechanical_reply=mechanical,
-            state=state,
-            response_class=response_class,
-        )
-    return mechanical
+        return _reply_recommendation(state, strategy)
+    return "Bitte geben Sie die technischen Parameter Ihrer Anwendung an."
 
 
 def _reply_clarification(
     state: GraphState,
     strategy: ConversationStrategyContract | None = None,
 ) -> str:
-    missing = state.asserted.blocking_unknowns
+    missing = list(
+        dict.fromkeys(
+            list(state.asserted.blocking_unknowns)
+            + _preselection_blocker_fields(state)
+        )
+    )
     conflicts = state.asserted.conflict_flags
     primary_question = (
         str(strategy.primary_question).strip()
@@ -705,19 +781,41 @@ def _reply_clarification(
 
 def _reply_state_update(state: GraphState) -> str:
     params = state.asserted.assertions
+    missing = list(
+        dict.fromkeys(
+            list(state.asserted.blocking_unknowns)
+            + _preselection_blocker_fields(state)
+        )
+    )
     parts = []
-    for field_name in ("medium", "pressure_bar", "temperature_c"):
+    for field_name in ("medium", "pressure_bar", "temperature_c", "shaft_diameter_mm", "speed_rpm"):
         if field_name in params:
             label = _CORE_FIELD_LABELS.get(field_name, field_name)
             val = params[field_name].asserted_value
             conf = params[field_name].confidence
             parts.append(f"{label}: {val} ({conf})")
+    priority = select_clarification_priority(state, missing) if missing else None
+    evidence_gaps = _blocking_evidence_gaps_for_preselection(state)
     if parts:
         params_text = "; ".join(parts)
+        if evidence_gaps:
+            return (
+                f"Betriebsparameter erfasst: {params_text}. "
+                "Die technische Basis ist berechnet, aber fuer eine belastbare quellenbasierte Vorauswahl fehlt noch Evidenz."
+            )
+        if priority is not None:
+            return (
+                f"Betriebsparameter erfasst: {params_text}. "
+                f"Als naechstes brauche ich noch genau einen Kernwert: {priority.question}"
+            )
         return (
             f"Betriebsparameter erfasst: {params_text}. "
             "Die technischen Grenzen werden geprüft."
         )
+    if priority is not None:
+        return f"Betriebsparameter wurden strukturiert erfasst. {priority.question}"
+    if evidence_gaps:
+        return "Betriebsparameter wurden strukturiert erfasst; fuer die quellenbasierte Einordnung bleibt ein Evidence-Gap offen."
     return "Betriebsparameter wurden strukturiert erfasst."
 
 
@@ -744,8 +842,14 @@ def _reply_recommendation(
 
     validity = gov.validity_limits
     open_pts = prioritized_open_point_labels(state, gov.open_validation_points)
+    evidence_supported = list(state.evidence.source_backed_findings)
+    assumptions = list(state.evidence.assumption_based_findings)
 
     lines = [header]
+    if evidence_supported:
+        lines.append("Quellenbasiert gestützt: " + "; ".join(evidence_supported))
+    if assumptions:
+        lines.append("Annahmebasiert: " + "; ".join(assumptions))
     if calc_notes:
         lines.append("Berechnungshinweise: " + " | ".join(calc_notes))
     if validity:
@@ -823,6 +927,68 @@ def _reply_rfq_ready(
 
 
 # ---------------------------------------------------------------------------
+# Inquiry confirmation (H1.2)
+# ---------------------------------------------------------------------------
+
+def build_inquiry_summary(state: GraphState) -> dict[str, Any]:
+    """Build a compact, outward-safe inquiry summary for the confirmation interrupt.
+
+    Returns only clean, derived values — no internal state artefacts (Invariant 8).
+    """
+    # Sealing type from normalized parameters
+    norm_params = state.normalized.parameters
+    sealing_type = None
+    for key in ("sealing_type",):
+        p = norm_params.get(key)
+        if p is not None:
+            sealing_type = getattr(p, "value", None) or (p.get("value") if isinstance(p, dict) else None)
+            break
+
+    # Material combination from decision.preselection
+    preselection = state.decision.preselection or {}
+    material_combination = preselection.get("material_combination") or preselection.get("material")
+
+    # Key parameters
+    key_parameters: dict[str, Any] = {}
+    for field_key, label in (
+        ("medium",            "medium"),
+        ("temperature_max_c", "temperature_max_c"),
+        ("pressure_max_bar",  "pressure_max_bar"),
+        ("shaft_diameter_mm", "shaft_diameter_mm"),
+    ):
+        for alias in (field_key, field_key.replace("_max_c", "_c").replace("_max_bar", "_bar")):
+            p = norm_params.get(alias)
+            if p is not None:
+                val = getattr(p, "value", None) or (p.get("value") if isinstance(p, dict) else None)
+                key_parameters[label] = val
+                break
+
+    # Top manufacturer (first candidate with fit_score if available)
+    top_manufacturer: dict[str, Any] | None = None
+    if state.matching.selected_manufacturer_ref is not None:
+        ref = state.matching.selected_manufacturer_ref
+        top_manufacturer = {
+            "name": ref.manufacturer_name,
+            "fit_score": preselection.get("fit_score"),
+        }
+    elif state.matching.manufacturer_refs:
+        ref = state.matching.manufacturer_refs[0]
+        top_manufacturer = {"name": ref.manufacturer_name, "fit_score": None}
+
+    # Open points
+    open_points_count = len(state.governance.open_validation_points)
+
+    return {
+        "sealing_type": sealing_type,
+        "material_combination": material_combination,
+        "key_parameters": key_parameters,
+        "top_manufacturer": top_manufacturer,
+        "open_points_count": open_points_count,
+        "pdf_ready": state.action_readiness.pdf_ready,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Node
 # ---------------------------------------------------------------------------
 
@@ -831,20 +997,84 @@ async def output_contract_node(state: GraphState) -> GraphState:
 
     Determines the response class from GovernanceState, assembles output_public
     (Invariant 8: no internal artefacts), and produces the visible reply.
-    One optional LLM call (_humanize_reply) adds conversational tone;
-    all factual content is determined deterministically before that call.
+    The visible reply is finalized by the canonical user-facing reply layer;
+    this node only emits the deterministic governed reply basis.
+
+    inquiry_ready path (H1.2):
+      1. check_inquiry_admissibility — deterministic, no LLM
+      2. Not admissible → downgrade to structured_clarification
+      3. Admissible → interrupt() for explicit user confirmation
+      4. confirmed=True → keep inquiry_ready, set action_readiness.inquiry_confirmed
+      5. confirmed=False → downgrade to governed_state_update
     """
     response_class = _determine_response_class(state)
+
+    # H1.2 — Inquiry admissibility + user confirmation gate
+    if response_class == _INQUIRY_READY:
+        admissibility = check_inquiry_admissibility(state)
+        if not admissibility.admissible:
+            # Downgrade: inquiry not ready, ask user for missing/assumed fields
+            log.info(
+                "[output_contract_node] inquiry not admissible — downgrading to structured_clarification. "
+                "blocking_reasons=%s",
+                admissibility.blocking_reasons,
+            )
+            response_class = _STRUCTURED_CLARIFICATION
+            # Store blocking_reasons in DecisionState so frontend can surface them
+            state = state.model_copy(update={
+                "decision": state.decision.model_copy(
+                    update={"blocking_reasons": list(admissibility.blocking_reasons)}
+                )
+            })
+        else:
+            # Admissible — require explicit user confirmation via interrupt()
+            summary = build_inquiry_summary(state)
+            try:
+                # "state" mirrors the structured_clarification interrupt format
+                # so callers can uniformly read state from any interrupt.
+                # output_response_class is pre-filled so callers know the
+                # tentative class even before confirmation is resolved.
+                _pre_state = state.model_copy(
+                    update={"output_response_class": _INQUIRY_READY}
+                )
+                confirmation = interrupt({
+                    "type": "inquiry_confirmation",
+                    "case_summary": summary,
+                    "blocking_reasons": [],
+                    "basis_hash": admissibility.basis_hash,
+                    "state": _pre_state.model_dump(mode="python"),
+                })
+            except RuntimeError:
+                # interrupt() not available (e.g. tests without checkpointer)
+                confirmation = None
+
+            if confirmation is not None:
+                confirmed = bool(
+                    confirmation.get("confirmed") if isinstance(confirmation, dict) else confirmation
+                )
+                if confirmed:
+                    log.info(
+                        "[output_contract_node] inquiry confirmed by user. basis_hash=%s",
+                        admissibility.basis_hash,
+                    )
+                    state = state.model_copy(update={
+                        "action_readiness": state.action_readiness.model_copy(
+                            update={"inquiry_confirmed": True}
+                        )
+                    })
+                else:
+                    log.info("[output_contract_node] inquiry rejected by user — downgrading to governed_state_update")
+                    response_class = _GOVERNED_STATE_UPDATE
+
     output_public = _build_output_public_base(state, response_class)
     reply = await _build_reply(state, response_class)
     output_public["message"] = reply
 
     log.debug(
-        "[output_contract_node] response_class=%s gov_class=%s rfq_admissible=%s humanize=%s",
+        "[output_contract_node] response_class=%s gov_class=%s rfq_admissible=%s",
         response_class,
         state.governance.gov_class,
         state.governance.rfq_admissible,
-        os.getenv("SEALAI_HUMANIZE_REPLY", "true"),
     )
 
     result_state = state.model_copy(update={
