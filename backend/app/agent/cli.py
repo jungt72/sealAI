@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
-from app.agent.agent.state import AgentState, SealingAIState
+from app.agent.state.agent_state import AgentState, SealingAIState
 
 def create_initial_state() -> SealingAIState:
     """
