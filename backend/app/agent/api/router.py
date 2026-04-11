@@ -30,7 +30,7 @@ from app.agent.agent.commercial import (
     build_handover_payload,
 )
 from app.agent.api.sse_runtime import agent_sse_generator
-from app.agent.agent.selection import build_final_reply, build_structured_api_exposure
+from app.agent.runtime.selection import build_final_reply, build_structured_api_exposure
 from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.agent.state import AgentState
 from app.agent.api.models import (
@@ -262,22 +262,25 @@ async def _build_light_runtime_context(
     *,
     request: ChatRequest,
     current_user: RequestUser,
+    governed_state_override: GovernedSessionState | None = None,
 ) -> tuple[GovernedSessionState | None, list[dict[str, str]], Optional[str]]:
     if not request.session_id:
         return None, [], None
-    try:
-        governed = await _load_live_governed_state(
-            current_user=current_user,
-            session_id=request.session_id,
-            create_if_missing=True,
-        )
-    except Exception as exc:  # noqa: BLE001
-        _log.debug("[router] live governed context load skipped: %s", exc)
-        return None, [], None
+    governed = governed_state_override
+    if governed is None:
+        try:
+            governed = await _load_live_governed_state(
+                current_user=current_user,
+                session_id=request.session_id,
+                create_if_missing=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _log.debug("[router] live governed context load skipped: %s", exc)
+            return None, [], None
     if governed is None:
         return None, [], None
     history = _governed_history_slice(governed)
-    case_summary = _build_param_summary(governed.model_dump())
+    case_summary = _build_light_case_summary(governed)
     return governed, history, case_summary
 
 
@@ -655,6 +658,8 @@ class RuntimeDispatchResolution:
     runtime_mode: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"]
     gate_applied: bool
     session_zone: str | None = None
+    direct_reply: str | None = None
+    governed_state: GovernedSessionState | None = None
 
 
 async def execute_agent(state: AgentState) -> AgentState:
@@ -699,6 +704,21 @@ async def _resolve_runtime_dispatch(
 
         redis_url = os.getenv("REDIS_URL", "")
         tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=request.session_id)
+        governed_state = None
+        if request.session_id:
+            governed_state = await _load_live_governed_state(
+                current_user=current_user,
+                session_id=request.session_id,
+                create_if_missing=True,
+            )
+        short_state_summary = _build_light_case_summary(governed_state) if governed_state is not None else None
+        missing_critical_fields = _collect_light_missing_fields(governed_state) if governed_state is not None else []
+        case_active = _light_case_active(governed_state) if governed_state is not None else False
+        last_route = (
+            str(governed_state.exploration_progress.last_route or "").strip() or None
+            if governed_state is not None
+            else None
+        )
 
         async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
             envelope = await get_or_create_session_async(
@@ -707,7 +727,14 @@ async def _resolve_runtime_dispatch(
                 owner_id,
                 redis_client=redis_client,
             )
-            gate = await decide_route_async(request.message, envelope)
+            gate = await decide_route_async(
+                request.message,
+                envelope,
+                short_state_summary=short_state_summary,
+                missing_critical_fields=missing_critical_fields,
+                case_active=case_active,
+                last_route=last_route,
+            )
             updated_envelope = await apply_gate_decision_and_persist_async(
                 envelope,
                 gate_route=gate.route,
@@ -733,6 +760,8 @@ async def _resolve_runtime_dispatch(
             runtime_mode=runtime_mode,
             gate_applied=True,
             session_zone=updated_envelope.session_zone,
+            direct_reply=gate.direct_reply,
+            governed_state=governed_state,
         )
     except Exception as exc:  # noqa: BLE001
         _log.warning(
@@ -1206,6 +1235,115 @@ def _build_param_summary(governed_state_data: dict) -> Optional[str]:
     return "\n".join(lines) if lines else None
 
 
+def _collect_light_missing_fields(state: GovernedSessionState) -> list[str]:
+    missing = list(state.asserted.blocking_unknowns) + list(state.asserted.conflict_flags)
+    existing = list(state.exploration_progress.missing_critical_fields or [])
+    seen: list[str] = []
+    for item in missing + existing:
+        text = str(item or "").strip()
+        if text and text not in seen:
+            seen.append(text)
+    return seen
+
+
+def _collect_tentative_domain_signals(state: GovernedSessionState) -> list[str]:
+    signals: list[str] = []
+    for key, value in (
+        ("motion", getattr(state.motion_hint, "label", None)),
+        ("application", getattr(state.application_hint, "label", None)),
+        ("medium_family", getattr(state.medium_classification, "family", None)),
+        ("medium_status", getattr(state.medium_classification, "status", None)),
+    ):
+        text = str(value or "").strip()
+        if text:
+            signals.append(f"{key}:{text}")
+    return signals
+
+
+def _build_light_case_summary(governed_state: GovernedSessionState) -> Optional[str]:
+    parts: list[str] = []
+    param_summary = _build_param_summary(governed_state.model_dump())
+    if param_summary:
+        parts.append(param_summary)
+    progress = governed_state.exploration_progress
+    if progress.observed_topic:
+        parts.append(f"- Beobachtetes Thema: {progress.observed_topic}")
+    if progress.missing_critical_fields:
+        parts.append(f"- Offene Kernangaben: {', '.join(progress.missing_critical_fields)}")
+    if progress.next_best_question_candidate:
+        parts.append(f"- Naechste Frage: {progress.next_best_question_candidate}")
+    return "\n".join(part for part in parts if part).strip() or None
+
+
+def _light_case_active(governed_state: GovernedSessionState) -> bool:
+    if governed_state.conversation_messages:
+        return True
+    if governed_state.asserted.assertions:
+        return True
+    if governed_state.exploration_progress.case_active:
+        return True
+    return bool(_build_param_summary(governed_state.model_dump()))
+
+
+def _truncate_light_topic(message: str, *, limit: int = 160) -> str | None:
+    text = " ".join(str(message or "").split()).strip()
+    if not text:
+        return None
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3].rstrip()}..."
+
+
+def _with_light_route_progress(
+    state: GovernedSessionState,
+    *,
+    message: str,
+    mode: Literal["CONVERSATION", "EXPLORATION"],
+    conversation_strategy: dict[str, Any] | None,
+) -> GovernedSessionState:
+    strategy = conversation_strategy or {}
+    existing = state.exploration_progress
+    observed_topic = existing.observed_topic
+    if mode == "EXPLORATION":
+        observed_topic = _truncate_light_topic(message) or observed_topic
+    updated_progress = existing.model_copy(
+        update={
+            "observed_topic": observed_topic,
+            "tentative_domain_signals": _collect_tentative_domain_signals(state),
+            "missing_critical_fields": _collect_light_missing_fields(state),
+            "next_best_question_candidate": str(strategy.get("primary_question") or "").strip() or None,
+            "next_best_question_reason": str(strategy.get("primary_question_reason") or "").strip() or None,
+            "last_route": mode,
+            "case_active": True,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    return state.model_copy(update={"exploration_progress": updated_progress})
+
+
+def _light_structured_state(
+    state: GovernedSessionState,
+    *,
+    mode: Literal["CONVERSATION", "EXPLORATION"],
+) -> dict[str, Any]:
+    progress = state.exploration_progress
+    next_step = "answer_next_question" if progress.next_best_question_candidate else "continue_conversation"
+    return {
+        "case_status": "exploration_active" if mode == "EXPLORATION" else "conversation_active",
+        "output_status": "conversational_answer",
+        "next_step": next_step,
+        "primary_allowed_action": next_step,
+        "active_blockers": list(progress.missing_critical_fields),
+        "last_route": progress.last_route,
+        "observed_topic": progress.observed_topic,
+        "tentative_domain_signals": list(progress.tentative_domain_signals),
+        "missing_critical_fields": list(progress.missing_critical_fields),
+        "next_best_question": progress.next_best_question_candidate,
+        "next_best_question_reason": progress.next_best_question_reason,
+        "case_active": progress.case_active,
+    }
+
+
 def _extract_extractions_from_working_profile(
     working_profile: Dict[str, Any],
     turn_index: int,
@@ -1644,19 +1782,25 @@ async def _stream_light_runtime(
     request: ChatRequest,
     current_user: RequestUser,
     mode: Literal["CONVERSATION", "EXPLORATION"],
+    governed_state_override: GovernedSessionState | None = None,
+    direct_reply: str | None = None,
 ) -> AsyncGenerator[str, None]:
     from app.agent.runtime.conversation_runtime import stream_conversation  # noqa: PLC0415
 
     governed, history, case_summary = await _build_light_runtime_context(
         request=request,
         current_user=current_user,
+        governed_state_override=governed_state_override,
     )
     final_reply = ""
+    final_strategy: dict[str, Any] | None = None
+    final_structured_state: dict[str, Any] | None = None
     async for frame in stream_conversation(
         message,
         history=history,
         case_summary=case_summary,
         mode=mode,
+        direct_reply=direct_reply,
     ):
         if frame.startswith("data: "):
             raw = frame[6:].strip()
@@ -1667,18 +1811,29 @@ async def _stream_light_runtime(
                     payload = None
                 if isinstance(payload, dict) and str(payload.get("type") or "") == "state_update":
                     final_reply = str(payload.get("reply") or "").strip()
+                    final_strategy = payload.get("conversation_strategy") if isinstance(payload.get("conversation_strategy"), dict) else None
+                    if governed is not None and request.session_id and final_reply:
+                        updated = _with_governed_conversation_turn(
+                            governed,
+                            user_message=message,
+                            assistant_reply=final_reply,
+                        )
+                        updated = _with_light_route_progress(
+                            updated,
+                            message=message,
+                            mode=mode,
+                            conversation_strategy=final_strategy,
+                        )
+                        await _persist_live_governed_state(
+                            current_user=current_user,
+                            session_id=request.session_id,
+                            state=updated,
+                        )
+                        final_structured_state = _light_structured_state(updated, mode=mode)
+                        payload["structured_state"] = final_structured_state
+                        frame = f"data: {json.dumps(payload, default=str)}\n\n"
+                        governed = updated
         yield frame
-    if governed is not None and request.session_id and final_reply:
-        updated = _with_governed_conversation_turn(
-            governed,
-            user_message=message,
-            assistant_reply=final_reply,
-        )
-        await _persist_live_governed_state(
-            current_user=current_user,
-            session_id=request.session_id,
-            state=updated,
-        )
 
 
 async def _run_light_chat_response(
@@ -1687,12 +1842,15 @@ async def _run_light_chat_response(
     request: ChatRequest,
     current_user: RequestUser,
     mode: Literal["CONVERSATION", "EXPLORATION"],
+    governed_state_override: GovernedSessionState | None = None,
+    direct_reply: str | None = None,
 ) -> ChatResponse:
     from app.agent.runtime.conversation_runtime import run_conversation  # noqa: PLC0415
 
     governed, history, case_summary = await _build_light_runtime_context(
         request=request,
         current_user=current_user,
+        governed_state_override=governed_state_override,
     )
 
     result = await run_conversation(
@@ -1700,23 +1858,32 @@ async def _run_light_chat_response(
         history=history,
         case_summary=case_summary,
         mode=mode,
+        direct_reply=direct_reply,
     )
+    structured_state: dict[str, Any] | None = None
     if governed is not None and request.session_id and result.reply_text:
         updated = _with_governed_conversation_turn(
             governed,
             user_message=message,
             assistant_reply=result.reply_text,
         )
+        updated = _with_light_route_progress(
+            updated,
+            message=message,
+            mode=mode,
+            conversation_strategy=None,
+        )
         await _persist_live_governed_state(
             current_user=current_user,
             session_id=request.session_id,
             state=updated,
         )
+        structured_state = _light_structured_state(updated, mode=mode)
     return ChatResponse(
         session_id=request.session_id,
         **build_public_response_core(
             reply=result.reply_text,
-            structured_state=None,
+            structured_state=structured_state,
             policy_path="fast",
             run_meta=None,
         ),
@@ -2000,6 +2167,8 @@ async def event_generator(
             request=request,
             current_user=current_user,
             mode=dispatch.runtime_mode,
+            governed_state_override=dispatch.governed_state,
+            direct_reply=dispatch.direct_reply,
         ):
             yield frame
         return
@@ -2084,6 +2253,8 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
             request=request,
             current_user=current_user,
             mode=dispatch.runtime_mode,
+            governed_state_override=dispatch.governed_state,
+            direct_reply=dispatch.direct_reply,
         )
 
     if dispatch.runtime_mode == "GOVERNED":

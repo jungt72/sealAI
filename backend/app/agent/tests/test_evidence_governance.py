@@ -1332,7 +1332,7 @@ class TestProjectionInvariants:
             }
 
         with patch(
-            "app.agent.agent.selection.build_output_contract_projection",
+            "app.agent.runtime.selection.build_output_contract_projection",
             side_effect=_contradictory_contract,
         ):
             state = build_selection_state(
@@ -1414,7 +1414,7 @@ class TestStateTraceAuditProjection:
             }
 
         with patch(
-            "app.agent.agent.selection.build_output_contract_projection",
+            "app.agent.runtime.selection.build_output_contract_projection",
             side_effect=_contradictory_contract,
         ):
             state = build_selection_state(
@@ -1534,7 +1534,7 @@ class TestCaseSummaryProjection:
             }
 
         with patch(
-            "app.agent.agent.selection.build_output_contract_projection",
+            "app.agent.runtime.selection.build_output_contract_projection",
             side_effect=_contradictory_contract,
         ):
             state = build_selection_state(
@@ -1665,7 +1665,7 @@ class TestActionabilityProjection:
             }
 
         with patch(
-            "app.agent.agent.selection.build_output_contract_projection",
+            "app.agent.runtime.selection.build_output_contract_projection",
             side_effect=_contradictory_contract,
         ):
             state = build_selection_state(

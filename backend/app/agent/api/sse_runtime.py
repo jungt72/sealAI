@@ -22,7 +22,7 @@ from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
 
 from langchain_core.messages import AIMessage
 
-from app.agent.agent.selection import build_structured_api_exposure
+from app.agent.runtime.selection import build_structured_api_exposure
 from app.agent.api.models import build_public_response_core
 
 logger = logging.getLogger(__name__)
