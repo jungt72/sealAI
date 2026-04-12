@@ -195,8 +195,10 @@ def test_inquiry_ready_payload_uses_result_class_specific_facts_prefix() -> None
             visible_reply="",
         )
 
-    assert "RFQ-Basis:" in payload["reply"]
+    assert "Anfragebasis:" in payload["reply"]
     assert payload["response_class"] == "inquiry_ready"
+    assert "inquiry" in payload["ui"]
+    assert payload["ui"]["inquiry"]["status"] == "rfq_ready"
 
 
 def test_governed_stream_payload_uses_central_user_facing_reply_assembly() -> None:
@@ -345,6 +347,37 @@ def test_governed_render_prompt_stays_single_question_for_thin_context() -> None
     assert "engineering_explainer_clarification" not in prompt
 
 
+def test_governed_render_prompt_includes_domain_knowledge_block() -> None:
+    prompt = build_governed_render_prompt(
+        response_class="technical_preselection",
+        turn_context=TurnContextContract(
+            conversation_phase="recommendation",
+            turn_goal="present_preselection",
+            primary_question_reason="Werkstoffe eingegrenzt.",
+        ),
+        fallback_text="FKM und PTFE als Kandidaten identifiziert.",
+        applicable_norms=["DIN 3760", "ISO 6194"],
+        requirement_class_id="RD30-2-1",
+        evidence_summary_lines=["FKM: bestaendig gegen Mineraloel bis 120°C"],
+        material_candidates=["FKM", "PTFE"],
+    )
+    assert "DOMAIN-WISSEN" in prompt
+    assert "RD30-2-1" in prompt
+    assert "FKM" in prompt
+    assert "PTFE" in prompt
+    assert "DIN 3760" in prompt
+    assert "bestaendig gegen Mineraloel" in prompt
+
+
+def test_governed_render_prompt_omits_domain_block_when_empty() -> None:
+    prompt = build_governed_render_prompt(
+        response_class="structured_clarification",
+        turn_context=None,
+        fallback_text="Welches Medium?",
+    )
+    assert "DOMAIN-WISSEN" not in prompt
+
+
 def test_surface_claims_cover_all_outward_classes() -> None:
     for response_class in (
         "conversational_answer",
@@ -406,12 +439,12 @@ def test_inquiry_ready_blocks_order_or_send_execution_language() -> None:
 
     assert guard_governed_rendered_text(
         "Die Anfragebasis ist versandfaehig vorbereitet. Offene Herstellerpruefpunkte bleiben sichtbar.",
-        fallback_text="RFQ-Basis ist vorbereitet.",
+        fallback_text="Anfragebasis ist vorbereitet.",
         allowed_surface_claims=claims,
     ).startswith("Die Anfragebasis ist versandfaehig vorbereitet.")
     assert guard_governed_rendered_text(
         "Die Anfragebasis ist bereit und bereits bestellt.",
-        fallback_text="RFQ-Basis ist vorbereitet.",
+        fallback_text="Anfragebasis ist vorbereitet.",
         allowed_surface_claims=claims,
     ) == claims["fallback_text"]
 

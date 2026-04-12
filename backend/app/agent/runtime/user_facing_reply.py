@@ -36,6 +36,10 @@ async def collect_governed_visible_reply(
     turn_context: TurnContextContract | None,
     fallback_text: str,
     allowed_surface_claims: GovernedAllowedSurfaceClaims | list[str] | None = None,
+    applicable_norms: list[str] | None = None,
+    requirement_class_id: str | None = None,
+    evidence_summary_lines: list[str] | None = None,
+    material_candidates: list[str] | None = None,
 ) -> str:
     """Central governed visible-reply anchor for the user-facing layer."""
     claims_spec: GovernedAllowedSurfaceClaims | list[str]
@@ -72,6 +76,10 @@ async def collect_governed_visible_reply(
         turn_context=turn_context,
         fallback_text=effective_fallback_text,
         allowed_surface_claims=claims_spec,
+        applicable_norms=applicable_norms,
+        requirement_class_id=requirement_class_id,
+        evidence_summary_lines=evidence_summary_lines,
+        material_candidates=material_candidates,
     )
 
     try:

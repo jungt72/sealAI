@@ -3,6 +3,7 @@ import os
 import json
 import uuid
 from copy import deepcopy
+import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Literal, Optional
@@ -145,6 +146,7 @@ class GovernedReplyAssemblyContext:
     run_meta: dict[str, Any]
     ui_payload: dict[str, Any]
     deterministic_reply: str
+    domain_context: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 def _conversation_message_payload(
@@ -1491,8 +1493,8 @@ def _governed_structured_state(state: GovernedSessionState, response_class: str)
         return {
             "case_status": "inquiry_ready",
             "output_status": "inquiry_ready",
-            "next_step": "review_rfq_handover",
-            "primary_allowed_action": "inspect_rfq_basis",
+            "next_step": "review_inquiry_handover",
+            "primary_allowed_action": "inspect_inquiry_basis",
             "active_blockers": active_blockers,
             **build_admissibility_payload(state.governance.rfq_admissible),
             "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
@@ -1594,7 +1596,7 @@ def _compose_deterministic_governed_reply(
             turn_context,
             fallback_text=fallback_text,
             response_class=response_class,
-            facts_prefix="RFQ-Basis",
+            facts_prefix="Anfragebasis",
             open_points_prefix="Vor Versand noch im Blick",
         )
     return str(fallback_text or "").strip()
@@ -1649,8 +1651,11 @@ def _build_governed_reply_context(
         return value
 
     ui_payload = project_for_ui(result_state).model_dump()
+    if "inquiry" not in ui_payload and isinstance(ui_payload.get("rfq"), dict):
+        ui_payload["inquiry"] = dict(ui_payload["rfq"])
     for tile_name, note_field in (
         ("rfq", "notes"),
+        ("inquiry", "notes"),
         ("export_profile", "notes"),
         ("dispatch_contract", "handover_notes"),
     ):
@@ -1686,6 +1691,28 @@ def _build_governed_reply_context(
         turn_context=turn_context,
         fallback_text=fallback_seed,
     )
+    _req_class = result_state.governance.requirement_class
+    _req_class_id = _req_class.class_id if _req_class is not None else None
+    _applicable_norms: list[str] = list(getattr(result_state.derived, "applicable_norms", None) or [])
+    _evidence: Any = result_state.evidence
+    _evidence_summary_lines: list[str] = list(
+        (getattr(_evidence, "source_backed_findings", None) or [])
+        + (getattr(_evidence, "deterministic_findings", None) or [])
+    )
+    _preselection: dict[str, Any] | None = result_state.decision.preselection if result_state.decision is not None else None
+    _material_candidates: list[str] = []
+    if isinstance(_preselection, dict):
+        for _key in ("candidates", "materials", "material_candidates"):
+            _val = _preselection.get(_key)
+            if isinstance(_val, list):
+                _material_candidates = [str(v) for v in _val if v]
+                break
+    domain_context: dict[str, Any] = {
+        "requirement_class_id": _req_class_id,
+        "applicable_norms": _applicable_norms,
+        "evidence_summary_lines": _evidence_summary_lines,
+        "material_candidates": _material_candidates,
+    }
     return GovernedReplyAssemblyContext(
         response_class=response_class,
         structured_state=structured_state,
@@ -1698,6 +1725,7 @@ def _build_governed_reply_context(
         },
         ui_payload=ui_payload,
         deterministic_reply=deterministic_reply,
+        domain_context=domain_context,
     )
 
 
@@ -1802,38 +1830,49 @@ async def _stream_light_runtime(
         mode=mode,
         direct_reply=direct_reply,
     ):
-        if frame.startswith("data: "):
-            raw = frame[6:].strip()
-            if raw and raw != "[DONE]":
-                try:
-                    payload = json.loads(raw)
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    payload = None
-                if isinstance(payload, dict) and str(payload.get("type") or "") == "state_update":
-                    final_reply = str(payload.get("reply") or "").strip()
-                    final_strategy = payload.get("conversation_strategy") if isinstance(payload.get("conversation_strategy"), dict) else None
-                    if governed is not None and request.session_id and final_reply:
-                        updated = _with_governed_conversation_turn(
-                            governed,
-                            user_message=message,
-                            assistant_reply=final_reply,
-                        )
-                        updated = _with_light_route_progress(
-                            updated,
-                            message=message,
-                            mode=mode,
-                            conversation_strategy=final_strategy,
-                        )
-                        await _persist_live_governed_state(
-                            current_user=current_user,
-                            session_id=request.session_id,
-                            state=updated,
-                        )
-                        final_structured_state = _light_structured_state(updated, mode=mode)
-                        payload["structured_state"] = final_structured_state
-                        frame = f"data: {json.dumps(payload, default=str)}\n\n"
-                        governed = updated
-        yield frame
+        if not frame.startswith("data: "):
+            continue
+        raw = frame[6:].strip()
+        if raw == "[DONE]":
+            yield frame
+            continue
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        event_type = str(payload.get("type") or "")
+        if event_type == "state_update":
+            final_reply = str(payload.get("reply") or "").strip()
+            final_strategy = payload.get("conversation_strategy") if isinstance(payload.get("conversation_strategy"), dict) else None
+            if governed is not None and request.session_id and final_reply:
+                updated = _with_governed_conversation_turn(
+                    governed,
+                    user_message=message,
+                    assistant_reply=final_reply,
+                )
+                updated = _with_light_route_progress(
+                    updated,
+                    message=message,
+                    mode=mode,
+                    conversation_strategy=final_strategy,
+                )
+                await _persist_live_governed_state(
+                    current_user=current_user,
+                    session_id=request.session_id,
+                    state=updated,
+                )
+                final_structured_state = _light_structured_state(updated, mode=mode)
+                payload["structured_state"] = final_structured_state
+                frame = f"data: {json.dumps(payload, default=str)}\n\n"
+                governed = updated
+            yield frame
+            continue
+        if event_type == "error":
+            yield frame
 
 
 async def _run_light_chat_response(
@@ -2026,6 +2065,7 @@ async def _stream_governed_graph(
                     turn_context=context.turn_context,
                     fallback_text=context.deterministic_reply,
                     allowed_surface_claims=_build_governed_allowed_surface_claims(context.response_class),
+                    **context.domain_context,
                 )
             if request.session_id and visible_reply:
                 persisted_state = _with_governed_conversation_turn(
@@ -2073,6 +2113,7 @@ async def _stream_governed_graph(
             turn_context=context.turn_context,
             fallback_text=context.deterministic_reply,
             allowed_surface_claims=_build_governed_allowed_surface_claims(context.response_class),
+            **context.domain_context,
         )
     if request.session_id and visible_reply:
         persisted_state = _with_governed_conversation_turn(
@@ -2111,6 +2152,7 @@ async def _run_governed_chat_response(
         turn_context=context.turn_context,
         fallback_text=context.deterministic_reply,
         allowed_surface_claims=_build_governed_allowed_surface_claims(context.response_class),
+        **context.domain_context,
     )
     if request.session_id and visible_reply:
         persisted_state = _with_governed_conversation_turn(
@@ -2995,8 +3037,7 @@ async def session_override_endpoint(
       4. Persist the updated GovernedSessionState.
       5. Return governance outcome to the caller.
     """
-    tenant_id = current_user.tenant_id or current_user.sub
-    owner_id = canonical_user_id(current_user)
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
 
     redis_url = os.getenv("REDIS_URL", "")
     if not redis_url:
@@ -3094,6 +3135,8 @@ async def agent_health() -> dict:
     return {"status": "ok", "service": "sealai-agent"}
 
 
+# Dashboard helper only: this endpoint returns non-authoritative context data and
+# does not participate in governed preselection, matching, or inquiry release.
 _MEDIUM_INTELLIGENCE_SYSTEM_PROMPT = """\
 Du bist ein Experte für Dichtungstechnik und Fluidchemie.
 Analysiere das Medium "{medium}" und liefere alle dichtungsrelevanten Eigenschaften.

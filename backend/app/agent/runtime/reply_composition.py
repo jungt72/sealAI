@@ -209,6 +209,10 @@ def build_governed_render_prompt(
     turn_context: TurnContextContract | None,
     fallback_text: str,
     allowed_surface_claims: GovernedAllowedSurfaceClaims | list[str] | None = None,
+    applicable_norms: list[str] | None = None,
+    requirement_class_id: str | None = None,
+    evidence_summary_lines: list[str] | None = None,
+    material_candidates: list[str] | None = None,
 ) -> str:
     """Render a compact controlled prompt for governed visible chat replies."""
     response_class = normalize_outward_response_class(response_class)
@@ -278,6 +282,20 @@ def build_governed_render_prompt(
                 "- Verbotene Formulierungen / Behauptungen: "
                 + " | ".join(allowed_surface_claims["forbidden_fragments"])
             )
+    _domain_items: list[str] = []
+    if requirement_class_id:
+        _domain_items.append(f"- Anforderungsklasse: {requirement_class_id}")
+    if material_candidates:
+        _domain_items.append("- Kandidaten-Werkstoffe: " + " | ".join(material_candidates[:4]))
+    if applicable_norms:
+        _domain_items.append("- Anwendbare Normen: " + " | ".join(applicable_norms[:4]))
+    if evidence_summary_lines:
+        for _line in evidence_summary_lines[:3]:
+            _domain_items.append(f"- Quellenbasis: {_line}")
+    if _domain_items:
+        lines.append("")
+        lines.append("DOMAIN-WISSEN (deterministisch):")
+        lines.extend(_domain_items)
     lines.append("")
     lines.append("DETERMINISTISCHE FACHBASIS:")
     lines.append(fallback_text.strip())
