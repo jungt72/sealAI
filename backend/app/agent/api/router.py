@@ -1646,7 +1646,6 @@ def _build_governed_reply_context(
         strategy=conversation_strategy,
         response_class=response_class,
     )
-    allowed_surface_claims = _build_governed_allowed_surface_claims(response_class)
     assertions_payload: dict[str, Any] = {}
     for _key, _e in (result_state.asserted.assertions or {}).items():
         if _e.asserted_value is not None:
@@ -1659,12 +1658,10 @@ def _build_governed_reply_context(
             assertions_payload[_key] = {"value": _val_str, "confidence": _e.confidence}
 
     structured_state = _governed_structured_state(persisted_state, response_class)
-    fallback_seed = str(allowed_surface_claims.get("fallback_text") or "").strip()
-    deterministic_reply = _compose_deterministic_governed_reply(
-        response_class=response_class,
-        turn_context=turn_context,
-        fallback_text=fallback_seed,
-    )
+    # C1: output_reply from output_contract_node is the single source of truth
+    # for deterministic reply content. _compose_deterministic_governed_reply()
+    # was a parallel construction that is no longer called on this path.
+    deterministic_reply = str(result_state.output_reply or "").strip()
     _req_class = result_state.governance.requirement_class
     _req_class_id = _req_class.class_id if _req_class is not None else None
     _applicable_norms: list[str] = list(getattr(result_state.derived, "applicable_norms", None) or [])
