@@ -1780,6 +1780,65 @@ def _block_residual_legacy_structured_usage(*, session_id: str, decision: Any) -
 
 _EXPLORATION_LLM_MODEL: str = os.environ.get("SEALAI_EXPLORATION_MODEL", "gpt-4o-mini")
 
+# ── ExplorationQuery helpers ──────────────────────────────────────────────────
+
+import re as _re
+
+_EXPLORATION_COMPARISON_RE = _re.compile(
+    r"\b(vergleich\w*|vs\.?|versus|oder|unterschied\w*|besser\w*)\b", _re.IGNORECASE
+)
+_EXPLORATION_NORM_RE = _re.compile(
+    r"\b(din\s*\d+|api\s*\d+|iso\s*\d+|atex|fda|norm|standard|vorschrift\w*)\b",
+    _re.IGNORECASE,
+)
+_EXPLORATION_MATERIAL_DETAIL_RE = _re.compile(
+    r"\b(was\s+ist|was\s+bedeutet|erklaer\w*|erkl.r\w*|wofuer|wofür|eigenschaften)\b",
+    _re.IGNORECASE,
+)
+_EXPLORATION_PARAM_MARKERS: dict[str, str] = {
+    "temperature": r"\b\d+\s*°c\b|\b(temperatur|hitze)\b",
+    "pressure": r"\b\d+\s*bar\b|\b(druck|druckbereich)\b",
+    "speed": r"\b\d+\s*(rpm|min-1|u\/min)\b|\b(drehzahl|drehgeschwindigkeit)\b",
+    "medium": r"\b(wasser|oel|öl|dampf|saeure|säure|lauge|hydraulik|chemie)\b",
+    "sealing_type": r"\b(rwdr|gleitring|dichtung|o.ring|packung|stopfbuch\w*)\b",
+}
+
+
+def _classify_exploration_intent(message: str) -> str:
+    """Classify message into ExplorationQueryIntent without LLM."""
+    lowered = str(message or "").lower()
+    if _EXPLORATION_COMPARISON_RE.search(lowered):
+        return "material_comparison"
+    if _EXPLORATION_NORM_RE.search(lowered):
+        return "norm_explanation"
+    if _EXPLORATION_MATERIAL_DETAIL_RE.search(lowered):
+        return "material_detail"
+    return "general_orientation"
+
+
+def _detect_exploration_parameters(message: str) -> list[str]:
+    """Detect which technical parameter domains are mentioned in the message."""
+    lowered = str(message or "").lower()
+    detected: list[str] = []
+    for param_name, pattern in _EXPLORATION_PARAM_MARKERS.items():
+        if _re.search(pattern, lowered, _re.IGNORECASE):
+            detected.append(param_name)
+    return detected
+
+
+async def _retrieve_for_exploration_query(
+    query: "ExplorationQuery",
+    tenant_id: str,
+) -> list[dict[str, Any]]:
+    """Adapter: map ExplorationQuery → retrieve_with_tenant call parameters.
+
+    Uses query.topic as the retrieval text, query.max_results for k.
+    This is the single seam that satisfies Invariant 5 — no raw user-message
+    string reaches the retrieval layer; the ExplorationQuery is the contract.
+    """
+    from app.agent.services.real_rag import retrieve_with_tenant  # noqa: PLC0415
+    return await retrieve_with_tenant(query.topic, tenant_id, k=query.max_results)
+
 
 async def _stream_exploration_reply(
     message: str,
@@ -1788,20 +1847,31 @@ async def _stream_exploration_reply(
 ) -> AsyncGenerator[str, None]:
     """RAG-grounded EXPLORATION reply generator.
 
-    Retrieves up to 3 relevant chunks from Qdrant, renders explore.j2
-    with the RAG context, then streams a direct LLM response.
+    Builds an ExplorationQuery from the user message (Invariant 5), retrieves
+    up to max_results chunks via the adapter, renders explore.j2 with the RAG
+    context + intent metadata, then streams a direct LLM response.
+
     Yields SSE frames matching the stream_conversation() contract:
         data: {"type": "state_update", "reply": "..."}\n\n
         data: [DONE]\n\n
     """
     import openai as _openai  # noqa: PLC0415
-    from app.agent.services.real_rag import retrieve_with_tenant  # noqa: PLC0415
+    from app.agent.evidence.exploration_query import ExplorationQuery  # noqa: PLC0415
     from app.agent.prompts import prompts  # noqa: PLC0415
 
-    # ── RAG retrieval ────────────────────────────────────────────────────────
+    # ── Build ExplorationQuery (Invariant 5) ──────────────────────────────────
+    query = ExplorationQuery(
+        topic=message,
+        detected_parameters=_detect_exploration_parameters(message),
+        query_intent=_classify_exploration_intent(message),  # type: ignore[arg-type]
+        language="de",
+        max_results=3,
+    )
+
+    # ── RAG retrieval via adapter (raw string never reaches retrieval layer) ──
     rag_context = ""
     try:
-        chunks = await retrieve_with_tenant(message, tenant_id, k=3)
+        chunks = await _retrieve_for_exploration_query(query, tenant_id)
         if chunks:
             parts = []
             for chunk in chunks:
@@ -1817,7 +1887,12 @@ async def _stream_exploration_reply(
     try:
         system_prompt = prompts.render(
             "exploration/explore.j2",
-            {"rag_context": rag_context, "topic": message, "detected_parameters": []},
+            {
+                "rag_context": rag_context,
+                "topic": query.topic,
+                "detected_parameters": query.detected_parameters,
+                "query_intent": query.query_intent,
+            },
         )
     except Exception as exc:  # noqa: BLE001
         _log.warning("[exploration] prompt render failed (%s) — using fallback", exc)
@@ -1834,7 +1909,7 @@ async def _stream_exploration_reply(
             model=_EXPLORATION_LLM_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message},
+                {"role": "user", "content": query.topic},
             ],
             temperature=0.3,
             max_tokens=800,
