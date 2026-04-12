@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agent.agent.boundaries import FAST_PATH_DISCLAIMER
 from app.agent.runtime.reply_composition import build_turn_context_instruction
 from app.agent.runtime.conversation_runtime import (
     ConversationResult,
@@ -113,6 +112,27 @@ class TestBuildMessages:
         assert msgs[1]["role"] == "system"
         assert "KOMMUNIKATIONSKONTEXT" in msgs[1]["content"]
         assert "Relevanter offener Fokus" in msgs[1]["content"]
+
+
+    def test_exploration_mode_strips_history(self):
+        history = [
+            {"role": "user", "content": "Was ist NBR?"},
+            {"role": "assistant", "content": "NBR ist ein synthetischer Kautschuk."},
+        ]
+        msgs = _build_messages("Welches Medium vertraegt PTFE?", history=history, mode="EXPLORATION")
+        roles = [m["role"] for m in msgs]
+        # History turns must not appear — only system(s) + user
+        assert roles.count("user") == 1
+        assert msgs[-1]["content"] == "Welches Medium vertraegt PTFE?"
+
+    def test_conversation_mode_keeps_history(self):
+        history = [
+            {"role": "user", "content": "Was ist NBR?"},
+            {"role": "assistant", "content": "NBR ist ein synthetischer Kautschuk."},
+        ]
+        msgs = _build_messages("Und FKM?", history=history, mode="CONVERSATION")
+        roles = [m["role"] for m in msgs]
+        assert roles.count("user") == 2
 
 
 class TestConversationStrategyContract:
@@ -395,15 +415,31 @@ def _parse_events(events: list[str]) -> list[dict]:
 
 class TestStreamConversation:
     @pytest.mark.asyncio
-    async def test_text_chunks_emitted(self):
+    async def test_direct_reply_fast_path_skips_openai_stream_and_emits_state_update(self):
+        with patch("app.agent.runtime.conversation_runtime.openai.AsyncOpenAI") as mock_openai:
+            events = await _collect(
+                stream_conversation(
+                    "Danke",
+                    direct_reply="Gern. Wenn Sie moechten, gehen wir den naechsten Schritt gemeinsam durch.",
+                    mode="CONVERSATION",
+                )
+            )
+        mock_openai.assert_not_called()
+        parsed = _parse_events(events)
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert state_update["reply"]
+        assert state_update["response_class"] == "conversational_answer"
+        assert [e.get("type") for e in parsed] == ["state_update", "__DONE__"]
+
+    @pytest.mark.asyncio
+    async def test_stream_suppresses_preview_chunks_and_uses_state_update_reply(self):
         with _patch_openai(["FKM ist ", "ein Fluorelastomer."]):
             events = await _collect(stream_conversation("Was ist FKM?"))
         parsed = _parse_events(events)
         text_chunks = [e for e in parsed if e.get("type") == "text_chunk"]
-        assert len(text_chunks) >= 1
-        combined = "".join(e["text"] for e in text_chunks)
-        assert "FKM" in combined
-        assert all(e.get("preview_only") is True for e in text_chunks)
+        assert text_chunks == []
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert state_update["reply"] == "FKM ist ein Fluorelastomer."
 
     @pytest.mark.asyncio
     async def test_final_state_update_reflects_case_context_in_light_reply(self):
@@ -519,13 +555,12 @@ class TestStreamConversation:
         assert "Beginne die sichtbare Antwort IMMER mit diesem ersten Satz" not in joined
 
     @pytest.mark.asyncio
-    async def test_boundary_block_always_appended(self):
+    async def test_stream_does_not_expose_boundary_block_as_visible_authority(self):
         with _patch_openai(["Hallo!"]):
             events = await _collect(stream_conversation("Hallo"))
         parsed = _parse_events(events)
         boundary_events = [e for e in parsed if e.get("type") == "boundary_block"]
-        assert len(boundary_events) == 1
-        assert FAST_PATH_DISCLAIMER in boundary_events[0]["text"]
+        assert boundary_events == []
 
     @pytest.mark.asyncio
     async def test_done_sentinel_always_last(self):
@@ -534,43 +569,35 @@ class TestStreamConversation:
         assert events[-1] == "data: [DONE]\n\n"
 
     @pytest.mark.asyncio
-    async def test_stream_end_event_before_done(self):
+    async def test_stream_end_is_transport_done_only(self):
         with _patch_openai(["Text."]):
             events = await _collect(stream_conversation("Test"))
         parsed = _parse_events(events)
         stream_end = [e for e in parsed if e.get("type") == "stream_end"]
-        assert len(stream_end) == 1
-        # stream_end must come before __DONE__
-        end_idx = next(i for i, e in enumerate(parsed) if e.get("type") == "stream_end")
-        done_idx = next(i for i, e in enumerate(parsed) if e.get("type") == "__DONE__")
-        assert end_idx < done_idx
+        assert stream_end == []
+        assert parsed[-1]["type"] == "__DONE__"
 
     @pytest.mark.asyncio
     async def test_artifacts_in_chunks_filtered(self):
-        """UUIDs in LLM output are stripped via render_chunk."""
+        """UUIDs in LLM output are stripped before the canonical state_update."""
         uuid = "550e8400-e29b-41d4-a716-446655440000"
         with _patch_openai([f"Trace {uuid} — FKM."]):
             events = await _collect(stream_conversation("Was ist FKM?"))
         parsed = _parse_events(events)
-        all_text = "".join(
-            e.get("text", "") for e in parsed if e.get("type") == "text_chunk"
-        )
-        assert uuid not in all_text
-        assert "FKM" in all_text
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert uuid not in state_update["reply"]
+        assert "FKM" in state_update["reply"]
 
     @pytest.mark.asyncio
-    async def test_policy_violation_emits_replacement(self):
-        """When full assembled text violates policy, a text_replacement event is emitted."""
+    async def test_policy_violation_only_surfaces_canonical_state_update(self):
+        """When text violates policy, only the safe state_update reply is visible."""
         # Output with recommendation language → policy violation
         with _patch_openai(["Ich empfehle FKM für diese Dichtung."]):
             events = await _collect(stream_conversation("Welches Material?"))
         parsed = _parse_events(events)
         replacements = [e for e in parsed if e.get("type") == "text_replacement"]
-        assert len(replacements) == 1
-        # Replacement text is the safe fallback, not the original
-        assert "empfehle" not in replacements[0]["text"]
+        assert replacements == []
         state_update = next(e for e in parsed if e.get("type") == "state_update")
-        assert state_update["reply"] == replacements[0]["text"]
         assert "empfehle" not in state_update["reply"]
 
     @pytest.mark.asyncio
@@ -614,13 +641,14 @@ class TestStreamConversation:
         assert len(boundary_events) == 0
 
     @pytest.mark.asyncio
-    async def test_empty_llm_response_still_sends_boundary_and_done(self):
-        """Even with empty LLM output, boundary block and [DONE] are sent."""
+    async def test_empty_llm_response_still_sends_state_update_and_done(self):
+        """Even with empty LLM output, state_update and [DONE] are sent."""
         with _patch_openai([]):
             events = await _collect(stream_conversation("Test"))
         parsed = _parse_events(events)
         boundary_events = [e for e in parsed if e.get("type") == "boundary_block"]
-        assert len(boundary_events) == 1
+        assert boundary_events == []
+        assert any(e.get("type") == "state_update" for e in parsed)
         assert events[-1] == "data: [DONE]\n\n"
 
     @pytest.mark.asyncio
@@ -671,7 +699,9 @@ class TestStreamConversation:
 
         parsed = _parse_events(events)
         text_chunks = [e for e in parsed if e.get("type") == "text_chunk"]
-        assert all(e["text"] for e in text_chunks)  # no empty text chunks
+        assert text_chunks == []
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert state_update["reply"] == "FKM."
 
 
 class TestConversationParity:

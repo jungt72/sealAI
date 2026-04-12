@@ -9,16 +9,14 @@ Handles the CONVERSATION routing zone:
 
 Properties (Umbauplan F-A.4):
 - Direct LLM call (OpenAI async streaming)
-- SSE streaming — same wire format as governed path
 - No RAG, no LangGraph, no graph state
-- Stateless — caller provides history slice
-- Boundary block appended deterministically after LLM text
+- Stateless, caller provides history slice
+- Internal preview/audit events remain available before the SSE adapter
+- Productive SSE exposes only state_update.reply as visible text
 - All output passes through response_renderer outward contract
 
-SSE wire format (matches existing sse_runtime.py convention):
-    data: {"type": "text_chunk", "text": "..."}\n\n
-    data: {"type": "boundary_block", "text": "..."}\n\n
-    data: {"type": "stream_end"}\n\n
+Productive SSE wire format:
+    data: {"type": "state_update", "reply": "..."}\n\n
     data: [DONE]\n\n
 """
 from __future__ import annotations
@@ -118,10 +116,11 @@ def _conversation_state_update_event(
     reply: str,
     strategy: ConversationStrategyContract | None,
     turn_context,
+    structured_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = assemble_user_facing_reply(
         reply=reply,
-        structured_state=None,
+        structured_state=structured_state,
         policy_path="fast",
         run_meta=None,
         state_update=False,
@@ -181,11 +180,12 @@ def _build_messages(
     )
     if strategy_instruction:
         msgs.append({"role": "system", "content": strategy_instruction})
-    for turn in (history or []):
-        role = turn.get("role", "")
-        content = turn.get("content", "")
-        if role in ("user", "assistant") and content:
-            msgs.append({"role": role, "content": content})
+    if mode != "EXPLORATION":
+        for turn in (history or []):
+            role = turn.get("role", "")
+            content = turn.get("content", "")
+            if role in ("user", "assistant") and content:
+                msgs.append({"role": role, "content": content})
     # Belt-and-suspenders: inject explicit "DO NOT ASK AGAIN" block when we have
     # confirmed params. This guards against the LLM ignoring history-based hints.
     if case_summary and case_summary.strip():
@@ -503,6 +503,8 @@ async def iter_conversation_events(
     history: list[dict[str, str]] | None = None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
+    direct_reply: str | None = None,
+    structured_state: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Yield canonical conversation events for both JSON and SSE adapters.
 
@@ -523,8 +525,6 @@ async def iter_conversation_events(
         - Boundary block (FAST_PATH_DISCLAIMER) is always appended on success.
         - LLM errors yield an error event and stop.
     """
-    client = openai.AsyncOpenAI()
-    messages = _build_messages(message, history, case_summary=case_summary, mode=mode)
     strategy = _build_conversation_strategy_contract(
         message,
         history=history,
@@ -537,6 +537,27 @@ async def iter_conversation_events(
         case_summary=case_summary,
         mode=mode,
     )
+    if direct_reply is not None:
+        final_reply = str(direct_reply or "").strip()
+        if final_reply:
+            final_reply = compose_user_facing_mouth_reply(
+                final_reply,
+                turn_context,
+                response_class="conversational_answer",
+            )
+            final_reply = str(render_response(final_reply, path="CONVERSATION").text or final_reply).strip()
+        yield _conversation_state_update_event(
+            reply=final_reply,
+            strategy=strategy,
+            turn_context=turn_context,
+            structured_state=structured_state,
+        )
+        yield _conversation_visible_event("boundary_block", FAST_PATH_DISCLAIMER)
+        yield {"type": "stream_end"}
+        return
+
+    client = openai.AsyncOpenAI()
+    messages = _build_messages(message, history, case_summary=case_summary, mode=mode)
 
     accumulated: list[str] = []
     try:
@@ -581,6 +602,7 @@ async def iter_conversation_events(
         reply=final_reply,
         strategy=strategy,
         turn_context=turn_context,
+        structured_state=structured_state,
     )
 
     yield _conversation_visible_event("boundary_block", FAST_PATH_DISCLAIMER)
@@ -593,12 +615,21 @@ async def run_conversation(
     history: list[dict[str, str]] | None = None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
+    direct_reply: str | None = None,
+    structured_state: dict[str, Any] | None = None,
 ) -> ConversationResult:
     """Execute the conversation path and return the canonical reply text."""
     reply_text = ""
     replacement_echo: str | None = None
 
-    async for event in iter_conversation_events(message, history=history, case_summary=case_summary, mode=mode):
+    async for event in iter_conversation_events(
+        message,
+        history=history,
+        case_summary=case_summary,
+        mode=mode,
+        direct_reply=direct_reply,
+        structured_state=structured_state,
+    ):
         event_type = str(event.get("type") or "")
         if event_type == "text_replacement":
             replacement_echo = str(event.get("text") or "")
@@ -624,20 +655,32 @@ async def stream_conversation(
     history: list[dict[str, str]] | None = None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
+    direct_reply: str | None = None,
+    structured_state: dict[str, Any] | None = None,
 ) -> AsyncGenerator[str, None]:
-    """Stream a conversation-path response as SSE events."""
-    async for event in iter_conversation_events(message, history=history, case_summary=case_summary, mode=mode):
+    """Stream the canonical conversation-path SSE contract.
+
+    The only user-visible reply surface on `/api/agent/chat/stream` is the
+    final `state_update.reply`. Preview chunks, replacements, and boundary
+    blocks may still exist as internal events for parity/audit tests, but the
+    productive SSE adapter does not expose them as a second text authority.
+    """
+    async for event in iter_conversation_events(
+        message,
+        history=history,
+        case_summary=case_summary,
+        mode=mode,
+        direct_reply=direct_reply,
+        structured_state=structured_state,
+    ):
         event_type = str(event.get("type") or "")
         if event_type == "error":
             yield _sse_error(str(event.get("message") or ""))
             yield _sse_end()
             return
         if event_type == "stream_end":
-            yield 'data: {"type": "stream_end"}\n\n'
             yield _sse_end()
             return
         if event_type == "state_update":
             yield f"data: {json.dumps(event, default=str)}\n\n"
             continue
-        if "text" in event:
-            yield f"data: {json.dumps(event, default=str)}\n\n"
