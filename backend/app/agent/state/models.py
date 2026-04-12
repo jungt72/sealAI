@@ -816,7 +816,11 @@ class GovernedSessionState(BaseModel):
     exploration_progress: ExplorationProgressState = Field(default_factory=ExplorationProgressState)
 
     analysis_cycle: int = Field(default=0, ge=0)
-    """Number of completed analysis cycles in this session."""
+    """Internal cycle counter within a single graph invocation (reset to 0 each user turn)."""
+
+    user_turn_index: int = Field(default=0, ge=0)
+    """Monotonically increasing index per user message turn.
+    Used as turn_index for ObservedExtractions so newer turns can override older ones."""
 
     max_cycles: int = Field(default=3, ge=1)
     """Configured cycle limit. When exceeded → auto Class C."""

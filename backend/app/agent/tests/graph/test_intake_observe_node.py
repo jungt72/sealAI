@@ -119,6 +119,27 @@ class TestRegexExtraction:
         assert "temperature_c" in names
         assert "pressure_bar" in names
 
+    @pytest.mark.asyncio
+    async def test_extended_need_analysis_fields_extracted(self):
+        state = _fresh_state(
+            pending_message=(
+                "Gleitringdichtung fuer chemische Pumpe, 10 bar, 90°C, "
+                "Betrieb 24/7, Druck von innen nach aussen, Salzsaeure 10%, "
+                "etwas Schmutz, FDA."
+            )
+        )
+        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+            result = await intake_observe_node(state)
+        values = {e.field_name: e.raw_value for e in result.observed.raw_extractions}
+
+        assert values["sealing_type"] == "mechanical_seal"
+        assert values["duty_profile"] == "continuous"
+        assert values["pressure_direction"] == "inside_out"
+        assert values["installation"] == "pump"
+        assert values["contamination"] == "solids_or_particles"
+        assert "food_contact" in values["compliance"]
+        assert "concentration_context" in values["medium_qualifiers"]
+
 
 # ---------------------------------------------------------------------------
 # 2. Regex pass — material / medium tokens
@@ -326,12 +347,36 @@ class TestEdgeCases:
 
     @pytest.mark.asyncio
     async def test_turn_index_assigned_from_analysis_cycle(self):
-        """turn_index in extractions must equal state.analysis_cycle."""
-        state = _fresh_state(pending_message="12 bar", analysis_cycle=3)
+        """turn_index falls back to analysis_cycle when user_turn_index is 0."""
+        state = _fresh_state(pending_message="12 bar", analysis_cycle=3, user_turn_index=0)
+        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+            result = await intake_observe_node(state)
+        # user_turn_index=0 → falsy → falls back to analysis_cycle=3
+        for e in result.observed.raw_extractions:
+            assert e.turn_index == 3
+
+    @pytest.mark.asyncio
+    async def test_user_turn_index_takes_priority_over_analysis_cycle(self):
+        """user_turn_index must be used as turn_index when non-zero."""
+        state = _fresh_state(pending_message="12 bar", analysis_cycle=0, user_turn_index=5)
         with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
             result = await intake_observe_node(state)
         for e in result.observed.raw_extractions:
-            assert e.turn_index == 3
+            assert e.turn_index == 5
+
+    @pytest.mark.asyncio
+    async def test_newer_turn_overrides_older_extraction_in_reducer(self):
+        """Reducer must pick the extraction with higher turn_index for same field."""
+        from app.agent.state.models import ObservedState, ObservedExtraction
+        from app.agent.state.reducers import reduce_observed_to_normalized
+
+        old = ObservedExtraction(field_name="temperature_c", raw_value=80.0, raw_unit="°C",
+                                 source="llm", confidence=0.92, turn_index=0)
+        new = ObservedExtraction(field_name="temperature_c", raw_value=90.0, raw_unit="°C",
+                                 source="llm", confidence=0.92, turn_index=1)
+        observed = ObservedState(raw_extractions=[old, new])
+        normalized = reduce_observed_to_normalized(observed)
+        assert normalized.parameters["temperature_c"].value == 90.0
 
     @pytest.mark.asyncio
     async def test_llm_disabled_only_regex_runs(self):

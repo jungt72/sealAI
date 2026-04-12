@@ -1948,12 +1948,15 @@ async def _run_governed_graph_once(
                 redis_client=redis_client,
             )
 
+            _user_turn_index = len(governed_state.conversation_messages) // 2
             graph_input = GraphState.model_validate(
                 {
                     **governed_state.model_dump(),
                     "tenant_id": tenant_id,
                     "session_id": request.session_id,
                     "pending_message": request.message,
+                    "analysis_cycle": 0,
+                    "user_turn_index": _user_turn_index,
                 }
             )
             raw_result = await GOVERNED_GRAPH.ainvoke(graph_input)
@@ -1971,12 +1974,15 @@ async def _run_governed_graph_once(
             )
             return result_state, persisted_state
 
+    _user_turn_index = len(governed_state.conversation_messages) // 2
     graph_input = GraphState.model_validate(
         {
             **governed_state.model_dump(),
             "tenant_id": tenant_id,
             "session_id": request.session_id,
             "pending_message": request.message,
+            "analysis_cycle": 0,
+            "user_turn_index": _user_turn_index,
         }
     )
     raw_result = await GOVERNED_GRAPH.ainvoke(graph_input)
@@ -2020,12 +2026,15 @@ async def _stream_governed_graph(
                     redis_client=redis_client,
                 )
 
+            _user_turn_index = len(governed_state.conversation_messages) // 2
             graph_input = GraphState.model_validate(
                 {
                     **governed_state.model_dump(),
                     "tenant_id": tenant_id,
                     "session_id": request.session_id,
                     "pending_message": request.message,
+                    "analysis_cycle": 0,
+                    "user_turn_index": _user_turn_index,
                 }
             )
 

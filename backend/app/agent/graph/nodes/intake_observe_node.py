@@ -373,7 +373,9 @@ async def intake_observe_node(state: GraphState) -> GraphState:
         log.debug("[intake_observe_node] pending_message is empty — skipping")
         return state
 
-    turn_index = state.analysis_cycle
+    # user_turn_index is monotonically increasing per user message (set by router
+    # before each ainvoke). Falls back to analysis_cycle for backwards compatibility.
+    turn_index = getattr(state, "user_turn_index", None) or state.analysis_cycle
     observed = state.observed
 
     # ── Pass 1: deterministic regex extraction ────────────────────────────
