@@ -1804,6 +1804,88 @@ def _block_residual_legacy_structured_usage(*, session_id: str, decision: Any) -
     )
 
 
+_EXPLORATION_LLM_MODEL: str = os.environ.get("SEALAI_EXPLORATION_MODEL", "gpt-4o-mini")
+
+
+async def _stream_exploration_reply(
+    message: str,
+    *,
+    tenant_id: str,
+) -> AsyncGenerator[str, None]:
+    """RAG-grounded EXPLORATION reply generator.
+
+    Retrieves up to 3 relevant chunks from Qdrant, renders explore.j2
+    with the RAG context, then streams a direct LLM response.
+    Yields SSE frames matching the stream_conversation() contract:
+        data: {"type": "state_update", "reply": "..."}\n\n
+        data: [DONE]\n\n
+    """
+    import openai as _openai  # noqa: PLC0415
+    from app.agent.services.real_rag import retrieve_with_tenant  # noqa: PLC0415
+    from app.agent.prompts import prompts  # noqa: PLC0415
+
+    # ── RAG retrieval ────────────────────────────────────────────────────────
+    rag_context = ""
+    try:
+        chunks = await retrieve_with_tenant(message, tenant_id, k=3)
+        if chunks:
+            parts = []
+            for chunk in chunks:
+                text = str(chunk.get("content") or chunk.get("text") or "").strip()
+                if text:
+                    parts.append(text)
+            if parts:
+                rag_context = "\n\n---\n\n".join(parts)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("[exploration] RAG retrieval failed (%s) — proceeding without context", exc)
+
+    # ── Prompt rendering ─────────────────────────────────────────────────────
+    try:
+        system_prompt = prompts.render(
+            "exploration/explore.j2",
+            {"rag_context": rag_context, "topic": message, "detected_parameters": []},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("[exploration] prompt render failed (%s) — using fallback", exc)
+        system_prompt = (
+            "Du bist der Explorations-Assistent von SeaLAI. "
+            "Beantworte die technische Frage präzise und informativ."
+        )
+
+    # ── LLM streaming call ───────────────────────────────────────────────────
+    reply_parts: list[str] = []
+    try:
+        client = _openai.AsyncOpenAI()
+        stream = await client.chat.completions.create(
+            model=_EXPLORATION_LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message},
+            ],
+            temperature=0.3,
+            max_tokens=800,
+            stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                reply_parts.append(delta)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("[exploration] LLM call failed (%s) — returning empty reply", exc)
+
+    reply = "".join(reply_parts).strip()
+    if not reply:
+        reply = "Ich konnte keine technische Antwort ermitteln. Bitte präzisieren Sie Ihre Frage."
+
+    state_update_event = {
+        "type": "state_update",
+        "reply": reply,
+        "response_class": "conversational_answer",
+    }
+    yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
+    yield "data: [DONE]\n\n"
+
+
 async def _stream_light_runtime(
     *,
     message: str,
@@ -1823,13 +1905,23 @@ async def _stream_light_runtime(
     final_reply = ""
     final_strategy: dict[str, Any] | None = None
     final_structured_state: dict[str, Any] | None = None
-    async for frame in stream_conversation(
-        message,
-        history=history,
-        case_summary=case_summary,
-        mode=mode,
-        direct_reply=direct_reply,
-    ):
+
+    if mode == "EXPLORATION" and request.session_id:
+        tenant_id, _, _ = _canonical_scope(current_user, case_id=request.session_id)
+        frame_gen: AsyncGenerator[str, None] = _stream_exploration_reply(
+            message,
+            tenant_id=tenant_id,
+        )
+    else:
+        frame_gen = stream_conversation(
+            message,
+            history=history,
+            case_summary=case_summary,
+            mode=mode,
+            direct_reply=direct_reply,
+        )
+
+    async for frame in frame_gen:
         if not frame.startswith("data: "):
             continue
         raw = frame[6:].strip()

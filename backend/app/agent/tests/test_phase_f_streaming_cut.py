@@ -181,9 +181,10 @@ class TestBothFlagsOnConversationUsesNewRuntime:
         stream_conv_called = []
         agent_sse_called = []
 
-        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None):
+        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None, **_kwargs):
             stream_conv_called.append({"message": message, "mode": mode})
             yield "data: {\"type\": \"text_chunk\", \"text\": \"Hallo\"}\n\n"
+            yield "data: {\"type\": \"state_update\", \"reply\": \"Hallo\", \"response_class\": \"conversational_answer\"}\n\n"
             yield "data: [DONE]\n\n"
 
         async def _fake_sse_gen(state, *, graph, on_complete=None):
@@ -212,7 +213,8 @@ class TestBothFlagsOnConversationUsesNewRuntime:
         assert stream_conv_called, "stream_conversation must be called for light route"
         assert stream_conv_called[0]["mode"] == "CONVERSATION"
         assert not agent_sse_called, "agent_sse_generator must NOT be called for light route"
-        assert any("text_chunk" in f for f in frames), "text_chunk frames must be forwarded"
+        assert not any("text_chunk" in f for f in frames), "preview text must not be forwarded"
+        assert any("state_update" in f for f in frames), "canonical state_update frame must be forwarded"
 
 
 # ---------------------------------------------------------------------------
@@ -401,21 +403,27 @@ class TestLegacyPolicyFallbackUsesConversationRuntime:
 class TestGateRoutesConversationToStreamConversation:
     @pytest.mark.asyncio
     async def test_gate_routes_light_mode_to_stream_conversation(self):
-        """Mit beiden Flags aktiv und Light-Route landet die Anfrage in stream_conversation.
+        """Mit beiden Flags aktiv und EXPLORATION-Route landet die Anfrage in _stream_exploration_reply.
 
-        Phase F-A.5: Der _from_legacy_facade-Bypass ist entfernt. Alle Pfade
-        (BFF und Legacy-Facade) nutzen denselben Dispatch — Gate entscheidet.
+        Phase F-A.5 / Bug-1-Fix: EXPLORATION nutzt jetzt RAG via _stream_exploration_reply,
+        nicht stream_conversation. CONVERSATION bleibt auf stream_conversation.
         """
         import app.agent.api.router as router_module
 
+        exploration_called = []
         stream_conv_called = []
         agent_sse_called = []
+
+        async def _fake_exploration_reply(message, *, tenant_id):
+            exploration_called.append({"message": message, "tenant_id": tenant_id})
+            yield f"data: {json.dumps({'type': 'state_update', 'reply': 'RAG-Antwort'})}\n\n"
+            yield "data: [DONE]\n\n"
 
         async def _fake_sse_gen(state, *, graph, on_complete=None):
             agent_sse_called.append(True)
             yield "data: [DONE]\n\n"
 
-        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None):
+        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None, **_kwargs):
             stream_conv_called.append(mode)
             yield "data: [DONE]\n\n"
 
@@ -435,6 +443,7 @@ class TestGateRoutesConversationToStreamConversation:
              patch("app.agent.runtime.session_manager.get_or_create_session_async", AsyncMock(return_value=mock_envelope)), \
              patch("app.agent.runtime.session_manager.save_session_async", AsyncMock()), \
              patch("app.agent.runtime.gate.decide_route_async", AsyncMock(return_value=mock_gate_decision)), \
+             patch("app.agent.api.router._stream_exploration_reply", side_effect=_fake_exploration_reply), \
              patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
              patch("app.agent.api.router.agent_sse_generator", side_effect=_fake_sse_gen):
 
@@ -445,8 +454,9 @@ class TestGateRoutesConversationToStreamConversation:
                 )
             )
 
-        assert stream_conv_called == ["EXPLORATION"], (
-            "Light route must reach stream_conversation with the routed mode"
+        assert exploration_called, "EXPLORATION route must reach _stream_exploration_reply"
+        assert not stream_conv_called, (
+            "EXPLORATION must NOT go through stream_conversation (Bug 1 fix)"
         )
         assert not agent_sse_called, (
             "Light route must NOT fall through to agent_sse_generator"
@@ -494,7 +504,7 @@ class TestPolicyViolationSafeFallbackVisibleAsStateUpdate:
         #   - a text_replacement (for backend audit)
         #   - a final state_update with canonical fallback text
         #   - boundary_block + stream_end + [DONE]
-        async def _fake_stream_with_policy_violation(message, *, history=None, case_summary=None, mode=None):
+        async def _fake_stream_with_policy_violation(message, *, history=None, case_summary=None, mode=None, **_kwargs):
             import json
             yield f"data: {json.dumps({'type': 'text_chunk', 'text': 'VERBOTEN '})}\n\n"
             yield f"data: {json.dumps({'type': 'text_replacement', 'text': FALLBACK_TEXT})}\n\n"
@@ -535,8 +545,8 @@ class TestPolicyViolationSafeFallbackVisibleAsStateUpdate:
             if payload.get("type") == "state_update":
                 final_reply = payload.get("reply")
 
-        assert has_text_replacement, (
-            "text_replacement must be present in stream for backend audit purposes"
+        assert not has_text_replacement, (
+            "text_replacement must stay out of the canonical visible stream"
         )
         assert final_reply == FALLBACK_TEXT
 
@@ -552,7 +562,9 @@ class TestPhase1LiveCanon:
         mock_envelope = SessionEnvelope(
             session_id="sess-1", tenant_id="tenant-1", user_id="user-1"
         )
-        mock_gate_decision = GateDecision(route="EXPLORATION", reason="deterministic_light:goal_problem_or_uncertainty")
+        # CONVERSATION path passes history to stream_conversation and persists replies.
+        # EXPLORATION path now routes to _stream_exploration_reply (RAG-based, no history).
+        mock_gate_decision = GateDecision(route="CONVERSATION", reason="deterministic_light:goal_smalltalk")
         fake_redis = _FakeRedis()
 
         governed_state = GovernedSessionState(
@@ -566,7 +578,7 @@ class TestPhase1LiveCanon:
 
         captured = {}
 
-        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None):
+        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None, **_kwargs):
             captured["message"] = message
             captured["history"] = history
             captured["case_summary"] = case_summary
