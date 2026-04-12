@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TypedDict
+from typing import Callable, List, TypedDict
 
 from app.core.prompts import PromptLoader
 from app.agent.runtime.outward_names import normalize_outward_response_class
@@ -121,6 +121,20 @@ def _build_turn_context_instruction(
     return "\n".join(lines)
 
 
+_REFLECTION_PREFIX_BUILDERS: dict[str, Callable[[str, List[str]], str]] = {
+    "structured_clarification": lambda facts_text, _open: f"Damit ist schon klarer: {facts_text}.",
+    "governed_state_update":    lambda facts_text, open_pts: (
+        f"Damit ist die Lage schon enger: {facts_text}." if open_pts else f"Stand jetzt: {facts_text}."
+    ),
+    "technical_preselection":   lambda facts_text, open_pts: (
+        f"Die technische Richtung ist jetzt belastbarer: {facts_text}." if open_pts
+        else f"Die technische Richtung ist jetzt enger: {facts_text}."
+    ),
+    "candidate_shortlist":      lambda facts_text, _open: f"Auf dieser Grundlage steht jetzt: {facts_text}.",
+    "inquiry_ready":            lambda facts_text, _open: f"Die Anfragebasis steht jetzt auf: {facts_text}.",
+}
+
+
 def build_reflection_prefix(
     turn_context: TurnContextContract | None,
     *,
@@ -139,20 +153,9 @@ def build_reflection_prefix(
     facts_text = ", ".join(facts[:2])
 
     if facts_text:
-        if response_class == "structured_clarification":
-            return f"Damit ist schon klarer: {facts_text}."
-        if response_class == "governed_state_update":
-            if open_points:
-                return f"Damit ist die Lage schon enger: {facts_text}."
-            return f"Stand jetzt: {facts_text}."
-        if response_class == "technical_preselection":
-            if open_points:
-                return f"Die technische Richtung ist jetzt belastbarer: {facts_text}."
-            return f"Die technische Richtung ist jetzt enger: {facts_text}."
-        if response_class == "candidate_shortlist":
-            return f"Auf dieser Grundlage steht jetzt: {facts_text}."
-        if response_class == "inquiry_ready":
-            return f"Die Anfragebasis steht jetzt auf: {facts_text}."
+        prefix_builder = _REFLECTION_PREFIX_BUILDERS.get(response_class)
+        if prefix_builder is not None:
+            return prefix_builder(facts_text, open_points)
         if turn_context.conversation_phase in {"recommendation", "matching", "rfq_handover", "review"}:
             return f"Bisher steht: {facts_text}."
         if turn_context.conversation_phase in {"narrowing", "clarification"}:

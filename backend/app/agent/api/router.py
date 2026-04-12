@@ -6,7 +6,7 @@ from copy import deepcopy
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, Literal, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from fastapi.encoders import jsonable_encoder
@@ -52,6 +52,7 @@ from app.agent.api.models import (
 from app.agent.graph.nodes.output_contract_node import (
     _determine_response_class,
     build_governed_conversation_strategy_contract,
+    classify_message_as_knowledge_override,
 )
 from app.agent.state.models import (
     ConversationMessage,
@@ -1483,67 +1484,61 @@ async def _update_governed_state_post_graph(
     return updated
 
 
+_GOVERNED_STATE_VARIANTS: dict[str, dict[str, str]] = {
+    "inquiry_ready": {
+        "case_status": "inquiry_ready",
+        "output_status": "inquiry_ready",
+        "next_step": "review_inquiry_handover",
+        "primary_allowed_action": "inspect_inquiry_basis",
+    },
+    "candidate_shortlist": {
+        "case_status": "matching_available",
+        "output_status": "candidate_shortlist",
+        "next_step": "review_matching_result",
+        "primary_allowed_action": "inspect_manufacturer_candidates",
+    },
+    "structured_clarification": {
+        "case_status": "clarification_needed",
+        "output_status": "clarification_needed",
+        "next_step": "provide_missing_parameters",
+        "primary_allowed_action": "answer_open_points",
+    },
+}
+
+
+def _governed_state_extras_inquiry(state: GovernedSessionState) -> dict[str, Any]:
+    selected = state.rfq.selected_manufacturer_ref
+    return {
+        "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
+        "dispatch_ready": state.dispatch.dispatch_ready,
+        "dispatch_status": state.dispatch.dispatch_status,
+    }
+
+
+def _governed_state_extras_shortlist(state: GovernedSessionState) -> dict[str, Any]:
+    selected = state.matching.selected_manufacturer_ref
+    return {"selected_manufacturer": selected.manufacturer_name if selected is not None else None}
+
+
+_GOVERNED_STATE_EXTRAS: dict[str, Callable[[GovernedSessionState], dict[str, Any]]] = {
+    "inquiry_ready": _governed_state_extras_inquiry,
+    "candidate_shortlist": _governed_state_extras_shortlist,
+}
+
+
 def _governed_structured_state(state: GovernedSessionState, response_class: str) -> dict[str, Any]:
     response_class = normalize_outward_response_class(response_class)
     active_blockers = list(state.asserted.blocking_unknowns) + list(state.asserted.conflict_flags)
     medium_status = state.medium_classification.status
     medium_family = state.medium_classification.family
-    if response_class == "inquiry_ready":
-        selected = state.rfq.selected_manufacturer_ref
-        return {
-            "case_status": "inquiry_ready",
-            "output_status": "inquiry_ready",
-            "next_step": "review_inquiry_handover",
-            "primary_allowed_action": "inspect_inquiry_basis",
-            "active_blockers": active_blockers,
-            **build_admissibility_payload(state.governance.rfq_admissible),
-            "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
-            "dispatch_ready": state.dispatch.dispatch_ready,
-            "dispatch_status": state.dispatch.dispatch_status,
-            "medium_classification_status": medium_status,
-            "medium_family": medium_family,
-            "norm_status": state.sealai_norm.status,
-            "export_status": state.export_profile.status,
-            "mapping_status": state.manufacturer_mapping.status,
-            "contract_status": state.dispatch_contract.status,
-        }
-    if response_class == "candidate_shortlist":
-        selected = state.matching.selected_manufacturer_ref
-        return {
-            "case_status": "matching_available",
-            "output_status": "candidate_shortlist",
-            "next_step": "review_matching_result",
-            "primary_allowed_action": "inspect_manufacturer_candidates",
-            "active_blockers": active_blockers,
-            **build_admissibility_payload(state.governance.rfq_admissible),
-            "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
-            "medium_classification_status": medium_status,
-            "medium_family": medium_family,
-            "norm_status": state.sealai_norm.status,
-            "export_status": state.export_profile.status,
-            "mapping_status": state.manufacturer_mapping.status,
-            "contract_status": state.dispatch_contract.status,
-        }
-    if response_class == "structured_clarification":
-        return {
-            "case_status": "clarification_needed",
-            "output_status": "clarification_needed",
-            "next_step": "provide_missing_parameters",
-            "primary_allowed_action": "answer_open_points",
-            "active_blockers": active_blockers,
-            **build_admissibility_payload(state.governance.rfq_admissible),
-            "medium_classification_status": medium_status,
-            "medium_family": medium_family,
-            "norm_status": state.sealai_norm.status,
-            "export_status": state.export_profile.status,
-            "mapping_status": state.manufacturer_mapping.status,
-            "contract_status": state.dispatch_contract.status,
-        }
-    return {
+    variant: dict[str, Any] = _GOVERNED_STATE_VARIANTS.get(response_class) or {
         "case_status": "governed_visible",
         "output_status": response_class,
         "next_step": "review_governed_result",
         "primary_allowed_action": "continue_governed_session",
+    }
+    base: dict[str, Any] = {
+        **variant,
         "active_blockers": active_blockers,
         **build_admissibility_payload(state.governance.rfq_admissible),
         "medium_classification_status": medium_status,
@@ -1553,6 +1548,19 @@ def _governed_structured_state(state: GovernedSessionState, response_class: str)
         "mapping_status": state.manufacturer_mapping.status,
         "contract_status": state.dispatch_contract.status,
     }
+    extras_fn = _GOVERNED_STATE_EXTRAS.get(response_class)
+    if extras_fn is not None:
+        return {**base, **extras_fn(state)}
+    return base
+
+
+_REPLY_COMPOSERS: dict[str, Callable[[TurnContextContract, str], str]] = {
+    "structured_clarification": lambda tc, fb: compose_clarification_reply(tc, fallback_text=fb),
+    "governed_state_update":    lambda tc, fb: compose_result_reply(tc, fallback_text=fb, response_class="governed_state_update", facts_prefix="Bisher steht", open_points_prefix="Zur Absicherung noch offen"),
+    "technical_preselection":   lambda tc, fb: compose_result_reply(tc, fallback_text=fb, response_class="technical_preselection", facts_prefix="Technische Richtung", open_points_prefix="Im Scope jetzt noch pruefen"),
+    "candidate_shortlist":      lambda tc, fb: compose_result_reply(tc, fallback_text=fb, response_class="candidate_shortlist", facts_prefix="Belastbarer Rahmen", open_points_prefix="Vor Herstellerfreigabe noch offen"),
+    "inquiry_ready":            lambda tc, fb: compose_result_reply(tc, fallback_text=fb, response_class="inquiry_ready", facts_prefix="Anfragebasis", open_points_prefix="Vor Versand noch im Blick"),
+}
 
 
 def _compose_deterministic_governed_reply(
@@ -1562,43 +1570,9 @@ def _compose_deterministic_governed_reply(
     fallback_text: str,
 ) -> str:
     response_class = normalize_outward_response_class(response_class)
-    if response_class == "structured_clarification":
-        return compose_clarification_reply(
-            turn_context,
-            fallback_text=fallback_text,
-        )
-    if response_class == "governed_state_update":
-        return compose_result_reply(
-            turn_context,
-            fallback_text=fallback_text,
-            response_class=response_class,
-            facts_prefix="Bisher steht",
-            open_points_prefix="Zur Absicherung noch offen",
-        )
-    if response_class == "technical_preselection":
-        return compose_result_reply(
-            turn_context,
-            fallback_text=fallback_text,
-            response_class=response_class,
-            facts_prefix="Technische Richtung",
-            open_points_prefix="Im Scope jetzt noch pruefen",
-        )
-    if response_class == "candidate_shortlist":
-        return compose_result_reply(
-            turn_context,
-            fallback_text=fallback_text,
-            response_class=response_class,
-            facts_prefix="Belastbarer Rahmen",
-            open_points_prefix="Vor Herstellerfreigabe noch offen",
-        )
-    if response_class == "inquiry_ready":
-        return compose_result_reply(
-            turn_context,
-            fallback_text=fallback_text,
-            response_class=response_class,
-            facts_prefix="Anfragebasis",
-            open_points_prefix="Vor Versand noch im Blick",
-        )
+    composer = _REPLY_COMPOSERS.get(response_class)
+    if composer is not None:
+        return composer(turn_context, fallback_text)
     return str(fallback_text or "").strip()
 
 
@@ -2317,6 +2291,29 @@ async def event_generator(
         return
 
     if dispatch.runtime_mode == "GOVERNED":
+        # Knowledge / comparison override: in a GOVERNED session, pure knowledge
+        # and comparison questions must not trigger a governed state-dump.
+        # They are routed to the appropriate light runtime (no graph run).
+        _knowledge_override = classify_message_as_knowledge_override(request.message)
+        if _knowledge_override is not None:
+            _override_mode: Literal["CONVERSATION", "EXPLORATION"] = (
+                "CONVERSATION" if _knowledge_override == "conversational_answer" else "EXPLORATION"
+            )
+            _log.debug(
+                "[runtime_authority] stream session=%s knowledge_override=%s mode=%s",
+                request.session_id,
+                _knowledge_override,
+                _override_mode,
+            )
+            async for frame in _stream_light_runtime(
+                message=request.message,
+                request=request,
+                current_user=current_user,
+                mode=_override_mode,
+                governed_state_override=dispatch.governed_state,
+            ):
+                yield frame
+            return
         _log.debug(
             "[runtime_authority] stream session=%s authority=governed_graph reason=%s",
             request.session_id,
@@ -2401,6 +2398,19 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser | None =
         )
 
     if dispatch.runtime_mode == "GOVERNED":
+        # Knowledge / comparison override (same as streaming path)
+        _knowledge_override_json = classify_message_as_knowledge_override(request.message)
+        if _knowledge_override_json is not None:
+            _override_mode_json: Literal["CONVERSATION", "EXPLORATION"] = (
+                "CONVERSATION" if _knowledge_override_json == "conversational_answer" else "EXPLORATION"
+            )
+            return await _run_light_chat_response(
+                message=request.message,
+                request=request,
+                current_user=current_user,
+                mode=_override_mode_json,
+                governed_state_override=dispatch.governed_state,
+            )
         _log.debug(
             "[runtime_authority] json session=%s authority=governed_graph reason=%s",
             request.session_id,

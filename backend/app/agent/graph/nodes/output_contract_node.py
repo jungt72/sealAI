@@ -58,7 +58,8 @@ output_public shape (Invariant 8 — no internal artefacts):
 from __future__ import annotations
 
 import logging
-from typing import Any
+import re
+from typing import Any, Callable, Literal
 
 from langgraph.types import Command, interrupt
 
@@ -72,6 +73,68 @@ from app.agent.state.models import ConversationStrategyContract
 
 log = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Knowledge / comparison question detection (zone-stickiness override)
+# ---------------------------------------------------------------------------
+# In a GOVERNED session, pure knowledge or comparison questions must NOT trigger
+# a governed_state_update. Instead they are routed to the light runtime
+# (conversation_runtime or exploration_runtime) without any state dump.
+
+_KNOWLEDGE_PATTERNS: tuple[str, ...] = (
+    r"was ist\b",
+    r"was sind\b",
+    r"erkl[äa]r",
+    r"erkläre\b",
+    r"erklär\b",
+    r"wie funktioniert",
+    r"was bedeutet",
+    r"was bedeutet\b",
+    r"was heisst",
+    r"was versteht man unter",
+    r"kannst du.*erklären",
+)
+
+_COMPARISON_PATTERNS: tuple[str, ...] = (
+    r"vergleich",
+    r"\bunterschied\b",
+    r"\bversus\b",
+    r"\bvs\.?\b",
+    r"besser.*oder",
+    r"oder.*besser",
+)
+
+# These markers indicate a parameter correction/update — override is suppressed.
+_PARAM_UPDATE_MARKERS: tuple[str, ...] = (
+    r"\bstatt\b",
+    r"\bkorrig",
+    r"\bsondern\b",
+    r"\bänder",
+    r"\bkorrekt(?:ur)?\b",
+)
+
+
+def classify_message_as_knowledge_override(
+    message: str,
+) -> Literal["conversational_answer", "exploration_answer"] | None:
+    """Return an override response class for knowledge/comparison questions in GOVERNED.
+
+    Returns None when the message is a parameter update (correction markers present)
+    or when no knowledge/comparison pattern matches.
+    """
+    lowered = str(message or "").strip().lower()
+    if not lowered:
+        return None
+    # Parameter update markers suppress the override — keep governed flow
+    if any(re.search(p, lowered, re.IGNORECASE) for p in _PARAM_UPDATE_MARKERS):
+        return None
+    # Comparison is checked first — "was ist besser: X oder Y?" should use RAG
+    if any(re.search(p, lowered, re.IGNORECASE) for p in _COMPARISON_PATTERNS):
+        return "exploration_answer"
+    if any(re.search(p, lowered, re.IGNORECASE) for p in _KNOWLEDGE_PATTERNS):
+        return "conversational_answer"
+    return None
+
+
 # Outward response classes (Blaupause V1.1)
 _STRUCTURED_CLARIFICATION = "structured_clarification"
 _GOVERNED_STATE_UPDATE     = "governed_state_update"
@@ -79,12 +142,52 @@ _TECHNICAL_PRESELECTION = "technical_preselection"
 _CANDIDATE_SHORTLIST = "candidate_shortlist"
 _INQUIRY_READY = "inquiry_ready"
 
+# Fields that are treated as optional when 4+ core params are already confirmed.
+# When all remaining missing fields are in this set, the system confirms parameters
+# and states assumptions instead of asking a question.
+_OPTIONAL_CLARIFICATION_FIELDS: frozenset[str] = frozenset({
+    "installation",
+    "geometry_context",
+    "duty_profile",
+    "counterface_surface",
+    "contamination",
+    "tolerances",
+    "industry",
+    "compliance",
+    "motion_type",
+    "pressure_direction",
+    "medium_qualifiers",
+})
+
+# Default assumptions stated when optional fields are missing and we skip asking.
+_ASSUMPTION_DEFAULTS: dict[str, str] = {
+    "installation": "Pumpen-Einbau (typische Radialdichtungs-Einbaugeometrie)",
+    "geometry_context": "Standard-Einbau ohne besondere Bauraumrestriktionen",
+    "duty_profile": "Dauerbetrieb",
+    "motion_type": "rotierend",
+    "counterface_surface": "geschliffene Welle (Ra ≤ 0.8 µm)",
+    "contamination": "kein besonderer Feststoffeintrag",
+    "pressure_direction": "Abdichtung nach außen",
+}
+
+# Core params counted to decide whether we can skip optional questions.
+_CORE_TECH_FIELDS: tuple[str, ...] = (
+    "medium",
+    "temperature_c",
+    "pressure_bar",
+    "shaft_diameter_mm",
+    "speed_rpm",
+    "sealing_type",
+)
+
 # Core fields the system always asks for when missing
 _CORE_FIELD_LABELS: dict[str, str] = {
-    "medium":        "Medium (Fluid/Gas)",
-    "pressure_bar":  "Betriebsdruck [bar]",
-    "temperature_c": "Betriebstemperatur [°C]",
-    "sealing_type": "Dichtungstyp / Dichtprinzip",
+    "medium":            "Medium",
+    "pressure_bar":      "Betriebsdruck [bar]",
+    "temperature_c":     "Betriebstemperatur [°C]",
+    "sealing_type":      "Dichtungstyp",
+    "shaft_diameter_mm": "Wellendurchmesser [mm]",
+    "speed_rpm":         "Drehzahl [rpm]",
     "duty_profile": "Betriebsprofil",
     "installation": "Einbausituation",
     "geometry_context": "Geometrie / Bauform",
@@ -381,6 +484,20 @@ def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | No
     }
 
 
+_GOVERNED_STRATEGY_FACTORIES: dict[str, Callable[[], ConversationStrategyContract]] = {
+    _CANDIDATE_SHORTLIST: lambda: ConversationStrategyContract(
+        conversation_phase="matching",
+        turn_goal="explain_matching_result",
+        response_mode="result_summary",
+    ),
+    _INQUIRY_READY: lambda: ConversationStrategyContract(
+        conversation_phase="rfq_handover",
+        turn_goal="prepare_handover",
+        response_mode="handover_summary",
+    ),
+}
+
+
 def build_governed_conversation_strategy_contract(
     state: GraphState,
     response_class: str,
@@ -396,18 +513,9 @@ def build_governed_conversation_strategy_contract(
             primary_question_reason=str(hints["primary_question_reason"]) if hints.get("primary_question_reason") else "",
             response_mode="single_question",
         )
-    if response_class == _CANDIDATE_SHORTLIST:
-        return ConversationStrategyContract(
-            conversation_phase="matching",
-            turn_goal="explain_matching_result",
-            response_mode="result_summary",
-        )
-    if response_class == _INQUIRY_READY:
-        return ConversationStrategyContract(
-            conversation_phase="rfq_handover",
-            turn_goal="prepare_handover",
-            response_mode="handover_summary",
-        )
+    factory = _GOVERNED_STRATEGY_FACTORIES.get(response_class)
+    if factory is not None:
+        return factory()
     return ConversationStrategyContract(
         conversation_phase="recommendation",
         turn_goal="explain_governed_result",
@@ -421,6 +529,15 @@ def build_governed_conversation_strategy_contract(
 
 def _determine_response_class(state: GraphState) -> str:
     """Select the outward response class deterministically from GovernanceState."""
+    pending_message = str(getattr(state, "pending_message", "") or "").strip()
+
+    # Knowledge / comparison override: pure questions in a GOVERNED session must
+    # not emit a governed_state_update. Correction markers ("statt", "korrigiere")
+    # suppress the override so parameter updates go through the governed flow.
+    knowledge_override = classify_message_as_knowledge_override(pending_message)
+    if knowledge_override is not None:
+        return knowledge_override
+
     gov_class = state.governance.gov_class
     preselection_blockers = _preselection_blocker_fields(state)
 
@@ -429,6 +546,10 @@ def _determine_response_class(state: GraphState) -> str:
     if gov_class == "C":
         return _STRUCTURED_CLARIFICATION
     if gov_class == "B":
+        # Fast-confirm: 4+ core params present, only optional fields missing
+        # → emit governed_state_update (param confirmation) instead of asking
+        if _is_fast_confirm_applicable(state):
+            return _GOVERNED_STATE_UPDATE
         return _STRUCTURED_CLARIFICATION
     # gov_class == "A"
     if preselection_blockers:
@@ -687,6 +808,15 @@ def _dispatch_contract_public(state: GraphState) -> dict[str, Any]:
 # Reply text (deterministic template — no LLM)
 # ---------------------------------------------------------------------------
 
+_REPLY_BUILDERS: dict[str, Callable[..., str]] = {
+    _STRUCTURED_CLARIFICATION: lambda state, strategy: _reply_clarification(state, strategy),
+    _INQUIRY_READY:            lambda state, strategy: _reply_rfq_ready(state, strategy),
+    _CANDIDATE_SHORTLIST:      lambda state, strategy: _reply_matching(state, strategy),
+    _GOVERNED_STATE_UPDATE:    lambda state, strategy: _reply_state_update(state),
+    _TECHNICAL_PRESELECTION:   lambda state, strategy: _reply_recommendation(state, strategy),
+}
+
+
 async def _build_reply(state: GraphState, response_class: str) -> str:
     """Generate the deterministic governed reply basis.
 
@@ -695,17 +825,94 @@ async def _build_reply(state: GraphState, response_class: str) -> str:
     so this node must not introduce an additional LLM speaking authority.
     """
     strategy = build_governed_conversation_strategy_contract(state, response_class)
-    if response_class == _STRUCTURED_CLARIFICATION:
-        return _reply_clarification(state, strategy)
-    elif response_class == _INQUIRY_READY:
-        return _reply_rfq_ready(state, strategy)
-    elif response_class == _CANDIDATE_SHORTLIST:
-        return _reply_matching(state, strategy)
-    elif response_class == _GOVERNED_STATE_UPDATE:
-        return _reply_state_update(state)
-    elif response_class == _TECHNICAL_PRESELECTION:
-        return _reply_recommendation(state, strategy)
+    builder = _REPLY_BUILDERS.get(response_class)
+    if builder is not None:
+        return builder(state, strategy)
     return "Bitte geben Sie die technischen Parameter Ihrer Anwendung an."
+
+
+def _confirmed_core_tech_count(state: GraphState) -> int:
+    """Count how many core technical fields have any asserted value (any confidence)."""
+    return sum(
+        1 for f in _CORE_TECH_FIELDS
+        if state.asserted.assertions.get(f) is not None
+        and state.asserted.assertions[f].asserted_value is not None
+    )
+
+
+def _is_fast_confirm_applicable(state: GraphState) -> bool:
+    """True when 4+ core params are confirmed and ALL missing fields are optional.
+
+    When this is True the system should confirm parameters + state assumptions
+    instead of asking a blocking clarification question.
+    """
+    if state.asserted.conflict_flags:
+        return False
+    missing = list(
+        dict.fromkeys(
+            list(state.asserted.blocking_unknowns)
+            + _preselection_blocker_fields(state)
+        )
+    )
+    if not missing:
+        return False
+    if _confirmed_core_tech_count(state) < 4:
+        return False
+    return all(f in _OPTIONAL_CLARIFICATION_FIELDS for f in missing)
+
+
+def _reply_params_confirmed_with_assumptions(
+    state: GraphState,
+    missing_optional: list[str],
+) -> str:
+    """Return a confirmation message with stated assumptions for optional missing fields.
+
+    Called when 4+ core params are confirmed and all remaining missing fields are
+    optional. Instead of asking a question, confirms the captured params and states
+    explicit assumptions so the user can correct them if needed.
+    """
+    # Internal STS enum → human-readable outward display name
+    _SEALING_TYPE_DISPLAY: dict[str, str] = {
+        "mechanical_seal": "Gleitringdichtung",
+        "rwdr": "Radialwellendichtring (RWDR)",
+        "o_ring": "O-Ring",
+        "gasket": "Flachdichtung",
+        "packing": "Stopfbuchse",
+        "lip_seal": "Lippendichtung",
+    }
+
+    params = state.asserted.assertions
+    parts: list[str] = []
+    for field_name in ("medium", "sealing_type", "pressure_bar", "temperature_c", "shaft_diameter_mm", "speed_rpm"):
+        if field_name in params and params[field_name].asserted_value is not None:
+            label = _CORE_FIELD_LABELS.get(field_name, field_name)
+            raw_val = params[field_name].asserted_value
+            if field_name == "sealing_type":
+                val: object = _SEALING_TYPE_DISPLAY.get(str(raw_val), str(raw_val))
+            elif isinstance(raw_val, float) and raw_val == int(raw_val):
+                val = int(raw_val)
+            else:
+                val = raw_val
+            parts.append(f"{label}: {val}")
+
+    assumed_parts: list[str] = []
+    for field in missing_optional:
+        if field in _ASSUMPTION_DEFAULTS:
+            label = _CORE_FIELD_LABELS.get(field, field)
+            assumed_parts.append(f"{label}: {_ASSUMPTION_DEFAULTS[field]}")
+
+    params_text = "; ".join(parts) if parts else "keine"
+    if assumed_parts:
+        assumptions_text = "; ".join(assumed_parts)
+        return (
+            f"Betriebsparameter erfasst: {params_text}. "
+            f"Ich setze folgende Annahmen: {assumptions_text}. "
+            "Bitte korrigieren Sie, falls das nicht zutrifft — sonst fahre ich mit der technischen Analyse fort."
+        )
+    return (
+        f"Betriebsparameter erfasst: {params_text}. "
+        "Alle wesentlichen Parameter sind bekannt — ich fahre mit der technischen Analyse fort."
+    )
 
 
 def _reply_clarification(
@@ -739,6 +946,14 @@ def _reply_clarification(
         strategy=strategy or build_governed_conversation_strategy_contract(state, _STRUCTURED_CLARIFICATION),
         response_class=_STRUCTURED_CLARIFICATION,
     )
+
+    # ── Fast-confirm path: 4+ core params confirmed, only optional fields missing ──
+    # When enough technical context is present, assume the optional fields and
+    # confirm instead of asking. Conflicts always bypass this shortcut.
+    if not conflicts and missing and _confirmed_core_tech_count(state) >= 4:
+        truly_optional = [f for f in missing if f in _OPTIONAL_CLARIFICATION_FIELDS]
+        if truly_optional and len(truly_optional) == len(missing):
+            return _reply_params_confirmed_with_assumptions(state, truly_optional)
 
     if conflicts:
         primary_conflict = _pick_priority_clarification_field(conflicts)
@@ -780,6 +995,17 @@ def _reply_clarification(
 
 
 def _reply_state_update(state: GraphState) -> str:
+    # Fast-confirm path: enough core params, only optional fields missing
+    if _is_fast_confirm_applicable(state):
+        missing = list(
+            dict.fromkeys(
+                list(state.asserted.blocking_unknowns)
+                + _preselection_blocker_fields(state)
+            )
+        )
+        optional_missing = [f for f in missing if f in _OPTIONAL_CLARIFICATION_FIELDS]
+        return _reply_params_confirmed_with_assumptions(state, optional_missing)
+
     params = state.asserted.assertions
     missing = list(
         dict.fromkeys(
@@ -791,7 +1017,12 @@ def _reply_state_update(state: GraphState) -> str:
     for field_name in ("medium", "pressure_bar", "temperature_c", "shaft_diameter_mm", "speed_rpm"):
         if field_name in params:
             label = _CORE_FIELD_LABELS.get(field_name, field_name)
-            val = params[field_name].asserted_value
+            raw_val = params[field_name].asserted_value
+            # Normalize integer-like floats (6000.0 → 6000) for clean display
+            if isinstance(raw_val, float) and raw_val == int(raw_val):
+                val: object = int(raw_val)
+            else:
+                val = raw_val
             conf = params[field_name].confidence
             parts.append(f"{label}: {val} ({conf})")
     priority = select_clarification_priority(state, missing) if missing else None
