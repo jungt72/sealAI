@@ -41,7 +41,17 @@ async def collect_governed_visible_reply(
     evidence_summary_lines: list[str] | None = None,
     material_candidates: list[str] | None = None,
 ) -> str:
-    """Central governed visible-reply anchor for the user-facing layer."""
+    """Central governed visible-reply anchor for the user-facing layer.
+
+    C2 decision (2026-04-12): Style-Pass retained.
+    Role: pure reformulation — no content authority.
+    - fallback_text (= output_reply after C1) is the SSOT for content.
+    - LLM reformulates into natural German, temp=0.2, max_tokens=400.
+    - guard_governed_rendered_text() strips any output that violates
+      the surface-claims whitelist and falls back to fallback_text.
+    - On any LLM error: returns fallback_text directly.
+    Adding or removing content is not permitted — only style.
+    """
     claims_spec: GovernedAllowedSurfaceClaims | list[str]
     claims_spec = get_surface_claims_spec(
         response_class,
