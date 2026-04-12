@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -94,6 +95,74 @@ class TestAnonPathPolicyInjection:
         assert exc_info.value.status_code == 401
         assert "compat-only" in str(exc_info.value.detail)
         mock_execute.assert_not_awaited()
+
+
+class TestLightRuntimeStateWrite:
+    @pytest.mark.asyncio
+    async def test_exploration_turn_persists_lightweight_case_progress(self):
+        """EXPLORATION-Turns persistieren Exploration-Progress in GovernedSessionState.
+
+        Bug-1-Fix: EXPLORATION nutzt jetzt _stream_exploration_reply (RAG-basiert),
+        nicht mehr stream_conversation. Die Persistenz (last_route, observed_topic,
+        conversation_messages) muss trotzdem funktionieren.
+        next_best_question_candidate wird bei RAG-basiertem EXPLORATION nicht gesetzt
+        (keine conversation_strategy), deshalb wird dies hier nicht mehr geprüft.
+        """
+        from app.agent.api.models import ChatRequest
+        from app.agent.api.router import _stream_light_runtime
+        from app.agent.state.models import GovernedSessionState
+        from app.services.auth.dependencies import RequestUser
+
+        async def _fake_exploration_reply(message, *, tenant_id):
+            payload = {
+                "type": "state_update",
+                "reply": "SiC und FKM sind typisch für Pumpenanwendungen mit Leckage.",
+                "response_class": "conversational_answer",
+            }
+            yield f"data: {json.dumps(payload)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        persisted = {}
+
+        async def _capture_persist(*, current_user, session_id, state, redis_client=None):
+            persisted["state"] = state
+
+        request = ChatRequest(
+            message="Wir haben Leckage an einer Pumpe und muessen die Dichtstelle erst eingrenzen.",
+            session_id="case-light-001",
+        )
+        current_user = RequestUser(
+            user_id="u1",
+            username="thorsten",
+            sub="u1",
+            roles=["user"],
+            tenant_id="tenant-a",
+        )
+        governed_state = GovernedSessionState()
+
+        with (
+            patch("app.agent.api.router._stream_exploration_reply", side_effect=_fake_exploration_reply),
+            patch("app.agent.api.router._persist_live_governed_state", side_effect=_capture_persist),
+        ):
+            frames = []
+            async for frame in _stream_light_runtime(
+                message=request.message,
+                request=request,
+                current_user=current_user,
+                mode="EXPLORATION",
+                governed_state_override=governed_state,
+            ):
+                frames.append(frame)
+
+        saved = persisted["state"]
+        assert saved.exploration_progress.last_route == "EXPLORATION"
+        assert saved.exploration_progress.case_active is True
+        assert saved.exploration_progress.observed_topic is not None
+        assert "Leckage" in saved.exploration_progress.observed_topic
+        assert saved.conversation_messages[-2].role == "user"
+        assert saved.conversation_messages[-1].role == "assistant"
+        state_update = json.loads(frames[0][6:].strip())
+        assert state_update["structured_state"]["last_route"] == "EXPLORATION"
 
 
 # ---------------------------------------------------------------------------
