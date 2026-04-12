@@ -73,4 +73,63 @@ describe("BFF agent chat stream route", () => {
     });
     expect(payloads[2]).toBe("[DONE]");
   });
+
+  it("forwards assertions from backend state_update events", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"OK","response_class":"governed_state_update","assertions":{"temperature_c":{"asserted_value":80,"unit":"°C","confidence":0.92}}}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "80°C" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+
+    expect(payloads[1]).toMatchObject({
+      type: "state_update",
+      assertions: { temperature_c: { asserted_value: 80, unit: "°C", confidence: 0.92 } },
+    });
+  });
+
+  it("does not forward legacy outward class aliases into the productive UI contract", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"Alte Klasse","response_class":"rfq_ready"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Status?" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+
+    expect(payloads[1]).toMatchObject({
+      type: "state_update",
+      reply: "Alte Klasse",
+      responseClass: null,
+    });
+  });
 });

@@ -7,6 +7,7 @@ import type {
   AgentStreamRequest,
   AgentTurnContext,
 } from "@/lib/contracts/agent";
+import { isOutwardResponseClass } from "@/lib/contracts/agent";
 import { getAccessToken } from "@/lib/bff/auth-token";
 import { BffError } from "@/lib/bff/http";
 import { buildBackendUrl } from "@/lib/bff/backend";
@@ -179,13 +180,15 @@ export async function POST(request: Request) {
 
               if (eventType === "state_update") {
                 const reply = typeof payload.reply === "string" ? payload.reply : "";
+                const responseClass = isOutwardResponseClass(payload.response_class)
+                  ? payload.response_class
+                  : null;
                 controller.enqueue(
                   encodeSseEvent({
                     type: "state_update",
                     caseId,
                     reply,
-                    responseClass:
-                      typeof payload.response_class === "string" ? payload.response_class : null,
+                    responseClass,
                     structuredState:
                       payload.structured_state && typeof payload.structured_state === "object"
                         ? payload.structured_state
@@ -193,6 +196,10 @@ export async function POST(request: Request) {
                     conversationStrategy: mapConversationStrategy(payload.conversation_strategy),
                     turnContext: mapTurnContext(payload.turn_context),
                     ui: payload.ui && typeof payload.ui === "object" ? payload.ui : null,
+                    assertions:
+                      payload.assertions && typeof payload.assertions === "object"
+                        ? payload.assertions
+                        : null,
                   }),
                 );
                 continue;
