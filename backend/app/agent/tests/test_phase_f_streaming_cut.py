@@ -100,7 +100,8 @@ class TestFlagOffUsesGovernedAuthority:
 
         with patch.object(router_module, "_ENABLE_BINARY_GATE", False), \
              patch.object(router_module, "_ENABLE_CONVERSATION_RUNTIME", False), \
-             patch("app.agent.api.router._stream_governed_graph", side_effect=_fake_governed_stream):
+             patch("app.agent.api.router._stream_governed_graph", side_effect=_fake_governed_stream), \
+             patch("app.agent.api.router.classify_message_as_knowledge_override", return_value=None):
 
             frames = await _collect_frames(
                 router_module.event_generator(_make_request(), current_user=_make_current_user())
@@ -150,7 +151,8 @@ class TestGateFlagOnConvFlagOffUsesGovernedAuthority:
              patch("redis.asyncio.Redis.from_url", return_value=fake_redis), \
              patch("app.agent.runtime.session_manager.get_or_create_session_async", AsyncMock(return_value=mock_envelope)), \
              patch("app.agent.runtime.session_manager.save_session_async", AsyncMock()), \
-             patch("app.agent.runtime.gate.decide_route_async", AsyncMock(return_value=mock_gate_decision)):
+             patch("app.agent.runtime.gate.decide_route_async", AsyncMock(return_value=mock_gate_decision)), \
+             patch("app.agent.api.router.classify_message_as_knowledge_override", return_value=None):
 
             frames = await _collect_frames(
                 router_module.event_generator(_make_request(), current_user=_make_current_user())
@@ -347,7 +349,8 @@ class TestLegacyFacadeUsesCanonicalAuthority:
         with patch.object(router_module, "_ENABLE_BINARY_GATE", False), \
              patch.object(router_module, "_ENABLE_CONVERSATION_RUNTIME", False), \
              patch("app.agent.api.router._stream_governed_graph", side_effect=_fake_governed_stream), \
-             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv):
+             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
+             patch("app.agent.api.router.classify_message_as_knowledge_override", return_value=None):
 
             # Simulate what the legacy facade does: call event_generator directly
             frames = await _collect_frames(

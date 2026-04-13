@@ -166,7 +166,8 @@ def test_technical_preselection_payload_uses_fallback_without_prefix_injection()
             visible_reply="",
         )
 
-    assert payload["reply"] == "Ich kann die technische Richtung belastbar einordnen und die offenen Pruefpunkte klar benennen."
+    # C1: output_reply is the content SSOT — reply equals the output_reply value
+    assert payload["reply"] == "Technische Einengung auf Basis bestaetigter Parameter."
     assert payload["response_class"] == "technical_preselection"
 
 
@@ -195,7 +196,8 @@ def test_inquiry_ready_payload_uses_result_class_specific_facts_prefix() -> None
             visible_reply="",
         )
 
-    assert "Anfragebasis:" in payload["reply"]
+    # C1: output_reply is the content SSOT — reply equals the output_reply value
+    assert "Anfragebasis" in payload["reply"]
     assert payload["response_class"] == "inquiry_ready"
     assert "inquiry" in payload["ui"]
     assert payload["ui"]["inquiry"]["status"] == "rfq_ready"
@@ -515,10 +517,8 @@ def test_governed_stream_payload_includes_additive_conversation_strategy() -> No
                 asserted={
                     "blocking_unknowns": ["medium"],
                 },
-                output_reply=(
-                    "Welches Medium soll abgedichtet werden? "
-                    "Das Medium entscheidet zuerst ueber Werkstoffwahl und Einsatzrahmen."
-                ),
+                # C1: output_reply is user-visible content SSOT — question only, no reason text
+                output_reply="Welches Medium soll abgedichtet werden?",
                 output_response_class="structured_clarification",
             ),
             persisted_state=GovernedSessionState(),
@@ -600,6 +600,7 @@ async def test_stream_governed_graph_state_update_reply_uses_controlled_turn_con
         ),
         patch("app.agent.api.router.project_for_ui", return_value=_FakeProjection()),
         patch("app.agent.api.router.collect_governed_visible_reply", side_effect=_fake_collect),
+        patch("app.agent.api.router._persist_live_governed_state", AsyncMock()),
     ):
         payloads = await _collect_sse_payloads(
             _stream_governed_graph(
@@ -618,7 +619,8 @@ async def test_stream_governed_graph_state_update_reply_uses_controlled_turn_con
     assert token_chunks == []
     assert captured["response_class"] == "structured_clarification"
     assert isinstance(captured["turn_context"], TurnContextContract)
-    assert captured["fallback_text"] == "Bitte nennen Sie den naechsten entscheidenden Betriebsparameter."
+    # C1: fallback_text is output_reply (not claims_spec default)
+    assert captured["fallback_text"] == "Bitte Medium angeben."
     assert isinstance(captured["allowed_surface_claims"], dict)
 
 
@@ -656,7 +658,8 @@ async def test_stream_governed_graph_state_update_reply_falls_back_to_determinis
         )
 
     state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
-    assert state_update["reply"] == "Bitte nennen Sie den naechsten entscheidenden Betriebsparameter."
+    # C1: fallback when rendering empty = output_reply (not claims_spec default)
+    assert state_update["reply"] == "Bitte Medium angeben."
     assert state_update["response_class"] == "structured_clarification"
 
 
@@ -743,6 +746,7 @@ async def test_non_stream_governed_response_uses_turn_context_rendering() -> Non
         ),
         patch("app.agent.api.router.project_for_ui", return_value=_FakeProjection()),
         patch("app.agent.api.router.collect_governed_visible_reply", side_effect=_fake_collect),
+        patch("app.agent.api.router._persist_live_governed_state", AsyncMock()),
     ):
         response = await _run_governed_chat_response(
             SimpleNamespace(session_id="case-json-1", message="Ich moechte eine Dichtungsloesung erarbeiten."),
@@ -754,7 +758,8 @@ async def test_non_stream_governed_response_uses_turn_context_rendering() -> Non
         assert response.structured_state["output_status"] == "clarification_needed"
         assert captured["response_class"] == "structured_clarification"
         assert isinstance(captured["turn_context"], TurnContextContract)
-        assert captured["fallback_text"] == "Bitte nennen Sie den naechsten entscheidenden Betriebsparameter."
+        # C1: fallback_text is output_reply (not claims_spec default)
+        assert captured["fallback_text"] == "Bitte Medium angeben."
 
 
 @pytest.mark.asyncio
@@ -780,7 +785,8 @@ async def test_non_stream_governed_response_falls_back_to_deterministic_reply_wh
             current_user=_request_user(),
         )
 
-    assert response.reply == "Bitte nennen Sie den naechsten entscheidenden Betriebsparameter."
+    # C1: fallback when rendering empty = output_reply (not claims_spec default)
+    assert response.reply == "Bitte Medium angeben."
     assert response.response_class == "structured_clarification"
     assert response.structured_state["output_status"] == "clarification_needed"
 

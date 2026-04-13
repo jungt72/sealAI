@@ -4,6 +4,29 @@ Interaction Policy V2 — DEPRECATED (W3.4)
 Production routing is handled by app.agent.runtime.gate (decide_route / decide_route_async).
 This module is kept only for test backward-compat. Do not call from production paths.
 
+──────────────────────────────────────────────────────────────────────────────
+Patch D — Deletion pre-conditions (as of 2026-04-12)
+
+gate.py IS the production replacement: evaluate_policy → decide_route,
+evaluate_policy_async → decide_route_async, InteractionPolicyDecision → GateDecision.
+
+Deletion is BLOCKED by 4 test files that still import from this module:
+  • test_interaction_policy.py       — patches _call_routing_llm; tests all 4 tiers
+  • test_interaction_policy_0d.py    — imports module directly; tests deterministic tiers
+  • test_graph_routing.py            — imports evaluate_policy, patches _call_routing_llm
+  • test_working_profile_semantics.py — imports _missing_critical_params
+
+Required migration before deletion:
+  1. Rewrite test_interaction_policy.py + test_interaction_policy_0d.py to test
+     gate.py APIs (decide_route / classify_light_route / check_hard_overrides).
+  2. Update test_graph_routing.py to import from gate.py instead.
+  3. Update test_working_profile_semantics.py — replace _missing_critical_params
+     with the equivalent pattern from selection.py or gate.py.
+  4. Remove the lazy shim in runtime.py (evaluate_interaction_policy).
+  5. Delete agent/interaction_policy.py (re-export shim).
+  6. Then delete this file.
+──────────────────────────────────────────────────────────────────────────────
+
 Original: Semantic Routing via Nano-LLM
 Phase 0A.3 / 0D / 0D+
 
