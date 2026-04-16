@@ -15,7 +15,7 @@ what the deterministic rule engine must decide,
 how engineering data must be represented,
 how readiness, risk, and provenance are enforced,
 and in which implementation sequence Codex CLI must build it.
-This document supersedes fragmented architecture intent spread across prior concept drafts. The earlier blueprints remain useful background, especially for the four-layer engineering model, provenance, routing, norm modules, calculations, and cockpit contract, but this file is the one implementation reference Codex CLI should follow. fileciteturn21file1 fileciteturn21file2 fileciteturn21file4
+This document supersedes fragmented architecture intent spread across prior concept drafts. The earlier blueprints remain useful background, especially for the four-layer engineering model, provenance, routing, norm modules, calculations, and cockpit contract, but this file is the one implementation reference Codex CLI should follow.   
 ---
 2. Precedence rules
 2.1 Architectural precedence
@@ -35,7 +35,7 @@ follow this document,
 or flag a precise gap for approval.
 ---
 3. Codex CLI operating protocol for this repo
-This SSoT is written specifically for Codex CLI execution. OpenAI’s current official Codex guidance supports a workflow where large changes start with a planning pass, then proceed into coding once the plan is grounded; OpenAI also recommends well-scoped tasks, keeping persistent repo context in `AGENTS.md`, using the latest supported Codex model family, and structuring prompts clearly and specifically with instructions first and explicit output formats. The current Codex CLI help and Codex guidance also document approval modes (`Suggest`, `Auto Edit`, `Full Auto`) and emphasize repo-local execution, while the latest help docs note that model availability depends on CLI version/config and that Codex currently uses the GPT‑5.1‑Codex family depending on configuration. citeturn163073view7turn163073view10turn913547view3turn163073view0turn858182search2turn144142search4
+This SSoT is written specifically for Codex CLI execution. OpenAI’s current official Codex guidance supports a workflow where large changes start with a planning pass, then proceed into coding once the plan is grounded; OpenAI also recommends well-scoped tasks, keeping persistent repo context in `AGENTS.md`, using the latest supported Codex model family, and structuring prompts clearly and specifically with instructions first and explicit output formats. The current Codex CLI help and Codex guidance also document approval modes (`Suggest`, `Auto Edit`, `Full Auto`) and emphasize repo-local execution, while the latest help docs note that model availability depends on CLI version/config and that Codex currently uses the GPT‑5.1‑Codex family depending on configuration. 
 3.1 Required Codex execution style
 Codex CLI must work in this sequence:
 Read-only audit / ask-first phase for any large architectural change
@@ -55,7 +55,7 @@ and the instruction to use this SSoT as binding architecture.
 3.3 Codex mode usage
 Use Suggest / Ask mode for audits, repo mapping, gap analysis, architecture verification, and patch planning.
 Use Auto Edit only for contained patches with clear acceptance criteria.
-Use Full Auto only for tightly scoped implementation loops where the task, file scope, and validation commands are already stable. OpenAI’s official CLI guidance describes these approval modes and their intended use. citeturn858182search2
+Use Full Auto only for tightly scoped implementation loops where the task, file scope, and validation commands are already stable. OpenAI’s official CLI guidance describes these approval modes and their intended use. 
 3.4 Codex prompt construction rules
 Codex prompts in this repo must follow these OpenAI-aligned principles:
 instructions first,
@@ -63,7 +63,7 @@ context clearly separated,
 specific desired outputs,
 explicit tool/validation expectations,
 small well-scoped tasks where possible,
-and persistent repo context maintained in `AGENTS.md`. citeturn913547view3turn163073view7turn163073view10turn163073view0
+and persistent repo context maintained in `AGENTS.md`. 
 3.5 Repo-local execution assumptions
 Codex CLI should assume:
 project root is `/home/thorsten/sealai`,
@@ -87,7 +87,7 @@ then gathers path-specific data,
 then calculates deterministically,
 then marks risk and uncertainty explicitly,
 and only then generates a bounded technical preselection or manufacturer-ready inquiry basis.
-This problem-first and path-first flow is already present across the prior senior-level blueprints and norm-integrated concept. fileciteturn21file8 fileciteturn21file12
+This problem-first and path-first flow is already present across the prior senior-level blueprints and norm-integrated concept.  
 ---
 5. Architectural goals
 SeaLAI must be able to:
@@ -137,7 +137,7 @@ an RCA problem,
 a validation under changed operating conditions,
 a spare-part identification task,
 or a narrow single-check request.
-This dual structure is essential to model real industrial entry situations rather than only “greenfield design”. It directly extends the earlier SeaLAI target model, which already established path-based routing, phased data collection, and backend-first cockpit projection. fileciteturn21file8 fileciteturn21file10
+This dual structure is essential to model real industrial entry situations rather than only “greenfield design”. It directly extends the earlier SeaLAI target model, which already established path-based routing, phased data collection, and backend-first cockpit projection.  
 ---
 8. Mandatory architectural principles
 8.1 LLM responsibilities
@@ -199,7 +199,7 @@ Phase 4 — Geometry / fit
 Collect geometry, tolerances, surfaces, cavity/chamber/groove information, vibration, fit-critical machine data.
 Phase 5 — RFQ / liability / commercial readiness
 Evaluate readiness for bounded preselection, inquiry admissibility, and RFQ readiness.
-This phase stack follows the senior-engineering logic already defined in the prior blueprints: understand the function first, then choose the path, then activate norm- and path-specific logic. fileciteturn21file8
+This phase stack follows the senior-engineering logic already defined in the prior blueprints: understand the function first, then choose the path, then activate norm- and path-specific logic. 
 ---
 10. Phase transition rules
 10.1 Phase 0 → 1
@@ -359,7 +359,7 @@ For medium and chemistry specifically, the architecture must preserve the separa
 `medium_registry`
 `inferred_properties`
 `confirmed_properties`
-This provenance model is a core design pillar of the production-grade blueprint and is required to prevent hallucinated engineering truth. fileciteturn21file7turn21file9
+This provenance model is a core design pillar of the production-grade blueprint and is required to prevent hallucinated engineering truth. 
 ---
 13. EngineeringCockpitView (backend projection contract)
 The frontend consumes a backend-generated projection.
@@ -387,7 +387,7 @@ The frontend consumes a backend-generated projection.
   "blockers": []
 }
 ```
-This backend-first cockpit contract is already aligned with the prior blueprint and must remain the sole authority for frontend rendering. fileciteturn21file10turn21file11
+This backend-first cockpit contract is already aligned with the prior blueprint and must remain the sole authority for frontend rendering. 
 ---
 14. Core intake schema
 Mandatory core fields:
@@ -472,7 +472,7 @@ Representative geometry/fit fields:
 `geometry.bore.ra_um`
 `machine.vibration.mm_s_rms`
 chamber / cavity / flange / groove specifics by path
-The previous full blueprint already identifies runout, lead, hardness, roughness, chamber geometry, and fit-critical dimensions as mandatory engineering reality, not optional detail. fileciteturn21file18
+The previous full blueprint already identifies runout, lead, hardness, roughness, chamber geometry, and fit-critical dimensions as mandatory engineering reality, not optional detail. 
 ---
 17. RCA schema
 For `rca_failure_analysis`, required evidence dimensions include:
@@ -560,7 +560,7 @@ Extrusion indicator
 ```text
 extrusion_index = pressure_max / clearance_gap
 ```
-The production-grade blueprint already defined the need for explicit engineering checks such as circumferential speed, PV, vapor margin, leakage-related indicators, and risk-linked calculations. fileciteturn21file9turn21file12turn21file19
+The production-grade blueprint already defined the need for explicit engineering checks such as circumferential speed, PV, vapor margin, leakage-related indicators, and risk-linked calculations. 
 ---
 21. Risk-score engine
 21.1 Required score types
@@ -661,7 +661,7 @@ A norm module may only activate if:
 path is compatible,
 scope is in range,
 and minimum required fields are present.
-The norm-integrated SeaLAI concept already established this modular norm-gating pattern and the need to keep norm-neutral data collection separate from norm application. fileciteturn21file4turn21file5turn21file6
+The norm-integrated SeaLAI concept already established this modular norm-gating pattern and the need to keep norm-neutral data collection separate from norm application. 
 ---
 24. Output classes and enforcement
 Output classes
@@ -759,7 +759,7 @@ Required endpoints:
 `GET /cases/{id}/rfq/export`
 `GET /cases/{id}/rfq/pdf`
 `GET /cases/{id}/rfq/json`
-The previous blueprint already specified a minimal, backend-first API shape around `EngineeringCockpitView`, property confirmation, metrics recompute, and RFQ export; this document makes that the required baseline. fileciteturn21file10turn21file11
+The previous blueprint already specified a minimal, backend-first API shape around `EngineeringCockpitView`, property confirmation, metrics recompute, and RFQ export; this document makes that the required baseline. 
 ---
 29. Validation strategy
 29.1 CI gates
