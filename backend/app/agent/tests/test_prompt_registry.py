@@ -237,14 +237,27 @@ class TestGateMigration:
 
     def test_gate_py_has_get_gate_system_prompt_function(self):
         from app.agent.runtime.gate import _get_gate_system_prompt
-        result = _get_gate_system_prompt()
+        result = _get_gate_system_prompt(
+            current_zone="conversation",
+            short_state_summary=None,
+            missing_critical_fields=None,
+            case_active=False,
+            last_route=None,
+        )
         assert isinstance(result, str)
         assert "GOVERNED" in result
 
     def test_get_gate_system_prompt_returns_same_content_as_template(self):
         from app.agent.runtime.gate import _get_gate_system_prompt
-        gate_prompt = _get_gate_system_prompt()
-        template_render = prompts.render("gate/gate_classify.j2", {})
+        vars = {
+            "current_zone": "conversation",
+            "short_state_summary": None,
+            "missing_critical_fields": [],
+            "case_active": False,
+            "last_route": None,
+        }
+        gate_prompt = _get_gate_system_prompt(**vars)
+        template_render = prompts.render("gate/gate_classify.j2", vars)
         assert gate_prompt == template_render
 
 

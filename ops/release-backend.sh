@@ -22,15 +22,10 @@ docker build \
   backend/
 
 echo ">> Pushing ${BACKEND_IMAGE_TAG}"
-docker push "${BACKEND_IMAGE_TAG}"
+PUSH_OUTPUT="$(docker push "${BACKEND_IMAGE_TAG}" 2>&1)"
+echo "${PUSH_OUTPUT}"
 
-BACKEND_DIGEST="$(
-  docker image inspect "${BACKEND_IMAGE_TAG}" \
-    --format '{{range .RepoDigests}}{{println .}}{{end}}' \
-  | grep '^ghcr.io/jungt72/sealai-backend@' \
-  | head -n1 \
-  | cut -d@ -f2
-)"
+BACKEND_DIGEST="$(echo "${PUSH_OUTPUT}" | grep -oP 'digest: \K\S+' | tail -1)"
 test -n "${BACKEND_DIGEST}"
 
 BACKEND_IMAGE_PINNED="${BACKEND_IMAGE_TAG}@${BACKEND_DIGEST}"
@@ -45,9 +40,7 @@ sed -i "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=${BACKEND_IMAGE_PINNED}|" .env.prod
 echo ">> Validating pinned production refs"
 ./ops/check-env-drift.sh prod
 
-echo ">> Pulling backend only"
-docker compose "${COMPOSE_ARGS[@]}" pull backend
-
+# Image ist lokal bereits getaggt — pull nur bei remote-only deploy nötig
 echo ">> Recreating backend only"
 docker compose "${COMPOSE_ARGS[@]}" up -d --no-deps backend
 
@@ -61,14 +54,21 @@ docker exec backend sh -lc "grep -R 'decision_basis_hash' -n /app/app 2>/dev/nul
 
 echo ">> Waiting for backend health"
 for i in {1..30}; do
-  if docker exec backend sh -lc "curl -fsS http://127.0.0.1:8000/health" >/dev/null; then
+  if docker exec backend sh -lc "curl -fsS http://127.0.0.1:8000/health" >/dev/null 2>&1; then
     echo ">> Backend healthy"
     break
+  fi
+  if [[ $i -eq 30 ]]; then
+    echo "!! Health check failed after 30 attempts — rolling back"
+    cp "${ROLLBACK_FILE}" .env.prod
+    docker compose "${COMPOSE_ARGS[@]}" up -d --no-deps backend
+    echo "!! Rollback complete — check backend logs:"
+    docker logs backend --tail 50
+    exit 1
   fi
   echo ">> Backend not ready yet (${i}/30)"
   sleep 2
 done
 
 docker exec backend sh -lc "curl -fsS http://127.0.0.1:8000/health"
-
 echo ">> Done"

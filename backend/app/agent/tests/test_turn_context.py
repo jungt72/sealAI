@@ -333,8 +333,9 @@ def test_build_governed_turn_context_includes_known_rotary_facts_for_rendering()
     context = build_governed_turn_context(state=state, strategy=strategy)
 
     assert any("Medium: Salzwasser" == item for item in context.confirmed_facts_summary)
-    assert any("Wellendurchmesser: 40.0" == item for item in context.confirmed_facts_summary)
-    assert any("Drehzahl: 2000.0" == item for item in context.confirmed_facts_summary)
+    # Bug C fix: integer-like floats are normalized (40.0 → 40, 2000.0 → 2000).
+    assert any("Wellendurchmesser: 40" == item for item in context.confirmed_facts_summary)
+    assert any("Drehzahl: 2000" == item for item in context.confirmed_facts_summary)
 
 
 def test_build_governed_turn_context_uses_persisted_rotary_hint_after_reload() -> None:

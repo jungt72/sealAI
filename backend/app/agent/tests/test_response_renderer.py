@@ -215,6 +215,20 @@ class TestRenderResponse:
         assert "2 bar" in result.text
         assert "59 °C" in result.text
 
+    def test_outward_contract_strips_integerish_float_before_german_rpm_unit(self):
+        """Bug C: 6000.0 U/min → 6000 U/min (German rpm unit must be covered)."""
+        raw = "Drehzahl: 6000.0 U/min"
+        result = render_response(raw, path="GOVERNED")
+        assert "6000.0 U/min" not in result.text
+        assert "6000 U/min" in result.text
+
+    def test_outward_contract_strips_integerish_float_before_1_per_min(self):
+        """Bug C: 1500.0 1/min → 1500 1/min."""
+        raw = "Wellendrehzahl: 1500.0 1/min"
+        result = render_response(raw, path="GOVERNED")
+        assert "1500.0 1/min" not in result.text
+        assert "1500 1/min" in result.text
+
     def test_outward_contract_keeps_non_integer_decimals(self):
         raw = "Betriebsdruck: 2.5 bar, Temperaturfenster bis 59.5 °C."
         result = render_response(raw, path="GOVERNED")

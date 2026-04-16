@@ -1,120 +1,82 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: "Google Sans", "Google Sans Text", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Google Sans Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --color-background: #F8F9FA;
+  --color-foreground: #1F1F1F;
+
+  --color-gemini-blue: #1A73E8;
+  --color-gemini-purple: #7B1FA2;
+  --color-gemini-pink: #E91E63;
+  --color-gemini-cyan: #00BCD4;
+  
+  --color-sidebar: #F0F4F9;
+  --color-surface: #FFFFFF;
+  --color-border: #E3E3E3;
+  --color-muted: #F0F2F4;
+  --color-muted-foreground: #444746;
+
+  --bg-image-gemini-energy: linear-gradient(74deg, #4285F4 0%, #9B72CB 9%, #D96570 20%, #111 40%);
+  --bg-image-gemini-glow: radial-gradient(circle at 50% 50%, rgba(66, 133, 244, 0.1), transparent 50%);
+
+  --animate-sparkle: sparkle 2s ease-in-out infinite;
+
+  @keyframes sparkle {
+    0%, 100% { opacity: 1; transform: scale(1); filter: brightness(1); }
+    50% { opacity: 0.7; transform: scale(1.1); filter: brightness(1.2); }
+  }
+
+  --radius-xxl: 32px;
+  --radius-xl: 24px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+}
 
 @layer base {
   :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --background: 0 0% 97.3%;
+    --foreground: 0 0% 12.2%;
   }
-}
 
-@layer base {
-  * {
-    @apply border-border;
+  .dark {
+    --background: 240 6.7% 8.4%;
+    --foreground: 0 0% 98%;
+    
+    --color-background: #131314;
+    --color-foreground: #E3E3E3;
+    --color-sidebar: #1E1F20;
+    --color-surface: #000000;
+    --color-border: #444746;
+    --color-muted: #1E1F20;
+    --color-muted-foreground: #C4C7C5;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply antialiased bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
 
-@layer components {
-  .sealai-markdown {
-    color: #0f172a;
-    font-size: 0.995rem;
-    line-height: 1.78;
+@layer utilities {
+  .gemini-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      to right,
+      #4285F4,
+      #9B72CB,
+      #D96570,
+      #F3AF5F
+    );
   }
 
-  .sealai-markdown > :first-child {
-    margin-top: 0;
+  .gemini-card {
+    @apply rounded-xl bg-surface border border-border shadow-sm;
   }
 
-  .sealai-markdown > :last-child {
-    margin-bottom: 0;
-  }
-
-  .sealai-markdown-paragraph {
-    margin-bottom: 1rem;
-    white-space: pre-wrap;
-  }
-
-  .sealai-markdown-link {
-    color: #0369a1;
-    text-decoration: none;
-    font-weight: 500;
-  }
-
-  .sealai-markdown-link:hover {
-    text-decoration: underline;
-  }
-
-  .sealai-markdown-h1,
-  .sealai-markdown-h2,
-  .sealai-markdown-h3 {
-    color: #020617;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-
-  .sealai-markdown-h1 {
-    margin: 1.5rem 0 0.85rem;
-    font-size: 1.45rem;
-    line-height: 1.2;
-  }
-
-  .sealai-markdown-h2 {
-    margin: 1.35rem 0 0.75rem;
-    font-size: 1.2rem;
-    line-height: 1.3;
-  }
-
-  .sealai-markdown-h3 {
-    margin: 1.15rem 0 0.65rem;
-    font-size: 1.05rem;
-    line-height: 1.35;
-  }
-
-  .sealai-markdown-list {
-    margin-bottom: 1rem;
-    padding-left: 1.25rem;
-  }
-
-  .sealai-markdown-list-disc {
-    list-style: disc;
-  }
-
-  .sealai-markdown-list-decimal {
-    list-style: decimal;
-  }
-
-  .sealai-markdown-list-item {
-    margin: 0.35rem 0;
-    padding-left: 0.25rem;
-    white-space: pre-wrap;
+  .sparkle-icon {
+    @apply animate-sparkle text-gemini-blue;
   }
 }

@@ -37,7 +37,7 @@ import pytest
 from app.agent.evidence.evidence_query import EvidenceQuery
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.evidence_node import _build_evidence_query, evidence_node
-from app.agent.state.models import AssertedClaim, AssertedState, NormalizedState
+from app.agent.state.models import AssertedClaim, AssertedState
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +63,28 @@ def _state_with_assertions(tenant_id: str = "tenant_abc", **kwargs) -> GraphStat
     }
     asserted = AssertedState(assertions=assertions)
     return GraphState(asserted=asserted, tenant_id=tenant_id)
+
+
+def _state_with_normalized_and_asserted(tenant_id: str = "tenant_abc", **kwargs) -> GraphState:
+    assertions = {
+        field: _claim(field, val, conf)
+        for field, (val, conf) in kwargs.items()
+    }
+    return GraphState(
+        asserted=AssertedState(assertions=assertions),
+        normalized={
+            "parameters": {
+                field: {
+                    "field_name": field,
+                    "value": val,
+                    "confidence": conf,
+                    "source": "llm",
+                }
+                for field, (val, conf) in kwargs.items()
+            }
+        },
+        tenant_id=tenant_id,
+    )
 
 
 _MOCK_CARDS = [
@@ -172,6 +194,48 @@ class TestSuccessfulRetrieval:
             "event_type": "evidence_retrieved",
             "sources_count": 2,
         }
+
+    @pytest.mark.asyncio
+    async def test_retrieved_evidence_updates_asserted_refs_when_normalized_available(self):
+        state = _state_with_normalized_and_asserted(
+            medium=("Dampf", "inferred"),
+            pressure_bar=(12.0, "confirmed"),
+            temperature_c=(180.0, "confirmed"),
+        )
+        with patch(
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
+            new_callable=AsyncMock,
+            return_value=(
+                [{"id": "card-dampf", "content": "Dampf Dichtung", "source_ref": "datasheet:1"}],
+                {},
+            ),
+        ):
+            result = await evidence_node(state)
+
+        assert result.asserted.assertions["medium"].confidence == "confirmed"
+        assert result.asserted.assertions["medium"].evidence_refs == ["card-dampf"]
+        assert result.evidence.source_backed_findings == ["medium"]
+        assert result.evidence.evidence_gaps == []
+
+    @pytest.mark.asyncio
+    async def test_evidence_gap_keeps_saltwater_medium_unverified(self):
+        state = _state_with_normalized_and_asserted(
+            medium=("Salzwasser", "confirmed"),
+            pressure_bar=(10.0, "confirmed"),
+            temperature_c=(80.0, "confirmed"),
+        )
+        with patch(
+            "app.agent.graph.nodes.evidence_node.retrieve_evidence",
+            new_callable=AsyncMock,
+            return_value=(
+                [{"id": "card-other", "content": "RWDR fuer Oel", "source_ref": "datasheet:2"}],
+                {},
+            ),
+        ):
+            result = await evidence_node(state)
+
+        assert "missing_source_for_medium" in result.evidence.evidence_gaps
+        assert "missing_source_for_medium" in result.evidence.unresolved_open_points
 
     @pytest.mark.asyncio
     async def test_retrieve_called_with_tenant_id(self):

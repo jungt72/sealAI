@@ -468,6 +468,118 @@ class TestEdgeCases:
         assert override.override_value == "Wasser mit Reinigeranteil"
         assert override.turn_index == 2
 
+    @pytest.mark.asyncio
+    async def test_medium_update_without_correction_keyword_promotes_override(self):
+        """Bug D: Medium wechselt auch ohne Korrektur-Keyword.
+
+        Previous session confirmed medium=Oel.  New message mentions Salzwasser
+        without any correction keyword → must still be promoted to UserOverride
+        because medium is in _UNCONDITIONAL_OVERRIDE_FIELDS.
+        """
+        state = _fresh_state(
+            pending_message="Gleitring 80°C Salzwasser",
+            normalized={
+                "parameters": {
+                    "medium": {
+                        "field_name": "medium",
+                        "value": "Oel",
+                        "confidence": "confirmed",
+                        "source": "user_override",
+                    }
+                }
+            },
+            asserted={
+                "assertions": {
+                    "medium": {
+                        "field_name": "medium",
+                        "asserted_value": "Oel",
+                        "confidence": "confirmed",
+                    }
+                }
+            },
+            analysis_cycle=2,
+            user_turn_index=2,
+        )
+
+        with (
+            patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", True),
+            patch(
+                "app.agent.graph.nodes.intake_observe_node._llm_extract_params",
+                AsyncMock(
+                    return_value=[
+                        ObservedExtraction(
+                            field_name="medium",
+                            raw_value="Salzwasser",
+                            source="llm",
+                            confidence=0.85,
+                            turn_index=2,
+                        )
+                    ]
+                ),
+            ),
+        ):
+            result = await intake_observe_node(state)
+
+        medium_overrides = [ov for ov in result.observed.user_overrides if ov.field_name == "medium"]
+        assert medium_overrides, "medium must be promoted to UserOverride without correction keyword"
+        assert medium_overrides[-1].override_value == "Salzwasser"
+
+    @pytest.mark.asyncio
+    async def test_correction_message_overrides_multiple_fields(self):
+        """Bug E: 'statt Gleitring doch RWDR, 40mm Welle' → beide Felder überschrieben.
+
+        shaft_diameter_mm must be promoted alongside sealing_type when
+        correction keywords ('statt') are present in the message.
+        """
+        state = _fresh_state(
+            pending_message="statt Gleitring doch RWDR, 40mm Welle",
+            normalized={
+                "parameters": {
+                    "sealing_type": {
+                        "field_name": "sealing_type",
+                        "value": "mechanical_seal",
+                        "confidence": "confirmed",
+                        "source": "llm",
+                    },
+                    "shaft_diameter_mm": {
+                        "field_name": "shaft_diameter_mm",
+                        "value": 50.0,
+                        "confidence": "confirmed",
+                        "source": "llm",
+                    },
+                }
+            },
+            asserted={
+                "assertions": {
+                    "sealing_type": {
+                        "field_name": "sealing_type",
+                        "asserted_value": "mechanical_seal",
+                        "confidence": "confirmed",
+                    },
+                    "shaft_diameter_mm": {
+                        "field_name": "shaft_diameter_mm",
+                        "asserted_value": 50.0,
+                        "confidence": "confirmed",
+                    },
+                }
+            },
+            analysis_cycle=3,
+            user_turn_index=3,
+        )
+
+        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+            result = await intake_observe_node(state)
+
+        override_fields = {ov.field_name for ov in result.observed.user_overrides}
+        assert "sealing_type" in override_fields, "sealing_type must be overridden by correction"
+        assert "shaft_diameter_mm" in override_fields, "shaft_diameter_mm must be overridden by correction"
+
+        st_ov = next(ov for ov in result.observed.user_overrides if ov.field_name == "sealing_type")
+        assert "rwdr" in str(st_ov.override_value).lower()
+
+        dia_ov = next(ov for ov in result.observed.user_overrides if ov.field_name == "shaft_diameter_mm")
+        assert float(dia_ov.override_value) == pytest.approx(40.0)
+
 
 # ---------------------------------------------------------------------------
 # 6. _regex_params_to_extractions unit tests (pure function)

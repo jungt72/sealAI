@@ -882,6 +882,37 @@ def _first_pattern_value(text: str, patterns: list[tuple[str, str]]) -> str | No
     return None
 
 
+# Negation words that directly precede a matched term, e.g. "kein Gleitring".
+# Matches only when a negation word appears within 1 word before the match end.
+# "kein Gleitring" → match; "kein Gleitring sondern " → no match (too far away).
+_NEGATION_BEFORE_RE = re.compile(
+    r"\b(?:kein|keine|keinen|keinem|nicht|statt|anstatt|anstelle(?:\s+von)?|no|not)\s+\w*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _sealing_type_value(text: str, patterns: list[tuple[str, str]]) -> str | None:
+    """Negation-aware sealing type extraction.
+
+    Unlike _first_pattern_value, this:
+    - Skips matches that are immediately preceded by a negation word
+      (kein, nicht, statt, …).
+    - Returns the last non-negated match so that corrections like
+      "kein Gleitring sondern RWDR" yield 'rwdr', not 'mechanical_seal'.
+    """
+    best_value: str | None = None
+    best_pos: int = -1
+    for pattern, value in patterns:
+        for m in re.finditer(pattern, text, re.IGNORECASE):
+            before = text[: m.start()]
+            if _NEGATION_BEFORE_RE.search(before):
+                continue  # This match is negated — skip
+            if m.start() > best_pos:
+                best_value = value
+                best_pos = m.start()
+    return best_value
+
+
 def _all_pattern_values(text: str, patterns: list[tuple[str, str]]) -> list[str]:
     values: list[str] = []
     for pattern, value in patterns:
@@ -913,14 +944,21 @@ def extract_parameters(text: str) -> dict[str, Any]:
         extracted["diameter_mm"] = diameter_value
     speed_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:rpm|u[/.]?min)\b", text, re.I)
     if speed_match:
-        extracted["speed_rpm"] = float(speed_match.group(1).replace(",", "."))
+        raw_rpm = float(speed_match.group(1).replace(",", "."))
+        # Store as int when there's no fractional part (6000.0 → 6000)
+        extracted["speed_rpm"] = int(raw_rpm) if raw_rpm == int(raw_rpm) else raw_rpm
 
     motion_type = _extract_motion_type(text)
     if motion_type is not None:
         extracted["motion_type"] = motion_type
 
+    # sealing_type uses negation-aware extraction to handle corrections like
+    # "kein Gleitring sondern RWDR" correctly.
+    sealing_type_value = _sealing_type_value(text, _SEALING_TYPE_PATTERNS)
+    if sealing_type_value is not None:
+        extracted["sealing_type"] = sealing_type_value
+
     for field_name, patterns in (
-        ("sealing_type", _SEALING_TYPE_PATTERNS),
         ("pressure_direction", _PRESSURE_DIRECTION_PATTERNS),
         ("duty_profile", _DUTY_PROFILE_PATTERNS),
         ("installation", _INSTALLATION_PATTERNS),

@@ -13,6 +13,10 @@ OUTWARD_STATUS_ALIASES: dict[str, str] = {
     "clarification_needed": "structured_clarification",
 }
 
+ADMISSIBILITY_COMPAT_ALIASES: dict[str, str] = {
+    "rfq_admissible": "inquiry_admissible",
+}
+
 
 def normalize_outward_response_class(
     value: str | None,
@@ -36,9 +40,18 @@ def normalize_outward_status(
     return OUTWARD_STATUS_ALIASES.get(text, text)
 
 
-def build_admissibility_payload(flag: bool) -> dict[str, bool]:
+def build_admissibility_payload(
+    flag: bool,
+    *,
+    include_compat_aliases: bool = False,
+) -> dict[str, bool | dict[str, bool]]:
     value = bool(flag)
-    return {
+    payload: dict[str, bool | dict[str, bool]] = {
         "inquiry_admissible": value,
-        "rfq_admissible": value,
     }
+    if include_compat_aliases:
+        payload["compat_aliases"] = {
+            alias: value
+            for alias in ADMISSIBILITY_COMPAT_ALIASES
+        }
+    return payload

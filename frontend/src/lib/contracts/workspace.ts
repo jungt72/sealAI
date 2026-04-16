@@ -28,6 +28,18 @@ export type WorkspaceClaim = {
   claimOrigin: string;
 };
 
+export type WorkspaceEvidenceSummary = {
+  evidencePresent: boolean;
+  evidenceCount: number;
+  trustedSourcesPresent: boolean;
+  evidenceSupportedTopics: string[];
+  sourceBackedFindings: string[];
+  deterministicFindings: string[];
+  assumptionBasedFindings: string[];
+  unresolvedOpenPoints: string[];
+  evidenceGaps: string[];
+};
+
 export type WorkspaceManufacturerQuestion = {
   id: string;
   question: string;
@@ -81,6 +93,25 @@ export type WorkspaceView = {
     responseMode?: string | null;
     confirmedFactsSummary?: string[];
     openPointsSummary?: string[];
+  };
+  parameters?: {
+    medium?: string | null;
+    temperature_c?: number | string | null;
+    pressure_bar?: number | string | null;
+    sealing_type?: string | null;
+    pressure_direction?: string | null;
+    duty_profile?: string | null;
+    shaft_diameter_mm?: number | string | null;
+    speed_rpm?: number | string | null;
+    installation?: string | null;
+    geometry_context?: string | null;
+    contamination?: string | string[] | null;
+    counterface_surface?: string | null;
+    tolerances?: string | null;
+    industry?: string | null;
+    compliance?: string | string[] | null;
+    medium_qualifiers?: string | string[] | null;
+    motion_type?: string | null;
   };
   lifecycle: {
     currentStep: string | null;
@@ -174,6 +205,7 @@ export type WorkspaceView = {
     byOrigin: Record<string, number>;
     items: WorkspaceClaim[];
   };
+  evidence: WorkspaceEvidenceSummary;
   manufacturerQuestions: {
     mandatory: string[];
     openQuestions: WorkspaceManufacturerQuestion[];
@@ -181,7 +213,10 @@ export type WorkspaceView = {
   };
   matching: {
     ready: boolean;
+    shortlistReady: boolean;
+    inquiryReady: boolean;
     notReadyReasons: string[];
+    blockingReasons: string[];
     items: WorkspaceMatchItem[];
     openManufacturerQuestions: string[];
     selectedPartnerId: string | null;

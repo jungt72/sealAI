@@ -103,9 +103,26 @@ _CORRECTION_RE = re.compile(
     re.IGNORECASE,
 )
 
-_PRIMARY_OVERRIDE_FIELDS: frozenset[str] = frozenset({
+# Fields that are ALWAYS promoted to UserOverride when their value changes —
+# no correction keywords needed.  A new message mentioning a different medium
+# or sealing type always wins, even against a previously confirmed value.
+_UNCONDITIONAL_OVERRIDE_FIELDS: frozenset[str] = frozenset({
     "medium",
+    "sealing_type",
 })
+
+# Fields promoted to UserOverride ONLY when the message contains explicit
+# correction language ("statt", "korrigier", …).  Prevents accidental numeric
+# overrides from incidental re-mentions.
+_CORRECTION_OVERRIDE_FIELDS: frozenset[str] = frozenset({
+    "shaft_diameter_mm",
+    "pressure_bar",
+    "temperature_c",
+    "speed_rpm",
+})
+
+# Union used by tests and callers that need the full set.
+_PRIMARY_OVERRIDE_FIELDS: frozenset[str] = _UNCONDITIONAL_OVERRIDE_FIELDS | _CORRECTION_OVERRIDE_FIELDS
 
 
 def _canonical_compare_value(value: Any) -> str:
@@ -130,15 +147,27 @@ def _promote_primary_correction_overrides(
     new_extractions: list[ObservedExtraction],
     turn_index: int,
 ):
-    if not _CORRECTION_RE.search(state.pending_message):
-        return observed
+    """Promote qualifying extractions to UserOverride so they beat confirmed state.
+
+    Two tiers:
+    - _UNCONDITIONAL_OVERRIDE_FIELDS (medium, sealing_type): any value change
+      triggers an override regardless of whether correction keywords are present.
+    - _CORRECTION_OVERRIDE_FIELDS (shaft_diameter_mm, …): override only when
+      the message contains explicit correction language ("statt", "korrigier", …).
+    """
+    has_correction = bool(_CORRECTION_RE.search(state.pending_message))
 
     for extraction in new_extractions:
-        if extraction.field_name not in _PRIMARY_OVERRIDE_FIELDS:
+        is_unconditional = extraction.field_name in _UNCONDITIONAL_OVERRIDE_FIELDS
+        is_conditional = extraction.field_name in _CORRECTION_OVERRIDE_FIELDS and has_correction
+
+        if not (is_unconditional or is_conditional):
             continue
+
         current_value = _current_state_value(state, extraction.field_name)
         if current_value is not None and _canonical_compare_value(current_value) == _canonical_compare_value(extraction.raw_value):
             continue
+
         observed = observed.with_override(
             UserOverride(
                 field_name=extraction.field_name,

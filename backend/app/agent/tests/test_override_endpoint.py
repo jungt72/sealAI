@@ -86,6 +86,40 @@ async def test_session_override_endpoint_persists_structured_override(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_session_override_endpoint_uses_canonical_user_scope_without_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_redis = _FakeRedisClient()
+    monkeypatch.setenv("REDIS_URL", "redis://fake")
+    import redis.asyncio as redis_asyncio
+
+    monkeypatch.setattr(redis_asyncio, "Redis", _FakeRedisFactory(fake_redis))
+    user = RequestUser(
+        user_id="canonical-user",
+        username="tester",
+        sub="subject-id",
+        roles=[],
+        scopes=[],
+        tenant_id=None,
+    )
+
+    await session_override_endpoint(
+        "case-tenantless",
+        OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
+        current_user=user,
+    )
+
+    assert await load_governed_state_async(
+        tenant_id="canonical-user",
+        session_id="case-tenantless",
+        redis_client=fake_redis,
+    ) is not None
+    assert await load_governed_state_async(
+        tenant_id="subject-id",
+        session_id="case-tenantless",
+        redis_client=fake_redis,
+    ) is None
+
+
+@pytest.mark.asyncio
 async def test_session_override_endpoint_returns_503_without_redis_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("REDIS_URL", raising=False)
 

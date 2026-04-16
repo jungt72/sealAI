@@ -160,8 +160,9 @@ def _build_messages(
             case_summary=case_summary,
         )
     )
+    # CONVERSATION mode: minimal expert persona — no case_summary, no state context.
     system_prompt = (
-        None
+        _prompt_builder.conversation(case_summary=None)
         if mode == "CONVERSATION"
         else phase_prompt or _prompt_builder.conversation(case_summary=case_summary)
     )
@@ -188,7 +189,9 @@ def _build_messages(
                 msgs.append({"role": role, "content": content})
     # Belt-and-suspenders: inject explicit "DO NOT ASK AGAIN" block when we have
     # confirmed params. This guards against the LLM ignoring history-based hints.
-    if case_summary and case_summary.strip():
+    # Skipped for CONVERSATION mode (smalltalk) — state facts must NOT surface
+    # in greetings, thanks, or simple questions.
+    if mode != "CONVERSATION" and case_summary and case_summary.strip():
         msgs.append({
             "role": "system",
             "content": (
@@ -228,6 +231,11 @@ def _build_conversation_turn_context(
         case_summary=case_summary,
         mode=mode,
     )
+    # CONVERSATION mode (smalltalk / simple questions): no state context.
+    # The LLM must not see confirmed_facts or open_points — it should respond
+    # naturally without summarising technical parameters back to the user.
+    if mode == "CONVERSATION":
+        return build_turn_context_contract(strategy=strategy)
     return build_turn_context_contract(
         strategy=strategy,
         confirmed_facts_summary=_build_light_confirmed_facts_summary(
@@ -375,10 +383,13 @@ def _build_conversation_strategy_contract(
     )
 
     if mode == "CONVERSATION":
+        # No user_signal_mirror for CONVERSATION: technical terms in a knowledge
+        # question (e.g. "erkläre mir was ein RWDR ist") must not trigger
+        # "Randbedingungen"-hints. The topic is the subject, not a parameter.
         return ConversationStrategyContract(
             conversation_phase="rapport" if turn_index == 1 else "exploration",
             turn_goal="answer_light_request",
-            user_signal_mirror=user_signal_mirror,
+            user_signal_mirror="",
             primary_question=None,
             primary_question_reason="",
             response_mode="guided_explanation",

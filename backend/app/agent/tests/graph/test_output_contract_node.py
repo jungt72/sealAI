@@ -43,6 +43,7 @@ import pytest
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.output_contract_node import (
     _determine_response_class,
+    _is_fast_confirm_applicable,
     _reply_clarification,
     _reply_state_update,
     build_governed_conversation_strategy_contract,
@@ -1198,3 +1199,167 @@ class TestNoLLM:
             result = await output_contract_node(state)
         mock_cls.assert_not_called()
         assert result.output_response_class == "technical_preselection"
+
+
+# ---------------------------------------------------------------------------
+# Fast-confirm path: 4+ core params → assumptions instead of questions
+# ---------------------------------------------------------------------------
+
+def _four_core_params_state(missing_optional: list[str] | None = None) -> GraphState:
+    """State with 4+ confirmed core params and only optional fields missing."""
+    assertions = {
+        "medium":           _claim("medium",           "Salzwasser", "confirmed"),
+        "sealing_type":     _claim("sealing_type",     "RWDR",       "confirmed"),
+        "temperature_c":    _claim("temperature_c",    80.0,         "confirmed"),
+        "pressure_bar":     _claim("pressure_bar",     10.0,         "confirmed"),
+        "shaft_diameter_mm":_claim("shaft_diameter_mm", 50.0,        "confirmed"),
+        "speed_rpm":        _claim("speed_rpm",        6000.0,       "confirmed"),
+    }
+    governance = _gov(
+        gov_class="B",
+        open_validation_points=missing_optional or ["installation"],
+    )
+    return GraphState(
+        asserted=AssertedState(
+            assertions=assertions,
+            blocking_unknowns=missing_optional or ["installation"],
+        ),
+        governance=governance,
+    )
+
+
+class TestFastConfirmPath:
+    """When 4+ core params confirmed and all missing fields are optional,
+    the system must emit governed_state_update with param confirmation
+    instead of structured_clarification with a question."""
+
+    # ── _is_fast_confirm_applicable ─────────────────────────────────────────
+
+    def test_is_fast_confirm_true_with_all_6_core_params(self):
+        state = _four_core_params_state(missing_optional=["installation"])
+        assert _is_fast_confirm_applicable(state) is True
+
+    def test_is_fast_confirm_false_with_only_3_core_params(self):
+        assertions = {
+            "medium":       _claim("medium",       "Salzwasser", "confirmed"),
+            "temperature_c":_claim("temperature_c", 80.0,        "confirmed"),
+            "pressure_bar": _claim("pressure_bar",  10.0,        "confirmed"),
+        }
+        state = GraphState(
+            asserted=AssertedState(assertions=assertions, blocking_unknowns=["installation"]),
+            governance=_gov(gov_class="B"),
+        )
+        assert _is_fast_confirm_applicable(state) is False
+
+    def test_is_fast_confirm_false_when_required_field_missing(self):
+        assertions = {
+            "medium":           _claim("medium",           "Salzwasser", "confirmed"),
+            "sealing_type":     _claim("sealing_type",     "RWDR",       "confirmed"),
+            "temperature_c":    _claim("temperature_c",    80.0,         "confirmed"),
+            "pressure_bar":     _claim("pressure_bar",     10.0,         "confirmed"),
+            "shaft_diameter_mm":_claim("shaft_diameter_mm", 50.0,        "confirmed"),
+        }
+        state = GraphState(
+            asserted=AssertedState(assertions=assertions, blocking_unknowns=["speed_rpm"]),
+            governance=_gov(gov_class="B"),
+        )
+        assert _is_fast_confirm_applicable(state) is False
+
+    def test_is_fast_confirm_false_with_conflict(self):
+        state = _four_core_params_state(missing_optional=["installation"])
+        state = state.model_copy(update={
+            "asserted": state.asserted.model_copy(update={"conflict_flags": ["pressure_bar"]})
+        })
+        assert _is_fast_confirm_applicable(state) is False
+
+    # ── _determine_response_class upgrades B → governed_state_update ────────
+
+    def test_response_class_is_governed_state_update_when_fast_confirm(self):
+        state = _four_core_params_state(missing_optional=["installation"])
+        assert _determine_response_class(state) == "governed_state_update"
+
+    def test_response_class_stays_clarification_when_below_threshold(self):
+        assertions = {
+            "medium":       _claim("medium",       "Salzwasser", "confirmed"),
+            "temperature_c":_claim("temperature_c", 80.0,        "confirmed"),
+            "pressure_bar": _claim("pressure_bar",  10.0,        "confirmed"),
+        }
+        state = GraphState(
+            asserted=AssertedState(assertions=assertions, blocking_unknowns=["installation"]),
+            governance=_gov(gov_class="B"),
+        )
+        assert _determine_response_class(state) == "structured_clarification"
+
+    def test_response_class_stays_clarification_when_required_field_missing(self):
+        assertions = {
+            "medium":           _claim("medium",           "Salzwasser", "confirmed"),
+            "sealing_type":     _claim("sealing_type",     "RWDR",       "confirmed"),
+            "temperature_c":    _claim("temperature_c",    80.0,         "confirmed"),
+            "pressure_bar":     _claim("pressure_bar",     10.0,         "confirmed"),
+            "shaft_diameter_mm":_claim("shaft_diameter_mm", 50.0,        "confirmed"),
+        }
+        state = GraphState(
+            asserted=AssertedState(assertions=assertions, blocking_unknowns=["speed_rpm"]),
+            governance=_gov(gov_class="B"),
+        )
+        assert _determine_response_class(state) == "structured_clarification"
+
+    # ── _reply_state_update generates assumption text ───────────────────────
+
+    def test_reply_state_update_fast_confirm_has_no_question_mark(self):
+        state = _four_core_params_state(missing_optional=["installation"])
+        reply = _reply_state_update(state)
+        assert "?" not in reply
+
+    def test_reply_state_update_fast_confirm_contains_medium(self):
+        state = _four_core_params_state(missing_optional=["installation"])
+        reply = _reply_state_update(state)
+        assert "Salzwasser" in reply
+
+    def test_reply_state_update_fast_confirm_invites_correction(self):
+        state = _four_core_params_state(missing_optional=["installation"])
+        reply = _reply_state_update(state)
+        assert "korrigieren" in reply.lower()
+
+    def test_reply_state_update_fast_confirm_mentions_assumption(self):
+        state = _four_core_params_state(missing_optional=["installation"])
+        reply = _reply_state_update(state)
+        assert "Pumpen-Einbau" in reply or "Annahmen" in reply
+
+    def test_reply_state_update_fast_confirm_multiple_optional(self):
+        state = _four_core_params_state(
+            missing_optional=["installation", "geometry_context", "contamination"]
+        )
+        reply = _reply_state_update(state)
+        assert "?" not in reply
+        assert "Betriebsparameter erfasst" in reply
+
+    # ── Conflicts always bypass fast-confirm ────────────────────────────────
+
+    def test_conflict_keeps_structured_clarification(self):
+        assertions = {
+            "medium":           _claim("medium",           "Salzwasser", "confirmed"),
+            "sealing_type":     _claim("sealing_type",     "RWDR",       "confirmed"),
+            "temperature_c":    _claim("temperature_c",    80.0,         "confirmed"),
+            "pressure_bar":     _claim("pressure_bar",     10.0,         "confirmed"),
+            "shaft_diameter_mm":_claim("shaft_diameter_mm", 50.0,        "confirmed"),
+        }
+        state = GraphState(
+            asserted=AssertedState(
+                assertions=assertions,
+                blocking_unknowns=["installation"],
+                conflict_flags=["pressure_bar"],
+            ),
+            governance=_gov(gov_class="B"),
+        )
+        assert _determine_response_class(state) == "structured_clarification"
+
+    # ── Golden path ─────────────────────────────────────────────────────────
+
+    def test_golden_path_gleitring_80c_salzwasser_6000rpm_10bar(self):
+        """'Gleitring 80°C Salzwasser 6000rpm 10bar' → governed_state_update, no question."""
+        state = _four_core_params_state(missing_optional=["installation", "duty_profile"])
+        assert _determine_response_class(state) == "governed_state_update"
+        reply = _reply_state_update(state)
+        assert "?" not in reply
+        assert "Betriebsparameter erfasst" in reply

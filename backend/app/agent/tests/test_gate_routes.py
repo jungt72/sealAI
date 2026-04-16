@@ -84,19 +84,19 @@ class TestNewRouteNames:
         assert decision.route == "GOVERNED"
 
     def test_llm_CONVERSATION_result_passes_through(self):
-        llm_result = LLMGateResult(routing="CONVERSATION", confidence=0.90)
+        llm_result = LLMGateResult(route="CONVERSATION", confidence=0.90)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
-            decision = decide_route("Was ist ein O-Ring?", CONV)
+            decision = decide_route("Nur kurz bitte.", CONV)
         assert decision.route == "CONVERSATION"
 
     def test_llm_EXPLORATION_result_passes_through(self):
-        llm_result = LLMGateResult(routing="EXPLORATION", confidence=0.88)
+        llm_result = LLMGateResult(route="EXPLORATION", confidence=0.88)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Ich suche etwas fuer meine Pumpe.", CONV)
         assert decision.route == "EXPLORATION"
 
     def test_llm_GOVERNED_result_passes_through(self):
-        llm_result = LLMGateResult(routing="GOVERNED", confidence=0.97)
+        llm_result = LLMGateResult(route="GOVERNED", confidence=0.97)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Etwas technisches.", CONV)
         assert decision.route == "GOVERNED"
@@ -124,13 +124,13 @@ class TestNoOldRouteNames:
         assert decision.route not in self.OLD_NAMES
 
     def test_parse_error_not_old_name(self):
-        llm_result = LLMGateResult(routing="GOVERNED", confidence=0.0, parse_error=True)
+        llm_result = LLMGateResult(route="GOVERNED", confidence=0.0, parse_error=True)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Irgendwas", CONV)
         assert decision.route not in self.OLD_NAMES
 
     def test_low_confidence_not_old_name(self):
-        llm_result = LLMGateResult(routing="EXPLORATION", confidence=0.50)
+        llm_result = LLMGateResult(route="EXPLORATION", confidence=0.50)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Mehrdeutig?", CONV)
         assert decision.route not in self.OLD_NAMES
@@ -145,7 +145,7 @@ class TestNoOldRouteNames:
 
     def test_apply_llm_result_not_old_name(self):
         for old_name in ["CONVERSATION", "EXPLORATION", "GOVERNED"]:
-            result = LLMGateResult(routing=old_name, confidence=0.95)  # type: ignore[arg-type]
+            result = LLMGateResult(route=old_name, confidence=0.95)  # type: ignore[arg-type]
             decision = _apply_llm_result(result, "test")
             assert decision.route not in self.OLD_NAMES
 
@@ -221,14 +221,14 @@ class TestGovernedSessionNewNames:
         assert decision.reason == "governed_instant_override"
 
     def test_governed_session_light_override_returns_EXPLORATION(self):
-        llm_result = LLMGateResult(routing="EXPLORATION", confidence=_GOVERNED_LIGHT_THRESHOLD)
+        llm_result = LLMGateResult(route="EXPLORATION", confidence=_GOVERNED_LIGHT_THRESHOLD)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Nur kurz.", GOV)
         assert decision.route == "EXPLORATION"
         assert decision.reason == "governed_light_override"
 
     def test_governed_session_parse_error_returns_GOVERNED(self):
-        llm_result = LLMGateResult(routing="GOVERNED", confidence=0.0, parse_error=True)
+        llm_result = LLMGateResult(route="GOVERNED", confidence=0.0, parse_error=True)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Verstehe.", GOV)
         assert decision.route == "GOVERNED"

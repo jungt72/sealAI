@@ -94,10 +94,17 @@ class TestSuitabilityViolations:
         assert safe is False
         assert cat == "suitability"
 
-    def test_das_geht_blocked(self):
+    def test_das_geht_problemlos_blocked(self):
+        # "problemlos" is the trigger here, not "das geht" (too broad on its own)
         safe, cat = check_fast_path_output("Das geht problemlos bei diesem Druck.")
         assert safe is False
         assert cat == "suitability"
+
+    def test_das_funktioniert_erklaerung_passiert(self):
+        # Mechanism explanation — must NOT be blocked
+        safe, cat = check_fast_path_output("Das funktioniert durch radialen Anpressdruck der Dichtlippe.")
+        assert safe is True
+        assert cat is None
 
     def test_unkritisch_blocked(self):
         safe, cat = check_fast_path_output("Die Temperatur ist unkritisch.")

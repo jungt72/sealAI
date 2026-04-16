@@ -54,6 +54,38 @@ _QUESTION_META: dict[str, tuple[str, str]] = {
         "Welche Drehzahl liegt ungefähr an?",
         "Bei einer rotierenden Welle ist die Drehzahl einer der wichtigsten Kernparameter fuer die technische Einengung.",
     ),
+    "sealing_type": (
+        "Um welchen Dichtungstyp oder welches Dichtprinzip geht es?",
+        "Ohne Dichtungstyp bleibt der technische Loesungsraum zu breit fuer eine belastbare Vorauswahl.",
+    ),
+    "duty_profile": (
+        "Ist der Betrieb kontinuierlich, intermittierend oder nur gelegentlich?",
+        "Das Betriebsprofil entscheidet mit, wie robust die Vorauswahl ausgelegt werden muss.",
+    ),
+    "pressure_direction": (
+        "Aus welcher Richtung wirkt der Druck an der Dichtung?",
+        "Die Druckrichtung beeinflusst Dichtprinzip und Belastungsfall.",
+    ),
+    "contamination": (
+        "Gibt es Schmutz, Partikel oder abrasive Anteile im Umfeld oder Medium?",
+        "Partikel und abrasive Anteile koennen Werkstoff- und Bauartgrenzen frueh verschieben.",
+    ),
+    "tolerances": (
+        "Gibt es Angaben zu Rundlauf, Exzentrizitaet, Spalt oder Toleranzen?",
+        "Toleranzen und Rundlauf bestimmen, wie belastbar die Dichtstelle technisch einzuordnen ist.",
+    ),
+    "industry": (
+        "In welcher Branche oder in welchem regulierten Umfeld wird die Dichtung eingesetzt?",
+        "Der Branchenkontext kann zusaetzliche technische und regulatorische Pruefpunkte ausloesen.",
+    ),
+    "compliance": (
+        "Welche regulatorischen Anforderungen gelten hier, zum Beispiel FDA, ATEX oder eine Normvorgabe?",
+        "Regulatorische Anforderungen duerfen nicht als technischer Fit mitgeraten werden.",
+    ),
+    "medium_qualifiers": (
+        "Welche Mediumdetails sind bekannt, zum Beispiel Konzentration, Chloride oder Feststoffanteile?",
+        "Diese Mediumdetails koennen die Werkstoff- und Korrosionsgrenzen entscheidend veraendern.",
+    ),
     "shaft_diameter_mm": (
         "Wie groß ist der Wellendurchmesser ungefähr?",
         "Bei einer rotierenden Welle brauche ich den Wellendurchmesser, um die technische Richtung sauber einzugrenzen.",
@@ -281,6 +313,14 @@ def select_clarification_priority(
         "medium",
         "pressure_bar",
         "temperature_c",
+        "sealing_type",
+        "duty_profile",
+        "pressure_direction",
+        "contamination",
+        "tolerances",
+        "industry",
+        "compliance",
+        "medium_qualifiers",
         "application_context",
         "installation",
         "geometry_context",
@@ -319,6 +359,12 @@ def select_clarification_priority(
             if priority is not None:
                 return priority
 
+    for field_name in ("sealing_type", "compliance"):
+        if field_name in field_set:
+            priority = _priority_from_field(field_name)
+            if priority is not None:
+                return priority
+
     if not field_set & structured_focus_fields:
         return None
 
@@ -335,6 +381,14 @@ def select_clarification_priority(
             "counterface_material",
             "pressure_bar",
             "temperature_c",
+            "sealing_type",
+            "duty_profile",
+            "pressure_direction",
+            "contamination",
+            "tolerances",
+            "industry",
+            "compliance",
+            "medium_qualifiers",
         )
         if _has_value(state, field_name)
     }
@@ -360,6 +414,24 @@ def select_clarification_priority(
         or (len(field_set) > 1 and priority.focus_key in contextual_override_fields)
     ):
         return priority
+
+    for field_name in (
+        "duty_profile",
+        "installation",
+        "geometry_context",
+        "pressure_direction",
+        "medium_qualifiers",
+        "contamination",
+        "counterface_surface",
+        "tolerances",
+        "industry",
+        "speed_rpm",
+        "shaft_diameter_mm",
+    ):
+        if field_name in field_set:
+            priority = _priority_from_field(field_name)
+            if priority is not None:
+                return priority
 
     for field_name in ("pressure_bar", "temperature_c"):
         if field_name in field_set:

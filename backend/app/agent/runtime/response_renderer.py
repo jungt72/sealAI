@@ -79,7 +79,7 @@ _FIELD_PREFIX_RE = re.compile(
 # boundaries so semantic decimals such as 2.5 remain untouched.
 _INTEGERISH_FLOAT_RE = re.compile(
     r"(?<![\w.])(?P<int>-?\d+)\.0"
-    r"(?=(?:\s*(?:°C|°F|Grad|grad|bar|rpm|mm|MPa|kPa)\b)|(?:\s*(?:[|,;:!?)]|$|\n)))"
+    r"(?=(?:\s*(?:°C|°F|Grad|grad|bar|rpm|U/min|1/min|mm|MPa|kPa)\b)|(?:\s*(?:[|,;:!?)]|$|\n)))"
 )
 
 # Raw JSON object blobs (heuristic: starts with { and has internal-looking keys)

@@ -58,12 +58,23 @@ DEPENDENCY_MAP: dict[str, list[str]] = {
     "temperature_max": ["material_suitability", "requirement_class", "preselection"],
     "temperature_c": ["material_suitability", "requirement_class", "preselection"],
     "medium": ["material_suitability", "requirement_class", "applicable_norms"],
+    "medium_qualifiers": ["material_suitability", "requirement_class", "applicable_norms", "preselection"],
     "rpm": ["pv_value", "velocity", "material_suitability"],
     "shaft_diameter": ["pv_value", "velocity"],
     "shaft_diameter_mm": ["pv_value", "velocity"],
     "pressure": ["requirement_class", "material_suitability"],
     "pressure_bar": ["requirement_class", "material_suitability"],
     "medium_confidence": ["material_suitability"],
+    "sealing_type": ["requirement_class", "preselection"],
+    "pressure_direction": ["requirement_class", "preselection"],
+    "duty_profile": ["requirement_class", "preselection"],
+    "installation": ["requirement_class", "preselection"],
+    "geometry_context": ["requirement_class", "preselection"],
+    "contamination": ["material_suitability", "requirement_class", "preselection"],
+    "counterface_surface": ["material_suitability", "requirement_class", "preselection"],
+    "tolerances": ["material_suitability", "requirement_class", "preselection"],
+    "industry": ["requirement_class", "applicable_norms", "preselection"],
+    "compliance": ["requirement_class", "applicable_norms", "preselection"],
 }
 
 
@@ -112,6 +123,48 @@ _CORE_REQUIRED_FIELDS: frozenset[str] = frozenset({
     "temperature_c",
 })
 
+_PRESELECTION_BLOCKER_BASE_FIELDS: tuple[str, ...] = (
+    "medium",
+    "pressure_bar",
+    "temperature_c",
+    "sealing_type",
+)
+
+_ASSUMABLE_FIELDS: tuple[str, ...] = (
+    "pressure_direction",
+    "contamination",
+    "counterface_surface",
+    "tolerances",
+    "medium_qualifiers",
+)
+
+_OPTIONAL_CONTEXT_FIELDS: tuple[str, ...] = (
+    "industry",
+)
+
+_SEALING_TYPE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "mechanical_seal": ("duty_profile", "installation"),
+    "rwdr": ("shaft_diameter_mm", "speed_rpm"),
+    "o_ring": ("geometry_context",),
+    "gasket": ("geometry_context",),
+    "packing": ("installation",),
+}
+
+_ROTARY_CONTEXT_FIELDS: frozenset[str] = frozenset({
+    "shaft_diameter_mm",
+    "speed_rpm",
+})
+
+_REGULATED_INDUSTRIES: frozenset[str] = frozenset({
+    "food_pharma",
+})
+
+_REGULATORY_COMPLIANCE_VALUES: frozenset[str] = frozenset({
+    "food_contact",
+    "atex",
+    "norm_or_regulatory",
+})
+
 # Fields at INFERRED or REQUIRES_CONFIRMATION confidence → blocking_unknowns
 _BLOCKING_CONFIDENCE_LEVELS: frozenset[ConfidenceLevel] = frozenset({
     "requires_confirmation",
@@ -123,6 +176,64 @@ _ASSERTABLE_CONFIDENCE_LEVELS: frozenset[ConfidenceLevel] = frozenset({
     "estimated",
     "inferred",
 })
+
+
+def _asserted_value(assertions: dict[str, AssertedClaim], field_name: str) -> Any:
+    claim = assertions.get(field_name)
+    return None if claim is None else claim.asserted_value
+
+
+def _value_contains(value: Any, needle: str) -> bool:
+    if isinstance(value, (list, tuple, set)):
+        return any(_value_contains(item, needle) for item in value)
+    return str(value or "").strip().casefold() == needle.casefold()
+
+
+def _has_asserted(assertions: dict[str, AssertedClaim], field_name: str) -> bool:
+    return _asserted_value(assertions, field_name) not in (None, "")
+
+
+def _missing(assertions: dict[str, AssertedClaim], fields: tuple[str, ...]) -> list[str]:
+    return [field for field in fields if not _has_asserted(assertions, field)]
+
+
+@dataclass(frozen=True)
+class TechnicalReadinessAssessment:
+    preselection_blockers: list[str] = field(default_factory=list)
+    missing_but_assumable: list[str] = field(default_factory=list)
+    optional_context: list[str] = field(default_factory=list)
+    compliance_blockers: list[str] = field(default_factory=list)
+    type_sensitive_required: list[str] = field(default_factory=list)
+
+
+def _technical_readiness_assessment(asserted: AssertedState) -> TechnicalReadinessAssessment:
+    assertions = asserted.assertions
+    blockers = _missing(assertions, _PRESELECTION_BLOCKER_BASE_FIELDS)
+    type_sensitive: list[str] = []
+
+    sealing_type = str(_asserted_value(assertions, "sealing_type") or "").strip()
+    if sealing_type in _SEALING_TYPE_REQUIRED_FIELDS:
+        type_sensitive.extend(_missing(assertions, _SEALING_TYPE_REQUIRED_FIELDS[sealing_type]))
+    elif any(_has_asserted(assertions, field) for field in _ROTARY_CONTEXT_FIELDS) and "sealing_type" not in blockers:
+        blockers.append("sealing_type")
+
+    industry = _asserted_value(assertions, "industry")
+    compliance = _asserted_value(assertions, "compliance")
+    compliance_blockers: list[str] = []
+    if any(_value_contains(industry, item) for item in _REGULATED_INDUSTRIES):
+        if not any(_value_contains(compliance, item) for item in _REGULATORY_COMPLIANCE_VALUES):
+            compliance_blockers.append("compliance")
+
+    missing_but_assumable = _missing(assertions, _ASSUMABLE_FIELDS)
+    optional_context = _missing(assertions, _OPTIONAL_CONTEXT_FIELDS)
+
+    return TechnicalReadinessAssessment(
+        preselection_blockers=list(dict.fromkeys(blockers + type_sensitive + compliance_blockers)),
+        missing_but_assumable=missing_but_assumable,
+        optional_context=optional_context,
+        compliance_blockers=compliance_blockers,
+        type_sensitive_required=list(dict.fromkeys(type_sensitive)),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +459,17 @@ def reduce_normalized_to_asserted(
         if core_field not in assertions and core_field not in blocking_unknowns:
             blocking_unknowns.append(core_field)
 
+    readiness = _technical_readiness_assessment(
+        AssertedState(
+            assertions=assertions,
+            blocking_unknowns=blocking_unknowns,
+            conflict_flags=conflict_flags,
+        )
+    )
+    for blocker in readiness.preselection_blockers:
+        if blocker not in blocking_unknowns:
+            blocking_unknowns.append(blocker)
+
     return AssertedState(
         assertions=assertions,
         blocking_unknowns=sorted(set(blocking_unknowns)),
@@ -384,7 +506,11 @@ def reduce_asserted_to_governance(
         if f in asserted.assertions
         and asserted.assertions[f].confidence in ("confirmed", "estimated")
     }
-    has_blocking_unknowns = bool(asserted.blocking_unknowns)
+    readiness = _technical_readiness_assessment(asserted)
+    effective_blocking_unknowns = list(
+        dict.fromkeys(list(asserted.blocking_unknowns) + list(readiness.preselection_blockers))
+    )
+    has_blocking_unknowns = bool(effective_blocking_unknowns)
     has_conflict_flags = bool(asserted.conflict_flags)
     cycle_exceeded = analysis_cycle >= max_cycles
 
@@ -422,11 +548,14 @@ def reduce_asserted_to_governance(
             )
 
     # ── Open validation points ────────────────────────────────────────────
-    open_validation_points: list[str] = list(asserted.blocking_unknowns)
+    open_validation_points: list[str] = list(effective_blocking_unknowns)
     if has_conflict_flags:
         open_validation_points += [
             f"Unresolved conflict: '{f}'" for f in asserted.conflict_flags
         ]
+    for item in readiness.missing_but_assumable:
+        if item not in open_validation_points:
+            open_validation_points.append(item)
 
     # ── Requirement class (minimal — Phase G will enrich this) ───────────
     requirement_class: Optional[RequirementClass] = None
@@ -466,6 +595,11 @@ def reduce_asserted_to_governance(
         rfq_admissible=rfq_admissible,
         validity_limits=validity_limits,
         open_validation_points=open_validation_points,
+        preselection_blockers=readiness.preselection_blockers,
+        missing_but_assumable=readiness.missing_but_assumable,
+        optional_context=readiness.optional_context,
+        compliance_blockers=readiness.compliance_blockers,
+        type_sensitive_required=readiness.type_sensitive_required,
     )
 
 

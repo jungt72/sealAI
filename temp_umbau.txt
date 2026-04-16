@@ -1,0 +1,644 @@
+# SealAI — Umbauplan V2
+**Erstellt:** 2026-04-07
+**Basis:** AUDIT_IST_2026-04-06.md + SEALAI_KONZEPT_FINAL + SEALAI_STACK_ARCHITEKTUR
+**Replaces:** SEALAI_UMBAUPLAN_V1.md (veraltet)
+
+---
+
+## Ausgangslage (Audit-Zusammenfassung)
+
+**Was bereits gut ist und nicht angefasst wird:**
+- 3-Way Gate mit Stickiness (470 LOC, gut getestet) ✓
+- Governed Subgraph 15 Nodes + Cycle Control ✓
+- Deterministische Reducer Chain (Observed→Normalized→Asserted→Governance) ✓
+- RWDR Calculator (547 LOC), Normalization (791 LOC), Critical Review (152 LOC) ✓
+- Output Contract Node (851 LOC) + Surface Claims Enforcement ✓
+- 1.548 von 1.573 Tests grün (98,4%) ✓
+- Redis Stack, Qdrant, PostgreSQL, Keycloak, Paperless laufen ✓
+
+**Was fehlt oder falsch ist:**
+- 30 Komponenten fehlen, 9 teilweise, 4 falsch benannt
+- Qdrant: 0 Dokumente, falsche Dimension (768 statt 384), falscher Name
+- STS-Seed-Files existieren nicht (kein agent/data/)
+- PromptRegistry fehlt komplett, alle Prompts hardcoded
+- EvidenceQuery + ExplorationQuery fehlen
+- Gotenberg Container gestoppt, kein Client-Code
+- 15+ Legacy-Imports aktiv, V2-Endpoint läuft noch
+- Falsche Outward-Class-Namen (governed_recommendation, rfq_ready)
+- Keine Cases-Tabelle, keine State-Snapshots in PostgreSQL
+
+---
+
+## Gesamtaufwand
+
+**9–13 Wochen** bei einem Entwickler.
+Kritischer Pfad: STS-Daten → RAG → PromptRegistry → State → Legacy-Cleanup.
+
+---
+
+## WOCHE 1 — Daten + Fundament
+
+*Kein Code der bestehende Features berührt. Nur Neues bauen.*
+
+### W1.1 — STS-Seed-Files anlegen (1–2 Tage)
+
+**Neue Dateien:**
+```
+backend/app/agent/data/sts/
+  materials.json           ~30 Materialcodes (STS-MAT-*)
+  sealing_types.json       ~25 Dichtungstypen (STS-TYPE-*)
+  requirement_classes.json ~12 Klassen (STS-RS-*)
+  media.json               ~40 Mediumcodes (STS-MED-*)
+  open_points.json         ~25 Prüfpunkte (STS-OPEN-*)
+```
+
+**Beispiel materials.json:**
+```json
+{
+  "STS-MAT-SIC-A1": {
+    "canonical_name": "Siliziumkarbid, gesintert, Standard",
+    "material_family": "ceramic",
+    "temperature_max": 500,
+    "pv_limit": 3.0,
+    "media_resistance": ["acids", "bases", "solvents", "saltwater"],
+    "media_not_suitable": ["fluorine"],
+    "norm_references": ["ISO 21049"],
+    "sealing_types": ["STS-TYPE-GS-S", "STS-TYPE-GS-CART", "STS-TYPE-GS-D"]
+  }
+}
+```
+
+**Dazugehörige Datei:**
+```
+backend/app/agent/sts/
+  __init__.py
+  loader.py    — JSON-Seed-Files laden + validieren
+  codes.py     — Code-Lookup-Funktionen (get_material, get_sealing_type etc.)
+```
+
+**Test:** `tests/test_sts_loader.py` — alle Codes ladbar, keine Duplikate.
+
+### W1.2 — Qdrant Collection korrigieren (0,5 Tage)
+
+**Problem:** Collection `sealai_knowledge_v3` mit 768-dim, 0 Docs, keine Indizes.
+**Aktion:** Migration-Script schreiben + ausführen.
+
+```python
+# backend/app/agent/rag/setup_collections.py
+
+# Altes löschen, Neues anlegen:
+# sealai_technical_docs
+# dense: 384-dim (paraphrase-multilingual-MiniLM-L12-v2), Cosine
+# sparse: BM25
+# Payload-Indizes: sts_mat_codes, sts_type_codes, doc_type, language
+```
+
+**Test:** `curl http://qdrant:6333/collections/sealai_technical_docs` → 384-dim + sparse + Indizes.
+
+### W1.3 — PromptRegistry implementieren (1–2 Tage)
+
+**Neue Dateien:**
+```
+backend/app/agent/prompts/
+  __init__.py              PromptRegistry (Singleton)
+  renderer/
+    base.j2                Basis + Disclaimer (IMMER geladen)
+    conversational.j2
+    clarification.j2
+    state_update.j2
+    preselection.j2        (nicht recommendation.j2!)
+    candidate_list.j2
+    inquiry_ready.j2       (nicht rfq_ready.j2!)
+  gate/
+    gate_classify.j2       3-Way Klassifikation
+  intake/
+    observe.j2             Parameter-Extraktion (Structured Output)
+  exploration/
+    explore.j2
+    compare.j2
+    detail.j2
+```
+
+**PromptRegistry:**
+```python
+class PromptRegistry:
+    def __init__(self):
+        self._env = Environment(
+            loader=FileSystemLoader(PROMPTS_DIR),
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+    def render(self, template_path: str, context: dict) -> str: ...
+    def renderer_system_prompt(self, outward_class: str, context: dict) -> str: ...
+
+prompts = PromptRegistry()  # Singleton
+```
+
+**Gate-Prompt migrieren:**
+- `runtime/gate.py`: `_GATE_SYSTEM_PROMPT` (hardcoded) → `prompts.render("gate/gate_classify.j2", context)`
+
+**Test:** `tests/test_prompt_registry.py` — alle Templates renderbar, keine fehlenden Variablen.
+
+### W1.4 — Gate-Routen umbenennen (0,5 Tage)
+
+```python
+# runtime/gate.py
+# ALT → NEU:
+"instant_light_reply" → "CONVERSATION"
+"light_exploration"   → "EXPLORATION"
+"governed_needed"     → "GOVERNED"
+```
+
+Alias-Dict für Übergangsphase (reverse-compat für Tests):
+```python
+ROUTE_ALIASES = {
+    "instant_light_reply": "CONVERSATION",
+    "light_exploration": "EXPLORATION",
+    "governed_needed": "GOVERNED",
+}
+```
+
+**Test:** Alle bestehenden Gate-Tests müssen weiter grün sein (Aliases greifen).
+
+### W1.5 — 25 fehlgeschlagene Tests fixen (1–2 Tage)
+
+Priorisierung:
+1. `test_reducers` (3) — GovernanceClass + Direct-Write-Guards
+2. `test_requirement_class_specialist` (3) — PTFE/Steam-Fälle
+3. `test_output_contract_node` (2) — Clarification-Reply
+4. `test_topology` (2) — End-to-End Response-Class
+5. Rest (15) — Working-Profile, Projections, Policy-Drift
+
+---
+
+## WOCHE 2 — State-Konsolidierung + RAG
+
+### W2.1 — State auf 6-Schichten-Konzept mappen (2–3 Tage)
+
+**Strategie:** Nicht neu bauen — bestehende Schichten umbenennen/konsolidieren.
+
+```python
+# Mapping:
+ObservedState      → bleibt (bereits korrekt)
+NormalizedState    → bleibt (bereits korrekt)
+AssertedState      → wird zu DerivedState
+                     (deterministische Berechnungen + RC)
+EvidenceState      → NEU als eigene Schicht
+                     (aus rag_evidence im AssertedState extrahieren)
+GovernanceState    → wird zu DecisionState
+                     (outward_class, preselection, assumptions)
+RfqState +         → werden zu ActionReadinessState
+DispatchState        (pdf_ready, idempotency_key, inquiry_sent)
+```
+
+**Neue Felder:**
+```python
+class ActionReadinessState(BaseModel):
+    pdf_ready: bool = False
+    pdf_url: str | None = None
+    inquiry_sent: bool = False
+    idempotency_key: str = Field(default_factory=lambda: str(ulid.new()))
+    missing_for_inquiry: list[str] = []
+
+class EvidenceState(BaseModel):
+    evidence_results: list[EvidenceItem] = []
+    source_versions: dict[str, str] = {}  # doc_id → checksum
+    retrieval_query: str | None = None
+```
+
+**Achtung:** Bestehende Tests die `AssertedState`/`GovernanceState` direkt referenzieren müssen angepasst werden.
+
+### W2.2 — DEPENDENCY_MAP + Stale-State (2 Tage)
+
+```python
+# state/reducers.py (Ergänzung)
+DEPENDENCY_MAP: dict[str, list[str]] = {
+    "temperature_max":  ["material_suitability", "requirement_class", "preselection"],
+    "medium":           ["material_suitability", "requirement_class", "applicable_norms"],
+    "rpm":              ["pv_value", "velocity", "material_suitability"],
+    "shaft_diameter":   ["pv_value", "velocity"],
+    "pressure":         ["requirement_class", "material_suitability"],
+    "medium_confidence":["material_suitability"],
+}
+
+def invalidate_downstream(changed_field: str, state: SealAIState) -> SealAIState:
+    affected = DEPENDENCY_MAP.get(changed_field, [])
+    for field in affected:
+        # Setze betroffene Felder auf "stale"
+        ...
+    state.decision.preselection = None
+    state.action_readiness.pdf_ready = False
+    state.action_readiness.pdf_url = None
+    return state
+```
+
+### W2.3 — Idempotency Keys + decision_basis_hash (1 Tag)
+
+```python
+# state/models.py
+class ActionReadinessState(BaseModel):
+    idempotency_key: str = Field(default_factory=lambda: str(ulid.new()))
+
+# state/persistence.py
+def compute_decision_basis_hash(state: SealAIState) -> str:
+    relevant = {
+        "normalized": state.normalized.dict(),
+        "derived": state.derived.dict(),
+        "evidence_versions": state.evidence.source_versions,
+        "ontology_version": STS_VERSION,
+        "prompt_version": PROMPT_VERSION,
+    }
+    return hashlib.sha256(json.dumps(relevant, sort_keys=True).encode()).hexdigest()[:16]
+```
+
+### W2.4 — EvidenceQuery + ExplorationQuery (2 Tage)
+
+**Neue Dateien:**
+```python
+# agent/evidence/evidence_query.py
+@dataclass
+class EvidenceQuery:
+    topic: str
+    detected_sts_codes: list[str]  # für Qdrant-Filter
+    query_intent: Literal["material_suitability", "failure_mode",
+                          "norm_reference", "calculation_basis"]
+    language: str = "de"
+    max_results: int = 5
+
+# agent/evidence/exploration_query.py
+@dataclass
+class ExplorationQuery:
+    topic: str
+    detected_parameters: list[str]
+    query_intent: Literal["material_suitability", "material_comparison",
+                          "material_detail", "norm_explanation",
+                          "general_orientation"]
+    comparison_candidates: list[str] = field(default_factory=list)
+    language: str = "de"
+    max_results: int = 3
+```
+
+### W2.5 — evidence_node mit EvidenceQuery verbinden (1 Tag)
+
+```python
+# graph/nodes/evidence_node.py
+async def evidence_node(state: SealAIState, writer: StreamWriter) -> SealAIState:
+    query = build_evidence_query(state.derived)  # deterministisch
+    results = await retrieval.retrieve_evidence(query)
+    writer({"event_type": "evidence_retrieved", "sources_count": len(results)})
+    return state.model_copy(update={
+        "evidence": EvidenceState(
+            evidence_results=results,
+            source_versions={r.doc_id: r.doc_version_hash for r in results}
+        )
+    })
+```
+
+### W2.6 — Pilot-Datenblätter in Paperless laden (1 Tag)
+
+Manuell: 5–10 Datenblätter hochladen + Tags vergeben:
+```
+doc_type:datasheet
+sts_mat:STS-MAT-SIC-A1
+sts_type:STS-TYPE-GS-CART
+lang:de
+source:hersteller-name
+```
+
+→ Ersten Webhook-Ingest testen.
+
+---
+
+## WOCHE 3 — Naming-Cleanup + Legacy-Entkopplung
+
+### W3.1 — Outward-Class-Rename (1 Tag)
+
+**Atomar — alle Dateien in einem Commit:**
+
+```bash
+# Alle Vorkommen finden:
+grep -rn "governed_recommendation\|rfq_ready\|rfq_admissible" \
+  backend/app --include="*.py" -l
+
+# Rename-Script:
+governed_recommendation  → technical_preselection
+rfq_ready               → inquiry_ready
+rfq_admissible          → inquiry_admissible
+manufacturer_match_result → candidate_shortlist
+```
+
+Betroffene Dateien: api/models.py, output_contract_node.py,
+surface_claims.py, response_renderer.py, alle Tests die diese Classes referenzieren.
+
+**Alias-Mapping für API-Rückwärtskompatibilität:**
+```python
+OUTWARD_CLASS_ALIASES = {
+    "governed_recommendation": "technical_preselection",
+    "rfq_ready": "inquiry_ready",
+}
+```
+
+### W3.2 — Legacy-Import-Entkopplung (3–4 Tage)
+
+**Schritt 1:** `services/rag/contracts.py` anlegen:
+```python
+@dataclass
+class RAGInput:
+    query: str
+    parameters: dict
+    language: str
+
+@dataclass
+class RAGOutput:
+    chunks: list[dict]
+    sources: list[str]
+    confidence: float
+```
+
+**Schritt 2:** Alle 15 betroffenen Dateien migrieren:
+```
+services/rag/nodes/p1_context.py
+services/rag/nodes/p2_rag_lookup.py
+services/rag/nodes/p4_live_calc.py
+services/rag/nodes/p4a_extract.py
+services/rag/nodes/p4b_calc_render.py
+services/rag/nodes/p4_5_quality_gate.py
+services/rag/render.py
+services/fast_brain/router.py
+services/auth/dependencies.py
+mcp/knowledge_tool.py
+utils/jinja_renderer.py
+(4 Test-Dateien)
+```
+
+Jede Datei: `from app._legacy_v2` → `from app.agent.state.models` oder `from app.services.rag.contracts`.
+
+### W3.3 — V2-Endpoint hinter Feature-Flag (1 Tag)
+
+```python
+# api/v1/endpoints/langgraph_v2.py
+import os
+if not os.getenv("ENABLE_LEGACY_V2_ENDPOINT", "false").lower() == "true":
+    # Endpoint nicht mounten
+    pass
+```
+
+`.env`: `ENABLE_LEGACY_V2_ENDPOINT=false` für neue Deployments.
+
+### W3.4 — interaction_policy.py + FastBrainRouter entfernen (1 Tag)
+
+```bash
+# Erst prüfen ob noch referenziert:
+grep -rn "interaction_policy\|FastBrainRouter\|fast_brain" \
+  backend/app/agent --include="*.py"
+
+# Dann löschen:
+rm services/fast_brain/router.py
+# interaction_policy.py: in gate.py integrieren oder löschen
+```
+
+### W3.5 — Keycloak-Rollen anlegen (0,5 Tage)
+
+Via Keycloak Admin-API oder UI:
+```
+Realm: sealAI
+Rollen hinzufügen:
+  - user_basic    (Analyse + PDF, kostenlos)
+  - user_pro      (mehrere Cases, History)
+  - manufacturer  (Inquiry-Empfang, Mapping)
+  - admin         (Ontologie, Paperless, Monitoring)
+```
+
+---
+
+## WOCHE 4 — Pipeline-Integration
+
+### W4.1 — Gotenberg Container starten + integrieren (0,5 Tage)
+
+```yaml
+# docker-compose.yml (Haupt) ergänzen:
+gotenberg:
+  image: gotenberg/gotenberg:8.15.0
+  restart: unless-stopped
+  networks:
+    - sealai
+
+tika:
+  image: apache/tika:2.9.2.1
+  restart: unless-stopped
+  networks:
+    - sealai
+```
+
+### W4.2 — Gotenberg-Client implementieren (2 Tage)
+
+**Neue Datei:** `backend/app/agent/documents/pdf_generator.py`
+
+```python
+async def generate_inquiry_pdf(state: SealAIState) -> bytes:
+    # Idempotency-Check
+    key = state.action_readiness.idempotency_key
+    cached = await redis.get(f"pdf:{key}")
+    if cached: return cached
+
+    # Jinja2 → HTML
+    html = prompts.render("pdf/inquiry.html.j2", build_pdf_context(state))
+
+    # Gotenberg → PDF
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{settings.GOTENBERG_URL}/forms/chromium/convert/html",
+            files={"files": ("index.html", html, "text/html")},
+            timeout=30.0
+        )
+
+    # Cache + Audit
+    await redis.setex(f"pdf:{key}", 86400, response.content)
+    await write_pdf_audit(state, key)
+    return response.content
+```
+
+### W4.3 — Inquiry HTML-Template (2 Tage)
+
+**Neue Dateien:**
+```
+backend/app/agent/prompts/pdf/
+  inquiry.html.j2      Haupt-Template (Parameter, Calc, Vorauswahl, Disclaimer)
+  styles.css           Print-optimiertes CSS
+```
+
+Das Template zeigt:
+1. Bedarfsanalyse
+2. Parameter-Tabelle (mit Status-Badges: bestätigt/angenommen/offen)
+3. Berechnungen mit Formeln
+4. Normreferenzen
+5. Technische Vorauswahl (mit fit_score, nicht "Wahrscheinlichkeit")
+6. Annahmen-Liste
+7. Offene Prüfpunkte für Hersteller
+8. Disclaimer (Vorauswahl, Hersteller entscheidet final)
+
+### W4.4 — interrupt() für Clarification-Loop (2–3 Tage)
+
+```python
+# graph/nodes/renderer_node.py
+from langgraph.types import interrupt
+
+async def renderer_node(state: SealAIState) -> SealAIState:
+    context = build_renderer_context(state)
+    system_prompt = prompts.renderer_system_prompt(
+        outward_class=state.decision.outward_class,
+        context=context
+    )
+    response = await llm.ainvoke(system_prompt)
+
+    if state.decision.outward_class == "structured_clarification":
+        user_input = interrupt({"response": response.content})
+        return state.model_copy(update={
+            "observed": state.observed.model_copy(
+                update={"raw_input": user_input}
+            )
+        })
+
+    return state.model_copy(update={
+        "action_readiness": state.action_readiness.model_copy(update={
+            "rendered_response": {
+                "outward_class": state.decision.outward_class,
+                "content": response.content,
+            }
+        })
+    })
+```
+
+### W4.5 — StreamWriter Progress-Events (1–2 Tage)
+
+```python
+# Jeder relevante Node bekommt StreamWriter:
+async def evidence_node(state: SealAIState, writer: StreamWriter) -> SealAIState:
+    writer({"event_type": "evidence_retrieved", "sources_count": len(results)})
+
+async def compute_node(state: SealAIState, writer: StreamWriter) -> SealAIState:
+    writer({"event_type": "compute_complete", "pv_value": pv})
+
+async def governance_node(state: SealAIState, writer: StreamWriter) -> SealAIState:
+    writer({"event_type": "governance_ready", "outward_class": outward_class})
+```
+
+### W4.6 — PostgreSQL: Cases + State-Snapshots (1–2 Tage)
+
+```sql
+CREATE TABLE cases (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_number VARCHAR(50) UNIQUE,  -- STS-INQ-2026-04-001
+    user_id     UUID NOT NULL,
+    subsegment  VARCHAR(100),
+    status      VARCHAR(50) DEFAULT 'active',
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE case_state_snapshots (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id         UUID REFERENCES cases(id),
+    revision        INTEGER NOT NULL,
+    state_json      JSONB NOT NULL,
+    basis_hash      VARCHAR(32),
+    ontology_version VARCHAR(50),
+    prompt_version  VARCHAR(50),
+    model_version   VARCHAR(50),
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+---
+
+## WOCHE 5–9 — Legacy-Bereinigung + selection.py
+
+### W5.1 — selection.py zerlegen (5–7 Tage)
+
+Aufteilen in 5 Module:
+```
+agent/agent/clarification.py       Clarification-Priority, Missing-Inputs
+agent/agent/readiness.py           OutputReadiness, is_releasable
+agent/agent/reply_builder.py       build_final_reply, Projection-Building
+agent/state/projections_extended.py alle build_*_projection Funktionen
+agent/domain/threshold.py          RWDR-Threshold-Logic
+```
+
+Regel: Keine neuen Funktionen. Nur verschieben und testen.
+Nach jedem verschobenen Modul: alle Tests grün.
+
+### W5.2 — Command-Routing implementieren (2–3 Tage)
+
+```python
+# Alle Nodes die aktuell statische Edges haben bekommen Command:
+from langgraph.types import Command
+
+async def governance_node(state: SealAIState) -> Command:
+    outward_class = determine_outward_class(state)
+    if outward_class == "structured_clarification":
+        return Command(
+            update={...},
+            goto="renderer_node"
+        )
+    return Command(
+        update={...},
+        goto="output_contract_node"
+    )
+```
+
+### W5.3 — Grafana Dashboards (2 Tage)
+
+Dashboard 1 (bereits vorhanden): SeaLAI Operations
+Dashboard 2 (neu): RAG Intelligence — Qdrant-Größe, Evidence-Scores, Ingestion-Rate
+Dashboard 3 (neu): Business — Inquiries, Quote-Rate, Hersteller-Response
+
+---
+
+## Phase F Done-Kriterium
+
+```
+✓ "Gleitring für 80°C Salzwasser, 50mm, 6000 U/min"
+  → Gate: GOVERNED
+  → 8 Kern-Nodes durchlaufen
+  → technical_preselection mit fit_score ausgegeben
+  → Token-Stream am Frontend
+  → Cockpit: Parameter + PV-Wert + Vorauswahl sichtbar
+  → PDF via Gotenberg erzeugbar
+  → Audit-Log Eintrag in PostgreSQL
+
+✓ "Welche Materialien für Salzwasser?"
+  → Gate: EXPLORATION
+  → 1 RAG-Lookup (Qdrant)
+  → conversational_answer
+
+✓ "Hallo, wie geht es dir?"
+  → Gate: CONVERSATION
+  → conversational_answer, < 1s
+
+✓ Kein Request in langgraph_v2/ (Feature-Flag off)
+✓ Alle 1.573 Tests grün
+✓ LangSmith zeigt Traces
+✓ Gotenberg + Tika Container laufen
+```
+
+---
+
+## Nächster konkreter Schritt
+
+**W1.1 jetzt starten:**
+
+```
+Lies CLAUDE.md und konzept/SEALAI_STACK_ARCHITEKTUR vollständig.
+
+Erstelle die STS-Seed-Files unter backend/app/agent/data/sts/:
+  - materials.json (30 Materialcodes, STS-MAT-*)
+  - sealing_types.json (25 Dichtungstypen, STS-TYPE-*)
+  - requirement_classes.json (12 Klassen, STS-RS-*)
+  - media.json (40 Mediumcodes, STS-MED-*)
+  - open_points.json (25 Prüfpunkte, STS-OPEN-*)
+
+Dann erstelle backend/app/agent/sts/loader.py und codes.py.
+Dann schreibe tests/test_sts_loader.py.
+
+Alle bestehenden Tests müssen weiter grün bleiben.
+

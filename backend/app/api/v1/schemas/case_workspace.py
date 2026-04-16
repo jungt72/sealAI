@@ -119,6 +119,20 @@ class ClaimsSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EvidenceSummary(BaseModel):
+    evidence_present: bool = False
+    evidence_count: int = 0
+    trusted_sources_present: bool = False
+    evidence_supported_topics: List[str] = Field(default_factory=list)
+    source_backed_findings: List[str] = Field(default_factory=list)
+    deterministic_findings: List[str] = Field(default_factory=list)
+    assumption_based_findings: List[str] = Field(default_factory=list)
+    unresolved_open_points: List[str] = Field(default_factory=list)
+    evidence_gaps: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ManufacturerQuestions(BaseModel):
     mandatory: List[str] = Field(default_factory=list)
     open_questions: List[Dict[str, Any]] = Field(default_factory=list)
@@ -218,7 +232,10 @@ class PartnerMatchingSummary(BaseModel):
     real partner database is connected, 'partner_db' when a live catalog exists.
     """
     matching_ready: bool = False
+    shortlist_ready: bool = False
+    inquiry_ready: bool = False
     not_ready_reasons: List[str] = Field(default_factory=list)
+    blocking_reasons: List[str] = Field(default_factory=list)
     material_fit_items: List[MaterialFitItem] = Field(default_factory=list)
     open_manufacturer_questions: List[str] = Field(default_factory=list)
     selected_partner_id: Optional[str] = None
@@ -310,12 +327,14 @@ class CaseWorkspaceProjection(BaseModel):
     candidate_clusters: CandidateClusterSummary = Field(default_factory=CandidateClusterSummary)
     conflicts: ConflictSummary = Field(default_factory=ConflictSummary)
     claims_summary: ClaimsSummary = Field(default_factory=ClaimsSummary)
+    evidence_summary: EvidenceSummary = Field(default_factory=EvidenceSummary)
     manufacturer_questions: ManufacturerQuestions = Field(default_factory=ManufacturerQuestions)
     rfq_status: RFQStatus = Field(default_factory=RFQStatus)
     artifact_status: ArtifactStatus = Field(default_factory=ArtifactStatus)
     rfq_package: RFQPackageSummary = Field(default_factory=RFQPackageSummary)
     partner_matching: PartnerMatchingSummary = Field(default_factory=PartnerMatchingSummary)
     communication_context: CommunicationContext = Field(default_factory=CommunicationContext)
+    parameters: Dict[str, Any] = Field(default_factory=dict)
     medium_capture: MediumCaptureSummary = Field(default_factory=MediumCaptureSummary)
     medium_classification: MediumClassificationSummary = Field(default_factory=MediumClassificationSummary)
     medium_context: MediumContextSummary = Field(default_factory=MediumContextSummary)

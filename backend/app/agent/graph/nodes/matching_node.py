@@ -46,6 +46,7 @@ _REQUIREMENT_CLASS_MATERIAL_HINTS: dict[str, str] = {
     "PTFE": "PTFE",
     "FKM": "FKM",
 }
+_BLOCKING_EVIDENCE_GAPS = {"retrieval_failed", "no_evidence_retrieved"}
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,38 @@ def _asserted_float(state: GraphState, field_name: str) -> float | None:
         return float(claim.asserted_value)
     except (TypeError, ValueError):
         return None
+
+
+def _preselection_blocker_fields(state: GraphState) -> list[str]:
+    return list(
+        dict.fromkeys(
+            list(getattr(state.governance, "preselection_blockers", []) or [])
+            + list(getattr(state.governance, "compliance_blockers", []) or [])
+            + list(getattr(state.governance, "type_sensitive_required", []) or [])
+        )
+    )
+
+
+def _blocking_evidence_gaps_for_release(state: GraphState) -> list[str]:
+    blockers: list[str] = []
+    for gap in list(getattr(state.evidence, "evidence_gaps", []) or []):
+        text = str(gap or "").strip()
+        if not text:
+            continue
+        if text.startswith("missing_source_for_") or text in _BLOCKING_EVIDENCE_GAPS:
+            blockers.append(text)
+    return list(dict.fromkeys(blockers))
+
+
+def _matching_release_blockers(state: GraphState) -> list[str]:
+    blockers: list[str] = []
+    if state.governance.gov_class != "A":
+        blockers.append("governance_not_class_a")
+    blockers.extend(_preselection_blocker_fields(state))
+    blockers.extend(_blocking_evidence_gaps_for_release(state))
+    blockers.extend(str(item) for item in list(state.asserted.blocking_unknowns or []) if item)
+    blockers.extend(f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item)
+    return list(dict.fromkeys(blockers))
 
 
 def _material_family_for_matching(state: GraphState) -> str | None:
@@ -199,14 +232,15 @@ def _fit_record(state: GraphState, record: Any) -> _CapabilityFit:
     )
 
 
-def _build_match_candidates(state: GraphState) -> tuple[list[dict[str, Any]], list[str]]:
+def _build_match_candidates(state: GraphState) -> tuple[list[dict[str, Any]], list[str], bool]:
     provider = get_default_domain_data_provider()
     records = provider.list_material_records()
     notes: list[str] = []
     candidates: list[dict[str, Any]] = []
+    demo_candidate_present = False
 
     if not records:
-        return [], ["No governed manufacturer records are available."]
+        return [], ["No governed manufacturer records are available."], False
 
     if any(bool(getattr(record, "is_demo_only", False)) for record in records):
         notes.append("Matching uses the current demo manufacturer catalog.")
@@ -218,6 +252,8 @@ def _build_match_candidates(state: GraphState) -> tuple[list[dict[str, Any]], li
                 f"Rejected {record.record_id}: {'; '.join(fit.blocking_reasons)}"
             )
             continue
+        if bool(getattr(record, "is_demo_only", False)):
+            demo_candidate_present = True
         candidates.append(
             {
                 "candidate_id": record.record_id,
@@ -250,7 +286,7 @@ def _build_match_candidates(state: GraphState) -> tuple[list[dict[str, Any]], li
             f"{top_candidate['candidate_id']} with capability score {int(top_candidate.get('fit_score') or 0)} "
             f"based on {', '.join(list(top_candidate.get('fit_reasons') or []))}."
         )
-    return candidates, notes
+    return candidates, notes, demo_candidate_present
 
 
 async def matching_node(state: GraphState) -> GraphState:
@@ -294,7 +330,7 @@ async def matching_node(state: GraphState) -> GraphState:
             }
         )
 
-    match_candidates, notes = _build_match_candidates(state)
+    match_candidates, notes, demo_candidate_present = _build_match_candidates(state)
     manufacturer_refs = _build_manufacturer_refs(
         recommendation_identity=match_candidates[0] if match_candidates else None,
         match_candidates=match_candidates,
@@ -315,6 +351,46 @@ async def matching_node(state: GraphState) -> GraphState:
         requirement_class=requirement_class_payload,
         match_candidates=match_candidates,
     )
+    release_blockers = _matching_release_blockers(state)
+    data_source = "demo_catalog" if demo_candidate_present else "governed_domain_data"
+    if demo_candidate_present:
+        release_blockers.append("demo_matching_catalog")
+    release_blockers = list(dict.fromkeys(release_blockers))
+    if release_blockers:
+        if match_candidates:
+            notes.append(
+                "Matching candidates are retained as internal capability signals but are not released as a shortlist."
+            )
+        return state.model_copy(
+            update={
+                "matching": MatchingState.model_validate(
+                    {
+                        "matchability_status": "not_released",
+                        "status": "candidate_not_released" if match_candidates else "blocked_release_basis",
+                        "shortlist_ready": False,
+                        "inquiry_ready": False,
+                        "release_blockers": release_blockers,
+                        "data_source": data_source,
+                        "selected_manufacturer_ref": None,
+                        "manufacturer_refs": manufacturer_refs,
+                        "manufacturer_capabilities": [
+                            {
+                                "manufacturer_name": item.get("manufacturer_name"),
+                                "requirement_class_ids": list(item.get("requirement_class_ids") or []),
+                                "material_families": list(item.get("material_families") or []),
+                                "grade_names": list(item.get("grade_names") or []),
+                                "candidate_ids": list(item.get("candidate_ids") or []),
+                                "capability_hints": list(item.get("capability_hints") or []),
+                                "source_refs": list(item.get("capability_sources") or []),
+                                "qualified_for_rfq": False,
+                            }
+                            for item in manufacturer_capabilities
+                        ],
+                        "matching_notes": notes,
+                    }
+                )
+            }
+        )
     matchability_status = "ready_for_matching"
     specialist_result = run_manufacturer_rfq_specialist(
         ManufacturerRfqSpecialistInput(
@@ -365,6 +441,14 @@ async def matching_node(state: GraphState) -> GraphState:
                 {
                     "matchability_status": outcome.get("matchability_status") or matchability_status,
                     "status": outcome.get("status") or "not_ready",
+                    "shortlist_ready": outcome.get("status") == "matched_primary_candidate",
+                    "inquiry_ready": (
+                        outcome.get("status") == "matched_primary_candidate"
+                        and state.governance.rfq_admissible
+                        and not state.governance.open_validation_points
+                    ),
+                    "release_blockers": [],
+                    "data_source": data_source,
                     "selected_manufacturer_ref": outcome.get("selected_manufacturer_ref"),
                     "manufacturer_refs": manufacturer_refs,
                     "manufacturer_capabilities": [

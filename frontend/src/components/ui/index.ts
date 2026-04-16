@@ -1,6 +1,6 @@
 /**
- * SealAI UI-Komponenten — Barrel-Export.
- * Alle Komponenten nutzen Tailwind-Tokens, kein ad-hoc Hex.
+ * UI Components — Barrel-Export.
+ * All components use Material 3 and Gemini tokens.
  */
 export { default as Button } from "./Button";
 export type { ButtonProps } from "./Button";

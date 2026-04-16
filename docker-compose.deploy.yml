@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ${BACKEND_IMAGE}
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: always
     env_file:
       - ./.env.prod
@@ -10,10 +10,10 @@ services:
       - backend-data:/app/data
   frontend:
     profiles: ["frontend-container"]
-    image: ${FRONTEND_IMAGE}
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: always
   keycloak:
-    image: ${KEYCLOAK_IMAGE}
+    image: ${KEYCLOAK_IMAGE:?KEYCLOAK_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: always
     env_file: [ ./.env.prod ]
 volumes:

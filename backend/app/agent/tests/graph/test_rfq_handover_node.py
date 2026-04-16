@@ -25,6 +25,13 @@ def _base_state() -> GraphState:
             "pressure_bar": _claim("pressure_bar", 12.0),
             "temperature_c": _claim("temperature_c", 180.0),
             "material": _claim("material", "PTFE"),
+            "sealing_type": _claim("sealing_type", "gasket"),
+            "pressure_direction": _claim("pressure_direction", "innen"),
+            "contamination": _claim("contamination", "none"),
+            "counterface_surface": _claim("counterface_surface", "smooth"),
+            "tolerances": _claim("tolerances", "standard"),
+            "medium_qualifiers": _claim("medium_qualifiers", "clean"),
+            "geometry_context": _claim("geometry_context", "flange"),
         }
     )
     governance = reduce_asserted_to_governance(asserted)
@@ -42,6 +49,8 @@ class TestRfqHandoverNode:
                 "matching": MatchingState(
                     status="matched_primary_candidate",
                     matchability_status="ready_for_matching",
+                    shortlist_ready=True,
+                    inquiry_ready=True,
                     selected_manufacturer_ref=ManufacturerRef(
                         manufacturer_name="Acme",
                         candidate_ids=["registry-ptfe-g25-acme"],
@@ -83,6 +92,28 @@ class TestRfqHandoverNode:
         assert result.rfq.selected_manufacturer_ref is None
 
     @pytest.mark.asyncio
+    async def test_not_ready_when_matching_is_not_released(self):
+        result = await rfq_handover_node(
+            _base_state().model_copy(
+                update={
+                    "matching": MatchingState(
+                        status="candidate_not_released",
+                        matchability_status="not_released",
+                        release_blockers=["demo_matching_catalog"],
+                        selected_manufacturer_ref=ManufacturerRef(
+                            manufacturer_name="Acme",
+                            candidate_ids=["registry-ptfe-g25-acme"],
+                        ),
+                    )
+                }
+            )
+        )
+
+        assert result.rfq.rfq_ready is False
+        assert result.rfq.status == "not_ready"
+        assert "demo_matching_catalog" in result.rfq.blocking_findings
+
+    @pytest.mark.asyncio
     async def test_missing_prerequisites_do_not_crash(self):
         result = await rfq_handover_node(GraphState())
 
@@ -109,6 +140,8 @@ class TestRfqHandoverNode:
                     "matching": MatchingState(
                         status="matched_primary_candidate",
                         matchability_status="ready_for_matching",
+                    shortlist_ready=True,
+                    inquiry_ready=True,
                         selected_manufacturer_ref=ManufacturerRef(
                             manufacturer_name="Acme",
                             candidate_ids=["registry-ptfe-g25-acme"],
@@ -149,6 +182,8 @@ class TestRfqHandoverNode:
                     "matching": MatchingState(
                         status="matched_primary_candidate",
                         matchability_status="ready_for_matching",
+                    shortlist_ready=True,
+                    inquiry_ready=True,
                         selected_manufacturer_ref=ManufacturerRef(
                             manufacturer_name="Acme",
                             candidate_ids=["registry-ptfe-g25-acme"],
@@ -220,6 +255,8 @@ class TestRfqHandoverNode:
                     "matching": MatchingState(
                         status="matched_primary_candidate",
                         matchability_status="ready_for_matching",
+                    shortlist_ready=True,
+                    inquiry_ready=True,
                         selected_manufacturer_ref=ManufacturerRef(
                             manufacturer_name="Acme",
                             candidate_ids=["registry-ptfe-g25-acme"],

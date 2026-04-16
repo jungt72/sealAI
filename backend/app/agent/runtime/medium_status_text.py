@@ -119,8 +119,24 @@ def medium_status_primary_question(state: GovernedSessionState) -> tuple[str, st
 def render_open_point_label(state: GovernedSessionState | None, field_name: str) -> str:
     if field_name == "medium" and state is not None:
         return medium_status_open_point(state)
+    if field_name == "sealing_type":
+        return "Dichtungstyp / Dichtprinzip"
     if field_name == "application_context":
         return "Anwendungs- und Bewegungsart präzisieren"
+    if field_name == "duty_profile":
+        return "Betriebsprofil"
+    if field_name == "pressure_direction":
+        return "Druckrichtung / Wirkprinzip"
+    if field_name == "contamination":
+        return "Schmutz, Partikel oder abrasive Anteile"
+    if field_name == "tolerances":
+        return "Rundlauf, Exzentrizitaet oder Toleranzen"
+    if field_name == "industry":
+        return "Branche / Einsatzumfeld"
+    if field_name == "compliance":
+        return "Regulatorische Anforderungen"
+    if field_name == "medium_qualifiers":
+        return "Mediumdetails wie Konzentration, Chloride oder Feststoffe"
     if field_name == "speed_rpm":
         return "Drehzahl der rotierenden Welle"
     if field_name == "shaft_diameter_mm":

@@ -14,6 +14,15 @@ function legacyProjection() {
       confirmed_facts_summary: ["Medium: Steam"],
       open_points_summary: ["Betriebsdruck"],
     },
+    parameters: {
+      medium: "Steam",
+      pressure_bar: 12,
+      temperature_c: 180,
+      shaft_diameter_mm: 50,
+      speed_rpm: 6000,
+      installation: "rotierende Wellenabdichtung",
+      motion_type: "rotary",
+    },
     case_summary: {
       thread_id: "case-123",
       turn_count: 4,
@@ -82,6 +91,17 @@ function legacyProjection() {
         { value: "NBR excluded", claim_type: "deterministic_fact", claim_origin: "deterministic" },
       ],
     },
+    evidence_summary: {
+      evidence_present: true,
+      evidence_count: 1,
+      trusted_sources_present: true,
+      evidence_supported_topics: ["medium"],
+      source_backed_findings: ["medium"],
+      deterministic_findings: ["pressure_bar"],
+      assumption_based_findings: ["installation"],
+      unresolved_open_points: ["missing_source_for_compliance"],
+      evidence_gaps: ["missing_source_for_compliance"],
+    },
     manufacturer_questions: {
       mandatory: ["Compound approval?"],
       open_questions: [],
@@ -89,7 +109,10 @@ function legacyProjection() {
     },
     partner_matching: {
       matching_ready: true,
+      shortlist_ready: true,
+      inquiry_ready: false,
       not_ready_reasons: [],
+      blocking_reasons: ["manufacturer_validation_required"],
       material_fit_items: [
         {
           material: "FKM",
@@ -154,9 +177,17 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.governance.releaseClass, "C");
   assert.equal(workspace.completeness.coveragePercent, 65);
   assert.equal(workspace.matching.items.length, 1);
+  assert.equal(workspace.matching.shortlistReady, true);
+  assert.equal(workspace.matching.inquiryReady, false);
+  assert.deepEqual(workspace.matching.blockingReasons, ["manufacturer_validation_required"]);
   assert.equal(workspace.rfq.documentUrl, "/api/bff/rfq/case-123/document");
   assert.equal(workspace.communication?.conversationPhase, "clarification");
   assert.equal(workspace.communication?.primaryQuestion, "Koennen Sie den Betriebsdruck noch einordnen?");
+  assert.equal(workspace.parameters?.shaft_diameter_mm, 50);
+  assert.equal(workspace.parameters?.speed_rpm, 6000);
   assert.equal(workspace.technicalDerivations?.[0]?.calcType, "rwdr");
   assert.equal(workspace.technicalDerivations?.[0]?.vSurfaceMPerS, 3.93);
+  assert.equal(workspace.evidence.evidencePresent, true);
+  assert.deepEqual(workspace.evidence.sourceBackedFindings, ["medium"]);
+  assert.deepEqual(workspace.evidence.evidenceGaps, ["missing_source_for_compliance"]);
 });

@@ -94,6 +94,14 @@ def decide_cycle(state: GraphState) -> CycleDecision:
         return CycleDecision.TERMINATE
 
     if gov_class == "B":
+        if (
+            getattr(state.governance, "preselection_blockers", None)
+            or getattr(state.governance, "compliance_blockers", None)
+            or getattr(state.governance, "type_sensitive_required", None)
+        ):
+            log.debug("[cycle_control] Class B with preselection blockers → TERMINATE")
+            return CycleDecision.TERMINATE
+
         if cycle < max_cycles:
             log.debug(
                 "[cycle_control] Class B cycle=%d/%d → CONTINUE",

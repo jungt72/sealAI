@@ -39,6 +39,7 @@ from langgraph.config import get_stream_writer
 from app.agent.evidence.evidence_query import EvidenceQuery
 from app.agent.evidence.retrieval import retrieve_evidence
 from app.agent.graph import GraphState
+from app.agent.state.reducers import SimpleClaim, reduce_normalized_to_asserted
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,26 @@ _FIELD_UNIT: dict[str, str] = {
     "shaft_diameter_mm": "mm",
     "speed_rpm":        "rpm",
 }
+
+_EVIDENCE_SENSITIVE_FIELDS: frozenset[str] = frozenset({
+    "medium_qualifiers",
+    "material",
+    "industry",
+    "compliance",
+})
+
+_EVIDENCE_SENSITIVE_MEDIUM_MARKERS: tuple[str, ...] = (
+    "salz",
+    "nacl",
+    "saeure",
+    "säure",
+    "acid",
+    "hcl",
+    "chem",
+    "lebensmittel",
+    "food",
+    "pharma",
+)
 
 
 def _emit_progress_event(payload: dict) -> None:
@@ -171,6 +192,120 @@ def _extract_source_versions(cards: list[dict]) -> dict[str, str]:
     return source_versions
 
 
+def _card_id(card: dict) -> str | None:
+    metadata = card.get("metadata") if isinstance(card.get("metadata"), dict) else {}
+    value = card.get("evidence_id") or card.get("id") or card.get("source_ref") or metadata.get("doc_id")
+    return str(value) if value else None
+
+
+def _card_text(card: dict) -> str:
+    metadata = card.get("metadata") if isinstance(card.get("metadata"), dict) else {}
+    parts = [
+        card.get("content"),
+        card.get("text"),
+        card.get("snippet"),
+        card.get("statement"),
+        metadata.get("text"),
+        metadata.get("doc_title"),
+        card.get("source_ref"),
+    ]
+    return " ".join(str(part) for part in parts if part not in (None, "")).casefold()
+
+
+def _has_trusted_source(card: dict) -> bool:
+    metadata = card.get("metadata") if isinstance(card.get("metadata"), dict) else {}
+    return bool(
+        card.get("source_ref")
+        or card.get("source")
+        or card.get("doc_title")
+        or metadata.get("doc_id")
+        or metadata.get("source")
+        or metadata.get("doc_title")
+    )
+
+
+def _value_tokens(value: object) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip().casefold() for item in value if str(item).strip()]
+    text = str(value or "").strip().casefold()
+    return [text] if text else []
+
+
+def _requires_source_for_field(field_name: str, value: object) -> bool:
+    if field_name in _EVIDENCE_SENSITIVE_FIELDS:
+        return True
+    if field_name == "medium":
+        rendered = " ".join(_value_tokens(value))
+        return any(marker in rendered for marker in _EVIDENCE_SENSITIVE_MEDIUM_MARKERS)
+    return False
+
+
+def _build_evidence_claims(state: GraphState, cards: list[dict]) -> list[SimpleClaim]:
+    claims: list[SimpleClaim] = []
+    for field_name, param in state.normalized.parameters.items():
+        tokens = _value_tokens(param.value)
+        if not tokens:
+            continue
+        for card in cards:
+            card_id = _card_id(card)
+            if not card_id:
+                continue
+            haystack = _card_text(card)
+            if any(token and token in haystack for token in tokens):
+                claims.append(
+                    SimpleClaim(
+                        claim_id=card_id,
+                        field_name=field_name,
+                        value=param.value,
+                        confidence="confirmed" if _has_trusted_source(card) else "estimated",
+                    )
+                )
+                break
+    return claims
+
+
+def _build_evidence_classification(
+    state: GraphState,
+    cards: list[dict],
+    claims: list[SimpleClaim],
+) -> dict[str, object]:
+    claim_fields = {claim.field_name for claim in claims}
+    asserted_fields = set(state.asserted.assertions)
+    sensitive_asserted = sorted(
+        field_name
+        for field_name, claim in state.asserted.assertions.items()
+        if _requires_source_for_field(field_name, claim.asserted_value)
+    )
+    evidence_gaps = [f"missing_source_for_{field}" for field in sensitive_asserted if field not in claim_fields]
+    if not cards and sensitive_asserted:
+        evidence_gaps.insert(0, "no_evidence_retrieved")
+
+    assumption_fields = [
+        field_name
+        for field_name, claim in state.asserted.assertions.items()
+        if claim.confidence in {"estimated", "inferred"} and field_name not in claim_fields
+    ]
+
+    unresolved_open_points = list(
+        dict.fromkeys(
+            list(state.asserted.blocking_unknowns)
+            + [gap for gap in evidence_gaps if gap != "no_evidence_retrieved"]
+        )
+    )
+
+    return {
+        "evidence_present": bool(cards),
+        "evidence_count": len(cards),
+        "trusted_sources_present": any(_has_trusted_source(card) for card in cards),
+        "evidence_supported_topics": sorted(claim_fields),
+        "deterministic_findings": sorted(field for field in asserted_fields if field not in claim_fields),
+        "source_backed_findings": sorted(claim_fields),
+        "assumption_based_findings": sorted(assumption_fields),
+        "unresolved_open_points": unresolved_open_points,
+        "evidence_gaps": list(dict.fromkeys(evidence_gaps)),
+    }
+
+
 async def evidence_node(state: GraphState) -> GraphState:
     """Zone 4 — Retrieve structured evidence from RAG.
 
@@ -208,6 +343,17 @@ async def evidence_node(state: GraphState) -> GraphState:
         )
         audit = _build_retrieval_audit(query=evidence_query, cards=cards, metrics=metrics)
         source_versions = _extract_source_versions(cards)
+        evidence_claims = _build_evidence_claims(state, cards)
+        asserted = (
+            reduce_normalized_to_asserted(state.normalized, evidence=evidence_claims)
+            if state.normalized.parameters
+            else state.asserted
+        )
+        evidence_classification = _build_evidence_classification(
+            state.model_copy(update={"asserted": asserted}),
+            cards,
+            evidence_claims,
+        )
         log.debug(
             "[evidence_node] retrieved %d evidence cards (tenant=%s)",
             len(cards),
@@ -223,11 +369,13 @@ async def evidence_node(state: GraphState) -> GraphState:
             update={
                 "rag_evidence": cards,
                 "rag_evidence_audit": audit,
+                "asserted": asserted,
                 "evidence": state.evidence.model_copy(
                     update={
                         "evidence_results": cards,
                         "source_versions": source_versions,
                         "retrieval_query": evidence_query.topic,
+                        **evidence_classification,
                     }
                 ),
             }
@@ -253,6 +401,19 @@ async def evidence_node(state: GraphState) -> GraphState:
                         "evidence_results": [],
                         "source_versions": {},
                         "retrieval_query": evidence_query.topic,
+                        "evidence_present": False,
+                        "evidence_count": 0,
+                        "trusted_sources_present": False,
+                        "evidence_supported_topics": [],
+                        "deterministic_findings": sorted(state.asserted.assertions),
+                        "source_backed_findings": [],
+                        "assumption_based_findings": [
+                            field_name
+                            for field_name, claim in state.asserted.assertions.items()
+                            if claim.confidence in {"estimated", "inferred"}
+                        ],
+                        "unresolved_open_points": list(state.asserted.blocking_unknowns),
+                        "evidence_gaps": ["retrieval_failed"],
                     }
                 ),
                 "rag_evidence_audit": {

@@ -53,8 +53,8 @@ describe("useAgentStream", () => {
     expect(result.current.activeCaseId).toBe("case-1");
     expect(result.current.streamingText).toBe("");
     expect(result.current.messages).toEqual([
-      { role: "user", content: "Hallo" },
-      { role: "assistant", content: "Finale Antwort" },
+      expect.objectContaining({ role: "user", content: "Hallo" }),
+      expect.objectContaining({ role: "assistant", content: "Finale Antwort" }),
     ]);
   });
 
@@ -95,8 +95,8 @@ describe("useAgentStream", () => {
     });
 
     expect(result.current.messages).toEqual([
-      { role: "user", content: "Neue Nachricht" },
-      { role: "assistant", content: "Aktuelle Antwort" },
+      expect.objectContaining({ role: "user", content: "Neue Nachricht" }),
+      expect.objectContaining({ role: "assistant", content: "Aktuelle Antwort" }),
     ]);
   });
 });

@@ -1,7 +1,27 @@
 import type { WorkspaceView, WorkspaceLifecycleStep } from "@/lib/contracts/workspace";
-import { buildRfqDocumentReadPath } from "@/lib/bff/workspace";
+import { buildRfqDocumentReadPath } from "../bff/workspace.ts";
 
 type LegacyWorkspaceProjection = {
+  parameters?: {
+    medium?: string | null;
+    temperature_c?: number | null;
+    pressure_bar?: number | null;
+    sealing_type?: string | null;
+    pressure_direction?: string | null;
+    duty_profile?: string | null;
+    shaft_diameter_mm?: number | null;
+    speed_rpm?: number | null;
+    installation?: string | null;
+    geometry_context?: string | null;
+    contamination?: string | string[] | null;
+    counterface_surface?: string | null;
+    tolerances?: string | null;
+    industry?: string | null;
+    compliance?: string | string[] | null;
+    medium_qualifiers?: string | string[] | null;
+    motion_type?: string | null;
+  } | null;
+
   communication_context?: {
     conversation_phase?: string | null;
     turn_goal?: string | null;
@@ -114,6 +134,17 @@ type LegacyWorkspaceProjection = {
       claim_origin: string;
     }>;
   };
+  evidence_summary?: {
+    evidence_present?: boolean;
+    evidence_count?: number;
+    trusted_sources_present?: boolean;
+    evidence_supported_topics?: string[];
+    source_backed_findings?: string[];
+    deterministic_findings?: string[];
+    assumption_based_findings?: string[];
+    unresolved_open_points?: string[];
+    evidence_gaps?: string[];
+  };
   manufacturer_questions: {
     mandatory: string[];
     open_questions: Array<{
@@ -127,7 +158,10 @@ type LegacyWorkspaceProjection = {
   };
   partner_matching: {
     matching_ready: boolean;
+    shortlist_ready?: boolean;
+    inquiry_ready?: boolean;
     not_ready_reasons: string[];
+    blocking_reasons?: string[];
     material_fit_items: Array<{
       material: string;
       cluster: string;
@@ -274,6 +308,27 @@ export function mapWorkspaceView(
           openPointsSummary: projection.communication_context.open_points_summary || [],
         }
       : undefined,
+    parameters: projection.parameters
+      ? {
+          medium: projection.parameters.medium ?? null,
+          temperature_c: projection.parameters.temperature_c ?? null,
+          pressure_bar: projection.parameters.pressure_bar ?? null,
+          sealing_type: projection.parameters.sealing_type ?? null,
+          pressure_direction: projection.parameters.pressure_direction ?? null,
+          duty_profile: projection.parameters.duty_profile ?? null,
+          shaft_diameter_mm: projection.parameters.shaft_diameter_mm ?? null,
+          speed_rpm: projection.parameters.speed_rpm ?? null,
+          installation: projection.parameters.installation ?? null,
+          geometry_context: projection.parameters.geometry_context ?? null,
+          contamination: projection.parameters.contamination ?? null,
+          counterface_surface: projection.parameters.counterface_surface ?? null,
+          tolerances: projection.parameters.tolerances ?? null,
+          industry: projection.parameters.industry ?? null,
+          compliance: projection.parameters.compliance ?? null,
+          medium_qualifiers: projection.parameters.medium_qualifiers ?? null,
+          motion_type: projection.parameters.motion_type ?? null,
+        }
+      : undefined,
     lifecycle: {
       currentStep: lifecycleSteps.find((step) => step.status === "active")?.label || null,
       completedSteps: lifecycleSteps.filter((step) => step.status === "done").map((step) => step.label),
@@ -394,6 +449,17 @@ export function mapWorkspaceView(
         claimOrigin: item.claim_origin,
       })),
     },
+    evidence: {
+      evidencePresent: Boolean(projection.evidence_summary?.evidence_present),
+      evidenceCount: projection.evidence_summary?.evidence_count ?? 0,
+      trustedSourcesPresent: Boolean(projection.evidence_summary?.trusted_sources_present),
+      evidenceSupportedTopics: projection.evidence_summary?.evidence_supported_topics || [],
+      sourceBackedFindings: projection.evidence_summary?.source_backed_findings || [],
+      deterministicFindings: projection.evidence_summary?.deterministic_findings || [],
+      assumptionBasedFindings: projection.evidence_summary?.assumption_based_findings || [],
+      unresolvedOpenPoints: projection.evidence_summary?.unresolved_open_points || [],
+      evidenceGaps: projection.evidence_summary?.evidence_gaps || [],
+    },
     manufacturerQuestions: {
       mandatory: projection.manufacturer_questions.mandatory,
       openQuestions: projection.manufacturer_questions.open_questions.map((item) => ({
@@ -407,7 +473,10 @@ export function mapWorkspaceView(
     },
     matching: {
       ready: projection.partner_matching.matching_ready,
+      shortlistReady: Boolean(projection.partner_matching.shortlist_ready),
+      inquiryReady: Boolean(projection.partner_matching.inquiry_ready),
       notReadyReasons: projection.partner_matching.not_ready_reasons,
+      blockingReasons: projection.partner_matching.blocking_reasons || [],
       items: projection.partner_matching.material_fit_items.map((item) => ({
         material: item.material,
         cluster: item.cluster,

@@ -13,6 +13,7 @@
     "axios": "^1.8.1",
     "chalk": "^5.4.1",
     "framer-motion": "7.6.8",
+    "katex": "^0.16.45",
     "markdown-to-jsx": "^7.7.4",
     "next": "15.3.6",
     "next-auth": "^4.24.11",
@@ -23,10 +24,13 @@
     "react-dom": "^19.1.0",
     "react-icons": "^5.5.0",
     "react-markdown": "^10.1.0",
-    "react-syntax-highlighter": "^15.6.1",
-    "remark-gfm": "^4.0.1"
+    "react-syntax-highlighter": "^15.6.6",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
+    "@types/react-syntax-highlighter": "^15.5.13",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.1.5",

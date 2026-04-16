@@ -19,8 +19,11 @@ from app.api.v1.schemas.case_workspace import (
     ArtifactStatus,
     CaseSummary,
     CaseWorkspaceProjection,
+    ClaimItem,
+    ClaimsSummary,
     CommunicationContext,
     CycleInfo,
+    EvidenceSummary,
     GovernanceStatus,
     MediumCaptureSummary,
     MediumClassificationSummary,
@@ -64,6 +67,25 @@ _FIELD_LABELS: dict[str, str] = {
     "application_context": "Anwendung",
 }
 
+_CANONICAL_PARAMETER_KEYS: tuple[str, ...] = (
+    "medium",
+    "temperature_c",
+    "pressure_bar",
+    "sealing_type",
+    "pressure_direction",
+    "duty_profile",
+    "shaft_diameter_mm",
+    "speed_rpm",
+    "installation",
+    "geometry_context",
+    "contamination",
+    "counterface_surface",
+    "tolerances",
+    "industry",
+    "compliance",
+    "medium_qualifiers",
+)
+
 _MOVEMENT_LABELS: dict[str, str] = {
     "rotary": "rotierend",
     "linear": "linear",
@@ -96,6 +118,22 @@ def _build_confirmed_facts_summary(working_profile_pillar: Dict[str, Any]) -> li
             rendered_value = _APPLICATION_LABELS.get(str(value), value)
         facts.append(f"{_FIELD_LABELS.get(key, key)}: {rendered_value}")
     return _compact_unique_strings(facts)
+
+
+def _build_parameters_snapshot(working_profile_pillar: Dict[str, Any]) -> Dict[str, Any]:
+    profile = _d(working_profile_pillar.get("engineering_profile")) or _d(
+        working_profile_pillar.get("extracted_params")
+    )
+    snapshot: Dict[str, Any] = {}
+    for key in _CANONICAL_PARAMETER_KEYS:
+        value = profile.get(key)
+        if value in (None, ""):
+            continue
+        snapshot[key] = value
+    movement_type = profile.get("movement_type")
+    if movement_type not in (None, ""):
+        snapshot["motion_type"] = movement_type
+    return snapshot
 
 
 def _technical_derivation_from_live_calc_tile(tile: Dict[str, Any]) -> TechnicalDerivationItem | None:
@@ -132,6 +170,42 @@ def _build_technical_derivations(
     live_calc_tile = _d(working_profile_pillar.get("live_calc_tile")) or _d(system.get("live_calc_tile"))
     live_calc_derivation = _technical_derivation_from_live_calc_tile(live_calc_tile)
     return [live_calc_derivation] if live_calc_derivation is not None else []
+
+
+def _build_evidence_summary(evidence_state: Dict[str, Any]) -> EvidenceSummary:
+    return EvidenceSummary(
+        evidence_present=bool(evidence_state.get("evidence_present")),
+        evidence_count=int(evidence_state.get("evidence_count") or 0),
+        trusted_sources_present=bool(evidence_state.get("trusted_sources_present")),
+        evidence_supported_topics=[str(item) for item in _ls(evidence_state.get("evidence_supported_topics")) if item],
+        source_backed_findings=[str(item) for item in _ls(evidence_state.get("source_backed_findings")) if item],
+        deterministic_findings=[str(item) for item in _ls(evidence_state.get("deterministic_findings")) if item],
+        assumption_based_findings=[str(item) for item in _ls(evidence_state.get("assumption_based_findings")) if item],
+        unresolved_open_points=[str(item) for item in _ls(evidence_state.get("unresolved_open_points")) if item],
+        evidence_gaps=[str(item) for item in _ls(evidence_state.get("evidence_gaps")) if item],
+    )
+
+
+def _build_claims_summary(evidence_summary: EvidenceSummary) -> ClaimsSummary:
+    items: list[ClaimItem] = []
+    for finding in evidence_summary.deterministic_findings:
+        items.append(ClaimItem(value=finding, claim_type="deterministic_fact", claim_origin="deterministic"))
+    for finding in evidence_summary.source_backed_findings:
+        items.append(ClaimItem(value=finding, claim_type="source_backed_finding", claim_origin="evidence"))
+    for finding in evidence_summary.assumption_based_findings:
+        items.append(ClaimItem(value=finding, claim_type="assumption_based_finding", claim_origin="assumption"))
+    for finding in evidence_summary.unresolved_open_points:
+        items.append(ClaimItem(value=finding, claim_type="unresolved_open_point", claim_origin="open"))
+    for finding in evidence_summary.evidence_gaps:
+        items.append(ClaimItem(value=finding, claim_type="evidence_gap", claim_origin="evidence_gap"))
+
+    by_type: dict[str, int] = {}
+    by_origin: dict[str, int] = {}
+    for item in items:
+        by_type[item.claim_type] = by_type.get(item.claim_type, 0) + 1
+        by_origin[item.claim_origin] = by_origin.get(item.claim_origin, 0) + 1
+
+    return ClaimsSummary(total=len(items), by_type=by_type, by_origin=by_origin, items=items)
 
 
 def _question_from_open_point(open_point: str | None) -> str | None:
@@ -309,6 +383,8 @@ def _governed_release_status(state: GovernedSessionState) -> str:
     if state.rfq.rfq_ready:
         return "rfq_ready"
     if state.matching.status == "matched_primary_candidate" or state.governance.gov_class == "A":
+        if getattr(state.governance, "preselection_blockers", None):
+            return "precheck_only"
         return "manufacturer_validation_required"
     if state.governance.gov_class == "B":
         return "precheck_only"
@@ -362,6 +438,9 @@ def synthesize_workspace_state_from_governed(
     matching_state = {
         "status": state.matching.status,
         "matchability_status": state.matching.matchability_status,
+        "shortlist_ready": state.matching.shortlist_ready,
+        "inquiry_ready": state.matching.inquiry_ready,
+        "release_blockers": list(state.matching.release_blockers),
         "selected_partner_id": (
             state.matching.selected_manufacturer_ref.manufacturer_name
             if state.matching.selected_manufacturer_ref is not None
@@ -379,8 +458,13 @@ def synthesize_workspace_state_from_governed(
             }
             for capability in state.matching.manufacturer_capabilities
         ],
-        "blocking_reasons": list(state.matching.matching_notes),
-        "data_source": "candidate_derived",
+        "blocking_reasons": list(
+            dict.fromkeys(
+                list(state.matching.release_blockers)
+                + list(state.matching.matching_notes)
+            )
+        ),
+        "data_source": state.matching.data_source,
     }
     rfq_state = {
         "status": state.rfq.status,
@@ -409,13 +493,38 @@ def synthesize_workspace_state_from_governed(
         if state.governance.gov_class in {"A", "B"}
         else "clarification"
     )
+    missing_critical = list(
+        dict.fromkeys(
+            list(state.asserted.blocking_unknowns)
+            + list(getattr(state.governance, "preselection_blockers", []) or [])
+        )
+    )
+    tracked_basis_fields = (
+        "medium",
+        "pressure_bar",
+        "temperature_c",
+        "sealing_type",
+        "duty_profile",
+        "installation",
+        "shaft_diameter_mm",
+        "speed_rpm",
+    )
+    coverage_score = min(
+        1.0,
+        round(
+            sum(1 for field_name in tracked_basis_fields if field_name in state.asserted.assertions)
+            / len(tracked_basis_fields),
+            2,
+        ),
+    )
+    analysis_complete = state.governance.gov_class == "A" and not missing_critical
     completeness = {
-        "coverage_score": round(len(state.asserted.assertions) / 3.0, 2),
-        "coverage_gaps": list(state.asserted.blocking_unknowns),
+        "coverage_score": coverage_score,
+        "coverage_gaps": missing_critical,
         "completeness_depth": "governed" if state.governance.gov_class in {"A", "B"} else "precheck",
-        "missing_critical_parameters": list(state.asserted.blocking_unknowns),
-        "analysis_complete": state.governance.gov_class in {"A", "B"},
-        "recommendation_ready": state.governance.gov_class == "A",
+        "missing_critical_parameters": missing_critical,
+        "analysis_complete": analysis_complete,
+        "recommendation_ready": analysis_complete,
     }
     return {
         "conversation": {
@@ -474,7 +583,7 @@ def synthesize_workspace_state_from_governed(
             },
             "governance_metadata": {
                 "release_status": release_status,
-                "unknowns_release_blocking": list(state.asserted.blocking_unknowns),
+                "unknowns_release_blocking": missing_critical,
                 "unknowns_manufacturer_validation": list(state.governance.open_validation_points),
                 "assumptions_active": [],
                 "scope_of_validity": list(state.governance.validity_limits),
@@ -486,6 +595,7 @@ def synthesize_workspace_state_from_governed(
             "medium_capture": state.medium_capture.model_dump(),
             "medium_classification": state.medium_classification.model_dump(),
             "medium_context": state.medium_context.model_dump(),
+            "evidence_state": state.evidence.model_dump(),
             "technical_derivations": technical_derivations,
             "matching_state": matching_state,
             "rfq_state": rfq_state,
@@ -531,6 +641,7 @@ def synthesize_workspace_state_from_ssot(state: Dict[str, Any], *, chat_id: str)
     medium_capture: Dict[str, Any] = dict(state.get("medium_capture") or case_state.get("medium_capture") or {})
     medium_classification: Dict[str, Any] = dict(state.get("medium_classification") or case_state.get("medium_classification") or {})
     medium_context: Dict[str, Any] = dict(case_state.get("medium_context") or {})
+    evidence_state: Dict[str, Any] = dict(case_state.get("evidence_state") or {})
     governance_state: Dict[str, Any] = dict(case_state.get("governance_state") or {})
     matching_state: Dict[str, Any] = dict(case_state.get("matching_state") or {})
     rfq_state: Dict[str, Any] = dict(case_state.get("rfq_state") or {})
@@ -625,6 +736,7 @@ def synthesize_workspace_state_from_ssot(state: Dict[str, Any], *, chat_id: str)
             "medium_capture": medium_capture,
             "medium_classification": medium_classification,
             "medium_context": medium_context,
+            "evidence_state": evidence_state,
             "matching_state": matching_state,
             "rfq_state": rfq_state,
             "rfq_object": rfq_object,
@@ -662,6 +774,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     medium_capture = _d(system.get("medium_capture"))
     medium_classification = _d(system.get("medium_classification"))
     medium_context = _d(system.get("medium_context"))
+    evidence_state = _d(system.get("evidence_state"))
     rfq_admissibility = _d(system.get("rfq_admissibility"))
     answer_contract = _d(system.get("answer_contract"))
     rfq_draft = _d(system.get("rfq_draft"))
@@ -701,10 +814,12 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
             governance_metadata.get("unknowns_release_blocking") or []
         ),
         unknowns_manufacturer_validation=list(
-            governance_metadata.get("unknowns_manufacturer_validation") or []
+            list(governance_metadata.get("unknowns_manufacturer_validation") or [])
+            + list(evidence_state.get("unresolved_open_points") or [])
         ),
         assumptions_active=list(
-            governance_metadata.get("assumptions_active") or []
+            list(governance_metadata.get("assumptions_active") or [])
+            + list(evidence_state.get("assumption_based_findings") or [])
         ),
         required_disclaimers=list(
             answer_contract.get("required_disclaimers") or []
@@ -751,13 +866,17 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     )
 
     # ── PartnerMatchingSummary ─────────────────────────────────────────────────
-    matching_ready = bool(
-        matching_state.get("status") == "matched_primary_candidate"
-        or matching_state.get("matchability_status") == "ready_for_matching"
-    )
+    shortlist_ready = bool(matching_state.get("shortlist_ready", False))
+    inquiry_ready = bool(matching_state.get("inquiry_ready", False) and rfq_ready)
+    matching_ready = shortlist_ready
     not_ready_reasons = [
         str(item)
-        for item in list(dict.fromkeys(_ls(matching_state.get("blocking_reasons"))))
+        for item in list(
+            dict.fromkeys(
+                _ls(matching_state.get("release_blockers"))
+                + _ls(matching_state.get("blocking_reasons"))
+            )
+        )
         if item
     ]
     matchability_status = str(matching_state.get("matchability_status") or "").strip()
@@ -800,7 +919,10 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     ]
     partner_matching = PartnerMatchingSummary(
         matching_ready=matching_ready,
+        shortlist_ready=shortlist_ready,
+        inquiry_ready=inquiry_ready,
         not_ready_reasons=not_ready_reasons,
+        blocking_reasons=not_ready_reasons,
         material_fit_items=material_fit_items,
         open_manufacturer_questions=open_manufacturer_questions,
         selected_partner_id=selected_partner_id,
@@ -821,6 +943,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         rfq_status=rfq_status,
         working_profile_pillar=working_profile_pillar,
     )
+    parameters = _build_parameters_snapshot(working_profile_pillar)
     primary_raw_text = medium_capture.get("primary_raw_text")
     if not medium_classification and primary_raw_text:
         derived_medium = classify_medium_value(str(primary_raw_text))
@@ -869,16 +992,21 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         working_profile_pillar=working_profile_pillar,
         system=system,
     )
+    evidence_summary = _build_evidence_summary(evidence_state)
+    claims_summary = _build_claims_summary(evidence_summary)
 
     return CaseWorkspaceProjection(
         case_summary=case_summary,
         governance_status=governance_status,
+        claims_summary=claims_summary,
+        evidence_summary=evidence_summary,
         rfq_status=rfq_status,
         rfq_package=rfq_package,
         artifact_status=artifact_status,
         cycle_info=cycle_info,
         partner_matching=partner_matching,
         communication_context=communication_context,
+        parameters=parameters,
         medium_capture=medium_capture_summary,
         medium_classification=medium_classification_summary,
         medium_context=medium_context_summary,

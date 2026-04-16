@@ -127,8 +127,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set) => ({
   setStreamWorkspace: (v) =>
     set((s) => ({
       streamWorkspace: v,
-      // Assertions aus dem Stream persistieren — nie mit null überschreiben
-      streamAssertions: v?.assertions ?? s.streamAssertions,
+      // Stream assertions are only a temporary projection aid. When the stream
+      // view is cleared after canonical workspace refresh, they must not remain
+      // as a competing parameter authority.
+      streamAssertions: v === null ? null : v.assertions ?? s.streamAssertions,
     })),
   setStreamAssertions: (v) => set({ streamAssertions: v }),
   setChatInput: (v) => set({ chatInput: v }),

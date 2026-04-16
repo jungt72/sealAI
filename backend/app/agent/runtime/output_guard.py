@@ -55,7 +55,9 @@ _SUITABILITY_PATTERNS: Sequence[str] = (
     r"\b(ideal|optimal|perfekt)\s+für\b",
     r"\b(unkritisch|problemlos|bedenkenlos|ohne\s+Bedenken)\b",
     r"\bkein\s+Problem\b",
-    r"\bdas\s+(geht|passt|funktioniert)\b",
+    # NOTE: r"\bdas\s+(geht|passt|funktioniert)\b" was removed — too broad.
+    # "Das funktioniert durch..." is legitimate mechanism explanation, not a
+    # suitability assertion. "Das geht problemlos" is still caught by "problemlos".
     r"\b(freigegeben|zugelassen)\s+für\b",
 )
 

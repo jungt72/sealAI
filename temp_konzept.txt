@@ -1,0 +1,1087 @@
+# SeaLAI — Finales Produktkonzept
+**Version:** 1.1 — Konsolidiert aus 4 Architektur-Reviews + Markt-Analyse + Produktionsreifer Dichtungs-Blaupause  
+**Datum:** 2026-04-15  
+**Status:** Bindend — Grundlage für Phase F Implementierung
+
+---
+
+## Die Idee in einem Satz
+
+SeaLAI ist der schnellste Weg von einem unklaren Dichtungsproblem
+zu einer belastbaren, herstellerfähigen Anfrage —
+und demokratisiert damit einen Markt, der bisher nur Experten
+oder teure Hersteller-Berater zugänglich war.
+
+---
+
+## 1. Das Problem das SeaLAI löst
+
+### Für den User
+
+Der Dichtungstechnik-Markt ist ein Chaos aus Herstellerperspektive.
+
+- Freudenberg nennt es "SEALIX® HC-7"
+- Burgmann nennt es "M7N-SiC"
+- Parker nennt es "CrN-Series"
+- Alle meinen oft ähnliche Werkstoffe, Typen oder Einsatzbereiche —
+  aber kein Nutzer weiß sicher, was technisch wirklich passt
+
+Wer heute eine Dichtung sucht, macht typischerweise Folgendes:
+
+```text
+1. Google "Dichtung SiC FKM Salzwasser Pumpe"
+2. Bekommt Herstellerwebsites + Industrieverzeichnisse
+3. Ruft an oder füllt Kontaktformular aus
+4. Wartet auf Rückruf vom Außendienst
+5. Erklärt das Problem erneut — ohne Fachsprache
+6. Bekommt ein Angebot von einem Hersteller — ohne echten Vergleich
+7. Weiß nicht, ob das technisch passend oder nur das lauteste Angebot ist
+
+Der Konstrukteur oder Instandhalter hat meist kein Problem mit Technik.
+Er hat ein Problem mit Orientierung in einem zerklüfteten Markt.
+
+Kleinen und mittleren Herstellern fehlt der digitale Vertriebskanal.
+Großen Herstellern fehlt der Anreiz, günstig und transparent zu sein.
+Der User zahlt am Ende mehr als nötig — oder trifft die falsche Wahl.
+
+Für den kleineren Hersteller
+
+Ein spezialisierter Dichtungshersteller mit 50–200 Mitarbeitern hat:
+
+ausgezeichnete Technologie, oft besser als die großen
+keine starke digitale Sichtbarkeit
+einen Außendienst, der Zeit verliert mit unqualifizierten Anfragen
+keine Möglichkeit, gezielt an technisch passende Kunden zu kommen
+
+Er verliert Aufträge nicht wegen schlechterer Qualität,
+sondern weil ihn der Nutzer nie gefunden hat.
+
+2. Die Lösung
+
+SeaLAI führt den Nutzer durch eine strukturierte technische Bedarfsanalyse
+und übersetzt sein Problem in eine präzise, herstellerunabhängige Anfrage.
+
+Dann matched SeaLAI diese Anfrage mit Herstellern, die exakt das können —
+nicht nur die bekannten, sondern die am besten geeigneten.
+
+Nutzer beschreibt sein Problem
+       ↓
+SeaLAI analysiert + berechnet + qualifiziert
+       ↓
+Strukturierte Anfrage in herstellerneutraler Sprache
+       ↓
+Matching mit geeigneten Herstellern (klein UND groß)
+       ↓
+User wählt — Hersteller antwortet mit konkretem Angebot
+       ↓
+Ergebnis: Beste Lösung zum besten Preis — nicht das lauteste Angebot
+
+Der User spart: Zeit, Rückfragen, Fehlkäufe, überhöhte Preise.
+Der Hersteller bekommt: Qualifizierte Leads, die wirklich passen.
+SeaLAI verdient: Listing-Fee von Herstellern, die gefunden werden wollen.
+
+3. Positionierung
+Was SeaLAI ist
+
+Der strukturierte, neutrale Einstiegspunkt für technische
+Dichtungsanfragen — wo Nutzer Klarheit bekommen und
+Hersteller die richtigen Kunden finden.
+
+Was SeaLAI nicht ist
+Kein Ersatz für Herstellerberatung
+(die finale technische Freigabe liegt beim Hersteller)
+Kein Produktkatalog
+(kein Lager, kein Direktkauf)
+Kein Hersteller-Tool
+(neutral, unabhängig)
+Kein Google-Klon
+(nicht Suche — sondern strukturierte Qualifizierung)
+Das Versprechen an den User
+
+Du musst kein Dichtungsexperte sein.
+Du musst nicht wissen, wie es heißt.
+Du beschreibst dein Problem — wir machen daraus
+eine professionelle Anfrage an die richtigen Hersteller.
+
+Das Versprechen an den Hersteller
+
+Keine Schrottanfragen mehr.
+Nur Anfragen, die zu deinen Produkten passen.
+Alle technischen Daten schon strukturiert.
+Du musst nur noch antworten.
+
+Das technische Versprechen von SeaLAI
+
+SeaLAI gibt keine finale Produktempfehlung aus,
+sondern erstellt eine technische Vorauswahl und qualifizierte Anfragebasis.
+
+Das bedeutet:
+
+SeaLAI darf Berechnungen, Plausibilisierungen, Ausschlüsse und Vorselektionen machen
+SeaLAI darf fehlende Pflichtdaten, Risiken und offene Prüfpunkte klar benennen
+SeaLAI darf geeignete Hersteller und passende Produktfamilien vorqualifizieren
+SeaLAI darf niemals die finale technische Freigabe oder Haftung des Herstellers ersetzen
+
+Die Sprache von SeaLAI ist deshalb bewusst:
+
+Vorauswahl
+fit_score
+wahrscheinliche Richtung
+offene Punkte
+Herstellerprüfung erforderlich
+
+und ausdrücklich nicht:
+
+„garantiert passend“
+„final freigegeben“
+„wird funktionieren“
+„ist normkonform“, wenn Nachweise fehlen
+4. Geschäftsmodell
+Wer zahlt wen
+USER                    SEAALAI                 HERSTELLER
+────────────────────────────────────────────────────────────
+Kostenlos               Technische              Zahlt für
+                        Intelligence +          Listing +
+                        UX +                    qualifizierte
+                        Neutralität      ←      Leads
+
+Monetarisierung Herstellerseite:
+
+Modell	Beschreibung	Phase
+Pilot-Listing	Feste monatliche Fee für 1 Subsegment	MVP
+Standard-Listing	Listing + Inquiry-Weiterleitung (cap)	V1
+Performance	Pay-per-accepted-inquiry oder pay-per-quote	V2
+Featured	Erhöhte Sichtbarkeit in geeigneten Fällen (transparent)	V2
+
+Wichtig: Technischer Fit ist niemals käuflich.
+Sichtbarkeit kann käuflich sein — aber transparent gekennzeichnet.
+Diese Trennung ist das Fundament des Nutzervertrauens.
+
+Wer ist der ideale erste Hersteller
+
+Nicht Freudenberg. Nicht Burgmann.
+
+Der ideale erste Hersteller ist:
+
+mittelständischer Spezialist (50–500 Mitarbeiter)
+technisch exzellent in einem klaren Subsegment
+schwach im digitalen Vertrieb
+Außendienst verliert Zeit mit Vorqualifizierung
+will wachsen, braucht neue Kanäle
+
+Diese Hersteller profitieren am meisten und zahlen gerne.
+
+5. MVP-Strategie
+Der eine KPI der über Erfolg entscheidet
+
+Anteil der SeaLAI-Inquiries, die innerhalb definierter SLA
+zu einer echten Hersteller-Quote führen.
+
+Nicht Klicks. Nicht Registrierungen. Nicht PDFs. Quotes.
+
+Scope des MVP
+
+Nicht: Dichtungstechnik allgemein.
+Ja: Ein klar abgegrenztes Subsegment.
+
+Empfehlung für MVP-Scope:
+
+Gleitringdichtungen für Kreiselpumpen in chemischen /
+prozesstechnischen Anwendungen
+
+Begründung:
+
+klares technisches Profil (API-682-/ISO-21049-naher Rahmen)
+hoher Pre-Sales-Aufwand beim Hersteller → größter Schmerz
+Nutzer oft unterqualifiziert → größter SeaLAI-Vorteil
+Marktgröße im Subsegment: ausreichend für Beweis
+klare Norm- und Herstellerwelt für frühe Ontologie und STS-Mappings
+Strategische Klarstellung zum Scope
+
+SeaLAI wird architektonisch so gebaut, dass später auch folgende Pfade sauber integrierbar sind:
+
+Radialwellendichtringe
+statische Dichtungen
+Labyrinth-/Bearing-Isolator-Konzepte
+Hydraulik- und Pneumatikdichtungen
+hygienische / ATEX- / Offshore- / Emissionsfälle
+
+Aber:
+
+Im MVP wird nur der Pumpen-/Gleitringpfad vollständig tief ausmodelliert.
+Alle anderen Pfade werden nur strukturell vorbereitet, nicht fachlich gleich tief umgesetzt.
+
+Das verhindert Scope-Chaos und hält den Qualitätsanspruch hoch.
+
+Meilensteine
+Monat 1-3: Fundament
+  □ Technische Architektur Phase F abgeschlossen
+  □ Ontologie für Gleitringdichtungen vollständig
+  □ Kanonisches Engineering-Modell für ms_pump produktiv
+  □ 5 Pilot-Hersteller identifiziert und onboardet
+  □ Erster vollständiger User-Flow testbar
+
+Monat 4-6: Beweis
+  □ Erste echte Nutzeranfragen durch den vollen Flow
+  □ PDF + JSON Payload in Herstellerprozesse integriert
+  □ Quote Rate + Response Time messbar
+  □ Erster zahlender Hersteller
+
+Monat 7-12: Skalierung
+  □ Quote Rate > Zielwert → Listing-Fee ausweiten
+  □ Hersteller verlängern → Segment ausweiten
+  □ RWDR / Static / weitere Pfade spezifizieren
+  □ SEO + Content aufgebaut
+6. User Experience — Das Herzstück
+Grundprinzip
+
+Der Nutzer öffnet SeaLAI wie er Google öffnet.
+Aber er bekommt nicht Links — er bekommt einen Gesprächspartner,
+der mitdenkt, strukturiert und fachlich führt.
+
+UX-Architektur: Chat + Cockpit
+┌─────────────────────┬─────────────────────────────────────────────┐
+│                     │  COCKPIT                                    │
+│  CHAT               │                                             │
+│                     │  Technische Einordnung                      │
+│  "Ich brauche       │  ─────────────────────────────────────────  │
+│  eine Dichtung      │  Pfad:      Pumpen-Gleitringdichtung        │
+│  für unsere         │  Status:    Engineering aktiv               │
+│  Pumpe..."          │  RFQ:       noch nicht bereit               │
+│                     │                                             │
+│  SeaLAI: "Ich       │  Grunddaten                                 │
+│  habe folgendes     │  ─────────────────────────────────────────  │
+│  verstanden..."     │  Medium:   Salzwasser      aus Chat erkannt │
+│                     │  Temp.:    80°C            bestätigt        │
+│  Token-Stream →     │  Druck:    10 bar          bestätigt        │
+│  natürliches        │  Welle:    50 mm           bestätigt        │
+│  Schreibgefühl      │  Drehz.:   6000 U/min      aus Chat erkannt │
+│                     │                                             │
+│  Progress-Events:   │  Technische Risikofaktoren                 │
+│  ● Analyse läuft    │  ─────────────────────────────────────────  │
+│  ● Berechnung       │  Dampfdruckprüfung        offen             │
+│  ● Hersteller       │  Schmierfähigkeit         kritisch          │
+│    werden geprüft   │  Feststoffe               unbekannt         │
+│                     │                                             │
+│                     │  Geometrie / Fit                            │
+│                     │  ─────────────────────────────────────────  │
+│                     │  Einbausituation          offen             │
+│                     │  Druckrichtung            offen             │
+│                     │  Chamber-Geometrie        offen             │
+│                     │  Wellenrunout             offen             │
+│                     │                                             │
+│                     │  Berechnungen                               │
+│                     │  ─────────────────────────────────────────  │
+│                     │  Umfangsgeschw.     15,71 m/s              │
+│                     │  Flashing-Margin    unkritisch*            │
+│                     │  Heat-Load          vorläufig              │
+│                     │  *unter Annahmen                           │
+│                     │                                             │
+│                     │  Vorauswahl                                 │
+│                     │  ─────────────────────────────────────────  │
+│                     │  Typ:      Cartridge wahrscheinlich         │
+│                     │  Faces:    SiC/SiC wahrscheinlich           │
+│                     │  Elastomer: FKM vorläufig                  │
+│                     │  STS:      STS-RS-CHEM-B1                  │
+│                     │                                             │
+│                     │  Offene Punkte                              │
+│                     │  ─────────────────────────────────────────  │
+│                     │  □ Chloridgehalt                           │
+│                     │  □ Dichtungsanordnung                      │
+│                     │  □ Wellentoleranz / Rundlauf               │
+│                     │                                             │
+│                     │  [Anfrage vorbereiten →]                   │
+└─────────────────────┴─────────────────────────────────────────────┘
+UX-Prinzipien
+
+1. Der Nutzer braucht kein Fachwissen
+SeaLAI übersetzt Umgangssprache in Fachsprache.
+
+„Gummidichtung“ → SeaLAI fragt: „Meinen Sie FKM, EPDM, PTFE oder einen O-Ring-Typ?“
+„Simmerring“ → SeaLAI weiß: Radialwellendichtring / Rotary Shaft Lip Seal
+„Viton“ → SeaLAI weiß: FKM (Markenname, nicht die neutrale Werkstoffsprache)
+
+2. Eine Frage zur Zeit — maximal drei gekoppelt
+Kein Verhör. Kein Riesenformular.
+SeaLAI stellt die wichtigste offene Frage.
+
+3. Das Cockpit zeigt immer den aktuellen Stand
+Was ist schon sicher?
+Was ist aus dem Chat erkannt?
+Was ist nur fachlicher Kontext?
+Was fehlt für eine belastbare Aussage?
+
+4. Daten-Provenienz ist sichtbar
+Jeder kritische Wert ist klar markiert als:
+
+aus Chat erkannt
+bestätigt
+Fachreferenz
+fehlt
+
+SeaLAI darf keine Scheinsicherheit erzeugen.
+
+5. Stale-State ist sichtbar
+Wenn der Nutzer einen Parameter ändert:
+→ Cockpit zeigt sofort: Vorauswahl wird neu bewertet
+→ keine stumme Weiternutzung veralteter Ergebnisse
+
+6. "Keine belastbare Vorauswahl möglich" ist kein Fehler
+Es ist ein Qualitätsmerkmal.
+Wenn Daten fehlen, sagt SeaLAI klar:
+
+was fehlt
+warum es fehlt
+welche Aussage deshalb noch nicht zulässig ist
+
+7. Hersteller-Matching bleibt transparent
+Der Nutzer sieht:
+
+warum ein Hersteller vorgeschlagen wird
+welche Capabilities passen
+welche offenen Prüfpunkte an den Hersteller gehen
+ob ein Listing bezahlt ist
+7. Produktlogik — Das kanonische Engineering-Modell
+Warum dieses Modell nötig ist
+
+Eine professionelle Dichtungsbedarfsermittlung ist kein Chat mit ein paar Parametern.
+
+Sie braucht ein einheitliches, pfadabhängiges Engineering-Modell, das für Software stabil genug ist und gleichzeitig fachlich sauber bleibt.
+
+Deshalb basiert SeaLAI intern auf vier Ebenen:
+
+Core Intake
+    ↓
+Failure Driver
+    ↓
+Geometry / Fit
+    ↓
+RFQ / Haftung
+
+Diese vier Ebenen sind die eigentliche fachliche Wahrheit des Systems.
+
+Die 4 Ebenen
+1. Core Intake
+
+Universelle Grunddaten, ohne die keine seriöse Vorauswahl möglich ist:
+
+Medium / Zusammensetzung
+Temperatur min / normal / max
+Druck min / normal / max
+Drehzahl / Geschwindigkeit
+Referenz-Ø
+Bewegungsart
+Aggregattyp
+Druckrichtung
+2. Failure Driver
+
+Technische Risikotreiber, die je Pfad unterschiedlich relevant werden:
+
+Viskosität
+Dichte / Specific Gravity
+Dampfdruck
+pH / chemische Aggressivität
+Feststoffanteil
+Korngröße / Abrasivität
+Schmierfähigkeit
+Trockenlauf
+Duty Cycle
+Start-Stopp-Häufigkeit
+Emissionsanforderungen
+3. Geometry / Fit
+
+Maschinen- und Einbaudaten, ohne die die Dichtung mechanisch nicht belastbar bewertet werden kann:
+
+Chamber-/Cavity-Geometrie
+Wellenmaterial
+Härte
+Oberflächenrauheit
+Lead / Drall
+Exzentrizität
+Runout
+Misalignment
+Axial- / Radialspiel
+Vibration
+Nutgeometrien / Flanschdaten / Spalte je nach Pfad
+4. RFQ / Haftung
+
+Abnahmekriterien und Herstellerreife:
+
+zulässige Leckage
+Ziel-Lebensdauer / MTBF
+Kritikalität / Ausfallfolgen
+Normen / Compliance
+vorhandener Alt-Typ / Referenz
+Hilfssysteme / Support Systems
+Dokumente / Zeichnungen / Fotos
+Audit-/Bestätigungsstatus
+Grundsatz
+
+Eine Anfrage ist erst dann RFQ-reif, wenn alle für den aktiven Pfad
+relevanten Pflichtdaten der vier Ebenen ausreichend belastbar vorliegen.
+
+8. Pfadlogik — Welche Dichtfamilie SeaLAI intern verfolgt
+
+SeaLAI arbeitet intern mit klaren Hauptpfaden:
+
+ms_pump         → Gleitringdichtungen in Pumpen / API-682-nahem Kontext
+rwdr            → Radialwellendichtringe / Rotary Shaft Lip Seals
+static          → O-Ringe, Flachdichtungen, Packungen, Flansche
+labyrinth       → Non-Contact / Bearing Isolator / Labyrinth
+hyd_pneu        → Hydraulik- und Pneumatikdichtungen
+unclear_rotary  → rotierende Anwendung, aber Dichtprinzip noch unklar
+MVP-Regel
+
+Im MVP wird nur ms_pump tief beherrscht.
+Alle anderen Pfade sind architektonisch vorbereitet, aber noch nicht auf derselben fachlichen Tiefe umgesetzt.
+
+Routing-Logik
+
+Beispielhaft:
+
+Wenn motion.type = static
+→ static
+
+Wenn motion.type = linear und equipment_type = hydraulic_cylinder / pneumatic_cylinder
+→ hyd_pneu
+
+Wenn motion.type = rotating und equipment_type = pump
+→ ms_pump
+
+Wenn motion.type = rotating und equipment_type = gearbox / general_rotary
+→ rwdr oder unclear_rotary
+
+Wenn rotierend, aber Dichtfamilie unklar
+→ unclear_rotary
+Wichtig
+
+Die Pfadwahl steuert:
+
+welche Pflichtfelder sichtbar werden
+welche Berechnungen zulässig sind
+welche Risiko-Flags aktiv werden
+welche Exportstruktur verwendet wird
+welche Hersteller überhaupt gematcht werden können
+9. Medium-Intelligence — Der entscheidende Unterschied
+Warum der Medienname nicht reicht
+
+„Salzwasser“ ist nicht genug.
+„Schokolade“ ist nicht genug.
+„Salzsäure“ ist nicht genug.
+
+Für die Auslegung zählt nicht der Name allein,
+sondern das Verhalten des Mediums unter Betriebsbedingungen.
+
+Deshalb trennt SeaLAI intern fünf Ebenen
+medium_input
+medium_context
+medium_registry
+confirmed_properties
+inferred_properties
+1. medium_input
+
+Rohangabe des Nutzers:
+
+„Salzwasser“
+„HCl 37 %“
+„Hydrauliköl HLP 46“
+„Honig“
+2. medium_context
+
+LLM-abgeleiteter, assistiver Kontext:
+
+chemische Klasse
+typische Schmierfähigkeit
+typische Risiken
+wahrscheinliche Rückfragen
+Confidence
+
+Wichtig:
+Dieser Kontext ist assistiv, nicht normativ.
+
+3. medium_registry
+
+Validierte Datenquellen:
+
+interne Stoffdaten
+technische Tabellen
+Herstellerdaten
+SDS / TDS / Datenblätter
+Laborwerte / hinterlegte Bibliotheken
+4. confirmed_properties
+
+Explizit bestätigte technische Werte:
+
+Viskosität
+Dichte
+Dampfdruck
+pH
+Feststoffanteil
+Chloridgehalt
+Trockenlaufzeit
+5. inferred_properties
+
+Aus Chat extrahiert, aber noch nicht bestätigt.
+
+Produktlogik
+
+SeaLAI darf:
+
+aus dem Medium sinnvolle Rückfragen erzeugen
+Risiken priorisieren
+Blocker sichtbar machen
+Medium-Kontext als technische Hilfe anzeigen
+
+SeaLAI darf nicht:
+
+unbestätigte Stoffdaten als finale Wahrheit behandeln
+aus Medium-Kontext eine endgültige Werkstofffreigabe ableiten
+RFQ-Reife vortäuschen, wenn Stoffdaten nur hypothetisch sind
+10. User Experience — Das Herzstück
+Die 12 User-Intents
+
+SeaLAI erkennt automatisch, was der Nutzer will:
+
+Intent	Beispiel	Flow
+new_design	"Neue Pumpe, brauche Dichtung"	Vollständige Bedarfsanalyse
+quick_calculation	"PV-Wert für 50 mm bei 6000 U/min?"	Sofort-Rechnung
+material_comparison	"FKM vs EPDM für Dampf?"	Parallel-RAG + 1 LLM
+material_detail	"Erzähl mir mehr über SiC"	Case-kontext-aware Erklärung
+failure_diagnosis	"Dichtung hält nur 3 Monate"	Schadensanalyse
+norm_research	"Welche Norm für Chemie?"	Direktantwort aus Ontologie
+spare_part_search	"Ersatz für BASL 50×70×10"	Matching direkt
+validation_request	"FKM bei 150°C Dampf — noch ok?"	Eignungsprüfung
+space_constraint	"Nur 8 mm Einbauraum"	Gefilterte Typenauswahl
+industry_specific	"Lebensmittelindustrie"	FDA/EU-Constraint aktiv
+temperature_profile	"20°C Anlauf, 130°C Peak"	Profil-Auslegung
+lifecycle_optimization	"Dichtung hält nur 6 Monate, will 24"	Optimierungspfad
+Zusätzliche Engineering-Intents, die strukturell vorbereitet werden
+
+Diese Intents sind für den Vollausbau vorgesehen und werden architektonisch bereits mitgedacht:
+
+Intent	Beispiel	Zielpfad
+hydraulic_cylinder_design	"Kolbendichtung für 250 bar"	hyd_pneu
+pneumatic_seal_issue	"Stange verliert Luft"	hyd_pneu
+flange_emission_case	"TA-Luft-konforme Flanschdichtung"	static
+labyrinth_selection	"Kontaktlose Abdichtung für Lagerstelle"	labyrinth
+unclear_rotary_case	"Brauche Dichtung für rotierende Welle"	unclear_rotary
+11. Technische Architektur
+Gesamtbild
+                    USER (Browser/App)
+                           │
+              ┌────────────┴────────────┐
+              │      Next.js BFF        │
+              │  Auth · SSE · Rate Limit│
+              └────────────┬────────────┘
+                           │
+              ┌────────────┴────────────┐
+              │      3-Way Gate         │
+              │  CONVERSATION/          │
+              │  EXPLORATION/GOVERNED   │
+              └──┬────────┬────────┬───┘
+                 │        │        │
+          Conv.  │  Expl. │  Gov.  │
+          1 LLM  │  1 RAG │  8-Node│
+                 │  1 LLM │  Sub-  │
+                 │        │  graph │
+                 └────────┴────────┘
+                           │
+              ┌────────────┴────────────┐
+              │    Response Renderer    │
+              │  Jinja2 + State-Snapshot│
+              │  Token-Stream → SSE     │
+              └────────────┬────────────┘
+                           │
+              ┌────────────┴────────────┐
+              │   Domain Intelligence   │
+              │   Ontologie + STS       │
+              │   Deterministische Calc │
+              │   RAG (Qdrant + BM25)   │
+              │   Canonical Model       │
+              └─────────────────────────┘
+Stack
+Komponente	Technologie	Warum
+Orchestrierung	LangGraph 1.1.6	Stateful, Checkpointing, Interrupts, Streaming
+Backend	FastAPI + Python	Async, leichtgewichtig
+Frontend	Next.js	App Router, SSE-fähig, BFF-Pattern
+LLM Gate	gpt-4o-mini	Günstig, ausreichend für Klassifikation
+LLM Observe/Render	gpt-4o	Qualität für Extraktion + Sprache
+Vector DB	Qdrant	Hybrid BM25 + Semantic
+Session	Redis	LangGraph Checkpoint
+Persistenz	PostgreSQL	Cases, Audit, History
+Prompts	Jinja2	Konditionelle Logik, keine f-strings
+Observability	LangSmith	Natives LangGraph-Tracing
+Auth	Keycloak	OIDC/JWT
+3-Way Gate
+CONVERSATION  → kein Domänenparameter, reine Kommunikation
+                → 1 LLM-Call, kein RAG
+
+EXPLORATION   → Domänenkontext vorhanden, aber unvollständige Parameter
+                → ExplorationQuery + 1 RAG-Lookup + 1 LLM-Call
+
+GOVERNED      → strukturierte / teilweise strukturierte Parameter
+                → voller technischer Pfad mit kanonischem Modell
+                → im Zweifel: immer GOVERNED
+Governed Subgraph (vereinfacht)
+intake_observe
+      ↓
+normalize_node
+      ↓
+routing_node
+      ↓
+failure_driver_node
+      ↓
+evidence_node
+      ↓
+compute_node
+      ↓
+governance_node
+      ↓
+output_contract
+      ↓
+renderer_node
+6-Schicht State
+ObservedState       # LLM schreibt NUR hier
+NormalizedState     # deterministisch: Canonical-Mapping, Einheiten
+DerivedState        # deterministisch: Berechnungen, Ableitungen
+EvidenceState       # RAG / Quellen / Dokumentversionen
+DecisionState       # outward_class, preselection, assumptions, blockers
+ActionReadiness     # PDF ready, inquiry admissible, idempotency
+Erweiterung: Kanonischer Engineering-Vertrag
+
+Zusätzlich gibt es eine stabile fachliche Sicht:
+
+EngineeringCockpitView
+
+mit:
+
+routing.path
+sections.core / failure / geometry / rfq
+provenance
+missing_mandatory_keys
+risk_flags
+readiness
+scores
+
+Diese Sicht ist die produktionsreife Quelle für Cockpit, Export und Audit-Trail.
+
+Stale-State-Logik
+
+Wenn Nutzer Parameter ändert → DEPENDENCY_MAP invalidiert betroffene Felder.
+Cockpit zeigt sofort: ⚠ Vorauswahl wird neu bewertet.
+
+Cycle Control
+
+MAX_CYCLES = 3. Danach keine stillen Annahmen.
+
+Explizite Zustände:
+
+incomplete_analysis
+assumptions_require_confirmation
+low_confidence_preselection_only
+inquiry_admissible
+rfq_ready (nur intern, wenn alle Bedingungen erfüllt sind)
+12. Domain Intelligence — SeaLAI Technical Standard (STS)
+Was STS ist
+
+STS ist das interne Canonical Model von SeaLAI.
+Eine herstellerunabhängige Zwischensprache, die sicherstellt,
+dass alle Empfehlungen vergleichbar, eindeutig und hersteller-mappbar sind.
+
+STS ist kein externer Standard.
+STS wird nie als offizieller externer Normstandard vermarktet.
+
+STS-Struktur
+STS-MAT-*      Materialcodes
+STS-TYPE-*     Dichtungstypen
+STS-RS-*       Requirement Specifications
+STS-MED-*      Mediumcodes
+STS-OPEN-*     Standardisierte offene Prüfpunkte
+STS-RISK-*     Standardisierte Risikoflags
+Neu: STS-RISK
+STS-RISK-FLASHING
+STS-RISK-POOR_LUBRICATION
+STS-RISK-CHLORIDE_CORROSION
+STS-RISK-FIT_UNKNOWN
+STS-RISK-RUNOUT_UNKNOWN
+STS-RISK-RFQ_NOT_READY
+
+Damit kann SeaLAI Risiken standardisiert, systemübergreifend und auditierbar markieren.
+
+Hersteller-Mapping
+
+Hersteller registrieren ihre Produkte gegen STS-Codes.
+
+{
+  "STS-TYPE-GS-CART + STS-MAT-SIC-A1 + STS-MAT-FKM-A1": {
+    "product_name": "M7N Cartridge",
+    "product_code": "M7N-SIC/SIC/FKM-K",
+    "lead_time_days": 10,
+    "standard_sizes": ["40mm", "50mm", "60mm", "80mm"]
+  }
+}
+Deterministische Domain-Engine
+
+Das LLM rechnet nicht.
+Es formuliert, was die Engine berechnet oder als offen markiert hat.
+
+pv_value = math.pi * shaft_diameter_mm * rpm / 60_000
+
+Wichtig:
+
+rule_execution_confidence = 1.0 heißt nur: korrekt gerechnet
+es heißt nicht: Eingaben vollständig oder belastbar
+
+Dafür gibt es separat:
+
+input_completeness
+provenance_quality
+rfq_readiness
+13. Berechnungen und technische Bewertung
+SeaLAI darf und soll deterministisch berechnen
+Rotierende Systeme / Pumpen / Gleitringe
+Umfangsgeschwindigkeit
+Face-Speed
+PV-Hilfswert
+Reibleistung / Heat-Load
+Flashing-Margin
+vereinfachte Leckageband-Abschätzung
+Schmierregime-Indikatoren
+Fit-Risk aus Geometrie und Toleranzen
+RWDR
+Umfangsgeschwindigkeit
+Druckdifferenz gegen RWDR-Grenzlogik
+Lip-Belastungscheck
+Oberflächen-/Lead-/Runout-Check
+Schmutz- und Schmier-Risiko
+Statische Dichtungen
+Flächenpressungslogik
+Temperatur-/Chemie-Ausschluss
+Emissions-/Leckage-Anforderungscheck
+Extrusions-/Squeeze-/Groove-Logik
+Labyrinth
+Spalt-/Stufen-/Leckagepfad-Logik
+Druckverhältnis
+Eignung als Non-Contact-Lösung
+Hydraulik/Pneumatik
+lineare Geschwindigkeit
+Druck × Geschwindigkeit als Belastungshilfe
+Extrusionsrisiko
+Reibleistungsabschätzung
+Seitenlast-/Kontaminationsrisiko
+Grundsatz
+
+Berechnungen liefern zusätzliche belastbare Information,
+ersetzen aber niemals fehlende Pflichtdaten.
+
+14. Risk, Readiness und Compliance
+Risk Flags
+
+SeaLAI führt standardisierte Risikoflags, z. B.:
+
+flashing_risk
+lubrication_concern
+corrosion_concern
+fit_risk
+emission_requirement_open
+runout_unknown
+material_compatibility_unclear
+support_plan_required
+rwdr_pressure_out_of_range
+Readiness-Stufen
+preliminary_selection_possible
+technical_review_needed
+manufacturer_review_needed
+inquiry_admissible
+rfq_ready
+Regel
+
+rfq_ready = true nur wenn:
+
+alle Core-Pflichtfelder vorhanden
+alle pfadabhängigen Failure-Driver-Pflichtfelder vorhanden
+alle pfadabhängigen Geometry-/Fit-Pflichtfelder vorhanden
+RFQ-/Haftungsfelder vorhanden
+kritische Werte ausreichend bestätigt oder registriert
+keine offenen Blocker gegen die Anfragefähigkeit sprechen
+Compliance-Schicht
+
+SeaLAI erkennt und verwaltet:
+
+API-682-/ISO-21049-Kontext
+DIN 3760 / ISO 6194
+ISO 5597 / 7425 / 6195 für Hyd/Pneu
+TA-Luft / VDI 2290 / VDI 2440
+ISO 15848
+FDA / EU / Hygienefälle
+ATEX / Offshore / kundenspezifische Vorgaben
+
+SeaLAI markiert:
+
+Relevanz erkannt
+Nachweise fehlen
+Herstellerprüfung erforderlich
+
+SeaLAI behauptet nie Compliance ohne Nachweise.
+
+15. Support Systems / Seal Supply
+
+Für Gleitring- und Gasdichtungen werden Support-Systeme als eigener Logikblock behandelt.
+
+Erfasst werden
+vorhandene / gewünschte Piping Plans
+Versorgungsmedium
+Druck
+Temperatur
+Volumenstrom
+Überwachung
+Barrier / Buffer / Flush / Quench
+Eignung gegen Failure Profile
+Produktlogik
+
+SeaLAI darf:
+
+auf fehlende Support-System-Daten hinweisen
+Support-System-Bedarf sichtbar machen
+technische Gründe nennen
+
+SeaLAI darf nicht:
+
+ohne ausreichende Daten einen finalen Piping-Plan freigeben
+16. Das Anfrage-Dokument (Kern-Deliverable)
+PDF für den User
+
+Das PDF bleibt der menschlich lesbare Kern-Deliverable:
+
+Fall-ID
+Revision
+Parameter
+Provenienz
+Berechnungen
+Vorauswahl
+Annahmen
+offene Prüfpunkte
+klarer Haftungshinweis
+JSON Payload für den Hersteller
+
+Maschinenlesbar, direkt ERP-/CRM-fähig.
+
+Zusätzlich enthält die Payload jetzt explizit:
+
+routing.path
+provenance
+missing_mandatory_keys
+risk_flags
+readiness
+support_system_context
+compliance_context
+Pfadspezifische Exporte
+rfq/api682_like.json
+rfq/rwdr_din3760.json
+rfq/static_flange_vdi2290.json
+rfq/labyrinth.json
+rfq/hydraulic_cylinder_seal.json
+rfq/pneumatic_cylinder_seal.json
+
+Im MVP produktiv zuerst:
+
+rfq/api682_like.json
+
+Alle weiteren Exporte:
+
+strukturell vorbereitet
+fachlich später ausgebaut
+17. 6 Outward Response Classes
+
+Jede Antwort ist exakt einer Klasse zugeordnet.
+Das LLM darf keine Klasse ausgeben, die nicht deterministisch erreicht wurde.
+
+Klasse	Bedeutung	Erlaubt	Verboten
+conversational_answer	Orientierung	Allgemeine Info, Prozesserklärung	Jede Fachaussage
+structured_clarification	Rückfrage	Genau eine Frage + Begründung	Empfehlung, Hersteller
+governed_state_update	Erfassungsstand	Parameter, Annahmen, Status	Finale Empfehlung
+technical_preselection	Vorauswahl	Typ, Materialrichtung, fit_score	Garantien, finale Freigabe
+candidate_shortlist	Herstellerliste	Match-Gründe, Capabilities	Ranking ohne Basis
+inquiry_ready	Anfrage bereit	Versandstatus, offene Punkte	Freigabe behaupten
+
+fit_score heißt fit_score — nicht „Wahrscheinlichkeit“.
+
+18. Manufacturer Intelligence
+Capability Database
+@dataclass
+class ManufacturerProfile:
+    id: str
+    name: str
+
+    sealing_types: list[str]
+    material_capabilities: list[str]
+    media_capabilities: list[str]
+    max_temperature: float
+    max_pressure: float
+    max_pv_value: float
+    certifications: list[str]
+    industries: list[str]
+
+    specialty_areas: list[str]
+    typical_lead_time_days: int
+    min_shaft_diameter: float
+    max_shaft_diameter: float
+
+    listing_tier: Literal["standard", "featured"]
+    inquiry_endpoint: str
+Matching Engine
+
+Deterministisch, in drei Schritten:
+
+harte Ausschlüsse
+technischer Fit
+Transparenz über Listing
+Harte Ausschlüsse
+
+Beispiele:
+
+STS-Type nicht in Capability
+Medium nicht abgedeckt
+Temperatur / Druck / PV außerhalb Capability
+Zertifizierung fehlt
+Support-System-Anforderung nicht erfüllbar
+19. Sicherheit, Compliance und Audit
+Uploads / Datenblätter
+1. Quarantäne
+2. Malware-Scan
+3. Sandboxed Parsing
+4. Trennung: raw / extracted / derived
+5. Immutable Storage
+6. Provenienz bis auf Feldebene
+Prompt-Injection-Schutz
+
+Dokumenttext ist niemals Instruktion.
+Extraktion zuerst in Schema → dann in State.
+
+Audit Trail
+
+Jede technical_preselection und jede inquiry_ready wird immutable gespeichert mit:
+
+state_snapshot
+ontology_version
+prompt_version
+model_version
+source_versions
+decision_basis_hash
+disclaimer_text
+20. Betrieb & Skalierung
+Was in LangGraph gehört
+Gate
+Observe
+Routing
+State-Transitions
+Interrupts
+Rendering
+kontrollierter Evidence-Pfad
+Was nicht in LangGraph gehört
+Upload-Pipeline
+PDF-Worker
+Mail-/Versand
+Retry/Dead-Letter
+Reporting/BI
+Audit Append-Only Writer
+Fehlertoleranz
+# OpenAI down → degraded mode:
+# - bestehende Cases anzeigen
+# - neue Analysen sichtbar eingeschränkt
+# - strukturierte Dateneingabe weiter erlauben
+# - Queue statt harter Fehler
+Caching
+
+Hash-basiert mit kompletter Versionierung über:
+
+ontology_version
+source_version_hash
+intent
+language
+prompt_version
+industry_constraint_version
+engineering_ruleset_version
+21. Go-to-Market — Die ersten 12 Monate
+Phase 1: Beweis (Monat 1–6)
+
+Ziel: Quote Rate > X% im MVP-Subsegment beweisen.
+
+Vorgehen:
+
+1 Subsegment (Gleitring, Chemie/Prozess)
+5–10 Pilot-Hersteller persönlich onboarden
+manuelle Hersteller-Mappings
+User-Akquisition über SEO + LinkedIn + direkte technische Ansprache
+jeden Quote-Outcome messen
+Phase 2: Monetarisierung (Monat 7–12)
+
+Wenn Quote Rate bewiesen:
+
+Listing-Fee einführen
+Segment ausweiten
+Content/SEO systematisieren
+Hersteller-Self-Service vorbereiten
+Phase 3: Skalierung (ab Monat 13)
+weitere Pfade fachlich vertiefen
+Performance-basierte Modelle prüfen
+Featured Listing transparent einführen
+Herstellerdatenbank ausbauen
+zusätzliche Norm- und Branchenpfade integrieren
+22. Was gegenüber der früheren Version jetzt ausdrücklich integriert ist
+Neu integriert
+1. Kanonisches Engineering-Modell
+
+Core Intake → Failure Driver → Geometry/Fit → RFQ/Haftung
+
+2. Pfadlogik
+
+ms_pump, rwdr, static, labyrinth, hyd_pneu, unclear_rotary
+
+3. Medium-Intelligence und Daten-Provenienz
+
+medium_input, medium_context, medium_registry, confirmed_properties, inferred_properties
+
+4. Risk-/Readiness-/Compliance-Schicht
+
+risk_flags, missing_mandatory_keys, inquiry_admissible, rfq_ready
+
+5. Support-Systeme / Seal Supply
+
+als eigener technischer Modulblock
+
+6. Pfadspezifische RFQ-Exporte
+
+zunächst strukturell, MVP-seitig tief nur für ms_pump
+
+Bewusst unverändert geblieben
+User-first-Positionierung
+Herstellerfreigabe als letzte Instanz
+STS als internes Canonical Model
+PDF + JSON Deliverable
+neutraler Marktplatzansatz
+MVP eng statt „Dichtungstechnik allgemein“
+23. Fazit
+
+SeaLAI ist kein neues Industrieverzeichnis.
+SeaLAI ist kein Google-Klon.
+SeaLAI ist kein beliebiger KI-Chatbot für Dichtungen.
+
+SeaLAI ist das erste System, das den zerklüfteten Dichtungsmarkt
+für den Nutzer transparent macht,
+das viele Herstellersprachen in eine neutrale Sprache übersetzt
+und das sicherstellt, dass nicht nur irgendein Hersteller antwortet,
+sondern der technisch passende Hersteller auf Basis einer qualifizierten Anfrage.
+
+Der User bekommt maximalen Wert kostenlos.
+Der Hersteller bekommt qualifizierte Leads, die passen.
+Kleinere, spezialisierte Hersteller kommen an Kunden,
+die sie sonst nie gefunden hätten.
+
+Der Moat ist nicht nur die Technologie.
+Der Moat ist:
+
+die Qualität der Bedarfsermittlung
+die neutrale Übersetzung in herstellerfähige Sprache
+die saubere Trennung zwischen Vorauswahl und Herstellerfreigabe
+das Vertrauen beider Seiten

@@ -16,6 +16,9 @@ Rules:
 - Do NOT invent values not present in the message.
 - Do NOT infer governance decisions, material recommendations, or fitness statements.
 - If nothing found, return {"extractions": []}.
+- For speed_rpm and shaft_diameter_mm: always output raw_value as an integer (no decimal point). Example: 6000 not 6000.0, 50 not 50.0.
+- For temperature_c and pressure_bar: decimal values are acceptable.
+- When the message contains a correction ("nicht X sondern Y", "kein X sondern Y", "statt X Y"): extract only the affirmed value Y, not the negated value X.
 
 Example input:  "PTFE-Dichtung für 180°C Dampf bei 12 bar"
 Example output: {"extractions": [

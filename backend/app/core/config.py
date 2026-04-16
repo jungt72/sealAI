@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # LangSmith / OpenTelemetry tracing (auto-picked up by LangChain via os.environ)
     langchain_tracing_v2: bool = False
     langchain_api_key: Optional[str] = None
-    langchain_project: str = "sealai-v4"
+    langchain_project: str = "sealai-phase-h"
 
     # Prometheus metrics
     prometheus_enabled: bool = True

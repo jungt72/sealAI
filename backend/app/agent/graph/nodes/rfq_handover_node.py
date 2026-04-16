@@ -54,6 +54,7 @@ _ALLOWED_DIMENSION_KEYS = (
     "groove_depth_mm",
     "piston_rod_diameter_mm",
 )
+_BLOCKING_EVIDENCE_GAPS = {"retrieval_failed", "no_evidence_retrieved"}
 
 
 def _confirmed_parameters(state: GraphState) -> dict[str, Any]:
@@ -72,6 +73,42 @@ def _dimensions(state: GraphState) -> dict[str, Any]:
         if claim is not None and claim.asserted_value is not None:
             result[key] = claim.asserted_value
     return result
+
+
+def _preselection_blocker_fields(state: GraphState) -> list[str]:
+    return list(
+        dict.fromkeys(
+            list(getattr(state.governance, "preselection_blockers", []) or [])
+            + list(getattr(state.governance, "compliance_blockers", []) or [])
+            + list(getattr(state.governance, "type_sensitive_required", []) or [])
+        )
+    )
+
+
+def _blocking_evidence_gaps_for_release(state: GraphState) -> list[str]:
+    blockers: list[str] = []
+    for gap in list(getattr(state.evidence, "evidence_gaps", []) or []):
+        text = str(gap or "").strip()
+        if not text:
+            continue
+        if text.startswith("missing_source_for_") or text in _BLOCKING_EVIDENCE_GAPS:
+            blockers.append(text)
+    return list(dict.fromkeys(blockers))
+
+
+def _rfq_release_blockers(state: GraphState) -> list[str]:
+    blockers: list[str] = []
+    if not state.matching.shortlist_ready:
+        blockers.append("shortlist_not_released")
+    if not state.matching.inquiry_ready:
+        blockers.append("matching_not_inquiry_ready")
+    blockers.extend(list(state.matching.release_blockers))
+    blockers.extend(_preselection_blocker_fields(state))
+    blockers.extend(_blocking_evidence_gaps_for_release(state))
+    blockers.extend(str(item) for item in list(state.asserted.blocking_unknowns or []) if item)
+    blockers.extend(f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item)
+    blockers.extend(f"open_point:{item}" for item in list(state.governance.open_validation_points or []) if item)
+    return list(dict.fromkeys(blockers))
 
 
 def _qualified_materials(state: GraphState) -> tuple[list[str], list[dict[str, Any]]]:
@@ -151,6 +188,23 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
                     rfq_object={},
                     requirement_class=requirement_class,
                     notes=["RFQ handover requires Class A governance with admissible technical scope."],
+                )
+            }
+        )
+
+    release_blockers = _rfq_release_blockers(state)
+    if release_blockers:
+        return state.model_copy(
+            update={
+                "rfq": RfqState(
+                    status="not_ready",
+                    rfq_ready=False,
+                    rfq_admissible=state.governance.rfq_admissible,
+                    blocking_findings=release_blockers,
+                    selected_manufacturer_ref=selected,
+                    recipient_refs=_recipient_refs(state),
+                    requirement_class=requirement_class,
+                    notes=["RFQ handover is blocked until matching and inquiry readiness are conservatively released."],
                 )
             }
         )

@@ -2,8 +2,10 @@ from app.agent.state.models import (
     AssertedClaim,
     AssertedState,
     ContextHintState,
+    EvidenceState,
     GovernanceState,
     GovernedSessionState,
+    MatchingState,
 )
 from app.api.v1.projections.case_workspace import (
     project_case_workspace,
@@ -127,6 +129,52 @@ def test_workspace_projection_exposes_live_calc_as_technical_derivation() -> Non
     assert projection.technical_derivations[0].dn_value == 75000
 
 
+def test_workspace_projection_exposes_structured_canonical_parameters() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-params"},
+            "working_profile": {
+                "engineering_profile": {
+                    "medium": "Salzwasser",
+                    "pressure_bar": 10.0,
+                    "temperature_c": 80.0,
+                    "sealing_type": "mechanical_seal",
+                    "duty_profile": "continuous",
+                    "shaft_diameter_mm": 50.0,
+                    "speed_rpm": 6000.0,
+                    "installation": "rotierende Wellenabdichtung",
+                    "movement_type": "rotary",
+                    "contamination": "abrasive",
+                    "compliance": ["food_contact"],
+                    "medium_qualifiers": ["chlorides_or_salinity"],
+                },
+                "completeness": {"missing_critical_parameters": []},
+            },
+            "reasoning": {"phase": "recommendation", "state_revision": 4},
+            "system": {
+                "governance_metadata": {"release_status": "precheck_only"},
+                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    assert projection.parameters["medium"] == "Salzwasser"
+    assert projection.parameters["pressure_bar"] == 10.0
+    assert projection.parameters["temperature_c"] == 80.0
+    assert projection.parameters["sealing_type"] == "mechanical_seal"
+    assert projection.parameters["duty_profile"] == "continuous"
+    assert projection.parameters["shaft_diameter_mm"] == 50.0
+    assert projection.parameters["speed_rpm"] == 6000.0
+    assert projection.parameters["installation"] == "rotierende Wellenabdichtung"
+    assert projection.parameters["contamination"] == "abrasive"
+    assert projection.parameters["compliance"] == ["food_contact"]
+    assert projection.parameters["medium_qualifiers"] == ["chlorides_or_salinity"]
+    assert projection.parameters["motion_type"] == "rotary"
+
+
 def test_governed_workspace_projection_reframes_after_linear_and_medium_correction() -> None:
     projection = project_case_workspace_from_governed_state(
         GovernedSessionState(
@@ -172,3 +220,66 @@ def test_governed_workspace_projection_reframes_after_linear_and_medium_correcti
     assert all("Welle" not in item and "RWDR" not in item for item in projection.communication_context.open_points_summary)
     assert projection.rfq_status.rfq_ready is False
     assert projection.partner_matching.matching_ready is False
+
+
+def test_governed_workspace_projection_exposes_evidence_basis_classes() -> None:
+    projection = project_case_workspace_from_governed_state(
+        GovernedSessionState(
+            asserted=AssertedState(
+                assertions={
+                    "medium": AssertedClaim(field_name="medium", asserted_value="Salzwasser"),
+                    "pressure_bar": AssertedClaim(field_name="pressure_bar", asserted_value=10.0),
+                }
+            ),
+            governance=GovernanceState(
+                gov_class="A",
+                rfq_admissible=True,
+                open_validation_points=[],
+            ),
+            evidence=EvidenceState(
+                evidence_present=True,
+                evidence_count=1,
+                trusted_sources_present=True,
+                source_backed_findings=["medium"],
+                deterministic_findings=["pressure_bar"],
+                assumption_based_findings=["installation"],
+                unresolved_open_points=["missing_source_for_compliance"],
+                evidence_gaps=["missing_source_for_compliance"],
+            ),
+        ),
+        chat_id="case-evidence",
+    )
+
+    assert projection.evidence_summary.evidence_present is True
+    assert projection.evidence_summary.source_backed_findings == ["medium"]
+    assert projection.claims_summary.by_origin["evidence"] == 1
+    assert projection.claims_summary.by_origin["deterministic"] == 1
+    assert projection.governance_status.assumptions_active == ["installation"]
+    assert "missing_source_for_compliance" in projection.governance_status.unknowns_manufacturer_validation
+
+
+def test_governed_workspace_projection_keeps_unreleased_matching_blocked() -> None:
+    projection = project_case_workspace_from_governed_state(
+        GovernedSessionState(
+            governance=GovernanceState(
+                gov_class="A",
+                rfq_admissible=True,
+                open_validation_points=[],
+            ),
+            matching=MatchingState(
+                status="candidate_not_released",
+                matchability_status="not_released",
+                shortlist_ready=False,
+                inquiry_ready=False,
+                release_blockers=["demo_matching_catalog"],
+                data_source="demo_catalog",
+            ),
+        ),
+        chat_id="case-matching-blocked",
+    )
+
+    assert projection.partner_matching.matching_ready is False
+    assert projection.partner_matching.shortlist_ready is False
+    assert projection.partner_matching.inquiry_ready is False
+    assert "demo_matching_catalog" in projection.partner_matching.blocking_reasons
+    assert projection.partner_matching.data_source == "demo_catalog"

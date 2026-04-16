@@ -488,7 +488,7 @@ class TestGateSessionIntegration:
         redis = FakeRedis()
         env = get_or_create_session("t1", "s1", "u1", redis_client=redis)
 
-        llm_result = LLMGateResult(routing="CONVERSATION", confidence=0.92)
+        llm_result = LLMGateResult(route="CONVERSATION", confidence=0.92)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Was ist ein O-Ring?", env)
         assert decision.route == "CONVERSATION"
