@@ -1,6 +1,6 @@
 # SealAI — Claude Code Arbeitsanweisung
-**Letzte Aktualisierung:** 2026-04-07
-**Status:** Phase F — Foundation Cut AKTIV
+**Letzte Aktualisierung:** 2026-04-11
+**Status:** Phase H — Commercial Buildout AKTIV
 
 ---
 
@@ -13,7 +13,7 @@
 | 2 | **Umbauplan V2** | `konzept/SEALAI_UMBAUPLAN_V2` | Operativer Migrationsplan (aktuell) |
 | 2 | **Kommunikations-Zielbild** | `konzept/SEALAI_KOMMUNIKATION_ZIELBILD.md` | Normatives Kommunikationsverhalten |
 | 3 | **Architekturnachtrag** | `konzept/audit/ARCHITEKTURNACHTRAG_2026-04-04.md` | Gate-Entscheidung (3-stufig) |
-| 3 | **IST-Audit** | `konzept/audit/AUDIT_IST_2026-04-06.md` | Aktueller IST-Zustand der Codebase |
+| 3 | **IST-Audit** | `konzept/audit/AUDIT_IST_2026-04-09.md` | Aktueller IST-Zustand der Codebase |
 
 > Bei Konflikten: Finales Konzept + Stack-Architektur > Umbauplan V2 > Kommunikations-Zielbild > Architekturnachtrag > IST-Audit
 
@@ -44,7 +44,7 @@ Finale Freigabe: Hersteller.
 ```
 CONVERSATION  kein Domänenparameter → 1 LLM-Call, < 1s
 EXPLORATION   Domänenkontext, keine vollst. Parameter → 1 RAG + 1 LLM, < 3s
-GOVERNED      vollst./teilw. Parameter für RWDR/RC → 8-Node Subgraph
+GOVERNED      vollst./teilw. Parameter für RWDR/RC → Graph
 ```
 Bias zu GOVERNED bei Unsicherheit. Zone-Stickiness: nur aufsteigend.
 
@@ -60,10 +60,15 @@ ActionReadiness    PDF-Status, idempotency_key, inquiry_sent
 Stale-State via DEPENDENCY_MAP. Idempotency Keys für alle Side Effects.
 Revisionsbindung aller Artefakte an `decision_basis_hash`.
 
-### Governed Subgraph: 8 Kern-Nodes
+### Governed Graph: 15 Nodes (8 Kern + 7 kommerzielle Erweiterungen)
 ```
+Kern (Phase F):
 intake_observe → normalize_node → assert_node → evidence_node →
-compute_node → governance_node → output_contract → cycle_control/renderer
+compute_node → governance_node → output_contract → cycle_control
+
+Erweiterungen (deterministisch, Phase H):
+matching → rfq_handover → dispatch → norm →
+export_profile → manufacturer_mapping → dispatch_contract
 ```
 MAX_CYCLES = 3. Nach Limit: `incomplete_analysis` oder
 `assumptions_require_confirmation` — kein stilles Weiterlaufen.
@@ -116,7 +121,7 @@ paperless-ngx         2.20.10       RAG-Admin (Upload + Tag + Webhook)
 tika                  2.9.2.1       OCR + Extraktion
 gotenberg             8.15.0        PDF-Erzeugung
 prometheus            latest        Metrics
-grafana               latest        Dashboards
+grafana               latest        Dashboards (3 vorhanden)
 ──────────────────────────────────────────────────────────
 ERPNext               —             NICHT in Scope
 ```
@@ -146,68 +151,92 @@ LLM: `gpt-4o-mini` (Gate/Classify) · `gpt-4o` (Observe/Render)
 
 ---
 
-## Aktuelle Phase: F — Foundation Cut
+## Aktuelle Phase: H — Commercial Buildout
 
-Audit abgeschlossen (2026-04-07). Umbauplan V2 liegt vor.
-Phase F beginnt jetzt mit W1.1.
+Phase G abgeschlossen 2026-04-11. 1851 Tests grün.
 
-### Phase F Done-Kriterium
-
-```
-✓ "Gleitring für 80°C Salzwasser, 50mm, 6000 U/min"
-  → Gate: GOVERNED → 8 Nodes → technical_preselection
-  → Token-Stream am Frontend sichtbar
-  → Cockpit: Parameter + PV-Wert + Vorauswahl
-  → PDF via Gotenberg erzeugbar
-  → Audit-Log in PostgreSQL
-
-✓ "Welche Materialien für Salzwasser?"
-  → Gate: EXPLORATION → 1 RAG + 1 LLM → conversational_answer
-
-✓ "Hallo, wie geht es dir?"
-  → Gate: CONVERSATION → direkt, < 1s
-
-✓ Kein Request in langgraph_v2/
-✓ Alle 1.573 Tests grün
-✓ LangSmith zeigt Traces
-✓ Gotenberg + Tika Container laufen
-```
-
-### Reihenfolge innerhalb Phase F
+### Was in Phase F + G erledigt wurde
 
 ```
-Woche 1 — Daten + Fundament
-  W1.1  STS-Seed-Files anlegen         → agent/data/sts/*.json
-  W1.2  Qdrant Collection fixen        → sealai_technical_docs, 384-dim
-  W1.3  PromptRegistry implementieren  → agent/prompts/__init__.py
-  W1.4  Gate-Routen umbenennen         → CONVERSATION/EXPLORATION/GOVERNED
-  W1.5  25 fehlgeschlagene Tests fixen
+Phase F (Foundation Cut) — abgeschlossen 2026-04-10:
+  ✓ STS-Seed-Files (30 MAT, 20 TYPE, 40 MED, 8 RS, 12 OPEN)
+  ✓ Qdrant sealai_technical_docs (384-dim, BM25+Semantic)
+  ✓ PromptRegistry Singleton + 12 Jinja2-Templates
+  ✓ Gate 3-stufig: CONVERSATION / EXPLORATION / GOVERNED
+  ✓ State 6 Schichten + DEPENDENCY_MAP + Idempotency Keys
+  ✓ EvidenceQuery + ExplorationQuery + Hybrid Retrieval
+  ✓ Outward-Class-Rename: technical_preselection, inquiry_ready
+  ✓ Legacy-Imports: 0 verbleibend in Produktivcode
+  ✓ V2-Endpoint: Feature-Flag False
+  ✓ Gotenberg + Tika laufen, PDF-Pipeline komplett
+  ✓ interrupt() für Clarification
+  ✓ StreamWriter Progress-Events (3 Nodes)
+  ✓ PostgreSQL: Alembic-Migration ausgeführt
+  ✓ 1792 Tests grün
 
-Woche 2 — State + RAG
-  W2.1  State auf 6 Schichten mappen   → DerivedState, EvidenceState, etc.
-  W2.2  DEPENDENCY_MAP implementieren  → reducers.py
-  W2.3  Idempotency + basis_hash       → models.py, persistence.py
-  W2.4  EvidenceQuery + ExplorationQuery → evidence/
-  W2.5  evidence_node verbinden
-  W2.6  Pilot-Datenblätter in Paperless laden
-
-Woche 3 — Naming + Legacy
-  W3.1  Outward-Class-Rename (atomar)  → technical_preselection, inquiry_ready
-  W3.2  Legacy-Import-Entkopplung      → 15+ Dateien
-  W3.3  V2-Endpoint Feature-Flag
-  W3.4  interaction_policy + FastBrainRouter entfernen
-  W3.5  Keycloak-Rollen anlegen
-
-Woche 4 — Pipeline + Integration
-  W4.1  Gotenberg + Tika Container starten
-  W4.2  Gotenberg-Client implementieren
-  W4.3  Inquiry HTML-Template (Jinja2)
-  W4.4  interrupt() für Clarification
-  W4.5  StreamWriter Progress-Events
-  W4.6  PostgreSQL Cases + State-Snapshots
+Phase G (Domain Buildout) — abgeschlossen 2026-04-11:
+  ✓ agent/agent/ aufgelöst: 18 Dateien → Zielstruktur (Shims)
+  ✓ case_state.py → state/case_state.py
+  ✓ projections_extended.py → state/ (bereits dort)
+  ✓ fastembed als einziger Embedding-Weg
+  ✓ 3 Pilot-Chunks in Qdrant (SiC, FKM, PTFE)
+  ✓ pilot_manufacturers.json (5 Hersteller)
+  ✓ fit_score.py (4-Komponenten, deterministisch)
+  ✓ payload_builder.py (inquiry_payload)
+  ✓ STS erweitert: 30 MAT, 20 TYPE, 40 MED
+  ✓ failure_modes.json (16 Schadensbilder)
+  ✓ norm_map.json (8 Normen: DIN, API, ISO, ATEX, FDA)
+  ✓ normalize_material() → STS-MAT-* Codes
+  ✓ Grafana Dashboards 2+3 (RAG Intelligence, Business)
+  ✓ Prometheus: 5 neue Instrumente
+  ✓ 1851 Tests grün
 ```
 
-Details zu jedem Schritt: `konzept/SEALAI_UMBAUPLAN_V2`
+### Phase H Done-Kriterium
+
+```
+✓ Inquiry Pipeline vollständig:
+  - Admissibility-Check deterministisch
+  - User-Confirmation via interrupt()
+  - PDF mit state_hash erzeugt
+  - Inquiry-Payload an Hersteller gesendet (Pilot)
+  - Cases-Tabelle + Audit-Log geschrieben
+
+✓ Frontend vollständig:
+  - Chat + Cockpit in Produktion
+  - SSE-Stream: Token + Progress-Events
+  - Keycloak-Login: user_basic, manufacturer, admin
+
+✓ Pilot-Betrieb:
+  - Mindestens 1 echter Hersteller ongeboardet
+  - Mindestens 5 echte Datenblätter in Paperless
+  - Mindestens 1 Inquiry vollständig durchgelaufen
+
+✓ Alle Tests grün (Ziel: 1900+)
+```
+
+### Empfohlene Reihenfolge Phase H
+
+```
+H1 — Inquiry Pipeline
+  H1.1  Admissibility-Check (check_inquiry_admissibility)
+  H1.2  User-Confirmation via interrupt()
+  H1.3  Cases-Tabelle aktivieren (Alembic bereits ausgeführt)
+  H1.4  Inquiry-Versand (JSON-Payload an Hersteller)
+  H1.5  Audit-Log schreiben (inquiry_audit Tabelle)
+
+H2 — Frontend Integration
+  H2.1  Chat-Handler SSE vollständig verdrahten
+  H2.2  Cockpit-Tiles aus projections.py live
+  H2.3  Progress-Events vom StreamWriter empfangen
+  H2.4  Keycloak-Login im Frontend
+
+H3 — Pilot-Betrieb
+  H3.1  Erster echter Hersteller onboarden (manuell)
+  H3.2  Echte Datenblätter in Paperless laden + taggen
+  H3.3  Paperless-Webhook → Qdrant aktivieren
+  H3.4  Erster vollständiger Durchlauf mit echtem User
+```
 
 ---
 
@@ -215,10 +244,10 @@ Details zu jedem Schritt: `konzept/SEALAI_UMBAUPLAN_V2`
 
 ### Vor jeder Aufgabe
 - Lies `konzept/SEALAI_UMBAUPLAN_V2` vollständig (mind. relevanten Abschnitt).
-- Prüfe: Welche Woche? Welcher Schritt?
+- Prüfe: Welche Phase? Welcher Schritt?
 - Prüfe: Verstößt die Änderung gegen eine der 16 Invarianten?
 - Prüfe: Welche bestehenden Dateien werden angefasst?
-- Prüfe: Bleiben alle 1.573 Tests grün?
+- Prüfe: Bleiben alle 1.851 Tests grün?
 
 ### Während der Arbeit
 - Kleine, testbare Schritte. Tests grün nach jedem Commit.
@@ -233,12 +262,11 @@ Details zu jedem Schritt: `konzept/SEALAI_UMBAUPLAN_V2`
 ### Nach jeder Aufgabe
 - Alle Tests grün?
 - Neue Tests grün?
-- Wenn Phase F: End-to-End Smoketest möglich?
+- Commit mit aussagekräftiger Message.
 
 ### Was du NICHT tun sollst
-- Phase G/H starten bevor Phase F Done-Kriterium bestanden ist.
 - `selection.py` erweitern (nur zerlegen).
-- `langgraph_v2/` oder `_legacy_v2/` weiterentwickeln.
+- `langgraph_v2/` oder `_legacy_v2/` anfassen.
 - STS als externen Standard benennen.
 - conservative assumptions nach MAX_CYCLES.
 - f-strings für Prompts verwenden.
@@ -255,115 +283,84 @@ Details zu jedem Schritt: `konzept/SEALAI_UMBAUPLAN_V2`
 backend/app/agent/          ← Single Source of Truth
 ```
 
-### Legacy (read-only, wird schrittweise entfernt)
+### Legacy (de facto deaktiviert)
 ```
-backend/app/langgraph_v2/   ← Feature-Flag, wird deaktiviert (W3.3)
-backend/app/_legacy_v2/     ← Adapter, wird nach Entkopplung entfernt (W3.2)
+backend/app/langgraph_v2/   ← Feature-Flag False, nicht anfassen
+backend/app/_legacy_v2/     ← Nur noch conftest.py
+backend/app/agent/agent/    ← Nur noch Re-Export-Shims (18 Dateien)
 ```
 
-### Ziel-Ordnerstruktur nach Phase F
+### Aktuelle Ordnerstruktur (IST nach Phase G)
 ```
 backend/app/agent/
-├── api/
-│   ├── handlers/           chat_handler, upload_handler, inquiry_handler
-│   └── sse/                stream.py
-├── prompts/                PromptRegistry + alle Jinja2-Templates
-│   ├── renderer/           base.j2, conversational.j2, clarification.j2,
-│   │                       state_update.j2, preselection.j2,
-│   │                       candidate_list.j2, inquiry_ready.j2
-│   ├── gate/               gate_classify.j2
-│   ├── intake/             observe.j2
-│   ├── exploration/        explore.j2, compare.j2, detail.j2
-│   └── pdf/                inquiry.html.j2, styles.css
-├── runtime/
-│   ├── gate.py             3-Way Gate + Command
-│   ├── session_manager.py  thread_id v3, Stickiness
-│   ├── conversation_runtime.py
-│   ├── exploration_runtime.py
-│   └── response_renderer.py
-├── graph/
-│   ├── main_graph.py
-│   ├── governed_subgraph.py
-│   ├── nodes/              8 Kern-Nodes + StreamWriter
-│   └── topology.py
-├── state/
-│   ├── models.py           6 Schichten
-│   ├── reducers.py         + DEPENDENCY_MAP
-│   ├── persistence.py      Redis Checkpoint v3
-│   └── projections.py      Cockpit-Tiles
-├── evidence/
-│   ├── evidence_query.py
-│   ├── exploration_query.py
-│   └── retrieval.py        Qdrant Hybrid Search
-├── domain/
-│   ├── normalization.py
-│   ├── rwdr_calc.py
-│   ├── requirement_class.py
-│   ├── threshold.py
-│   └── fit_score.py
-├── sts/
-│   ├── loader.py
-│   └── codes.py
-├── manufacturers/
-│   ├── capability_db.py
-│   ├── matching_engine.py
-│   └── payload_builder.py
-├── documents/
-│   ├── tika_client.py
-│   └── pdf_generator.py    → Gotenberg
-├── rag/
-│   ├── ingest_service.py   Paperless-Webhook → Qdrant
-│   └── setup_collections.py
+├── api/                    router.py (2.771 LOC), sse_runtime.py
+├── prompts/                PromptRegistry + 12 Templates + pdf/
+├── runtime/                gate.py, session_manager.py, conversation_runtime.py,
+│                           exploration_runtime.py, response_renderer.py,
+│                           reply_builder.py, clarification.py, boundaries.py,
+│                           output_guard.py, policy.py, selection.py,
+│                           interaction_policy.py (deprecated)
+├── graph/                  topology.py, legacy_graph.py, nodes/ (15 Nodes),
+│                           tools.py
+├── state/                  models.py (6 Schichten), reducers.py (DEPENDENCY_MAP),
+│                           persistence.py, projections.py,
+│                           projections_extended.py, case_state.py,
+│                           agent_state.py, sync.py
+├── evidence/               evidence_query.py, exploration_query.py, retrieval.py
+├── domain/                 normalization.py, rwdr_calc.py, requirement_class.py,
+│                           threshold.py, fit_score.py, logic.py, physics.py,
+│                           readiness.py, review.py, material.py,
+│                           manufacturer_rfq.py, medium_registry.py
+├── sts/                    loader.py, codes.py
+├── manufacturers/          commercial.py, payload_builder.py
+├── documents/              tika_client.py, pdf_generator.py
+├── rag/                    setup_collections.py, seed_pilot_chunks.py,
+│                           paperless_tags.py
+├── agent/                  18 Re-Export-Shims (kein produktiver Code)
 └── data/
-    ├── sts/                materials.json, sealing_types.json,
-    │                       requirement_classes.json, media.json,
-    │                       open_points.json
-    ├── manufacturers/      pilot_manufacturers.json
-    └── ontology/           failure_modes.json, norm_map.json
+    ├── sts/                materials.json (30), sealing_types.json (20),
+    │                       requirement_classes.json (8), media.json (40),
+    │                       open_points.json (12)
+    ├── manufacturers/      pilot_manufacturers.json (5 Hersteller)
+    └── ontology/           failure_modes.json (16), norm_map.json (8)
 ```
 
 ---
 
 ## Phasenübersicht
 
-| Phase | Name | Status | Startet nach |
+| Phase | Name | Status | Abgeschlossen |
 |---|---|---|---|
-| AUDIT | IST-Analyse | ERLEDIGT 2026-04-07 | — |
-| **F** | Foundation Cut | **AKTIV** | Audit ✓ |
-| G | Domain Buildout | WARTET | Phase F Done |
-| H | Commercial Buildout | WARTET | Phase G Teilabschluss |
+| AUDIT | IST-Analyse | ERLEDIGT | 2026-04-07 |
+| F | Foundation Cut | ERLEDIGT | 2026-04-10 · 1792 Tests |
+| G | Domain Buildout | ERLEDIGT | 2026-04-11 · 1851 Tests |
+| **H** | Commercial Buildout | **AKTIV** | — |
 
 ---
 
-## Erster Prompt für Phase F
+## Erster Prompt für Phase H
 
 ```
-Lies konzept/SEALAI_UMBAUPLAN_V2 vollständig.
+Phase G abgeschlossen (1851 Tests grün).
+Lies CLAUDE.md und konzept/SEALAI_UMBAUPLAN_V2 vollständig.
 
-Starte W1.1: Erstelle die STS-Seed-Files.
+Starte H1.1: Admissibility-Check implementieren.
 
-Neue Dateien:
-  backend/app/agent/data/sts/materials.json
-  backend/app/agent/data/sts/sealing_types.json
-  backend/app/agent/data/sts/requirement_classes.json
-  backend/app/agent/data/sts/media.json
-  backend/app/agent/data/sts/open_points.json
-
-Dann:
-  backend/app/agent/sts/__init__.py
-  backend/app/agent/sts/loader.py
-  backend/app/agent/sts/codes.py
-
-Dann:
-  backend/app/agent/tests/test_sts_loader.py
+Neue Datei: backend/app/agent/domain/admissibility.py
 
 Anforderungen:
-- Mindestens 15 Materialcodes (STS-MAT-*) inkl. SiC, FKM, PTFE, EPDM, NBR, FKM-HT, WC, Grafit
-- Mindestens 10 Dichtungstypen (STS-TYPE-*) inkl. GS-S, GS-CART, GS-D, RWDR-A, RWDR-B, OR-A, FLAT-A
-- Mindestens 6 Requirement Classes (STS-RS-*)
-- Mindestens 15 Mediumcodes (STS-MED-*)
-- Mindestens 10 offene Prüfpunkte (STS-OPEN-*)
-- loader.py: JSON laden + validieren (keine Duplikate, Pflichtfelder)
-- codes.py: get_material(code), get_sealing_type(code), is_valid_code(code)
-- Alle bestehenden 1.548 Tests müssen weiter grün bleiben.
+- check_inquiry_admissibility(state: SealAIState) → AdmissibilityResult
+- Deterministisch — kein LLM
+- Pflichtfelder prüfen: medium, temperature_max_c, pressure_max_bar,
+  shaft_diameter_mm, sealing_type
+- parameter_status "assumed" für kritische Felder → blocking
+- critical_review.py blocking_findings → blocking
+- AdmissibilityResult enthält: admissible, blocking_reasons, basis_hash
+- tests/test_inquiry_admissibility.py:
+    vollständiger State → admissible=True
+    fehlender Pflichtparameter → admissible=False
+    "assumed" Druck → admissible=False
+    blocking_reasons nie leer wenn admissible=False
+
+Alle 1.851 Tests müssen grün bleiben.
 ```
