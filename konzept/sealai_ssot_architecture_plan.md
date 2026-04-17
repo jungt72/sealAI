@@ -833,3 +833,6 @@ how uncertainty is represented,
 how evidence is traced,
 and how outputs are bounded by explicit rule-based contracts.
 This document is the single implementation SSoT for achieving that.
+how evidence is traced,
+and how outputs are bounded by explicit rule-based contracts.
+This document is the single implementation SSoT for achieving that.
