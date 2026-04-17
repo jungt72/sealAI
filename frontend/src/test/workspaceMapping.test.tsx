@@ -5,6 +5,60 @@ import { mapWorkspaceView } from "@/lib/mapping/workspace";
 describe("mapWorkspaceView", () => {
   it("uses canonical RFQ readiness and pdf availability", () => {
     const workspace = mapWorkspaceView("case-123", {
+      request_type: "validation_check",
+      engineering_path: "rwdr",
+      cockpit_view: {
+        request_type: "validation_check",
+        engineering_path: "rwdr",
+        routing_metadata: {
+          phase: "clarification",
+          last_node: "facade_hydration",
+          routing: {},
+        },
+        sections: [
+          {
+            section_id: "core_intake",
+            title: "A. Grunddaten",
+            completion: { mandatory_present: 3, mandatory_total: 4, percent: 75 },
+            properties: [
+              {
+                key: "medium",
+                label: "Medium / Fluid",
+                value: "Salzwasser",
+                origin: "fast_brain_extracted",
+                confidence: "confirmed",
+                is_confirmed: true,
+                is_mandatory: true,
+              },
+            ],
+          },
+        ],
+        checks: [
+          {
+            calc_id: "rwdr_circumferential_speed",
+            label: "RWDR circumferential speed",
+            formula_version: "rwdr_calc_v1",
+            required_inputs: ["shaft_diameter_mm", "speed_rpm"],
+            missing_inputs: [],
+            valid_paths: ["rwdr"],
+            output_key: "v_surface_m_s",
+            unit: "m/s",
+            status: "ok",
+            value: 3.93,
+            fallback_behavior: "insufficient_data_when_required_inputs_missing",
+            guardrails: ["diameter and speed must be present and non-negative"],
+            notes: ["Dn-Wert liegt im ueblichen Richtbereich."],
+          },
+        ],
+        missing_mandatory_keys: ["geometry_context"],
+        blockers: [],
+        readiness: {
+          status: "preliminary",
+          is_rfq_ready: false,
+          release_status: "manufacturer_validation_required",
+          coverage_score: 0.65,
+        },
+      },
       communication_context: {
         conversation_phase: "clarification",
         turn_goal: "clarify_primary_open_point",
@@ -147,6 +201,14 @@ describe("mapWorkspaceView", () => {
     });
 
     expect(workspace.rfq.status).toBe("ready");
+    expect(workspace.requestType).toBe("validation_check");
+    expect(workspace.engineeringPath).toBe("rwdr");
+    expect(workspace.cockpit?.requestType).toBe("validation_check");
+    expect(workspace.cockpit?.path).toBe("rwdr");
+    expect(workspace.cockpit?.sections.core_intake.properties[0]?.origin).toBe("fast_brain_extracted");
+    expect(workspace.cockpit?.checks[0]?.calcId).toBe("rwdr_circumferential_speed");
+    expect(workspace.cockpit?.checks[0]?.outputKey).toBe("v_surface_m_s");
+    expect(workspace.cockpit?.readiness.missingMandatoryKeys).toEqual(["geometry_context"]);
     expect(workspace.rfq.documentUrl).toBe("/api/bff/rfq/case-123/document");
     expect(workspace.communication?.conversationPhase).toBe("clarification");
     expect(workspace.communication?.primaryQuestion).toBe(

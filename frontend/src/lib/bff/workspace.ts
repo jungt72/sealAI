@@ -37,3 +37,14 @@ export async function fetchWorkspace(caseId: string): Promise<WorkspaceView> {
   });
   return ensureJson<WorkspaceView>(response);
 }
+
+export async function submitRfq(caseId: string, payload: any): Promise<any> {
+  const response = await fetch(`/api/bff/rfq/${encodeURIComponent(caseId)}/document`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  return ensureJson<any>(response);
+}

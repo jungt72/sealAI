@@ -21,6 +21,25 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
 
 
+RequestType = Literal[
+    "new_design",
+    "retrofit",
+    "rca_failure_analysis",
+    "validation_check",
+    "spare_part_identification",
+    "quick_engineering_check",
+]
+
+EngineeringPath = Literal[
+    "ms_pump",
+    "rwdr",
+    "static",
+    "labyrinth",
+    "hyd_pneu",
+    "unclear_rotary",
+]
+
+
 class CaseSummary(BaseModel):
     thread_id: Optional[str] = None
     user_id: Optional[str] = None
@@ -318,8 +337,97 @@ class CycleInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+CockpitSectionId = Literal[
+    "core_intake",
+    "failure_drivers",
+    "geometry_fit",
+    "rfq_liability",
+]
+
+
+class CockpitProperty(BaseModel):
+    key: str
+    label: str
+    value: Any = None
+    unit: Optional[str] = None
+    origin: Optional[str] = None
+    confidence: Optional[str] = None
+    is_confirmed: bool = False
+    is_mandatory: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CockpitSectionCompletion(BaseModel):
+    mandatory_present: int = 0
+    mandatory_total: int = 0
+    percent: int = 0
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CockpitSection(BaseModel):
+    section_id: CockpitSectionId
+    title: str
+    completion: CockpitSectionCompletion = Field(default_factory=CockpitSectionCompletion)
+    properties: List[CockpitProperty] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CockpitRoutingMetadata(BaseModel):
+    phase: Optional[str] = None
+    last_node: Optional[str] = None
+    routing: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CockpitReadinessSummary(BaseModel):
+    status: str = "preliminary"
+    is_rfq_ready: bool = False
+    release_status: str = "inadmissible"
+    coverage_score: float = 0.0
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EngineeringCheckResult(BaseModel):
+    calc_id: str
+    label: str
+    formula_version: str
+    required_inputs: List[str] = Field(default_factory=list)
+    missing_inputs: List[str] = Field(default_factory=list)
+    valid_paths: List[EngineeringPath] = Field(default_factory=list)
+    output_key: str
+    unit: Optional[str] = None
+    status: str = "insufficient_data"
+    value: Any = None
+    fallback_behavior: str = "insufficient_data_when_required_inputs_missing"
+    guardrails: List[str] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EngineeringCockpitView(BaseModel):
+    request_type: Optional[RequestType] = None
+    engineering_path: Optional[EngineeringPath] = None
+    routing_metadata: CockpitRoutingMetadata = Field(default_factory=CockpitRoutingMetadata)
+    sections: List[CockpitSection] = Field(default_factory=list)
+    checks: List[EngineeringCheckResult] = Field(default_factory=list)
+    missing_mandatory_keys: List[str] = Field(default_factory=list)
+    blockers: List[str] = Field(default_factory=list)
+    readiness: CockpitReadinessSummary = Field(default_factory=CockpitReadinessSummary)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CaseWorkspaceProjection(BaseModel):
     """Top-level UI-facing read model for a single engineering case."""
+    request_type: Optional[RequestType] = None
+    engineering_path: Optional[EngineeringPath] = None
+    cockpit_view: EngineeringCockpitView = Field(default_factory=EngineeringCockpitView)
     case_summary: CaseSummary = Field(default_factory=CaseSummary)
     completeness: CompletenessStatus = Field(default_factory=CompletenessStatus)
     governance_status: GovernanceStatus = Field(default_factory=GovernanceStatus)

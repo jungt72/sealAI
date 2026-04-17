@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 from app.agent.runtime.clarification_priority import select_next_focus_from_known_context
 from app.agent.state.models import GovernedSessionState
+from app.agent.domain.checks_registry import build_registered_check_results
 from app.agent.domain.medium_registry import classify_medium_value
 from app.api.v1.schemas.case_workspace import (
     ArtifactStatus,
@@ -21,14 +22,23 @@ from app.api.v1.schemas.case_workspace import (
     CaseWorkspaceProjection,
     ClaimItem,
     ClaimsSummary,
+    CockpitProperty,
+    CockpitReadinessSummary,
+    CockpitRoutingMetadata,
+    CockpitSection,
+    CockpitSectionCompletion,
     CommunicationContext,
     CycleInfo,
+    EngineeringCockpitView,
+    EngineeringCheckResult,
+    EngineeringPath as WorkspaceEngineeringPath,
     EvidenceSummary,
     GovernanceStatus,
     MediumCaptureSummary,
     MediumClassificationSummary,
     MediumContextSummary,
     PartnerMatchingSummary,
+    RequestType as WorkspaceRequestType,
     RFQPackageSummary,
     RFQStatus,
     TechnicalDerivationItem,
@@ -101,6 +111,439 @@ _APPLICATION_LABELS: dict[str, str] = {
     "marine_propulsion": "Schiffsschraube / Wellenabdichtung",
 }
 
+_REQUEST_TYPE_VALUES: frozenset[str] = frozenset(
+    {
+        "new_design",
+        "retrofit",
+        "rca_failure_analysis",
+        "validation_check",
+        "spare_part_identification",
+        "quick_engineering_check",
+    }
+)
+
+_ENGINEERING_PATH_VALUES: frozenset[str] = frozenset(
+    {
+        "ms_pump",
+        "rwdr",
+        "static",
+        "labyrinth",
+        "hyd_pneu",
+        "unclear_rotary",
+    }
+)
+
+_COCKPIT_SECTION_CONFIG: tuple[dict[str, Any], ...] = (
+    {
+        "section_id": "core_intake",
+        "title": "A. Grunddaten",
+        "fields": (
+            {"key": "medium", "label": "Medium / Fluid", "unit": None},
+            {"key": "temperature_c", "label": "Temperatur", "unit": "degC"},
+            {"key": "pressure_bar", "label": "Druck", "unit": "bar"},
+            {"key": "shaft_diameter_mm", "label": "Referenz-Ø", "unit": "mm"},
+            {"key": "speed_rpm", "label": "Drehzahl", "unit": "rpm"},
+            {"key": "motion_type", "label": "Bewegungsart", "unit": None},
+            {"key": "installation", "label": "Equipment-Typ", "unit": None},
+            {"key": "pressure_direction", "label": "Druckrichtung", "unit": None},
+        ),
+    },
+    {
+        "section_id": "failure_drivers",
+        "title": "B. Technische Risikofaktoren",
+        "fields": (
+            {"key": "viscosity", "label": "Viskosität", "unit": "cSt"},
+            {"key": "solids_percent", "label": "Feststoffe", "unit": "%"},
+            {"key": "ph", "label": "pH-Wert", "unit": None},
+            {"key": "dry_run_possible", "label": "Trockenlauf mögl.", "unit": None},
+            {"key": "cleaning_cycles", "label": "Reinigungszyklen", "unit": None},
+        ),
+    },
+    {
+        "section_id": "geometry_fit",
+        "title": "C. Geometrie & Einbauraum",
+        "fields": (
+            {"key": "geometry_context", "label": "Bauraum", "unit": None},
+            {"key": "shaft_material", "label": "Wellenwerkstoff", "unit": None},
+            {"key": "shaft_hardness", "label": "Wellenhärte", "unit": "HRC"},
+            {"key": "runout_mm", "label": "Rundlauf", "unit": "mm"},
+            {"key": "vibration_rms", "label": "Vibration RMS", "unit": "mm/s"},
+        ),
+    },
+    {
+        "section_id": "rfq_liability",
+        "title": "D. Anfrage- & Freigabereife",
+        "fields": (
+            {"key": "allowable_leakage", "label": "Zul. Leckage", "unit": None},
+            {"key": "life_hours", "label": "Lebensdauer", "unit": "h"},
+            {"key": "compliance", "label": "Konformität", "unit": None},
+        ),
+    },
+)
+
+_DEFAULT_COCKPIT_RULES: dict[str, tuple[str, ...]] = {
+    "mandatory": ("medium", "temperature_c", "pressure_bar"),
+    "hidden": (),
+}
+
+_COCKPIT_PATH_RULES: dict[str, dict[str, tuple[str, ...]]] = {
+    "ms_pump": {
+        "mandatory": (
+            "medium",
+            "temperature_c",
+            "pressure_bar",
+            "shaft_diameter_mm",
+            "speed_rpm",
+            "motion_type",
+            "installation",
+            "viscosity",
+            "solids_percent",
+            "runout_mm",
+        ),
+        "hidden": (),
+    },
+    "rwdr": {
+        "mandatory": (
+            "medium",
+            "temperature_c",
+            "shaft_diameter_mm",
+            "speed_rpm",
+            "shaft_material",
+            "shaft_hardness",
+        ),
+        "hidden": ("pressure_max_bar",),
+    },
+    "static": {
+        "mandatory": ("medium", "temperature_c", "pressure_bar", "geometry_context"),
+        "hidden": ("speed_rpm", "shaft_diameter_mm", "runout_mm"),
+    },
+    "labyrinth": {
+        "mandatory": ("shaft_diameter_mm", "speed_rpm", "medium"),
+        "hidden": ("pressure_bar",),
+    },
+    "hyd_pneu": {
+        "mandatory": ("medium", "temperature_c", "pressure_bar", "geometry_context"),
+        "hidden": (),
+    },
+    "unclear_rotary": {
+        "mandatory": ("medium", "motion_type"),
+        "hidden": (),
+    },
+}
+
+
+def _normalize_text(value: Any) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _has_marker(texts: list[str], markers: tuple[str, ...]) -> bool:
+    return any(marker in text for text in texts for marker in markers)
+
+
+def _coerce_request_type(value: Any) -> WorkspaceRequestType | None:
+    text = _normalize_text(value)
+    if text in _REQUEST_TYPE_VALUES:
+        return text  # type: ignore[return-value]
+    return None
+
+
+def _coerce_engineering_path(value: Any) -> WorkspaceEngineeringPath | None:
+    text = _normalize_text(value)
+    if text in _ENGINEERING_PATH_VALUES:
+        return text  # type: ignore[return-value]
+    return None
+
+
+def _derive_request_type(
+    *,
+    profile: Dict[str, Any],
+    system: Dict[str, Any],
+    reasoning: Dict[str, Any],
+) -> WorkspaceRequestType | None:
+    explicit_request_type = (
+        _coerce_request_type(system.get("request_type"))
+        or _coerce_request_type(_d(system.get("routing")).get("request_type"))
+        or _coerce_request_type(reasoning.get("request_type"))
+    )
+    if explicit_request_type is not None:
+        return explicit_request_type
+
+    if any(
+        profile.get(key) not in (None, "", [], {})
+        for key in (
+            "geometry_locked",
+            "old_part_known",
+            "old_part_dimensions",
+            "allowed_changes",
+            "available_radial_space_mm",
+            "available_axial_space_mm",
+            "cavity_standard_known",
+        )
+    ):
+        return "retrofit"
+
+    if any(
+        profile.get(key) not in (None, "", [], {})
+        for key in (
+            "symptom_class",
+            "failure_timing",
+            "damage_pattern",
+            "leakage_pattern",
+            "runtime_to_failure",
+            "runtime_to_failure_hours",
+            "operating_phase_of_failure",
+            "inspection_findings",
+        )
+    ):
+        return "rca_failure_analysis"
+
+    if any(
+        profile.get(key) not in (None, "", [], {})
+        for key in (
+            "validation_target",
+            "validation_basis",
+            "existing_design_reference",
+        )
+    ):
+        return "validation_check"
+
+    if any(
+        profile.get(key) not in (None, "", [], {})
+        for key in (
+            "part_number",
+            "old_part_number",
+            "manufacturer_part_number",
+            "spare_part_reference",
+        )
+    ):
+        return "spare_part_identification"
+
+    if any(
+        profile.get(key) not in (None, "", [], {})
+        for key in ("requested_check", "calc_id", "target_formula")
+    ):
+        return "quick_engineering_check"
+
+    return None
+
+
+def _derive_engineering_path(
+    *,
+    profile: Dict[str, Any],
+    system: Dict[str, Any],
+    reasoning: Dict[str, Any],
+) -> WorkspaceEngineeringPath | None:
+    explicit_path = (
+        _coerce_engineering_path(system.get("engineering_path"))
+        or _coerce_engineering_path(_d(system.get("routing")).get("path"))
+        or _coerce_engineering_path(reasoning.get("engineering_path"))
+    )
+    if explicit_path is not None:
+        return explicit_path
+
+    motion_type = _normalize_text(profile.get("movement_type") or profile.get("motion_type"))
+    texts = [
+        _normalize_text(profile.get("installation")),
+        _normalize_text(profile.get("application_context")),
+        _normalize_text(profile.get("application_category")),
+        _normalize_text(profile.get("geometry_context")),
+        _normalize_text(profile.get("sealing_type")),
+        _normalize_text(_d(system.get("answer_contract")).get("requirement_class_hint")),
+        _normalize_text(_d(_d(system.get("answer_contract")).get("requirement_class")).get("seal_type")),
+    ]
+    texts = [text for text in texts if text]
+
+    if _has_marker(texts, ("labyrinth",)):
+        return "labyrinth"
+
+    if motion_type == "static" or _has_marker(texts, ("static_sealing", "housing_sealing", "flachdichtung", "static seal")):
+        return "static"
+
+    if _has_marker(texts, ("hydraul", "pneumat", "zylinder", "cylinder", "rod", "kolbenstange")):
+        return "hyd_pneu"
+
+    if motion_type == "rotary":
+        if _has_marker(texts, ("pump", "kreiselpumpe", "mechanical_seal", "mechanical seal", "gleitring")):
+            return "ms_pump"
+        if _has_marker(texts, ("rwdr", "wellendichtring", "radial shaft", "radialwellendichtring", "simmerring", "gearbox", "lip seal")):
+            return "rwdr"
+        return "unclear_rotary"
+
+    return None
+
+
+def _parameter_provenance_map(reasoning: Dict[str, Any]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = {}
+    for key in ("extracted_parameter_provenance", "parameter_provenance"):
+        payload = _d(reasoning.get(key))
+        if payload:
+            merged.update(payload)
+    return merged
+
+
+def _parameter_confidence_map(reasoning: Dict[str, Any]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = {}
+    for key in ("parameter_confidence",):
+        payload = _d(reasoning.get(key))
+        if payload:
+            merged.update(payload)
+    return merged
+
+
+def _provenance_origin(value: Any) -> str | None:
+    if isinstance(value, str):
+        text = str(value).strip()
+        return text or None
+    if isinstance(value, dict):
+        for key in ("origin", "source", "source_kind", "provenance"):
+            text = str(value.get(key) or "").strip()
+            if text:
+                return text
+    return None
+
+
+def _provenance_confidence(value: Any) -> str | None:
+    if isinstance(value, dict):
+        text = str(value.get("confidence") or "").strip()
+        return text or None
+    return None
+
+
+def _cockpit_field_value(profile: Dict[str, Any], key: str) -> Any:
+    if key in profile:
+        return profile.get(key)
+    if key == "motion_type":
+        return profile.get("movement_type")
+    return None
+
+
+def _build_cockpit_sections(
+    *,
+    profile: Dict[str, Any],
+    engineering_path: WorkspaceEngineeringPath | None,
+    reasoning: Dict[str, Any],
+) -> tuple[list[CockpitSection], list[str]]:
+    rules = _COCKPIT_PATH_RULES.get(
+        str(engineering_path or ""),
+        _DEFAULT_COCKPIT_RULES,
+    )
+    mandatory_keys = set(rules["mandatory"])
+    hidden_keys = set(rules["hidden"])
+    provenance_map = _parameter_provenance_map(reasoning)
+    confidence_map = _parameter_confidence_map(reasoning)
+    missing_mandatory_keys: list[str] = []
+    sections: list[CockpitSection] = []
+
+    for section_config in _COCKPIT_SECTION_CONFIG:
+        properties: list[CockpitProperty] = []
+        mandatory_total = 0
+        mandatory_present = 0
+        for field in section_config["fields"]:
+            key = str(field["key"])
+            if key in hidden_keys:
+                continue
+            value = _cockpit_field_value(profile, key)
+            origin = _provenance_origin(provenance_map.get(key))
+            confidence = (
+                str(confidence_map.get(key)).strip()
+                if confidence_map.get(key) not in (None, "")
+                else _provenance_confidence(provenance_map.get(key))
+            )
+            is_mandatory = key in mandatory_keys
+            is_confirmed = confidence == "confirmed"
+            if value in (None, "", []):
+                value = None
+                if is_mandatory:
+                    missing_mandatory_keys.append(key)
+                origin = origin or "missing"
+            if is_mandatory:
+                mandatory_total += 1
+                if value is not None:
+                    mandatory_present += 1
+            properties.append(
+                CockpitProperty(
+                    key=key,
+                    label=str(field["label"]),
+                    value=value,
+                    unit=field.get("unit"),
+                    origin=origin,
+                    confidence=confidence,
+                    is_confirmed=is_confirmed,
+                    is_mandatory=is_mandatory,
+                )
+            )
+
+        percent = int(round((mandatory_present / mandatory_total) * 100)) if mandatory_total else 100
+        sections.append(
+            CockpitSection(
+                section_id=str(section_config["section_id"]),
+                title=str(section_config["title"]),
+                completion=CockpitSectionCompletion(
+                    mandatory_present=mandatory_present,
+                    mandatory_total=mandatory_total,
+                    percent=percent,
+                ),
+                properties=properties,
+            )
+        )
+
+    return sections, missing_mandatory_keys
+
+
+def _build_cockpit_view(
+    *,
+    profile: Dict[str, Any],
+    request_type: WorkspaceRequestType | None,
+    engineering_path: WorkspaceEngineeringPath | None,
+    reasoning: Dict[str, Any],
+    system: Dict[str, Any],
+    rfq_status: RFQStatus,
+    governance_status: GovernanceStatus,
+    completeness_payload: Dict[str, Any],
+    checks: list[EngineeringCheckResult],
+) -> EngineeringCockpitView:
+    sections, missing_mandatory_keys = _build_cockpit_sections(
+        profile=profile,
+        engineering_path=engineering_path,
+        reasoning=reasoning,
+    )
+    blockers = [
+        str(item)
+        for item in dict.fromkeys(
+            list(rfq_status.blockers)
+            + list(governance_status.gate_failures)
+        )
+        if item
+    ]
+    coverage_score = float(completeness_payload.get("coverage_score") or 0.0)
+    is_rfq_ready = bool(
+        rfq_status.rfq_ready
+        or (
+            not missing_mandatory_keys
+            and coverage_score > 0.6
+        )
+    )
+    status = "rfq_ready" if is_rfq_ready else ("preliminary" if missing_mandatory_keys else "review_needed")
+    return EngineeringCockpitView(
+        request_type=request_type,
+        engineering_path=engineering_path,
+        routing_metadata=CockpitRoutingMetadata(
+            phase=str(reasoning.get("phase") or "") or None,
+            last_node=str(reasoning.get("last_node") or "") or None,
+            routing=_d(system.get("routing")),
+        ),
+        sections=sections,
+        checks=checks,
+        missing_mandatory_keys=missing_mandatory_keys,
+        blockers=blockers,
+        readiness=CockpitReadinessSummary(
+            status=status,
+            is_rfq_ready=is_rfq_ready,
+            release_status=governance_status.release_status,
+            coverage_score=coverage_score,
+        ),
+    )
+
 
 def _build_confirmed_facts_summary(working_profile_pillar: Dict[str, Any]) -> list[str]:
     profile = _d(working_profile_pillar.get("engineering_profile")) or _d(
@@ -134,6 +577,17 @@ def _build_parameters_snapshot(working_profile_pillar: Dict[str, Any]) -> Dict[s
     if movement_type not in (None, ""):
         snapshot["motion_type"] = movement_type
     return snapshot
+
+
+def _parameter_confidence_from_meta(parameter_meta: Dict[str, Any]) -> Dict[str, str]:
+    confidence_map: Dict[str, str] = {}
+    for key, value in parameter_meta.items():
+        if not isinstance(value, dict):
+            continue
+        confidence = str(value.get("confidence") or "").strip()
+        if confidence:
+            confidence_map[str(key)] = confidence
+    return confidence_map
 
 
 def _technical_derivation_from_live_calc_tile(tile: Dict[str, Any]) -> TechnicalDerivationItem | None:
@@ -170,6 +624,25 @@ def _build_technical_derivations(
     live_calc_tile = _d(working_profile_pillar.get("live_calc_tile")) or _d(system.get("live_calc_tile"))
     live_calc_derivation = _technical_derivation_from_live_calc_tile(live_calc_tile)
     return [live_calc_derivation] if live_calc_derivation is not None else []
+
+
+def _build_engineering_checks(
+    *,
+    profile: Dict[str, Any],
+    engineering_path: WorkspaceEngineeringPath | None,
+    technical_derivations: list[TechnicalDerivationItem],
+) -> list[EngineeringCheckResult]:
+    checks: list[EngineeringCheckResult] = []
+    for item in build_registered_check_results(
+        profile=profile,
+        engineering_path=engineering_path,
+        technical_derivations=technical_derivations,
+    ):
+        try:
+            checks.append(EngineeringCheckResult.model_validate(item))
+        except Exception:
+            continue
+    return checks
 
 
 def _build_evidence_summary(evidence_state: Dict[str, Any]) -> EvidenceSummary:
@@ -543,6 +1016,11 @@ def synthesize_workspace_state_from_governed(
             "last_node": "governed_live_state",
             "selected_partner_id": matching_state.get("selected_partner_id"),
             "state_revision": state.analysis_cycle,
+            "parameter_confidence": {
+                field_name: claim.confidence
+                for field_name, claim in state.asserted.assertions.items()
+                if getattr(claim, "confidence", None) is not None
+            },
         },
         "system": {
             "governed_output_text": "",
@@ -700,6 +1178,8 @@ def synthesize_workspace_state_from_ssot(state: Dict[str, Any], *, chat_id: str)
             "last_node": "facade_hydration",
             "selected_partner_id": selected_partner_id,
             "state_revision": cycle.get("state_revision", 0),
+            "parameter_provenance": parameter_meta,
+            "parameter_confidence": _parameter_confidence_from_meta(parameter_meta),
         },
         "system": {
             "governed_output_text": governance.get("governed_output_text") or "",
@@ -944,6 +1424,19 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         working_profile_pillar=working_profile_pillar,
     )
     parameters = _build_parameters_snapshot(working_profile_pillar)
+    routing_profile = _d(working_profile_pillar.get("engineering_profile")) or _d(
+        working_profile_pillar.get("extracted_params")
+    )
+    request_type = _derive_request_type(
+        profile=routing_profile,
+        system=system,
+        reasoning=reasoning,
+    )
+    engineering_path = _derive_engineering_path(
+        profile=routing_profile,
+        system=system,
+        reasoning=reasoning,
+    )
     primary_raw_text = medium_capture.get("primary_raw_text")
     if not medium_classification and primary_raw_text:
         derived_medium = classify_medium_value(str(primary_raw_text))
@@ -992,10 +1485,30 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         working_profile_pillar=working_profile_pillar,
         system=system,
     )
+    checks = _build_engineering_checks(
+        profile=routing_profile,
+        engineering_path=engineering_path,
+        technical_derivations=technical_derivations,
+    )
     evidence_summary = _build_evidence_summary(evidence_state)
     claims_summary = _build_claims_summary(evidence_summary)
+    completeness_payload = _d(working_profile_pillar.get("completeness"))
+    cockpit_view = _build_cockpit_view(
+        profile=routing_profile,
+        request_type=request_type,
+        engineering_path=engineering_path,
+        reasoning=reasoning,
+        system=system,
+        rfq_status=rfq_status,
+        governance_status=governance_status,
+        completeness_payload=completeness_payload,
+        checks=checks,
+    )
 
     return CaseWorkspaceProjection(
+        request_type=request_type,
+        engineering_path=engineering_path,
+        cockpit_view=cockpit_view,
         case_summary=case_summary,
         governance_status=governance_status,
         claims_summary=claims_summary,

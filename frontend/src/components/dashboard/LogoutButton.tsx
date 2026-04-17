@@ -45,16 +45,16 @@ export default function LogoutButton({ showLabel = true, className }: LogoutButt
         <button
             onClick={handleLogout}
             className={`flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all group relative ${showLabel
-                    ? "text-seal-ylnmn hover:text-red-500 hover:bg-red-50"
-                    : "justify-center text-seal-ylnmn hover:text-red-500 hover:bg-red-50"
+                    ? "text-muted-foreground hover:text-red-500 hover:bg-red-50"
+                    : "justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50"
                 } ${className ?? ""}`}
-            title={!showLabel ? "Logout" : undefined}
+            title={!showLabel ? "Abmelden" : undefined}
         >
             <LogOut className={`${showLabel ? "mr-3" : ""} h-5 w-5 shrink-0`} />
-            {showLabel && <span className="animate-in fade-in duration-300">Sign Out</span>}
+            {showLabel && <span className="animate-in fade-in duration-300">Abmelden</span>}
             {!showLabel && (
-                <div className="absolute left-full ml-4 px-2 py-1 bg-seal-rich text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] whitespace-nowrap">
-                    Logout
+                <div className="absolute left-full ml-4 px-2 py-1 bg-[#041E49] text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] whitespace-nowrap">
+                    Abmelden
                 </div>
             )}
         </button>

@@ -36,8 +36,6 @@ import os
 import re
 from typing import Any
 
-import openai
-
 from app.agent.domain.normalization import (
     extract_parameters as regex_extract,
     extract_shaft_diameter_mm,
@@ -45,6 +43,7 @@ from app.agent.domain.normalization import (
 from app.agent.graph import GraphState
 from app.agent.prompts import prompts
 from app.agent.state.models import ObservedExtraction, UserOverride
+from app.llm.factory import get_async_llm
 
 log = logging.getLogger(__name__)
 
@@ -54,10 +53,6 @@ log = logging.getLogger(__name__)
 
 _ENABLE_LLM_EXTRACTION: bool = (
     os.environ.get("SEALAI_ENABLE_LLM_EXTRACTION", "true").lower() == "true"
-)
-
-_EXTRACTION_MODEL: str = os.environ.get(
-    "SEALAI_EXTRACTION_MODEL", "gpt-4o-mini"
 )
 
 # ---------------------------------------------------------------------------
@@ -309,10 +304,10 @@ async def _llm_extract_params(
     LLM is constrained to the allowed field list — no governance artefacts.
     """
     try:
-        client = openai.AsyncOpenAI()
+        client, model = get_async_llm("extraction")
         system_prompt = prompts.render("intake/observe.j2", {})
         response = await client.chat.completions.create(
-            model=_EXTRACTION_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": message},

@@ -15,8 +15,8 @@ const inter = Inter({
 const siteOrigin = getSiteOrigin();
 
 export const metadata: Metadata = {
-  title: "Gemini",
-  description: "Experience the next generation of AI.",
+  title: "SealingAI — Sealing Intelligence",
+  description: "Professionelle technische Vorqualifizierung und Analyse für industrielle Dichtungslösungen.",
   metadataBase: siteOrigin,
 };
 
@@ -26,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="light">
+    <html lang="de" className="light">
       <body className={cn(inter.variable, "font-sans bg-[#F8F9FA] text-[#1F1F1F] antialiased")}>
         <Providers>
           {children}

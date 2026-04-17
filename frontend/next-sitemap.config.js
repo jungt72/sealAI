@@ -22,7 +22,10 @@ module.exports = {
   transform: async (config, path) => ({
     loc: path,
     changefreq: path === "/" ? "daily" : config.changefreq,
-    priority: path === "/" ? 1.0 : path === "/dashboard" ? 0.8 : 0.7,
+    priority: 
+      path === "/" ? 1.0 : 
+      path.startsWith("/medien/") || path.startsWith("/werkstoffe/") || path.startsWith("/wissen/") ? 0.9 :
+      path === "/dashboard" ? 0.8 : 0.7,
     lastmod: new Date().toISOString(),
     alternateRefs: config.alternateRefs ?? [],
   }),

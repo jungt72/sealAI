@@ -3,15 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  Menu, 
-  Plus, 
-  MessageSquare, 
-  History, 
-  Settings, 
-  HelpCircle, 
+import {
+  Menu,
+  Plus,
+  MessageSquare,
+  History,
+  Settings,
+  HelpCircle,
   Activity,
-  Sparkles,
   Database,
   LayoutDashboard
 } from "lucide-react";
@@ -32,9 +31,8 @@ export default function DashboardShell({
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background font-sans">
-      {/* Sidebar - Gemini Style */}
-      <aside
-        className={cn(
+      {/* Sidebar - SealingAI Style */}
+      <aside        className={cn(
           "relative z-20 flex h-full flex-col bg-sidebar transition-all duration-300 ease-in-out",
           isExpanded ? "w-[280px]" : "w-[68px]"
         )}
@@ -51,7 +49,7 @@ export default function DashboardShell({
             "ml-3 flex items-center gap-2 transition-opacity duration-300",
             isExpanded ? "opacity-100" : "opacity-0 w-0 overflow-hidden"
           )}>
-            <span className="text-xl font-medium tracking-tight text-foreground">Gemini</span>
+            <span className="text-xl font-semibold tracking-tight text-[#041E49]">SealingAI</span>
           </div>
         </div>
 
@@ -60,21 +58,21 @@ export default function DashboardShell({
           <Link
             href="/dashboard/new"
             className={cn(
-              "flex items-center gap-3 bg-muted hover:bg-[#E3E3E3] transition-all duration-200 text-muted-foreground",
+              "flex items-center gap-3 bg-[#D3E3FD] hover:bg-[#C2D3EE] transition-all duration-200 text-[#041E49]",
               isExpanded 
-                ? "h-12 px-4 rounded-full w-fit min-w-[140px]" 
+                ? "h-12 px-4 rounded-full w-fit min-w-[160px]" 
                 : "h-12 w-12 justify-center rounded-2xl"
             )}
           >
             <Plus size={24} className="shrink-0" />
-            {isExpanded && <span className="text-sm font-medium">New Chat</span>}
+            {isExpanded && <span className="text-sm font-medium">Neue Analyse</span>}
           </Link>
         </div>
 
         {/* Nav Items & Recent History Placeholder */}
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto custom-scrollbar">
           {isExpanded && (
-            <p className="px-4 py-2 text-[13px] font-medium text-muted-foreground">Recent</p>
+            <p className="px-4 py-2 text-[13px] font-medium text-muted-foreground uppercase tracking-wider">Verlauf</p>
           )}
           
           {NAV_ITEMS.map((item) => {
@@ -97,7 +95,7 @@ export default function DashboardShell({
                 <item.icon size={20} className="shrink-0" />
                 {isExpanded && (
                   <span className="text-sm font-medium whitespace-nowrap overflow-hidden">
-                    {item.label}
+                    {item.label === "Workbench" ? "Analyse-Workbench" : item.label === "Knowledge Base" ? "Mediendatenbank" : item.label}
                   </span>
                 )}
               </Link>
@@ -108,9 +106,9 @@ export default function DashboardShell({
         {/* Bottom Actions */}
         <div className="px-3 py-4 space-y-1">
           {[
-            { icon: HelpCircle, label: "Help" },
-            { icon: Activity, label: "Activity" },
-            { icon: Settings, label: "Settings" },
+            { icon: HelpCircle, label: "Hilfe" },
+            { icon: Activity, label: "Aktivität" },
+            { icon: Settings, label: "Einstellungen" },
           ].map((item) => (
             <button
               key={item.label}
@@ -121,13 +119,12 @@ export default function DashboardShell({
             </button>
           ))}
           
-          {/* Sparkle Brand Marker */}
+          {/* Brand Marker */}
           {isExpanded && (
-            <div className="mt-4 px-4 py-3 flex items-center gap-3">
-              <Sparkles size={18} className="sparkle-icon" />
+            <div className="mt-4 px-4 py-3 flex items-center gap-3 border-t border-border">
               <div className="flex flex-col">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                  Gemini Advanced
+                  Sealing Intelligence
                 </span>
               </div>
             </div>

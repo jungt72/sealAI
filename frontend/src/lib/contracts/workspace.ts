@@ -1,3 +1,5 @@
+import type { EngineeringCockpitView } from "@/lib/engineering/cockpitModel";
+
 export type WorkspaceLifecycleStep = {
   label: string;
   status: "done" | "active" | "pending";
@@ -85,6 +87,9 @@ export type WorkspaceMatchItem = {
 
 export type WorkspaceView = {
   caseId: string;
+  requestType?: string | null;
+  engineeringPath?: string | null;
+  cockpit?: EngineeringCockpitView | null;
   communication?: {
     conversationPhase?: string | null;
     turnGoal?: string | null;
@@ -224,6 +229,7 @@ export type WorkspaceView = {
   };
   rfq: {
     status: "unavailable" | "draft" | "ready";
+    rfq_ready: boolean;
     releaseStatus: string;
     confirmed: boolean;
     blockers: string[];

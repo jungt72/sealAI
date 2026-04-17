@@ -7,20 +7,76 @@ import {
   EngineeringPath, 
   EngineeringProperty, 
   EngineeringSection, 
+  DEFAULT_PATH_RULES,
   PATH_RULES,
   DataOrigin
 } from "@/lib/engineering/cockpitModel";
+import { 
+  MediumStatusViewModel, 
+  buildMediumStatusViewFromWorkspace, 
+  buildMediumStatusViewFromStream 
+} from "@/lib/mediumStatusView";
 
 export type CockpitData = {
   view: EngineeringCockpitView;
   parameters: Record<string, any>;
   coverage: number;
   releaseStatus: string;
+  mediumStatus: MediumStatusViewModel;
 };
 
-const SECTIONS_CONFIG = [
+function isEngineeringPath(value: string | null | undefined): value is EngineeringPath {
+  return (
+    value === "ms_pump" ||
+    value === "rwdr" ||
+    value === "static" ||
+    value === "labyrinth" ||
+    value === "hyd_pneu" ||
+    value === "unclear_rotary"
+  );
+}
+
+function deriveFallbackEngineeringPath(parameters: Record<string, any>): EngineeringPath | null {
+  const motion = String(parameters.motion_type || "").toLowerCase();
+  const equipment = String(
+    parameters.installation || parameters.application_context || parameters.sealing_type || "",
+  ).toLowerCase();
+
+  if (equipment.includes("labyrinth")) return "labyrinth";
+  if (
+    equipment.includes("hydraul") ||
+    equipment.includes("pneumat") ||
+    equipment.includes("cylinder") ||
+    equipment.includes("zylinder") ||
+    equipment.includes("kolbenstange") ||
+    equipment.includes("rod")
+  ) {
+    return "hyd_pneu";
+  }
+  if (motion === "static") return "static";
+  if (motion === "rotary" && (equipment.includes("pump") || equipment.includes("gleitring"))) return "ms_pump";
+  if (
+    motion === "rotary" &&
+    (
+      equipment.includes("gearbox") ||
+      equipment.includes("rwdr") ||
+      equipment.includes("wellendichtring") ||
+      equipment.includes("simmerring")
+    )
+  ) {
+    return "rwdr";
+  }
+  if (motion === "rotary") return "unclear_rotary";
+  return null;
+}
+
+const SECTIONS_CONFIG: Array<{
+  id: EngineeringSection["id"];
+  title: string;
+  fields: Array<{ key: string; label: string; unit: string }>;
+}> = [
   {
-    id: "core",
+    id: "core_intake",
     title: "A. Grunddaten",
     fields: [
       { key: "medium", label: "Medium / Fluid", unit: "" },
@@ -34,7 +90,7 @@ const SECTIONS_CONFIG = [
     ]
   },
   {
-    id: "failure",
+    id: "failure_drivers",
     title: "B. Technische Risikofaktoren",
     fields: [
       { key: "viscosity", label: "Viskosität", unit: "cSt" },
@@ -45,7 +101,7 @@ const SECTIONS_CONFIG = [
     ]
   },
   {
-    id: "geometry",
+    id: "geometry_fit",
     title: "C. Geometrie & Einbauraum",
     fields: [
       { key: "geometry_context", label: "Bauraum", unit: "" },
@@ -56,7 +112,7 @@ const SECTIONS_CONFIG = [
     ]
   },
   {
-    id: "rfq",
+    id: "rfq_liability",
     title: "D. Anfrage- & Freigabereife",
     fields: [
       { key: "allowable_leakage", label: "Zul. Leckage", unit: "" },
@@ -69,25 +125,17 @@ const SECTIONS_CONFIG = [
 function projectEngineeringView(
   parameters: Record<string, any>,
   assertions: Record<string, any> | null,
-  workspace: any
+  workspace: any,
+  requestType: string | null = null,
+  engineeringPath: EngineeringPath | null = null
 ): EngineeringCockpitView {
-  // 1. Path Detection
-  const motion = parameters.motion_type || "unclear";
-  const equipment = parameters.installation || "unclear";
-  
-  let path: EngineeringPath = "standard";
-  if (motion === "rotary" && equipment === "pump") path = "mechanical_seal_pump";
-  else if (motion === "rotary" && (equipment === "gearbox" || equipment === "rotary_general")) path = "radial_shaft_seal";
-  else if (motion === "static") path = "static_seal";
-  else if (motion === "rotary") path = "unclear_rotary";
+  const path = engineeringPath ?? deriveFallbackEngineeringPath(parameters);
+  const rules = path ? PATH_RULES[path] : DEFAULT_PATH_RULES;
 
-  const rules = PATH_RULES[path];
-
-  // 2. Section Projection
-  const sections: Record<string, EngineeringSection> = {};
+  const sections = {} as EngineeringCockpitView["sections"];
 
   SECTIONS_CONFIG.forEach(secConfig => {
-    const properties: EngineeringProperty[] = secConfig.fields.map(f => {
+    const properties: EngineeringProperty[] = secConfig.fields.flatMap((f) => {
       const assertion = assertions?.[f.key];
       const rawVal = parameters[f.key] || assertion?.value || null;
       
@@ -109,47 +157,46 @@ function projectEngineeringView(
         origin = "medium_registry";
       }
 
-      return {
+      const isMandatory = rules.mandatory.includes(f.key);
+      const isHidden = rules.hidden.includes(f.key);
+      if (isHidden) {
+        return [];
+      }
+
+      return [{
         key: f.key,
         label: f.label,
         value: rawVal,
         unit: f.unit,
         origin,
+        confidence: assertion?.confidence || null,
         isConfirmed,
-        isMandatory: rules.mandatory.includes(f.key),
-        isHidden: rules.hidden.includes(f.key),
-        riskFlags: [] // Placeholder for future logic
-      };
+        isMandatory,
+      }];
     });
 
-    const visibleProps = properties.filter(p => !p.isHidden);
-    const mandatoryVisible = visibleProps.filter(p => p.isMandatory);
+    const mandatoryVisible = properties.filter(p => p.isMandatory);
     const filledMandatory = mandatoryVisible.filter(p => p.value !== null);
     
-    // Honest completeness: 
-    // If mandatory fields exist, percentage reflects them.
-    // If no mandatory fields exist, it's 100% only if all visible optional fields are filled, else 0.5 (or similar)
-    // Actually, let's stick to mandatory, but if 0 mandatory, show 1 only if at least one optional is filled.
-    let completeness = 0;
-    if (mandatoryVisible.length > 0) {
-      completeness = filledMandatory.length / mandatoryVisible.length;
-    } else {
-      const filledOptional = visibleProps.filter(p => p.value !== null).length;
-      completeness = visibleProps.length > 0 && filledOptional === visibleProps.length ? 1 : (filledOptional > 0 ? 0.5 : 0);
-    }
+    const percent = mandatoryVisible.length > 0
+      ? Math.round((filledMandatory.length / mandatoryVisible.length) * 100)
+      : 100;
     
     sections[secConfig.id] = {
       id: secConfig.id,
       title: secConfig.title,
       properties,
-      completeness
+      completion: {
+        mandatoryPresent: filledMandatory.length,
+        mandatoryTotal: mandatoryVisible.length,
+        percent,
+      },
     };
   });
 
-  // 3. Readiness Calculation
   const allProps = Object.values(sections).flatMap(s => s.properties);
   const missingMandatoryKeys = allProps
-    .filter(p => p.isMandatory && p.value === null && !p.isHidden)
+    .filter(p => p.isMandatory && p.value === null)
     .map(p => p.key);
 
   const isRfqReady = workspace?.rfq?.rfq_ready || (missingMandatoryKeys.length === 0 && (workspace?.completeness?.coverageScore || 0) > 0.6);
@@ -163,14 +210,21 @@ function projectEngineeringView(
 
   return {
     path,
+    requestType: requestType || "nicht bestimmt",
     sections,
+    checks: [],
     readiness,
     mediumContext: {
       canonicalName: workspace?.mediumClassification?.canonicalLabel || null,
       isConfirmed: workspace?.mediumClassification?.confidence === "high",
       properties: workspace?.mediumContext?.properties || [],
       riskFlags: workspace?.mediumContext?.challenges || []
-    }
+    },
+    routingMetadata: {
+      phase: workspace?.communication?.conversationPhase || null,
+      lastNode: null,
+      routing: {},
+    },
   };
 }
 
@@ -183,9 +237,15 @@ export function useCockpitData(): CockpitData | null {
     let rawParams: Record<string, any> = {};
     let assertions = streamAssertions;
     let wsObj = workspace;
+    let mediumStatus: MediumStatusViewModel | null = null;
+    let requestType: string | null = null;
+    let engineeringPath: EngineeringPath | null = null;
 
     if (workspace) {
       rawParams = workspace.parameters || {};
+      mediumStatus = buildMediumStatusViewFromWorkspace(workspace);
+      requestType = workspace.requestType || null;
+      engineeringPath = isEngineeringPath(workspace.engineeringPath) ? workspace.engineeringPath : null;
     } else if (streamWorkspace) {
       const params: Record<string, any> = {};
       const streamParams = streamWorkspace.ui.parameter.parameters || [];
@@ -195,20 +255,32 @@ export function useCockpitData(): CockpitData | null {
         }
       }
       rawParams = params;
-      // We don't assign streamWorkspace to wsObj if it's strictly typed to WorkspaceView
-      // Instead we pass it as any to the projector which handles it safely
       wsObj = streamWorkspace as any; 
+      mediumStatus = buildMediumStatusViewFromStream(streamWorkspace);
     } else {
       return null;
     }
 
-    const view = projectEngineeringView(rawParams, assertions, wsObj);
+    if (!mediumStatus) return null;
+
+    if (workspace?.cockpit) {
+      return {
+        view: workspace.cockpit,
+        parameters: rawParams,
+        coverage: workspace?.completeness?.coverageScore || 0,
+        releaseStatus: workspace?.governance.releaseStatus || "inadmissible",
+        mediumStatus,
+      };
+    }
+
+    const view = projectEngineeringView(rawParams, assertions, wsObj, requestType, engineeringPath);
 
     return {
       view,
       parameters: rawParams,
       coverage: workspace?.completeness?.coverageScore || 0,
       releaseStatus: workspace?.governance.releaseStatus || "inadmissible",
+      mediumStatus
     };
   }, [workspace, streamWorkspace, streamAssertions]);
 }

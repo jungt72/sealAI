@@ -1,32 +1,21 @@
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: "Google Sans", "Google Sans Text", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Google Sans Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
   --color-background: #F8F9FA;
   --color-foreground: #1F1F1F;
 
-  --color-gemini-blue: #1A73E8;
-  --color-gemini-purple: #7B1FA2;
-  --color-gemini-pink: #E91E63;
-  --color-gemini-cyan: #00BCD4;
+  /* SealingAI Professional B2B Palette */
+  --color-seal-blue: #041E49;
+  --color-seal-light-blue: #D3E3FD;
   
   --color-sidebar: #F0F4F9;
   --color-surface: #FFFFFF;
   --color-border: #E3E3E3;
   --color-muted: #F0F2F4;
   --color-muted-foreground: #444746;
-
-  --bg-image-gemini-energy: linear-gradient(74deg, #4285F4 0%, #9B72CB 9%, #D96570 20%, #111 40%);
-  --bg-image-gemini-glow: radial-gradient(circle at 50% 50%, rgba(66, 133, 244, 0.1), transparent 50%);
-
-  --animate-sparkle: sparkle 2s ease-in-out infinite;
-
-  @keyframes sparkle {
-    0%, 100% { opacity: 1; transform: scale(1); filter: brightness(1); }
-    50% { opacity: 0.7; transform: scale(1.1); filter: brightness(1.2); }
-  }
 
   --radius-xxl: 32px;
   --radius-xl: 24px;
@@ -45,13 +34,13 @@
     --background: 240 6.7% 8.4%;
     --foreground: 0 0% 98%;
     
-    --color-background: #131314;
+    --color-background: #0B1221;
     --color-foreground: #E3E3E3;
-    --color-sidebar: #1E1F20;
-    --color-surface: #000000;
-    --color-border: #444746;
-    --color-muted: #1E1F20;
-    --color-muted-foreground: #C4C7C5;
+    --color-sidebar: #111827;
+    --color-surface: #020617;
+    --color-border: #1F2937;
+    --color-muted: #1F2937;
+    --color-muted-foreground: #9CA3AF;
   }
 
   body {
@@ -61,22 +50,7 @@
 }
 
 @layer utilities {
-  .gemini-gradient {
-    @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(
-      to right,
-      #4285F4,
-      #9B72CB,
-      #D96570,
-      #F3AF5F
-    );
-  }
-
-  .gemini-card {
+  .seal-card {
     @apply rounded-xl bg-surface border border-border shadow-sm;
-  }
-
-  .sparkle-icon {
-    @apply animate-sparkle text-gemini-blue;
   }
 }

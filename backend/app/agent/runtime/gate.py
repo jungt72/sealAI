@@ -34,6 +34,8 @@ from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from app.llm.factory import get_sync_llm, get_async_llm
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -62,7 +64,6 @@ def _observe_gate_decision(decision: "GateDecision", started_at: float) -> "Gate
 # Configuration
 # ---------------------------------------------------------------------------
 
-_GATE_MODEL = os.environ.get("SEALAI_GATE_MODEL", "gpt-4o-mini")
 _ENABLE_GATE_DIRECT_REPLY = os.environ.get("SEALAI_ENABLE_GATE_DIRECT_REPLY", "false").lower() == "true"
 _CONFIDENCE_THRESHOLD = 0.75
 # Stricter threshold for non-governed override while the session is already
@@ -380,9 +381,7 @@ def _call_gate_llm(message: str) -> LLMGateResult:
     Kept for tests and CLI usage. Production callers use _call_gate_llm_async.
     Raises on network/timeout to let decide_route handle the fallback.
     """
-    import openai  # lazy import
-
-    client = openai.OpenAI()
+    client, model = get_sync_llm("gate")
     system_prompt = _get_gate_system_prompt(
         current_zone="conversation",
         short_state_summary=None,
@@ -391,14 +390,14 @@ def _call_gate_llm(message: str) -> LLMGateResult:
         last_route=None,
     )
     response = client.chat.completions.create(
-        model=_GATE_MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message},
         ],
         response_format=_GATE_RESPONSE_FORMAT,
-        max_completion_tokens=220,
-        temperature=0,
+        temperature=0.0,
+        max_tokens=256,
     )
     raw = (response.choices[0].message.content or "").strip()
     try:
@@ -425,9 +424,7 @@ async def _call_gate_llm_async(
     last_route: str | None = None,
 ) -> LLMGateResult:
     """Async mini-LLM call — does not block the event loop."""
-    import openai  # lazy import
-
-    client = openai.AsyncOpenAI()
+    client, model = get_async_llm("gate")
     system_prompt = _get_gate_system_prompt(
         current_zone=current_zone,
         short_state_summary=short_state_summary,
@@ -436,7 +433,7 @@ async def _call_gate_llm_async(
         last_route=last_route,
     )
     response = await client.chat.completions.create(
-        model=_GATE_MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message},

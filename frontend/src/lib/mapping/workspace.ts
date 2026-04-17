@@ -1,7 +1,75 @@
 import type { WorkspaceView, WorkspaceLifecycleStep } from "@/lib/contracts/workspace";
+import type {
+  EngineeringCockpitView,
+  EngineeringCheckResult,
+  EngineeringPath,
+  EngineeringSection,
+  EngineeringSectionId,
+} from "@/lib/engineering/cockpitModel";
 import { buildRfqDocumentReadPath } from "../bff/workspace.ts";
 
+type RawCockpitProperty = {
+  key?: string;
+  label?: string;
+  value?: unknown;
+  unit?: string | null;
+  origin?: string | null;
+  confidence?: string | null;
+  is_confirmed?: boolean;
+  is_mandatory?: boolean;
+};
+
+type RawCockpitSection = {
+  section_id?: string | null;
+  title?: string | null;
+  completion?: {
+    mandatory_present?: number;
+    mandatory_total?: number;
+    percent?: number;
+  } | null;
+  properties?: RawCockpitProperty[];
+};
+
+type RawEngineeringCheckResult = {
+  calc_id?: string;
+  label?: string;
+  formula_version?: string;
+  required_inputs?: string[];
+  missing_inputs?: string[];
+  valid_paths?: string[];
+  output_key?: string;
+  unit?: string | null;
+  status?: string;
+  value?: unknown;
+  fallback_behavior?: string;
+  guardrails?: string[];
+  notes?: string[];
+};
+
+type RawCockpitView = {
+  request_type?: string | null;
+  engineering_path?: string | null;
+  routing_metadata?: {
+    phase?: string | null;
+    last_node?: string | null;
+    routing?: Record<string, unknown>;
+  } | null;
+  sections?: RawCockpitSection[];
+  checks?: RawEngineeringCheckResult[];
+  missing_mandatory_keys?: string[];
+  blockers?: string[];
+  readiness?: {
+    status?: string | null;
+    is_rfq_ready?: boolean;
+    release_status?: string | null;
+    coverage_score?: number | null;
+  } | null;
+};
+
 type LegacyWorkspaceProjection = {
+  request_type?: string | null;
+  engineering_path?: string | null;
+  cockpit_view?: RawCockpitView | null;
   parameters?: {
     medium?: string | null;
     temperature_c?: number | null;
@@ -71,6 +139,7 @@ type LegacyWorkspaceProjection = {
   };
   case_summary: {
     thread_id: string | null;
+    intent_goal?: string | null;
     turn_count: number;
     max_turns: number;
   };
@@ -286,6 +355,125 @@ function buildLifecycleSteps(projection: LegacyWorkspaceProjection): WorkspaceLi
   return steps;
 }
 
+function toEngineeringPath(value: string | null | undefined): EngineeringPath | null {
+  return value === "ms_pump" ||
+    value === "rwdr" ||
+    value === "static" ||
+    value === "labyrinth" ||
+    value === "hyd_pneu" ||
+    value === "unclear_rotary"
+    ? value
+    : null;
+}
+
+function emptyCockpitSection(id: EngineeringSectionId, title: string): EngineeringSection {
+  return {
+    id,
+    title,
+    properties: [],
+    completion: {
+      mandatoryPresent: 0,
+      mandatoryTotal: 0,
+      percent: 0,
+    },
+  };
+}
+
+function defaultCockpitSections(): Record<EngineeringSectionId, EngineeringSection> {
+  return {
+    core_intake: emptyCockpitSection("core_intake", "A. Grunddaten"),
+    failure_drivers: emptyCockpitSection("failure_drivers", "B. Technische Risikofaktoren"),
+    geometry_fit: emptyCockpitSection("geometry_fit", "C. Geometrie & Einbauraum"),
+    rfq_liability: emptyCockpitSection("rfq_liability", "D. Anfrage- & Freigabereife"),
+  };
+}
+
+function mapCockpitChecks(rawChecks: RawEngineeringCheckResult[] | undefined): EngineeringCheckResult[] {
+  return (rawChecks || []).map((check) => ({
+    calcId: check.calc_id || "",
+    label: check.label || check.calc_id || "",
+    formulaVersion: check.formula_version || "",
+    requiredInputs: check.required_inputs || [],
+    missingInputs: check.missing_inputs || [],
+    validPaths: (check.valid_paths || []).flatMap((path) => {
+      const engineeringPath = toEngineeringPath(path);
+      return engineeringPath ? [engineeringPath] : [];
+    }),
+    outputKey: check.output_key || "",
+    unit: check.unit ?? null,
+    status: check.status || "insufficient_data",
+    value: check.value ?? null,
+    fallbackBehavior: check.fallback_behavior || "insufficient_data_when_required_inputs_missing",
+    guardrails: check.guardrails || [],
+    notes: check.notes || [],
+  }));
+}
+
+function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockpitView | null {
+  const raw = projection.cockpit_view;
+  if (!raw) {
+    return null;
+  }
+
+  const sections = defaultCockpitSections();
+  for (const section of raw.sections || []) {
+    const id = section.section_id;
+    if (id !== "core_intake" && id !== "failure_drivers" && id !== "geometry_fit" && id !== "rfq_liability") {
+      continue;
+    }
+    sections[id] = {
+      id,
+      title: section.title || sections[id].title,
+      completion: {
+        mandatoryPresent: section.completion?.mandatory_present ?? 0,
+        mandatoryTotal: section.completion?.mandatory_total ?? 0,
+        percent: section.completion?.percent ?? 0,
+      },
+      properties: (section.properties || []).map((property) => ({
+        key: property.key || "",
+        label: property.label || property.key || "",
+        value: property.value ?? null,
+        unit: property.unit || undefined,
+        origin: property.origin ?? null,
+        confidence: property.confidence ?? null,
+        isConfirmed: Boolean(property.is_confirmed),
+        isMandatory: Boolean(property.is_mandatory),
+      })),
+    };
+  }
+
+  return {
+    path: toEngineeringPath(raw.engineering_path) || toEngineeringPath(projection.engineering_path),
+    requestType: raw.request_type || projection.request_type || projection.case_summary.intent_goal || "nicht bestimmt",
+    routingMetadata: {
+      phase: raw.routing_metadata?.phase || null,
+      lastNode: raw.routing_metadata?.last_node || null,
+      routing: raw.routing_metadata?.routing || {},
+    },
+    sections,
+    checks: mapCockpitChecks(raw.checks),
+    readiness: {
+      isRfqReady: Boolean(raw.readiness?.is_rfq_ready),
+      missingMandatoryKeys: raw.missing_mandatory_keys || [],
+      blockers: raw.blockers || [],
+      status:
+        raw.readiness?.status === "rfq_ready" ||
+        raw.readiness?.status === "review_needed" ||
+        raw.readiness?.status === "preliminary"
+          ? raw.readiness.status
+          : "preliminary",
+      releaseStatus: raw.readiness?.release_status || projection.governance_status.release_status,
+      coverageScore: raw.readiness?.coverage_score ?? projection.completeness.coverage_score,
+    },
+    mediumContext: {
+      canonicalName: projection.medium_classification?.canonical_label || null,
+      isConfirmed: projection.medium_classification?.confidence === "high",
+      properties: projection.medium_context?.properties || [],
+      riskFlags: projection.medium_context?.challenges || [],
+    },
+  };
+}
+
 export function mapWorkspaceView(
   caseId: string,
   projection: LegacyWorkspaceProjection,
@@ -297,6 +485,9 @@ export function mapWorkspaceView(
 
   return {
     caseId,
+    requestType: projection.request_type || projection.case_summary.intent_goal || null,
+    engineeringPath: projection.engineering_path || null,
+    cockpit: mapCockpitView(projection),
     communication: projection.communication_context
       ? {
           conversationPhase: projection.communication_context.conversation_phase || null,
@@ -504,6 +695,7 @@ export function mapWorkspaceView(
     },
     rfq: {
       status: rfqReady ? "ready" : projection.rfq_package.has_draft ? "draft" : "unavailable",
+      rfq_ready: rfqReady,
       releaseStatus,
       confirmed: projection.rfq_status.rfq_confirmed,
       blockers: projection.rfq_status.blockers,

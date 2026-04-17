@@ -5,6 +5,60 @@ import { mapWorkspaceView } from "./workspace.ts";
 
 function legacyProjection() {
   return {
+    request_type: "retrofit",
+    engineering_path: "rwdr",
+    cockpit_view: {
+      request_type: "retrofit",
+      engineering_path: "rwdr",
+      routing_metadata: {
+        phase: "clarification",
+        last_node: "facade_hydration",
+        routing: {},
+      },
+      sections: [
+        {
+          section_id: "core_intake",
+          title: "A. Grunddaten",
+          completion: { mandatory_present: 2, mandatory_total: 3, percent: 67 },
+          properties: [
+            {
+              key: "medium",
+              label: "Medium / Fluid",
+              value: "Steam",
+              origin: "user_override",
+              confidence: "confirmed",
+              is_confirmed: true,
+              is_mandatory: true,
+            },
+          ],
+        },
+      ],
+      checks: [
+        {
+          calc_id: "rwdr_circumferential_speed",
+          label: "RWDR circumferential speed",
+          formula_version: "rwdr_calc_v1",
+          required_inputs: ["shaft_diameter_mm", "speed_rpm"],
+          missing_inputs: [],
+          valid_paths: ["rwdr"],
+          output_key: "v_surface_m_s",
+          unit: "m/s",
+          status: "ok",
+          value: 3.93,
+          fallback_behavior: "insufficient_data_when_required_inputs_missing",
+          guardrails: ["diameter and speed must be present and non-negative"],
+          notes: ["Dn-Wert liegt im ueblichen Richtbereich."],
+        },
+      ],
+      missing_mandatory_keys: ["speed_rpm"],
+      blockers: ["compound approval"],
+      readiness: {
+        status: "preliminary",
+        is_rfq_ready: false,
+        release_status: "manufacturer_validation_required",
+        coverage_score: 0.65,
+      },
+    },
     communication_context: {
       conversation_phase: "clarification",
       turn_goal: "clarify_primary_open_point",
@@ -173,6 +227,14 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   const workspace = mapWorkspaceView("case-123", legacyProjection());
 
   assert.equal(workspace.caseId, "case-123");
+  assert.equal(workspace.requestType, "retrofit");
+  assert.equal(workspace.engineeringPath, "rwdr");
+  assert.equal(workspace.cockpit?.requestType, "retrofit");
+  assert.equal(workspace.cockpit?.path, "rwdr");
+  assert.equal(workspace.cockpit?.sections.core_intake.properties[0]?.origin, "user_override");
+  assert.equal(workspace.cockpit?.checks[0]?.calcId, "rwdr_circumferential_speed");
+  assert.equal(workspace.cockpit?.checks[0]?.outputKey, "v_surface_m_s");
+  assert.deepEqual(workspace.cockpit?.readiness.missingMandatoryKeys, ["speed_rpm"]);
   assert.equal(workspace.governance.releaseStatus, "manufacturer_validation_required");
   assert.equal(workspace.governance.releaseClass, "C");
   assert.equal(workspace.completeness.coveragePercent, 65);

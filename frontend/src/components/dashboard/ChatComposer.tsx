@@ -65,7 +65,7 @@ export default function ChatComposer({ onSend, isLoading, autoFocus, externalVal
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Enter a prompt here"
+                    placeholder="Beschreiben Sie Ihr Dichtungsproblem..."
                     className="flex-1 bg-transparent px-2 py-3 text-base text-foreground placeholder-muted-foreground focus:outline-none resize-none max-h-60 leading-relaxed"
                     disabled={isLoading}
                     autoFocus={autoFocus}
@@ -84,7 +84,7 @@ export default function ChatComposer({ onSend, isLoading, autoFocus, externalVal
                         className={cn(
                             "flex h-10 w-10 items-center justify-center rounded-full transition-all",
                             canSend 
-                                ? "text-gemini-blue hover:bg-[#DDE3EA]" 
+                                ? "text-seal-blue hover:bg-[#DDE3EA]" 
                                 : "text-muted-foreground opacity-40 cursor-not-allowed"
                         )}
                     >

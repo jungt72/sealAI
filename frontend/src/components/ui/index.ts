@@ -1,6 +1,6 @@
 /**
  * UI Components — Barrel-Export.
- * All components use Material 3 and Gemini tokens.
+ * All components use Sealing Intelligence tokens.
  */
 export { default as Button } from "./Button";
 export type { ButtonProps } from "./Button";

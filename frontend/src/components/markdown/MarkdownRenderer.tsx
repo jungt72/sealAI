@@ -71,12 +71,12 @@ export default function MarkdownRenderer({ children }: { children: string }) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
       rehypePlugins={[rehypeKatex]}
-      className="gemini-markdown break-words text-[15px] leading-relaxed text-foreground"
+      className="seal-markdown break-words text-[15px] leading-relaxed text-foreground"
       components={{
         p: ({ node, ...props }) => <p className="mb-4 last:mb-0" {...props} />,
         a: ({ node, ...props }) => (
           <a
-            className="text-gemini-blue no-underline hover:underline font-medium"
+            className="text-seal-blue no-underline hover:underline font-medium"
             target="_blank"
             rel="noopener noreferrer"
             {...props}
