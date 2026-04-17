@@ -830,3 +830,6 @@ SeaLAI is only production-ready when it not only asks the right engineering ques
 what it is allowed to conclude,
 when prior conclusions become invalid,
 how uncertainty is represented,
+how evidence is traced,
+and how outputs are bounded by explicit rule-based contracts.
+This document is the single implementation SSoT for achieving that.
