@@ -1,8 +1,8 @@
 @AGENTS.md
 
 # CLAUDE.md — SeaLAI Project Instructions for Claude Code
-**Version:** 4.0
-**Datum:** 2026-04-17
+**Version:** 5.0
+**Datum:** 2026-04-18
 **Status:** Binding Claude Code project memory
 **Purpose:** Claude-specific execution rules for working safely inside the SeaLAI repository
 
@@ -13,13 +13,15 @@
 > 2. `konzept/sealai_ssot_architecture_plan.md` (base SSoT — architectural foundation)
 > 3. `konzept/sealai_ssot_supplement_v1.md` (LangGraph role, consistency, schema layering, persistence)
 > 4. `konzept/sealai_ssot_supplement_v2.md` (positioning, moat, MVP scope, terminology, capability, business logic)
-> 5. `konzept/sealai_engineering_depth_ptfe_rwdr.md` (binding for all PTFE-RWDR engineering decisions)
-> 6. `konzept/founder_decisions_phase_1a.md` (implementation-level decisions on 8 architectural questions + transition strategy)
-> 7. `AGENTS.md`
-> 8. this `CLAUDE.md`
+> 5. `konzept/sealai_ssot_supplement_v3.md` (Fast Responder, Problem-First Matching, Application Patterns, Small-Quantity Capability, Proactive Advisory, Cascading Calculations, Medium Intelligence, Educational Contract, Multimodal Input, Knowledge-to-Case Bridge)
+> 6. `konzept/sealai_engineering_depth_ptfe_rwdr.md` (binding for all PTFE-RWDR engineering decisions)
+> 7. `konzept/founder_decisions_phase_1a.md` (implementation-level decisions on 8 architectural questions + transition strategy)
+> 8. `AGENTS.md`
+> 9. this `CLAUDE.md`
 >
 > Product North Star is at the top because all technical decisions ultimately serve product purpose. If a technical decision seems to optimize correctly but feels wrong, check it against the North Star first.
 > Where supplements conflict with the base SSoT on the same topic, the supplement wins (newer, addresses gaps identified during architectural review).
+> Supplement v3 is the binding technical operationalization of the Product North Star. It sits at equal precedence with v1 and v2 but carries the product-purpose translation into concrete services, schemas, and contracts.
 > Where the engineering depth guide conflicts with any SSoT document on PTFE-RWDR fields, the depth guide wins for PTFE-RWDR fields only.
 > Founder Decisions are implementation-level reference: they translate SSoT into concrete commitments (schema changes, service boundaries, strategy choice). They do not override SSoT or North Star, but they fix the specific interpretation that has been chosen.
 
@@ -34,7 +36,7 @@ Before changing code, Claude must:
 - inspect the current wiring
 - inspect the relevant tests
 - inspect the relevant docs
-- compare current code against the full authority set (Product North Star + SSoT + supplements + engineering depth + founder decisions)
+- compare current code against the full authority set (Product North Star + SSoT + supplements v1/v2/v3 + engineering depth + founder decisions)
 - identify the smallest clean patch sequence
 
 Do not jump directly into implementation for architectural work.
@@ -49,18 +51,20 @@ Before any architectural, backend, routing, state, cockpit, readiness, export, o
 2. `konzept/sealai_ssot_architecture_plan.md` — architectural foundation
 3. `konzept/sealai_ssot_supplement_v1.md` — LangGraph role, consistency, schema layering, persistence
 4. `konzept/sealai_ssot_supplement_v2.md` — positioning, moat, MVP scope, terminology, capability, business logic
-5. `konzept/sealai_engineering_depth_ptfe_rwdr.md` — PTFE-RWDR engineering depth
-6. `konzept/founder_decisions_phase_1a.md` — 8 implementation decisions + Selective Rewrite strategy
-7. `AGENTS.md` (already imported here)
-8. `konzept/SEALAI_KONZEPT_FINAL.md` — product/business narrative (subordinate)
-9. `konzept/SEALAI_KOMMUNIKATION_ZIELBILD.md` — communication target image (subordinate; may be stale, review separately)
-10. `konzept/SEALAI_STACK_ARCHITEKTUR.md` — runtime/infrastructure reference only
+5. `konzept/sealai_ssot_supplement_v3.md` — Product North Star operationalization (Fast Responder, Problem-First Matching, Application Patterns, Small-Quantity, Proactive Advisory, Cascading Calculations, Medium Intelligence, Educational Contract, Multimodal Input, Knowledge-to-Case Bridge)
+6. `konzept/sealai_engineering_depth_ptfe_rwdr.md` — PTFE-RWDR engineering depth
+7. `konzept/founder_decisions_phase_1a.md` — 8 implementation decisions + Selective Rewrite strategy
+8. `AGENTS.md` (already imported here)
+9. `konzept/SEALAI_KONZEPT_FINAL.md` — product/business narrative (subordinate)
+10. `konzept/SEALAI_KOMMUNIKATION_ZIELBILD.md` — communication target image (subordinate; may be stale, review separately)
+11. `konzept/SEALAI_STACK_ARCHITEKTUR.md` — runtime/infrastructure reference only
 
 ### Rule
 - The Product North Star is the compass: what SeaLAI is for, what it must never become, how it treats users and manufacturers. When in doubt, return here.
 - The base SSoT is the architectural foundation.
 - Supplement v1 (chapters 33–36) adds LangGraph orchestration role, consistency model, four-layer schema separation, and persistence model.
 - Supplement v2 (chapters 37–43) adds positioning, moat, MVP scope boundary, terminology mapping registry, manufacturer capability model, and business logic constraints.
+- Supplement v3 (chapters 44–53) adds the Product North Star operationalization: Fast Responder runtime layer, Problem-First Matching direction, Application Pattern Library, Small-Quantity Capability extension, Proactive Advisory engine, Cascading Calculation Engine, Medium Intelligence Service, Educational Output Contract, Multimodal Input Processing, and the Knowledge-to-Case Bridge.
 - The engineering depth guide is binding for PTFE-RWDR engineering decisions (schema fields, risk thresholds, failure-mode taxonomy, check calculations).
 - Founder Decisions fix the specific interpretation of open architectural questions and the transition strategy (Selective Rewrite).
 - `SEALAI_KONZEPT_FINAL.md` and `SEALAI_KOMMUNIKATION_ZIELBILD.md` are subordinate product/business context.
@@ -71,6 +75,7 @@ Before any architectural, backend, routing, state, cockpit, readiness, export, o
 Where documents disagree on a specific rule:
 - Product North Star > any technical document (for product-purpose questions)
 - Newer supplement > older supplement > base SSoT (for the same technical topic)
+- Supplement v3 is the technical operationalization of the North Star; it wins over v1/v2 where v3 explicitly extends or supersedes
 - Engineering depth guide > any SSoT document (for PTFE-RWDR-specific fields only)
 - Founder Decisions specify the chosen interpretation where SSoT left options open; they do not contradict SSoT
 - Technical SSoT > product concept > runtime/infra reference (across categories)
@@ -105,6 +110,10 @@ That means:
 - business-logic / monetization changes
 - knowledge base curation and knowledge service changes
 - tenant model / authorization changes
+- Fast Responder / Pre-Gate Classifier changes (supplement v3 §44)
+- Application Pattern Library changes (supplement v3 §46)
+- Cascading Calculation Engine changes (supplement v3 §49)
+- Medium Intelligence Service changes (supplement v3 §50)
 
 ### 3.3 Do not skip directly to edits when
 - multiple layers are affected
@@ -113,6 +122,7 @@ That means:
 - the task changes canonical truth
 - the task touches the moat layers defined in supplement v2 §37
 - the task touches any of the 8 founder decisions
+- the task touches supplement v3 operational services (Fast Responder, Problem-First Matching, Cascading Calculations, Medium Intelligence)
 
 ---
 
@@ -131,6 +141,7 @@ Claude must preserve these truths:
 - Frontend is a projection layer
 - LLM normalizes, extracts, proposes, prioritizes, summarizes, renders — nothing else (base SSoT §8.1)
 - Deterministic rules decide routing, mandatory fields, checks, readiness, and output class (base SSoT §8.3)
+- Deterministic cascading calculations execute synchronously when inputs are satisfied (supplement v3 §49)
 - No final manufacturer approval may be simulated
 - No unconfirmed medium or web hint may be treated as confirmed engineering truth
 
@@ -149,6 +160,8 @@ Every feature, contract, or UI decision must preserve:
 - **Layer 1 — Structural neutrality**: no manufacturer influence on ranking outside declared sponsored zones; all sponsored content is explicitly labeled at every surface
 - **Layer 2 — Technical translation**: matching operates on structured concepts and capability claims, never on marketing text or free-text similarity
 - **Layer 3 — Request qualification**: cases reaching manufacturers are structured, parameterized inquiry packages with explicit open-points and assumptions
+
+Problem-First Matching (supplement v3 §45) is the algorithmic enforcement of Moat Layer 2.
 
 If a proposed change weakens any moat layer, it must justify the trade-off explicitly. If no justification is credible, the change is rejected.
 
@@ -177,6 +190,9 @@ Do not reintroduce:
 - hidden assumptions when data is incomplete
 - parallel orchestration stacks (`fast_brain` vs `services/langgraph/` vs `agent/graph`) — per Decision #2, these are consolidated into the single `agent/` stack
 - `RoutingPath` and `ResultForm` as separate concepts — per Decision #5, `RoutingPath` is replaced by `PreGateClassification` (5 values) and `ResultForm` is removed (7 SSoT output classes are the single output classification)
+- graph invocation for simple greetings / meta-questions / blocked content — per supplement v3 §44, these are handled by the Fast Responder service without case creation
+- capability-first matching (starting from manufacturer portfolios and deriving problems) — per supplement v3 §45, matching direction is always problem-first
+- manual calculation chains or deferred derivations — per supplement v3 §49, cascading calculations execute synchronously to fixpoint when inputs are satisfied
 
 ### 5.2 Anti-patterns (supplement v2 §38)
 Do not introduce or reintroduce:
@@ -189,6 +205,7 @@ Do not introduce or reintroduce:
 - silent terminology fallthrough
 - founder-employer matching bonus
 - monetization tied to specific product categories
+- LLM-generated factual claims without provenance attribution (supplement v3 §50 requires three-tier provenance for Medium Intelligence; Decision #8 requires source citation for Knowledge queries)
 
 ### 5.3 Legacy code
 If current code still reflects historical patterns (RWDR-first implementation traces from pre-SSoT era, `_legacy_v2`, `services/langgraph/` duplicates, `services/fast_brain/`, Phase-F-era `interaction_policy.py`, etc.), report it explicitly and isolate it instead of expanding it.
@@ -220,6 +237,10 @@ If in doubt, downgrade the output class instead of overclaiming.
 
 Knowledge query responses (Decision #8) must cite sources with explicit attribution. "SeaLAI says" is never sufficient; source reference (norm §, datasheet, terminology registry entry) is required for factual claims.
 
+Medium Intelligence output (supplement v3 §50) must carry three-tier provenance labels: Registry-grounded / LLM-synthesis (with "Plausibilitäts-Schätzung" disclaimer) / User-provided. Visual distinction is required in rendering.
+
+Advisory Notes (supplement v3 §48) must always carry the disclaimer that not all circumstances could be assessed.
+
 ---
 
 ## 7. State, stale invalidation, and regression
@@ -239,6 +260,8 @@ If a change affects:
 - ptfe_compound details (for PTFE-RWDR cases)
 - shaft surface / finish / lead / hardness
 - tenant_id (rare, but changes downstream visibility)
+- application pattern assignment (supplement v3 §46)
+- any input to a cascading calculation (supplement v3 §49)
 
 then Claude must assume:
 - dependent derived values can become stale
@@ -246,6 +269,7 @@ then Claude must assume:
 - inquiry state may need invalidation
 - recompute may be required
 - affected risk scores must be recomputed per supplement v1 §34
+- cascading calculations must re-execute to fixpoint per supplement v3 §49.6
 
 Do not implement optimistic persistence of outdated derived values.
 
@@ -265,6 +289,7 @@ Claude must prefer:
 - evidence-based change reports
 - services under `backend/app/services/` that are testable without LangGraph imports (supplement v1 §33.8)
 - four-layer schema separation: domain / models / schemas / agent-state (supplement v1 §35)
+- synchronous cascading calculations over async outbox for microsecond-scale formula evaluations (supplement v3 §49.3)
 
 Claude must avoid:
 - repo-wide speculative rewrites
@@ -273,10 +298,11 @@ Claude must avoid:
 - duplicating rules that already live in the authority set or AGENTS
 - business logic inside LangGraph nodes (supplement v1 §33.4)
 - upward imports across the schema layers (supplement v1 §35.8)
+- graph invocation for Fast-Responder-eligible classifications (supplement v3 §44.4)
 
 ### 8.1 Selective Rewrite awareness (Founder Decisions meta-decision)
 The transition strategy is Selective Rewrite:
-- **Greenfield**: persistence extensions, new services (case_service, output_classifier, pre_gate_classifier, inquiry_extract_service, anonymization_service, knowledge_service, terminology_service, risk_engine, compatibility_service, outbox_worker, norm_modules, output_validator, formula_library, projection_service), new tables for capability/terminology/knowledge/extracts
+- **Greenfield**: persistence extensions, new services (case_service, output_classifier, pre_gate_classifier, inquiry_extract_service, anonymization_service, knowledge_service, terminology_service, risk_engine, compatibility_service, outbox_worker, norm_modules, output_validator, formula_library, projection_service, **fast_responder_service, application_pattern_service, medium_intelligence_service, advisory_engine, photo_analysis_service, article_number_decoder_service, datasheet_extraction_service**), new tables for capability/terminology/knowledge/extracts/patterns/media/advisories
 - **Strangler**: preserve topology.py, three-mode gate, observability, audit logger; shrink oversized nodes by extracting logic to services
 - **Remove**: services/langgraph/, services/fast_brain/, _legacy_v2/, ResultForm enum, legacy feature flags, interaction_policy.py shim after consumer migration
 
@@ -295,6 +321,9 @@ Before concluding a task, Claude must:
 - verify services touched by the change don't import LangGraph (supplement v1 §33.8)
 - verify moat invariants where applicable (supplement v2 §37.3)
 - verify tenant isolation where applicable (Decision #6)
+- verify Fast Responder boundary not violated (supplement v3 §44.4): no new classification handled by Fast Responder, no case creation from fast path
+- verify cascading calculation graph has no cycles (supplement v3 §49.6 fixpoint test)
+- verify Medium Intelligence provenance tiers are preserved end-to-end (supplement v3 §50.2)
 - report what was actually executed
 - clearly separate:
   - pre-existing failures
@@ -314,6 +343,7 @@ Document responsibilities:
 - **Base SSoT** (`sealai_ssot_architecture_plan.md`) = architectural foundation
 - **Supplement v1** = technical implementation pillars (LangGraph role, consistency, schema layering, persistence)
 - **Supplement v2** = positioning, moat, MVP scope, terminology, capability, business logic
+- **Supplement v3** = Product North Star operationalization (runtime layering, matching direction, application patterns, small-quantity, proactive advisory, cascading calculations, medium intelligence, educational contract, multimodal input, knowledge bridge)
 - **Engineering depth guide (PTFE-RWDR)** = fact-dense engineering reference for MVP depth
 - **Founder Decisions** = implementation-level choices on the 8 open architectural questions + transition strategy
 - **AGENTS.md** = working contract for Codex and similar agents
@@ -341,10 +371,11 @@ Use this sequence:
 4. Produce delta report against the full authority set
 5. Verify moat invariants for any user-facing or matching change
 6. Verify Product North Star alignment for any user-interaction or user-experience change
-7. Propose smallest patch sequence
-8. Implement one patch at a time
-9. Validate
-10. Report exact evidence
+7. Verify Supplement v3 service boundaries for any runtime / service-layer change
+8. Propose smallest patch sequence
+9. Implement one patch at a time
+10. Validate
+11. Report exact evidence
 
 Do not combine architecture redesign, code migration, and broad cleanup in one uncontrolled step.
 
@@ -368,6 +399,9 @@ Claude must actively maintain awareness of the MVP scope boundary (supplement v2
 - Golden cases must cover both deep and shallow examples per supplement v2 §39.8
 - Knowledge queries (Decision #8) in MVP are PTFE-RWDR-focused with 50-100 curated entries; broader topics return "I don't have detailed information on this specific question"
 - Norm modules (Decision #7) in MVP: DIN 3760/ISO 6194 + EU 10/2011 + FDA 21 CFR 177.1550 full gates; ATEX as capability flag
+- Application Patterns (supplement v3 §46) in MVP: 14 seeded patterns, covering PTFE-RWDR-relevant applications
+- Medium Registry (supplement v3 §50) in MVP: ~50 seeded medium entries with curated provenance
+- Cascading Calculations (supplement v3 §49) in MVP: 7 PTFE-RWDR calculation definitions covering the standard chain (circumferential speed → contact pressure → PV → thermal load → creep gap)
 
 ---
 
@@ -416,12 +450,86 @@ Claude must recognize knowledge queries as a first-class interaction mode, not a
 - `KNOWLEDGE_QUERY` uses a curated, versioned knowledge base (50-100 PTFE-RWDR-focused entries in MVP)
 - Every factual claim in a knowledge response cites a source (norm §, datasheet, terminology registry entry)
 - No invented facts; when no relevant entry exists, respond honestly that information is not available
-- Seamless bridge from knowledge to case when the user moves from general question to specific application
+- Seamless bridge from knowledge to case when the user moves from general question to specific application (supplement v3 §53)
 - Anonymous knowledge sessions allowed; persistence requires registration
 
 ---
 
-## 16. Final rule
+## 16. Fast Responder awareness (Supplement v3 §44)
+
+Claude must preserve the two-layer runtime model:
+
+### 16.1 Fast Responder handles only
+- `GREETING`, `META_QUESTION`, `BLOCKED` classifications
+- No case creation, no persistence, no graph invocation
+- Latency target: 500ms-1s
+
+### 16.2 Fast Responder MUST NOT handle
+- `KNOWLEDGE_QUERY` (goes to Knowledge Service)
+- `DOMAIN_INQUIRY` (goes to full graph)
+- Any classification added later, without an explicit supplement amendment
+
+### 16.3 Classification ambiguity defaults to graph
+- If Pre-Gate Classifier returns uncertain/ambiguous classification, fail-safe is the Full Graph Pipeline
+- Never fail-safe into Fast Responder (that would skip governance)
+
+---
+
+## 17. Supplement v3 operational awareness
+
+Claude must be fluent in Supplement v3's key concepts because they shape most implementation work in Phase 1a and beyond:
+
+### 17.1 Problem-First Matching (§45)
+- Direction: user problem → derived capabilities → manufacturer candidates
+- NEVER: manufacturer portfolio → fitted problems
+- Zero-match case is not a failure — user is informed honestly and offered adjacent-capability dispatch option
+
+### 17.2 Application Patterns (§46)
+- 14 seeded MVP patterns covering PTFE-RWDR-relevant applications
+- Pattern selection is explicit, user confirms; auto-populated fields are flagged as pattern-derived
+- Adding a new pattern = new data record + regression test, no code change
+
+### 17.3 Small-Quantity Capability (§47)
+- `quantity_requested` is a first-class Case field (pieces, urgency, context, flexibility)
+- At ≤10 pieces: HARD filter on manufacturer `accepts_single_pieces = true`
+- User expectation is set pre-dispatch with price-range indication (context, not comparison)
+
+### 17.4 Proactive Advisory (§48)
+- Medium-conservative: advisories emit only when minimum parameter set is met
+- Every advisory carries the disclaimer: "Nicht alle Umstände dieses konkreten Falls konnten berücksichtigt werden"
+- Eight initial categories, deterministic rules in `advisory_engine.py`
+- Advisories are informational, never block inquiry readiness (norm violations block)
+
+### 17.5 Cascading Calculations (§49)
+- Synchronous execution to fixpoint
+- MVP chain: D, n → v → p_contact → PV → heat_flux → risk dimensions
+- Every derived value carries `provenance = "calculated"` with calc_id, version, inputs used
+- Stale invalidation on input change (supplement v1 §34 semantics)
+
+### 17.6 Medium Intelligence (§50)
+- Three-tier provenance: Registry / LLM-synthesis / User-provided
+- LLM-synthesized properties carry the "Plausibilitäts-Schätzung" disclaimer explicitly
+- UI renders as separate card with five sections: Identifikation, Eigenschaften, Abhandlung, Warum dieses Material, Hinweise
+- Feeds into Advisory Engine for medium-specific risk notes
+
+### 17.7 Educational Output (§51)
+- Authored (not LLM-generated) for novice-facing educational surfaces
+- Proficiency detection (novice/intermediate/experienced) modulates visibility
+- Available on every field, pattern, advisory — never forced on the user
+
+### 17.8 Multimodal Input (§52)
+- Five input types supported in MVP: photo, article number, datasheet fragment, sketch, free text
+- All extractions are proposals requiring user verification (never silent adoption)
+- Conflicts between inputs are surfaced to user, never silently resolved
+
+### 17.9 Knowledge-to-Case Bridge (§53)
+- Transition signals detected per turn in KNOWLEDGE_QUERY mode
+- Context accumulated in session is transferred to new Case on bridge acceptance
+- Registration prompt at bridge point; declining keeps knowledge session alive
+
+---
+
+## 18. Final rule
 
 When uncertain, Claude must choose:
 - more explicit blockers
@@ -435,8 +543,11 @@ When uncertain, Claude must choose:
 - more honest depth-level acknowledgment ("shallow" instead of pretending deep)
 - more user dignity (never makes the user feel stupid — North Star §2.1)
 - more source attribution in knowledge responses
+- more explicit provenance in Medium Intelligence output
+- more Fast-Responder-boundary respect (don't overload it)
+- more synchronous-cascade behavior for formula calculations (don't async-queue what should complete in 50ms)
 
 Where uncertainty remains after consulting all authority documents, ask before patching. Silent reinterpretation of ambiguous rules is the most dangerous failure mode and must be avoided.
 
-The Product North Star is the ultimate tiebreaker: when technical purity and product purpose conflict, product purpose wins.
+The Product North Star is the ultimate tiebreaker: when technical purity and product purpose conflict, product purpose wins. Supplement v3 is its binding technical operationalization.
 
