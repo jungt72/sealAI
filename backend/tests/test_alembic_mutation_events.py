@@ -16,7 +16,7 @@ def test_migration_downgrades_cleanly(alembic_config, test_db_engine):
     from alembic import command
 
     command.upgrade(alembic_config, "head")
-    command.downgrade(alembic_config, "-1")
+    command.downgrade(alembic_config, "6d8f1b3a9c20")
     inspector = inspect(test_db_engine)
     assert "mutation_events" not in inspector.get_table_names()
 
