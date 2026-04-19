@@ -4,13 +4,15 @@ from sqlalchemy import inspect
 
 
 def test_migration_has_correct_revision_id(alembic_config):
-    """Migration exists and is at head."""
+    """Patch 1.1 migration exists in the Alembic chain."""
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(alembic_config)
-    head = script.get_current_head()
+    migration = script.get_revision("6d8f1b3a9c20")
 
-    assert head == "6d8f1b3a9c20"
+    assert migration is not None
+    assert migration.revision == "6d8f1b3a9c20"
+    assert migration.down_revision == "a1b2c3d4e5f6"
 
 
 def test_migration_upgrades_cleanly(alembic_config, test_db_engine):
