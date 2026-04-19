@@ -35,6 +35,8 @@ build/
 
 # Local scratch
 *.sql
+# Exception: audit schema dumps ARE allowed (Gate 0→1 artifacts, no user data)
+!audits/sealai_schema_*.sql
 *.docx
 *.tx_
 backups/
