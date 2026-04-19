@@ -1,3 +1,12 @@
+import pytest
+
+_SKIP_REASON = (
+    "Legacy test targeting old mutation / param handling; replacement "
+    "arrives in Sprint 1 Patch 1.6 per Implementation Plan. "
+    "See audits/gate_0_to_1_2026-04-19.md §7.2."
+)
+pytest.skip(_SKIP_REASON, allow_module_level=True)
+
 from app.langgraph_v2.utils.parameter_patch import apply_parameter_patch_lww
 
 

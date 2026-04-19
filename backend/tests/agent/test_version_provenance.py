@@ -22,7 +22,7 @@ for key, value in {
 }.items():
     os.environ.setdefault(key, value)
 
-from app.agent.agent.graph import _VISIBLE_REPLY_SYSTEM_PROMPT, VISIBLE_REPLY_PROMPT_HASH
+from app.agent.graph.legacy_graph import _VISIBLE_REPLY_SYSTEM_PROMPT, VISIBLE_REPLY_PROMPT_HASH
 from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from prompts.builder import PromptBuilder
 from app.agent.api.router import _build_fast_path_version_provenance, _build_structured_version_provenance
@@ -33,7 +33,8 @@ from app.agent.case_state import (
     PROJECTION_VERSION,
     build_case_state,
 )
-from app.agent.runtime import INTERACTION_POLICY_VERSION, evaluate_interaction_policy
+from app.agent.runtime.interaction_policy import evaluate_policy as evaluate_interaction_policy
+from app.agent.runtime.policy import INTERACTION_POLICY_VERSION
 
 
 def test_reasoning_prompt_version_matches_builder():

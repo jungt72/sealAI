@@ -13,11 +13,11 @@ from app.mcp.calc_engine import (
     mcp_calc_gasket,
     _lookup_gasket_dims,
     _bolt_capacity,
-    _is_critical_medium,
     _gasket_area,
     _EN_GASKET_DIMENSIONS,
     _BOLT_CAPACITY_KN,
 )
+from app.mcp.calculations.compliance import is_critical_application as _is_critical_medium
 
 
 # ---------------------------------------------------------------------------

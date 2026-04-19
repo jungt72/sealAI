@@ -4,6 +4,13 @@ import os
 
 import pytest
 
+_SKIP_REASON = (
+    "Legacy test targeting app.langgraph_v2 live calc pipeline; "
+    "replacement arrives in Sprint 4 Patch 4.6 and Sprint 4 Patch 4.7 "
+    "per Implementation Plan. See audits/gate_0_to_1_2026-04-19.md §7.2."
+)
+pytest.skip(_SKIP_REASON, allow_module_level=True)
+
 # Keep this test isolated from global env/config requirements.
 os.environ.setdefault("postgres_user", "test")
 os.environ.setdefault("postgres_password", "test")

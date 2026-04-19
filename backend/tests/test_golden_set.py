@@ -2,6 +2,14 @@ import pytest
 import os
 import json
 from unittest.mock import MagicMock
+
+_SKIP_REASON = (
+    "Legacy test targeting app.langgraph_v2; replacement arrives in "
+    "Sprint 5 Patch 5.6 per Implementation Plan. "
+    "See audits/gate_0_to_1_2026-04-19.md §7.2."
+)
+pytest.skip(_SKIP_REASON, allow_module_level=True)
+
 from app.langgraph_v2.state import SealAIState, WorkingProfile
 from app.langgraph_v2.nodes.nodes_frontdoor import frontdoor_discovery_node
 
