@@ -258,6 +258,7 @@ async def _persist_live_governed_state(
         state,
         case_number=session_id,
         user_id=owner_id,
+        tenant_id=tenant_id,
     )
 
 

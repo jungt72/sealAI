@@ -50,8 +50,11 @@ def _ensure_stubs() -> None:
             case_number = _sa.Column(_sa.String(50))
             session_id = _sa.Column(_sa.String(255))
             user_id = _sa.Column(_sa.String(255))
+            tenant_id = _sa.Column(_sa.String(255))
+            case_revision = _sa.Column(_sa.Integer(), default=0)
             status = _sa.Column(_sa.String(50))
             subsegment = _sa.Column(_sa.String(100), nullable=True)
+            payload = _sa.Column(_sa.JSON())
 
         _stub = types.ModuleType("app.models.case_record")
         _stub.CaseRecord = _CaseRecord  # type: ignore[attr-defined]
@@ -135,6 +138,7 @@ def _make_db_sequence(*results) -> MagicMock:
     db.execute = _execute
     db.add = MagicMock()
     db.commit = AsyncMock()
+    db.rollback = AsyncMock()
     db.refresh = AsyncMock()
     db.flush = AsyncMock()
     return db
@@ -146,12 +150,16 @@ def _make_case(
     case_number: str = "STS-INQ-2026-04-001",
     session_id: str = "sess-123",
     user_id: str = "user-abc",
+    tenant_id: str = "tenant-1",
+    case_revision: int = 0,
 ) -> MagicMock:
     case = MagicMock()
     case.id = id or str(uuid.uuid4())
     case.case_number = case_number
     case.session_id = session_id
     case.user_id = user_id
+    case.tenant_id = tenant_id
+    case.case_revision = case_revision
     case.status = "active"
     return case
 
@@ -237,7 +245,7 @@ class TestGetOrCreateCase:
 
         from app.agent.state.persistence import get_or_create_case
 
-        result = await get_or_create_case("sess-abc", "user-1", db)
+        result = await get_or_create_case("sess-abc", "user-1", "tenant-1", db)
 
         assert result is existing
         db.add.assert_not_called()
@@ -250,11 +258,11 @@ class TestGetOrCreateCase:
 
         from app.agent.state.persistence import get_or_create_case
 
-        result = await get_or_create_case("sess-new", "user-42", db)
+        result = await get_or_create_case("sess-new", "user-42", "tenant-42", db)
 
         assert result is not None
         assert hasattr(result, "case_number")
-        db.add.assert_called_once()
+        assert db.add.called
         db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -264,7 +272,7 @@ class TestGetOrCreateCase:
 
         from app.agent.state.persistence import get_or_create_case
 
-        result = await get_or_create_case("sess-x", "u1", db)
+        result = await get_or_create_case("sess-x", "u1", "tenant-1", db)
 
         assert re.match(r"^STS-INQ-\d{4}-\d{2}-\d{3}$", result.case_number), (
             f"Bad case_number: {result.case_number}"
@@ -277,10 +285,11 @@ class TestGetOrCreateCase:
 
         from app.agent.state.persistence import get_or_create_case
 
-        result = await get_or_create_case("sess-unique", "user-xyz", db)
+        result = await get_or_create_case("sess-unique", "user-xyz", "tenant-xyz", db)
 
         assert result.session_id == "sess-unique"
         assert result.user_id == "user-xyz"
+        assert result.tenant_id == "tenant-xyz"
 
     @pytest.mark.asyncio
     async def test_idempotent_second_call_returns_existing(self):
@@ -291,8 +300,8 @@ class TestGetOrCreateCase:
 
         from app.agent.state.persistence import get_or_create_case
 
-        first = await get_or_create_case("sess-dup", "user-1", db1)
-        second = await get_or_create_case("sess-dup", "user-1", db2)
+        first = await get_or_create_case("sess-dup", "user-1", "tenant-1", db1)
+        second = await get_or_create_case("sess-dup", "user-1", "tenant-1", db2)
 
         assert hasattr(first, "case_number")
         assert second is existing
@@ -373,7 +382,9 @@ class TestWriteStateSnapshot:
     async def test_creates_first_snapshot(self):
         """When no snapshot exists, creates revision 1."""
         state = self._simple_state()
-        db = _make_db_sequence(None)
+        case_row = _make_case(id="case-xyz")
+        latest_snapshot = _make_snapshot(case_id="case-xyz", revision=1)
+        db = _make_db_sequence(case_row, None, case_row, latest_snapshot)
 
         _added = []
         orig_add = db.add
@@ -388,8 +399,9 @@ class TestWriteStateSnapshot:
 
         await write_state_snapshot("case-xyz", state, db)
 
-        assert len(_added) == 1
-        assert _added[0].revision == 1
+        snapshots = [item for item in _added if hasattr(item, "revision")]
+        assert len(snapshots) == 1
+        assert snapshots[0].revision == 1
         db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -406,7 +418,8 @@ class TestWriteStateSnapshot:
         state_json = persisted.model_dump(mode="json")
 
         existing_snap = _make_snapshot(basis_hash=basis_hash, state_json=state_json)
-        db = _make_db_sequence(existing_snap)
+        case_row = _make_case(id="case-xyz")
+        db = _make_db_sequence(case_row, existing_snap)
 
         from app.agent.state.persistence import write_state_snapshot
 
@@ -421,7 +434,9 @@ class TestWriteStateSnapshot:
         """When a snapshot already exists with different content, next revision = existing + 1."""
         state = self._simple_state()
         existing_snap = _make_snapshot(revision=3, basis_hash="old_hash_different_zzz")
-        db = _make_db_sequence(existing_snap)
+        case_row = _make_case(id="case-xyz", case_revision=3)
+        latest_snapshot = _make_snapshot(case_id="case-xyz", revision=4)
+        db = _make_db_sequence(case_row, existing_snap, case_row, latest_snapshot)
 
         _added = []
         orig_add = db.add
@@ -435,8 +450,9 @@ class TestWriteStateSnapshot:
 
         await write_state_snapshot("case-xyz", state, db)
 
-        assert len(_added) == 1
-        assert _added[0].revision == 4
+        snapshots = [item for item in _added if hasattr(item, "revision")]
+        assert len(snapshots) == 1
+        assert snapshots[0].revision == 4
 
     @pytest.mark.asyncio
     async def test_snapshot_carries_basis_hash(self):
@@ -445,7 +461,9 @@ class TestWriteStateSnapshot:
 
         state = self._simple_state()
         expected_hash = compute_decision_basis_hash(state)
-        db = _make_db_sequence(None)
+        case_row = _make_case(id="case-abc")
+        latest_snapshot = _make_snapshot(case_id="case-abc", revision=1, basis_hash=expected_hash)
+        db = _make_db_sequence(case_row, None, case_row, latest_snapshot)
 
         _added = []
         db.add = MagicMock(side_effect=_added.append)
@@ -454,7 +472,8 @@ class TestWriteStateSnapshot:
 
         await write_state_snapshot("case-abc", state, db)
 
-        assert _added[0].basis_hash == expected_hash
+        snapshots = [item for item in _added if hasattr(item, "basis_hash")]
+        assert snapshots[0].basis_hash == expected_hash
 
 
 # ---------------------------------------------------------------------------

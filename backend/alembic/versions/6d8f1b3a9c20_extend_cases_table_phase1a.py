@@ -22,13 +22,9 @@ Implementation Plan Sprint 1 Patch 1.1. These columns support:
 
 Data migration
 --------------
-All existing cases are test data per Founder Decision #6. A single
-DELETE FROM cases cascades (via ON DELETE CASCADE) to:
-- case_state_snapshots
-- inquiry_deliveries
-- inquiry_audit
-
-Pre-deletion row counts are logged for the audit trail.
+Existing cases and dependent rows are preserved. This migration is additive:
+it extends the existing cases table without purging case history. Pre-migration
+row counts are logged for the audit trail.
 
 Preserved
 ---------
@@ -63,7 +59,8 @@ depends_on = None
 def upgrade() -> None:
     conn = op.get_bind()
 
-    # Per Founder Decision #6, existing cases are test data.
+    # Keep this migration non-destructive on real databases. Counts are logged
+    # so operators can verify that existing case history was preserved.
     before_cases = conn.execute(sa.text("SELECT COUNT(*) FROM cases")).scalar()
     before_snapshots = conn.execute(
         sa.text("SELECT COUNT(*) FROM case_state_snapshots")
@@ -73,12 +70,10 @@ def upgrade() -> None:
         sa.text("SELECT COUNT(*) FROM inquiry_deliveries")
     ).scalar()
     print(
-        f"[phase1a_extend_cases] Pre-deletion counts: "
+        f"[phase1a_extend_cases] Pre-migration counts: "
         f"cases={before_cases}, case_state_snapshots={before_snapshots}, "
         f"inquiry_audit={before_audit}, inquiry_deliveries={before_deliveries}"
     )
-
-    op.execute("DELETE FROM cases")
 
     op.add_column("cases", sa.Column("tenant_id", sa.String(255), nullable=True))
     op.add_column(
@@ -172,4 +167,4 @@ def downgrade() -> None:
     op.drop_column("cases", "case_revision")
     op.drop_column("cases", "tenant_id")
 
-    # Deleted test data is intentionally not restored by downgrade.
+    # Existing case data is intentionally preserved by upgrade and downgrade.

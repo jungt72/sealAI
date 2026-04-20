@@ -143,13 +143,26 @@ class _FakeCaseRecord:
     user_id = _Attr("user_id")
     updated_at = _Attr("updated_at")
 
-    def __init__(self, *, case_number, user_id, subsegment=None, status="active", id=None, updated_at=None):
+    def __init__(
+        self,
+        *,
+        case_number,
+        user_id,
+        subsegment=None,
+        status="active",
+        tenant_id=None,
+        id=None,
+        updated_at=None,
+        case_revision=0,
+    ):
         self.id = id or str(uuid.uuid4())
         self.case_number = case_number
         self.user_id = user_id
         self.subsegment = subsegment
         self.status = status
+        self.tenant_id = tenant_id
         self.updated_at = updated_at or f"updated:{case_number}"
+        self.case_revision = case_revision
 
 
 class _FakeCaseStateSnapshot:
@@ -235,15 +248,104 @@ def _fake_select(target):
     return _Select(target)
 
 
+class _FakeCaseService:
+    def __init__(self, session: _FakeSession):
+        self._session = session
+
+    async def create_case(
+        self,
+        *,
+        case_number,
+        user_id,
+        actor,
+        session_id=None,
+        subsegment=None,
+        status="active",
+        tenant_id=None,
+        state_json=None,
+        basis_hash=None,
+        ontology_version=None,
+        prompt_version=None,
+        model_version=None,
+    ):
+        if tenant_id is None:
+            raise AssertionError("tenant_id is required")
+        case_row = _FakeCaseRecord(
+            case_number=case_number,
+            user_id=user_id,
+            subsegment=subsegment,
+            status=status,
+            tenant_id=tenant_id,
+            case_revision=1,
+        )
+        self._session._store.cases.append(case_row)
+        self._session._store.snapshots.append(
+            _FakeCaseStateSnapshot(
+                case_id=case_row.id,
+                revision=1,
+                state_json=state_json or {},
+                basis_hash=basis_hash,
+                ontology_version=ontology_version,
+                prompt_version=prompt_version,
+                model_version=model_version,
+            )
+        )
+        return case_row
+
+    async def write_snapshot(
+        self,
+        *,
+        case_id,
+        state_json,
+        actor,
+        basis_hash=None,
+        ontology_version=None,
+        prompt_version=None,
+        model_version=None,
+        case_updates=None,
+    ):
+        case_row = next(case for case in self._session._store.cases if case.id == case_id)
+        latest = next(
+            (
+                snapshot
+                for snapshot in sorted(
+                    self._session._store.snapshots,
+                    key=lambda item: item.revision,
+                    reverse=True,
+                )
+                if snapshot.case_id == case_id
+            ),
+            None,
+        )
+        if latest is not None and latest.basis_hash == basis_hash and latest.state_json == state_json:
+            return latest
+        for field_name, value in (case_updates or {}).items():
+            setattr(case_row, field_name, value)
+        case_row.case_revision += 1
+        snapshot = _FakeCaseStateSnapshot(
+            case_id=case_id,
+            revision=case_row.case_revision,
+            state_json=state_json,
+            basis_hash=basis_hash,
+            ontology_version=ontology_version,
+            prompt_version=prompt_version,
+            model_version=model_version,
+        )
+        self._session._store.snapshots.append(snapshot)
+        return snapshot
+
+
 def _install_fake_snapshot_backend():
     store = _Store(cases=[], snapshots=[])
     fake_db = types.SimpleNamespace(AsyncSessionLocal=lambda: _FakeSessionContext(store))
     fake_case_models = types.SimpleNamespace(CaseRecord=_FakeCaseRecord)
     fake_snapshot_models = types.SimpleNamespace(CaseStateSnapshot=_FakeCaseStateSnapshot)
+    fake_case_service = types.SimpleNamespace(CaseService=_FakeCaseService)
     return store, {
         "app.database": fake_db,
         "app.models.case_record": fake_case_models,
         "app.models.case_state_snapshot": fake_snapshot_models,
+        "app.services.case_service": fake_case_service,
     }
 
 
@@ -256,6 +358,7 @@ async def test_save_governed_state_snapshot_creates_case_and_snapshot() -> None:
             _state(analysis_cycle=2),
             case_number="case-123",
             user_id="user-1",
+            tenant_id="tenant-1",
         )
 
     assert len(store.cases) == 1
@@ -264,7 +367,8 @@ async def test_save_governed_state_snapshot_creates_case_and_snapshot() -> None:
     snapshot = store.snapshots[0]
     assert case_row.case_number == "case-123"
     assert case_row.user_id == "user-1"
-    assert snapshot.revision == 2
+    assert case_row.tenant_id == "tenant-1"
+    assert snapshot.revision == 1
     assert snapshot.case_id == case_row.id
     assert snapshot.state_json["analysis_cycle"] == 2
     assert snapshot.basis_hash
@@ -279,8 +383,18 @@ async def test_save_governed_state_snapshot_is_idempotent_for_same_state() -> No
 
     with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
         state = _state(analysis_cycle=1)
-        await save_governed_state_snapshot_async(state, case_number="case-dup", user_id="user-1")
-        await save_governed_state_snapshot_async(state, case_number="case-dup", user_id="user-1")
+        await save_governed_state_snapshot_async(
+            state,
+            case_number="case-dup",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
+        await save_governed_state_snapshot_async(
+            state,
+            case_number="case-dup",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
 
     assert len(store.cases) == 1
     assert len(store.snapshots) == 1
@@ -291,11 +405,17 @@ async def test_save_governed_state_snapshot_advances_revision_when_cycle_stalls(
     store, fake_modules = _install_fake_snapshot_backend()
 
     with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
-        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-rev", user_id="user-1")
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=1),
+            case_number="case-rev",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, medium="Dampf"),
             case_number="case-rev",
             user_id="user-1",
+            tenant_id="tenant-1",
         )
 
     assert [snapshot.revision for snapshot in store.snapshots] == [1, 2]
@@ -306,11 +426,17 @@ async def test_get_case_and_latest_snapshot_reads_latest_revision() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
     with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
-        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-read", user_id="user-1")
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=1),
+            case_number="case-read",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, medium="Dampf"),
             case_number="case-read",
             user_id="user-1",
+            tenant_id="tenant-1",
         )
         case_row = await get_case_by_number_async(case_number="case-read", user_id="user-1")
         snapshot = await get_latest_governed_case_snapshot_async(case_number="case-read", user_id="user-1")
@@ -331,11 +457,17 @@ async def test_get_governed_snapshot_by_revision_reads_targeted_revision() -> No
     store, fake_modules = _install_fake_snapshot_backend()
 
     with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
-        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-rev-read", user_id="user-1")
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=1),
+            case_number="case-rev-read",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, medium="Dampf"),
             case_number="case-rev-read",
             user_id="user-1",
+            tenant_id="tenant-1",
         )
         snapshot = await get_governed_case_snapshot_by_revision_async(
             case_number="case-rev-read",
@@ -353,16 +485,31 @@ async def test_list_cases_reads_owned_cases_newest_first_with_latest_revision() 
     store, fake_modules = _install_fake_snapshot_backend()
 
     with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
-        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-a", user_id="user-1")
-        await save_governed_state_snapshot_async(_state(analysis_cycle=3), case_number="case-b", user_id="user-1")
-        await save_governed_state_snapshot_async(_state(analysis_cycle=2), case_number="case-c", user_id="user-2")
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=1),
+            case_number="case-a",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=3),
+            case_number="case-b",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=2),
+            case_number="case-c",
+            user_id="user-2",
+            tenant_id="tenant-2",
+        )
         store.cases[0].updated_at = "2026-04-08T00:00:00+00:00"
         store.cases[1].updated_at = "2026-04-09T00:00:00+00:00"
         store.cases[2].updated_at = "2026-04-10T00:00:00+00:00"
         items = await list_cases_async(user_id="user-1")
 
     assert [item["case_number"] for item in items] == ["case-b", "case-a"]
-    assert [item["latest_revision"] for item in items] == [3, 1]
+    assert [item["latest_revision"] for item in items] == [1, 1]
 
 
 @pytest.mark.asyncio
@@ -370,11 +517,17 @@ async def test_list_case_snapshots_reads_revisions_newest_first() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
     with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
-        await save_governed_state_snapshot_async(_state(analysis_cycle=1), case_number="case-list", user_id="user-1")
+        await save_governed_state_snapshot_async(
+            _state(analysis_cycle=1),
+            case_number="case-list",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, medium="Dampf"),
             case_number="case-list",
             user_id="user-1",
+            tenant_id="tenant-1",
         )
         items = await list_governed_case_snapshots_async(case_number="case-list", user_id="user-1")
 
@@ -386,10 +539,19 @@ async def test_list_case_snapshots_reads_revisions_newest_first() -> None:
 async def test_persist_live_governed_state_triggers_postgres_snapshot_without_redis(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
-    async def _fake_save_snapshot(state, *, case_number, user_id, subsegment=None, status="active"):
+    async def _fake_save_snapshot(
+        state,
+        *,
+        case_number,
+        user_id,
+        tenant_id,
+        subsegment=None,
+        status="active",
+    ):
         captured["analysis_cycle"] = state.analysis_cycle
         captured["case_number"] = case_number
         captured["user_id"] = user_id
+        captured["tenant_id"] = tenant_id
         captured["status"] = status
 
     monkeypatch.delenv("REDIS_URL", raising=False)
@@ -412,5 +574,6 @@ async def test_persist_live_governed_state_triggers_postgres_snapshot_without_re
         "analysis_cycle": 3,
         "case_number": "case-42",
         "user_id": "user-1",
+        "tenant_id": "tenant-1",
         "status": "active",
     }

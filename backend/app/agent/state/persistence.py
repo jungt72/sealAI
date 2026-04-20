@@ -184,6 +184,7 @@ async def save_governed_state_snapshot_async(
     *,
     case_number: str,
     user_id: str,
+    tenant_id: str,
     subsegment: str | None = None,
     status: str = "active",
 ) -> None:
@@ -195,7 +196,7 @@ async def save_governed_state_snapshot_async(
         from app.agent.graph.legacy_graph import _GRAPH_MODEL_ID  # noqa: PLC0415
         from app.database import AsyncSessionLocal  # noqa: PLC0415
         from app.models.case_record import CaseRecord  # noqa: PLC0415
-        from app.models.case_state_snapshot import CaseStateSnapshot  # noqa: PLC0415
+        from app.services.case_service import CaseService  # noqa: PLC0415
     except ModuleNotFoundError as exc:
         log.warning(
             "[persistence] Postgres snapshot persistence unavailable for case=%s: %s",
@@ -206,60 +207,46 @@ async def save_governed_state_snapshot_async(
 
     persisted_state = _with_decision_basis_hash(state)
     basis_hash = persisted_state.decision.decision_basis_hash
-    desired_revision = int(persisted_state.analysis_cycle or 0)
     snapshot_payload: dict[str, Any] = persisted_state.model_dump(mode="json")
 
     async with AsyncSessionLocal() as session:
+        service = CaseService(session)
         case_result = await session.execute(
             select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
         )
         case_row = case_result.scalar_one_or_none()
         if case_row is None:
-            case_row = CaseRecord(
+            await service.create_case(
                 case_number=case_number,
                 user_id=user_id,
+                tenant_id=tenant_id,
                 subsegment=subsegment,
                 status=status,
-            )
-            session.add(case_row)
-            await session.flush()
-        else:
-            case_row.user_id = user_id
-            case_row.status = status or case_row.status
-            if subsegment is not None:
-                case_row.subsegment = subsegment
-
-        latest_result = await session.execute(
-            select(CaseStateSnapshot)
-            .where(CaseStateSnapshot.case_id == case_row.id)
-            .order_by(CaseStateSnapshot.revision.desc())
-            .limit(1)
-        )
-        latest_snapshot = latest_result.scalar_one_or_none()
-        if (
-            latest_snapshot is not None
-            and latest_snapshot.basis_hash == basis_hash
-            and latest_snapshot.state_json == snapshot_payload
-        ):
-            await session.commit()
-            return
-
-        next_revision = desired_revision if desired_revision > 0 else 1
-        if latest_snapshot is not None and next_revision <= int(latest_snapshot.revision):
-            next_revision = int(latest_snapshot.revision) + 1
-
-        session.add(
-            CaseStateSnapshot(
-                case_id=case_row.id,
-                revision=next_revision,
+                actor="governed_state_persistence",
                 state_json=snapshot_payload,
                 basis_hash=basis_hash,
                 ontology_version=_ontology_version(persisted_state),
                 prompt_version=REASONING_PROMPT_VERSION,
                 model_version=_GRAPH_MODEL_ID,
             )
+            return
+
+        case_updates: dict[str, Any] = {
+            "user_id": user_id,
+            "status": status or case_row.status,
+        }
+        if subsegment is not None:
+            case_updates["subsegment"] = subsegment
+        await service.write_snapshot(
+            case_id=str(case_row.id),
+            state_json=snapshot_payload,
+            basis_hash=basis_hash,
+            ontology_version=_ontology_version(persisted_state),
+            prompt_version=REASONING_PROMPT_VERSION,
+            model_version=_GRAPH_MODEL_ID,
+            case_updates=case_updates,
+            actor="governed_state_persistence",
         )
-        await session.commit()
 
 
 async def get_case_by_number_async(
@@ -517,6 +504,7 @@ async def load_governed_state_async(
 async def get_or_create_case(
     session_id: str,
     user_id: str,
+    tenant_id: str,
     db: Any,  # AsyncSession
     *,
     subsegment: str | None = None,
@@ -529,6 +517,7 @@ async def get_or_create_case(
 
     try:
         from app.models.case_record import CaseRecord  # noqa: PLC0415
+        from app.services.case_service import CaseService  # noqa: PLC0415
     except ModuleNotFoundError as exc:  # pragma: no cover
         log.warning("[persistence] CaseRecord unavailable: %s", exc)
         raise
@@ -543,16 +532,16 @@ async def get_or_create_case(
 
     # Create new case with sequential case_number
     case_number = await _generate_case_number(db)
-    case = CaseRecord(
+    case = await CaseService(db).create_case(
         case_number=case_number,
         session_id=session_id,
         user_id=user_id,
+        tenant_id=tenant_id,
         subsegment=subsegment,
         status="active",
+        actor="case_persistence",
+        state_json={},
     )
-    db.add(case)
-    await db.commit()
-    await db.refresh(case)
     log.info(
         "[persistence] created case case_number=%s session=%s user=%s",
         case_number,
@@ -590,52 +579,34 @@ async def write_state_snapshot(
 
     Skips write if the latest snapshot has the same basis_hash and state_json.
     """
-    from sqlalchemy import select  # noqa: PLC0415
-
     try:
         from app.agent.graph.legacy_graph import _GRAPH_MODEL_ID  # noqa: PLC0415
     except Exception:
         _GRAPH_MODEL_ID = "unknown"
 
     try:
-        from app.models.case_state_snapshot import CaseStateSnapshot  # noqa: PLC0415
+        from app.services.case_service import CaseService  # noqa: PLC0415
     except ModuleNotFoundError as exc:  # pragma: no cover
-        log.warning("[persistence] CaseStateSnapshot unavailable: %s", exc)
+        log.warning("[persistence] CaseService unavailable: %s", exc)
         raise
 
     persisted = _with_decision_basis_hash(state)
     basis_hash = persisted.decision.decision_basis_hash
     snapshot_payload = persisted.model_dump(mode="json")
 
-    # Dedup: skip if identical to latest
-    latest_result = await db.execute(
-        select(CaseStateSnapshot)
-        .where(CaseStateSnapshot.case_id == case_id)
-        .order_by(CaseStateSnapshot.revision.desc())
-        .limit(1)
-    )
-    latest = latest_result.scalar_one_or_none()
-    if latest is not None and latest.basis_hash == basis_hash and latest.state_json == snapshot_payload:
-        return latest
-
-    next_revision = (int(latest.revision) + 1) if latest is not None else 1
-
-    snapshot = CaseStateSnapshot(
+    snapshot = await CaseService(db).write_snapshot(
         case_id=case_id,
-        revision=next_revision,
         state_json=snapshot_payload,
         basis_hash=basis_hash,
         ontology_version=_ontology_version(persisted),
         prompt_version=REASONING_PROMPT_VERSION,
         model_version=_GRAPH_MODEL_ID,
+        actor="state_snapshot_persistence",
     )
-    db.add(snapshot)
-    await db.commit()
-    await db.refresh(snapshot)
     log.debug(
         "[persistence] wrote state snapshot case_id=%s revision=%d basis_hash=%s",
         case_id,
-        next_revision,
+        int(snapshot.revision),
         basis_hash,
     )
     return snapshot

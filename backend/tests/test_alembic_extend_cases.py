@@ -1,6 +1,7 @@
 """Tests for Sprint 1 Patch 1.1 migration: extend_cases_table_phase1a."""
 
 from sqlalchemy import inspect
+from sqlalchemy import text
 
 
 def test_migration_has_correct_revision_id(alembic_config):
@@ -20,6 +21,101 @@ def test_migration_upgrades_cleanly(alembic_config, test_db_engine):
     from alembic import command
 
     command.upgrade(alembic_config, "head")
+
+
+def test_migration_preserves_existing_case_data(alembic_config, test_db_engine):
+    """Existing case history is preserved when upgrading from the old DB head."""
+    from alembic import command
+
+    command.upgrade(alembic_config, "a1b2c3d4e5f6")
+
+    with test_db_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO cases (
+                    id, case_number, user_id, subsegment, status, session_id
+                ) VALUES (
+                    'case-existing-1', 'CASE-EXISTING-1', 'user-existing',
+                    'rwdr', 'active', 'session-existing-1'
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO case_state_snapshots (
+                    id, case_id, revision, state_json, basis_hash,
+                    ontology_version, prompt_version, model_version
+                ) VALUES (
+                    'snapshot-existing-1', 'case-existing-1', 1,
+                    '{"existing": true}'::jsonb, 'basis-existing',
+                    'ontology-v1', 'prompt-v1', 'model-v1'
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO inquiry_deliveries (
+                    id, case_id, manufacturer_id, payload_json, idempotency_key
+                ) VALUES (
+                    'delivery-existing-1', 'case-existing-1', 'manufacturer-1',
+                    '{"delivery": true}'::jsonb, 'delivery-key-existing-1'
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO inquiry_audit (
+                    id, case_id, idempotency_key, state_snapshot_id,
+                    decision_basis_hash, payload_json
+                ) VALUES (
+                    'audit-existing-1', 'case-existing-1',
+                    'audit-key-existing-1', 'snapshot-existing-1',
+                    'decision-basis-existing', '{"audit": true}'::jsonb
+                )
+                """
+            )
+        )
+
+    command.upgrade(alembic_config, "head")
+
+    with test_db_engine.begin() as conn:
+        counts = dict(
+            conn.execute(
+                text(
+                    """
+                    SELECT 'cases' AS table_name, COUNT(*) FROM cases
+                    UNION ALL
+                    SELECT 'case_state_snapshots', COUNT(*) FROM case_state_snapshots
+                    UNION ALL
+                    SELECT 'inquiry_deliveries', COUNT(*) FROM inquiry_deliveries
+                    UNION ALL
+                    SELECT 'inquiry_audit', COUNT(*) FROM inquiry_audit
+                    """
+                )
+            ).all()
+        )
+        payload = conn.execute(
+            text("SELECT payload FROM cases WHERE id = 'case-existing-1'")
+        ).scalar_one()
+        revision = conn.execute(
+            text("SELECT case_revision FROM cases WHERE id = 'case-existing-1'")
+        ).scalar_one()
+
+    assert counts == {
+        "cases": 1,
+        "case_state_snapshots": 1,
+        "inquiry_deliveries": 1,
+        "inquiry_audit": 1,
+    }
+    assert payload == {} or payload == "{}"
+    assert revision == 0
 
 
 def test_migration_downgrades_cleanly(alembic_config, test_db_engine):
