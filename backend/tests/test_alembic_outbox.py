@@ -17,7 +17,7 @@ def test_migration_downgrades_cleanly(alembic_config, test_db_engine):
     from alembic import command
 
     command.upgrade(alembic_config, "head")
-    command.downgrade(alembic_config, "-1")
+    command.downgrade(alembic_config, "7e9c4a2b8d31")
     inspector = inspect(test_db_engine)
     assert "outbox" not in inspector.get_table_names()
 
@@ -97,9 +97,11 @@ def test_valid_status_insert_succeeds(test_db_engine_at_head):
             conn.execute(
                 text(
                     """
-                    INSERT INTO outbox (outbox_id, task_type, payload, status)
+                    INSERT INTO outbox (
+                        outbox_id, tenant_id, task_type, payload, status
+                    )
                     VALUES (
-                        :outbox_id, 'risk_score_recompute',
+                        :outbox_id, 'tenant-test', 'risk_score_recompute',
                         '{}'::jsonb, :status
                     )
                     """
@@ -121,9 +123,11 @@ def test_invalid_status_rejected(test_db_engine_at_head):
             conn.execute(
                 text(
                     """
-                    INSERT INTO outbox (outbox_id, task_type, payload, status)
+                    INSERT INTO outbox (
+                        outbox_id, tenant_id, task_type, payload, status
+                    )
                     VALUES (
-                        'obx-bad', 'risk_score_recompute',
+                        'obx-bad', 'tenant-test', 'risk_score_recompute',
                         '{}'::jsonb, 'not_a_real_status'
                     )
                     """
@@ -137,8 +141,10 @@ def test_defaults_applied(test_db_engine_at_head):
         conn.execute(
             text(
                 """
-                INSERT INTO outbox (outbox_id, task_type, payload)
-                VALUES ('obx-defaults', 'notify_audit_log', '{}'::jsonb)
+                INSERT INTO outbox (outbox_id, tenant_id, task_type, payload)
+                VALUES (
+                    'obx-defaults', 'tenant-test', 'notify_audit_log', '{}'::jsonb
+                )
                 """
             )
         )
@@ -160,15 +166,17 @@ def test_fk_cascade_on_case_delete(test_db_engine_at_head):
     with test_db_engine_at_head.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO cases (id, case_number, user_id) "
-                "VALUES ('case-cascade-outbox', 'CASE-1-3', 'user-test')"
+                "INSERT INTO cases (id, case_number, user_id, tenant_id) "
+                "VALUES ('case-cascade-outbox', 'CASE-1-3', 'user-test', 'tenant-test')"
             )
         )
         conn.execute(
             text(
                 """
-                INSERT INTO outbox (outbox_id, case_id, task_type, payload)
-                VALUES ('obx-cascade', 'case-cascade-outbox',
+                INSERT INTO outbox (
+                    outbox_id, case_id, tenant_id, task_type, payload
+                )
+                VALUES ('obx-cascade', 'case-cascade-outbox', 'tenant-test',
                         'risk_score_recompute', '{}'::jsonb)
                 """
             )
@@ -185,19 +193,19 @@ def test_fk_no_cascade_on_mutation_delete(test_db_engine_at_head):
     with test_db_engine_at_head.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO cases (id, case_number, user_id) "
-                "VALUES ('case-mut-1', 'CASE-1-3-MUT', 'user-test')"
+                "INSERT INTO cases (id, case_number, user_id, tenant_id) "
+                "VALUES ('case-mut-1', 'CASE-1-3-MUT', 'user-test', 'tenant-test')"
             )
         )
         conn.execute(
             text(
                 """
                 INSERT INTO mutation_events (
-                    mutation_id, case_id, event_type, payload,
+                    mutation_id, case_id, tenant_id, event_type, payload,
                     case_revision_before, case_revision_after,
                     actor, actor_type
                 ) VALUES (
-                    'mut-1-3-outbox', 'case-mut-1', 'case_created',
+                    'mut-1-3-outbox', 'case-mut-1', 'tenant-test', 'case_created',
                     '{}'::jsonb, 0, 1, 'test', 'system'
                 )
                 """
@@ -206,8 +214,10 @@ def test_fk_no_cascade_on_mutation_delete(test_db_engine_at_head):
         conn.execute(
             text(
                 """
-                INSERT INTO outbox (outbox_id, mutation_id, task_type, payload)
-                VALUES ('obx-no-cascade', 'mut-1-3-outbox',
+                INSERT INTO outbox (
+                    outbox_id, mutation_id, tenant_id, task_type, payload
+                )
+                VALUES ('obx-no-cascade', 'mut-1-3-outbox', 'tenant-test',
                         'notify_audit_log', '{}'::jsonb)
                 """
             )

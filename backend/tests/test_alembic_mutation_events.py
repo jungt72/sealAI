@@ -61,19 +61,19 @@ def test_valid_insert_succeeds(test_db_engine_at_head):
     with test_db_engine_at_head.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO cases (id, case_number, user_id) "
-                "VALUES ('case-test-1.2', 'CASE-TEST-1-2', 'user-test')"
+                "INSERT INTO cases (id, case_number, user_id, tenant_id) "
+                "VALUES ('case-test-1.2', 'CASE-TEST-1-2', 'user-test', 'tenant-test')"
             )
         )
         conn.execute(
             text(
                 """
                 INSERT INTO mutation_events (
-                    mutation_id, case_id, event_type, payload,
+                    mutation_id, case_id, tenant_id, event_type, payload,
                     case_revision_before, case_revision_after,
                     actor, actor_type
                 ) VALUES (
-                    'mut-test-001', 'case-test-1.2', 'case_created',
+                    'mut-test-001', 'case-test-1.2', 'tenant-test', 'case_created',
                     '{}'::jsonb, 0, 1, 'test-user', 'user'
                 )
                 """
@@ -96,8 +96,8 @@ def test_insert_missing_required_column_fails(test_db_engine_at_head):
     with test_db_engine_at_head.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO cases (id, case_number, user_id) "
-                "VALUES ('case-test-1.2b', 'CASE-TEST-1-2B', 'user-test')"
+                "INSERT INTO cases (id, case_number, user_id, tenant_id) "
+                "VALUES ('case-test-1.2b', 'CASE-TEST-1-2B', 'user-test', 'tenant-test')"
             )
         )
         with pytest.raises(IntegrityError):
@@ -121,19 +121,19 @@ def test_fk_cascade_on_case_delete(test_db_engine_at_head):
     with test_db_engine_at_head.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO cases (id, case_number, user_id) "
-                "VALUES ('case-cascade-test', 'CASE-CASCADE', 'user-test')"
+                "INSERT INTO cases (id, case_number, user_id, tenant_id) "
+                "VALUES ('case-cascade-test', 'CASE-CASCADE', 'user-test', 'tenant-test')"
             )
         )
         conn.execute(
             text(
                 """
                 INSERT INTO mutation_events (
-                    mutation_id, case_id, event_type, payload,
+                    mutation_id, case_id, tenant_id, event_type, payload,
                     case_revision_before, case_revision_after,
                     actor, actor_type
                 ) VALUES (
-                    'mut-cascade-001', 'case-cascade-test', 'field_updated',
+                    'mut-cascade-001', 'case-cascade-test', 'tenant-test', 'field_updated',
                     '{"field":"x"}'::jsonb, 1, 2, 'test', 'system'
                 )
                 """

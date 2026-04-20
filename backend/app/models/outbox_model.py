@@ -1,8 +1,8 @@
 """SQLAlchemy ORM model for the outbox table.
 
 Mirrors the outbox table created by Alembic migration 4c2f8a9d1b73
-(Patch 1.3). Column names, types, nullability, and defaults match the
-migration exactly.
+(Patch 1.3) and hardened by b8c4d6e2f901 (Patch 1.7). Column names,
+types, nullability, and defaults match the migration chain.
 
 Design notes
 ------------
@@ -48,7 +48,7 @@ class OutboxModel(Base):
         ForeignKey("mutation_events.mutation_id", name="fk_outbox_mutation_id"),
         nullable=True,
     )
-    tenant_id = Column(String(255), nullable=True)
+    tenant_id = Column(String(255), nullable=False)
     task_type = Column(String(64), nullable=False)
     payload = Column(
         JSON().with_variant(JSONB(astext_type=Text()), "postgresql"),

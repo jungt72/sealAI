@@ -103,7 +103,7 @@ class TestOutboxModelStructure:
         assert not columns.outbox_id.nullable
         assert columns.case_id.nullable
         assert columns.mutation_id.nullable
-        assert columns.tenant_id.nullable
+        assert not columns.tenant_id.nullable
         assert not columns.task_type.nullable
         assert not columns.payload.nullable
         assert not columns.status.nullable
@@ -144,6 +144,7 @@ class TestOutboxModelPersistence:
 
         row = OutboxModel(
             outbox_id=str(uuid.uuid4()),
+            tenant_id="tenant-test",
             task_type="notify_audit_log",
             payload={},
         )
@@ -160,7 +161,7 @@ class TestOutboxModelPersistence:
             outbox_id=str(uuid.uuid4()),
             case_id=None,
             mutation_id=None,
-            tenant_id=None,
+            tenant_id="tenant-test",
             task_type="risk_score_recompute",
             payload={"key": "value"},
             status="pending",
@@ -179,6 +180,7 @@ class TestOutboxModelPersistence:
     def test_repr_readable(self, session: Session) -> None:
         row = OutboxModel(
             outbox_id=str(uuid.uuid4()),
+            tenant_id="tenant-test",
             task_type="project_case_snapshot",
             payload={},
         )

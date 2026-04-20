@@ -1,8 +1,8 @@
 """SQLAlchemy ORM model for the mutation_events table.
 
 Mirrors the mutation_events table created by Alembic migration
-7e9c4a2b8d31 (Patch 1.2). Column names, types, nullability, and
-defaults match the migration exactly.
+7e9c4a2b8d31 (Patch 1.2) and hardened by b8c4d6e2f901 (Patch 1.7).
+Column names, types, nullability, and defaults match the migration chain.
 
 Design notes
 ------------
@@ -41,7 +41,7 @@ class MutationEventModel(Base):
         ForeignKey("cases.id", ondelete="CASCADE", name="fk_mutation_events_case_id"),
         nullable=False,
     )
-    tenant_id = Column(String(255), nullable=True)
+    tenant_id = Column(String(255), nullable=False)
     event_type = Column(String(64), nullable=False)
     payload = Column(
         JSON().with_variant(JSONB(astext_type=Text()), "postgresql"),

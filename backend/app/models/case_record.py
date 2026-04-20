@@ -20,7 +20,7 @@ class CaseRecord(Base):
     status = Column(String(50), nullable=False, server_default="active", default="active")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    tenant_id = Column(String(255), nullable=True)
+    tenant_id = Column(String(255), nullable=False)
     case_revision = Column(Integer, nullable=False, server_default="0", default=0)
     schema_version = Column(String(32), nullable=True)
     ruleset_version = Column(String(32), nullable=True)

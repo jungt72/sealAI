@@ -20,7 +20,7 @@ def test_migration_upgrades_cleanly(alembic_config, test_db_engine):
     """Migration applies without error."""
     from alembic import command
 
-    command.upgrade(alembic_config, "head")
+    command.upgrade(alembic_config, "6d8f1b3a9c20")
 
 
 def test_migration_preserves_existing_case_data(alembic_config, test_db_engine):
@@ -83,7 +83,7 @@ def test_migration_preserves_existing_case_data(alembic_config, test_db_engine):
             )
         )
 
-    command.upgrade(alembic_config, "head")
+    command.upgrade(alembic_config, "6d8f1b3a9c20")
 
     with test_db_engine.begin() as conn:
         counts = dict(
@@ -212,8 +212,8 @@ def test_payload_defaults_to_empty_jsonb(test_db_engine_at_head):
     with test_db_engine_at_head.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO cases (id, case_number, user_id) "
-                "VALUES ('test-001', 'CASE-TEST-001', 'user-test')"
+                "INSERT INTO cases (id, case_number, user_id, tenant_id) "
+                "VALUES ('test-001', 'CASE-TEST-001', 'user-test', 'tenant-test')"
             )
         )
         result = conn.execute(
@@ -232,8 +232,8 @@ def test_case_revision_defaults_to_zero(test_db_engine_at_head):
     with test_db_engine_at_head.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO cases (id, case_number, user_id) "
-                "VALUES ('test-002', 'CASE-TEST-002', 'user-test')"
+                "INSERT INTO cases (id, case_number, user_id, tenant_id) "
+                "VALUES ('test-002', 'CASE-TEST-002', 'user-test', 'tenant-test')"
             )
         )
         result = conn.execute(

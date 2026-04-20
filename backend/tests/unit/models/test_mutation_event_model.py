@@ -65,7 +65,7 @@ def _create_sqlite_mutation_events_table(engine: Engine) -> None:
                 CREATE TABLE mutation_events (
                     mutation_id VARCHAR(36) PRIMARY KEY,
                     case_id VARCHAR(36) NOT NULL,
-                    tenant_id VARCHAR(255),
+                    tenant_id VARCHAR(255) NOT NULL,
                     event_type VARCHAR(64) NOT NULL,
                     payload JSON NOT NULL DEFAULT '{}',
                     case_revision_before INTEGER NOT NULL,
@@ -118,7 +118,7 @@ class TestMutationEventModelStructure:
         assert str(columns.actor.type) == "VARCHAR(128)"
         assert str(columns.actor_type.type) == "VARCHAR(32)"
         assert not columns.case_id.nullable
-        assert columns.tenant_id.nullable
+        assert not columns.tenant_id.nullable
         assert not columns.payload.nullable
         assert not columns.created_at.nullable
 
@@ -165,7 +165,7 @@ class TestMutationEventModelPersistence:
         evt = MutationEventModel(
             mutation_id=str(uuid.uuid4()),
             case_id=case_id,
-            tenant_id=None,
+            tenant_id="tenant-test",
             event_type="case_created",
             payload={"any": "dict"},
             case_revision_before=0,
@@ -190,7 +190,7 @@ class TestMutationEventModelPersistence:
         evt = MutationEventModel(
             mutation_id=str(uuid.uuid4()),
             case_id=case_id,
-            tenant_id=None,
+            tenant_id="tenant-test",
             event_type="field_updated",
             payload={},
             case_revision_before=1,
