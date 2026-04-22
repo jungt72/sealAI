@@ -242,6 +242,29 @@ describe("useCockpitData", () => {
     useWorkspaceStore.getState().reset();
   });
 
+
+  it("keeps PTFE-RWDR fallback ahead of generic hydraulic wording", () => {
+    const workspace = workspaceFixture();
+    workspace.cockpit = null;
+    workspace.engineeringPath = null;
+    workspace.parameters = {
+      medium: "HLP46",
+      sealing_type: "PTFE-RWDR",
+      application_context: "Hydraulik Getriebe",
+      motion_type: "rotary",
+    } as WorkspaceView["parameters"];
+
+    useWorkspaceStore.setState({
+      workspace,
+      streamWorkspace: null,
+      streamAssertions: null,
+    });
+
+    const { result } = renderHook(() => useCockpitData());
+
+    expect(result.current?.view.path).toBe("rwdr");
+  });
+
   it("prefers backend cockpit view over local fallback reconstruction", () => {
     useWorkspaceStore.setState({
       workspace: workspaceFixture(),

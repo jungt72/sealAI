@@ -38,11 +38,34 @@ function isEngineeringPath(value: string | null | undefined): value is Engineeri
 
 function deriveFallbackEngineeringPath(parameters: Record<string, any>): EngineeringPath | null {
   const motion = String(parameters.motion_type || "").toLowerCase();
-  const equipment = String(
-    parameters.installation || parameters.application_context || parameters.sealing_type || "",
-  ).toLowerCase();
+  const equipment = [
+    parameters.installation,
+    parameters.application_context,
+    parameters.sealing_type,
+    parameters.geometry_context,
+  ]
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map(String)
+    .join(" ")
+    .toLowerCase();
 
   if (equipment.includes("labyrinth")) return "labyrinth";
+  if (motion === "static") return "static";
+
+  const hasRwdrMarker =
+    equipment.includes("ptfe-rwdr") ||
+    equipment.includes("ptfe rwdr") ||
+    equipment.includes("rwdr") ||
+    equipment.includes("wellendichtring") ||
+    equipment.includes("radialwellendichtring") ||
+    equipment.includes("simmerring") ||
+    equipment.includes("lip seal");
+  if (hasRwdrMarker || (motion === "rotary" && equipment.includes("gearbox"))) {
+    return "rwdr";
+  }
+
+  if (motion === "rotary" && (equipment.includes("pump") || equipment.includes("gleitring"))) return "ms_pump";
+
   if (
     equipment.includes("hydraul") ||
     equipment.includes("pneumat") ||
@@ -52,19 +75,6 @@ function deriveFallbackEngineeringPath(parameters: Record<string, any>): Enginee
     equipment.includes("rod")
   ) {
     return "hyd_pneu";
-  }
-  if (motion === "static") return "static";
-  if (motion === "rotary" && (equipment.includes("pump") || equipment.includes("gleitring"))) return "ms_pump";
-  if (
-    motion === "rotary" &&
-    (
-      equipment.includes("gearbox") ||
-      equipment.includes("rwdr") ||
-      equipment.includes("wellendichtring") ||
-      equipment.includes("simmerring")
-    )
-  ) {
-    return "rwdr";
   }
   if (motion === "rotary") return "unclear_rotary";
   return null;
