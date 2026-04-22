@@ -10,9 +10,7 @@ BACKEND_APP = REPO_ROOT / "backend" / "app"
 SSOT_REGISTRY = REPO_ROOT / "docs" / "architecture" / "SSOT_REGISTRY.md"
 DEPRECATED_MAP = REPO_ROOT / "docs" / "architecture" / "DEPRECATED_MAP.md"
 
-BANNED_PRODUCT_IMPORT_PREFIXES = (
-    "app.langgraph_v2",
-)
+BANNED_PRODUCT_IMPORT_PREFIXES = ("app.langgraph_v2",)
 
 NON_CANONICAL_TREES = (
     "archive/",
@@ -33,6 +31,8 @@ CANONICAL_PATHS = (
     "backend/app/agent/state/persistence.py",
     "backend/app/agent/api/loaders.py",
     "backend/app/api/v1/projections/case_workspace.py",
+    "backend/app/api/v1/projections/workspace_routing.py",
+    "backend/app/api/v1/projections/ptfe_rwdr_enrichment.py",
     "backend/app/api/v1/schemas/case_workspace.py",
     "backend/app/agent/api/routes/workspace.py",
     "backend/app/api/v1/endpoints/state.py",
@@ -68,13 +68,19 @@ def _imports(path: Path) -> set[str]:
 
 
 def test_ssot_registry_and_deprecated_map_exist() -> None:
-    assert SSOT_REGISTRY.exists(), "SSoT registry must exist before architecture changes."
-    assert DEPRECATED_MAP.exists(), "Deprecated map must exist before architecture cleanup."
+    assert (
+        SSOT_REGISTRY.exists()
+    ), "SSoT registry must exist before architecture changes."
+    assert (
+        DEPRECATED_MAP.exists()
+    ), "Deprecated map must exist before architecture cleanup."
 
 
 def test_canonical_registry_paths_exist() -> None:
     missing = [path for path in CANONICAL_PATHS if not (REPO_ROOT / path).exists()]
-    assert not missing, "SSoT registry references missing canonical files: " + ", ".join(missing)
+    assert not missing, (
+        "SSoT registry references missing canonical files: " + ", ".join(missing)
+    )
 
 
 def test_product_code_does_not_import_removed_langgraph_v2() -> None:
@@ -83,7 +89,9 @@ def test_product_code_does_not_import_removed_langgraph_v2() -> None:
         for module in _imports(path):
             if module.startswith(BANNED_PRODUCT_IMPORT_PREFIXES):
                 offenders.append(f"{path.relative_to(REPO_ROOT)} imports {module}")
-    assert not offenders, "Removed LangGraph v2 imports found in product code:\n" + "\n".join(offenders)
+    assert not offenders, (
+        "Removed LangGraph v2 imports found in product code:\n" + "\n".join(offenders)
+    )
 
 
 def test_non_canonical_trees_are_documented_as_patch_hazards() -> None:
@@ -96,17 +104,21 @@ def test_non_canonical_trees_are_documented_as_patch_hazards() -> None:
 
 def test_agent_router_has_single_canonical_mount() -> None:
     main_py = (REPO_ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
-    v1_api_py = (REPO_ROOT / "backend" / "app" / "api" / "v1" / "api.py").read_text(encoding="utf-8")
+    v1_api_py = (REPO_ROOT / "backend" / "app" / "api" / "v1" / "api.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "from app.agent.api.router import router as agent_router" in main_py
-    assert re.search(r"include_router\(agent_router,\s*prefix=[\"']/api/agent[\"']", main_py)
+    assert re.search(
+        r"include_router\(agent_router,\s*prefix=[\"']/api/agent[\"']", main_py
+    )
     assert "api_router.include_router(agent_router" not in v1_api_py
 
 
 def test_v1_state_facade_mutations_fail_closed() -> None:
-    state_py = (REPO_ROOT / "backend" / "app" / "api" / "v1" / "endpoints" / "state.py").read_text(
-        encoding="utf-8"
-    )
+    state_py = (
+        REPO_ROOT / "backend" / "app" / "api" / "v1" / "endpoints" / "state.py"
+    ).read_text(encoding="utf-8")
     for route_name in (
         "update_state",
         "confirm_rfq_package",
@@ -115,7 +127,10 @@ def test_v1_state_facade_mutations_fail_closed() -> None:
     ):
         assert f"def {route_name}" in state_py
     assert state_py.count("status_code=501") >= 4
-    assert "State mutation is only supported on the canonical /api/agent runtime path" in state_py
+    assert (
+        "State mutation is only supported on the canonical /api/agent runtime path"
+        in state_py
+    )
 
 
 def test_architecture_docs_mark_legacy_tests_as_non_canonical() -> None:

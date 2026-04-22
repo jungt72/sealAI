@@ -32,7 +32,9 @@ This registry is the binding map for future patches. If a file is not listed as 
 
 | Concern | Canonical source | Role |
 | --- | --- | --- |
-| Backend workspace projection | `backend/app/api/v1/projections/case_workspace.py` | Canonical backend read model. Refactor target: split, but preserve public contract. |
+| Backend workspace projection facade | `backend/app/api/v1/projections/case_workspace.py` | Canonical public backend read model facade. Preserve public contract here. |
+| Workspace routing projection | `backend/app/api/v1/projections/workspace_routing.py` | Deterministic request type and engineering path routing. |
+| PTFE-RWDR workspace enrichment | `backend/app/api/v1/projections/ptfe_rwdr_enrichment.py` | Deterministic PTFE-RWDR read-model enrichment via V3 services. |
 | Backend workspace schema | `backend/app/api/v1/schemas/case_workspace.py` | API response contract. |
 | Agent workspace route | `backend/app/agent/api/routes/workspace.py` | Canonical workspace read route under `/api/agent`. |
 | Compatibility workspace route | `backend/app/api/v1/endpoints/state.py` | Compatibility facade only. It may read canonical state and projection; it must not mutate canonical truth. |

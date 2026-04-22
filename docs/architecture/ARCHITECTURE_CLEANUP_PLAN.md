@@ -18,15 +18,16 @@ Current risk: this file owns too many responsibilities and is the highest-risk p
 
 Proposed extraction order:
 
-1. `backend/app/api/v1/projections/workspace_routing.py`
+1. `backend/app/api/v1/projections/workspace_routing.py` - extracted
    - `_derive_request_type`
    - `_derive_engineering_path`
    - path coercion helpers
 
-2. `backend/app/api/v1/projections/ptfe_rwdr_enrichment.py`
+2. `backend/app/api/v1/projections/ptfe_rwdr_enrichment.py` - extracted
    - PTFE family inference
    - PTFE-RWDR service adapter
    - deterministic derivation/advisory/matching enrichment
+   - guardrail: generic RWDR without explicit PTFE signal must not trigger PTFE enrichment
 
 3. `backend/app/api/v1/projections/cockpit_projection.py`
    - cockpit sections

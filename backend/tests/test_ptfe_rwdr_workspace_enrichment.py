@@ -86,6 +86,25 @@ def test_ptfe_rwdr_workspace_enrichment_runs_cascade_and_advisories() -> None:
     )
 
 
+def test_non_ptfe_rwdr_keeps_existing_rwdr_calculation_source() -> None:
+    projection = project_case_workspace(
+        _workspace_state(
+            {
+                "engineering_path": "rwdr",
+                "sealing_type": "Radialwellendichtring",
+                "medium": "Oel",
+                "movement_type": "rotary",
+                "shaft_diameter_mm": 50,
+                "speed_rpm": 1500,
+            }
+        )
+    )
+
+    assert projection.engineering_path == "rwdr"
+    assert projection.technical_derivations == []
+    assert projection.partner_matching.data_source == "candidate_derived"
+
+
 def test_non_ptfe_static_workspace_is_not_enriched_as_rwdr() -> None:
     projection = project_case_workspace(
         _workspace_state(
