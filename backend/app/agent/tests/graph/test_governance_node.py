@@ -78,6 +78,8 @@ def _full_class_a() -> GraphState:
         medium=("Dampf", "confirmed"),
         pressure_bar=(12.0, "confirmed"),
         temperature_c=(180.0, "confirmed"),
+        sealing_type=("general_seal", "confirmed"),
+        material=("PTFE", "confirmed"),
     )
 
 
@@ -325,6 +327,49 @@ class TestImmutability:
         )
         result = await governance_node(state)
         assert result.analysis_cycle == 2
+
+
+class TestCaseLifecyclePhase:
+    @pytest.mark.asyncio
+    async def test_explicit_authority_phase_sets_case_lifecycle_phase(self):
+        state = _state(
+            medium=("Dampf", "confirmed"),
+            pressure_bar=(12.0, "confirmed"),
+            temperature_c=(180.0, "confirmed"),
+            phase=("matching", "confirmed"),
+        )
+
+        result = await governance_node(state)
+
+        assert result.case_lifecycle.phase == "matching"
+
+    @pytest.mark.asyncio
+    async def test_unknown_phase_does_not_set_case_lifecycle_phase(self):
+        state = _state(
+            medium=("Dampf", "confirmed"),
+            pressure_bar=(12.0, "confirmed"),
+            temperature_c=(180.0, "confirmed"),
+            phase=("final", "confirmed"),
+        )
+
+        result = await governance_node(state)
+
+        assert result.case_lifecycle.phase is None
+
+    @pytest.mark.asyncio
+    async def test_neighbouring_state_does_not_set_case_lifecycle_phase(self):
+        state = _full_class_a().model_copy(
+            update={
+                "analysis_cycle": 3,
+                "rfq": _full_class_a().rfq.model_copy(update={"rfq_ready": True}),
+                "matching": _full_class_a().matching.model_copy(update={"status": "matched_primary_candidate"}),
+                "exploration_progress": _full_class_a().exploration_progress.model_copy(update={"last_route": "GOVERNED"}),
+            }
+        )
+
+        result = await governance_node(state)
+
+        assert result.case_lifecycle.phase is None
 
 
 # ---------------------------------------------------------------------------

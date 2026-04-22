@@ -20,8 +20,11 @@ Design notes
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import validates
 from sqlalchemy.types import JSON
 
 from app.database import Base
@@ -63,3 +66,38 @@ class MutationEventModel(Base):
             f"<MutationEventModel mutation_id={self.mutation_id!r} "
             f"case_id={self.case_id!r} event_type={self.event_type!r}>"
         )
+
+    @validates(
+        "mutation_id",
+        "case_id",
+        "tenant_id",
+        "event_type",
+        "actor",
+        "actor_type",
+    )
+    def _validate_required_string(self, key: str, value: Any) -> str:
+        if value is None:
+            raise ValueError(f"{key} is required")
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError(f"{key} is required")
+        return normalized
+
+    @validates("payload")
+    def _validate_payload(self, _key: str, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("payload must be a dict")
+        return value
+
+    @validates("case_revision_before", "case_revision_after")
+    def _validate_revision(self, key: str, value: Any) -> int:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{key} must be an integer")
+        if value < 0:
+            raise ValueError(f"{key} must be non-negative")
+
+        before = value if key == "case_revision_before" else self.case_revision_before
+        after = value if key == "case_revision_after" else self.case_revision_after
+        if before is not None and after is not None and after != before + 1:
+            raise ValueError("case revisions must increase exactly by one")
+        return value

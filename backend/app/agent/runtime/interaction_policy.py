@@ -59,15 +59,14 @@ import os
 import re
 from typing import Any, Optional
 
-from app.agent.runtime.policy import (
-    INTERACTION_POLICY_VERSION,
-    InteractionPolicyDecision,
-    ResultForm,
-    RoutingPath,
-)
+from app.agent.runtime.policy import INTERACTION_POLICY_VERSION, InteractionPolicyDecision
 from app.agent.runtime.selection import STRUCTURED_REQUIRED_CORE_PARAMS
+from app.domain.pre_gate_classification import PreGateClassification
+from app.services.output_classifier import OutputClass
+from app.services.pre_gate_classifier import PreGateClassifier
 
 log = logging.getLogger(__name__)
+_PRE_GATE_CLASSIFIER = PreGateClassifier()
 
 # ---------------------------------------------------------------------------
 # Routing model configuration
@@ -221,8 +220,8 @@ def _missing_critical_params(current_state: dict[str, Any] | None) -> tuple[str,
 
 def _direct_answer(*, coverage: str = "in_scope") -> InteractionPolicyDecision:
     return InteractionPolicyDecision(
-        result_form=ResultForm.DIRECT_ANSWER,
-        path=RoutingPath.FAST_PATH,
+        output_class=OutputClass.CONVERSATIONAL_ANSWER,
+        pre_gate_classification=PreGateClassification.KNOWLEDGE_QUERY,
         stream_mode="reply_only",
         interaction_class="DIRECT_ANSWER",
         runtime_path="FAST_DIRECT",
@@ -234,9 +233,8 @@ def _direct_answer(*, coverage: str = "in_scope") -> InteractionPolicyDecision:
     )
 
 
-# _guided_recommendation() removed (Phase 0D): FAST_PATH always returns DIRECT_ANSWER now.
-# GUIDED_RECOMMENDATION form is deprecated — kept in ResultForm enum for serialisation
-# compatibility only, but never returned by evaluate_policy().
+# _guided_recommendation() removed (Phase 0D): FAST_PATH now maps to
+# conversational_answer until the remaining light runtime is migrated.
 
 
 def _deterministic_result(
@@ -244,8 +242,10 @@ def _deterministic_result(
     missing: tuple[str, ...] = (),
 ) -> InteractionPolicyDecision:
     return InteractionPolicyDecision(
-        result_form=ResultForm.DETERMINISTIC_RESULT,
-        path=RoutingPath.STRUCTURED_PATH,
+        output_class=OutputClass.STRUCTURED_CLARIFICATION
+        if missing
+        else OutputClass.GOVERNED_STATE_UPDATE,
+        pre_gate_classification=PreGateClassification.DOMAIN_INQUIRY,
         stream_mode="structured_progress_stream",
         interaction_class="DETERMINISTIC_RESULT",
         runtime_path="STRUCTURED_DETERMINISTIC",
@@ -257,16 +257,15 @@ def _deterministic_result(
     )
 
 
-# _qualified_case() removed (Phase 0D): STRUCTURED_PATH always returns DETERMINISTIC_RESULT.
-# QUALIFIED_CASE form is deprecated — kept in ResultForm enum for serialisation
-# compatibility only, but never returned by evaluate_policy().
+# _qualified_case() removed (Phase 0D): structured routing remains a
+# transitional gate path; final output-class selection lives in OutputClassifier.
 
 
 def _meta_path() -> InteractionPolicyDecision:
     """State-status query — answered deterministically, no LLM."""
     return InteractionPolicyDecision(
-        result_form=ResultForm.DIRECT_ANSWER,
-        path=RoutingPath.META_PATH,
+        output_class=OutputClass.CONVERSATIONAL_ANSWER,
+        pre_gate_classification=PreGateClassification.META_QUESTION,
         stream_mode="reply_only",
         interaction_class="META_STATUS",
         runtime_path="META_DETERMINISTIC",
@@ -281,8 +280,8 @@ def _meta_path() -> InteractionPolicyDecision:
 def _greeting_path() -> InteractionPolicyDecision:
     """Trivial greeting / smalltalk — deterministic response, no LLM, no RAG."""
     return InteractionPolicyDecision(
-        result_form=ResultForm.DIRECT_ANSWER,
-        path=RoutingPath.GREETING_PATH,
+        output_class=OutputClass.CONVERSATIONAL_ANSWER,
+        pre_gate_classification=PreGateClassification.GREETING,
         stream_mode="reply_only",
         interaction_class="GREETING",
         runtime_path="GREETING_DETERMINISTIC",
@@ -297,8 +296,8 @@ def _greeting_path() -> InteractionPolicyDecision:
 def _blocked_path(*, reason: str) -> InteractionPolicyDecision:
     """Explicitly forbidden request — deterministic safe refusal, no LLM, no pipeline."""
     return InteractionPolicyDecision(
-        result_form=ResultForm.DIRECT_ANSWER,
-        path=RoutingPath.BLOCKED_PATH,
+        output_class=OutputClass.CONVERSATIONAL_ANSWER,
+        pre_gate_classification=PreGateClassification.BLOCKED,
         stream_mode="reply_only",
         interaction_class="BLOCKED",
         runtime_path="BLOCKED_POLICY",
@@ -380,21 +379,28 @@ def _evaluate_deterministic_tiers(
     Returns a decision if a deterministic tier matches, else None.
     Shared by both sync and async evaluate_policy variants.
     """
-    # ── Tier 0a: Meta queries ──────────────────────────────────────────────
-    if _is_meta_query(user_input):
+    classification = _PRE_GATE_CLASSIFIER.classify(user_input).classification
+
+    if classification is PreGateClassification.META_QUESTION or _is_meta_query(user_input):
         log.debug("Policy decision: META (state-status query)")
         return _meta_path()
 
-    # ── Tier 0b: Blocked requests ──────────────────────────────────────────
-    block_reason = _check_input_blocked(user_input)
-    if block_reason:
+    if classification is PreGateClassification.BLOCKED:
+        block_reason = _check_input_blocked(user_input) or "pre_gate_blocked"
         log.info("Policy decision: BLOCKED (%s)", block_reason)
         return _blocked_path(reason=block_reason)
 
-    # ── Tier 0c: Greeting / trivial smalltalk (no LLM, no RAG) ─────────────
-    if _is_greeting(user_input):
+    if classification is PreGateClassification.GREETING:
         log.debug("Policy decision: GREETING (trivial smalltalk)")
         return _greeting_path()
+
+    if classification is PreGateClassification.KNOWLEDGE_QUERY:
+        log.debug("Policy decision: KNOWLEDGE_QUERY (pre-gate)")
+        return _direct_answer()
+
+    if classification is PreGateClassification.DOMAIN_INQUIRY:
+        missing = _missing_critical_params(current_state)
+        return _deterministic_result(missing=missing)
 
     return None
 

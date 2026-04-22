@@ -38,6 +38,8 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
   const displayRequestType = (cockpit?.view.requestType && cockpit.view.requestType !== "nicht bestimmt")
     ? cockpit.view.requestType 
     : initialRequestType;
+  const mediumStatusTone = cockpit?.mediumStatus.tone;
+  const mediumStatusUiVariant = mediumStatusTone === "neutral" ? "default" : mediumStatusTone;
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-white">
@@ -169,7 +171,7 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
           <CockpitCard 
             title="Medium & Risiko" 
             icon={ShieldAlert}
-            status={cockpit?.mediumStatus.tone === "neutral" ? "default" : cockpit?.mediumStatus.tone}
+            status={mediumStatusUiVariant}
           >
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
@@ -180,7 +182,7 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
                   </span>
                   <StatusBadge 
                     label={cockpit?.mediumStatus.statusLabel || "unbekannt"} 
-                    variant={cockpit?.mediumStatus.tone} 
+                    variant={mediumStatusUiVariant} 
                   />
                 </div>
                 {cockpit?.mediumStatus.status === "unavailable" && (

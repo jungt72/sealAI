@@ -1,15 +1,16 @@
 # backend/app/services/langgraph/redis_lifespan.py
 from __future__ import annotations
 
-import os
+import importlib
 import logging
+import os
 from typing import Optional, Any
 
 log = logging.getLogger("app.redis_checkpointer")
 
 # RedisSaver (sync). Unterschiedliche Versionen haben verschiedene __init__-Signaturen.
 try:
-    from langgraph.checkpoint.redis import RedisSaver  # type: ignore
+    RedisSaver = importlib.import_module("langgraph.checkpoint.redis").RedisSaver
 except Exception as e:  # pragma: no cover
     RedisSaver = None  # type: ignore
     log.warning("LangGraph RedisSaver nicht importierbar: %s", e)
@@ -80,7 +81,7 @@ def _try_construct_redis_saver(redis_url: str, ns: str, ttl: Optional[int]) -> A
     raise RuntimeError("Unbekannter Fehler bei RedisSaver-Konstruktion")
 
 
-def get_redis_checkpointer(app=None) -> Optional["RedisSaver"]:
+def get_redis_checkpointer(app=None) -> Optional[Any]:
     """
     Erzeugt einen LangGraph-RedisSaver (Checkpointer).
     Gibt None zurück, wenn Paket fehlt oder Konstruktion scheitert.

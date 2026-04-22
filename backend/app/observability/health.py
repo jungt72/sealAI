@@ -81,7 +81,8 @@ async def check_agent_runtime() -> Dict[str, Any]:
                 "status": "unhealthy",
                 "error": f"missing_agent_routes:{','.join(missing_paths)}",
             }
-        if health_payload.get("status") != "ok" or health_payload.get("service") != "sealai-agent":
+        accepted_services = {"sealai-agent", "SSoT Agent Authority"}
+        if health_payload.get("status") != "ok" or health_payload.get("service") not in accepted_services:
             DEPENDENCY_UP.labels(dependency="agent_runtime").set(0)
             return {
                 "status": "unhealthy",

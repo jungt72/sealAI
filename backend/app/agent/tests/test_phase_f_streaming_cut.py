@@ -36,6 +36,7 @@ def _make_current_user(
 ):
     """Build a minimal RequestUser-like stub."""
     user = MagicMock()
+    user.user_id = sub
     user.sub = sub
     user.tenant_id = tenant_id
     return user
@@ -687,7 +688,7 @@ class TestPhase1LiveCanon:
 
     @pytest.mark.asyncio
     async def test_live_chat_history_prefers_governed_transcript(self):
-        import app.agent.api.router as router_module
+        import app.agent.api.routes.history as history_routes
 
         live_state = GovernedSessionState(
             conversation_messages=[
@@ -696,19 +697,20 @@ class TestPhase1LiveCanon:
             ]
         )
 
-        with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=live_state)), \
-             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(side_effect=AssertionError("legacy canonical state should not be used"))):
-            payload = await router_module.get_live_chat_history(
+        with patch("app.agent.api.loaders._load_live_governed_state", AsyncMock(return_value=live_state)), \
+             patch("app.agent.api.routes.history.get_latest_governed_case_snapshot_async", AsyncMock(side_effect=AssertionError("snapshot should not be used"))), \
+             patch("app.agent.api.routes.history.load_structured_case", AsyncMock(side_effect=AssertionError("legacy canonical state should not be used"))):
+            payload = await history_routes.get_live_chat_history(
                 "sess-1",
                 current_user=_make_current_user(),
             )
 
-        assert [item["role"] for item in payload["messages"]] == ["user", "assistant"]
-        assert payload["messages"][1]["content"] == "Wo genau?"
+        assert [item.role for item in payload] == ["user", "assistant"]
+        assert payload[1].content == "Wo genau?"
 
     @pytest.mark.asyncio
     async def test_live_chat_history_falls_back_to_postgres_governed_snapshot_before_structured_case(self):
-        import app.agent.api.router as router_module
+        import app.agent.api.routes.history as history_routes
 
         snapshot_state = GovernedSessionState(
             conversation_messages=[
@@ -716,20 +718,21 @@ class TestPhase1LiveCanon:
             ]
         )
 
-        with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=None)), \
-             patch("app.agent.api.router._load_governed_state_snapshot_projection_source", AsyncMock(return_value=snapshot_state)), \
-             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(side_effect=AssertionError("canonical state should not be used"))):
-            payload = await router_module.get_live_chat_history(
+        snapshot = types.SimpleNamespace(state_json=snapshot_state.model_dump(mode="json"))
+        with patch("app.agent.api.loaders._load_live_governed_state", AsyncMock(return_value=None)), \
+             patch("app.agent.api.routes.history.get_latest_governed_case_snapshot_async", AsyncMock(return_value=snapshot)), \
+             patch("app.agent.api.routes.history.load_structured_case", AsyncMock(side_effect=AssertionError("canonical state should not be used"))):
+            payload = await history_routes.get_live_chat_history(
                 "sess-pg",
                 current_user=_make_current_user(),
             )
 
-        assert [item["role"] for item in payload["messages"]] == ["assistant"]
-        assert payload["messages"][0]["content"] == "Persistierte Governed-Antwort"
+        assert [item.role for item in payload] == ["assistant"]
+        assert payload[0].content == "Persistierte Governed-Antwort"
 
     @pytest.mark.asyncio
     async def test_live_chat_history_uses_structured_case_only_when_no_governed_source_exists(self):
-        import app.agent.api.router as router_module
+        import app.agent.api.routes.history as history_routes
 
         canonical_state = {
             "messages": [
@@ -737,16 +740,16 @@ class TestPhase1LiveCanon:
             ],
         }
 
-        with patch("app.agent.api.router._load_live_governed_state", AsyncMock(return_value=None)), \
-             patch("app.agent.api.router._load_governed_state_snapshot_projection_source", AsyncMock(return_value=None)), \
-             patch("app.agent.api.router.require_structured_residual_state", AsyncMock(return_value=canonical_state)):
-            payload = await router_module.get_live_chat_history(
+        with patch("app.agent.api.loaders._load_live_governed_state", AsyncMock(return_value=None)), \
+             patch("app.agent.api.routes.history.get_latest_governed_case_snapshot_async", AsyncMock(return_value=None)), \
+             patch("app.agent.api.routes.history.load_structured_case", AsyncMock(return_value=canonical_state)):
+            payload = await history_routes.get_live_chat_history(
                 "sess-legacy",
                 current_user=_make_current_user(),
             )
 
-        assert [item["role"] for item in payload["messages"]] == ["user"]
-        assert payload["messages"][0]["content"] == "Historische Structured-Frage"
+        assert [item.role for item in payload] == ["user"]
+        assert payload[0].content == "Historische Structured-Frage"
 
     @pytest.mark.asyncio
     async def test_canonical_state_load_applies_live_governed_snapshot_for_review_near_readers(self):

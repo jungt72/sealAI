@@ -125,6 +125,7 @@ class CaseService:
         ontology_version: str | None = None,
         prompt_version: str | None = None,
         model_version: str | None = None,
+        case_updates: dict[str, Any] | None = None,
     ) -> CaseRecord:
         """Create a case through the same audit/snapshot/outbox write path."""
 
@@ -132,17 +133,27 @@ class CaseService:
             raise InvalidMutationError("case_number is required")
         if not user_id:
             raise InvalidMutationError("user_id is required")
+        if not actor:
+            raise InvalidMutationError("actor is required")
+        if state_json is not None and not isinstance(state_json, dict):
+            raise InvalidMutationError("state_json must be a dict")
         tenant_id = self._require_tenant_id(tenant_id)
+        normalized_case_updates = case_updates if case_updates is not None else {}
+        self._validate_case_updates(normalized_case_updates)
 
         actor_type = self._coerce_actor_type(actor_type)
+        base_case_updates: dict[str, Any] = {
+            "case_number": case_number,
+            "session_id": session_id,
+            "user_id": user_id,
+            "subsegment": subsegment,
+            "status": status,
+            "tenant_id": tenant_id,
+        }
         payload = {
             "case_updates": {
-                "case_number": case_number,
-                "session_id": session_id,
-                "user_id": user_id,
-                "subsegment": subsegment,
-                "status": status,
-                "tenant_id": tenant_id,
+                **base_case_updates,
+                **normalized_case_updates,
             },
             "snapshot": {
                 "state_json": state_json if state_json is not None else {},
@@ -163,6 +174,7 @@ class CaseService:
                 tenant_id=tenant_id,
                 case_revision=0,
             )
+            self._apply_case_updates(case_row, normalized_case_updates)
             self._session.add(case_row)
             await self._session.flush()
 
@@ -221,6 +233,8 @@ class CaseService:
 
         if not isinstance(state_json, dict):
             raise InvalidMutationError("state_json must be a dict")
+        normalized_case_updates = case_updates if case_updates is not None else {}
+        self._validate_case_updates(normalized_case_updates)
 
         case_row = await self._load_case(case_id)
         if case_row is None:
@@ -231,11 +245,12 @@ class CaseService:
             latest is not None
             and latest.basis_hash == basis_hash
             and latest.state_json == state_json
+            and not normalized_case_updates
         ):
             return latest
 
         payload = {
-            "case_updates": case_updates or {},
+            "case_updates": normalized_case_updates,
             "snapshot": {
                 "state_json": state_json,
                 "basis_hash": basis_hash,
@@ -257,6 +272,87 @@ class CaseService:
         if latest is None:  # pragma: no cover - defensive guard
             raise InvalidMutationError("snapshot write did not produce a snapshot")
         return latest
+
+    async def get_latest_snapshot_for_case_number(
+        self,
+        *,
+        case_number: str,
+        user_id: str,
+    ) -> tuple[CaseRecord, CaseStateSnapshot] | None:
+        """Return the latest persisted snapshot for a case-number read path."""
+
+        return await self.get_snapshot_by_revision_for_case_number(
+            case_number=case_number,
+            revision=None,
+            user_id=user_id,
+        )
+
+    async def get_snapshot_by_revision_for_case_number(
+        self,
+        *,
+        case_number: str,
+        revision: int | None,
+        user_id: str,
+    ) -> tuple[CaseRecord, CaseStateSnapshot] | None:
+        """Return a specific or latest snapshot with a required owner guard."""
+
+        self._validate_snapshot_read_scope(case_number=case_number, user_id=user_id)
+        if revision is not None and revision < 0:
+            raise InvalidMutationError("revision must be non-negative")
+        case_query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+        case_query = case_query.where(CaseRecord.user_id == user_id)
+        case_result = await self._session.execute(case_query)
+        case_row = case_result.scalar_one_or_none()
+        if case_row is None:
+            return None
+
+        snapshot_query = select(CaseStateSnapshot).where(CaseStateSnapshot.case_id == case_row.id)
+        if revision is not None:
+            snapshot_query = snapshot_query.where(CaseStateSnapshot.revision == revision)
+        else:
+            snapshot_query = snapshot_query.order_by(CaseStateSnapshot.revision.desc())
+        snapshot_query = snapshot_query.limit(1)
+
+        snapshot_result = await self._session.execute(snapshot_query)
+        snapshot_row = snapshot_result.scalar_one_or_none()
+        if snapshot_row is None:
+            return None
+        return case_row, snapshot_row
+
+    async def list_snapshot_revisions_for_case_number(
+        self,
+        *,
+        case_number: str,
+        user_id: str,
+        limit: int = 50,
+    ) -> list[CaseStateSnapshot]:
+        """List snapshot revisions newest first for a case-number read path."""
+
+        self._validate_snapshot_read_scope(case_number=case_number, user_id=user_id)
+        if limit < 1:
+            raise InvalidMutationError("limit must be positive")
+        case_query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+        case_query = case_query.where(CaseRecord.user_id == user_id)
+        case_result = await self._session.execute(case_query)
+        case_row = case_result.scalar_one_or_none()
+        if case_row is None:
+            return []
+
+        snapshot_result = await self._session.execute(
+            select(CaseStateSnapshot)
+            .where(CaseStateSnapshot.case_id == case_row.id)
+            .order_by(CaseStateSnapshot.revision.desc())
+            .limit(limit)
+        )
+        return list(snapshot_result.scalars().all())
+
+    async def get_latest_snapshot_revision_for_case_id(self, case_id: str) -> int | None:
+        """Return the latest snapshot revision for a case row, if one exists."""
+
+        latest = await self._latest_snapshot(case_id)
+        if latest is None:
+            return None
+        return int(latest.revision)
 
     async def _load_case_for_update(self, case_id: str) -> CaseRecord | None:
         result = await self._session.execute(
@@ -351,9 +447,7 @@ class CaseService:
         case_row: CaseRecord,
         case_updates: Any,
     ) -> None:
-        if not isinstance(case_updates, dict):
-            raise InvalidMutationError("case_updates must be a dict")
-
+        self._validate_case_updates(case_updates)
         allowed_fields = {
             "application_pattern_id",
             "calc_library_version",
@@ -371,18 +465,10 @@ class CaseService:
             "session_id",
             "status",
             "subsegment",
-            "tenant_id",
-            "user_id",
         }
         for field_name, value in case_updates.items():
-            if field_name == "case_number":
-                continue
-            if value is None:
-                continue
             if field_name not in allowed_fields:
                 raise InvalidMutationError(f"unsupported case update: {field_name}")
-            if field_name == "tenant_id":
-                value = self._require_tenant_id(value)
             setattr(case_row, field_name, value)
 
     def _validate_payload(self, payload: Any) -> None:
@@ -395,8 +481,32 @@ class CaseService:
         if not isinstance(state_json, dict):
             raise InvalidMutationError("payload.snapshot.state_json must be a dict")
         case_updates = payload.get("case_updates", {})
+        self._validate_case_updates(case_updates, payload_key="payload.case_updates")
+
+    def _validate_case_updates(
+        self,
+        case_updates: Any,
+        *,
+        payload_key: str = "case_updates",
+    ) -> None:
         if not isinstance(case_updates, dict):
-            raise InvalidMutationError("payload.case_updates must be a dict")
+            raise InvalidMutationError(f"{payload_key} must be a dict")
+        immutable_fields = {"case_number", "tenant_id", "user_id"}
+        for field_name, value in case_updates.items():
+            if field_name in immutable_fields:
+                raise InvalidMutationError(
+                    f"{field_name} cannot be changed through case_updates"
+                )
+            if value is None:
+                raise InvalidMutationError(
+                    f"{payload_key}.{field_name} cannot be None"
+                )
+
+    def _validate_snapshot_read_scope(self, *, case_number: str, user_id: str) -> None:
+        if not case_number:
+            raise InvalidMutationError("case_number is required")
+        if not user_id:
+            raise InvalidMutationError("user_id is required")
 
     def _coerce_event_type(self, event_type: MutationEventType | str) -> MutationEventType:
         try:

@@ -21,6 +21,8 @@ from app.agent.state.models import (
     SealaiNormOperatingConditions,
     SealaiNormState,
 )
+from app.domain.engineering_path import derive_engineering_path
+from app.domain.sealing_material_family import derive_sealing_material_family
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +99,7 @@ def _norm_status(state: GraphState) -> str:
 async def norm_node(state: GraphState) -> GraphState:
     """Derive the bounded SealAI norm object from the current governed state."""
     requirement_class = state.rfq.requirement_class or state.dispatch.requirement_class or state.governance.requirement_class
+    material_family = _material_family(state)
 
     sealai_norm = SealaiNormState(
         status=_norm_status(state),
@@ -104,6 +107,9 @@ async def norm_node(state: GraphState) -> GraphState:
             sealai_request_id=_session_request_id(state),
             norm_version="sealai_norm_v1",
             requirement_class_id=requirement_class.class_id if requirement_class is not None else None,
+            engineering_path=derive_engineering_path(
+                engineering_path=_asserted_value(state, "engineering_path"),
+            ),
             seal_family=requirement_class.seal_type if requirement_class is not None else None,
         ),
         application_summary=_application_summary(state),
@@ -115,7 +121,12 @@ async def norm_node(state: GraphState) -> GraphState:
         ),
         geometry=dict(state.rfq.dimensions),
         material=SealaiNormMaterial(
-            material_family=_material_family(state),
+            material_family=material_family,
+            sealing_material_family=derive_sealing_material_family(
+                asserted_material=_asserted_value(state, "material"),
+                sealai_norm_material_family=material_family,
+                qualified_materials=state.rfq.qualified_materials,
+            ),
             qualified_materials=_qualified_material_names(state),
         ),
         assumptions=[assumption.description for assumption in state.normalized.assumptions],

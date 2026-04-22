@@ -550,6 +550,12 @@ class ActionReadinessState(BaseModel):
     handover_status: str | None = None
 
 
+class CaseLifecycleState(BaseModel):
+    """Stable authority slice for case lifecycle metadata."""
+
+    phase: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # SealAINormState — Phase H.1
 # ---------------------------------------------------------------------------
@@ -560,6 +566,7 @@ class SealaiNormIdentity(BaseModel):
     sealai_request_id: Optional[str] = None
     norm_version: str = "sealai_norm_v1"
     requirement_class_id: Optional[str] = None
+    engineering_path: Optional[str] = None
     seal_family: Optional[str] = None
 
 
@@ -576,6 +583,7 @@ class SealaiNormMaterial(BaseModel):
     """Stable material slice for the neutral norm object."""
 
     material_family: Optional[str] = None
+    sealing_material_family: Optional[str] = None
     qualified_materials: list[str] = Field(default_factory=list)
 
 
@@ -780,6 +788,25 @@ class ExplorationProgressState(BaseModel):
     updated_at: Optional[str] = None
 
 
+class GovernedPersistenceMarker(BaseModel):
+    """Redis-side marker proving comparability to a durable Postgres snapshot."""
+
+    snapshot_comparable: bool = False
+    postgres_snapshot_revision: int | None = Field(default=None, ge=1)
+    postgres_case_revision: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _require_revisions_when_comparable(self) -> "GovernedPersistenceMarker":
+        if self.snapshot_comparable and (
+            self.postgres_snapshot_revision is None
+            or self.postgres_case_revision is None
+        ):
+            raise ValueError(
+                "snapshot-comparable governed state requires Postgres revisions"
+            )
+        return self
+
+
 # ---------------------------------------------------------------------------
 # Combined governed session state (convenience wrapper)
 # ---------------------------------------------------------------------------
@@ -807,6 +834,7 @@ class GovernedSessionState(BaseModel):
     rfq: RfqState = Field(default_factory=RfqState)
     dispatch: DispatchState = Field(default_factory=DispatchState)
     action_readiness: ActionReadinessState = Field(default_factory=ActionReadinessState)
+    case_lifecycle: CaseLifecycleState = Field(default_factory=CaseLifecycleState)
     sealai_norm: SealaiNormState = Field(default_factory=SealaiNormState)
     export_profile: ExportProfileState = Field(default_factory=ExportProfileState)
     manufacturer_mapping: ManufacturerMappingState = Field(default_factory=ManufacturerMappingState)
@@ -814,6 +842,7 @@ class GovernedSessionState(BaseModel):
     medium_context: MediumContext = Field(default_factory=MediumContext)
     conversation_messages: list[ConversationMessage] = Field(default_factory=list)
     exploration_progress: ExplorationProgressState = Field(default_factory=ExplorationProgressState)
+    persistence_marker: GovernedPersistenceMarker | None = None
 
     analysis_cycle: int = Field(default=0, ge=0)
     """Internal cycle counter within a single graph invocation (reset to 0 each user turn)."""

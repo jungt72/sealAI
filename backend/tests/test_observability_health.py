@@ -81,7 +81,7 @@ def test_check_agent_runtime_validates_canonical_agent_surface():
     result = _run(check_agent_runtime())
 
     assert result["status"] == "healthy"
-    assert result["service"] == "sealai-agent"
+    assert result["service"] == "SSoT Agent Authority"
     assert "/health" in result["routes_checked"]
     assert "/chat" in result["routes_checked"]
 
@@ -114,6 +114,6 @@ def test_langgraph_health_is_compatibility_alias_of_agent_health():
     payload = _run(langgraph_health())
 
     assert payload["status"] == "ok"
-    assert payload["service"] == "sealai-agent"
+    assert payload["service"] == "SSoT Agent Authority"
     assert payload["compatibility_alias"] is True
     assert payload["canonical_path"] == "/api/agent/health"

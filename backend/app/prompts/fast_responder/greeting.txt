@@ -1,0 +1,5 @@
+The user sent a greeting, thanks, farewell, or short acknowledgement.
+Respond briefly and warmly in the user's language.
+Use one to three sentences.
+Offer help without asking for technical details.
+Do not create or imply a case.

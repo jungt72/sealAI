@@ -6,9 +6,8 @@ types, nullability, and defaults match the migration chain.
 
 Design notes
 ------------
-- status is a plain String column. The SQL CHECK constraint enforces
-  allowed values at the DB level; Python validation happens via a
-  future service-layer enum.
+- status is a plain String column. The SQL CHECK constraint and ORM
+  validator enforce the allowed queue states.
 - task_type is a plain String column. Python enum will be added at
   service layer (not in domain yet; deferred until outbox_worker
   sprint).
@@ -20,8 +19,20 @@ Design notes
 
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from typing import Any
+
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import validates
 from sqlalchemy.types import JSON
 
 from app.database import Base
@@ -31,11 +42,27 @@ class OutboxModel(Base):
     """Durable async task queue row.
 
     See outbox table (Alembic 4c2f8a9d1b73) for semantics. Status
-    CHECK constraint and indexes are defined in the migration, not
-    redeclared here.
+    CHECK constraint is mirrored here; indexes remain migration-owned.
     """
 
     __tablename__ = "outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'completed', "
+            "'failed_retryable', 'failed_permanent')",
+            name="valid_status",
+        ),
+    )
+
+    VALID_STATUSES = frozenset(
+        {
+            "pending",
+            "in_progress",
+            "completed",
+            "failed_retryable",
+            "failed_permanent",
+        }
+    )
 
     outbox_id = Column(String(36), primary_key=True)
     case_id = Column(
@@ -76,3 +103,47 @@ class OutboxModel(Base):
             f"<OutboxModel outbox_id={self.outbox_id!r} "
             f"status={self.status!r} task_type={self.task_type!r}>"
         )
+
+    @validates("outbox_id", "tenant_id", "task_type")
+    def _validate_required_string(self, key: str, value: Any) -> str:
+        if value is None:
+            raise ValueError(f"{key} is required")
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError(f"{key} is required")
+        return normalized
+
+    @validates("case_id", "mutation_id")
+    def _validate_optional_string(self, key: str, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError(f"{key} cannot be blank")
+        return normalized
+
+    @validates("payload")
+    def _validate_payload(self, _key: str, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("payload must be a dict")
+        return value
+
+    @validates("status")
+    def _validate_status(self, _key: str, value: Any) -> str:
+        normalized = str(value).strip() if value is not None else ""
+        if normalized not in self.VALID_STATUSES:
+            raise ValueError(f"unsupported outbox status: {value}")
+        return normalized
+
+    @validates("priority", "attempts", "max_attempts")
+    def _validate_attempt_counter(self, key: str, value: Any) -> int:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{key} must be an integer")
+        if key == "priority":
+            return value
+        if key == "max_attempts":
+            if value < 1:
+                raise ValueError("max_attempts must be positive")
+        elif value < 0:
+            raise ValueError(f"{key} must be non-negative")
+        return value

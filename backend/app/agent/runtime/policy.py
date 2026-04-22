@@ -8,46 +8,27 @@ These are the authoritative types used by the router and persisted in case metad
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 
-
-class ResultForm(str, Enum):
-    """The four output forms defined in the Umbauplan (Section 2.1)."""
-
-    DIRECT_ANSWER = "direct_answer"
-    """Immediate factual help — glossary, comparisons, background knowledge."""
-
-    GUIDED_RECOMMENDATION = "guided_recommendation"
-    """Orientating guidance with visible open points and assumptions."""
-
-    DETERMINISTIC_RESULT = "deterministic_result"
-    """Calculated result from a deterministic service (e.g. RWDR speed check)."""
-
-    QUALIFIED_CASE = "qualified_case"
-    """Full technical case with governance gates and audit trail."""
-
-
-class RoutingPath(str, Enum):
-    """Internal execution path for the agent graph."""
-
-    FAST_PATH = "fast"
-    """Lightweight execution — no full qualification pipeline."""
-
-    STRUCTURED_PATH = "structured"
-    """Full structured pipeline with case state and persistence."""
-
-    META_PATH = "meta"
-    """Deterministic state-status response — no LLM involved."""
-
-    BLOCKED_PATH = "blocked"
-    """Request explicitly asks for content SealAI is forbidden to provide.
-    Returns a deterministic safe refusal. No LLM, no pipeline."""
-
-    GREETING_PATH = "greeting"
-    """Trivial smalltalk / greeting — deterministic response, no LLM, no RAG."""
+from app.domain.pre_gate_classification import PreGateClassification
+from app.services.output_classifier import OutputClass
 
 
 INTERACTION_POLICY_VERSION = "interaction_policy_v2"
+
+
+def legacy_policy_path_for_pre_gate(
+    classification: PreGateClassification,
+) -> str:
+    """Map Sprint-2 pre-gate classification to the legacy graph edge string."""
+    if classification is PreGateClassification.GREETING:
+        return "greeting"
+    if classification is PreGateClassification.META_QUESTION:
+        return "meta"
+    if classification is PreGateClassification.KNOWLEDGE_QUERY:
+        return "fast"
+    if classification is PreGateClassification.BLOCKED:
+        return "blocked"
+    return "structured"
 
 
 @dataclass(frozen=True)
@@ -59,8 +40,8 @@ class InteractionPolicyDecision:
     Produced entirely by deterministic Python logic — never by free LLM generation.
     """
 
-    result_form: ResultForm
-    path: RoutingPath
+    output_class: OutputClass
+    pre_gate_classification: PreGateClassification
 
     # Streaming mode for the frontend
     stream_mode: str  # "reply_only" | "structured_progress_stream"
@@ -78,3 +59,18 @@ class InteractionPolicyDecision:
     required_fields: tuple[str, ...] = field(default_factory=tuple)
 
     policy_version: str = INTERACTION_POLICY_VERSION
+
+    @property
+    def result_form(self) -> str:
+        """Legacy payload alias retained during router migration."""
+        return self.output_class.value
+
+    @property
+    def policy_path(self) -> str:
+        """Legacy graph edge alias derived from PreGateClassification."""
+        return legacy_policy_path_for_pre_gate(self.pre_gate_classification)
+
+    @property
+    def path(self) -> str:
+        """Legacy attribute retained for callers not yet migrated off policy_path."""
+        return self.policy_path

@@ -201,3 +201,51 @@ class TestMutationEventModelPersistence:
         rendered = repr(evt)
         assert "MutationEventModel" in rendered
         assert "field_updated" in rendered
+
+    @pytest.mark.parametrize(
+        ("field_name", "value"),
+        [
+            ("mutation_id", ""),
+            ("case_id", "   "),
+            ("tenant_id", ""),
+            ("event_type", " "),
+            ("actor", ""),
+            ("actor_type", " "),
+        ],
+    )
+    def test_required_string_fields_reject_blank_values(
+        self,
+        field_name: str,
+        value: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=f"{field_name} is required"):
+            MutationEventModel(**{field_name: value})
+
+    def test_payload_must_be_dict(self) -> None:
+        with pytest.raises(ValueError, match="payload must be a dict"):
+            MutationEventModel(payload=["not", "a", "dict"])
+
+    @pytest.mark.parametrize(
+        ("field_name", "value", "message"),
+        [
+            ("case_revision_before", -1, "case_revision_before must be non-negative"),
+            ("case_revision_after", -1, "case_revision_after must be non-negative"),
+            ("case_revision_before", "0", "case_revision_before must be an integer"),
+            ("case_revision_after", True, "case_revision_after must be an integer"),
+        ],
+    )
+    def test_revisions_must_be_non_negative_integers(
+        self,
+        field_name: str,
+        value: object,
+        message: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=message):
+            MutationEventModel(**{field_name: value})
+
+    def test_revisions_must_increase_exactly_by_one(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match="case revisions must increase exactly by one",
+        ):
+            MutationEventModel(case_revision_before=3, case_revision_after=5)

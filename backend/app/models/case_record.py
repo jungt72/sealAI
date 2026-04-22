@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, false, func, text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import validates
 from sqlalchemy.types import JSON
 
 from app.database import Base
@@ -41,3 +43,26 @@ class CaseRecord(Base):
         server_default=text("'{}'::jsonb"),
         default=dict,
     )
+
+    @validates("tenant_id")
+    def _validate_tenant_id(self, _key: str, value: Any) -> str:
+        if value is None:
+            raise ValueError("tenant_id is required")
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError("tenant_id is required")
+        return normalized
+
+    @validates("case_revision")
+    def _validate_case_revision(self, _key: str, value: Any) -> int:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError("case_revision must be an integer")
+        if value < 0:
+            raise ValueError("case_revision must be non-negative")
+        return value
+
+    @validates("payload")
+    def _validate_payload(self, _key: str, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("payload must be a dict")
+        return value

@@ -137,6 +137,14 @@ class TestOutboxModelStructure:
         assert fk_by_ref[("cases", "id")].ondelete == "CASCADE"
         assert fk_by_ref[("mutation_events", "mutation_id")].ondelete is None
 
+    def test_status_check_constraint_matches_migration(self) -> None:
+        constraints = {
+            constraint.name: constraint
+            for constraint in OutboxModel.__table__.constraints
+        }
+
+        assert "valid_status" in constraints
+
 
 class TestOutboxModelPersistence:
     def test_insert_minimal_with_defaults(self, session: Session) -> None:
@@ -187,6 +195,55 @@ class TestOutboxModelPersistence:
         rendered = repr(row)
         assert "OutboxModel" in rendered
         assert "project_case_snapshot" in rendered
+
+    @pytest.mark.parametrize(
+        ("field_name", "value"),
+        [
+            ("outbox_id", ""),
+            ("tenant_id", "   "),
+            ("task_type", ""),
+        ],
+    )
+    def test_required_string_fields_reject_blank_values(
+        self,
+        field_name: str,
+        value: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=f"{field_name} is required"):
+            OutboxModel(**{field_name: value})
+
+    @pytest.mark.parametrize("field_name", ["case_id", "mutation_id"])
+    def test_optional_reference_fields_reject_blank_values(
+        self,
+        field_name: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=f"{field_name} cannot be blank"):
+            OutboxModel(**{field_name: "   "})
+
+    def test_payload_must_be_dict(self) -> None:
+        with pytest.raises(ValueError, match="payload must be a dict"):
+            OutboxModel(payload="not-a-dict")
+
+    def test_status_must_be_supported_queue_state(self) -> None:
+        with pytest.raises(ValueError, match="unsupported outbox status"):
+            OutboxModel(status="queued")
+
+    @pytest.mark.parametrize(
+        ("field_name", "value", "message"),
+        [
+            ("attempts", -1, "attempts must be non-negative"),
+            ("max_attempts", 0, "max_attempts must be positive"),
+            ("priority", False, "priority must be an integer"),
+        ],
+    )
+    def test_queue_counters_are_valid(
+        self,
+        field_name: str,
+        value: object,
+        message: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=message):
+            OutboxModel(**{field_name: value})
 
 
 class TestLayerDiscipline:

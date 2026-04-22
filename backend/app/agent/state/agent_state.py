@@ -466,8 +466,9 @@ class AgentState(TypedDict):
     owner_id: NotRequired[Optional[str]]
     loaded_state_revision: NotRequired[int]
     case_state: NotRequired[CaseState]  # Canonical productive authority
-    result_form: NotRequired[Optional[str]]   # ResultForm value, e.g. "direct_answer"
-    policy_path: NotRequired[Optional[str]]   # "fast" | "structured" — set by router (Phase 0A.3)
+    result_form: NotRequired[Optional[str]]   # Legacy output-class payload alias
+    pre_gate_classification: NotRequired[Optional[str]]  # PreGateClassification value
+    policy_path: NotRequired[Optional[str]]   # Legacy graph edge alias derived from pre-gate
     run_meta: NotRequired[Optional[Dict[str, Any]]]  # model_id, prompt_version, policy_version (Phase 0A.5)
     # V3 spec fields (Phase 0A QW-2/3/4)
     turn_count: int                           # current turn in this session (hard limit guard)

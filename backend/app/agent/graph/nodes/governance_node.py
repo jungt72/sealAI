@@ -33,6 +33,7 @@ from langgraph.types import Command
 from app.agent.graph import GraphState
 from app.agent.graph.cycle_control import CycleDecision, decide_cycle
 from app.agent.state.reducers import reduce_asserted_to_governance
+from app.domain.case_phase import derive_case_phase
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,11 @@ def _governance_command_goto(state: GraphState) -> str:
     if decision == CycleDecision.CONTINUE:
         return "cycle_increment"
     return "matching"
+
+
+def _asserted_value(state: GraphState, field_name: str) -> object | None:
+    claim = state.asserted.assertions.get(field_name)
+    return None if claim is None else claim.asserted_value
 
 
 async def governance_node(state: GraphState) -> GraphState:
@@ -72,9 +78,17 @@ async def governance_node(state: GraphState) -> GraphState:
         state.analysis_cycle,
         state.max_cycles,
     )
-    from app.agent.graph.nodes.output_contract_node import _determine_response_class
+    from app.agent.graph.output_contract_assembly import _determine_response_class
 
-    governed_state = state.model_copy(update={"governance": governance})
+    case_lifecycle = state.case_lifecycle.model_copy(
+        update={"phase": derive_case_phase(phase=_asserted_value(state, "phase"))}
+    )
+    governed_state = state.model_copy(
+        update={
+            "governance": governance,
+            "case_lifecycle": case_lifecycle,
+        }
+    )
     _emit_progress_event(
         {
             "event_type": "governance_ready",

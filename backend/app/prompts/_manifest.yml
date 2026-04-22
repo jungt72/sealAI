@@ -7,9 +7,6 @@ check_safety:
 challenger_gate:
   file: "challenger_gate.j2"
   version: "1.0.0"
-fast_brain_system:
-  file: "fast_brain_system.j2"
-  version: "1.0.0"
 material_scientist_agent:
   file: "material_scientist_agent.j2"
   version: "1.0.0"

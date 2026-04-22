@@ -35,7 +35,7 @@ export function buildRfqPayload(
     engineering_path: view.path,
     parameters: cleanedParams,
     risks: [
-      ...view.mediumStatus.status === "unavailable" ? ["Medium nicht identifiziert"] : [], 
+      ...data.mediumStatus.status === "unavailable" ? ["Medium nicht identifiziert"] : [], 
       ...view.mediumContext.riskFlags, 
       ...view.readiness.blockers
     ],

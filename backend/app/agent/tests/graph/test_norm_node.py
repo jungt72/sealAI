@@ -5,6 +5,7 @@ import pytest
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.norm_node import norm_node
 from app.agent.state.models import (
+    AssertedClaim,
     DispatchState,
     ManufacturerRef,
     MatchingState,
@@ -87,6 +88,25 @@ def _qualified_state() -> GraphState:
     )
 
 
+def _with_asserted_value(state: GraphState, field_name: str, value: object) -> GraphState:
+    return state.model_copy(
+        update={
+            "asserted": state.asserted.model_copy(
+                update={
+                    "assertions": {
+                        **state.asserted.assertions,
+                        field_name: AssertedClaim(
+                            field_name=field_name,
+                            asserted_value=value,
+                            confidence="confirmed",
+                        ),
+                    }
+                }
+            )
+        }
+    )
+
+
 class TestNormNode:
     @pytest.mark.asyncio
     async def test_full_qualified_case_builds_norm_object(self):
@@ -95,9 +115,53 @@ class TestNormNode:
         assert result.sealai_norm.status == "rfq_ready"
         assert result.sealai_norm.identity.norm_version == "sealai_norm_v1"
         assert result.sealai_norm.identity.requirement_class_id == "PTFE10"
+        assert result.sealai_norm.identity.engineering_path is None
         assert result.sealai_norm.identity.sealai_request_id == "sealai-phaseh-norm-node-001"
         assert result.sealai_norm.material.material_family == "PTFE"
+        assert result.sealai_norm.material.sealing_material_family is None
         assert result.sealai_norm.manufacturer_validation_required is False
+
+    @pytest.mark.asyncio
+    async def test_authority_engineering_path_is_populated_when_explicit(self):
+        result = await norm_node(_with_asserted_value(_qualified_state(), "engineering_path", "rwdr"))
+
+        assert result.sealai_norm.identity.engineering_path == "rwdr"
+
+    @pytest.mark.asyncio
+    async def test_neighbouring_signals_do_not_populate_engineering_path(self):
+        state = _with_asserted_value(_qualified_state(), "motion_type", "rotary")
+        state = _with_asserted_value(state, "sealing_type", "rwdr")
+        state = _with_asserted_value(state, "seal_family", "radial_shaft_seal")
+
+        result = await norm_node(state)
+
+        assert result.sealai_norm.identity.engineering_path is None
+
+    @pytest.mark.asyncio
+    async def test_unknown_engineering_path_does_not_populate_identity(self):
+        result = await norm_node(_with_asserted_value(_qualified_state(), "engineering_path", "rotary"))
+
+        assert result.sealai_norm.identity.engineering_path is None
+
+    @pytest.mark.asyncio
+    async def test_authority_material_family_seam_is_populated_when_explicit(self):
+        state = _qualified_state()
+        claim = state.asserted.assertions["material"].model_copy(
+            update={"asserted_value": "ptfe_glass_filled"}
+        )
+        state = state.model_copy(
+            update={
+                "asserted": state.asserted.model_copy(
+                    update={"assertions": {**state.asserted.assertions, "material": claim}}
+                ),
+                "rfq": state.rfq.model_copy(update={"qualified_materials": []}),
+            }
+        )
+
+        result = await norm_node(state)
+
+        assert result.sealai_norm.material.material_family == "ptfe_glass_filled"
+        assert result.sealai_norm.material.sealing_material_family == "ptfe_glass_filled"
 
     @pytest.mark.asyncio
     async def test_incomplete_case_produces_valid_partial_norm(self):

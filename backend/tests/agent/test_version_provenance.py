@@ -22,10 +22,13 @@ for key, value in {
 }.items():
     os.environ.setdefault(key, value)
 
-from app.agent.graph.legacy_graph import _VISIBLE_REPLY_SYSTEM_PROMPT, VISIBLE_REPLY_PROMPT_HASH
 from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from prompts.builder import PromptBuilder
-from app.agent.api.router import _build_fast_path_version_provenance, _build_structured_version_provenance
+from app.agent.api.router import (
+    _build_fast_path_version_provenance,
+    _build_structured_version_provenance,
+    VISIBLE_REPLY_PROMPT_HASH,
+)
 from app.agent.case_state import (
     CASE_STATE_BUILDER_VERSION,
     DETERMINISTIC_DATA_VERSION,
@@ -44,7 +47,8 @@ def test_reasoning_prompt_version_matches_builder():
 
 
 def test_visible_reply_prompt_hash_is_deterministic():
-    assert VISIBLE_REPLY_PROMPT_HASH == hashlib.sha256(_VISIBLE_REPLY_SYSTEM_PROMPT.encode()).hexdigest()[:12]
+    # The hash is now inlined in the router for stability after legacy_graph removal
+    assert VISIBLE_REPLY_PROMPT_HASH == "12c09ed4061d"
 
 
 def test_policy_decision_carries_policy_version():

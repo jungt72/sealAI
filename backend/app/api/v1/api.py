@@ -8,7 +8,6 @@ from app.core.config import settings
 from app.api.v1.endpoints import (
     auth,
     langgraph_health,
-    langgraph_v2,
     memory,
     ping,
     users,
@@ -28,11 +27,8 @@ api_router.include_router(ping.router)
 api_router.include_router(chat_history.router)  # <-- /api/v1/chat/...
 
 # [DEPRECATED — Phase F-A.5 / residual compat only] Legacy LangGraph HTTP/SSE-API (v2)
-# Health stays mounted for diagnostics. The compat chat/router is mounted only
-# when ENABLE_LEGACY_V2_ENDPOINT=true so new deployments do not expose it.
+# Health stays mounted for diagnostics.
 api_router.include_router(langgraph_health.router, prefix="/langgraph", tags=["health"])
-if settings.ENABLE_LEGACY_V2_ENDPOINT:
-    api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph"])
 api_router.include_router(state.router, tags=["state"])
 
 # Model Context Protocol (MCP)

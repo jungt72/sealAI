@@ -88,6 +88,13 @@ def _inquiry_ready_state() -> GraphState:
             }
         ),
         governance=GovernanceState(gov_class="A", rfq_admissible=True),
+        matching=MatchingState(
+            status="matched_primary_candidate",
+            matchability_status="ready_for_matching",
+            shortlist_ready=True,
+            inquiry_ready=True,
+            selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme GmbH"),
+        ),
         rfq=_full_rfq_state(),
     )
 
@@ -97,6 +104,13 @@ def _not_admissible_state() -> GraphState:
     return GraphState(
         # empty normalized → missing all fields
         governance=GovernanceState(gov_class="A", rfq_admissible=True),
+        matching=MatchingState(
+            status="matched_primary_candidate",
+            matchability_status="ready_for_matching",
+            shortlist_ready=True,
+            inquiry_ready=True,
+            selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme GmbH"),
+        ),
         rfq=_full_rfq_state(),
     )
 

@@ -131,6 +131,14 @@ class ReviewSeedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ConversationResponse(BaseModel):
+    role: str
+    content: str
+    created_at: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CaseMetadataResponse(BaseModel):
     id: str
     case_number: str

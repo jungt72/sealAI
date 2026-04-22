@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.agent.policy import RoutingPath, ResultForm
 from app.agent.agent.interaction_policy import (
     _check_input_blocked,
     _is_meta_query,
     _fast_path_upgrade_to_structured,
 )
+from app.domain.pre_gate_classification import PreGateClassification
 
 
 # ---------------------------------------------------------------------------
@@ -116,19 +116,20 @@ class TestFastPathUpgrade:
 
 
 # ---------------------------------------------------------------------------
-# 4. RoutingPath enum completeness
+# 4. PreGateClassification enum completeness
 # ---------------------------------------------------------------------------
 
-class TestRoutingPathEnum:
-    def test_all_four_paths_exist(self):
-        assert RoutingPath.FAST_PATH.value == "fast"
-        assert RoutingPath.STRUCTURED_PATH.value == "structured"
-        assert RoutingPath.META_PATH.value == "meta"
-        assert RoutingPath.BLOCKED_PATH.value == "blocked"
+class TestPreGateClassificationEnum:
+    def test_all_five_classifications_exist(self):
+        assert PreGateClassification.GREETING.value == "GREETING"
+        assert PreGateClassification.META_QUESTION.value == "META_QUESTION"
+        assert PreGateClassification.KNOWLEDGE_QUERY.value == "KNOWLEDGE_QUERY"
+        assert PreGateClassification.BLOCKED.value == "BLOCKED"
+        assert PreGateClassification.DOMAIN_INQUIRY.value == "DOMAIN_INQUIRY"
 
-    def test_blocked_path_is_string_enum(self):
-        assert isinstance(RoutingPath.BLOCKED_PATH, str)
-        assert RoutingPath.BLOCKED_PATH == "blocked"
+    def test_blocked_classification_is_string_enum(self):
+        assert isinstance(PreGateClassification.BLOCKED, str)
+        assert PreGateClassification.BLOCKED == "BLOCKED"
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +144,8 @@ class TestEvaluatePolicyPreChecks:
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: called.append(x) or "Fast")
 
         decision = ip_mod.evaluate_policy("Was fehlt noch?")
-        assert decision.path == RoutingPath.META_PATH
+        assert decision.pre_gate_classification is PreGateClassification.META_QUESTION
+        assert decision.path == "meta"
         assert called == [], "LLM must not be called for meta queries"
 
     def test_blocked_query_returns_blocked_path_without_llm(self, monkeypatch):
@@ -153,7 +155,8 @@ class TestEvaluatePolicyPreChecks:
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: called.append(x) or "Fast")
 
         decision = ip_mod.evaluate_policy("Welchen Hersteller soll ich nehmen?")
-        assert decision.path == RoutingPath.BLOCKED_PATH
+        assert decision.pre_gate_classification is PreGateClassification.BLOCKED
+        assert decision.path == "blocked"
         assert called == [], "LLM must not be called for blocked queries"
 
     def test_technical_fast_is_upgraded_to_structured(self, monkeypatch):
@@ -162,7 +165,8 @@ class TestEvaluatePolicyPreChecks:
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: "Fast")
 
         decision = ip_mod.evaluate_policy("Druck 5 bar, Temperatur 80°C")
-        assert decision.path == RoutingPath.STRUCTURED_PATH
+        assert decision.pre_gate_classification is PreGateClassification.DOMAIN_INQUIRY
+        assert decision.path == "structured"
 
     def test_clean_fast_stays_fast(self, monkeypatch):
         """Harmless greeting classified as Fast by LLM must stay on fast path."""
@@ -170,7 +174,8 @@ class TestEvaluatePolicyPreChecks:
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: "Fast")
 
         decision = ip_mod.evaluate_policy("Hallo, wer bist du?")
-        assert decision.path == RoutingPath.FAST_PATH
+        assert decision.pre_gate_classification is PreGateClassification.META_QUESTION
+        assert decision.path == "meta"
 
     def test_llm_error_falls_back_to_structured(self, monkeypatch):
         """LLM failure must fall back to Structured, never to Fast or Blocked."""
@@ -181,7 +186,8 @@ class TestEvaluatePolicyPreChecks:
         )
 
         decision = ip_mod.evaluate_policy("Ich habe eine Dichtefrage")
-        assert decision.path == RoutingPath.STRUCTURED_PATH
+        assert decision.pre_gate_classification is PreGateClassification.DOMAIN_INQUIRY
+        assert decision.path == "structured"
 
     def test_blocked_decision_has_escalation_reason(self, monkeypatch):
         """Blocked decision must carry a non-empty escalation_reason."""
@@ -189,7 +195,8 @@ class TestEvaluatePolicyPreChecks:
         monkeypatch.setattr(ip_mod, "_call_routing_llm", lambda x: "Fast")
 
         decision = ip_mod.evaluate_policy("Welchen Hersteller soll ich nehmen?")
-        assert decision.path == RoutingPath.BLOCKED_PATH
+        assert decision.pre_gate_classification is PreGateClassification.BLOCKED
+        assert decision.path == "blocked"
         assert decision.escalation_reason is not None
         assert len(decision.escalation_reason) > 0
 

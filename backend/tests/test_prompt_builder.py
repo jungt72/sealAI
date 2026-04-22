@@ -14,27 +14,6 @@ def builder() -> PromptBuilder:
     return PromptBuilder()
 
 
-def test_persona_always_present(builder: PromptBuilder) -> None:
-    prompt = builder.fast_brain({}, missing_params=["medium"])
-    assert "Thomas Reiter" in prompt
-    assert "22 Jahre" in prompt
-
-
-def test_missing_params_branch(builder: PromptBuilder) -> None:
-    with_missing = builder.fast_brain({}, missing_params=["medium"])
-    all_present = builder.fast_brain(
-        {"medium": {"value": "Wasser", "unit": "", "source": "user"}},
-        missing_params=[],
-    )
-    assert "Alle Kernparameter" in all_present
-    assert "Alle Kernparameter" not in with_missing
-
-
-def test_no_empty_params_section(builder: PromptBuilder) -> None:
-    prompt = builder.fast_brain({}, missing_params=["medium"])
-    assert "ERFASSTE PARAMETER" not in prompt
-
-
 def test_fact_cards_rendered(builder: PromptBuilder) -> None:
     cards = [{"title": "PTFE Eignung", "specificity": 4, "content": "PTFE eignet sich für..."}]
     prompt = builder.governed({}, [], cards)
@@ -50,11 +29,6 @@ def test_no_fact_cards_fallback(builder: PromptBuilder) -> None:
 def test_product_laws_in_governed(builder: PromptBuilder) -> None:
     prompt = builder.governed({}, [], [])
     assert "manufacturer-final" in prompt.lower()
-
-
-def test_product_laws_absent_in_fast_brain(builder: PromptBuilder) -> None:
-    prompt = builder.fast_brain({}, missing_params=["medium"])
-    assert "PRODUKTGESETZE" not in prompt
 
 
 def test_product_laws_in_final_answer(builder: PromptBuilder) -> None:
@@ -122,12 +96,6 @@ def test_req_class_in_governed(builder: PromptBuilder) -> None:
     prompt = builder.governed({}, [], [], req_class="B")
     assert "REQUIREMENT CLASS" in prompt
     assert "B" in prompt
-
-
-def test_no_trigger_slow_brain_in_fast_brain(builder: PromptBuilder) -> None:
-    """Token-based routing is removed — fast_brain prompt must not contain the legacy token."""
-    prompt = builder.fast_brain({}, missing_params=["medium"])
-    assert "TRIGGER_SLOW_BRAIN" not in prompt
 
 
 def test_submit_claim_present_when_include_tools(builder: PromptBuilder) -> None:

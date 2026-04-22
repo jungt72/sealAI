@@ -74,7 +74,7 @@ export function createRfqJson(data: CockpitData, caseId: string): RfqArtifact {
       : data.view.path,
     parameters: cleanedParams,
     missing: data.view.readiness.missingMandatoryKeys,
-    risks: [...data.view.mediumStatus.status === "unavailable" ? ["Medium nicht identifiziert"] : [], ...data.view.mediumContext.riskFlags, ...data.view.readiness.blockers],
+    risks: [...data.mediumStatus.status === "unavailable" ? ["Medium nicht identifiziert"] : [], ...data.view.mediumContext.riskFlags, ...data.view.readiness.blockers],
     readiness: {
       is_ready: data.view.readiness.isRfqReady,
       status: data.view.readiness.status,

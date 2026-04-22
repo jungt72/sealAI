@@ -9,8 +9,7 @@ W3.4: interaction_policy is no longer called from production routing paths.
 from app.agent.runtime.policy import (  # noqa: F401 — public re-export
     INTERACTION_POLICY_VERSION,
     InteractionPolicyDecision,
-    ResultForm,
-    RoutingPath,
+    legacy_policy_path_for_pre_gate,
 )
 
 

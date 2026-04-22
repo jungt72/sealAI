@@ -7,7 +7,6 @@ import re
 from typing import Any, Dict
 
 from langchain_core.messages import HumanMessage, AIMessage
-from langgraph.checkpoint.base import BaseCheckpointSaver  # Typkompatibel
 
 from .build import build_consult_graph
 
@@ -88,7 +87,7 @@ def _local_fallback_reply(user_text: str) -> str:
     )
 
 
-def _get_graph(checkpointer: BaseCheckpointSaver | None):
+def _get_graph(checkpointer: Any | None):
     """
     Liefert einen kompilierten Consult-Graphen.
     - Ohne Checkpointer: Singleton.
@@ -123,7 +122,7 @@ def invoke_consult(
     text: str,
     *,
     thread_id: str,
-    checkpointer: BaseCheckpointSaver | None = None,
+    checkpointer: Any | None = None,
 ) -> str:
     """
     Führt eine Consult-Anfrage aus.

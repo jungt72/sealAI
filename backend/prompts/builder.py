@@ -63,22 +63,6 @@ class PromptBuilder:
         )
         return result
 
-    def fast_brain(
-        self,
-        parameters: dict,
-        missing_params: list[str],
-    ) -> str:
-        """Prompt for the fast-brain / pre-qualification step."""
-        return self._build(
-            "fast_brain.j2",
-            {
-                "parameters": parameters,
-                "missing_params": missing_params,
-                "assumptions": [],
-            },
-            include_laws=False,
-        )
-
     def governed(
         self,
         parameters: dict,

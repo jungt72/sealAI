@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from app.agent.prompts import REASONING_PROMPT_VERSION
-from app.agent.state.models import GovernedSessionState
+from app.agent.state.models import GovernedPersistenceMarker, GovernedSessionState
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +56,15 @@ class GovernedCaseSnapshotRevisionRead:
     prompt_version: str | None
     model_version: str | None
     created_at: Any
+
+
+@dataclass(frozen=True)
+class GovernedStateSnapshotPersistenceResult:
+    case_id: str
+    case_number: str
+    postgres_snapshot_revision: int
+    postgres_case_revision: int
+    basis_hash: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +108,27 @@ def _with_decision_basis_hash(state: GovernedSessionState) -> GovernedSessionSta
             )
         }
     )
+
+
+def with_snapshot_persistence_marker(
+    state: GovernedSessionState,
+    result: GovernedStateSnapshotPersistenceResult,
+) -> GovernedSessionState:
+    """Return state marked comparable to the successfully persisted snapshot."""
+
+    return state.model_copy(
+        update={
+            "persistence_marker": GovernedPersistenceMarker(
+                snapshot_comparable=True,
+                postgres_snapshot_revision=result.postgres_snapshot_revision,
+                postgres_case_revision=result.postgres_case_revision,
+            )
+        }
+    )
+
+
+def _without_persistence_marker(state: GovernedSessionState) -> GovernedSessionState:
+    return state.model_copy(update={"persistence_marker": None})
 
 
 # ---------------------------------------------------------------------------
@@ -185,16 +215,20 @@ async def save_governed_state_snapshot_async(
     case_number: str,
     user_id: str,
     tenant_id: str,
+    pre_gate_classification: str | None = None,
     subsegment: str | None = None,
     status: str = "active",
-) -> None:
+) -> GovernedStateSnapshotPersistenceResult | None:
     """Persist a governed case row and additive Postgres state snapshot."""
 
     from sqlalchemy import select  # noqa: PLC0415
 
     try:
-        from app.agent.graph.legacy_graph import _GRAPH_MODEL_ID  # noqa: PLC0415
+        _GRAPH_MODEL_ID = "gpt-4o-mini"
         from app.database import AsyncSessionLocal  # noqa: PLC0415
+        from app.domain.engineering_path import AUTHORITY_ENGINEERING_PATHS  # noqa: PLC0415
+        from app.domain.pre_gate_classification import PreGateClassification  # noqa: PLC0415
+        from app.domain.sealing_material_family import AUTHORITY_SEALING_MATERIAL_FAMILIES  # noqa: PLC0415
         from app.models.case_record import CaseRecord  # noqa: PLC0415
         from app.services.case_service import CaseService  # noqa: PLC0415
     except ModuleNotFoundError as exc:
@@ -203,11 +237,36 @@ async def save_governed_state_snapshot_async(
             case_number,
             exc,
         )
-        return
+        return None
 
-    persisted_state = _with_decision_basis_hash(state)
+    persisted_state = _without_persistence_marker(_with_decision_basis_hash(state))
     basis_hash = persisted_state.decision.decision_basis_hash
     snapshot_payload: dict[str, Any] = persisted_state.model_dump(mode="json")
+    readiness_case_updates: dict[str, Any] = {
+        "inquiry_admissible": bool(persisted_state.governance.rfq_admissible),
+        "rfq_ready": bool(persisted_state.rfq.rfq_ready),
+    }
+    explicit_pre_gate_classification = (
+        PreGateClassification(pre_gate_classification).value
+        if pre_gate_classification is not None
+        else None
+    )
+    case_updates_from_runtime: dict[str, Any] = {}
+    if explicit_pre_gate_classification is not None:
+        case_updates_from_runtime["pre_gate_classification"] = explicit_pre_gate_classification
+    case_updates_from_governed_state: dict[str, Any] = {}
+    sealing_material_family = str(
+        persisted_state.sealai_norm.material.sealing_material_family or ""
+    ).strip()
+    if sealing_material_family in AUTHORITY_SEALING_MATERIAL_FAMILIES:
+        case_updates_from_governed_state["sealing_material_family"] = sealing_material_family
+    engineering_path = persisted_state.sealai_norm.identity.engineering_path
+    if (
+        isinstance(engineering_path, str)
+        and engineering_path
+        and engineering_path in AUTHORITY_ENGINEERING_PATHS
+    ):
+        case_updates_from_governed_state["engineering_path"] = engineering_path
 
     async with AsyncSessionLocal() as session:
         service = CaseService(session)
@@ -216,7 +275,7 @@ async def save_governed_state_snapshot_async(
         )
         case_row = case_result.scalar_one_or_none()
         if case_row is None:
-            await service.create_case(
+            created_case = await service.create_case(
                 case_number=case_number,
                 user_id=user_id,
                 tenant_id=tenant_id,
@@ -228,16 +287,30 @@ async def save_governed_state_snapshot_async(
                 ontology_version=_ontology_version(persisted_state),
                 prompt_version=REASONING_PROMPT_VERSION,
                 model_version=_GRAPH_MODEL_ID,
+                case_updates={
+                    **readiness_case_updates,
+                    **case_updates_from_runtime,
+                    **case_updates_from_governed_state,
+                },
             )
-            return
+            case_revision = int(created_case.case_revision or 1)
+            return GovernedStateSnapshotPersistenceResult(
+                case_id=str(created_case.id),
+                case_number=str(created_case.case_number),
+                postgres_snapshot_revision=case_revision,
+                postgres_case_revision=case_revision,
+                basis_hash=basis_hash,
+            )
 
         case_updates: dict[str, Any] = {
-            "user_id": user_id,
             "status": status or case_row.status,
+            **readiness_case_updates,
+            **case_updates_from_runtime,
+            **case_updates_from_governed_state,
         }
         if subsegment is not None:
             case_updates["subsegment"] = subsegment
-        await service.write_snapshot(
+        snapshot_row = await service.write_snapshot(
             case_id=str(case_row.id),
             state_json=snapshot_payload,
             basis_hash=basis_hash,
@@ -246,6 +319,17 @@ async def save_governed_state_snapshot_async(
             model_version=_GRAPH_MODEL_ID,
             case_updates=case_updates,
             actor="governed_state_persistence",
+        )
+        case_revision = int(
+            getattr(case_row, "case_revision", snapshot_row.revision)
+            or snapshot_row.revision
+        )
+        return GovernedStateSnapshotPersistenceResult(
+            case_id=str(case_row.id),
+            case_number=str(case_row.case_number),
+            postgres_snapshot_revision=int(snapshot_row.revision),
+            postgres_case_revision=case_revision,
+            basis_hash=basis_hash,
         )
 
 
@@ -300,7 +384,7 @@ async def list_cases_async(
     try:
         from app.database import AsyncSessionLocal  # noqa: PLC0415
         from app.models.case_record import CaseRecord  # noqa: PLC0415
-        from app.models.case_state_snapshot import CaseStateSnapshot  # noqa: PLC0415
+        from app.services.case_service import CaseService  # noqa: PLC0415
     except ModuleNotFoundError as exc:
         log.warning(
             "[persistence] Postgres case list unavailable for user=%s: %s",
@@ -317,15 +401,12 @@ async def list_cases_async(
             .limit(limit)
         )
         case_rows = list(case_result.scalars().all())
+        service = CaseService(session)
         items: list[dict[str, Any]] = []
         for case_row in case_rows:
-            latest_result = await session.execute(
-                select(CaseStateSnapshot)
-                .where(CaseStateSnapshot.case_id == case_row.id)
-                .order_by(CaseStateSnapshot.revision.desc())
-                .limit(1)
+            latest_revision = await service.get_latest_snapshot_revision_for_case_id(
+                str(case_row.id)
             )
-            latest_snapshot = latest_result.scalar_one_or_none()
             items.append(
                 {
                     "id": str(case_row.id),
@@ -333,11 +414,7 @@ async def list_cases_async(
                     "status": str(case_row.status),
                     "subsegment": case_row.subsegment,
                     "updated_at": getattr(case_row, "updated_at", None),
-                    "latest_revision": (
-                        int(latest_snapshot.revision)
-                        if latest_snapshot is not None
-                        else None
-                    ),
+                    "latest_revision": latest_revision,
                 }
             )
         return items
@@ -363,12 +440,9 @@ async def get_governed_case_snapshot_by_revision_async(
 ) -> GovernedCaseSnapshotRead | None:
     """Load the latest or a targeted governed Postgres snapshot for a case."""
 
-    from sqlalchemy import select  # noqa: PLC0415
-
     try:
         from app.database import AsyncSessionLocal  # noqa: PLC0415
-        from app.models.case_record import CaseRecord  # noqa: PLC0415
-        from app.models.case_state_snapshot import CaseStateSnapshot  # noqa: PLC0415
+        from app.services.case_service import CaseService  # noqa: PLC0415
     except ModuleNotFoundError as exc:
         log.warning(
             "[persistence] Postgres snapshot read unavailable for case=%s: %s",
@@ -378,25 +452,14 @@ async def get_governed_case_snapshot_by_revision_async(
         return None
 
     async with AsyncSessionLocal() as session:
-        case_query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
-        if user_id is not None:
-            case_query = case_query.where(CaseRecord.user_id == user_id)
-        case_result = await session.execute(case_query)
-        case_row = case_result.scalar_one_or_none()
-        if case_row is None:
+        result = await CaseService(session).get_snapshot_by_revision_for_case_number(
+            case_number=case_number,
+            revision=revision,
+            user_id=user_id,
+        )
+        if result is None:
             return None
-
-        snapshot_query = select(CaseStateSnapshot).where(CaseStateSnapshot.case_id == case_row.id)
-        if revision is not None:
-            snapshot_query = snapshot_query.where(CaseStateSnapshot.revision == revision)
-        else:
-            snapshot_query = snapshot_query.order_by(CaseStateSnapshot.revision.desc())
-        snapshot_query = snapshot_query.limit(1)
-
-        snapshot_result = await session.execute(snapshot_query)
-        snapshot_row = snapshot_result.scalar_one_or_none()
-        if snapshot_row is None:
-            return None
+        case_row, snapshot_row = result
 
         state_json = dict(snapshot_row.state_json or {})
         return GovernedCaseSnapshotRead(
@@ -421,12 +484,9 @@ async def list_governed_case_snapshots_async(
 ) -> list[GovernedCaseSnapshotRevisionRead]:
     """List governed snapshot revisions for a case newest first."""
 
-    from sqlalchemy import select  # noqa: PLC0415
-
     try:
         from app.database import AsyncSessionLocal  # noqa: PLC0415
-        from app.models.case_record import CaseRecord  # noqa: PLC0415
-        from app.models.case_state_snapshot import CaseStateSnapshot  # noqa: PLC0415
+        from app.services.case_service import CaseService  # noqa: PLC0415
     except ModuleNotFoundError as exc:
         log.warning(
             "[persistence] Postgres snapshot list unavailable for case=%s: %s",
@@ -436,21 +496,11 @@ async def list_governed_case_snapshots_async(
         return []
 
     async with AsyncSessionLocal() as session:
-        case_query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
-        if user_id is not None:
-            case_query = case_query.where(CaseRecord.user_id == user_id)
-        case_result = await session.execute(case_query)
-        case_row = case_result.scalar_one_or_none()
-        if case_row is None:
-            return []
-
-        snapshot_result = await session.execute(
-            select(CaseStateSnapshot)
-            .where(CaseStateSnapshot.case_id == case_row.id)
-            .order_by(CaseStateSnapshot.revision.desc())
-            .limit(limit)
+        snapshot_rows = await CaseService(session).list_snapshot_revisions_for_case_number(
+            case_number=case_number,
+            user_id=user_id,
+            limit=limit,
         )
-        snapshot_rows = list(snapshot_result.scalars().all())
         return [
             GovernedCaseSnapshotRevisionRead(
                 revision=int(snapshot_row.revision),
@@ -574,13 +624,13 @@ async def write_state_snapshot(
     case_id: str,
     state: GovernedSessionState,
     db: Any,  # AsyncSession
-) -> Any:  # CaseStateSnapshot
+) -> Any:
     """Append a new state snapshot revision for a case.
 
     Skips write if the latest snapshot has the same basis_hash and state_json.
     """
     try:
-        from app.agent.graph.legacy_graph import _GRAPH_MODEL_ID  # noqa: PLC0415
+        _GRAPH_MODEL_ID = "gpt-4o-mini"
     except Exception:
         _GRAPH_MODEL_ID = "unknown"
 

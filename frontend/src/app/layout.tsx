@@ -27,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="de" className="light">
-      <body className={cn(inter.variable, "font-sans bg-[#F8F9FA] text-[#1F1F1F] antialiased")}>
+      <body className={cn(inter.variable, "font-sans bg-background text-[#1F1F1F] antialiased")}>
         <Providers>
           {children}
         </Providers>

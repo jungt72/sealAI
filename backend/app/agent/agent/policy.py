@@ -3,6 +3,5 @@
 from app.agent.runtime.policy import (  # noqa: F401
     INTERACTION_POLICY_VERSION,
     InteractionPolicyDecision,
-    ResultForm,
-    RoutingPath,
+    legacy_policy_path_for_pre_gate,
 )

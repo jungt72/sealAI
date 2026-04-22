@@ -444,6 +444,12 @@ def _build_structured_case_payload(
         runtime_path=runtime_path,
         binding_level=binding_level,
     )
+    original_case_state = jsonable_encoder(state.get("case_state"))
+    if original_case_state:
+        canonical_state = _apply_persisted_case_state_reload_overlay(
+            canonical_state,
+            original_case_state,
+        )
     case_state = jsonable_encoder(canonical_state.get("case_state"))
     persisted_lifecycle = _build_persisted_lifecycle(case_state or {})
     persisted_concurrency_token = _build_case_meta_concurrency_token(case_state or {})
