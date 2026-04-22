@@ -8,11 +8,19 @@ The additional synthesis helpers convert canonical SSoT AgentState into that
 same 4-pillar shape so both `/api/v1/state/*` and `/api/agent/*` can expose the
 same workspace contract without inventing a parallel projection path.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict
 
-from app.agent.runtime.clarification_priority import select_next_focus_from_known_context
+from app.services.advisory_engine import AdvisoryEngine
+from app.services.application_pattern_service import ApplicationPatternLibrary
+from app.services.calculation_engine import CascadingCalculationEngine
+from app.services.medium_intelligence_service import MediumIntelligenceService
+
+from app.agent.runtime.clarification_priority import (
+    select_next_focus_from_known_context,
+)
 from app.agent.state.models import GovernedSessionState
 from app.agent.domain.checks_registry import build_registered_check_results
 from app.agent.domain.medium_registry import classify_medium_value
@@ -337,35 +345,77 @@ def _derive_engineering_path(
         _coerce_engineering_path(system.get("engineering_path"))
         or _coerce_engineering_path(_d(system.get("routing")).get("path"))
         or _coerce_engineering_path(reasoning.get("engineering_path"))
+        or _coerce_engineering_path(profile.get("engineering_path"))
+        or _coerce_engineering_path(profile.get("path"))
+        or _coerce_engineering_path(profile.get("routing_path"))
     )
     if explicit_path is not None:
         return explicit_path
 
-    motion_type = _normalize_text(profile.get("movement_type") or profile.get("motion_type"))
+    motion_type = _normalize_text(
+        profile.get("movement_type") or profile.get("motion_type")
+    )
     texts = [
         _normalize_text(profile.get("installation")),
         _normalize_text(profile.get("application_context")),
         _normalize_text(profile.get("application_category")),
         _normalize_text(profile.get("geometry_context")),
         _normalize_text(profile.get("sealing_type")),
-        _normalize_text(_d(system.get("answer_contract")).get("requirement_class_hint")),
-        _normalize_text(_d(_d(system.get("answer_contract")).get("requirement_class")).get("seal_type")),
+        _normalize_text(
+            _d(system.get("answer_contract")).get("requirement_class_hint")
+        ),
+        _normalize_text(
+            _d(_d(system.get("answer_contract")).get("requirement_class")).get(
+                "seal_type"
+            )
+        ),
     ]
     texts = [text for text in texts if text]
 
     if _has_marker(texts, ("labyrinth",)):
         return "labyrinth"
 
-    if motion_type == "static" or _has_marker(texts, ("static_sealing", "housing_sealing", "flachdichtung", "static seal")):
+    if motion_type == "static" or _has_marker(
+        texts, ("static_sealing", "housing_sealing", "flachdichtung", "static seal")
+    ):
         return "static"
 
-    if _has_marker(texts, ("hydraul", "pneumat", "zylinder", "cylinder", "rod", "kolbenstange")):
+    if _has_marker(
+        texts,
+        (
+            "rwdr",
+            "wellendichtring",
+            "radialwellendichtring",
+            "radial shaft",
+            "simmerring",
+            "lip seal",
+        ),
+    ):
+        return "rwdr"
+
+    if _has_marker(
+        texts, ("hydraul", "pneumat", "zylinder", "cylinder", "rod", "kolbenstange")
+    ):
         return "hyd_pneu"
 
     if motion_type == "rotary":
-        if _has_marker(texts, ("pump", "kreiselpumpe", "mechanical_seal", "mechanical seal", "gleitring")):
+        if _has_marker(
+            texts,
+            ("pump", "kreiselpumpe", "mechanical_seal", "mechanical seal", "gleitring"),
+        ):
             return "ms_pump"
-        if _has_marker(texts, ("rwdr", "wellendichtring", "radial shaft", "radialwellendichtring", "simmerring", "gearbox", "lip seal")):
+        if _has_marker(
+            texts,
+            (
+                "rwdr",
+                "wellendichtring",
+                "radial shaft",
+                "radialwellendichtring",
+                "simmerring",
+                "gearbox",
+                "lip seal",
+            ),
+        ):
             return "rwdr"
         return "unclear_rotary"
 
@@ -473,7 +523,11 @@ def _build_cockpit_sections(
                 )
             )
 
-        percent = int(round((mandatory_present / mandatory_total) * 100)) if mandatory_total else 100
+        percent = (
+            int(round((mandatory_present / mandatory_total) * 100))
+            if mandatory_total
+            else 100
+        )
         sections.append(
             CockpitSection(
                 section_id=str(section_config["section_id"]),
@@ -510,20 +564,19 @@ def _build_cockpit_view(
     blockers = [
         str(item)
         for item in dict.fromkeys(
-            list(rfq_status.blockers)
-            + list(governance_status.gate_failures)
+            list(rfq_status.blockers) + list(governance_status.gate_failures)
         )
         if item
     ]
     coverage_score = float(completeness_payload.get("coverage_score") or 0.0)
     is_rfq_ready = bool(
-        rfq_status.rfq_ready
-        or (
-            not missing_mandatory_keys
-            and coverage_score > 0.6
-        )
+        rfq_status.rfq_ready or (not missing_mandatory_keys and coverage_score > 0.6)
     )
-    status = "rfq_ready" if is_rfq_ready else ("preliminary" if missing_mandatory_keys else "review_needed")
+    status = (
+        "rfq_ready"
+        if is_rfq_ready
+        else ("preliminary" if missing_mandatory_keys else "review_needed")
+    )
     return EngineeringCockpitView(
         request_type=request_type,
         engineering_path=engineering_path,
@@ -550,7 +603,13 @@ def _build_confirmed_facts_summary(working_profile_pillar: Dict[str, Any]) -> li
         working_profile_pillar.get("extracted_params")
     )
     facts: list[str] = []
-    for key in ("movement_type", "application_context", "medium", "pressure_bar", "temperature_c"):
+    for key in (
+        "movement_type",
+        "application_context",
+        "medium",
+        "pressure_bar",
+        "temperature_c",
+    ):
         value = profile.get(key)
         if value in (None, ""):
             continue
@@ -563,7 +622,9 @@ def _build_confirmed_facts_summary(working_profile_pillar: Dict[str, Any]) -> li
     return _compact_unique_strings(facts)
 
 
-def _build_parameters_snapshot(working_profile_pillar: Dict[str, Any]) -> Dict[str, Any]:
+def _build_parameters_snapshot(
+    working_profile_pillar: Dict[str, Any],
+) -> Dict[str, Any]:
     profile = _d(working_profile_pillar.get("engineering_profile")) or _d(
         working_profile_pillar.get("extracted_params")
     )
@@ -579,6 +640,380 @@ def _build_parameters_snapshot(working_profile_pillar: Dict[str, Any]) -> Dict[s
     return snapshot
 
 
+def _first_present(profile: Dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = profile.get(key)
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value in (None, "", [], {}):
+        return None
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    number = _float_or_none(value)
+    return int(number) if number is not None else None
+
+
+def _boolish(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().casefold() in {"1", "true", "yes", "ja", "y", "j"}
+
+
+def _infer_ptfe_family(profile: Dict[str, Any]) -> str | None:
+    explicit = _first_present(
+        profile,
+        "sealing_material_family",
+        "material_family",
+        "compound_family",
+        "ptfe_compound_family",
+    )
+    if explicit:
+        return str(explicit)
+    text = " ".join(
+        str(value)
+        for key, value in profile.items()
+        if key
+        in {
+            "material",
+            "compound",
+            "sealing_type",
+            "medium",
+            "application_context",
+            "installation",
+        }
+        and value not in (None, "")
+    ).casefold()
+    if "ptfe" not in text:
+        return None
+    if "glas" in text or "glass" in text:
+        return "ptfe_glass_filled"
+    if "carbon" in text or "kohle" in text:
+        return "ptfe_carbon_filled"
+    if "bronze" in text:
+        return "ptfe_bronze_filled"
+    if "graphit" in text or "graphite" in text:
+        return "ptfe_graphite_filled"
+    if "mos2" in text or "moly" in text:
+        return "ptfe_mos2_filled"
+    if "peek" in text:
+        return "ptfe_peek_filled"
+    return "ptfe_virgin"
+
+
+def _is_ptfe_rwdr_profile(
+    profile: Dict[str, Any], engineering_path: Any | None
+) -> bool:
+    path = (
+        str(engineering_path or profile.get("engineering_path") or "")
+        .strip()
+        .casefold()
+    )
+    if path == "rwdr":
+        family = _infer_ptfe_family(profile)
+        if family is None:
+            text = " ".join(
+                str(value) for value in profile.values() if value not in (None, "")
+            ).casefold()
+            return any(
+                marker in text
+                for marker in ("ptfe", "wellendich", "rwdr", "simmerring")
+            )
+        return family.startswith("ptfe")
+    text = " ".join(
+        str(value) for value in profile.values() if value not in (None, "")
+    ).casefold()
+    return "ptfe" in text and any(
+        marker in text for marker in ("rwdr", "wellendich", "simmerring", "welle")
+    )
+
+
+def _build_ptfe_rwdr_case_for_services(profile: Dict[str, Any]) -> Dict[str, Any]:
+    case: Dict[str, Any] = {"engineering_path": "rwdr"}
+    family = _infer_ptfe_family(profile)
+    if family:
+        case["sealing_material_family"] = family
+    shaft_diameter = _float_or_none(
+        _first_present(profile, "shaft_diameter_mm", "shaft_diameter", "diameter")
+    )
+    speed_rpm = _float_or_none(_first_present(profile, "speed_rpm", "rpm", "speed"))
+    pressure_bar = _float_or_none(
+        _first_present(profile, "pressure_bar", "pressure_max_bar", "pressure")
+    )
+    temperature_c = _float_or_none(
+        _first_present(profile, "temperature_c", "temperature_max_c", "temperature")
+    )
+    temperature_nom_c = _float_or_none(
+        _first_present(profile, "temperature_nom_c", "temperature_c", "temperature")
+    )
+    radial_force = _float_or_none(
+        _first_present(profile, "radial_force_n_per_mm", "lip_radial_force_n_per_mm")
+    )
+    contact_width = _float_or_none(
+        _first_present(profile, "contact_width_mm", "lip_contact_width_mm")
+    )
+    extrusion_gap = _float_or_none(
+        _first_present(profile, "extrusion_gap_mm", "clearance_gap_mm")
+    )
+    years = _float_or_none(_first_present(profile, "expected_service_duration_years"))
+    life_hours = _float_or_none(_first_present(profile, "life_hours"))
+    if years is None and life_hours is not None:
+        years = round(life_hours / 8760.0, 4)
+    if shaft_diameter is not None:
+        case.setdefault("shaft", {})["diameter_mm"] = shaft_diameter
+    if speed_rpm is not None:
+        case.setdefault("operating", {}).setdefault("shaft_speed", {})["rpm_nom"] = (
+            speed_rpm
+        )
+    if pressure_bar is not None:
+        case.setdefault("operating", {}).setdefault("pressure", {})["max_bar"] = (
+            pressure_bar
+        )
+    if temperature_c is not None:
+        case.setdefault("operating", {}).setdefault("temperature", {})["max_c"] = (
+            temperature_c
+        )
+    if temperature_nom_c is not None:
+        case.setdefault("operating", {}).setdefault("temperature", {})["nom_c"] = (
+            temperature_nom_c
+        )
+    if radial_force is not None:
+        case.setdefault("rwdr", {}).setdefault("lip", {})["radial_force_n_per_mm"] = (
+            radial_force
+        )
+    if contact_width is not None:
+        case.setdefault("rwdr", {}).setdefault("lip", {})["contact_width_mm"] = (
+            contact_width
+        )
+    if extrusion_gap is not None:
+        case.setdefault("rwdr", {})["extrusion_gap_mm"] = extrusion_gap
+    if years is not None:
+        case["expected_service_duration_years"] = years
+    friction = _float_or_none(_first_present(profile, "friction_coefficient"))
+    if friction is not None:
+        case.setdefault("compound", {})["friction_coefficient"] = friction
+    return case
+
+
+def _ptfe_required_missing(profile: Dict[str, Any]) -> list[str]:
+    required = {
+        "medium": ("medium",),
+        "shaft_diameter_mm": ("shaft_diameter_mm", "shaft_diameter", "diameter"),
+        "speed_rpm": ("speed_rpm", "rpm", "speed"),
+        "temperature_c": ("temperature_c", "temperature_max_c", "temperature"),
+        "pressure_bar": ("pressure_bar", "pressure_max_bar", "pressure"),
+        "quantity_requested": ("quantity_requested", "quantity_pieces", "pieces"),
+        "shaft_surface_finish_ra_um": (
+            "shaft_surface_finish_ra_um",
+            "surface_finish_ra_um",
+            "shaft_ra_um",
+        ),
+        "shaft_hardness_hrc": ("shaft_hardness_hrc", "shaft_hardness", "hardness_hrc"),
+        "machining_method": ("machining_method",),
+    }
+    missing: list[str] = []
+    for canonical, aliases in required.items():
+        if _first_present(profile, *aliases) is None:
+            missing.append(canonical)
+    return missing
+
+
+def _ptfe_pattern_notes(profile: Dict[str, Any]) -> list[str]:
+    text = " ".join(
+        str(
+            _first_present(
+                profile, "application_context", "installation", "medium", "sealing_type"
+            )
+            or ""
+        ).split()
+    )
+    if not text:
+        return []
+    candidates = ApplicationPatternLibrary().match(text, limit=3)
+    if not candidates:
+        return []
+    return [
+        f"Application pattern candidate: {candidate.pattern.canonical_name} (confidence {candidate.confidence:.2f}); user confirmation required."
+        for candidate in candidates
+    ]
+
+
+def _ptfe_medium_context(
+    profile: Dict[str, Any], existing: Dict[str, Any]
+) -> Dict[str, Any]:
+    if existing.get("status") not in (None, "", "unavailable"):
+        return existing
+    medium = _first_present(profile, "medium")
+    if medium is None:
+        return existing
+    result = MediumIntelligenceService().get_medium_intelligence(
+        str(medium),
+        temperature_c=_float_or_none(
+            _first_present(profile, "temperature_c", "temperature")
+        ),
+        application_context=str(
+            _first_present(profile, "application_context", "installation") or ""
+        )
+        or None,
+    )
+    return {
+        "medium_label": str(medium),
+        "status": "recognized"
+        if result.matched_registry_entry is not None
+        else "unavailable",
+        "scope": "ptfe_rwdr_preselection_context",
+        "summary": result.medium_summary,
+        "properties": [
+            f"{key}: {prop.value}"
+            for key, prop in result.llm_synthesized_properties.items()
+        ],
+        "challenges": list(result.risk_notes),
+        "followup_points": ["Finale Werkstoffauswahl bleibt Herstellerpruefung."],
+        "confidence": result.confidence_level,
+        "source_type": result.provenance_tier.value,
+        "not_for_release_decisions": True,
+        "disclaimer": "Mediumdaten sind Vorqualifizierungs-Kontext, keine finale Werkstofffreigabe.",
+    }
+
+
+def _ptfe_advisory_notes(profile: Dict[str, Any], missing: list[str]) -> list[str]:
+    quantity = _int_or_none(
+        _first_present(profile, "quantity_requested", "quantity_pieces", "pieces")
+    )
+    context: Dict[str, Any] = {
+        "missing_critical_fields": missing[:4],
+        "quantity_requested": quantity,
+        "quantity_capability_available": False if quantity is not None else True,
+        "food_contact_required": _boolish(
+            _first_present(profile, "food_contact_required")
+        ),
+        "atex_required": _boolish(_first_present(profile, "atex_required")),
+        "dry_run_possible": _boolish(
+            _first_present(profile, "dry_run_possible", "dry_run_risk")
+        ),
+        "dry_run_allowed": not _boolish(_first_present(profile, "dry_run_not_allowed")),
+        "shaft_diameter_mm": _first_present(profile, "shaft_diameter_mm"),
+        "housing_bore_diameter_mm": _first_present(profile, "housing_bore_diameter_mm"),
+    }
+    ra = _float_or_none(
+        _first_present(
+            profile, "shaft_surface_finish_ra_um", "surface_finish_ra_um", "shaft_ra_um"
+        )
+    )
+    hardness = _float_or_none(
+        _first_present(profile, "shaft_hardness_hrc", "shaft_hardness", "hardness_hrc")
+    )
+    machining = str(_first_present(profile, "machining_method") or "").casefold()
+    warnings: list[str] = []
+    if ra is not None and (ra < 0.1 or ra > 0.8):
+        warnings.append("PTFE-RWDR shaft Ra outside 0.1-0.8 um guardrail.")
+    if hardness is not None and hardness < 45:
+        warnings.append("PTFE-RWDR shaft hardness below 45 HRC guardrail.")
+    if "hard" in machining and "turn" in machining:
+        warnings.append("Hard-turned shaft is a PTFE-RWDR lead-pumping risk.")
+    if warnings:
+        context["installation_warnings"] = warnings
+        context["geometry_consistency_issue"] = True
+    advisories = AdvisoryEngine().evaluate_advisories(context)
+    return [
+        f"Advisory {advisory.category.value}/{advisory.severity.value}: {advisory.title} - {advisory.recommended_action}"
+        for advisory in advisories
+    ]
+
+
+def _build_ptfe_rwdr_derivation(
+    profile: Dict[str, Any],
+) -> TechnicalDerivationItem | None:
+    case = _build_ptfe_rwdr_case_for_services(profile)
+    state, records = CascadingCalculationEngine().execute_cascade(case)
+    derived = _d(state.get("derived"))
+    diameter = _float_or_none(
+        _first_present(profile, "shaft_diameter_mm", "shaft_diameter", "diameter")
+    )
+    rpm = _float_or_none(_first_present(profile, "speed_rpm", "rpm", "speed"))
+    notes = [f"{record.calc_id}@{record.version}" for record in records]
+    missing = _ptfe_required_missing(profile)
+    notes.extend(_ptfe_pattern_notes(profile))
+    notes.extend(_ptfe_advisory_notes(profile, missing))
+    if not derived and not notes:
+        return None
+    status = "ok" if records else "insufficient_data"
+    return TechnicalDerivationItem(
+        calc_type="rwdr",
+        status=status,
+        v_surface_m_s=derived.get("surface_speed_ms"),
+        pv_value_mpa_m_s=derived.get("pv_loading"),
+        dn_value=(diameter * rpm if diameter is not None and rpm is not None else None),
+        notes=notes,
+    )
+
+
+def _enrich_ptfe_rwdr_workspace_inputs(
+    *,
+    routing_profile: Dict[str, Any],
+    engineering_path: Any | None,
+    system: Dict[str, Any],
+    matching_state: Dict[str, Any],
+    medium_context: Dict[str, Any],
+) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    if not _is_ptfe_rwdr_profile(routing_profile, engineering_path):
+        return system, matching_state, medium_context
+    system = dict(system)
+    matching_state = dict(matching_state)
+    medium_context = _ptfe_medium_context(routing_profile, dict(medium_context))
+    existing_derivations = [
+        item
+        for item in _ls(system.get("technical_derivations"))
+        if isinstance(item, dict)
+    ]
+    if not existing_derivations:
+        derivation = _build_ptfe_rwdr_derivation(routing_profile)
+        if derivation is not None:
+            system["technical_derivations"] = [derivation.model_dump()]
+    if not matching_state.get("match_candidates"):
+        quantity = _int_or_none(
+            _first_present(
+                routing_profile, "quantity_requested", "quantity_pieces", "pieces"
+            )
+        )
+        missing = _ptfe_required_missing(routing_profile)
+        blockers = []
+        if missing:
+            blockers.append("ptfe_rwdr_required_inputs_missing")
+        blockers.append("manufacturer_capability_data_required")
+        matching_state.update(
+            {
+                "status": "ptfe_rwdr_problem_signature_ready"
+                if not missing
+                else "ptfe_rwdr_intake_incomplete",
+                "matchability_status": "requires_manufacturer_capability_data",
+                "shortlist_ready": False,
+                "inquiry_ready": False,
+                "release_blockers": blockers,
+                "blocking_reasons": blockers,
+                "match_candidates": [],
+                "data_source": "ptfe_rwdr_deterministic_projection",
+            }
+        )
+        if quantity is not None and quantity <= 10:
+            matching_state["blocking_reasons"] = list(
+                dict.fromkeys(
+                    blockers + ["small_quantity_requires_accepts_single_pieces_claim"]
+                )
+            )
+    return system, matching_state, medium_context
+
+
 def _parameter_confidence_from_meta(parameter_meta: Dict[str, Any]) -> Dict[str, str]:
     confidence_map: Dict[str, str] = {}
     for key, value in parameter_meta.items():
@@ -590,10 +1025,15 @@ def _parameter_confidence_from_meta(parameter_meta: Dict[str, Any]) -> Dict[str,
     return confidence_map
 
 
-def _technical_derivation_from_live_calc_tile(tile: Dict[str, Any]) -> TechnicalDerivationItem | None:
+def _technical_derivation_from_live_calc_tile(
+    tile: Dict[str, Any],
+) -> TechnicalDerivationItem | None:
     if not tile:
         return None
-    if not any(tile.get(key) is not None for key in ("v_surface_m_s", "pv_value_mpa_m_s", "dn_value")):
+    if not any(
+        tile.get(key) is not None
+        for key in ("v_surface_m_s", "pv_value_mpa_m_s", "dn_value")
+    ):
         return None
     return TechnicalDerivationItem(
         calc_type="rwdr",
@@ -621,7 +1061,9 @@ def _build_technical_derivations(
     if items:
         return items
 
-    live_calc_tile = _d(working_profile_pillar.get("live_calc_tile")) or _d(system.get("live_calc_tile"))
+    live_calc_tile = _d(working_profile_pillar.get("live_calc_tile")) or _d(
+        system.get("live_calc_tile")
+    )
     live_calc_derivation = _technical_derivation_from_live_calc_tile(live_calc_tile)
     return [live_calc_derivation] if live_calc_derivation is not None else []
 
@@ -650,27 +1092,75 @@ def _build_evidence_summary(evidence_state: Dict[str, Any]) -> EvidenceSummary:
         evidence_present=bool(evidence_state.get("evidence_present")),
         evidence_count=int(evidence_state.get("evidence_count") or 0),
         trusted_sources_present=bool(evidence_state.get("trusted_sources_present")),
-        evidence_supported_topics=[str(item) for item in _ls(evidence_state.get("evidence_supported_topics")) if item],
-        source_backed_findings=[str(item) for item in _ls(evidence_state.get("source_backed_findings")) if item],
-        deterministic_findings=[str(item) for item in _ls(evidence_state.get("deterministic_findings")) if item],
-        assumption_based_findings=[str(item) for item in _ls(evidence_state.get("assumption_based_findings")) if item],
-        unresolved_open_points=[str(item) for item in _ls(evidence_state.get("unresolved_open_points")) if item],
-        evidence_gaps=[str(item) for item in _ls(evidence_state.get("evidence_gaps")) if item],
+        evidence_supported_topics=[
+            str(item)
+            for item in _ls(evidence_state.get("evidence_supported_topics"))
+            if item
+        ],
+        source_backed_findings=[
+            str(item)
+            for item in _ls(evidence_state.get("source_backed_findings"))
+            if item
+        ],
+        deterministic_findings=[
+            str(item)
+            for item in _ls(evidence_state.get("deterministic_findings"))
+            if item
+        ],
+        assumption_based_findings=[
+            str(item)
+            for item in _ls(evidence_state.get("assumption_based_findings"))
+            if item
+        ],
+        unresolved_open_points=[
+            str(item)
+            for item in _ls(evidence_state.get("unresolved_open_points"))
+            if item
+        ],
+        evidence_gaps=[
+            str(item) for item in _ls(evidence_state.get("evidence_gaps")) if item
+        ],
     )
 
 
 def _build_claims_summary(evidence_summary: EvidenceSummary) -> ClaimsSummary:
     items: list[ClaimItem] = []
     for finding in evidence_summary.deterministic_findings:
-        items.append(ClaimItem(value=finding, claim_type="deterministic_fact", claim_origin="deterministic"))
+        items.append(
+            ClaimItem(
+                value=finding,
+                claim_type="deterministic_fact",
+                claim_origin="deterministic",
+            )
+        )
     for finding in evidence_summary.source_backed_findings:
-        items.append(ClaimItem(value=finding, claim_type="source_backed_finding", claim_origin="evidence"))
+        items.append(
+            ClaimItem(
+                value=finding,
+                claim_type="source_backed_finding",
+                claim_origin="evidence",
+            )
+        )
     for finding in evidence_summary.assumption_based_findings:
-        items.append(ClaimItem(value=finding, claim_type="assumption_based_finding", claim_origin="assumption"))
+        items.append(
+            ClaimItem(
+                value=finding,
+                claim_type="assumption_based_finding",
+                claim_origin="assumption",
+            )
+        )
     for finding in evidence_summary.unresolved_open_points:
-        items.append(ClaimItem(value=finding, claim_type="unresolved_open_point", claim_origin="open"))
+        items.append(
+            ClaimItem(
+                value=finding, claim_type="unresolved_open_point", claim_origin="open"
+            )
+        )
     for finding in evidence_summary.evidence_gaps:
-        items.append(ClaimItem(value=finding, claim_type="evidence_gap", claim_origin="evidence_gap"))
+        items.append(
+            ClaimItem(
+                value=finding, claim_type="evidence_gap", claim_origin="evidence_gap"
+            )
+        )
 
     by_type: dict[str, int] = {}
     by_origin: dict[str, int] = {}
@@ -678,7 +1168,9 @@ def _build_claims_summary(evidence_summary: EvidenceSummary) -> ClaimsSummary:
         by_type[item.claim_type] = by_type.get(item.claim_type, 0) + 1
         by_origin[item.claim_origin] = by_origin.get(item.claim_origin, 0) + 1
 
-    return ClaimsSummary(total=len(items), by_type=by_type, by_origin=by_origin, items=items)
+    return ClaimsSummary(
+        total=len(items), by_type=by_type, by_origin=by_origin, items=items
+    )
 
 
 def _question_from_open_point(open_point: str | None) -> str | None:
@@ -699,10 +1191,15 @@ def _is_stale_rotary_open_point(label: str, *, movement_type: str | None) -> boo
     text = str(label or "").strip().casefold()
     if str(movement_type or "").strip().casefold() != "linear":
         return False
-    return any(marker in text for marker in ("rotierend", "welle", "wellen", "rwdr", "wellendichtring"))
+    return any(
+        marker in text
+        for marker in ("rotierend", "welle", "wellen", "rwdr", "wellendichtring")
+    )
 
 
-def _filter_stale_focus_points(items: list[str], *, profile: Dict[str, Any]) -> list[str]:
+def _filter_stale_focus_points(
+    items: list[str], *, profile: Dict[str, Any]
+) -> list[str]:
     medium_present = profile.get("medium") not in (None, "")
     movement_type = str(profile.get("movement_type") or "").strip()
     result: list[str] = []
@@ -730,30 +1227,51 @@ def _build_communication_context(
     profile = _d(working_profile_pillar.get("engineering_profile")) or _d(
         working_profile_pillar.get("extracted_params")
     )
-    missing = [str(item) for item in _ls(completeness.get("missing_critical_parameters")) if item]
+    missing = [
+        str(item)
+        for item in _ls(completeness.get("missing_critical_parameters"))
+        if item
+    ]
     unknowns = [
         str(item)
         for item in list(
             dict.fromkeys(
                 list(governance_metadata.get("unknowns_release_blocking") or [])
-                + list(governance_metadata.get("unknowns_manufacturer_validation") or [])
+                + list(
+                    governance_metadata.get("unknowns_manufacturer_validation") or []
+                )
             )
         )
         if item
     ]
 
     confirmed_facts_summary = _build_confirmed_facts_summary(working_profile_pillar)
-    known_fields = {str(key) for key, value in profile.items() if value not in (None, "")}
+    known_fields = {
+        str(key) for key, value in profile.items() if value not in (None, "")
+    }
     focus_priority = None
     if any(
         profile.get(key) not in (None, "")
-        for key in ("movement_type", "application_context", "installation", "geometry_context", "speed_rpm", "shaft_diameter_mm")
+        for key in (
+            "movement_type",
+            "application_context",
+            "installation",
+            "geometry_context",
+            "speed_rpm",
+            "shaft_diameter_mm",
+        )
     ):
         focus_priority = select_next_focus_from_known_context(
             known_fields=known_fields,
-            medium_status="recognized" if profile.get("medium") not in (None, "") else "unknown",
+            medium_status="recognized"
+            if profile.get("medium") not in (None, "")
+            else "unknown",
             current_text=" ".join(str(item) for item in confirmed_facts_summary),
-            application_anchor_present=bool(profile.get("application_context") or profile.get("movement_type") or profile.get("installation")),
+            application_anchor_present=bool(
+                profile.get("application_context")
+                or profile.get("movement_type")
+                or profile.get("installation")
+            ),
             rotary_context_detected=bool(
                 profile.get("movement_type") == "rotary"
                 or {"speed_rpm", "shaft_diameter_mm"} & known_fields
@@ -761,9 +1279,13 @@ def _build_communication_context(
         )
 
     if missing or unknowns:
-        prioritized_open_points = [focus_priority.open_point_label] if focus_priority is not None else []
+        prioritized_open_points = (
+            [focus_priority.open_point_label] if focus_priority is not None else []
+        )
         open_points_summary = _compact_unique_strings(
-            _filter_stale_focus_points(prioritized_open_points + missing + unknowns, profile=profile)
+            _filter_stale_focus_points(
+                prioritized_open_points + missing + unknowns, profile=profile
+            )
         )
         return CommunicationContext(
             conversation_phase="clarification",
@@ -771,7 +1293,9 @@ def _build_communication_context(
             primary_question=(
                 focus_priority.question
                 if focus_priority is not None
-                else _question_from_open_point(open_points_summary[0] if open_points_summary else None)
+                else _question_from_open_point(
+                    open_points_summary[0] if open_points_summary else None
+                )
             ),
             supporting_reason=(
                 focus_priority.reason
@@ -790,7 +1314,11 @@ def _build_communication_context(
             response_mode="handover_summary",
             confirmed_facts_summary=confirmed_facts_summary,
             open_points_summary=_compact_unique_strings(
-                [str(item) for item in list(rfq_status.open_points) + list(rfq_status.blockers) if item]
+                [
+                    str(item)
+                    for item in list(rfq_status.open_points) + list(rfq_status.blockers)
+                    if item
+                ]
             ),
         )
 
@@ -800,23 +1328,29 @@ def _build_communication_context(
             turn_goal="explain_matching_result",
             response_mode="result_summary",
             confirmed_facts_summary=confirmed_facts_summary,
-            open_points_summary=_compact_unique_strings(not_ready_reasons or list(rfq_status.open_points)),
+            open_points_summary=_compact_unique_strings(
+                not_ready_reasons or list(rfq_status.open_points)
+            ),
         )
 
-    mapped_phase = "exploration" if phase in {"intake", "conversation"} else "recommendation"
+    mapped_phase = (
+        "exploration" if phase in {"intake", "conversation"} else "recommendation"
+    )
     return CommunicationContext(
         conversation_phase=mapped_phase,
         turn_goal="explain_governed_result",
         response_mode="guided_explanation",
         confirmed_facts_summary=confirmed_facts_summary,
-        open_points_summary=_compact_unique_strings([str(item) for item in list(rfq_status.open_points) if item]),
+        open_points_summary=_compact_unique_strings(
+            [str(item) for item in list(rfq_status.open_points) if item]
+        ),
     )
 
 
 def _serialize_ssot_messages(messages: list) -> list:
     """Serialize LangChain message objects into JSON-safe dicts."""
     result = []
-    for msg in (messages or []):
+    for msg in messages or []:
         msg_type = getattr(msg, "type", None)
         if msg_type is None:
             msg_type = type(msg).__name__.lower().replace("message", "")
@@ -855,7 +1389,10 @@ def _serialize_governed_messages(messages: list) -> list:
 def _governed_release_status(state: GovernedSessionState) -> str:
     if state.rfq.rfq_ready:
         return "rfq_ready"
-    if state.matching.status == "matched_primary_candidate" or state.governance.gov_class == "A":
+    if (
+        state.matching.status == "matched_primary_candidate"
+        or state.governance.gov_class == "A"
+    ):
         if getattr(state.governance, "preselection_blockers", None):
             return "precheck_only"
         return "manufacturer_validation_required"
@@ -896,7 +1433,9 @@ def synthesize_workspace_state_from_governed(
                 "v_surface_m_s": result.get("v_surface_m_s"),
                 "pv_value_mpa_m_s": result.get("pv_value_mpa_m_s"),
                 "dn_value": result.get("dn_value"),
-                "notes": [str(item) for item in list(result.get("notes") or []) if item],
+                "notes": [
+                    str(item) for item in list(result.get("notes") or []) if item
+                ],
             }
         )
     if technical_derivations:
@@ -922,12 +1461,18 @@ def synthesize_workspace_state_from_governed(
         "match_candidates": [
             {
                 "candidate_id": capability.manufacturer_name,
-                "grade_name": (capability.grade_names[0] if capability.grade_names else None),
+                "grade_name": (
+                    capability.grade_names[0] if capability.grade_names else None
+                ),
                 "material_family": (
-                    capability.material_families[0] if capability.material_families else None
+                    capability.material_families[0]
+                    if capability.material_families
+                    else None
                 ),
                 "fit_reasons": list(capability.capability_hints),
-                "viability_status": "viable" if capability.qualified_for_rfq else "manufacturer_validation_required",
+                "viability_status": "viable"
+                if capability.qualified_for_rfq
+                else "manufacturer_validation_required",
             }
             for capability in state.matching.manufacturer_capabilities
         ],
@@ -956,7 +1501,11 @@ def synthesize_workspace_state_from_governed(
         ),
     }
     messages = _serialize_governed_messages(state.conversation_messages)
-    user_turn_count = sum(1 for item in state.conversation_messages if getattr(item, "role", None) == "user")
+    user_turn_count = sum(
+        1
+        for item in state.conversation_messages
+        if getattr(item, "role", None) == "user"
+    )
     phase = (
         "rfq_handover"
         if state.rfq.rfq_ready
@@ -985,7 +1534,11 @@ def synthesize_workspace_state_from_governed(
     coverage_score = min(
         1.0,
         round(
-            sum(1 for field_name in tracked_basis_fields if field_name in state.asserted.assertions)
+            sum(
+                1
+                for field_name in tracked_basis_fields
+                if field_name in state.asserted.assertions
+            )
             / len(tracked_basis_fields),
             2,
         ),
@@ -994,7 +1547,9 @@ def synthesize_workspace_state_from_governed(
     completeness = {
         "coverage_score": coverage_score,
         "coverage_gaps": missing_critical,
-        "completeness_depth": "governed" if state.governance.gov_class in {"A", "B"} else "precheck",
+        "completeness_depth": "governed"
+        if state.governance.gov_class in {"A", "B"}
+        else "precheck",
         "missing_critical_parameters": missing_critical,
         "analysis_complete": analysis_complete,
         "recommendation_ready": analysis_complete,
@@ -1033,14 +1588,17 @@ def synthesize_workspace_state_from_governed(
                 "has_draft": bool(state.rfq.rfq_object),
                 "rfq_id": str(state.rfq.rfq_object.get("object_version") or "") or None,
                 "rfq_basis_status": state.rfq.status or release_status,
-                "operating_context_redacted": dict(state.rfq.confirmed_parameters or {}),
+                "operating_context_redacted": dict(
+                    state.rfq.confirmed_parameters or {}
+                ),
                 "manufacturer_questions_mandatory": [],
                 "conflicts_visible_count": len(state.rfq.blocking_findings),
                 "buyer_assumptions_acknowledged": [],
             },
             "rfq_admissibility": {
                 "release_status": release_status,
-                "status": state.rfq.status or ("rfq_ready" if state.rfq.rfq_ready else release_status),
+                "status": state.rfq.status
+                or ("rfq_ready" if state.rfq.rfq_ready else release_status),
                 "blockers": list(state.rfq.blocking_findings),
                 "open_points": list(state.rfq.soft_findings),
             },
@@ -1062,7 +1620,9 @@ def synthesize_workspace_state_from_governed(
             "governance_metadata": {
                 "release_status": release_status,
                 "unknowns_release_blocking": missing_critical,
-                "unknowns_manufacturer_validation": list(state.governance.open_validation_points),
+                "unknowns_manufacturer_validation": list(
+                    state.governance.open_validation_points
+                ),
                 "assumptions_active": [],
                 "scope_of_validity": list(state.governance.validity_limits),
                 "required_disclaimers": list(state.governance.validity_limits),
@@ -1089,23 +1649,35 @@ def _build_rfq_draft_for_ssot(
     handover: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Build the minimal rfq_draft shape expected by workspace projection."""
-    release_status = governance.get("release_status") or rfq_state.get("status") or "inadmissible"
+    release_status = (
+        governance.get("release_status") or rfq_state.get("status") or "inadmissible"
+    )
     rfq_object = _d(rfq_state.get("rfq_object"))
     payload = rfq_object or _d(handover.get("handover_payload"))
     if not payload:
         return {}
     return {
         "has_draft": True,
-        "rfq_id": str(payload.get("object_version") or payload.get("object_type") or "rfq_payload_basis_v1"),
+        "rfq_id": str(
+            payload.get("object_version")
+            or payload.get("object_type")
+            or "rfq_payload_basis_v1"
+        ),
         "rfq_basis_status": release_status,
         "operating_context_redacted": dict(payload.get("confirmed_parameters") or {}),
         "manufacturer_questions_mandatory": [],
-        "conflicts_visible_count": len(list(rfq_state.get("blockers") or rfq_state.get("blocking_reasons") or [])),
-        "buyer_assumptions_acknowledged": list(governance.get("assumptions_active") or []),
+        "conflicts_visible_count": len(
+            list(rfq_state.get("blockers") or rfq_state.get("blocking_reasons") or [])
+        ),
+        "buyer_assumptions_acknowledged": list(
+            governance.get("assumptions_active") or []
+        ),
     }
 
 
-def synthesize_workspace_state_from_ssot(state: Dict[str, Any], *, chat_id: str) -> Dict[str, Any]:
+def synthesize_workspace_state_from_ssot(
+    state: Dict[str, Any], *, chat_id: str
+) -> Dict[str, Any]:
     """Build the transitional 4-pillar workspace state from canonical SSoT state."""
     working_profile: Dict[str, Any] = dict(state.get("working_profile") or {})
     sealing_state: Dict[str, Any] = dict(state.get("sealing_state") or {})
@@ -1116,16 +1688,26 @@ def synthesize_workspace_state_from_ssot(state: Dict[str, Any], *, chat_id: str)
     review: Dict[str, Any] = dict(sealing_state.get("review") or {})
     selection: Dict[str, Any] = dict(sealing_state.get("selection") or {})
     parameter_meta: Dict[str, Any] = dict(case_state.get("parameter_meta") or {})
-    medium_capture: Dict[str, Any] = dict(state.get("medium_capture") or case_state.get("medium_capture") or {})
-    medium_classification: Dict[str, Any] = dict(state.get("medium_classification") or case_state.get("medium_classification") or {})
+    medium_capture: Dict[str, Any] = dict(
+        state.get("medium_capture") or case_state.get("medium_capture") or {}
+    )
+    medium_classification: Dict[str, Any] = dict(
+        state.get("medium_classification")
+        or case_state.get("medium_classification")
+        or {}
+    )
     medium_context: Dict[str, Any] = dict(case_state.get("medium_context") or {})
     evidence_state: Dict[str, Any] = dict(case_state.get("evidence_state") or {})
     governance_state: Dict[str, Any] = dict(case_state.get("governance_state") or {})
     matching_state: Dict[str, Any] = dict(case_state.get("matching_state") or {})
     rfq_state: Dict[str, Any] = dict(case_state.get("rfq_state") or {})
-    manufacturer_state: Dict[str, Any] = dict(case_state.get("manufacturer_state") or {})
+    manufacturer_state: Dict[str, Any] = dict(
+        case_state.get("manufacturer_state") or {}
+    )
     result_contract: Dict[str, Any] = dict(case_state.get("result_contract") or {})
-    sealing_requirement_spec: Dict[str, Any] = dict(case_state.get("sealing_requirement_spec") or {})
+    sealing_requirement_spec: Dict[str, Any] = dict(
+        case_state.get("sealing_requirement_spec") or {}
+    )
     requirement_class: Dict[str, Any] = dict(
         case_state.get("requirement_class")
         or result_contract.get("requirement_class")
@@ -1142,18 +1724,23 @@ def synthesize_workspace_state_from_ssot(state: Dict[str, Any], *, chat_id: str)
     release_status = governance.get("release_status")
     rfq_admissibility = governance.get("rfq_admissibility")
     phase = case_meta.get("phase") or cycle.get("phase")
-    selected_partner_id = (
-        recipient_selection.get("selected_partner_id")
-        or selection.get("selected_partner_id")
+    selected_partner_id = recipient_selection.get(
+        "selected_partner_id"
+    ) or selection.get("selected_partner_id")
+    rfq_confirmed = bool(
+        rfq_state.get("rfq_confirmed", handover.get("rfq_confirmed", False))
     )
-    rfq_confirmed = bool(rfq_state.get("rfq_confirmed", handover.get("rfq_confirmed", False)))
     rfq_handover_initiated = bool(
-        rfq_state.get("rfq_handover_initiated", handover.get("handover_completed", False))
+        rfq_state.get(
+            "rfq_handover_initiated", handover.get("handover_completed", False)
+        )
     )
     rfq_object = _d(rfq_state.get("rfq_object"))
     rfq_html_report = handover.get("rfq_html_report")
     rfq_html_report_present = bool(
-        rfq_state.get("rfq_html_report_present", bool(rfq_html_report) or bool(rfq_object))
+        rfq_state.get(
+            "rfq_html_report_present", bool(rfq_html_report) or bool(rfq_object)
+        )
     )
     required_disclaimers = list(
         governance_state.get("required_disclaimers")
@@ -1191,27 +1778,47 @@ def synthesize_workspace_state_from_ssot(state: Dict[str, Any], *, chat_id: str)
             "rfq_draft": _build_rfq_draft_for_ssot(governance, rfq_state, handover),
             "rfq_admissibility": {
                 "release_status": release_status or "inadmissible",
-                "status": rfq_state.get("status") or ("ready" if release_status == "rfq_ready" else "inadmissible"),
-                "blockers": list(rfq_state.get("blockers") or rfq_state.get("blocking_reasons") or []),
+                "status": rfq_state.get("status")
+                or ("ready" if release_status == "rfq_ready" else "inadmissible"),
+                "blockers": list(
+                    rfq_state.get("blockers") or rfq_state.get("blocking_reasons") or []
+                ),
                 "open_points": list(rfq_state.get("open_points") or []),
             },
             "answer_contract": {
                 "release_status": release_status or "inadmissible",
                 "required_disclaimers": required_disclaimers,
-                "recommendation_identity": result_contract.get("recommendation_identity"),
+                "recommendation_identity": result_contract.get(
+                    "recommendation_identity"
+                ),
                 "requirement_class": requirement_class or None,
                 "requirement_class_hint": result_contract.get("requirement_class_hint"),
             },
             "governance_metadata": {
                 "release_status": release_status or "inadmissible",
-                "unknowns_release_blocking": governance.get("unknowns_release_blocking") or [],
-                "unknowns_manufacturer_validation": governance.get("unknowns_manufacturer_validation") or [],
+                "unknowns_release_blocking": governance.get("unknowns_release_blocking")
+                or [],
+                "unknowns_manufacturer_validation": governance.get(
+                    "unknowns_manufacturer_validation"
+                )
+                or [],
                 "assumptions_active": governance.get("assumptions_active") or [],
-                "scope_of_validity": governance_state.get("scope_of_validity") or governance.get("scope_of_validity") or [],
+                "scope_of_validity": governance_state.get("scope_of_validity")
+                or governance.get("scope_of_validity")
+                or [],
                 "required_disclaimers": required_disclaimers,
-                "review_required": bool(governance_state.get("review_required", review.get("review_required", False))),
-                "review_state": governance_state.get("review_state") or review.get("review_state"),
-                "contract_obsolete": bool(result_contract.get("contract_obsolete", cycle.get("contract_obsolete", False))),
+                "review_required": bool(
+                    governance_state.get(
+                        "review_required", review.get("review_required", False)
+                    )
+                ),
+                "review_state": governance_state.get("review_state")
+                or review.get("review_state"),
+                "contract_obsolete": bool(
+                    result_contract.get(
+                        "contract_obsolete", cycle.get("contract_obsolete", False)
+                    )
+                ),
             },
             "medium_capture": medium_capture,
             "medium_classification": medium_classification,
@@ -1225,9 +1832,13 @@ def synthesize_workspace_state_from_ssot(state: Dict[str, Any], *, chat_id: str)
     }
 
 
-def project_case_workspace_from_ssot(state: Dict[str, Any], *, chat_id: str) -> CaseWorkspaceProjection:
+def project_case_workspace_from_ssot(
+    state: Dict[str, Any], *, chat_id: str
+) -> CaseWorkspaceProjection:
     """Project canonical SSoT AgentState into the public workspace contract."""
-    return project_case_workspace(synthesize_workspace_state_from_ssot(state, chat_id=chat_id))
+    return project_case_workspace(
+        synthesize_workspace_state_from_ssot(state, chat_id=chat_id)
+    )
 
 
 def project_case_workspace_from_governed_state(
@@ -1236,7 +1847,9 @@ def project_case_workspace_from_governed_state(
     chat_id: str,
 ) -> CaseWorkspaceProjection:
     """Project live governed state into the public workspace contract."""
-    return project_case_workspace(synthesize_workspace_state_from_governed(state, chat_id=chat_id))
+    return project_case_workspace(
+        synthesize_workspace_state_from_governed(state, chat_id=chat_id)
+    )
 
 
 def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProjection:
@@ -1278,6 +1891,22 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     state_revision = int(reasoning.get("state_revision") or 0)
     selected_partner_id = reasoning.get("selected_partner_id") or None
 
+    routing_profile_for_enrichment = _d(
+        working_profile_pillar.get("engineering_profile")
+    ) or _d(working_profile_pillar.get("extracted_params"))
+    engineering_path_for_enrichment = _derive_engineering_path(
+        profile=routing_profile_for_enrichment,
+        system=system,
+        reasoning=reasoning,
+    )
+    system, matching_state, medium_context = _enrich_ptfe_rwdr_workspace_inputs(
+        routing_profile=routing_profile_for_enrichment,
+        engineering_path=engineering_path_for_enrichment,
+        system=system,
+        matching_state=matching_state,
+        medium_context=medium_context,
+    )
+
     # ── CaseSummary ────────────────────────────────────────────────────────────
     case_summary = CaseSummary(
         thread_id=conversation.get("thread_id"),
@@ -1301,15 +1930,18 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
             list(governance_metadata.get("assumptions_active") or [])
             + list(evidence_state.get("assumption_based_findings") or [])
         ),
-        required_disclaimers=list(
-            answer_contract.get("required_disclaimers") or []
-        ),
+        required_disclaimers=list(answer_contract.get("required_disclaimers") or []),
     )
 
     # ── RFQStatus ──────────────────────────────────────────────────────────────
-    rfq_ready = bool(rfq_admissibility.get("status") == "rfq_ready" or release_status == "rfq_ready")
+    rfq_ready = bool(
+        rfq_admissibility.get("status") == "rfq_ready" or release_status == "rfq_ready"
+    )
     handover_ready = bool(
-        rfq_state.get("handover_ready", rfq_confirmed and rfq_html_report_present and bool(selected_partner_id))
+        rfq_state.get(
+            "handover_ready",
+            rfq_confirmed and rfq_html_report_present and bool(selected_partner_id),
+        )
     )
     rfq_status = RFQStatus(
         admissibility_status=rfq_admissibility.get("status") or release_status,
@@ -1328,10 +1960,16 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         has_draft=bool(rfq_draft.get("has_draft", False)),
         rfq_id=rfq_draft.get("rfq_id"),
         rfq_basis_status=rfq_draft.get("rfq_basis_status") or release_status,
-        operating_context_redacted=dict(rfq_draft.get("operating_context_redacted") or {}),
-        manufacturer_questions_mandatory=list(rfq_draft.get("manufacturer_questions_mandatory") or []),
+        operating_context_redacted=dict(
+            rfq_draft.get("operating_context_redacted") or {}
+        ),
+        manufacturer_questions_mandatory=list(
+            rfq_draft.get("manufacturer_questions_mandatory") or []
+        ),
         conflicts_visible_count=int(rfq_draft.get("conflicts_visible_count") or 0),
-        buyer_assumptions_acknowledged=list(rfq_draft.get("buyer_assumptions_acknowledged") or []),
+        buyer_assumptions_acknowledged=list(
+            rfq_draft.get("buyer_assumptions_acknowledged") or []
+        ),
     )
 
     # ── ArtifactStatus ─────────────────────────────────────────────────────────
@@ -1360,7 +1998,12 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         if item
     ]
     matchability_status = str(matching_state.get("matchability_status") or "").strip()
-    if not matching_ready and not not_ready_reasons and matchability_status and matchability_status != "ready_for_matching":
+    if (
+        not matching_ready
+        and not not_ready_reasons
+        and matchability_status
+        and matchability_status != "ready_for_matching"
+    ):
         not_ready_reasons = [matchability_status]
     material_fit_items = []
     for candidate in _ls(matching_state.get("match_candidates")):
@@ -1378,7 +2021,9 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
                     or ""
                 ),
                 "cluster": str(candidate.get("viability_status") or "viable"),
-                "specificity": "compound_specific" if candidate.get("grade_name") else "family_only",
+                "specificity": "compound_specific"
+                if candidate.get("grade_name")
+                else "family_only",
                 "requires_validation": bool(
                     str(candidate.get("viability_status") or "viable") != "viable"
                     or release_status == "manufacturer_validation_required"
@@ -1452,7 +2097,9 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
             "followup_question": derived_medium.followup_question,
         }
     medium_capture_summary = MediumCaptureSummary(
-        raw_mentions=[str(item) for item in _ls(medium_capture.get("raw_mentions")) if item],
+        raw_mentions=[
+            str(item) for item in _ls(medium_capture.get("raw_mentions")) if item
+        ],
         primary_raw_text=primary_raw_text,
         source_turn_ref=medium_capture.get("source_turn_ref"),
         source_turn_index=medium_capture.get("source_turn_index"),
@@ -1473,12 +2120,20 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         status=str(medium_context.get("status") or "unavailable"),
         scope=str(medium_context.get("scope") or "orientierend"),
         summary=medium_context.get("summary"),
-        properties=[str(item) for item in _ls(medium_context.get("properties")) if item],
-        challenges=[str(item) for item in _ls(medium_context.get("challenges")) if item],
-        followup_points=[str(item) for item in _ls(medium_context.get("followup_points")) if item],
+        properties=[
+            str(item) for item in _ls(medium_context.get("properties")) if item
+        ],
+        challenges=[
+            str(item) for item in _ls(medium_context.get("challenges")) if item
+        ],
+        followup_points=[
+            str(item) for item in _ls(medium_context.get("followup_points")) if item
+        ],
         confidence=medium_context.get("confidence"),
         source_type=medium_context.get("source_type"),
-        not_for_release_decisions=bool(medium_context.get("not_for_release_decisions", True)),
+        not_for_release_decisions=bool(
+            medium_context.get("not_for_release_decisions", True)
+        ),
         disclaimer=medium_context.get("disclaimer"),
     )
     technical_derivations = _build_technical_derivations(
