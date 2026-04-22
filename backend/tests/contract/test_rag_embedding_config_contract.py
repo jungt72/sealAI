@@ -5,55 +5,57 @@ import importlib
 import pytest
 
 
-def _supported_models() -> set[str]:
-    try:
-        from fastembed import TextEmbedding  # type: ignore
-    except Exception as exc:
-        pytest.skip(f"fastembed not available: {type(exc).__name__}: {exc}")
-    items = TextEmbedding.list_supported_models()
-    out: set[str] = set()
-    for item in items or []:
-        if isinstance(item, str):
-            out.add(item)
-        elif isinstance(item, dict):
-            name = item.get("model") or item.get("model_name") or item.get("name")
-            if name:
-                out.add(str(name))
-        else:
-            name = getattr(item, "model", None) or getattr(item, "model_name", None) or getattr(item, "name", None)
-            if name:
-                out.add(str(name))
-    return out
+def _set_minimal_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("postgres_user", "test")
+    monkeypatch.setenv("postgres_password", "test")
+    monkeypatch.setenv("postgres_host", "localhost")
+    monkeypatch.setenv("postgres_port", "5432")
+    monkeypatch.setenv("postgres_db", "test")
+    monkeypatch.setenv("database_url", "postgresql+psycopg://test:test@localhost:5432/test")
+    monkeypatch.setenv("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/test")
+    monkeypatch.setenv("openai_api_key", "dummy")
+    monkeypatch.setenv("OPENAI_API_KEY", "dummy")
+    monkeypatch.setenv("qdrant_url", "http://localhost:6333")
+    monkeypatch.setenv("qdrant_collection", "test")
+    monkeypatch.setenv("redis_url", "redis://localhost:6379/0")
+    monkeypatch.setenv("nextauth_url", "http://localhost:3000")
+    monkeypatch.setenv("nextauth_secret", "dummy")
+    monkeypatch.setenv("keycloak_issuer", "http://localhost:8080/realms/test")
+    monkeypatch.setenv("keycloak_jwks_url", "http://localhost:8080/realms/test/protocol/openid-connect/certs")
+    monkeypatch.setenv("keycloak_client_id", "dummy")
+    monkeypatch.setenv("keycloak_client_secret", "dummy")
+    monkeypatch.setenv("keycloak_expected_azp", "dummy")
 
 
-def test_resolve_embedding_model_falls_back_if_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
-    supported = _supported_models()
-    fallback = "jinaai/jina-embeddings-v2-base-de"
-    if fallback not in supported:
-        pytest.skip(f"expected fallback {fallback!r} not in supported fastembed models")
-
-    monkeypatch.setenv("RAG_EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
-    monkeypatch.delenv("RAG_EMBEDDING_DIM", raising=False)
-    monkeypatch.delenv("EMB_MODEL_NAME", raising=False)
-    monkeypatch.delenv("EMBEDDINGS_MODEL", raising=False)
-
-    from app.services.rag import rag_orchestrator as ro
-
-    importlib.reload(ro)
-    model, dim = ro.resolve_embedding_model()
-    assert model == fallback
-    assert isinstance(dim, int) and dim > 0
-
-
-def test_resolve_embedding_model_honors_canonical_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_embedding_model_uses_canonical_dense_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_minimal_settings_env(monkeypatch)
     model_name = "jinaai/jina-embeddings-v2-base-de"
-    monkeypatch.setenv("RAG_EMBEDDING_MODEL", model_name)
-    monkeypatch.setenv("RAG_EMBEDDING_DIM", "768")
+    monkeypatch.setenv("RAG_DENSE_MODEL", model_name)
+    monkeypatch.delenv("RAG_EMBEDDING_MODEL", raising=False)
 
     from app.services.rag import rag_orchestrator as ro
 
     importlib.reload(ro)
+    ro._embedding_dim = 768
     model, dim = ro.resolve_embedding_model()
     assert model == model_name
     assert dim == 768
 
+
+def test_resolve_embedding_config_probes_and_caches_dimension(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_minimal_settings_env(monkeypatch)
+    monkeypatch.setenv("RAG_DENSE_MODEL", "BAAI/bge-base-en-v1.5")
+
+    from app.services.rag import rag_orchestrator as ro
+
+    importlib.reload(ro)
+    calls = {"count": 0}
+
+    def _fake_embed(_texts: list[str]) -> list[list[float]]:
+        calls["count"] += 1
+        return [[0.0, 0.0, 0.0, 0.0]]
+
+    monkeypatch.setattr(ro, "_embed", _fake_embed)
+    assert ro.resolve_embedding_config() == ("BAAI/bge-base-en-v1.5", 4)
+    assert ro.resolve_embedding_config() == ("BAAI/bge-base-en-v1.5", 4)
+    assert calls["count"] == 1

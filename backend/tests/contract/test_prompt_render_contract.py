@@ -4,6 +4,8 @@ from typing import Any, Dict
 
 import pytest
 
+pytest.skip('legacy LangGraph v2 prompt-render contract imports removed app.langgraph_v2; migrate to app.agent prompt/service contract tests', allow_module_level=True)
+
 
 def _minimal_prompt_context() -> Dict[str, Any]:
     return {

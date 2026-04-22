@@ -52,12 +52,12 @@ Current risk: `backend/pytest.ini` only discovers `backend/tests`, while active 
 
 Steps:
 
-1. Run collection for `backend/app/agent/tests` and classify failures:
-   - productive current tests
-   - compatibility tests
-   - stale tests
-2. Move productive tests to `backend/tests/agent/` or add a second test path after fixing collection/runtime issues.
-3. Move stale tests to a clearly named legacy test folder or delete them in a dedicated commit.
+1. Run collection for `backend/app/agent/tests` and classify failures - done.
+2. Quarantine stale pre-SSoT modules with module-level skips and documented migration targets - done for:
+   - `backend/app/agent/tests/test_commercial_handover.py`
+   - `backend/app/agent/tests/test_governed_stream_payload.py`
+   - `backend/app/agent/tests/test_state_integration.py`
+3. Move productive tests to `backend/tests/agent/` or add a second test path after fixing collection/runtime issues.
 4. Keep architecture guardrails in default test path permanently.
 
 ## Phase 3 - Legacy Contract Migration
@@ -70,8 +70,14 @@ Steps:
    - migrate to `app.agent.*`
    - replace with projection/service contract test
    - delete as obsolete
-2. Add a guard that fails if new tests import `app.langgraph_v2` outside a clearly marked legacy quarantine.
-3. Remove or rename misleading `langgraph` wording in productive health/docs where it no longer describes runtime truth.
+2. Quarantine obsolete LangGraph v2 contract modules with explicit replacement targets - done for:
+   - `backend/tests/contract/test_optional_rag_contract.py`
+   - `backend/tests/contract/test_prompt_render_contract.py`
+   - `backend/tests/contract/test_tool_contracts.py`
+3. Quarantine obsolete router-private SSE contract - done for `backend/tests/contract/test_sse_contract.py`.
+4. Keep `backend/tests/contract/test_rag_embedding_config_contract.py` active with explicit minimal settings env.
+5. Add a guard that fails if legacy quarantines lose their module-level skip or documentation.
+6. Remove or rename misleading `langgraph` wording in productive health/docs where it no longer describes runtime truth.
 
 ## Phase 4 - Frontend Authority Tightening
 

@@ -4,6 +4,8 @@ from typing import Any, Dict, List
 
 import pytest
 
+pytest.skip('legacy LangGraph v2 tool contracts import removed app.langgraph_v2; migrate to current app.agent service/tool contracts', allow_module_level=True)
+
 
 def test_set_parameters_returns_working_profile_object() -> None:
     from app.langgraph_v2.state import SealAIState, WorkingProfile

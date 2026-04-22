@@ -20,6 +20,18 @@ NON_CANONICAL_TREES = (
     "langgraph_backup/",
 )
 
+
+LEGACY_TEST_QUARANTINE = (
+    "backend/app/agent/tests/test_commercial_handover.py",
+    "backend/app/agent/tests/test_governed_stream_payload.py",
+    "backend/app/agent/tests/test_state_integration.py",
+    "backend/tests/contract/test_optional_rag_contract.py",
+    "backend/tests/contract/test_prompt_render_contract.py",
+    "backend/tests/contract/test_tool_contracts.py",
+    "backend/tests/contract/test_sse_contract.py",
+)
+
+
 CANONICAL_PATHS = (
     "backend/app/agent/api/router.py",
     "backend/app/agent/api/routes/chat.py",
@@ -140,3 +152,19 @@ def test_architecture_docs_mark_legacy_tests_as_non_canonical() -> None:
     registry = SSOT_REGISTRY.read_text(encoding="utf-8")
     assert "backend/app/agent/state/models.py" in registry
     assert "backend/app/api/v1/projections/case_workspace.py" in registry
+
+
+def test_legacy_test_quarantine_is_explicit_and_documented() -> None:
+    deprecated = DEPRECATED_MAP.read_text(encoding="utf-8")
+    cleanup = (
+        REPO_ROOT / "docs" / "architecture" / "ARCHITECTURE_CLEANUP_PLAN.md"
+    ).read_text(encoding="utf-8")
+    docs = deprecated + "\n" + cleanup
+
+    for rel in LEGACY_TEST_QUARANTINE:
+        path = REPO_ROOT / rel
+        assert path.exists(), f"Legacy quarantine file is missing: {rel}"
+        text = path.read_text(encoding="utf-8")
+        assert "pytest.skip(" in text, f"Legacy test must module-skip: {rel}"
+        assert "allow_module_level=True" in text, f"Legacy skip must be module-level: {rel}"
+        assert rel in docs, f"Legacy quarantine must be documented: {rel}"

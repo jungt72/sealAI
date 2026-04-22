@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.skip("legacy pre-SSoT commercial handover test imports removed app.agent.agent.graph", allow_module_level=True)
+
 from app.agent.agent.commercial import (
     build_dispatch_bridge,
     build_dispatch_dry_run,
