@@ -25,10 +25,11 @@ describe("useAgentStream", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses only state_update.reply as visible text and finalizes the assistant turn once", async () => {
+  it("streams text chunks live and finalizes with state_update.reply once", async () => {
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
       await handlers.onopen?.(new Response(null, { status: 200 }));
-      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "Preview text" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "Preview " }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "text" }) });
       handlers.onmessage?.({ data: JSON.stringify({ type: "case_bound", caseId: "case-1" }) });
       handlers.onmessage?.({
         data: JSON.stringify({ type: "state_update", caseId: "case-1", reply: "Finale Antwort" }),

@@ -432,12 +432,12 @@ class TestStreamConversation:
         assert [e.get("type") for e in parsed] == ["state_update", "__DONE__"]
 
     @pytest.mark.asyncio
-    async def test_stream_suppresses_preview_chunks_and_uses_state_update_reply(self):
+    async def test_stream_emits_live_chunks_and_uses_state_update_reply(self):
         with _patch_openai(["FKM ist ", "ein Fluorelastomer."]):
             events = await _collect(stream_conversation("Was ist FKM?"))
         parsed = _parse_events(events)
         text_chunks = [e for e in parsed if e.get("type") == "text_chunk"]
-        assert text_chunks == []
+        assert [e.get("text") for e in text_chunks] == ["FKM ist ", "ein Fluorelastomer."]
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"] == "FKM ist ein Fluorelastomer."
 
@@ -699,7 +699,7 @@ class TestStreamConversation:
 
         parsed = _parse_events(events)
         text_chunks = [e for e in parsed if e.get("type") == "text_chunk"]
-        assert text_chunks == []
+        assert [e.get("text") for e in text_chunks] == ["FKM."]
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"] == "FKM."
 

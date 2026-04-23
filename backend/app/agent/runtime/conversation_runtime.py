@@ -11,11 +11,12 @@ Properties (Umbauplan F-A.4):
 - Direct LLM call (OpenAI async streaming)
 - No RAG, no LangGraph, no graph state
 - Stateless, caller provides history slice
-- Internal preview/audit events remain available before the SSE adapter
-- Productive SSE exposes only state_update.reply as visible text
+- Productive SSE exposes live text_chunk events plus a final state_update.reply
+- Audit-only replacement and boundary events stay internal
 - All output passes through response_renderer outward contract
 
 Productive SSE wire format:
+    data: {"type": "text_chunk", "text": "..."}\n\n
     data: {"type": "state_update", "reply": "..."}\n\n
     data: [DONE]\n\n
 """
@@ -669,12 +670,12 @@ async def stream_conversation(
     direct_reply: str | None = None,
     structured_state: dict[str, Any] | None = None,
 ) -> AsyncGenerator[str, None]:
-    """Stream the canonical conversation-path SSE contract.
+    """Stream the conversation-path SSE contract with live LLM text chunks.
 
-    The only user-visible reply surface on `/api/agent/chat/stream` is the
-    final `state_update.reply`. Preview chunks, replacements, and boundary
-    blocks may still exist as internal events for parity/audit tests, but the
-    productive SSE adapter does not expose them as a second text authority.
+    `text_chunk` is the progressive user-visible stream. The final
+    `state_update.reply` remains the canonical complete answer and carries
+    the structured UI/cockpit state. Audit-only replacements and boundary
+    blocks stay internal.
     """
     async for event in iter_conversation_events(
         message,
@@ -692,6 +693,9 @@ async def stream_conversation(
         if event_type == "stream_end":
             yield _sse_end()
             return
+        if event_type == "text_chunk":
+            yield f"data: {json.dumps(event, default=str)}\n\n"
+            continue
         if event_type == "state_update":
             yield f"data: {json.dumps(event, default=str)}\n\n"
             continue

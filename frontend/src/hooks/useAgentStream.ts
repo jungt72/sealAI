@@ -148,6 +148,12 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               return;
             }
 
+            if (type === "text_chunk" && typeof payload.text === "string") {
+              finalAssistantTextRef.current += payload.text;
+              setStreamingText(finalAssistantTextRef.current);
+              return;
+            }
+
             if (type === "state_update" && typeof payload.caseId === "string") {
               const stateUpdate = payload as unknown as AgentStateUpdateEvent;
               const nextWorkspace = buildStreamWorkspaceView(stateUpdate);

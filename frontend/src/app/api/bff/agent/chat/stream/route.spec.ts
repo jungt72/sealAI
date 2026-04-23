@@ -36,7 +36,7 @@ describe("BFF agent chat stream route", () => {
     vi.restoreAllMocks();
   });
 
-  it("drops backend preview events and forwards only the canonical state_update contract", async () => {
+  it("forwards live text chunks and keeps state_update as the canonical final contract", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         buildBackendSseStream([
@@ -63,15 +63,16 @@ describe("BFF agent chat stream route", () => {
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
 
-    expect(payloads).toHaveLength(3);
+    expect(payloads).toHaveLength(4);
     expect(payloads[0]).toMatchObject({ type: "case_bound" });
-    expect(payloads[1]).toMatchObject({
+    expect(payloads[1]).toMatchObject({ type: "text_chunk", text: "Preview" });
+    expect(payloads[2]).toMatchObject({
       type: "state_update",
       caseId: expect.any(String),
       reply: "Finale Antwort",
       responseClass: "conversational_answer",
     });
-    expect(payloads[2]).toBe("[DONE]");
+    expect(payloads[3]).toBe("[DONE]");
   });
 
   it("forwards assertions from backend state_update events", async () => {

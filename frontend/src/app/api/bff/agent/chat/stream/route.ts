@@ -17,7 +17,6 @@ function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
 }
 
 const IGNORED_BACKEND_EVENT_TYPES = new Set([
-  "text_chunk",
   "text_replacement",
   "boundary_block",
   "stream_end",
@@ -175,6 +174,19 @@ export async function POST(request: Request) {
 
               const eventType = String(payload.type || "message");
               if (IGNORED_BACKEND_EVENT_TYPES.has(eventType)) {
+                continue;
+              }
+
+              if (eventType === "text_chunk") {
+                const text = typeof payload.text === "string" ? payload.text : "";
+                if (text) {
+                  controller.enqueue(
+                    encodeSseEvent({
+                      type: "text_chunk",
+                      text,
+                    }),
+                  );
+                }
                 continue;
               }
 
