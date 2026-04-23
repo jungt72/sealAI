@@ -31,7 +31,7 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: |
-          npm install --no-fund --no-audit
+          npm install --legacy-peer-deps --no-fund --no-audit
           npm run build
 
       - name: Smoke test Agent BFF routes (no token)
