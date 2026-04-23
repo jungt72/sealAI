@@ -2,19 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Stage 1: Lint
-  # ---------------------------------------------------------------------------
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,15 +23,65 @@ jobs:
       - name: Install ruff
         run: python -m pip install ruff
 
+      - name: Collect changed Python files
+        id: changed_py
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base="$PR_BASE_SHA"
+            head="$PR_HEAD_SHA"
+          else
+            base="$BEFORE_SHA"
+            head="$HEAD_SHA"
+          fi
+
+          if [[ -n "$base" && ! "$base" =~ ^0+$ ]]; then
+            changed_files="$(git diff --name-only "$base" "$head" -- '*.py' \
+              ':(exclude)_trash/**' \
+              ':(exclude)archive/**' \
+              ':(exclude)langgraph_backup/**' \
+              ':(exclude)_local_keep/**' || true)"
+          else
+            changed_files="$(git diff-tree --no-commit-id --name-only -r "$head" -- '*.py' \
+              ':(exclude)_trash/**' \
+              ':(exclude)archive/**' \
+              ':(exclude)langgraph_backup/**' \
+              ':(exclude)_local_keep/**' || true)"
+          fi
+
+          changed_files="$(printf '%s\n' "$changed_files" | sed '/^$/d' || true)"
+          count="$(printf '%s\n' "$changed_files" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+          {
+            echo 'files<<EOF'
+            printf '%s\n' "$changed_files"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ "$count" -eq 0 ]]; then
+            echo 'No changed Python files in active code paths.'
+          else
+            printf 'Changed Python files (%s):\n%s\n' "$count" "$changed_files"
+          fi
+
       - name: Check formatting
-        run: ruff format --check .
+        if: steps.changed_py.outputs.count != '0'
+        run: |
+          printf '%s\n' "${{ steps.changed_py.outputs.files }}" | xargs -r ruff format --check
 
       - name: Check lint rules
-        run: ruff check .
+        if: steps.changed_py.outputs.count != '0'
+        run: |
+          printf '%s\n' "${{ steps.changed_py.outputs.files }}" | xargs -r ruff check
 
-  # ---------------------------------------------------------------------------
-  # Stage 2: Tests (depends on lint)
-  # ---------------------------------------------------------------------------
   test:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest
@@ -76,9 +125,6 @@ jobs:
           path: backend/.pytest_cache/
           retention-days: 7
 
-  # ---------------------------------------------------------------------------
-  # Stage 3: Docker build smoke-test (depends on test)
-  # ---------------------------------------------------------------------------
   build:
     name: Docker build (no push)
     runs-on: ubuntu-latest

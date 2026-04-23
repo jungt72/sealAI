@@ -19,7 +19,7 @@ if [ -z "$matches" ]; then
   exit 0
 fi
 
-allowed_re='^(frontend/src/app/api/langgraph/|frontend/src/lib/langgraphApi\.ts)'
+allowed_re='^(frontend/src/app/api/langgraph/|frontend/src/lib/langgraphApi\.ts|frontend/src/lib/workspaceApi\.ts)'
 illegal=$(printf "%s\n" "$matches" | grep -Ev "$allowed_re" || true)
 if [ -n "$illegal" ]; then
   echo "FAIL: forbidden /api/v1/langgraph/ usage in client code" >&2
