@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import { Bot, CheckCircle2, CircleDot, Gauge, Sparkles, UserRound } from "lucide-react";
 
 import ChatComposer from "@/components/dashboard/ChatComposer";
 import { useAgentStream } from "@/hooks/useAgentStream";
@@ -24,27 +25,44 @@ function MessageBubble({
   const isUser = role === "user";
 
   return (
-    <div className={cn("flex w-full", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "justify-start")}>
+      {!isUser && (
+        <div className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-seal-blue shadow-sm">
+          <Bot size={16} />
+        </div>
+      )}
       <div
         className={cn(
-          "max-w-[82%] rounded-xl border px-4 py-3 text-[15px] leading-relaxed shadow-sm",
+          "max-w-[min(760px,86%)] rounded-lg border px-4 py-3 text-[15px] leading-relaxed shadow-sm",
           isUser
             ? "border-seal-blue bg-seal-blue text-white"
-            : "border-border bg-white text-foreground",
-          isStreaming && "border-seal-blue/30",
+            : "border-slate-200 bg-white text-slate-900",
+          isStreaming && "border-seal-blue/30 shadow-seal-blue/10",
         )}
       >
         {isUser ? (
           <p className="whitespace-pre-wrap">{content}</p>
         ) : (
-          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-strong:text-foreground">
+          <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0 prose-strong:text-slate-950">
             <ReactMarkdown>{content}</ReactMarkdown>
           </div>
         )}
       </div>
+      {isUser && (
+        <div className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600">
+          <UserRound size={16} />
+        </div>
+      )}
     </div>
   );
 }
+
+const SUGGESTIONS = [
+  "PTFE-RWDR für Hydrauliköl, 80 Grad Celsius und 1.500 rpm vorqualifizieren.",
+  "Warum fällt ein PTFE-Wellendichtring an einer rotierenden Welle vorzeitig aus?",
+  "Welche Parameter brauchst du für eine belastbare PTFE-RWDR Anfrage?",
+  "Elastomer-RWDR durch PTFE-RWDR ersetzen: welche Risiken zuerst klären?",
+];
 
 export default function ChatPane({ caseId }: ChatPaneProps) {
   const {
@@ -74,59 +92,74 @@ export default function ChatPane({ caseId }: ChatPaneProps) {
   const currentCaseId = activeCaseId || caseId;
 
   return (
-    <div className="flex h-full w-full flex-col bg-slate-50/30">
+    <div className="flex h-full w-full flex-col bg-[#f8fafc]">
       <div className="custom-scrollbar flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 py-8">
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-2">
-              <div className="text-sm font-semibold uppercase tracking-widest text-seal-blue opacity-70">
-                SeaLAI Analyse-Workbench
+        <div className="mx-auto flex min-h-full max-w-4xl flex-col px-4 py-5 sm:px-6 lg:px-8">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-seal-blue">
+                <CircleDot size={13} /> Live-Klärung
               </div>
-              <h1 className="text-2xl font-bold text-foreground">
-                {currentCaseId ? `Analyse-Fall: ${currentCaseId}` : "Neue Dichtungsanalyse"}
+              <h1 className="mt-1 truncate text-xl font-semibold tracking-tight text-slate-950">
+                {currentCaseId ? `Fall ${currentCaseId}` : "Neue PTFE-RWDR Analyse"}
               </h1>
-              <p className="mt-2 max-w-2xl text-muted-foreground leading-relaxed">
-                Willkommen in der SeaLAI Workbench. Ich unterstütze Sie bei der technischen
-                Einordnung und Qualifizierung Ihres Dichtungsproblems.
-              </p>
             </div>
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                <CheckCircle2 size={13} /> SSoT aktiv
+              </span>
+              <span className="hidden items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 sm:inline-flex">
+                <Gauge size={13} /> PTFE-RWDR Fokus
+              </span>
+            </div>
+          </div>
 
-            {!hasConversation && (
-              <>
-                <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
-                  <p className="text-[15px] leading-relaxed">
-                    Beschreiben Sie den Dichtfall so konkret wie möglich. Für PTFE-RWDR sind
-                    Medium, Temperatur, Druck, Wellendurchmesser, Drehzahl und Einbausituation
-                    besonders wertvoll.
-                  </p>
+          {!hasConversation && (
+            <div className="mb-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                  <Sparkles size={17} className="text-seal-blue" />
+                  Technischen Fall starten
                 </div>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  Beschreibe Anwendung, Medium, Temperatur, Druck, Welle, Drehzahl oder Ausfallbild. SeaLAI führt die Klärung Schritt für Schritt und hält den Fallstatus rechts synchron.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Kritische Startdaten</div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-700">
+                  {[
+                    "Medium",
+                    "Temperatur",
+                    "Druck",
+                    "Welle",
+                    "Drehzahl",
+                    "Einbauraum",
+                  ].map((item) => (
+                    <span key={item} className="rounded-md border border-slate-200 bg-white px-2.5 py-2 font-medium">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
-                {!caseId && (
-                  <div className="flex flex-col gap-4 border-t border-border pt-6">
-                    <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                      Vorschläge für den Einstieg:
-                    </p>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {[
-                        "PTFE-RWDR für eine rotierende Welle in Hydrauliköl auslegen.",
-                        "Vorzeitiger Ausfall eines PTFE-Wellendichtrings analysieren.",
-                        "Retrofit: Elastomer-RWDR durch PTFE-RWDR ersetzen.",
-                        "Bestehenden Radialwellendichtring technisch identifizieren.",
-                      ].map((suggestion) => (
-                        <button
-                          key={suggestion}
-                          type="button"
-                          onClick={() => void sendMessage(suggestion)}
-                          disabled={isStreaming}
-                          className="rounded-xl border border-border bg-white p-4 text-left text-sm font-medium text-foreground/80 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
+          <div className="flex flex-1 flex-col gap-5 pb-4">
+            {!hasConversation && !caseId && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => void sendMessage(suggestion)}
+                    disabled={isStreaming}
+                    className="min-h-[86px] rounded-lg border border-slate-200 bg-white p-4 text-left text-sm font-medium leading-5 text-slate-800 shadow-sm transition-colors hover:border-seal-blue/30 hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             )}
 
             {messages.map((message, index) => (
@@ -142,15 +175,18 @@ export default function ChatPane({ caseId }: ChatPaneProps) {
             )}
 
             {isStreaming && !streamingText && (
-              <div className="flex justify-start">
-                <div className="rounded-xl border border-border bg-white px-4 py-3 text-[13px] text-muted-foreground shadow-sm">
-                  SeaLAI analysiert...
+              <div className="flex justify-start gap-3">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-seal-blue shadow-sm">
+                  <Bot size={16} />
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
+                  SeaLAI verbindet den LLM-Stream...
                 </div>
               </div>
             )}
 
             {error && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
                 <div className="flex items-start justify-between gap-3">
                   <p>{error}</p>
                   <button
@@ -169,14 +205,12 @@ export default function ChatPane({ caseId }: ChatPaneProps) {
         </div>
       </div>
 
-      <div className="border-t border-border bg-white p-4">
-        <div className="mx-auto max-w-3xl">
+      <div className="border-t border-slate-200 bg-white p-3 sm:p-4">
+        <div className="mx-auto max-w-4xl">
           <ChatComposer onSend={(message) => void sendMessage(message)} isLoading={isStreaming} />
-          <div className="mt-3 text-center">
-            <p className="text-[11px] text-muted-foreground opacity-60">
-              SeaLAI liefert technische Vorqualifizierungen. Herstellerfreigabe bleibt die finale Instanz.
-            </p>
-          </div>
+          <p className="mt-2 text-center text-[11px] text-slate-400">
+            Technische Vorqualifizierung. Herstellerfreigabe bleibt finale Instanz.
+          </p>
         </div>
       </div>
     </div>

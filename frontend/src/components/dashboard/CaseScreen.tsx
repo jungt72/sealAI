@@ -47,9 +47,9 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
       <CockpitTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
       {/* CONTENT AREA */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden xl:flex-row">
         {/* MAIN AREA (DYNAMIC BASED ON TAB) */}
-        <div className="flex-1 min-w-0 relative h-full">
+        <div className="relative min-h-0 min-w-0 flex-1">
           {activeTab === "clarification" && <ChatPane caseId={caseId} />}
           {activeTab === "documents" && <ArtifactsPane data={cockpit} caseId={caseId} />}
           {activeTab === "rfq" && <RfqPane data={cockpit} caseId={caseId} />}
@@ -207,33 +207,34 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
             </div>
           </CockpitCard>
 
-          {/* 5. PASSENDE HERSTELLER */}
+          {/* 5. PTFE-RWDR FOKUS */}
           <CockpitCard 
-            title="Passende Hersteller" 
+            title="PTFE-RWDR Fokus" 
             icon={Search}
           >
             <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] font-bold text-seal-blue">EagleBurgmann</span>
-                  <span className="text-[10px] font-medium bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">95% Fit</span>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] font-bold text-seal-blue">Radialwellendichtring</span>
+                  <StatusBadge label="SSoT" variant="info" />
                 </div>
-                <p className="text-[10px] text-muted-foreground leading-tight">
-                  Spezialist für GLRD & Pumpensysteme.
+                <p className="mt-1.5 text-[11px] leading-tight text-muted-foreground">
+                  Bewertung bleibt auf PTFE-RWDR und technische Vorqualifizierung begrenzt.
                 </p>
               </div>
-              <div className="flex flex-col gap-1.5 border-t border-border/50 pt-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] font-bold text-seal-blue">John Crane</span>
-                  <span className="text-[10px] font-medium bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">92% Fit</span>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <span className="block font-bold text-slate-700">Kontaktfläche</span>
+                  <span className="text-muted-foreground">Welle / Gegenlauf</span>
                 </div>
-                <p className="text-[10px] text-muted-foreground leading-tight">
-                  Stark in Chemie & Hochdruck.
-                </p>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <span className="block font-bold text-slate-700">Primärrisiko</span>
+                  <span className="text-muted-foreground">PV, Wärme, Verschleiß</span>
+                </div>
               </div>
               <button 
                 onClick={() => setActiveTab("rfq")}
-                className="w-full mt-2 py-2 bg-seal-blue/5 hover:bg-seal-blue/10 text-seal-blue text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
+                className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-seal-blue/5 py-2 text-[11px] font-bold text-seal-blue transition-colors hover:bg-seal-blue/10"
               >
                 Anfrage konfigurieren <ArrowRight size={12} />
               </button>

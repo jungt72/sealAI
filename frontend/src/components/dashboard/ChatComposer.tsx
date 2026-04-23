@@ -1,97 +1,92 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, SendHorizontal, Mic } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React, { useEffect, useRef, useState } from "react";
+import { Paperclip, SendHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ChatComposerProps {
-    onSend: (message: string) => void;
-    isLoading?: boolean;
-    autoFocus?: boolean;
-    externalValue?: string | null;
+  onSend: (message: string) => void;
+  isLoading?: boolean;
+  autoFocus?: boolean;
+  externalValue?: string | null;
 }
 
 export default function ChatComposer({ onSend, isLoading, autoFocus, externalValue }: ChatComposerProps) {
-    const [message, setMessage] = useState('');
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [message, setMessage] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    useEffect(() => {
-        if (externalValue !== undefined && externalValue !== null) {
-            setMessage(externalValue);
-            textareaRef.current?.focus();
-        }
-    }, [externalValue]);
+  useEffect(() => {
+    if (externalValue !== undefined && externalValue !== null) {
+      setMessage(externalValue);
+      textareaRef.current?.focus();
+    }
+  }, [externalValue]);
 
-    useEffect(() => {
-        if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-        }
-    }, [message]);
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 220)}px`;
+    }
+  }, [message]);
 
-    const handleSubmit = (e?: React.FormEvent) => {
-        e?.preventDefault();
-        if (message.trim() && !isLoading) {
-            onSend(message);
-            setMessage('');
-        }
-    };
+  const handleSubmit = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    const trimmed = message.trim();
+    if (trimmed && !isLoading) {
+      onSend(trimmed);
+      setMessage("");
+    }
+  };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit();
-        }
-    };
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit();
+    }
+  };
 
-    const canSend = Boolean(message.trim()) && !isLoading;
+  const canSend = Boolean(message.trim()) && !isLoading;
 
-    return (
-        <form
-            onSubmit={handleSubmit}
-            className="flex flex-col w-full bg-muted rounded-[28px] p-2 transition-all focus-within:bg-[#EAECEF] border border-transparent focus-within:border-border"
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="w-full rounded-lg border border-slate-200 bg-white p-2 shadow-sm transition-colors focus-within:border-seal-blue/40 focus-within:shadow-md"
+    >
+      <div className="flex items-end gap-2">
+        <button
+          type="button"
+          title="Anhang hinzufügen"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"
         >
-            <div className="flex items-end gap-1">
-                <button
-                    type="button"
-                    className="flex h-12 w-12 items-center justify-center rounded-full text-muted-foreground hover:bg-[#DDE3EA] transition-colors shrink-0"
-                >
-                    <Plus size={24} />
-                </button>
+          <Paperclip size={18} />
+        </button>
 
-                <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Beschreiben Sie Ihr Dichtungsproblem..."
-                    className="flex-1 bg-transparent px-2 py-3 text-base text-foreground placeholder-muted-foreground focus:outline-none resize-none max-h-60 leading-relaxed"
-                    disabled={isLoading}
-                    autoFocus={autoFocus}
-                />
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="PTFE-RWDR Fall, Medium, Druck, Temperatur oder Ausfallbild beschreiben..."
+          className="max-h-[220px] min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-slate-950 placeholder:text-slate-400 focus:outline-none"
+          disabled={isLoading}
+          autoFocus={autoFocus}
+        />
 
-                <div className="flex items-center gap-1 shrink-0 p-1">
-                    <button
-                        type="button"
-                        className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:bg-[#DDE3EA] transition-colors"
-                    >
-                        <Mic size={20} />
-                    </button>
-                    <button
-                        type="submit"
-                        disabled={!canSend}
-                        className={cn(
-                            "flex h-10 w-10 items-center justify-center rounded-full transition-all",
-                            canSend 
-                                ? "text-seal-blue hover:bg-[#DDE3EA]" 
-                                : "text-muted-foreground opacity-40 cursor-not-allowed"
-                        )}
-                    >
-                        <SendHorizontal size={20} />
-                    </button>
-                </div>
-            </div>
-        </form>
-    );
+        <button
+          type="submit"
+          title="Senden"
+          disabled={!canSend}
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+            canSend
+              ? "bg-seal-blue text-white hover:bg-[#0a2e68]"
+              : "cursor-not-allowed bg-slate-100 text-slate-400",
+          )}
+        >
+          <SendHorizontal size={18} />
+        </button>
+      </div>
+    </form>
+  );
 }

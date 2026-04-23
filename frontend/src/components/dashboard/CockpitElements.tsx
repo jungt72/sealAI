@@ -28,7 +28,7 @@ export function CockpitTabs({ activeTab, onTabChange }: CockpitTabsProps) {
   ];
 
   return (
-    <div className="flex items-center border-b border-border bg-white px-4">
+    <div className="custom-scrollbar flex items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3">
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
         return (
@@ -36,10 +36,10 @@ export function CockpitTabs({ activeTab, onTabChange }: CockpitTabsProps) {
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              "flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-all",
+              "flex h-12 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-all",
               isActive 
                 ? "border-seal-blue text-seal-blue" 
-                : "border-transparent text-muted-foreground hover:text-foreground"
+                : "border-transparent text-slate-500 hover:text-slate-950"
             )}
           >
             <tab.icon size={16} />
@@ -69,8 +69,8 @@ export function CockpitCard({ title, children, icon: Icon, status = "default", c
   };
 
   return (
-    <div className={cn("rounded-xl border p-4 shadow-sm bg-white transition-all", statusColors[status], className)}>
-      <div className="mb-3 flex items-center justify-between border-b border-border/50 pb-2">
+    <div className={cn("rounded-lg border p-4 shadow-sm bg-white transition-all", statusColors[status], className)}>
+      <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
         <div className="flex items-center gap-2">
           {Icon && <Icon size={14} className="text-muted-foreground" />}
           <h3 className="text-[11px] font-bold text-foreground uppercase tracking-widest">{title}</h3>
@@ -126,7 +126,7 @@ export function StatusBadge({ label, variant = "default" }: {
   };
 
   return (
-    <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border", variants[variant])}>
+    <span className={cn("rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", variants[variant])}>
       {label}
     </span>
   );
@@ -135,7 +135,7 @@ export function StatusBadge({ label, variant = "default" }: {
 /* --- PANEL --- */
 export function CockpitPanel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-4 p-4 overflow-y-auto h-full bg-slate-50/50 border-l border-border w-[380px] shrink-0 custom-scrollbar">
+    <div className="custom-scrollbar flex h-full w-full shrink-0 flex-col gap-4 overflow-y-auto border-t border-slate-200 bg-slate-50/80 p-4 xl:w-[372px] xl:border-l xl:border-t-0">
       {children}
     </div>
   );
