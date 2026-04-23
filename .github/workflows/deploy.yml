@@ -1,16 +1,45 @@
-name: deploy
+name: Deploy Backend
+
 on:
   workflow_run:
-    workflows: [ build-and-push ]
-    types: [ completed ]
-    branches: [ main, refactor/intake-triage-unify ]
+    workflows: ["Build and Push Backend"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      backend_tag:
+        description: "Optional backend image tag override (e.g. ghcr.io/jungt72/sealai-backend:abcd1234)"
+        required: false
+        type: string
+
 permissions:
   contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BACKEND: ${{ github.repository_owner }}/sealai-backend
+
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve backend image
+        id: image
+        env:
+          INPUT_BACKEND_TAG: ${{ inputs.backend_tag }}
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_BACKEND_TAG:-}" ]]; then
+            BACKEND_IMAGE="$INPUT_BACKEND_TAG"
+          else
+            SHA="${WORKFLOW_SHA:-${GITHUB_SHA}}"
+            SHORT_SHA="${SHA:0:8}"
+            BACKEND_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${SHORT_SHA}"
+          fi
+          echo "backend_image=${BACKEND_IMAGE}" >> "$GITHUB_OUTPUT"
+
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -19,9 +48,12 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            set -euxo pipefail
-            cd /root/sealai
-            docker compose -f docker-compose.yml -f docker-compose.deploy.yml pull backend frontend keycloak || true
-            docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d backend frontend keycloak
-            docker system prune -f
-            curl -fsS http://localhost:8000/api/v1/ping || curl -fsS http://localhost:8000/health || true
+            set -euo pipefail
+            cd /home/thorsten/sealai
+            if grep -q '^BACKEND_IMAGE=' .env.prod; then
+              sed -i "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=${{ steps.image.outputs.backend_image }}|" .env.prod
+            else
+              printf '\nBACKEND_IMAGE=%s\n' '${{ steps.image.outputs.backend_image }}' >> .env.prod
+            fi
+            ./ops/up-prod.sh
+            ./ops/stack_smoke.sh
