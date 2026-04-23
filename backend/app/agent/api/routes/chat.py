@@ -61,11 +61,11 @@ async def _run_light_chat_response(
         direct_reply=direct_reply,
     )
     structured_state: dict[str, Any] | None = None
-    if result.content:
+    if result.reply_text:
         updated = _with_light_route_progress(
             governed,
             role="assistant",
-            content=result.content,
+            content=result.reply_text,
             pre_gate_classification=mode,
         )
         await _persist_live_governed_state(
@@ -79,7 +79,7 @@ async def _run_light_chat_response(
     return ChatResponse(
         session_id=request.session_id,
         **build_public_response_core(
-            reply=result.content,
+            reply=result.reply_text,
             structured_state=structured_state,
             policy_path=mode.lower(),
             run_meta={
@@ -117,10 +117,9 @@ async def _run_governed_chat_response(
         persisted_state=persisted_state,
     )
     visible_reply = await collect_governed_visible_reply(
-        current_user=current_user,
-        session_id=request.session_id,
-        result_state=result_state,
-        persisted_state=persisted_state,
+        response_class=context.response_class,
+        turn_context=context.turn_context,
+        fallback_text=context.deterministic_reply,
     )
 
     return ChatResponse(

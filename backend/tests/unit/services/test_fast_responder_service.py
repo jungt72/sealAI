@@ -16,7 +16,6 @@ from app.services.fast_responder_service import (
 @pytest.mark.parametrize(
     "classification,text,expected",
     [
-        (PreGateClassification.GREETING, "Hallo", "Hallo"),
         (PreGateClassification.META_QUESTION, "Was kann SeaLAI?", "SeaLAI"),
         (PreGateClassification.BLOCKED, "Welchen Hersteller empfiehlst du?", "Dabei kann ich nicht helfen"),
     ],
@@ -37,6 +36,7 @@ def test_fast_responder_handles_only_non_case_pre_gate_classes(
 @pytest.mark.parametrize(
     "classification",
     [
+        PreGateClassification.GREETING,
         PreGateClassification.KNOWLEDGE_QUERY,
         PreGateClassification.DOMAIN_INQUIRY,
     ],
@@ -52,18 +52,18 @@ def test_fast_responder_uses_bounded_prompt_llm_when_injected() -> None:
     class LLM:
         def complete(self, *, system_prompt, user_input, classification, timeout_seconds):
             assert "Do not create or imply a case" in system_prompt
-            assert user_input == "Hello"
-            assert classification is PreGateClassification.GREETING
+            assert user_input == "What can SeaLAI do?"
+            assert classification is PreGateClassification.META_QUESTION
             assert timeout_seconds == 1.5
-            return "Hello. How can I help?"
+            return "SeaLAI explains and structures sealing inquiries."
 
     response = FastResponderService(llm=LLM()).respond(
-        "Hello",
-        PreGateClassification.GREETING,
+        "What can SeaLAI do?",
+        PreGateClassification.META_QUESTION,
         SessionContext(language_hint="en"),
     )
 
-    assert response.content == "Hello. How can I help?"
+    assert response.content == "SeaLAI explains and structures sealing inquiries."
 
 
 def test_meta_question_can_return_registration_prompt_without_case_creation() -> None:
@@ -81,9 +81,9 @@ def test_fast_responder_records_metrics_without_persistence() -> None:
     metrics = FastResponderMetrics()
     service = FastResponderService(metrics=metrics)
 
-    service.respond("Hallo", PreGateClassification.GREETING)
+    service.respond("Was kann SeaLAI?", PreGateClassification.META_QUESTION)
 
-    assert metrics.invocations_total == {PreGateClassification.GREETING.value: 1}
+    assert metrics.invocations_total == {PreGateClassification.META_QUESTION.value: 1}
     assert len(metrics.latency_seconds) == 1
     assert metrics.escalated_to_graph_total == 0
 
@@ -94,7 +94,7 @@ def test_fast_responder_p95_latency_under_budget() -> None:
 
     for _ in range(40):
         start = time.perf_counter()
-        service.respond("Hallo", PreGateClassification.GREETING)
+        service.respond("Was kann SeaLAI?", PreGateClassification.META_QUESTION)
         durations.append(time.perf_counter() - start)
 
     p95 = sorted(durations)[int(len(durations) * 0.95) - 1]

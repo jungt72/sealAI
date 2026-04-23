@@ -182,11 +182,11 @@ async def _stream_exploration_reply(
         delta = chunk.choices[0].delta.content
         if delta:
             full_reply += delta
-            yield f"data: {json.dumps({'type': 'state_update', 'reply': delta}, default=str)}\n\n"
+            yield f"data: {json.dumps({'type': 'text_chunk', 'text': delta}, default=str)}\n\n"
 
     state_update_event = {
         "type": "state_update",
-        "reply": "",
+        "reply": full_reply,
         "response_class": "conversational_answer",
     }
     yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
@@ -237,6 +237,10 @@ async def _stream_light_runtime(
             continue
 
         event_type = payload.get("type")
+        if event_type == "text_chunk":
+            yield frame
+            continue
+
         if event_type == "state_update":
             final_reply += payload.get("reply") or ""
             payload["response_class"] = "conversational_answer"
@@ -298,10 +302,9 @@ async def _stream_governed_graph(
         persisted_state=turn_result.persisted_state,
     )
     visible_reply = await collect_governed_visible_reply(
-        current_user=current_user,
-        session_id=request.session_id,
-        result_state=turn_result.result_state,
-        persisted_state=turn_result.persisted_state,
+        response_class=context.response_class,
+        turn_context=context.turn_context,
+        fallback_text=context.deterministic_reply,
     )
     payload = _assemble_governed_stream_payload(
         context=context,

@@ -45,7 +45,6 @@ async def test_runtime_dispatch_uses_pre_gate_before_three_mode_gate(
     assert dispatch.gate_applied is False
     assert dispatch.gate_reason.startswith("pre_gate:")
     if classification in {
-        PreGateClassification.GREETING,
         PreGateClassification.META_QUESTION,
         PreGateClassification.BLOCKED,
     }:
@@ -83,12 +82,12 @@ async def test_fast_responder_chat_path_does_not_invoke_graph_or_persist(monkeyp
     monkeypatch.setattr("app.agent.api.router.GOVERNED_GRAPH", Graph())
 
     response = await chat_endpoint(
-        ChatRequest(message="Hallo", session_id="fast-no-persist"),
+        ChatRequest(message="Was kann SeaLAI?", session_id="fast-no-persist"),
         current_user=_user(),
     )
 
     assert response.response_class == "conversational_answer"
-    assert response.run_meta["fast_responder"]["source_classification"] == "GREETING"
+    assert response.run_meta["fast_responder"]["source_classification"] == "META_QUESTION"
     assert response.run_meta["fast_responder"]["no_case_created"] is True
     assert response.structured_state is None
 

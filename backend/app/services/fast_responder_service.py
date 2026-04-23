@@ -61,7 +61,6 @@ class FastResponderService:
 
     allowed_classifications: frozenset[PreGateClassification] = frozenset(
         {
-            PreGateClassification.GREETING,
             PreGateClassification.META_QUESTION,
             PreGateClassification.BLOCKED,
         }
