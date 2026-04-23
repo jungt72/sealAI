@@ -1,12 +1,17 @@
-name: LangGraph v2 Guardrails
+name: Agent BFF Guardrails
 
 on:
   push:
   pull_request:
 
 jobs:
-  langgraph-v2-guardrails:
+  agent-bff-guardrails:
     runs-on: ubuntu-latest
+    env:
+      AUTH_SECRET: ci-guardrail-secret
+      NEXTAUTH_SECRET: ci-guardrail-secret
+      AUTH_TRUST_HOST: true
+      NEXTAUTH_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
 
@@ -31,10 +36,10 @@ jobs:
           npm ci
           npm run build
 
-      - name: Smoke test BFF routes (no token)
+      - name: Smoke test Agent BFF routes (no token)
         run: |
           cd frontend
-          npm run start -- --port 3000 &
+          node .next/standalone/server.js &
           START_PID=$!
           trap "kill $START_PID" EXIT
           sleep 10
