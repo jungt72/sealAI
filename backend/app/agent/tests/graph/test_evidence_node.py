@@ -218,7 +218,7 @@ class TestSuccessfulRetrieval:
         assert result.evidence.evidence_gaps == []
 
     @pytest.mark.asyncio
-    async def test_evidence_gap_keeps_saltwater_medium_unverified(self):
+    async def test_unpromoted_saltwater_medium_remains_unresolved_open_point(self):
         state = _state_with_normalized_and_asserted(
             medium=("Salzwasser", "confirmed"),
             pressure_bar=(10.0, "confirmed"),
@@ -234,8 +234,9 @@ class TestSuccessfulRetrieval:
         ):
             result = await evidence_node(state)
 
-        assert "missing_source_for_medium" in result.evidence.evidence_gaps
-        assert "missing_source_for_medium" in result.evidence.unresolved_open_points
+        assert "missing_source_for_medium" not in result.evidence.evidence_gaps
+        assert result.evidence.evidence_gaps == []
+        assert "medium" in result.evidence.unresolved_open_points
 
     @pytest.mark.asyncio
     async def test_retrieve_called_with_tenant_id(self):

@@ -58,7 +58,7 @@ async def test_resume_command_routes_next_user_input_back_into_observed_state() 
 
 
 @pytest.mark.asyncio
-async def test_non_clarification_path_remains_normal_result() -> None:
+async def test_unasserted_required_fields_trigger_structured_clarification() -> None:
     graph = build_governed_graph()
     state = GraphState(
         pending_message="Medium Wasser, 12 bar, 80°C",
@@ -72,6 +72,17 @@ async def test_non_clarification_path_remains_normal_result() -> None:
     ):
         raw = await graph.ainvoke(state)
 
-    assert "__interrupt__" not in raw
-    result = GraphState.model_validate(raw)
-    assert result.output_response_class == "governed_state_update"
+    assert "__interrupt__" in raw
+    interrupts = list(raw["__interrupt__"])
+    assert interrupts
+    payload = interrupts[0].value
+    assert payload["kind"] == "structured_clarification"
+    assert payload["response_class"] == "structured_clarification"
+
+    result = GraphState.model_validate(payload["state"])
+    assert result.output_response_class == "structured_clarification"
+    assert result.output_reply == payload["message"]
+    assert result.governance.preselection_blockers
+    assert set(result.governance.preselection_blockers) <= set(
+        result.evidence.unresolved_open_points
+    )
