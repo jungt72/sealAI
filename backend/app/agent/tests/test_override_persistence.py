@@ -496,9 +496,14 @@ class TestOverrideInvariant:
             UserOverride(field_name="temperature_c", override_value=80.0, turn_index=1),
         ]
         result = self._apply_overrides(overrides)
-        # All three core fields overridden → should reach Class A
-        assert result.governance.gov_class == "A"
-        assert result.governance.rfq_admissible is True
+        # User overrides promote the core fields, but sealing_type still blocks Class A.
+        assert result.asserted.assertions["medium"].asserted_value == "Wasser"
+        assert result.asserted.assertions["pressure_bar"].asserted_value == 6.0
+        assert result.asserted.assertions["temperature_c"].asserted_value == 80.0
+        assert result.governance.gov_class == "B"
+        assert result.governance.rfq_admissible is False
+        assert "sealing_type" in result.governance.preselection_blockers
+        assert "sealing_type" in result.governance.open_validation_points
 
     def test_override_wins_over_existing_llm_extraction(self):
         """Override must beat a pre-existing LLM extraction for same field."""
