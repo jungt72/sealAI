@@ -37,7 +37,8 @@ from app.agent.api.routes import workspace as workspace_routes
 from app.agent.state.models import (
     DerivedState,
     EvidenceState,
-    GovernanceState,
+    AssertedClaim,
+    AssertedState,
     GovernedPersistenceMarker,
     GovernedSessionState,
     NormalizedParameter,
@@ -47,6 +48,7 @@ from app.agent.state.models import (
     SealaiNormMaterial,
     SealaiNormState,
 )
+from app.agent.state.reducers import reduce_asserted_to_governance
 from app.agent.state.persistence import (
     REASONING_PROMPT_VERSION,
     get_case_by_number_async,
@@ -69,7 +71,20 @@ def _state(
     sealing_material_family: str | None = None,
     engineering_path: str | None = None,
 ) -> GovernedSessionState:
+    asserted = AssertedState(
+        assertions={
+            "medium": AssertedClaim(
+                field_name="medium",
+                asserted_value=medium,
+                confidence="confirmed",
+            )
+        }
+    )
+    governance = reduce_asserted_to_governance(asserted).model_copy(
+        update={"rfq_admissible": inquiry_admissible}
+    )
     return GovernedSessionState(
+        asserted=asserted,
         normalized=NormalizedState.model_validate(
             {
                 "parameters": {
@@ -89,7 +104,7 @@ def _state(
             field_status={"pv_value": "derived", "velocity": "derived"},
         ),
         evidence=EvidenceState(source_versions={"doc-1": "abc123"}),
-        governance=GovernanceState(rfq_admissible=inquiry_admissible),
+        governance=governance,
         rfq=RfqState(rfq_ready=rfq_ready),
         sealai_norm=SealaiNormState(
             identity=SealaiNormIdentity(engineering_path=engineering_path),

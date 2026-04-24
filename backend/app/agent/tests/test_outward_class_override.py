@@ -20,8 +20,8 @@ from app.agent.graph.nodes.output_contract_node import (
 from app.agent.state.models import (
     AssertedClaim,
     AssertedState,
-    GovernanceState,
 )
+from app.agent.state.reducers import reduce_asserted_to_governance
 
 
 # ---------------------------------------------------------------------------
@@ -41,9 +41,18 @@ def _full_a_state(pending: str = "") -> GraphState:
         "shaft_diameter_mm": _claim("shaft_diameter_mm", 50.0, "confirmed"),
         "sealing_type":  _claim("sealing_type",  "mechanical_seal", "confirmed"),
     }
-    governance = GovernanceState(gov_class="A", rfq_admissible=False)
+    asserted = AssertedState(assertions=assertions)
+    governance = reduce_asserted_to_governance(asserted).model_copy(
+        update={
+            "gov_class": "A",
+            "rfq_admissible": False,
+            "preselection_blockers": [],
+            "type_sensitive_required": [],
+            "compliance_blockers": [],
+        }
+    )
     return GraphState(
-        asserted=AssertedState(assertions=assertions),
+        asserted=asserted,
         governance=governance,
         pending_message=pending,
     )

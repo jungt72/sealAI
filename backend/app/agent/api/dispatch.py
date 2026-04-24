@@ -1,22 +1,18 @@
 import logging
 import os
 import dataclasses
-from typing import Any, Literal, Optional, List
+from typing import Any, Literal
 
 from app.agent.state.models import GovernedSessionState
 from app.services.auth.dependencies import RequestUser
 from app.agent.api.deps import (
-    _canonical_scope,
     _runtime_mode_for_pre_gate,
-    _is_light_runtime_mode,
 )
 from app.agent.api.loaders import (
+    _bridge_knowledge_session_to_governed_state,
     _load_live_governed_state,
-)
-from app.agent.api.utils import (
-    _build_light_case_summary,
-    _collect_light_missing_fields,
-    _collect_tentative_domain_signals,
+    _load_live_knowledge_session_context,
+    _persist_live_knowledge_session_context,
 )
 
 _log = logging.getLogger(__name__)
@@ -40,6 +36,7 @@ class RuntimeDispatchResolution:
     session_zone: str | None = None
     direct_reply: str | None = None
     fast_response: Any | None = None
+    knowledge_response: Any | None = None
     governed_state: GovernedSessionState | None = None
 
 async def _resolve_runtime_dispatch(
@@ -84,6 +81,63 @@ async def _resolve_runtime_dispatch(
                 fast_response=fast_response,
             )
 
+        if pre_gate.classification is PreGateClassification.KNOWLEDGE_QUERY:
+            from dataclasses import replace  # noqa: PLC0415
+            from app.services.knowledge_service import KnowledgeService  # noqa: PLC0415
+            from app.services.knowledge_case_bridge_service import KnowledgeCaseBridgeService  # noqa: PLC0415
+
+            knowledge_response = KnowledgeService().answer(request.message)
+            if request.session_id:
+                try:
+                    bridge_service = KnowledgeCaseBridgeService()
+                    knowledge_context = await _load_live_knowledge_session_context(
+                        current_user=current_user,
+                        session_id=request.session_id,
+                    )
+                    knowledge_context = bridge_service.update_context(
+                        request.message,
+                        context=knowledge_context,
+                        session_id=request.session_id,
+                        role="user",
+                    )
+                    invitation = bridge_service.build_bridge_invitation(
+                        request.message,
+                        context=knowledge_context,
+                    )
+                    if invitation:
+                        knowledge_response = replace(
+                            knowledge_response,
+                            content=f"{knowledge_response.content}\n\n{invitation}",
+                        )
+                        knowledge_context = bridge_service.mark_transition_offered(
+                            knowledge_context,
+                        )
+                    knowledge_context = bridge_service.update_context(
+                        knowledge_response.content,
+                        context=knowledge_context,
+                        role="assistant",
+                    )
+                    await _persist_live_knowledge_session_context(
+                        current_user=current_user,
+                        session_id=request.session_id,
+                        context=knowledge_context,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _log.warning(
+                        "[runtime_dispatch] knowledge context update failed (%s: %s) — returning knowledge response without bridge context",
+                        type(exc).__name__,
+                        exc,
+                    )
+            return RuntimeDispatchResolution(
+                gate_route="CONVERSATION",
+                gate_reason=f"pre_gate:{pre_gate.reasoning}",
+                runtime_mode="CONVERSATION",
+                gate_applied=False,
+                pre_gate_classification=pre_gate.classification.value,
+                pre_gate_reason=pre_gate.reasoning,
+                knowledge_response=knowledge_response,
+            )
+
         if pre_gate.classification is not PreGateClassification.DOMAIN_INQUIRY:
             runtime_mode = (
                 _runtime_mode_for_pre_gate(pre_gate.classification.value)
@@ -99,51 +153,52 @@ async def _resolve_runtime_dispatch(
                 pre_gate_reason=pre_gate.reasoning,
             )
 
-        from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
-        from app.agent.runtime.gate import decide_route_async  # noqa: PLC0415
-        from app.agent.runtime.session_manager import (  # noqa: PLC0415
-            apply_gate_decision_and_persist_async,
-            get_or_create_session_async,
-        )
-
-        redis_url = os.getenv("REDIS_URL", "")
-        tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=request.session_id)
         governed_state = None
         if request.session_id:
-            governed_state = await _load_live_governed_state(
-                current_user=current_user,
-                session_id=request.session_id,
-                create_if_missing=True,
-            )
-        short_state_summary = _build_light_case_summary(governed_state) if governed_state is not None else None
-        missing_critical_fields = _collect_light_missing_fields(governed_state) if governed_state is not None else []
-        tentative_signals = _collect_tentative_domain_signals(governed_state) if governed_state is not None else []
-
-        async with AsyncRedis.from_url(redis_url) as redis:
-            session = await get_or_create_session_async(
-                redis,
-                tenant_id=tenant_id,
-                owner_id=owner_id,
-                session_id=request.session_id,
-            )
-            decision = await decide_route_async(
-                request.message,
-                session,
-                short_state_summary=short_state_summary,
-                missing_critical_fields=missing_critical_fields,
-                tentative_signals=tentative_signals,
-            )
-            await apply_gate_decision_and_persist_async(redis, session, decision)
-
-            return RuntimeDispatchResolution(
-                gate_route=decision.route,
-                gate_reason=decision.reason,
-                runtime_mode=decision.runtime_mode,
-                gate_applied=True,
-                pre_gate_classification=pre_gate.classification.value,
-                pre_gate_reason=pre_gate.reasoning,
-                governed_state=governed_state,
-            )
+            knowledge_context = None
+            try:
+                knowledge_context = await _load_live_knowledge_session_context(
+                    current_user=current_user,
+                    session_id=request.session_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _log.warning(
+                    "[runtime_dispatch] knowledge bridge load failed (%s: %s) — continuing without bridge seed",
+                    type(exc).__name__,
+                    exc,
+                )
+            if knowledge_context is not None and (
+                knowledge_context.mentioned_parameters
+                or knowledge_context.conversation_turns
+                or knowledge_context.explored_concepts
+            ):
+                try:
+                    governed_state = await _bridge_knowledge_session_to_governed_state(
+                        current_user=current_user,
+                        session_id=request.session_id,
+                        context=knowledge_context,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _log.warning(
+                        "[runtime_dispatch] knowledge bridge seed failed (%s: %s) — falling back to plain governed state load",
+                        type(exc).__name__,
+                        exc,
+                    )
+            if governed_state is None:
+                governed_state = await _load_live_governed_state(
+                    current_user=current_user,
+                    session_id=request.session_id,
+                    create_if_missing=True,
+                )
+        return RuntimeDispatchResolution(
+            gate_route="GOVERNED",
+            gate_reason=f"pre_gate:{pre_gate.reasoning}",
+            runtime_mode="GOVERNED",
+            gate_applied=False,
+            pre_gate_classification=pre_gate.classification.value,
+            pre_gate_reason=pre_gate.reasoning,
+            governed_state=governed_state,
+        )
 
     except Exception as exc:  # noqa: BLE001
         _log.warning(
@@ -157,4 +212,3 @@ async def _resolve_runtime_dispatch(
             runtime_mode="GOVERNED",
             gate_applied=False,
         )
-

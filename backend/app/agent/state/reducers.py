@@ -398,12 +398,12 @@ def reduce_normalized_to_asserted(
     """Derive AssertedState from NormalizedState and optional evidence claims.
 
     Rules (deterministic):
-    1. Parameters at 'confirmed' or 'estimated' confidence → AssertedClaim.
-    2. Parameters at 'inferred' confidence → AssertedClaim (with caveat note).
-    3. Parameters at 'requires_confirmation' → blocking_unknowns.
-    4. Blocking ConflictRefs → conflict_flags.
-    5. Evidence claims can upgrade an 'inferred' parameter to 'confirmed'
-       if the claim field_name matches and claim.confidence == 'confirmed'.
+    1. Normalized candidates from LLM/regex extraction are not asserted by
+       confidence alone.
+    2. User overrides are explicit promotion and may become AssertedClaim.
+    3. Matching confirmed/estimated evidence claims may promote a candidate.
+    4. Parameters at 'requires_confirmation' → blocking_unknowns.
+    5. Blocking ConflictRefs → conflict_flags.
     6. Core required fields that are absent entirely → blocking_unknowns.
 
     Returns a new AssertedState. Never mutates inputs.
@@ -425,29 +425,48 @@ def reduce_normalized_to_asserted(
     # ── Process normalized parameters ────────────────────────────────────
     for field_name, param in normalized.parameters.items():
         confidence = param.confidence
-
-        # Evidence upgrade: inferred → confirmed if evidence says so
-        if confidence == "inferred" and field_name in evidence_index:
-            ev = evidence_index[field_name]
-            if ev.confidence in ("confirmed", "estimated"):
-                confidence = ev.confidence
-                log.debug(
-                    "[reducer] evidence upgrade field=%s inferred→%s (claim=%s)",
-                    field_name,
-                    confidence,
-                    ev.claim_id,
-                )
+        ev = evidence_index.get(field_name)
 
         if confidence == "requires_confirmation":
             blocking_unknowns.append(field_name)
-        elif confidence in ("confirmed", "estimated", "inferred"):
-            ev_refs = [evidence_index[field_name].claim_id] if field_name in evidence_index else []
+            continue
+
+        if param.source == "user_override":
             assertions[field_name] = AssertedClaim(
                 field_name=field_name,
                 asserted_value=param.value,
-                evidence_refs=ev_refs,
+                evidence_refs=[],
                 confidence=confidence,
             )
+            continue
+
+        if ev is None or ev.confidence not in ("confirmed", "estimated"):
+            log.debug(
+                "[reducer] candidate_not_asserted field=%s source=%s confidence=%s",
+                field_name,
+                param.source,
+                confidence,
+            )
+            continue
+
+        if _canonical_value(ev.value) != _canonical_value(param.value):
+            if field_name not in conflict_flags:
+                conflict_flags.append(field_name)
+            log.debug(
+                "[reducer] evidence_value_conflict field=%s candidate=%r evidence=%r claim=%s",
+                field_name,
+                param.value,
+                ev.value,
+                ev.claim_id,
+            )
+            continue
+
+        assertions[field_name] = AssertedClaim(
+            field_name=field_name,
+            asserted_value=param.value,
+            evidence_refs=[ev.claim_id],
+            confidence=ev.confidence,
+        )
 
     # ── Conflict flags from blocking conflicts ───────────────────────────
     for conflict in normalized.conflicts:

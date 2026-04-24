@@ -265,7 +265,7 @@ class NormalizedState(BaseModel):
 # ---------------------------------------------------------------------------
 
 class AssertedClaim(BaseModel):
-    """A single asserted (confirmed) technical value.
+    """A single promoted technical value.
 
     Produced exclusively by reduce_normalized_to_asserted().
     """
@@ -285,7 +285,7 @@ class AssertedState(BaseModel):
     """
 
     assertions: dict[str, AssertedClaim] = Field(default_factory=dict)
-    """Confirmed technical claims. Key = field_name."""
+    """Promoted technical claims. Key = field_name."""
 
     blocking_unknowns: list[str] = Field(default_factory=list)
     """Field names that must be resolved before governance can proceed."""
@@ -599,6 +599,7 @@ class SealaiNormState(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     validity_limits: list[str] = Field(default_factory=list)
     open_validation_points: list[str] = Field(default_factory=list)
+    norm_checks: list[dict[str, Any]] = Field(default_factory=list)
     manufacturer_validation_required: bool = False
 
 

@@ -243,10 +243,11 @@ describe("useCockpitData", () => {
   });
 
 
-  it("keeps PTFE-RWDR fallback ahead of generic hydraulic wording", () => {
+  it("does not derive authoritative path or readiness when backend cockpit is absent", () => {
     const workspace = workspaceFixture();
     workspace.cockpit = null;
     workspace.engineeringPath = null;
+    workspace.rfq.rfq_ready = false;
     workspace.parameters = {
       medium: "HLP46",
       sealing_type: "PTFE-RWDR",
@@ -262,7 +263,12 @@ describe("useCockpitData", () => {
 
     const { result } = renderHook(() => useCockpitData());
 
-    expect(result.current?.view.path).toBe("rwdr");
+    expect(result.current?.view.path).toBeNull();
+    expect(result.current?.view.readiness.isRfqReady).toBe(false);
+    expect(result.current?.view.readiness.status).toBe("review_needed");
+    expect(result.current?.view.readiness.blockers).toContain("backend_cockpit_pending");
+    expect(result.current?.view.sections.core_intake.completion.mandatoryTotal).toBe(0);
+    expect(result.current?.view.routingMetadata?.routing?.authority).toBe("frontend_placeholder");
   });
 
   it("prefers backend cockpit view over local fallback reconstruction", () => {

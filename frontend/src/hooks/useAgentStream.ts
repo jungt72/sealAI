@@ -14,6 +14,7 @@ export type ChatMessage = {
 type UseAgentStreamOptions = {
   initialCaseId?: string;
   onCaseBound?: (caseId: string) => void;
+  onTurnComplete?: (caseId: string) => void;
 };
 
 export function useAgentStream(options: UseAgentStreamOptions = {}) {
@@ -29,6 +30,33 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const historyLoadedCaseIdRef = useRef<string | null>(null);
   const streamRequestIdRef = useRef(0);
   const finalizedRequestIdRef = useRef<number | null>(null);
+  const latestCaseIdRef = useRef<string | null>(options.initialCaseId || null);
+
+  const syncHistory = useCallback(
+    async (caseId: string, mode: "restore" | "merge" = "merge") => {
+      try {
+        const response = await fetch(`/api/bff/agent/chat/history/${encodeURIComponent(caseId)}`);
+        if (!response.ok) {
+          return;
+        }
+        const data = (await response.json()) as { messages?: Array<{ role: string; content: string }> } | null;
+        if (!data?.messages?.length) return;
+        const restored: ChatMessage[] = data.messages
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+        if (restored.length === 0) return;
+        setMessages((current) => {
+          if (mode === "restore") {
+            return current.length > 0 ? current : restored;
+          }
+          return restored.length >= current.length ? restored : current;
+        });
+      } catch (err: unknown) {
+        console.warn("[useAgentStream] History load failed:", err);
+      }
+    },
+    [],
+  );
 
   // Restore chat history on mount when a caseId is given (page reload)
   useEffect(() => {
@@ -37,22 +65,8 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       return;
     }
     historyLoadedCaseIdRef.current = caseId;
-
-    fetch(`/api/bff/agent/chat/history/${encodeURIComponent(caseId)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { messages?: Array<{ role: string; content: string }> } | null) => {
-        if (!data?.messages?.length) return;
-        const restored: ChatMessage[] = data.messages
-          .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
-        if (restored.length > 0) {
-          setMessages((current) => (current.length > 0 ? current : restored));
-        }
-      })
-      .catch((err: unknown) => {
-        console.warn("[useAgentStream] History load failed:", err);
-      });
-  }, [options.initialCaseId]);
+    void syncHistory(caseId, "restore");
+  }, [options.initialCaseId, syncHistory]);
 
   const finalizeAssistantTurn = useCallback((requestId: number) => {
     if (streamRequestIdRef.current !== requestId || finalizedRequestIdRef.current === requestId) {
@@ -65,6 +79,10 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     setStreamingText("");
 
     if (!finalText) {
+      if (latestCaseIdRef.current) {
+        void syncHistory(latestCaseIdRef.current);
+        options.onTurnComplete?.(latestCaseIdRef.current);
+      }
       return;
     }
 
@@ -75,7 +93,11 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       }
       return [...existing, { role: "assistant", content: finalText, timestamp: new Date().toISOString() }];
     });
-  }, []);
+    if (latestCaseIdRef.current) {
+      void syncHistory(latestCaseIdRef.current);
+      options.onTurnComplete?.(latestCaseIdRef.current);
+    }
+  }, [options, syncHistory]);
 
   const sendMessage = useCallback(
     async (message: string) => {
@@ -131,6 +153,9 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
             if (event.data === "[DONE]") {
               setIsStreaming(false);
+              if (latestCaseIdRef.current) {
+                void syncHistory(latestCaseIdRef.current);
+              }
               return;
             }
 
@@ -143,6 +168,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
             const type = String(payload.type || "message");
             if (type === "case_bound" && typeof payload.caseId === "string") {
+              latestCaseIdRef.current = payload.caseId;
               setActiveCaseId(payload.caseId);
               options.onCaseBound?.(payload.caseId);
               return;
@@ -156,6 +182,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
             if (type === "state_update" && typeof payload.caseId === "string") {
               const stateUpdate = payload as unknown as AgentStateUpdateEvent;
+              latestCaseIdRef.current = stateUpdate.caseId;
               const nextWorkspace = buildStreamWorkspaceView(stateUpdate);
               setStreamWorkspace(nextWorkspace);
               if (typeof stateUpdate.reply === "string" && stateUpdate.reply) {
@@ -173,6 +200,9 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
           onclose() {
             if (streamRequestIdRef.current === requestId) {
               setIsStreaming(false);
+              if (latestCaseIdRef.current) {
+                void syncHistory(latestCaseIdRef.current);
+              }
             }
           },
           onerror(error) {

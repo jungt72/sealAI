@@ -797,7 +797,7 @@ async def test_non_stream_governed_response_falls_back_to_deterministic_reply_wh
 async def test_chat_endpoint_uses_governed_json_renderer_for_governed_dispatch() -> None:
     with (
         patch(
-            "app.agent.api.router._resolve_runtime_dispatch",
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
             AsyncMock(
                 return_value=RuntimeDispatchResolution(
                     gate_route="GOVERNED",
@@ -808,7 +808,7 @@ async def test_chat_endpoint_uses_governed_json_renderer_for_governed_dispatch()
             ),
         ),
         patch(
-            "app.agent.api.router._run_governed_chat_response",
+            "app.agent.api.routes.chat._run_governed_chat_response",
             AsyncMock(
                 return_value=SimpleNamespace(
                     session_id="case-json-3",
@@ -841,11 +841,11 @@ async def test_chat_endpoint_fails_closed_to_governed_on_unexpected_runtime_mode
 
     with (
         patch(
-            "app.agent.api.router._resolve_runtime_dispatch",
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
             AsyncMock(return_value=legacy_resolution),
         ),
         patch(
-            "app.agent.api.router._run_governed_chat_response",
+            "app.agent.api.routes.chat._run_governed_chat_response",
             AsyncMock(
                 return_value=SimpleNamespace(
                     session_id="case-fallback-1",
@@ -878,11 +878,11 @@ async def test_chat_endpoint_fails_closed_to_governed_instead_of_light_legacy_fa
 
     with (
         patch(
-            "app.agent.api.router._resolve_runtime_dispatch",
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
             AsyncMock(return_value=legacy_resolution),
         ),
         patch(
-            "app.agent.api.router._run_governed_chat_response",
+            "app.agent.api.routes.chat._run_governed_chat_response",
             AsyncMock(
                 return_value=SimpleNamespace(
                     session_id="case-fallback-light-1",
@@ -895,7 +895,7 @@ async def test_chat_endpoint_fails_closed_to_governed_instead_of_light_legacy_fa
             ),
         ) as mock_governed,
         patch(
-            "app.agent.api.router._run_light_chat_response",
+            "app.agent.api.routes.chat._run_light_chat_response",
             AsyncMock(
                 return_value=SimpleNamespace(
                     session_id="case-fallback-light-1",
@@ -935,11 +935,11 @@ async def test_stream_event_generator_fails_closed_to_governed_on_unexpected_run
 
     with (
         patch(
-            "app.agent.api.router._resolve_runtime_dispatch",
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
             AsyncMock(return_value=legacy_resolution),
         ),
         patch(
-            "app.agent.api.router._stream_governed_graph",
+            "app.agent.api.streaming._stream_governed_graph",
             side_effect=_fake_stream_governed_graph,
         ) as mock_governed_stream,
     ):

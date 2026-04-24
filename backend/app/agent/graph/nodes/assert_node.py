@@ -20,11 +20,12 @@ Evidence handling (Phase F):
     Claim objects via state.rag_evidence_claims.
 
 Reducer semantics (see state/reducers.py for full spec):
-    1. Parameters at 'confirmed' or 'estimated' → AssertedClaim.
-    2. Parameters at 'inferred' → AssertedClaim (with caveat note).
-    3. Parameters at 'requires_confirmation' → blocking_unknowns.
-    4. Blocking ConflictRefs → conflict_flags.
-    5. Core required fields absent entirely → blocking_unknowns.
+    1. LLM/regex normalized candidates are not asserted by confidence alone.
+    2. User overrides are explicit promotion and may become AssertedClaim.
+    3. Evidence claims may promote matching candidates.
+    4. Parameters at 'requires_confirmation' → blocking_unknowns.
+    5. Blocking ConflictRefs → conflict_flags.
+    6. Core required fields absent entirely → blocking_unknowns.
 """
 from __future__ import annotations
 

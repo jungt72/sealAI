@@ -258,7 +258,7 @@ class TestReducerObservedToNormalized:
 
 class TestReducerNormalizedToAsserted:
 
-    def _normalized_with(self, **fields) -> NormalizedState:
+    def _normalized_with(self, *, source: str = "user_override", **fields) -> NormalizedState:
         """Build NormalizedState with given field→(value, confidence) pairs."""
         params = {}
         for fname, (val, conf) in fields.items():
@@ -266,7 +266,7 @@ class TestReducerNormalizedToAsserted:
                 field_name=fname,
                 value=val,
                 confidence=conf,
-                source="llm",
+                source=source,
             )
         return NormalizedState(parameters=params)
 
@@ -288,6 +288,22 @@ class TestReducerNormalizedToAsserted:
         result = reduce_normalized_to_asserted(norm)
         assert "pressure_bar" in result.assertions
         assert result.assertions["pressure_bar"].confidence == "inferred"
+
+    def test_llm_confirmed_candidate_is_not_asserted_without_promotion(self):
+        norm = self._normalized_with(source="llm", medium=("Wasser", "confirmed"))
+        result = reduce_normalized_to_asserted(norm)
+
+        assert norm.parameters["medium"].value == "Wasser"
+        assert norm.parameters["medium"].source == "llm"
+        assert "medium" not in result.assertions
+        assert "medium" in result.blocking_unknowns
+
+    def test_llm_inferred_candidate_is_not_asserted_without_promotion(self):
+        norm = self._normalized_with(source="llm", pressure_bar=(6.0, "inferred"))
+        result = reduce_normalized_to_asserted(norm)
+
+        assert "pressure_bar" not in result.assertions
+        assert "pressure_bar" in result.blocking_unknowns
 
     def test_requires_confirmation_goes_to_blocking_unknowns(self):
         norm = self._normalized_with(medium=("?", "requires_confirmation"))
@@ -313,7 +329,7 @@ class TestReducerNormalizedToAsserted:
         assert "sealing_type" in result.blocking_unknowns
 
     def test_evidence_upgrades_inferred_to_confirmed(self):
-        norm = self._normalized_with(pressure_bar=(6.0, "inferred"))
+        norm = self._normalized_with(source="llm", pressure_bar=(6.0, "inferred"))
         evidence = [SimpleClaim(
             claim_id="C1",
             field_name="pressure_bar",
@@ -323,6 +339,20 @@ class TestReducerNormalizedToAsserted:
         result = reduce_normalized_to_asserted(norm, evidence=evidence)
         assert result.assertions["pressure_bar"].confidence == "confirmed"
         assert "C1" in result.assertions["pressure_bar"].evidence_refs
+
+    def test_evidence_must_match_candidate_value_to_promote(self):
+        norm = self._normalized_with(source="llm", pressure_bar=(6.0, "confirmed"))
+        evidence = [SimpleClaim(
+            claim_id="C-value-conflict",
+            field_name="pressure_bar",
+            value=8.0,
+            confidence="confirmed",
+        )]
+
+        result = reduce_normalized_to_asserted(norm, evidence=evidence)
+
+        assert "pressure_bar" not in result.assertions
+        assert "pressure_bar" in result.conflict_flags
 
     def test_evidence_does_not_upgrade_requires_confirmation(self):
         norm = self._normalized_with(medium=("?", "requires_confirmation"))
@@ -337,17 +367,18 @@ class TestReducerNormalizedToAsserted:
         assert "medium" not in result.assertions
         assert "medium" in result.blocking_unknowns
 
-    def test_no_evidence_is_fine(self):
-        norm = self._normalized_with(medium=("Wasser", "confirmed"))
+    def test_user_override_needs_no_evidence(self):
+        norm = self._normalized_with(source="user_override", medium=("Wasser", "confirmed"))
         result = reduce_normalized_to_asserted(norm, evidence=None)
         assert "medium" in result.assertions
+        assert result.assertions["medium"].evidence_refs == []
 
     def test_blocking_conflict_goes_to_conflict_flags(self):
         from app.agent.state.models import ConflictRef
         norm = NormalizedState(
             parameters={
                 "medium": NormalizedParameter(
-                    field_name="medium", value="Wasser", confidence="confirmed", source="llm"
+                    field_name="medium", value="Wasser", confidence="confirmed", source="user_override"
                 )
             },
             conflicts=[
@@ -362,7 +393,7 @@ class TestReducerNormalizedToAsserted:
         norm = NormalizedState(
             parameters={
                 "medium": NormalizedParameter(
-                    field_name="medium", value="Wasser", confidence="confirmed", source="llm"
+                    field_name="medium", value="Wasser", confidence="confirmed", source="user_override"
                 )
             },
             conflicts=[
@@ -781,9 +812,9 @@ class TestFullPipeline:
         asserted = reduce_normalized_to_asserted(normalized)
         governance = reduce_asserted_to_governance(asserted)
 
-        assert governance.gov_class == "B"
+        assert governance.gov_class == "D"
         assert governance.rfq_admissible is False
-        assert "sealing_type" in governance.preselection_blockers
+        assert set(_CORE_REQUIRED_FIELDS).issubset(set(asserted.blocking_unknowns))
 
     def test_pipeline_class_b_missing_two_core_fields(self):
         obs = ObservedState().with_extraction(
@@ -793,8 +824,26 @@ class TestFullPipeline:
         asserted = reduce_normalized_to_asserted(normalized)
         governance = reduce_asserted_to_governance(asserted)
 
+        assert governance.gov_class == "D"
+        assert governance.rfq_admissible is False
+        assert "medium" in asserted.blocking_unknowns
+
+    def test_pipeline_class_b_from_promoted_user_overrides(self):
+        obs = ObservedState()
+        for field, value in [("medium", "Wasser"), ("pressure_bar", 6.0), ("temperature_c", 80.0)]:
+            obs = obs.with_override(UserOverride(
+                field_name=field,
+                override_value=value,
+                turn_index=0,
+            ))
+
+        normalized = reduce_observed_to_normalized(obs)
+        asserted = reduce_normalized_to_asserted(normalized)
+        governance = reduce_asserted_to_governance(asserted)
+
         assert governance.gov_class == "B"
         assert governance.rfq_admissible is False
+        assert "sealing_type" in governance.preselection_blockers
 
     def test_pipeline_class_d_no_technical_content(self):
         obs = ObservedState().with_extraction(

@@ -1,18 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  Activity,
   Bell,
   Database,
-  HelpCircle,
-  LayoutDashboard,
-  Menu,
+  MessageSquareText,
+  Clock3,
+  Bookmark,
+  FileText,
   Plus,
-  Search,
   Settings,
 } from "lucide-react";
 
@@ -20,8 +19,11 @@ import LogoutButton from "@/components/dashboard/LogoutButton";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/dashboard/new", icon: LayoutDashboard, label: "Analyse-Workbench" },
-  { href: "/rag", icon: Database, label: "Mediendatenbank" },
+  { href: "/dashboard/new", icon: MessageSquareText, label: "Chat" },
+  { href: "/rag", icon: Database, label: "Wissen" },
+  { href: "/dashboard/new", icon: Clock3, label: "Verlauf" },
+  { href: "/dashboard/new", icon: Bookmark, label: "Merkliste" },
+  { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
 ];
 
 function greetingForNow(date = new Date()) {
@@ -44,154 +46,103 @@ export default function DashboardShell({
 }) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const [isExpanded, setIsExpanded] = useState(true);
 
   const userName = firstNameFromSession(session?.user?.name, session?.user?.email);
   const greeting = useMemo(() => greetingForNow(), []);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#eef2f6] font-sans text-foreground">
-      <aside
-        className={cn(
-          "relative z-20 hidden h-full flex-col border-r border-slate-200 bg-[#f8fafc] transition-all duration-300 ease-in-out lg:flex",
-          isExpanded ? "w-[272px]" : "w-[72px]",
-        )}
-      >
-        <div className="flex h-16 items-center gap-3 px-4">
-          <button
-            type="button"
-            aria-label="Navigation umschalten"
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-          >
-            <Menu size={20} />
-          </button>
-          <div
-            className={cn(
-              "flex min-w-0 items-center gap-3 overflow-hidden transition-opacity duration-300",
-              isExpanded ? "opacity-100" : "w-0 opacity-0",
-            )}
-          >
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-seal-blue text-sm font-bold text-white">
-              S
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-slate-950">SeaLAI</div>
-              <div className="truncate text-[11px] font-medium uppercase tracking-widest text-slate-500">
-                PTFE-RWDR Workbench
-              </div>
-            </div>
+    <div className="flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
+      <aside className="hidden h-full w-[72px] shrink-0 flex-col border-r border-[#E7ECF3] bg-white lg:flex">
+        <div className="flex h-[72px] items-center justify-center border-b border-[#E7ECF3]">
+          <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0B5BD3] text-base font-semibold text-white shadow-[0_10px_30px_rgba(11,91,211,0.22)]">
+            S
           </div>
         </div>
 
-        <div className="px-3 py-3">
-          <Link
-            href="/dashboard/new"
-            className={cn(
-              "flex h-11 items-center gap-3 rounded-lg bg-seal-blue text-white shadow-sm shadow-slate-200 transition-colors hover:bg-[#0a2e68]",
-              isExpanded ? "px-3" : "justify-center px-0",
-            )}
-          >
-            <Plus size={19} className="shrink-0" />
-            {isExpanded && <span className="truncate text-sm font-semibold">Neue Analyse</span>}
-          </Link>
-        </div>
-
-        <nav className="custom-scrollbar flex-1 overflow-y-auto px-3 py-2">
-          {isExpanded && (
-            <div className="px-3 pb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
-              Arbeitsbereiche
-            </div>
-          )}
-          <div className="space-y-1">
-            {NAV_ITEMS.map((item) => {
-              const isActive =
-                item.href === "/dashboard/new"
-                  ? pathname.startsWith("/dashboard")
-                  : pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-[#e6eefc] text-seal-blue"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
-                    !isExpanded && "justify-center px-0",
-                  )}
-                >
-                  <item.icon size={18} className="shrink-0" />
-                  {isExpanded && <span className="truncate">{item.label}</span>}
-                </Link>
-              );
-            })}
-          </div>
+        <nav className="flex flex-1 flex-col items-center gap-3 px-3 py-6">
+          {NAV_ITEMS.map((item) => {
+            const isActive =
+              item.href === "/dashboard/new"
+                ? pathname.startsWith("/dashboard")
+                : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={`${item.label}-${item.href}`}
+                href={item.href}
+                title={item.label}
+                className={cn(
+                  "flex h-11 w-11 items-center justify-center rounded-[14px] border transition-colors",
+                  isActive
+                    ? "border-[#CFE0FF] bg-[#EEF4FF] text-[#0B5BD3]"
+                    : "border-transparent text-[#6B7280] hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
+                )}
+              >
+                <item.icon size={19} />
+              </Link>
+            );
+          })}
         </nav>
 
-        <div className="space-y-1 border-t border-slate-200 px-3 py-4">
-          {[
-            { icon: HelpCircle, label: "Hilfe" },
-            { icon: Activity, label: "Aktivität" },
-            { icon: Settings, label: "Einstellungen" },
-          ].map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              title={item.label}
-              className={cn(
-                "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950",
-                !isExpanded && "justify-center px-0",
-              )}
-            >
-              <item.icon size={18} className="shrink-0" />
-              {isExpanded && <span className="truncate">{item.label}</span>}
-            </button>
-          ))}
-          {isExpanded && (
-            <div className="pt-2">
-              <LogoutButton />
-            </div>
-          )}
+        <div className="flex flex-col items-center gap-3 border-t border-[#E7ECF3] px-3 py-4">
+          <button
+            type="button"
+            title="Einstellungen"
+            className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]"
+          >
+            <Settings size={18} />
+          </button>
+          <div className="w-full px-1">
+            <LogoutButton />
+          </div>
         </div>
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
+        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-[#E7ECF3] bg-white px-5 sm:px-7">
           <div className="min-w-0">
-            <p className="truncate text-lg font-semibold tracking-tight text-slate-950">
-              {greeting} {userName}, schön, dass du da bist.
-            </p>
-            <p className="mt-0.5 truncate text-sm text-slate-500">
-              Technische Klärung, Live-Antwort und Fallstatus in einem Arbeitsbereich.
-            </p>
+            <div className="flex items-center gap-3">
+              <div className="text-[18px] font-semibold tracking-tight text-[#0B5BD3]">SeaLAI</div>
+              <div className="h-5 w-px bg-[#D7DDE8]" />
+              <div className="text-[16px] font-medium text-[#374151]">Knowledge Modus</div>
+            </div>
+            <div className="mt-1 truncate text-[12px] text-[#6B7280]">
+              {greeting} {userName}, schoen, dass du da bist.
+            </div>
           </div>
-          <div className="ml-4 flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              title="Suchen"
-              className="hidden h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-950 sm:flex"
-            >
-              <Search size={18} />
-            </button>
+          <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="hidden text-sm text-[#6B7280] md:block">
+              Suche-ID: <span className="font-semibold text-[#0B5BD3]">COMP-2025-000245</span>
+            </div>
+            <span className="inline-flex items-center rounded-full border border-[#D8EEDB] bg-[#EEF9F0] px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#2F8F46]">
+              Governed
+            </span>
             <button
               type="button"
               title="Benachrichtigungen"
-              className="hidden h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-950 sm:flex"
+              className="hidden h-10 w-10 items-center justify-center rounded-full border border-[#E7ECF3] text-[#6B7280] transition-colors hover:bg-[#F8FAFD] hover:text-[#111827] md:flex"
             >
               <Bell size={18} />
             </button>
+            <div className="flex items-center gap-3 rounded-full border border-[#E7ECF3] bg-white px-2.5 py-1.5">
+              <div className="grid h-9 w-9 place-items-center rounded-full border border-[#D7DDE8] bg-[#F8FAFD] text-sm font-semibold text-[#6B7280]">
+                {userName.slice(0, 2).toUpperCase()}
+              </div>
+              <div className="hidden text-left md:block">
+                <div className="text-sm font-medium text-[#111827]">{userName} Mustermann</div>
+                <div className="text-[12px] text-[#6B7280]">Ingenieur</div>
+              </div>
+            </div>
             <Link
               href="/dashboard/new"
               title="Neue Analyse"
-              className="flex h-10 w-10 items-center justify-center rounded-lg bg-seal-blue text-white transition-colors hover:bg-[#0a2e68] lg:hidden"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0B5BD3] text-white transition-colors hover:bg-[#0A4FB9] lg:hidden"
             >
               <Plus size={18} />
             </Link>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-[#f5f7fb] p-2 sm:p-3">
-          <div className="h-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F7FB] p-3">
+          <div className="h-full overflow-hidden rounded-[20px] border border-[#E7ECF3] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
             {children}
           </div>
         </div>

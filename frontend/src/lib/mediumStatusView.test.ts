@@ -34,6 +34,7 @@ describe("mediumStatusView", () => {
           manufacturers: [],
           notes: [],
         },
+        compute: { items: [] },
         rfq: {
           status: "pending",
           rfq_ready: false,

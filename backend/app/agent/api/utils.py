@@ -372,6 +372,26 @@ def _fast_response_run_meta(fast_response: Any) -> dict[str, Any]:
         }
     }
 
+
+def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
+    citations = [
+        dataclasses.asdict(citation)
+        for citation in tuple(getattr(knowledge_response, "citations", ()) or ())
+        if dataclasses.is_dataclass(citation)
+    ]
+    return {
+        "knowledge_service": {
+            "source_classification": getattr(
+                getattr(knowledge_response, "source_classification", None),
+                "value",
+                getattr(knowledge_response, "source_classification", None),
+            ),
+            "output_class": getattr(knowledge_response, "output_class", "conversational_answer"),
+            "no_case_created": bool(getattr(knowledge_response, "no_case_created", True)),
+            "citations": citations,
+        }
+    }
+
 def _materialize_governed_graph_result(raw_result: object) -> GraphState:
     if isinstance(raw_result, dict) and "__interrupt__" in raw_result:
         return GraphState(**raw_result)

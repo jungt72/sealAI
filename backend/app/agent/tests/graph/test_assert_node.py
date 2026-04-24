@@ -9,9 +9,9 @@ Key invariants under test:
     5. GovernanceState unchanged after this node.
 
 Coverage:
-    1.  All three core fields confirmed → assertions complete, no blocking
+    1.  All three promoted core fields confirmed → assertions complete, no blocking
     2.  requires_confirmation field → blocking_unknowns, absent from assertions
-    3.  inferred field → AssertedClaim present (caveat carried by confidence)
+    3.  promoted inferred field → AssertedClaim present (caveat carried by confidence)
     4.  Missing core field → blocking_unknowns includes that field
     5.  All core fields missing → all three in blocking_unknowns
     6.  Blocking conflict → conflict_flags populated
@@ -22,7 +22,8 @@ Coverage:
     11. analysis_cycle, max_cycles unchanged
     12. No LLM call (openai never invoked)
     13. Empty NormalizedState → all core fields in blocking_unknowns
-    14. User override field (confirmed) → AssertedClaim present
+    14. LLM/regex candidate without promotion → no AssertedClaim
+    15. User override field (confirmed) → AssertedClaim present
 """
 from __future__ import annotations
 
@@ -51,7 +52,7 @@ def _param(
     field: str,
     value,
     confidence: str = "confirmed",
-    source: str = "llm",
+    source: str = "user_override",
     source_turn: int = 0,
 ) -> NormalizedParameter:
     return NormalizedParameter(
@@ -118,7 +119,9 @@ class TestCoreFieldsConfirmed:
             temperature_c=(180.0, "confirmed"),
         )
         result = await assert_node(state)
-        assert result.asserted.blocking_unknowns == []
+        for field in _CORE_FIELDS:
+            assert field not in result.asserted.blocking_unknowns
+        assert "sealing_type" in result.asserted.blocking_unknowns
 
     @pytest.mark.asyncio
     async def test_asserted_value_correct(self):
@@ -193,6 +196,43 @@ class TestInferred:
         )
         result = await assert_node(state)
         assert "medium" not in result.asserted.blocking_unknowns
+
+
+# ---------------------------------------------------------------------------
+# 3b. LLM/regex candidate without promotion → no AssertedClaim
+# ---------------------------------------------------------------------------
+
+class TestUnpromotedLlmCandidate:
+    @pytest.mark.asyncio
+    async def test_confirmed_llm_candidate_not_asserted(self):
+        state = GraphState(
+            normalized=NormalizedState(
+                parameters={
+                    "medium": _param("medium", "Dampf", "confirmed", source="llm"),
+                }
+            )
+        )
+
+        result = await assert_node(state)
+
+        assert "medium" not in result.asserted.assertions
+        assert "medium" in result.asserted.blocking_unknowns
+        assert result.normalized.parameters["medium"].source == "llm"
+
+    @pytest.mark.asyncio
+    async def test_inferred_llm_candidate_not_asserted(self):
+        state = GraphState(
+            normalized=NormalizedState(
+                parameters={
+                    "pressure_bar": _param("pressure_bar", 12.0, "inferred", source="llm"),
+                }
+            )
+        )
+
+        result = await assert_node(state)
+
+        assert "pressure_bar" not in result.asserted.assertions
+        assert "pressure_bar" in result.asserted.blocking_unknowns
 
 
 # ---------------------------------------------------------------------------

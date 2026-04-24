@@ -125,11 +125,11 @@ services:
       GENERATION_MODEL: "gpt-5-large"
       GENERATION_TEMP: "0.2"
       GENERATION_MAX_TOKENS: "1024"
-      SEALAI_LOG_LEVEL: "DEBUG"
-      CONSULT_GRAPH_DEBUG: "1"
-      CONSULT_GRAPH_DEBUG_LEVEL: "debug"
-      WS_AUTH_OPTIONAL: "1"
-      SEALAI_LG_TRACE: "1"
+      SEALAI_LOG_LEVEL: "${SEALAI_LOG_LEVEL:-INFO}"
+      CONSULT_GRAPH_DEBUG: "${CONSULT_GRAPH_DEBUG:-0}"
+      CONSULT_GRAPH_DEBUG_LEVEL: "${CONSULT_GRAPH_DEBUG_LEVEL:-info}"
+      WS_AUTH_OPTIONAL: "${WS_AUTH_OPTIONAL:-0}"
+      SEALAI_LG_TRACE: "${SEALAI_LG_TRACE:-0}"
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — set in .env or .env.prod}
       # LangSmith tracing — set LANGCHAIN_TRACING_V2=true and LANGCHAIN_API_KEY to enable
       LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
@@ -162,7 +162,7 @@ services:
     environment:
       BACKEND_INTERNAL_URL: "http://backend:8000"
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env or .env.prod}@redis:6379/0"
-      NEXTAUTH_DEBUG: "true"
+      NEXTAUTH_DEBUG: "${NEXTAUTH_DEBUG:-false}"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null"]
       interval: 30s

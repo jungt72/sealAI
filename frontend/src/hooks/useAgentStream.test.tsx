@@ -23,6 +23,13 @@ describe("useAgentStream", () => {
   beforeEach(() => {
     mockFetchEventSource.mockReset();
     vi.restoreAllMocks();
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
   });
 
   it("streams text chunks live and finalizes with state_update.reply once", async () => {

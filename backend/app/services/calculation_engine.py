@@ -112,10 +112,22 @@ def _circumferential_speed(case: Mapping[str, Any]) -> CalcResult:
     return CalcResult({"derived.surface_speed_ms": math.pi * diameter / 1000.0 * rpm / 60.0})
 
 
+def _dn_value(case: Mapping[str, Any]) -> CalcResult:
+    diameter = _num(case, "shaft.diameter_mm")
+    rpm = _num(case, "operating.shaft_speed.rpm_nom")
+    return CalcResult({"derived.dn_value": diameter * rpm})
+
+
 def _contact_pressure(case: Mapping[str, Any]) -> CalcResult:
     force = _num(case, "rwdr.lip.radial_force_n_per_mm")
     width = _num(case, "rwdr.lip.contact_width_mm")
     return CalcResult({"derived.contact_pressure_n_per_mm2": force / width})
+
+
+def _pressure_pv_loading(case: Mapping[str, Any]) -> CalcResult:
+    pressure_bar = _num(case, "operating.pressure.max_bar")
+    speed = _num(case, "derived.surface_speed_ms")
+    return CalcResult({"derived.pv_value_mpa_m_s": pressure_bar * 0.1 * speed})
 
 
 def _pv_loading(case: Mapping[str, Any]) -> CalcResult:
@@ -154,6 +166,8 @@ def _temperature_headroom(case: Mapping[str, Any]) -> CalcResult:
 
 PTFE_RWDR_CALCULATIONS: tuple[CalculationDefinition, ...] = (
     CalculationDefinition("ptfe_rwdr.circumferential_speed", "1.0", ("shaft.diameter_mm", "operating.shaft_speed.rpm_nom"), ("derived.surface_speed_ms",), _circumferential_speed),
+    CalculationDefinition("ptfe_rwdr.dn_value", "1.0", ("shaft.diameter_mm", "operating.shaft_speed.rpm_nom"), ("derived.dn_value",), _dn_value),
+    CalculationDefinition("ptfe_rwdr.pressure_pv_loading", "1.0", ("operating.pressure.max_bar", "derived.surface_speed_ms"), ("derived.pv_value_mpa_m_s",), _pressure_pv_loading),
     CalculationDefinition("ptfe_rwdr.contact_pressure", "1.0", ("rwdr.lip.radial_force_n_per_mm", "rwdr.lip.contact_width_mm"), ("derived.contact_pressure_n_per_mm2",), _contact_pressure),
     CalculationDefinition("ptfe_rwdr.pv_loading", "1.0", ("derived.contact_pressure_n_per_mm2", "derived.surface_speed_ms"), ("derived.pv_loading",), _pv_loading),
     CalculationDefinition("ptfe_rwdr.thermal_load_indicator", "1.0", ("derived.pv_loading", "shaft.diameter_mm"), ("derived.heat_flux_w_per_mm",), _thermal_load_indicator),

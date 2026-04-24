@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from typing import Any, Optional
 
 from fastapi import HTTPException
@@ -25,8 +26,15 @@ from app.agent.api.utils import (
     _build_light_case_summary,
     _sync_governed_state_from_review_outcome,
 )
+from app.services.knowledge_case_bridge_service import (
+    KnowledgeCaseBridgeService,
+    KnowledgeConversationTurn,
+    KnowledgeSessionContext,
+    ParameterSeed,
+)
 
 _log = logging.getLogger(__name__)
+_KNOWLEDGE_SESSION_TTL_SECONDS = 86_400
 
 _PRE_GATE_CLASSIFICATIONS = {
     "GREETING",
@@ -41,6 +49,67 @@ def _snapshot_pre_gate_classification(value: str | None) -> str | None:
     if value in _PRE_GATE_CLASSIFICATIONS:
         return value
     return None
+
+
+def _knowledge_session_key(*, tenant_id: str, owner_id: str, session_id: str) -> str:
+    return f"knowledge_session:{tenant_id}:{owner_id}:{session_id}"
+
+
+def _serialize_knowledge_session_context(context: KnowledgeSessionContext) -> str:
+    payload = {
+        "session_id": context.session_id,
+        "mentioned_parameters": {
+            field_name: {
+                "field_name": seed.field_name,
+                "raw_value": seed.raw_value,
+                "raw_unit": seed.raw_unit,
+                "confidence": seed.confidence,
+                "source_turn_index": seed.source_turn_index,
+            }
+            for field_name, seed in dict(context.mentioned_parameters).items()
+        },
+        "explored_concepts": list(context.explored_concepts),
+        "detected_intent": context.detected_intent,
+        "transition_offered": context.transition_offered,
+        "conversation_turns": [
+            {"role": turn.role, "content": turn.content}
+            for turn in context.conversation_turns
+        ],
+        "user_turn_index": context.user_turn_index,
+    }
+    return json.dumps(payload, ensure_ascii=True)
+
+
+def _deserialize_knowledge_session_context(raw: str) -> KnowledgeSessionContext | None:
+    try:
+        data = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict):
+        return None
+    parameter_payload = data.get("mentioned_parameters") or {}
+    mentioned_parameters = {
+        str(field_name): ParameterSeed(**value)
+        for field_name, value in dict(parameter_payload).items()
+        if isinstance(value, dict)
+    }
+    conversation_turns = tuple(
+        KnowledgeConversationTurn(
+            role=str(turn.get("role") or "assistant"),
+            content=str(turn.get("content") or ""),
+        )
+        for turn in list(data.get("conversation_turns") or [])
+        if isinstance(turn, dict) and str(turn.get("content") or "").strip()
+    )
+    return KnowledgeSessionContext(
+        session_id=str(data.get("session_id") or "default"),
+        mentioned_parameters=mentioned_parameters,
+        explored_concepts=tuple(str(item) for item in list(data.get("explored_concepts") or []) if str(item).strip()),
+        detected_intent=str(data.get("detected_intent") or "").strip() or None,
+        transition_offered=bool(data.get("transition_offered")),
+        conversation_turns=conversation_turns,
+        user_turn_index=int(data.get("user_turn_index") or 0),
+    )
 
 async def _load_live_governed_state(
     *,
@@ -62,6 +131,69 @@ async def _load_live_governed_state(
             tenant_id=tenant_id,
             session_id=session_id,
             redis_client=redis_client,
+        )
+
+
+async def _load_live_knowledge_session_context(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> KnowledgeSessionContext | None:
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
+    redis_url = os.getenv("REDIS_URL", "")
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+    async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+        raw = await redis_client.get(
+            _knowledge_session_key(
+                tenant_id=tenant_id,
+                owner_id=owner_id,
+                session_id=session_id,
+            )
+        )
+    if raw is None:
+        return None
+    return _deserialize_knowledge_session_context(raw)
+
+
+async def _persist_live_knowledge_session_context(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+    context: KnowledgeSessionContext,
+) -> None:
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
+    redis_url = os.getenv("REDIS_URL", "")
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+    async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+        await redis_client.set(
+            _knowledge_session_key(
+                tenant_id=tenant_id,
+                owner_id=owner_id,
+                session_id=session_id,
+            ),
+            _serialize_knowledge_session_context(context),
+            ex=_KNOWLEDGE_SESSION_TTL_SECONDS,
+        )
+
+
+async def _clear_live_knowledge_session_context(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+) -> None:
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
+    redis_url = os.getenv("REDIS_URL", "")
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+    async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+        await redis_client.delete(
+            _knowledge_session_key(
+                tenant_id=tenant_id,
+                owner_id=owner_id,
+                session_id=session_id,
+            )
         )
 
 async def _persist_live_governed_state(
@@ -108,6 +240,93 @@ async def _persist_live_governed_state(
             exc,
             exc_info=True,
         )
+
+
+def _merge_seed_into_governed_state(
+    *,
+    governed_state: GovernedSessionState,
+    context: KnowledgeSessionContext,
+) -> GovernedSessionState:
+    seed = KnowledgeCaseBridgeService().build_governed_seed(context)
+
+    conversation_messages = list(governed_state.conversation_messages)
+    seen_turns = {(message.role, message.content) for message in conversation_messages}
+    for message in seed.conversation_messages:
+        key = (message.role, message.content)
+        if key in seen_turns:
+            continue
+        conversation_messages.append(message)
+        seen_turns.add(key)
+
+    observed = governed_state.observed
+    seen_extractions = {
+        (
+            extraction.field_name,
+            json.dumps(extraction.raw_value, sort_keys=True, default=str),
+            extraction.turn_index,
+        )
+        for extraction in observed.raw_extractions
+    }
+    for extraction in seed.observed_extractions:
+        key = (
+            extraction.field_name,
+            json.dumps(extraction.raw_value, sort_keys=True, default=str),
+            extraction.turn_index,
+        )
+        if key in seen_extractions:
+            continue
+        observed = observed.with_extraction(extraction)
+        seen_extractions.add(key)
+
+    progress = governed_state.exploration_progress.model_copy(
+        update={
+            "observed_topic": seed.observed_topic or governed_state.exploration_progress.observed_topic,
+            "tentative_domain_signals": list(
+                dict.fromkeys(
+                    list(governed_state.exploration_progress.tentative_domain_signals)
+                    + list(seed.tentative_domain_signals)
+                )
+            ),
+            "case_active": True,
+            "last_route": "KNOWLEDGE_BRIDGE",
+        }
+    )
+    return governed_state.model_copy(
+        update={
+            "observed": observed,
+            "conversation_messages": conversation_messages,
+            "exploration_progress": progress,
+            "user_turn_index": max(governed_state.user_turn_index, seed.user_turn_index),
+        }
+    )
+
+
+async def _bridge_knowledge_session_to_governed_state(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+    context: KnowledgeSessionContext,
+) -> GovernedSessionState:
+    governed_state = await _load_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        create_if_missing=True,
+    )
+    seeded_state = _merge_seed_into_governed_state(
+        governed_state=governed_state,
+        context=context,
+    )
+    await _persist_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        state=seeded_state,
+        pre_gate_classification="DOMAIN_INQUIRY",
+    )
+    await _clear_live_knowledge_session_context(
+        current_user=current_user,
+        session_id=session_id,
+    )
+    return seeded_state
 
 async def _persist_review_outcome_to_live_governed_state(
     *,

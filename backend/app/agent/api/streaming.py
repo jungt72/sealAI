@@ -103,6 +103,25 @@ async def _stream_fast_response(
     yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
     yield "data: [DONE]\n\n"
 
+
+async def _stream_knowledge_response(
+    *,
+    knowledge_response: Any,
+) -> AsyncGenerator[str, None]:
+    from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
+
+    state_update_event = {
+        "type": "state_update",
+        "reply": knowledge_response.content,
+        "response_class": knowledge_response.output_class,
+        "structured_state": None,
+        "policy_path": "knowledge",
+        "run_meta": _knowledge_response_run_meta(knowledge_response),
+    }
+    yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
+    yield "data: [DONE]\n\n"
+
+
 def _classify_exploration_intent(message: str) -> str:
     lowered = (message or "").lower()
     if "vergleich" in lowered or "unterschied" in lowered or "gegenüber" in lowered:
@@ -331,6 +350,12 @@ async def event_generator(
 
     if dispatch.fast_response is not None:
         async for frame in _stream_fast_response(fast_response=dispatch.fast_response):
+            yield frame
+        return
+    if dispatch.knowledge_response is not None:
+        async for frame in _stream_knowledge_response(
+            knowledge_response=dispatch.knowledge_response,
+        ):
             yield frame
         return
 

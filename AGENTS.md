@@ -1,717 +1,669 @@
-# AGENTS.md — SeaLAI Repository Operating Contract for Codex
+## Frontend Design Source of Truth
 
-**Version:** 3.0
-**Datum:** 2026-04-18
-**Status:** Binding
-**Audience:** Codex CLI / Codex agents / human reviewers
-**Scope:** Entire repository unless a deeper AGENTS.md overrides a section locally
 
----
 
-## 1. Purpose
+For all UI, layout, styling, motion, card, timeline, rail, cockpit, chat-workspace, and responsive frontend work, `frontend/DESIGN.md` is binding.
 
-This file is the single working contract for Codex inside the SeaLAI repository.
 
-Codex must use this file to understand:
 
-- what SeaLAI is actually building
-- which architecture is binding
-- how to work safely in this repo
-- how to audit before patching
-- how to keep diffs small and evidence-based
-- how to avoid drifting back into the wrong domain focus
+Agents must read and follow `frontend/DESIGN.md` before making any frontend change.
 
-This file is not marketing copy. It is an execution contract.
+If `frontend/DESIGN.md` conflicts with ad-hoc stylistic guesses, `frontend/DESIGN.md` wins.
 
----
+Do not invent a parallel design system.
 
-## 2. Project mission
 
-SeaLAI is a neutral technical translation and qualification platform for the sealing technology industry. It connects users with the sealing problem and manufacturers with the technical capability, without acting as a catalog, marketing funnel, or price aggregator.
+# AGENTS.md
 
-SeaLAI is **not**:
-- a generic chatbot
-- a catalog search UI
-- a final recommendation engine
-- a manufacturer replacement
-- a norm autopilot
-- a price comparison platform (in MVP; future evolution is out of scope for current sprints)
+## Purpose
 
-SeaLAI **is**:
-- a structured technical clarification system that understands before it advises
-- a path-routing and requirement-closing system with explicit Pre-Gate classification
-- a deterministic engineering-check system with cascading calculations
-- a provenance-aware cockpit for users, manufacturers, and SeaLAI analytics
-- a preselection and inquiry-preparation system that produces structured inquiry packages
-- a consultative platform that teaches while qualifying (Product North Star §3.3)
+This repository builds **SeaLAI** as a **conversation-first engineering system for sealing technology**.
 
-Final technical release always remains with the manufacturer.
+SeaLAI must feel to the user like a **very experienced senior sealing engineer**:
+
+* calm
+* precise
+* friendly
+* technically strong
+* honest about uncertainty
+* excellent at structured needs analysis
+* capable of both general sealing knowledge dialogue and case qualification
+
+At the same time, SeaLAI is **not** allowed to behave like a free-floating black-box chatbot.
+Its engineering truth must remain governed, deterministic where required, provenance-aware, and auditable.
+
+This file defines the binding operating rules for all coding agents working in this repository, especially Codex CLI, Claude Code, and similar autonomous patching agents.
 
 ---
 
-## 3. Binding source of truth
+## Product north star
 
-**Precedence order (highest to lowest):**
+Build SeaLAI as:
 
-1. `konzept/sealai_product_north_star.md` — product truths, user/manufacturer value, non-negotiables
-2. `konzept/sealai_ssot_architecture_plan.md` — architectural foundation (base SSoT)
-3. `konzept/sealai_ssot_supplement_v1.md` — LangGraph role, consistency, schema layering, persistence (Ch. 33-36)
-4. `konzept/sealai_ssot_supplement_v2.md` — positioning, moat, MVP scope, terminology, capability, business logic (Ch. 37-43)
-5. `konzept/sealai_ssot_supplement_v3.md` — Product North Star operationalization: Fast Responder, Problem-First Matching, Application Patterns, Small-Quantity, Advisory, Cascading Calculations, Medium Intelligence, Educational Contract, Multimodal Input, Knowledge Bridge (Ch. 44-53)
-6. `konzept/sealai_engineering_depth_ptfe_rwdr.md` — PTFE-RWDR engineering depth (binding for MVP depth fields)
-7. `konzept/founder_decisions_phase_1a.md` — 8 implementation decisions + Selective Rewrite transition strategy
-8. `audits/phase_1a_implementation_plan_2026-04-18.md` — binding sprint-level execution contract
-9. this `AGENTS.md`
-10. `konzept/SEALAI_KONZEPT_FINAL.md` — product/business narrative (subordinate)
-11. `konzept/SEALAI_KOMMUNIKATION_ZIELBILD.md` — communication target image (subordinate, may be stale)
-12. `konzept/SEALAI_STACK_ARCHITEKTUR.md` — runtime/infrastructure reference only
-13. current backend code as implemented truth
-14. current frontend code as projection truth
+> **a conversation-first engineering runtime for sealing technology**
+> that combines a human-feeling expert dialogue surface with a governed technical backend.
 
-**Conflict handling:**
-- Product North Star > any technical document (for product-purpose questions)
-- Newer supplement > older supplement > base SSoT (on the same topic)
-- Supplement v3 is binding technical operationalization of the Product North Star
-- Engineering depth guide > any SSoT document on PTFE-RWDR-specific fields
-- Implementation Plan specifies which patches run in which sprint; it must not be deviated from silently
-- If documents conflict, state the conflict explicitly and ask — do not guess
+SeaLAI is **not** only an RFQ preparation tool.
+SeaLAI is **not** only a chat UI.
+SeaLAI is **not** only a matching engine.
 
-**Current code vs. target:** Keep current code as truth of what exists today. Keep Authority set as truth of what must be built. The delta between them is what Phase 1a sprints address.
+SeaLAI must unify three things:
 
----
+1. **Expert conversation**
 
-## 4. Codex operating mode
+   * greetings
+   * smalltalk
+   * meta questions
+   * general sealing knowledge questions
+   * technical explanation
+   * structured clarification
 
-### 4.1 Read-only first
-For any non-trivial task:
-- inspect real code first
-- inspect real wiring first
-- inspect real tests first
-- inspect real state ownership first
-- report evidence before patching
+2. **Governed engineering intelligence**
 
-Do **not** jump directly into code changes for architecture-sensitive work.
+   * request typing
+   * engineering path detection
+   * provenance-aware parameter capture
+   * deterministic calculations
+   * proactive advisories
+   * medium intelligence
+   * readiness and blockers
 
-### 4.2 Smallest clean patch sequence
-After audit:
-- propose the smallest patch sequence
-- keep each patch narrow
-- preserve existing wiring where possible in strangler zones
-- construct new foundations greenfield where the Implementation Plan requires
-- avoid repo-wide churn
-- avoid speculative rewrites beyond the current sprint's scope
+3. **Neutral manufacturer-facing deliverables**
 
-### 4.3 Sprint boundary respect
-Codex MUST NOT work ahead into future sprints. If a current-sprint patch tempts a fix that would properly belong to a later sprint (e.g., "while I'm here, let me also refactor X"), that temptation is refused. The Implementation Plan's sprint boundaries are binding.
+   * technical prequalification
+   * transparent open points
+   * problem-first manufacturer matching
+   * JSON / PDF artifacts
+   * manufacturer-ready inquiry packages
 
-### 4.4 No "UI solved = problem solved"
-Do not treat labels, cards, sections, or frontend projections as evidence that the domain model is actually implemented. Backend/state truth matters more than frontend appearance.
-
-### 4.5 No silent invention
-Do not invent domain rules, norm logic, thresholds, compatibility truth, support-plan logic, or derived values without either:
-- explicit implementation evidence
-- explicit rule definition in the Authority set
-- or a clearly marked TODO / extension seam
-
-### 4.6 Tests green before merge — always
-No patch merges with failing tests. If a patch causes a test failure, the test must be fixed (if the test was wrong) or the patch must be fixed (if the code was wrong) before merge. "Fix later" is not an option.
+This direction is consistent with the product concept's chat-plus-cockpit model, structured technical clarification, transparent open points, and manufacturer-ready artifacts fileciteturn2file0L57-L99, and with the binding supplement requirements for Fast Responder, Problem-First Matching, Application Patterns, Proactive Advisory, Cascading Calculations, Medium Intelligence, Educational Output, Multimodal Intake, and Knowledge-to-Case Bridge fileciteturn2file2L1-L84 fileciteturn2file4L1-L41 fileciteturn2file5L1-L92 fileciteturn2file6L1-L23.
 
 ---
 
-## 5. SeaLAI's binding architecture model
+## Binding authority order
 
-SeaLAI has two orthogonal domain dimensions plus a runtime classification layer.
+When multiple docs or code paths disagree, use this order:
 
-### 5.1 Domain dimensions
+1. `konzept/sealai_ssot_architecture_plan.md`
+2. SSoT supplements v1 / v2 / v3
+3. this `AGENTS.md`
+4. current codebase behavior
+5. older notes, legacy prompts, or convenience shortcuts
 
-**Request type** (per AGENTS §5.1 in Base SSoT):
-- `new_design`
-- `retrofit`
-- `rca_failure_analysis` (MVP: recognized but degraded per Founder Decision #4)
-- `validation_check`
-- `spare_part_identification`
-- `quick_engineering_check`
+Important:
 
-**Engineering path** (per AGENTS §5.1 in Base SSoT):
-- `ms_pump`
-- `rwdr`
-- `static`
-- `labyrinth`
-- `hyd_pneu`
-- `unclear_rotary`
-
-### 5.2 Sealing material family (per Supplement v2 §39)
-
-Each case carries `sealing_material_family`:
-- `ptfe_virgin`, `ptfe_glass_filled`, `ptfe_carbon_filled`, `ptfe_bronze_filled`, `ptfe_mos2_filled`, `ptfe_graphite_filled`, `ptfe_peek_filled`, `ptfe_mixed_filled`
-- `elastomer_nbr`, `elastomer_fkm`, `elastomer_epdm`, `elastomer_hnbr`, `elastomer_ffkm`, `elastomer_silicone`
-- `unknown`
-
-### 5.3 Runtime classification (per Supplement v3 §44, Founder Decision #5)
-
-**Pre-Gate Classification** (5 values — replaces legacy `RoutingPath`):
-- `GREETING` — Fast Responder path
-- `META_QUESTION` — Fast Responder path
-- `KNOWLEDGE_QUERY` — Knowledge Service path (no case creation)
-- `BLOCKED` — Fast Responder path
-- `DOMAIN_INQUIRY` — Full graph pipeline, case creation
-
-**Three-Mode Gate** (within DOMAIN_INQUIRY, preserved as-is):
-- `CONVERSATION`
-- `EXPLORATION`
-- `GOVERNED`
-
-Codex MUST preserve this layered classification. Do NOT collapse Pre-Gate and Gate Mode. Do NOT reintroduce `RoutingPath` or `ResultForm` (both removed per Founder Decision #5).
-
-### 5.4 MVP depth boundary
-
-**Deep (full engineering fidelity):**
-- `engineering_path = rwdr` with `sealing_material_family ∈ ptfe_*`
-
-**Shallow (structural support, flat depth):**
-- `engineering_path = rwdr` with non-PTFE sealing_material_family
-- All other engineering paths
-
-The MVP is narrow in depth and wide in structure. PTFE-RWDR is the exclusive Phase 1a deep-fidelity domain.
+* Current code is **not automatically correct**.
+* Existing behavior may be provisional, legacy, or too broad.
+* Follow the SSoT intent, but do it through **small, evidence-based patches**.
 
 ---
 
-## 6. Core architectural rule: LLM vs rule engine
+## Non-negotiable invariants
 
-This is non-negotiable.
+### 1. One visible speaker
 
-### 6.1 The LLM may:
-- normalize user language
-- extract candidate structured fields
-- identify ambiguities
-- propose clarification priorities
-- render explanations and bounded summaries
-- synthesize Medium Intelligence with three-tier provenance (Supplement v3 §50)
-- generate knowledge-query responses with mandatory source citation (Founder Decision #8)
+The user must experience **one coherent expert speaker**.
+Even if multiple backend components contribute, the visible answer must read like a single experienced engineer.
 
-### 6.2 The LLM may NOT:
-- set final engineering path
-- set confirmed values
-- mark RFQ readiness
-- perform authoritative deterministic calculations
-- finalize norm applicability
-- issue final material or product approvals
-- simulate manufacturer release
-- produce factual claims without provenance (per Supplement v3 §50.2 three-tier rule)
+### 2. One authoritative engineering truth
 
-### 6.3 The rule engine must decide:
-- request type
-- engineering path
-- pre-gate classification (deterministic-first, LLM-assist only for ambiguity)
-- gate mode
-- norm module activation
-- mandatory fields
-- allowed calculations
-- cascading calculation execution (Supplement v3 §49)
-- risk scores
-- readiness
-- output class
-- downgrade / stale invalidation
+The LLM is **not** the engineering source of truth.
+Authoritative engineering state must come from governed backend logic, structured state, deterministic services, provenance-aware extraction, and explicit service contracts.
 
-If current code violates this separation, report it explicitly.
+### 3. Frontstage / backstage split
 
----
+Always preserve this split:
 
-## 7. Product invariants (Product North Star)
+* **Frontstage** = conversational engineer persona
+* **Backstage** = governed system logic
 
-Codex MUST respect these invariants in every user-facing decision:
+Frontstage should feel human and natural.
+Backstage should be strict, structured, testable, and auditable.
 
-1. **Dignity** — users never feel stupid (North Star §2.1). No form-gates, no jargon without explanation, no silent rejection.
-2. **Async respect** — users return whenever they have time (North Star §2.2). No session timeouts that lose context.
-3. **Understand before advise** — precise picture before solution (North Star §3.1).
-4. **Proactive validation** — the user's current seal may not be optimal (North Star §3.2).
-5. **Teach while qualifying** — every question is also an explanation (North Star §3.3).
-6. **Heterogeneous input is first-class** — photos, article numbers, datasheets, free text all accepted (North Star §4).
-7. **Small quantities are first-class** — 1-10 pieces filtering as Manufacturer Capability Claim (North Star §5).
-8. **Price context yes, price comparison no** — not in MVP (North Star §6).
+### 4. No silent certainty
 
-### 7.1 The five non-negotiables (North Star §7)
-SeaLAI must never become: a catalog, a marketing funnel, a price aggregator, a tool that makes users feel stupid, a tool that pretends to know what it doesn't. And must never bypass the manufacturer's final engineering authority.
+SeaLAI must never present uncertainty as certainty.
+Missing inputs, assumptions, derived values, and plausible-but-unverified medium facts must be visible as such.
 
----
+### 5. No second architecture
 
-## 8. Moat invariants (Supplement v2 §37)
+Do **not** introduce a separate chatbot architecture beside the governed system.
+Do **not** fork product logic into “chat mode” vs. “real mode” as separate apps.
+Build modes and response paths inside the same architecture.
 
-Every feature, contract, or UI decision must preserve:
+### 6. No duplicate truths
 
-- **Layer 1 — Structural neutrality**: no manufacturer influence on ranking outside declared sponsored zones; all sponsored content labeled at every surface
-- **Layer 2 — Technical translation**: matching operates on structured concepts and capability claims, never on marketing text or free-text similarity. Problem-First Matching (Supplement v3 §45) is the algorithmic enforcement.
-- **Layer 3 — Request qualification**: cases reaching manufacturers are structured, parameterized inquiry packages with explicit open-points and assumptions
+Do not create competing authorities across:
 
-If a proposed change weakens any moat layer, it must justify the trade-off explicitly. If no justification is credible, the change is rejected.
+* frontend-derived state
+* Redis-only state
+* Postgres durable state
+* LangGraph ephemeral state
+* artifact-only state
+
+Prefer an explicit truth hierarchy and stable backend projection.
+
+### 7. No broad rewrites
+
+Do not rewrite large areas just because they are complex.
+Prefer minimal, seam-based refactors that move the system toward the target architecture.
+
+### 8. Problem-first neutrality
+
+Manufacturer matching must start from the user's structured problem and derive required capabilities.
+It must not start from manufacturer claims and work backward.
+
+### 9. Educational but not patronizing
+
+SeaLAI should teach while qualifying, but never talk down to the user.
+Assume the user may lack domain exposure, not intelligence.
+
+### 10. Keep ERP/CRM out of core conversation flow initially
+
+ERPNext, CRM, and surrounding business systems are downstream integration edges.
+Do not pull them into the core chat / qualification / governed runtime unless the patch explicitly targets an integration seam.
 
 ---
 
-## 9. Canonical backend truth
+## Required architectural direction
 
-SeaLAI must remain backend-first.
+### Runtime must converge toward two top-level layers
 
-### 9.1 Required canonical shape
-The backend is the authoritative source for:
-- request type, engineering path, sealing material family
-- pre-gate classification, gate mode
-- core intake (fields per phase)
-- failure drivers, geometry/fit, RFQ/liability, RCA, commercial context
-- checks, cascading calculations, risk scores
-- readiness, provenance, norm context, artifacts
-- application pattern assignment (Supplement v3 §46)
-- medium intelligence output (Supplement v3 §50)
-- advisory notes (Supplement v3 §48)
-- tenant ownership (Founder Decision #6)
+#### Layer 1 — Fast Responder
 
-### 9.2 Frontend role
-Frontend is a renderer/projection layer. Frontend may group, filter, collapse, visualize, trigger actions. Frontend must not independently compute engineering truth, define mandatory fields, set readiness, resolve path conflicts, or override provenance.
+For:
 
----
+* greeting
+* short acknowledgement
+* meta questions about SeaLAI
+* blocked content
 
-## 10. Provenance is mandatory
+Properties:
 
-Every relevant engineering value must carry provenance.
+* no case creation
+* no graph invocation
+* no durable case persistence
+* fast response
+* still persona-consistent
 
-### 10.1 Allowed origins (base SSoT §9)
-- `user_stated`
-- `documented`
-- `web_hint`
-- `calculated`
-- `confirmed`
-- `missing`
+#### Layer 2 — Governed Flow
 
-### 10.2 Medium-specific provenance layers (Supplement v3 §50)
-Three-tier model for Medium Intelligence:
-- **Tier 1 — Registry-grounded**: from curated medium registry, high confidence
-- **Tier 2 — LLM-synthesis**: from LLM general knowledge, explicitly labeled with "Plausibilitäts-Schätzung, bitte im konkreten Fall prüfen"
-- **Tier 3 — User-provided**: treated as given
+For:
 
-Plus generic medium-related provenance: `medium.input`, `medium.context`, `medium.registry`, `medium.inferred_properties`, `medium.confirmed_properties`.
+* knowledge queries
+* domain inquiries
+* structured qualification
+* calculations
+* advisories
+* medium intelligence
+* matching
+* artifacts
 
-### 10.3 Rule
-No web-derived or LLM-derived hint may become confirmed engineering truth without an explicit promotion step. Every knowledge-query factual claim must cite a source.
+Properties:
+
+* may use LangGraph
+* may create durable state
+* must remain provenance-aware and auditable
+
+This split is binding and follows supplement v3 Fast Responder and Knowledge-to-Case bridge semantics fileciteturn2file2L1-L34 fileciteturn2file4L1-L41.
 
 ---
 
-## 11. Output classes are controlled
+## SeaLAI persona contract
 
-Codex must preserve the controlled output model.
+All user-visible reply work must preserve the intended persona.
 
-**Seven allowed output classes** (Base SSoT §10):
-- `conversational_answer`
-- `structured_clarification`
-- `governed_state_update`
-- `technical_preselection`
-- `rca_hypothesis` (Phase 2+ per Founder Decision #4; MVP degrades to structured_clarification)
-- `candidate_shortlist`
-- `inquiry_ready`
+SeaLAI should sound like:
 
-**Removed (do NOT reintroduce):** `ResultForm` enum (Founder Decision #5).
+* a senior sealing engineer
+* empathetic, but not theatrical
+* direct, but not cold
+* technical, but not jargon-heavy unless the user is clearly advanced
+* structured and calm
+* honest about uncertainty
+* able to explain trade-offs
+* able to guide without sounding like a form wizard
 
-### 11.1 Output enforcement
-The system must have a backend-side validation layer that checks final text against output-class claim rules. Prompt-only restrictions are not sufficient.
+SeaLAI should be able to handle:
 
-### 11.2 Red-flag phrases
-Output validation must detect and prevent phrases equivalent to: "guaranteed", "will definitely work", "fully approved", "norm compliant" without basis, "no further review required", "objectively best match".
+* general sealing technology questions
+* material comparisons
+* request clarification
+* retrofit and RCA entry points
+* spare-part identification entry points
+* structured engineering qualification
+* light smalltalk without breaking trust
 
-### 11.3 Advisory Notes (Supplement v3 §48)
-Advisory Notes are a cross-cutting output element — co-exist with any output class. Every advisory carries the disclaimer: "Nicht alle Umstände dieses konkreten Falls konnten berücksichtigt werden."
+SeaLAI must **not** sound like:
 
----
-
-## 12. Fast Responder boundary (Supplement v3 §44)
-
-Fast Responder is the pre-graph layer for non-case-creating interactions.
-
-### 12.1 Fast Responder handles ONLY
-- `GREETING`, `META_QUESTION`, `BLOCKED` classifications
-- No case creation, no persistence, no graph invocation
-- Latency target: 500ms–1s
-
-### 12.2 Fast Responder MUST NOT handle
-- `KNOWLEDGE_QUERY` (goes to Knowledge Service)
-- `DOMAIN_INQUIRY` (goes to full graph)
-- Any classification added later, without an explicit supplement amendment
-
-### 12.3 Classification ambiguity defaults to graph
-If Pre-Gate Classifier returns uncertain/ambiguous classification, fail-safe is the Full Graph Pipeline. Never fail-safe into Fast Responder.
+* a generic AI assistant
+* a marketing chatbot
+* a rigid decision tree
+* a manufacturer sales bot
+* an overconfident technical oracle
 
 ---
 
-## 13. State regression and stale invalidation
+## Coding-agent operating model
 
-Whenever a critical input changes, SeaLAI must increment revision, invalidate dependent derived state, mark affected outputs as stale, recompute highest valid phase, reset readiness if required, queue recomputation.
+### Default mode: audit first, patch second
 
-**Critical invalidators:**
-- medium change
-- pressure change
-- temperature envelope change
-- geometry reference change
-- motion type change
-- equipment type change
-- support-system change
-- `sealing_material_family` change
-- `ptfe_compound` detail change (for PTFE-RWDR)
-- shaft surface / finish / lead / hardness change
-- application pattern assignment change (Supplement v3 §46)
-- any input to a cascading calculation (Supplement v3 §49)
+For any non-trivial task, agents must:
 
-**Mutation discipline (Supplement v1 §34, Founder Decision #1):**
-- Every case change flows through `case_service.apply_mutation()`
-- Optimistic locking on `case_revision`
-- LangGraph nodes MUST NOT write directly to Postgres
-- Every mutation produces a `mutation_events` entry AND an `outbox` entry
-- `case_state_snapshots` is a projection cache, not primary source of truth
+1. inspect current architecture and exact insertion points
+2. identify the smallest productive seam
+3. explain what is true now
+4. explain what is misaligned
+5. patch minimally
+6. add or update tests
+7. validate with concrete commands
+8. stop
 
-**Cascading calculations (Supplement v3 §49):**
-- Execute synchronously to fixpoint when inputs are satisfied
-- Every derived value carries `provenance = "calculated"` with calc_id, version, inputs used
-- Stale invalidation propagates through the calculation graph
+### Never do these things first
 
-The frontend must only display stale/recompute status. It must never decide stale logic itself.
+Do **not** start with:
 
----
+* speculative refactors
+* file explosions
+* parallel abstractions
+* framework replacement
+* new orchestration layers without need
+* frontend rewrites to hide backend problems
 
-## 14. Tenant ownership model (Founder Decision #6)
+### Always optimize for
 
-Three-role data access:
-
-### 14.1 User owns the case
-- Every case has a `tenant_id` referring to the user
-- `tenant_id` is NOT NULL (enforced at schema and API layer)
-- Users see only their own cases
-- Conversation history, evidence, derived parameters belong to the user
-
-### 14.2 Manufacturer receives inquiry extract, not the case
-- Manufacturers see `inquiry_extracts` (separate table), not full case objects
-- Structured, technical, anonymized (no user PII, no conversation history)
-- Dispatch requires explicit user consent
-- Produced by `inquiry_extract_service`
-
-### 14.3 SeaLAI has analytics-only access
-- Anonymized aggregates for product improvement
-- Golden cases (anonymized successful cases) for training/testing/regression
-- PII removal is automated via `anonymization_service`
-
-Any query or code path that returns case data must filter by role and tenant. No cross-tenant leaks.
+* minimal diff
+* exact contracts
+* explicit service seams
+* backward safety
+* testability
+* architectural clarity
 
 ---
 
-## 15. Chemical compatibility is a real subsystem
+## Patch-size policy
 
-Treat chemical compatibility as its own architecture concern.
+Agents must prefer **small named patches**.
 
-### 15.1 It cannot be:
-- only prompt logic
-- only LLM inference
-- only generic web search
+A good patch:
 
-### 15.2 It must be built around:
-- internal compatibility registry
-- structured OEM/manufacturer data when available
-- SDS/TDS mappings
-- Medium Intelligence Service (Supplement v3 §50) with three-tier provenance
-- fallback hints clearly marked as non-confirmed
+* changes one architectural seam or one bounded behavior
+* is explainable in a short diagnosis
+* has clear before/after behavior
+* has focused tests
+* does not hide broad rewiring inside a “small” claim
 
-### 15.3 Required compatibility dimensions
-At minimum: medium key, concentration, temperature range, dynamic vs static rating, material family, material grade, limitations/guardrails, source refs, registry entry identity, version/hash for traceability.
+A bad patch:
 
----
-
-## 16. Norms are modules with gates
-
-Norm modules must be independently activatable with: applicability rule, required fields, deterministic checks, escalation logic, output implications.
-
-### 16.1 MVP norm modules (Founder Decision #7)
-- `norm_din_3760_iso_6194` — full code gate (PTFE-RWDR dimensional and type conventions)
-- `norm_eu_food_contact` — full code gate (EU 10/2011)
-- `norm_fda_food_contact` — full code gate (FDA 21 CFR 177.1550)
-- `norm_atex` — capability flag, not full module
-
-### 16.2 Deferred norm modules (Phase 2+)
-- `norm_api_682` — ms_pump / mechanical seal domain
-- `norm_en_12756` — mechanical seal dimensions
-- `norm_iso_3601` — O-ring static
-- `norm_vdi_2290` — static leakage classes
-
-### 16.3 Extensibility rule
-The norm module framework MUST allow adding a new norm as a pure capability extension: one new file, capability-claim additions, registry entry. No schema migration or service rewrite. Regression test verifies extensibility.
-
-### 16.4 Distinction rule
-Codex must explicitly distinguish: reference present vs. gate present vs. required fields present vs. checks present vs. escalation present. A norm mentioned in docs is not a norm implemented.
+* touches many unrelated files
+* mixes routing, UI, data model, and business logic together
+* adds abstractions before proving the seam
+* introduces dead code or “future maybe” systems
 
 ---
 
-## 17. Calculations and checks: registry-based, deterministic, cascading
+## Required service seams
 
-### 17.1 Minimum checks layer
-- circumferential speed
-- PV loading
-- flashing / vapor margin
-- leakage-related indicators
-- friction / heat indicators
-- creep-gap estimate (PTFE-specific)
-- extrusion gap check
-- compound temperature headroom
-- fit risk inputs
-- lubrication concern
-- corrosion concern
-- path-specific readiness checks
+Agents should prefer to work through explicit services instead of route-heavy or node-heavy incidental logic.
 
-### 17.2 Formula discipline (Supplement v3 §49)
-Each calculation must have:
-- stable `calc_id`
-- explicit required inputs (`FieldPath[]`)
-- optional inputs (improves precision)
-- output fields
-- `applicable_when` predicate
-- formula function
-- fallback behavior on missing inputs
-- version (semantic)
-- provenance metadata
+Target first-class seams include:
 
-### 17.3 Cascading execution
-The Cascading Calculation Engine executes all applicable formulas to fixpoint when inputs become available, synchronously within the same request. Maximum iterations guard against cycles.
+* `fast_responder_service`
+* `knowledge_service`
+* `knowledge_session_context_service`
+* `bridge_to_case_service`
+* `pattern_matcher_service`
+* `medium_intelligence_service`
+* `advisory_engine`
+* `calculation_cascade_service`
+* `problem_first_matching_service`
+* `cockpit_projection_service`
+* `artifact_generation_service`
 
-No ad hoc inline formulas. No manual calculation chains. The engineer should never have to trigger a follow-on calculation by hand.
+If equivalent seams already exist under different names, prefer **refactoring toward them** instead of duplicating them.
 
 ---
 
-## 18. Application Patterns (Supplement v3 §46)
+## State authority rules
 
-Pattern Library is a first-class data source, not prose.
+Agents must preserve or improve a clear state authority hierarchy.
 
-### 18.1 Pattern entity
-Each pattern: canonical_name, display_name (localized), triggering_contexts, engineering_path, typical_sealing_material_families, auto_populated_fields (with confidence), required_clarification_fields, typical_operating_envelope, relevant_norm_modules, candidate_compound_families, typical_failure_modes, quantity_profile, educational_note, provenance, version.
+Preferred hierarchy:
 
-### 18.2 MVP seed
-14 patterns covering PTFE-RWDR-relevant applications (chemical_process_pump, hydraulic_gearbox, food_processing_chocolate, food_processing_dairy, pharmaceutical_mixing, water_treatment, automotive_gearbox, rotating_drum_mixer, compressor_sealing, cryogenic, high_speed_spindle, pump_dry_run_risk, rebuild_replacement_individual, generic_industrial_unclear).
+1. **Postgres durable case truth**
+2. **Redis live/session truth**
+3. **LangGraph turn state**
+4. **Frontend rendering state**
 
-### 18.3 Matching is explicit, not silent
-Pattern selection is presented to the user for confirmation. Auto-populated fields are flagged as `pattern_derived` with user override option.
+Rules:
 
-### 18.4 Extensibility
-Adding a new pattern = new data record + regression test. No code change.
-
----
-
-## 19. Small-quantity first-class (Supplement v3 §47)
-
-### 19.1 User input
-`quantity_requested` is a first-class Case field: `pieces` (int or range), `urgency`, `context`, `flexibility`.
-
-### 19.2 Manufacturer capability extension
-ManufacturerCapabilityClaim extends `lot_size_capability`:
-- `minimum_order_pieces`, `typical_minimum_pieces`, `maximum_order_pieces`
-- `accepts_single_pieces` boolean
-- `tooling_cost_range_eur`, `tooling_amortization_strategy`
-- `price_structure_example` with staffelpreise (1, 4, 10, 100)
-- `rapid_manufacturing_available`, surcharge percent, leadtime hours
-
-### 19.3 Matching behavior
-- Quantity ≤ 10: HARD filter on `accepts_single_pieces = true`
-- Quantity > 10: soft signal via `preferred_batch_size_range`
-
-### 19.4 User expectation management
-Pre-dispatch, show expected price range as context (Supplement v3 §47.7). Range indication only, never price comparison.
+* frontend must not be authoritative for engineering truth
+* derived values need provenance
+* changed upstream values must stale downstream dependents
+* cockpit projection must come from backend authority, not UI inference
 
 ---
 
-## 20. Knowledge queries first-class (Founder Decision #8, Supplement v3 §53)
+## Retrieval / knowledge rules
 
-### 20.1 Knowledge Service
-Dedicated service for `KNOWLEDGE_QUERY` classification. Uses curated, versioned knowledge base (50-100 PTFE-RWDR-focused entries in MVP).
+SeaLAI must support both:
 
-### 20.2 Attribution mandatory
-Every factual claim cites a source (norm §, datasheet, terminology registry entry, literature reference). No invented facts. When no relevant entry exists, respond honestly.
+* general knowledge dialogue
+* case-specific governed qualification
 
-### 20.3 Bridge to case
-Transition signals detected per turn. Context accumulated in session is transferred to new case on bridge acceptance. Registration prompt at bridge point.
+Agents must preserve this distinction:
 
-### 20.4 Knowledge is not generic LLM
-Knowledge Service MUST NOT be a ChatGPT-wrapper. Every response grounded in the curated knowledge base; LLM synthesizes but does not invent.
+### Knowledge query path
 
----
+Use when the user is:
 
-## 21. Multimodal input (Supplement v3 §52)
+* asking a general question
+* learning concepts
+* comparing materials in abstract terms
+* exploring before committing to a case
 
-### 21.1 MVP input types
-Photo, article number/part designation, datasheet fragment, dimensional sketch, free-text description.
+### Domain inquiry path
 
-### 21.2 Extraction is proposal, not ground truth
-All extracted parameters are flagged as proposals requiring user verification. Never silent adoption.
+Use when the user is:
 
-### 21.3 Conflict handling
-If inputs disagree (e.g., photo shows cassette, article number decodes as single-lip), present conflict to user explicitly. Never silently resolve.
+* describing a real application
+* providing operating parameters
+* asking for a fit or recommendation for their case
+* seeking manufacturers or a structured qualification
 
-### 21.4 Privacy
-User-uploaded photos: retained only on user's case, stripped from manufacturer extracts and golden cases. EXIF metadata removed.
-
----
-
-## 22. RCA and retrofit (Founder Decision #4 for RCA, unchanged for retrofit)
-
-### 22.1 RCA in MVP — degraded
-RCA requests are recognized by Pre-Gate (keywords: "ausgefallen", "Leckage nach", "Lebensdauer"). Degraded with explicit verbatim message (Founder Decision #4 implementation spec) + optional Early-Access signup (`rca_early_access` table).
-
-### 22.2 RCA full pipeline in Phase 2+
-Full RCA intake pipeline, damage-pattern matching, `rca_hypothesis` output class — all deferred.
-
-### 22.3 Retrofit (MVP scope)
-Retrofit must support: geometry locked, allowed changes, old part references, fixed cavity constraints, available radial/axial space, standard vs custom fit judgment.
-
-### 22.4 Handover preservation
-Retrofit / new_design / RCA handover must preserve: transferred fields, blocked fields, original-request reference, reason for transition.
+The bridge between both must be explicit and smooth, not a hard reset.
 
 ---
 
-## 23. Commercial / supply context
+## Fast responder rules
 
-Required commercial context part of final readiness:
-- production mode
-- lot size (per quantity_requested and Supplement v3 §47)
-- lead-time criticality
-- standardization goal
-- second source requirement
-- lifecycle / spare-parts context
-- ATEX / food-grade requirement flags
+Fast Responder is a hard architectural boundary.
 
-Must not be buried as optional note-only metadata.
+It must only handle the explicitly allowed classes:
 
----
+* GREETING
+* META_QUESTION
+* BLOCKED
 
-## 24. Versioning is mandatory
+It must not:
 
-Every case tracks (Supplement v1 §36):
-- `schema_version`
-- `ruleset_version`
-- `calc_library_version`
-- `risk_engine_version`
-- `norm_module_versions`
-- `case_revision` (optimistic locking — Founder Decision #1)
+* create cases
+* write durable case state
+* invoke the full graph
+* silently expand into more categories without explicit authority
 
-### 24.1 Migration rule
-Additive schema changes must not silently create broken legacy cases. Old cases must be revalidated explicitly when necessary.
+If classification is ambiguous, fail safe toward the governed path.
 
 ---
 
-## 25. Selective Rewrite transition strategy (Founder Decisions meta)
+## Matching rules
 
-Phase 1a transition is **Selective Rewrite**:
+All manufacturer matching work must stay aligned with problem-first matching.
 
-### 25.1 Greenfield (build new)
-Persistence extensions (`mutation_events`, `outbox`, extended `cases` schema).
-New services: `case_service`, `output_classifier`, `pre_gate_classifier`, `inquiry_extract_service`, `anonymization_service`, `knowledge_service`, `terminology_service`, `risk_engine`, `compatibility_service`, `outbox_worker`, `norm_modules/`, `output_validator`, `formula_library`, `projection_service`, `fast_responder_service`, `application_pattern_service`, `medium_intelligence_service`, `advisory_engine`, `photo_analysis_service`, `article_number_decoder_service`, `datasheet_extraction_service`.
-New tables for capability, terminology, knowledge, extracts, patterns, media, advisories.
+Required flow:
 
-### 25.2 Strangler (preserve, refactor in place)
-`agent/graph/topology.py`, three-mode gate, observability, audit logger. Oversized nodes (intake_observe, matching, output_contract, rfq_handover) shrink as business logic extracts to services.
+1. derive structured problem signature
+2. derive required capabilities
+3. hard-filter candidates on required capabilities where appropriate
+4. score technical fit
+5. expose rationale and gaps
 
-### 25.3 Remove
-`services/langgraph/` (after YAML rule migration), `services/fast_brain/` (absorbed by three-mode gate CONVERSATION), `_legacy_v2/`, `ResultForm` enum, legacy feature flags (`SEALAI_ENABLE_BINARY_GATE`, `SEALAI_ENABLE_CONVERSATION_RUNTIME`, `ENABLE_LEGACY_V2_ENDPOINT`), `interaction_policy.py` shim, old endpoints (`langgraph_v2.py`, `fast_brain_runtime.py`).
+Forbidden:
 
----
-
-## 26. Codex workflow expectations
-
-### Step A — Audit
-- inspect real implementation
-- inspect current tests
-- inspect current wiring
-- inspect current docs
-- identify actual truth vs target truth (per Implementation Plan)
-
-### Step B — Delta report
-Return: what exists, what is partial, what is missing, what looks integrated but is not, smallest patch sequence within current sprint scope.
-
-### Step C — Patch one layer at a time
-Follow the Implementation Plan sprint order. Do NOT skip ahead because a later patch "looks more visible". Do NOT combine patches across sprint boundaries.
-
-### Step D — Validate
-Run tests for touched area. Run import-graph check. Run moat-invariant check where applicable. Run tenant-isolation check where applicable. Green before merge.
-
-### Step E — Report
-Exact file paths. Exact functions/classes/modules. Concise evidence. What changed. What tests confirm the change.
+* capability-first ranking
+* marketing-text-based matching
+* sponsor bonus in technical ranking
+* hiding zero-match outcomes
 
 ---
 
-## 27. Repo-specific discipline
+## Advisory and calculation rules
 
-### 27.1 Commands
-Always run repo-level commands from `/home/thorsten/sealai`.
+### Advisory engine
 
-### 27.2 Minimal diffs
-Prefer: extension seams, local refactors, adapter layers, explicit rule modules. Avoid: broad rewrites, renaming cascades, rewriting stable infrastructure "to clean up".
+Advisories must be:
 
-### 27.3 Evidence-based reporting
-When auditing or patch-planning: exact file path, exact functions/classes/modules, concise evidence, today vs. target state.
+* deterministic
+* parameter-triggered
+* visible
+* non-blocking unless explicitly compliance-hard
+* phrased as engineering guidance, not command
 
-### 27.4 MVP scope respect
-The MVP depth boundary is PTFE-RWDR. If current code has lingering RWDR-first artifacts from the pre-SSoT era, report and isolate — do NOT expand them. The new PTFE-RWDR focus is deliberate narrow-depth/wide-structure per Supplement v2 §39.
+### Calculation cascade
 
-### 27.5 Layer isolation (Supplement v1 §35)
-- `backend/app/domain/` — no upward imports
-- `backend/app/models/` — imports only from `domain/`
-- `backend/app/schemas/` — imports only from `domain/`
-- `backend/app/services/` — must NOT import from `backend/app/agent/`
-- LangGraph nodes MUST NOT import from `services/` except through defined service interfaces
+Calculations must be:
 
-Verify with `grep` commands before merging.
+* synchronous where lightweight
+* dependency-aware
+* provenance-tagged
+* stale-aware
+* re-executed when required inputs change
 
----
-
-## 28. Test discipline
-
-### 28.1 Green before merge
-No patch merges with failing tests. Ever.
-
-### 28.2 Test-first for critical services
-For services governing core invariants (`case_service`, `pre_gate_classifier`, `output_classifier`, `anonymization_service`, `norm_modules`), tests are written alongside or before implementation, not after.
-
-### 28.3 Coverage expectations
-- Unit tests for every public service method
-- Integration tests for authority invariants (moat, provenance, tenant isolation, fast responder boundary, cascade convergence)
-- Regression tests for every bug fix
-
-### 28.4 Test hygiene
-Tests must be: deterministic, isolated, self-explanatory. Flaky tests get fixed, not retried.
+Do not bury calculations inside prompt text if they can be implemented as governed services.
 
 ---
 
-## 29. Audit gates (Implementation Plan Part C)
+## Medium intelligence rules
 
-Between every sprint, Claude Code runs a read-only audit gate. Codex CLI does not pass its own audits. The audit gate produces a pass/fail verdict with evidence.
+Medium Intelligence may combine:
 
-Codex CLI must not proceed into the next sprint until the current sprint's gate is passed and the founder has explicitly approved transition.
+* registry-grounded facts
+* LLM synthesis
+* user-provided statements
 
-If an audit gate reveals issues, Codex CLI produces remediation patches within the current sprint — not the next one.
+But provenance must be explicit.
+
+Never present plausible LLM synthesis as validated engineering truth.
+If a separate medium card or surface exists, it must visually distinguish confidence / provenance tiers.
 
 ---
 
-## 30. Final operating rule
+## Frontend rules
 
-Codex must optimize for:
-- technical truth
-- provenance
-- deterministic boundaries
-- auditability
-- smallest correct patch path
-- Product North Star alignment (user dignity, async respect, teach while qualifying)
-- moat preservation
+Frontend must remain a rendering and interaction layer.
 
-Codex must NOT optimize for:
-- superficial UI completeness
-- broad speculative abstractions
-- hidden assumptions
-- free-form "AI convenience" over engineering safety
-- cross-sprint "while we're here" fixes
-- backward compatibility with deprecated patterns (ResultForm, RoutingPath, services/langgraph/, services/fast_brain/, etc.)
+Frontend may:
 
-If in doubt:
-- ask less from the user at once
-- preserve uncertainty
-- downgrade readiness
-- mark state stale
-- prefer explicit blockers over optimistic assumptions
-- escalate to founder via Claude Code audit rather than silently reinterpret
+* render the visible expert answer
+* render cockpit state
+* render advisories and medium cards
+* trigger clarification and explanation flows
+* show progress / readiness / provenance surfaces
+
+Frontend must not:
+
+* compute authoritative engineering readiness
+* own calculation truth
+* silently reconcile conflicting backend states
+* invent its own matching logic
+
+---
+
+## Tests and validation policy
+
+Every meaningful patch must include validation.
+
+### Minimum expectation
+
+Provide:
+
+* exact files changed
+* why those files were chosen
+* focused tests or updated tests
+* concrete repo-root commands to verify behavior
+
+### Preferred validation types
+
+* unit tests for service seams
+* route or contract tests for API envelopes
+* projection tests for cockpit mapping
+* regression tests for routing boundaries
+* deterministic examples for calculations and advisories
+
+### Repo-root command rule
+
+Always provide commands from:
+
+```bash
+/home/thorsten/sealai
+```
+
+Do not provide validation commands from subdirectories unless explicitly required.
+
+---
+
+## Prompting rules for coding agents
+
+When generating implementation plans or prompts, agents must be given:
+
+* **Task Summary**
+* **Architectural intent**
+* **Current seam / suspected insertion point**
+* **Files to inspect first**
+* **Constraints / invariants**
+* **Expected artifacts**
+* **Tests required**
+* **Validation commands**
+* **Explicit forbidden moves**
+
+This repo is not optimized for vague “improve this” prompting.
+It is optimized for **evidence-based seam work**.
+
+---
+
+## Required reporting format for patches
+
+Every patch review or implementation summary should follow this shape:
+
+### 1. Short diagnosis
+
+What is true now? What is the specific gap?
+
+### 2. Exact files changed
+
+List only the files actually changed.
+
+### 3. Why these files
+
+Explain the seam.
+
+### 4. Exact behavioral delta
+
+What changed at runtime?
+
+### 5. Validation
+
+Which commands/tests prove it?
+
+### 6. Risks / limitations
+
+What remains intentionally unresolved?
+
+### 7. Next productive patch
+
+What is the smallest sensible next move?
+
+---
+
+## Anti-patterns
+
+Agents must actively avoid these anti-patterns:
+
+### 1. Architecture cosplay
+
+Inventing fancy abstractions that do not improve production behavior.
+
+### 2. Hidden rewrites
+
+Claiming a “small patch” while quietly broad-refactoring half the stack.
+
+### 3. Prompt as backend
+
+Encoding durable engineering rules only in prompts when they should be deterministic services.
+
+### 4. UI concealment
+
+Using the frontend to hide unresolved backend authority problems.
+
+### 5. Duplicate seaming
+
+Adding a new service because the old one is messy, instead of extracting or tightening the real seam.
+
+### 6. Overeager persistence
+
+Creating cases for every interaction, including greetings or casual learning.
+
+### 7. Overblocking
+
+Pushing lightweight human interactions into heavy governed workflows unnecessarily.
+
+### 8. False empathy
+
+Writing the product voice as exaggerated, gushy, emoji-heavy, or insincere.
+
+### 9. Silent assumption loading
+
+Auto-filling engineering-critical fields without clearly marking them as proposed and overrideable.
+
+### 10. ERP gravity
+
+Letting ERP / CRM integration concerns distort core conversation and qualification architecture too early.
+
+---
+
+## Current stack assumption
+
+Agents should assume the current productive stack is approximately:
+
+* FastAPI backend
+* LangGraph-based governed orchestration
+* Redis live/checkpoint layer
+* Postgres durable case storage
+* Qdrant retrieval layer
+* Keycloak auth boundary
+* Dockerized deployment behind nginx
+
+This stack is sufficient for the target architecture.
+The job is to **shape it correctly**, not replace it.
+
+---
+
+## Immediate implementation priority order
+
+Unless a task explicitly overrides this, prefer this order:
+
+1. pre-gate boundary hardening
+2. fast responder seam
+3. unified visible response contract
+4. knowledge service
+5. knowledge session context
+6. bridge from knowledge to case
+7. pattern selection and explicit prefills
+8. medium intelligence
+9. advisory engine
+10. calculation cascade
+11. problem-first matching hardening
+12. artifact generation cleanup
+13. cockpit projection normalization
+14. explainability / educational surfaces
+
+This order maximizes product feel early while preserving architectural safety.
+
+---
+
+## Final instruction
+
+When in doubt, choose the option that:
+
+* keeps the system conversation-first for the user
+* keeps engineering truth governed in the backend
+* preserves neutrality
+* reduces architectural duplication
+* produces the smallest reliable patch
+* leaves clear evidence for the next agent
+
+SeaLAI should increasingly feel like:
+
+> **one experienced sealing engineer on the surface, backed by a disciplined engineering system underneath**
+
+That is the standard all implementation work in this repository must serve.

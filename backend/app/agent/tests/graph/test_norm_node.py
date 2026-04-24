@@ -14,11 +14,17 @@ from app.agent.state.models import (
     RecipientRef,
     RequirementClass,
     RfqState,
+    UserOverride,
 )
 from app.agent.state.reducers import (
     reduce_asserted_to_governance,
     reduce_normalized_to_asserted,
     reduce_observed_to_normalized,
+)
+from app.services.norm_modules import (
+    EscalationPolicy,
+    NormCheckResult,
+    NormCheckStatus,
 )
 
 
@@ -42,6 +48,9 @@ def _qualified_state() -> GraphState:
                 confidence=1.0,
                 turn_index=0,
             )
+        )
+        observed = observed.with_override(
+            UserOverride(field_name=field_name, override_value=value, turn_index=0)
         )
     normalized = reduce_observed_to_normalized(observed)
     asserted = reduce_normalized_to_asserted(normalized)
@@ -172,6 +181,8 @@ class TestNormNode:
                 confidence=1.0,
                 turn_index=0,
             )
+        ).with_override(
+            UserOverride(field_name="medium", override_value="Wasser", turn_index=0)
         )
         normalized = reduce_observed_to_normalized(observed)
         asserted = reduce_normalized_to_asserted(normalized)
@@ -196,3 +207,63 @@ class TestNormNode:
         assert result.sealai_norm.status == "pending"
         assert result.sealai_norm.identity.norm_version == "sealai_norm_v1"
         assert result.sealai_norm.geometry == {}
+
+    @pytest.mark.asyncio
+    async def test_productive_norm_path_uses_module_registry(self, monkeypatch):
+        calls: list[dict[str, object]] = []
+
+        class Registry:
+            def run_checks(self, context):
+                calls.append(dict(context))
+                return [
+                    NormCheckResult(
+                        module_id="norm_fake",
+                        version="1.0.0",
+                        status=NormCheckStatus.PASS,
+                        applies=True,
+                        references=("TEST",),
+                    )
+                ]
+
+        monkeypatch.setattr("app.agent.graph.nodes.norm_node.build_default_registry", lambda: Registry())
+
+        state = _with_asserted_value(_qualified_state(), "engineering_path", "rwdr")
+        result = await norm_node(state)
+
+        assert calls
+        assert calls[0]["engineering_path"] == "rwdr"
+        assert result.sealai_norm.norm_checks[0]["module_id"] == "norm_fake"
+        assert result.sealai_norm.norm_checks[0]["status"] == "pass"
+
+    @pytest.mark.asyncio
+    async def test_din_module_missing_fields_surface_as_validation_points(self):
+        result = await norm_node(_with_asserted_value(_qualified_state(), "engineering_path", "rwdr"))
+
+        din_check = next(
+            check for check in result.sealai_norm.norm_checks if check["module_id"] == "norm_din_3760_iso_6194"
+        )
+        assert din_check["status"] == "insufficient_data"
+        assert "shaft_diameter_mm" in din_check["missing_required_fields"]
+        assert "norm_din_3760_iso_6194:shaft_diameter_mm" in result.sealai_norm.open_validation_points
+        assert result.sealai_norm.manufacturer_validation_required is True
+
+    @pytest.mark.asyncio
+    async def test_din_module_review_state_is_projected_from_registry(self):
+        state = _qualified_state()
+        for field_name, value in {
+            "engineering_path": "rwdr",
+            "shaft_diameter_mm": 40.0,
+            "housing_bore_diameter_mm": 62.0,
+            "seal_width_mm": 10.0,
+            "seal_type": "A",
+        }.items():
+            state = _with_asserted_value(state, field_name, value)
+
+        result = await norm_node(state)
+
+        din_check = next(
+            check for check in result.sealai_norm.norm_checks if check["module_id"] == "norm_din_3760_iso_6194"
+        )
+        assert din_check["status"] == "review_required"
+        assert din_check["escalation"] == EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW.value
+        assert "norm_din_3760_iso_6194:manufacturer_review_required" in result.sealai_norm.open_validation_points

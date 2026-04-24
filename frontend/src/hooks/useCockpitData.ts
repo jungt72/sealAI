@@ -7,8 +7,6 @@ import {
   EngineeringPath, 
   EngineeringProperty, 
   EngineeringSection, 
-  DEFAULT_PATH_RULES,
-  PATH_RULES,
   DataOrigin
 } from "@/lib/engineering/cockpitModel";
 import { 
@@ -34,50 +32,6 @@ function isEngineeringPath(value: string | null | undefined): value is Engineeri
     value === "hyd_pneu" ||
     value === "unclear_rotary"
   );
-}
-
-function deriveFallbackEngineeringPath(parameters: Record<string, any>): EngineeringPath | null {
-  const motion = String(parameters.motion_type || "").toLowerCase();
-  const equipment = [
-    parameters.installation,
-    parameters.application_context,
-    parameters.sealing_type,
-    parameters.geometry_context,
-  ]
-    .filter((value) => value !== null && value !== undefined && value !== "")
-    .map(String)
-    .join(" ")
-    .toLowerCase();
-
-  if (equipment.includes("labyrinth")) return "labyrinth";
-  if (motion === "static") return "static";
-
-  const hasRwdrMarker =
-    equipment.includes("ptfe-rwdr") ||
-    equipment.includes("ptfe rwdr") ||
-    equipment.includes("rwdr") ||
-    equipment.includes("wellendichtring") ||
-    equipment.includes("radialwellendichtring") ||
-    equipment.includes("simmerring") ||
-    equipment.includes("lip seal");
-  if (hasRwdrMarker || (motion === "rotary" && equipment.includes("gearbox"))) {
-    return "rwdr";
-  }
-
-  if (motion === "rotary" && (equipment.includes("pump") || equipment.includes("gleitring"))) return "ms_pump";
-
-  if (
-    equipment.includes("hydraul") ||
-    equipment.includes("pneumat") ||
-    equipment.includes("cylinder") ||
-    equipment.includes("zylinder") ||
-    equipment.includes("kolbenstange") ||
-    equipment.includes("rod")
-  ) {
-    return "hyd_pneu";
-  }
-  if (motion === "rotary") return "unclear_rotary";
-  return null;
 }
 
 const SECTIONS_CONFIG: Array<{
@@ -139,8 +93,7 @@ function projectEngineeringView(
   requestType: string | null = null,
   engineeringPath: EngineeringPath | null = null
 ): EngineeringCockpitView {
-  const path = engineeringPath ?? deriveFallbackEngineeringPath(parameters);
-  const rules = path ? PATH_RULES[path] : DEFAULT_PATH_RULES;
+  const path = engineeringPath;
 
   const sections = {} as EngineeringCockpitView["sections"];
 
@@ -154,11 +107,9 @@ function projectEngineeringView(
 
       if (rawVal !== null) {
         if (assertion?.confidence === "user_override" || assertion?.confidence === "confirmed") {
-          origin = "user";
-          isConfirmed = true;
+          origin = "backend_placeholder";
         } else {
-          origin = "inferred";
-          isConfirmed = false;
+          origin = "pending_backend_confirmation";
         }
       }
 
@@ -167,11 +118,7 @@ function projectEngineeringView(
         origin = "medium_registry";
       }
 
-      const isMandatory = rules.mandatory.includes(f.key);
-      const isHidden = rules.hidden.includes(f.key);
-      if (isHidden) {
-        return [];
-      }
+      const isMandatory = false;
 
       return [{
         key: f.key,
@@ -190,7 +137,7 @@ function projectEngineeringView(
     
     const percent = mandatoryVisible.length > 0
       ? Math.round((filledMandatory.length / mandatoryVisible.length) * 100)
-      : 100;
+      : 0;
     
     sections[secConfig.id] = {
       id: secConfig.id,
@@ -204,18 +151,16 @@ function projectEngineeringView(
     };
   });
 
-  const allProps = Object.values(sections).flatMap(s => s.properties);
-  const missingMandatoryKeys = allProps
-    .filter(p => p.isMandatory && p.value === null)
-    .map(p => p.key);
-
-  const isRfqReady = workspace?.rfq?.rfq_ready || (missingMandatoryKeys.length === 0 && (workspace?.completeness?.coverageScore || 0) > 0.6);
+  const backendRfqReady = workspace?.rfq?.rfq_ready === true;
+  const missingMandatoryKeys: string[] = [];
 
   const readiness: EngineeringCockpitView["readiness"] = {
-    isRfqReady,
+    isRfqReady: backendRfqReady,
     missingMandatoryKeys,
-    blockers: workspace?.rfq?.blockers || [],
-    status: isRfqReady ? "rfq_ready" : (missingMandatoryKeys.length > 0 ? "preliminary" : "review_needed")
+    blockers: backendRfqReady ? [] : ["backend_cockpit_pending"],
+    status: backendRfqReady ? "rfq_ready" : "review_needed",
+    releaseStatus: backendRfqReady ? "rfq_ready" : "backend_cockpit_pending",
+    coverageScore: 0,
   };
 
   return {
@@ -233,7 +178,10 @@ function projectEngineeringView(
     routingMetadata: {
       phase: workspace?.communication?.conversationPhase || null,
       lastNode: null,
-      routing: {},
+      routing: {
+        authority: "frontend_placeholder",
+        note: "Backend cockpit truth is not available yet.",
+      },
     },
   };
 }

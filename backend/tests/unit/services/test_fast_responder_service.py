@@ -16,6 +16,7 @@ from app.services.fast_responder_service import (
 @pytest.mark.parametrize(
     "classification,text,expected",
     [
+        (PreGateClassification.GREETING, "Hallo", "Hallo"),
         (PreGateClassification.META_QUESTION, "Was kann SeaLAI?", "SeaLAI"),
         (PreGateClassification.BLOCKED, "Welchen Hersteller empfiehlst du?", "Dabei kann ich nicht helfen"),
     ],
@@ -36,7 +37,6 @@ def test_fast_responder_handles_only_non_case_pre_gate_classes(
 @pytest.mark.parametrize(
     "classification",
     [
-        PreGateClassification.GREETING,
         PreGateClassification.KNOWLEDGE_QUERY,
         PreGateClassification.DOMAIN_INQUIRY,
     ],

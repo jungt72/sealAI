@@ -27,7 +27,11 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "**",
+        hostname: "sealai.net",
+      },
+      {
+        protocol: "https",
+        hostname: "www.sealai.net",
       },
     ],
   },

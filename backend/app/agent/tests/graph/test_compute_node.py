@@ -3,7 +3,7 @@ Tests for graph/nodes/compute_node.py — Phase F-C.1
 
 Key invariants under test:
     1. Purely deterministic — no LLM call under any input.
-    2. compute_results written only from domain calc functions (rwdr_calc.py).
+    2. compute_results written through CascadingCalculationEngine.
     3. AssertedState is read-only — not modified.
     4. ObservedState, NormalizedState, GovernanceState unchanged.
     5. Fail-open on calc errors.
@@ -40,6 +40,7 @@ import pytest
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.compute_node import compute_node
 from app.agent.state.models import AssertedClaim, AssertedState
+from app.services.calculation_engine import CalcExecutionRecord
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +134,39 @@ class TestRwdrCalcTriggered:
         assert "status" in result.compute_results[0]
 
     @pytest.mark.asyncio
+    async def test_result_has_calculation_engine_metadata(self):
+        state = _rwdr_state()
+        result = await compute_node(state)
+        assert result.compute_results[0]["calculation_engine"] == "CascadingCalculationEngine"
+        assert result.compute_results[0]["provenance"] == "calculated"
+        assert result.compute_results[0]["calculation_records"]
+
+    @pytest.mark.asyncio
     async def test_result_is_plain_dict(self):
         state = _rwdr_state()
         result = await compute_node(state)
         assert isinstance(result.compute_results[0], dict)
+
+    @pytest.mark.asyncio
+    async def test_productive_path_uses_cascading_calculation_engine(self):
+        state = _rwdr_state(shaft_mm=10.0, rpm=20.0)
+        records = [
+            CalcExecutionRecord(
+                calc_id="test.calc",
+                version="1.0",
+                inputs_used={"shaft.diameter_mm": 10.0},
+                outputs_produced={"derived.surface_speed_ms": 42.0},
+            )
+        ]
+        with patch(
+            "app.agent.graph.nodes.compute_node.CascadingCalculationEngine.execute_cascade",
+            return_value=({"derived": {"surface_speed_ms": 42.0, "dn_value": 200.0}}, records),
+        ) as execute_cascade:
+            result = await compute_node(state)
+
+        execute_cascade.assert_called_once()
+        assert result.compute_results[0]["v_surface_m_s"] == 42.0
+        assert result.compute_results[0]["calculation_records"][0]["calc_id"] == "test.calc"
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +232,7 @@ class TestFailOpen:
     async def test_exception_leaves_compute_results_empty(self):
         state = _rwdr_state()
         with patch(
-            "app.agent.graph.nodes.compute_node.calculate_rwdr",
+            "app.agent.graph.nodes.compute_node.CascadingCalculationEngine.execute_cascade",
             side_effect=ValueError("simulated calc error"),
         ):
             result = await compute_node(state)
@@ -212,7 +242,7 @@ class TestFailOpen:
     async def test_exception_does_not_raise(self):
         state = _rwdr_state()
         with patch(
-            "app.agent.graph.nodes.compute_node.calculate_rwdr",
+            "app.agent.graph.nodes.compute_node.CascadingCalculationEngine.execute_cascade",
             side_effect=RuntimeError("unexpected domain error"),
         ):
             result = await compute_node(state)

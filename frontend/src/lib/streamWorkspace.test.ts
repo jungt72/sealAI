@@ -102,8 +102,10 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
   assert.equal(view.reply, "Antwort");
   assert.equal(view.ui.parameter.parameter_count, 1);
   assert.deepEqual(view.ui.assumption.open_points, ["pressure missing"]);
-  assert.equal(view.ui.compute.items[0]?.calc_type, "rwdr");
-  assert.equal(view.ui.compute.items[0]?.v_surface_m_s, 3.93);
+  const firstComputeItem = view.ui.compute.items?.[0];
+  assert.ok(firstComputeItem);
+  assert.equal(firstComputeItem.calc_type, "rwdr");
+  assert.equal(firstComputeItem.v_surface_m_s, 3.93);
   assert.equal(view.ui.matching.selected_manufacturer, "Acme");
   assert.deepEqual(view.ui.rfq.notes, ["awaiting review"]);
   assert.equal(view.ui.medium_classification.canonical_label, "Salzwasser");

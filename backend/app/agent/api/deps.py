@@ -57,8 +57,6 @@ def _resolve_payload_binding_level(default_binding_level: str, *, case_state: Op
     return str(case_meta.get("binding_level") or default_binding_level)
 
 def _runtime_mode_for_pre_gate(classification: str) -> Literal["CONVERSATION", "EXPLORATION", "GOVERNED"]:
-    if classification == "KNOWLEDGE_QUERY":
-        return "EXPLORATION"
     if classification in {"GREETING", "META_QUESTION", "BLOCKED"}:
         return "CONVERSATION"
     return "GOVERNED"

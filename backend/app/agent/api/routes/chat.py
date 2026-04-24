@@ -146,12 +146,35 @@ async def _chat_response_from_fast_response(
         ),
     )
 
+
+async def _chat_response_from_knowledge_response(
+    *,
+    request: ChatRequest,
+    knowledge_response: Any,
+) -> ChatResponse:
+    from app.agent.api.utils import _knowledge_response_run_meta # noqa: PLC0415
+    return ChatResponse(
+        session_id=request.session_id,
+        **build_public_response_core(
+            reply=knowledge_response.content,
+            structured_state=None,
+            policy_path="knowledge",
+            run_meta=_knowledge_response_run_meta(knowledge_response),
+        ),
+    )
+
+
 async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
     dispatch = await _resolve_runtime_dispatch(request, current_user=current_user)
     if dispatch.fast_response is not None:
         return await _chat_response_from_fast_response(
             request=request,
             fast_response=dispatch.fast_response,
+        )
+    if dispatch.knowledge_response is not None:
+        return await _chat_response_from_knowledge_response(
+            request=request,
+            knowledge_response=dispatch.knowledge_response,
         )
 
     if _is_light_runtime_mode(dispatch.runtime_mode):

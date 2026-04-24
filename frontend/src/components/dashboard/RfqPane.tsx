@@ -9,50 +9,18 @@ import {
   AlertTriangle, 
   Building2, 
   ShieldCheck, 
-  ArrowRight,
   Info
 } from "lucide-react";
 import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
 import { StatusBadge } from "./CockpitElements";
 import { cn } from "@/lib/utils";
-import { buildRfqPayload } from "@/lib/engineering/rfq";
-import { submitRfq } from "@/lib/bff/workspace";
 
 interface RfqPaneProps {
   data: CockpitData | null;
   caseId?: string;
 }
 
-// Mocked manufacturer data as per objective 2
-const MOCK_MANUFACTURERS = [
-  {
-    id: "m1",
-    name: "EagleBurgmann",
-    capability: "Mechanical Seals / Pumps",
-    score: 0.95,
-    notes: "Marktführer für GLRD, hervorragend für Standard- und Spezialpumpen.",
-    fitReason: "Hohe Deckung mit dem Engineering-Pfad 'mechanical_seal_pump'."
-  },
-  {
-    id: "m2",
-    name: "John Crane",
-    capability: "Sealing Solutions",
-    score: 0.92,
-    notes: "Starkes Portfolio für petrochemische Anwendungen und hohe Drücke.",
-    fitReason: "Gelistete Beständigkeiten passen zum identifizierten Medium."
-  },
-  {
-    id: "m3",
-    name: "Flowserve",
-    capability: "Pump Systems & Seals",
-    score: 0.88,
-    notes: "Integrierte Systemlösungen, gut für komplexe Retrofit-Projekte.",
-    fitReason: "Spezialisierung auf Retrofit passt zum gewählten Anfragetyp."
-  }
-];
-
 export default function RfqPane({ data, caseId }: RfqPaneProps) {
-  const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,21 +29,14 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
 
   const isReady = data.view.readiness.isRfqReady;
   const summary = generateTechnicalSummary(data);
-
-  const toggleManufacturer = (id: string) => {
-    setSelectedManufacturers(prev => 
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    );
-  };
+  const backendMatchingAvailable = false;
 
   const handleSend = async () => {
-    if (!isReady || selectedManufacturers.length === 0) return;
+    if (!isReady || !backendMatchingAvailable) return;
     
     setIsSending(true);
     setError(null);
     try {
-      const payload = buildRfqPayload(data, caseId, selectedManufacturers);
-      await submitRfq(caseId, payload);
       setIsSent(true);
     } catch (err) {
       console.error("RFQ Submit Error:", err);
@@ -94,23 +55,8 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
           </div>
           <h2 className="text-2xl font-bold text-seal-blue mb-2">Anfrage erfolgreich versendet</h2>
           <p className="text-muted-foreground mb-8">
-            Ihre technische Anfrage wurde an {selectedManufacturers.length} Hersteller übermittelt. Sie erhalten Rückmeldungen direkt in Ihrem Dashboard.
+            Ihre technische Anfrage wurde über den backend-bestätigten Anfrageprozess übermittelt.
           </p>
-          <div className="flex flex-col gap-3">
-            <div className="p-4 bg-slate-50 rounded-xl text-left border border-border/50">
-              <p className="text-[10px] font-bold uppercase text-muted-foreground mb-2 tracking-widest">Empfänger:</p>
-              <div className="flex flex-wrap gap-2">
-                {selectedManufacturers.map(id => {
-                  const m = MOCK_MANUFACTURERS.find(x => x.id === id);
-                  return (
-                    <span key={id} className="px-2 py-1 bg-white border border-border rounded text-[11px] font-medium">
-                      {m?.name}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -139,10 +85,10 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
                )}
                <button 
                 onClick={handleSend}
-                disabled={!isReady || selectedManufacturers.length === 0 || isSending}
+                disabled={!isReady || !backendMatchingAvailable || isSending}
                 className={cn(
                   "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg",
-                  isReady && selectedManufacturers.length > 0
+                  isReady && backendMatchingAvailable
                     ? "bg-seal-blue text-white hover:opacity-90 active:scale-95 shadow-seal-blue/20"
                     : "bg-slate-200 text-muted-foreground cursor-not-allowed shadow-none"
                 )}
@@ -181,68 +127,27 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
               </div>
             </div>
 
-            {/* RIGHT: MANUFACTURER SELECTION */}
+            {/* RIGHT: MANUFACTURER MATCHING */}
             <div className="lg:col-span-5 flex flex-col gap-6">
               <div className="flex flex-col gap-4">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                  <Building2 size={14} /> Passende Hersteller auswählen
+                  <Building2 size={14} /> Backend-Matching ausstehend
                 </h3>
                 
-                <div className="flex flex-col gap-3">
-                  {MOCK_MANUFACTURERS.map((m) => {
-                    const isSelected = selectedManufacturers.includes(m.id);
-                    return (
-                      <div 
-                        key={m.id}
-                        onClick={() => toggleManufacturer(m.id)}
-                        className={cn(
-                          "group relative p-4 rounded-2xl border transition-all cursor-pointer",
-                          isSelected 
-                            ? "bg-white border-seal-blue ring-1 ring-seal-blue shadow-md" 
-                            : "bg-white border-border hover:border-seal-blue/40"
-                        )}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="font-bold text-seal-blue">{m.name}</h4>
-                            <p className="text-[11px] text-muted-foreground">{m.capability}</p>
-                          </div>
-                          <div className={cn(
-                            "h-5 w-5 rounded-full border flex items-center justify-center transition-colors",
-                            isSelected ? "bg-seal-blue border-seal-blue" : "border-border bg-slate-50"
-                          )}>
-                            {isSelected && <div className="h-2 w-2 bg-white rounded-full" />}
-                          </div>
-                        </div>
-                        
-                        <p className="text-[12px] text-foreground/80 leading-relaxed mb-3">
-                          {m.notes}
-                        </p>
-                        
-                        <div className="flex flex-col gap-1 border-t border-border/50 pt-2">
-                          <p className="text-[10px] font-bold text-emerald-700 uppercase flex items-center gap-1">
-                            <CheckCircle2 size={10} /> Warum dieser Match?
-                          </p>
-                          <p className="text-[10px] text-muted-foreground italic">
-                            {m.fitReason}
-                          </p>
-                        </div>
-
-                        <div className="absolute top-4 right-12">
-                           <span className="text-[10px] font-bold text-seal-blue bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
-                             {Math.round(m.score * 100)}% Fit
-                           </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="rounded-2xl border border-dashed border-border bg-white p-5">
+                  <div className="flex items-start gap-3">
+                    <Info className="text-muted-foreground shrink-0 mt-0.5" size={18} />
+                    <div>
+                      <p className="text-sm font-semibold text-seal-blue">
+                        Noch keine backend-bestätigte Herstellerliste
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        Hersteller-Matching wird erst angezeigt, wenn der Backend-Prozess
+                        eine strukturierte, neutral geprüfte Auswahl liefert.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-
-                {selectedManufacturers.length === 0 && (
-                  <p className="text-[11px] text-center text-muted-foreground italic mt-2">
-                    Bitte wählen Sie mindestens einen Hersteller für die Anfrage aus.
-                  </p>
-                )}
               </div>
             </div>
           </div>

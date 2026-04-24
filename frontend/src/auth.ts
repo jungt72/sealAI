@@ -96,7 +96,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       userinfo: KEYCLOAK_USERINFO_URL,
 
       checks: ["pkce", "state"],
-      allowDangerousEmailAccountLinking: true,
+      allowDangerousEmailAccountLinking:
+        process.env.AUTH_ALLOW_DANGEROUS_EMAIL_LINKING === "true",
     }),
   ],
 
