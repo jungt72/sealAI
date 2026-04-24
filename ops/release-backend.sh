@@ -10,7 +10,7 @@ COMPOSE_ARGS=(
 )
 
 compose_prod() {
-  env -u BACKEND_IMAGE -u FRONTEND_IMAGE docker compose "${COMPOSE_ARGS[@]}" "$@"
+  env -u BACKEND_IMAGE -u FRONTEND_IMAGE -u LANGCHAIN_TRACING_V2 -u LANGCHAIN_API_KEY -u LANGCHAIN_PROJECT docker compose "${COMPOSE_ARGS[@]}" "$@"
 }
 
 SHA="$(git rev-parse HEAD)"
