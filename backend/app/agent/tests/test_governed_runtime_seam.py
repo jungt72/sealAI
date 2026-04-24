@@ -103,12 +103,14 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
     )
 
     request = SimpleNamespace(session_id="case-sse", message="Ich brauche eine Dichtung")
+    persist = AsyncMock()
     with (
         patch("app.agent.api.streaming.run_governed_graph_turn", seam),
         patch(
             "app.agent.api.streaming.collect_governed_visible_reply",
             AsyncMock(return_value="Welches Medium soll abgedichtet werden?"),
         ),
+        patch("app.agent.api.streaming._persist_live_governed_state", persist),
     ):
         frames = [
             frame
@@ -137,4 +139,12 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
     assert payloads[1]["type"] == "state_update"
     assert payloads[1]["reply"] == "Welches Medium soll abgedichtet werden?"
     assert payloads[1]["response_class"] == "structured_clarification"
+    persist.assert_awaited_once()
+    persisted_state_arg = persist.await_args.kwargs["state"]
+    assert persist.await_args.kwargs["session_id"] == "case-sse"
+    assert persist.await_args.kwargs["pre_gate_classification"] == "DOMAIN_INQUIRY"
+    assert persisted_state_arg.conversation_messages[-1] == ConversationMessage(
+        role="assistant",
+        content="Welches Medium soll abgedichtet werden?",
+    )
     assert frames[-1] == "data: [DONE]\n\n"

@@ -23,6 +23,7 @@ from app.agent.api.deps import (
 )
 from app.agent.api.utils import (
     _fast_response_run_meta,
+    _with_governed_conversation_turn,
     _with_light_route_progress,
     _light_structured_state,
 )
@@ -325,6 +326,19 @@ async def _stream_governed_graph(
         turn_context=context.turn_context,
         fallback_text=context.deterministic_reply,
     )
+    if visible_reply:
+        updated_state = _with_governed_conversation_turn(
+            turn_result.persisted_state,
+            role="assistant",
+            content=visible_reply,
+        )
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            state=updated_state,
+            pre_gate_classification=pre_gate_classification,
+        )
+
     payload = _assemble_governed_stream_payload(
         context=context,
         visible_reply=visible_reply,
