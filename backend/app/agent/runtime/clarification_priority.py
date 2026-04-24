@@ -139,6 +139,61 @@ def _has_value(state: GovernedSessionState, field_name: str) -> bool:
     return normalized is not None and normalized.value is not None
 
 
+def _observed_unasserted_value(state: GovernedSessionState, field_name: str) -> object | None:
+    asserted = state.asserted.assertions.get(field_name)
+    if asserted is not None and asserted.asserted_value is not None:
+        return None
+    normalized = state.normalized.parameters.get(field_name)
+    if normalized is None or normalized.value is None:
+        return None
+    return normalized.value
+
+
+def _display_value(value: object) -> object:
+    if isinstance(value, float) and value == int(value):
+        return int(value)
+    return value
+
+
+def _observed_confirmation_priority(
+    state: GovernedSessionState,
+    field_name: str,
+) -> ClarificationPriority | None:
+    value = _observed_unasserted_value(state, field_name)
+    if value is None:
+        return None
+    display = _display_value(value)
+    if field_name == "pressure_bar":
+        return ClarificationPriority(
+            focus_key=field_name,
+            question=f"Koennen Sie bestaetigen, dass der Betriebsdruck {display} bar betraegt?",
+            reason="Der Druck ist erkannt, aber noch nicht bestaetigt; ohne Bestaetigung bleibt er release-blocking.",
+            open_point_label=f"Betriebsdruck bestaetigen ({display} bar erkannt)",
+        )
+    if field_name == "temperature_c":
+        return ClarificationPriority(
+            focus_key=field_name,
+            question=f"Koennen Sie bestaetigen, dass die Betriebstemperatur {display} °C betraegt?",
+            reason="Die Temperatur ist erkannt, aber noch nicht bestaetigt; ohne Bestaetigung bleibt sie release-blocking.",
+            open_point_label=f"Betriebstemperatur bestaetigen ({display} °C erkannt)",
+        )
+    if field_name == "speed_rpm":
+        return ClarificationPriority(
+            focus_key=field_name,
+            question=f"Koennen Sie bestaetigen, dass die Drehzahl {display} rpm betraegt?",
+            reason="Die Drehzahl ist erkannt, aber noch nicht bestaetigt; ohne Bestaetigung bleibt sie release-blocking.",
+            open_point_label=f"Drehzahl bestaetigen ({display} rpm erkannt)",
+        )
+    if field_name == "shaft_diameter_mm":
+        return ClarificationPriority(
+            focus_key=field_name,
+            question=f"Koennen Sie bestaetigen, dass der Wellendurchmesser {display} mm betraegt?",
+            reason="Der Wellendurchmesser ist erkannt, aber noch nicht bestaetigt; ohne Bestaetigung bleibt er release-blocking.",
+            open_point_label=f"Wellendurchmesser bestaetigen ({display} mm erkannt)",
+        )
+    return None
+
+
 def _medium_status(state: GovernedSessionState) -> str:
     status = _nested_text(state.medium_classification, "status")
     if status and status != "unavailable":
@@ -353,11 +408,15 @@ def select_clarification_priority(
                 open_point_label=render_open_point_label(state, "medium"),
             )
 
-    for field_name in ("pressure_bar", "temperature_c"):
-        if field_name in field_set and _has_value(state, field_name):
-            priority = _priority_from_field(field_name)
-            if priority is not None:
-                return priority
+    for field_name in ("pressure_bar", "temperature_c", "speed_rpm", "shaft_diameter_mm"):
+        if field_name in field_set:
+            confirmation_priority = _observed_confirmation_priority(state, field_name)
+            if confirmation_priority is not None:
+                return confirmation_priority
+            if _has_value(state, field_name):
+                priority = _priority_from_field(field_name)
+                if priority is not None:
+                    return priority
 
     for field_name in ("sealing_type", "compliance"):
         if field_name in field_set:
