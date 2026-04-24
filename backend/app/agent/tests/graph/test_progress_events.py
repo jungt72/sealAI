@@ -83,5 +83,6 @@ async def test_governance_node_emits_governance_ready_event() -> None:
     ):
         result = await governance_node(state)
 
-    assert result.governance.gov_class == "A"
-    assert writer == [{"event_type": "governance_ready", "outward_class": "governed_state_update"}]
+    assert result.governance.gov_class == "B"
+    assert result.governance.preselection_blockers == ["sealing_type"]
+    assert writer == [{"event_type": "governance_ready", "outward_class": "structured_clarification"}]
