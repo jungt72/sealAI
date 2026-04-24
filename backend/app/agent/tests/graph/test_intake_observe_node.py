@@ -60,6 +60,16 @@ def _make_llm_response(items: list[dict]) -> MagicMock:
     return response
 
 
+def _mock_llm_factory(response=None, *, side_effect=None) -> MagicMock:
+    """Build the current get_async_llm() return shape used by intake_observe_node."""
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(
+        return_value=response,
+        side_effect=side_effect,
+    )
+    return MagicMock(return_value=(client, "test-extraction-model"))
+
+
 # ---------------------------------------------------------------------------
 # 1. Regex pass — numeric patterns
 # ---------------------------------------------------------------------------
@@ -185,11 +195,9 @@ class TestArchitectureInvariant:
             {"field_name": "temperature_c", "raw_value": 180, "raw_unit": "°C", "confidence": 0.95}
         ])
         with patch(
-            "app.agent.graph.nodes.intake_observe_node.openai"
-        ) as mock_openai:
-            mock_openai.AsyncOpenAI.return_value.chat.completions.create = AsyncMock(
-                return_value=mock_resp
-            )
+            "app.agent.graph.nodes.intake_observe_node.get_async_llm",
+            _mock_llm_factory(mock_resp),
+        ):
             result = await intake_observe_node(state)
 
         # NormalizedState was not touched by this node — must still be empty
@@ -256,11 +264,9 @@ class TestLLMExtractionMock:
             {"field_name": "medium", "raw_value": "Dampf", "raw_unit": None, "confidence": 0.80}
         ])
         with patch(
-            "app.agent.graph.nodes.intake_observe_node.openai"
-        ) as mock_openai:
-            mock_openai.AsyncOpenAI.return_value.chat.completions.create = AsyncMock(
-                return_value=mock_resp
-            )
+            "app.agent.graph.nodes.intake_observe_node.get_async_llm",
+            _mock_llm_factory(mock_resp),
+        ):
             result = await intake_observe_node(state)
 
         names = {e.field_name for e in result.observed.raw_extractions}
@@ -276,11 +282,9 @@ class TestLLMExtractionMock:
             {"field_name": "temperature_c", "raw_value": 180, "raw_unit": "°C", "confidence": 0.95}
         ])
         with patch(
-            "app.agent.graph.nodes.intake_observe_node.openai"
-        ) as mock_openai:
-            mock_openai.AsyncOpenAI.return_value.chat.completions.create = AsyncMock(
-                return_value=mock_resp
-            )
+            "app.agent.graph.nodes.intake_observe_node.get_async_llm",
+            _mock_llm_factory(mock_resp),
+        ):
             result = await intake_observe_node(state)
 
         # Should appear exactly once (from regex, not duplicated by LLM)
@@ -297,11 +301,9 @@ class TestLLMExtractionMock:
             {"field_name": "material",     "raw_value": "NBR",  "confidence": 0.85},
         ])
         with patch(
-            "app.agent.graph.nodes.intake_observe_node.openai"
-        ) as mock_openai:
-            mock_openai.AsyncOpenAI.return_value.chat.completions.create = AsyncMock(
-                return_value=mock_resp
-            )
+            "app.agent.graph.nodes.intake_observe_node.get_async_llm",
+            _mock_llm_factory(mock_resp),
+        ):
             result = await intake_observe_node(state)
 
         names = {e.field_name for e in result.observed.raw_extractions}
@@ -334,11 +336,9 @@ class TestEdgeCases:
         state = _fresh_state(pending_message="PTFE bei 180°C")
 
         with patch(
-            "app.agent.graph.nodes.intake_observe_node.openai"
-        ) as mock_openai:
-            mock_openai.AsyncOpenAI.return_value.chat.completions.create = AsyncMock(
-                side_effect=ConnectionError("network down")
-            )
+            "app.agent.graph.nodes.intake_observe_node.get_async_llm",
+            _mock_llm_factory(side_effect=ConnectionError("network down")),
+        ):
             result = await intake_observe_node(state)
 
         names = {e.field_name for e in result.observed.raw_extractions}
@@ -383,20 +383,14 @@ class TestEdgeCases:
         """With LLM disabled, only regex extractions are present."""
         state = _fresh_state(pending_message="Das Medium ist Dampf, 12 bar")
 
-        called = []
-
-        async def _mock_create(**kwargs):
-            called.append(True)
-            return _make_llm_response([])
-
         with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
             with patch(
-                "app.agent.graph.nodes.intake_observe_node.openai"
-            ) as mock_openai:
-                mock_openai.AsyncOpenAI.return_value.chat.completions.create = _mock_create
+                "app.agent.graph.nodes.intake_observe_node.get_async_llm",
+                _mock_llm_factory(_make_llm_response([])),
+            ) as mock_get_llm:
                 await intake_observe_node(state)
 
-        assert called == [], "LLM must not be called when feature flag is off"
+        mock_get_llm.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_existing_extractions_preserved(self):
