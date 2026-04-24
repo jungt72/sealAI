@@ -52,7 +52,7 @@ from app.agent.graph.topology import (
     NODE_RFQ_HANDOVER,
     build_governed_graph,
 )
-from app.agent.state.models import ObservedExtraction, ObservedState
+from app.agent.state.models import ObservedState, UserOverride
 
 
 # ---------------------------------------------------------------------------
@@ -64,23 +64,21 @@ def _state_with_message(msg: str, tenant_id: str = "test_tenant") -> GraphState:
 
 
 def _state_with_extractions(**fields) -> GraphState:
-    """Build a GraphState where ObservedState already has extractions
-    (bypasses the LLM in intake_observe_node by pre-loading observed state).
+    """Build a GraphState where ObservedState already has explicit values
+    (bypasses the LLM in intake_observe_node by pre-loading user overrides).
     """
     observed = ObservedState()
-    for field_name, (value, conf) in fields.items():
-        observed = observed.with_extraction(ObservedExtraction(
+    for field_name, (value, _conf) in fields.items():
+        observed = observed.with_override(UserOverride(
             field_name=field_name,
-            raw_value=value,
-            source="llm",
-            confidence=conf,
+            override_value=value,
             turn_index=0,
         ))
     return GraphState(observed=observed, tenant_id="test_tenant")
 
 
 _REQUIRED_OUTPUT_KEYS = {
-    "response_class", "gov_class", "rfq_admissible",
+    "response_class", "gov_class", "inquiry_admissible",
     "parameters", "missing_fields", "conflicts",
     "validity_notes", "open_points", "compute", "rfq", "dispatch", "norm", "export_profile", "manufacturer_mapping", "dispatch_contract", "message",
 }
