@@ -2,7 +2,7 @@
 Tests for Phase 0C.5 — Agent health endpoint.
 
 Verifies:
-1. GET /health returns 200 with {"status": "ok", "service": "sealai-agent"}
+1. GET /health returns 200 with {"status": "ok", "service": "SSoT Agent Authority"}
 2. Response is deterministic (no LLM / DB calls required)
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ class TestAgentHealthEndpoint:
 
     def test_health_returns_service_name(self, client):
         data = client.get("/health").json()
-        assert data["service"] == "sealai-agent"
+        assert data["service"] == "SSoT Agent Authority"
 
     def test_health_is_deterministic(self, client):
         """Two consecutive calls must return identical payloads."""
