@@ -50,24 +50,31 @@ assert_status() {
 # A) Health must stay public
 assert_status "GET" "${BASE_URL}/api/health" "200"
 
-# B) Current BFF agent stream route must exist and reject anonymous access
-assert_status \
-  "POST" \
-  "${BASE_URL}/api/bff/agent/chat/stream" \
-  "401" \
-  '{"message":"ping from ci"}'
+assert_absent() {
+  local method="$1"
+  local url="$2"
+  local body="${3:-}"
+  local code
 
-# C) Current BFF workspace route must exist and reject anonymous access
-assert_status \
-  "GET" \
-  "${BASE_URL}/api/bff/workspace/smoke-case" \
-  "401"
+  if [ "$method" = "GET" ]; then
+    code=$(http_code "$url")
+  else
+    code=$(curl -sS -o /tmp/smoke_resp.json -w "%{http_code}"       -X "$method"       -H "Content-Type: application/json"       -d "$body"       "$url")
+  fi
 
-# D) Current BFF history route must exist and reject anonymous access
-assert_status \
-  "GET" \
-  "${BASE_URL}/api/bff/agent/chat/history/smoke-case" \
-  "401"
+  if [ "$code" = "404" ] || [ "$code" = "410" ]; then
+    pass "$method ${url#${BASE_URL}} -> ${code} (retired frontend route absent)"
+  else
+    echo "response body:" >&2
+    cat /tmp/smoke_resp.json >&2 || true
+    fail "$method ${url#${BASE_URL}} -> ${code} (expected 404 or 410)"
+  fi
+}
+
+# B-D) Frontend-only smoke: retired BFF routes must stay absent on main
+assert_absent "POST" "${BASE_URL}/api/bff/agent/chat/stream" '{"message":"ping from ci"}'
+assert_absent "GET" "${BASE_URL}/api/bff/workspace/smoke-case"
+assert_absent "GET" "${BASE_URL}/api/bff/agent/chat/history/smoke-case"
 
 # E) Legacy LangGraph v2 routes must be gone
 legacy_state_code=$(http_code "${BASE_URL}/api/langgraph/state?thread_id=smoke")

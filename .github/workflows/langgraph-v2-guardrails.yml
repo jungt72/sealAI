@@ -11,7 +11,7 @@ jobs:
       AUTH_SECRET: ci-guardrail-secret
       NEXTAUTH_SECRET: ci-guardrail-secret
       AUTH_TRUST_HOST: true
-      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://127.0.0.1:3100
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +37,18 @@ jobs:
       - name: Smoke test Agent BFF routes (no token)
         run: |
           cd frontend
-          node .next/standalone/server.js &
+          PORT=3100 HOSTNAME=127.0.0.1 node .next/standalone/frontend/server.js &
           START_PID=$!
           trap "kill $START_PID" EXIT
-          sleep 10
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3100/api/health >/dev/null 2>&1; then
+              break
+            fi
+            if [[ $i -eq 30 ]]; then
+              echo "FAIL: frontend standalone did not become healthy in time" >&2
+              exit 1
+            fi
+            sleep 2
+          done
           cd ..
-          BASE_URL=http://localhost:3000 ./ops/smoke_langgraph_v2_bff.sh
+          BASE_URL=http://127.0.0.1:3100 ./ops/smoke_langgraph_v2_bff.sh
