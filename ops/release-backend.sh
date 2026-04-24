@@ -9,6 +9,10 @@ COMPOSE_ARGS=(
   -f docker-compose.deploy.yml
 )
 
+compose_prod() {
+  env -u BACKEND_IMAGE -u FRONTEND_IMAGE docker compose "${COMPOSE_ARGS[@]}" "$@"
+}
+
 SHA="$(git rev-parse HEAD)"
 SHORT_SHA="$(git rev-parse --short=8 HEAD)"
 TS="$(date +%Y%m%d-%H%M%S)"
@@ -42,11 +46,11 @@ echo ">> Validating pinned production refs"
 
 # Image ist lokal bereits getaggt — pull nur bei remote-only deploy nötig
 echo ">> Recreating backend only"
-docker compose "${COMPOSE_ARGS[@]}" up -d --no-deps backend
+compose_prod up -d --no-deps backend
 
 echo ">> Verifying image pin"
 grep '^BACKEND_IMAGE=' .env.prod
-docker compose "${COMPOSE_ARGS[@]}" ps backend
+compose_prod ps backend
 docker inspect backend --format '{{.Config.Image}}'
 
 echo ">> Verifying code marker"
@@ -61,7 +65,7 @@ for i in {1..30}; do
   if [[ $i -eq 30 ]]; then
     echo "!! Health check failed after 30 attempts — rolling back"
     cp "${ROLLBACK_FILE}" .env.prod
-    docker compose "${COMPOSE_ARGS[@]}" up -d --no-deps backend
+    compose_prod up -d --no-deps backend
     echo "!! Rollback complete — check backend logs:"
     docker logs backend --tail 50
     exit 1
