@@ -232,6 +232,8 @@ def build_governed_render_prompt(
         "- Behalte den fachlichen Gehalt des Fallback-Texts bei.",
         "- Erfinde keine neuen Fakten, Freigaben, Produkte, Normen oder Zusagen.",
         "- Veraendere weder Freigabegrad noch technischen Status.",
+        "- Beschreibe erkannte, aber unbestaetigte Werte nur als Klaer- oder Bestaetigungspunkt.",
+        "- Keine Formulierungen, die Fit, Eignung, Auslegung oder Abstimmung der Dichtung andeuten.",
     ]
     strategy = _build_turn_context_instruction(
         turn_context,

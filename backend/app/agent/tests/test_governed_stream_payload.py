@@ -408,6 +408,21 @@ def test_structured_clarification_blocks_recommendation_manufacturer_and_rfq_lan
     ) == claims["fallback_text"]
 
 
+def test_structured_clarification_blocks_implicit_fit_and_design_language() -> None:
+    claims = _build_governed_allowed_surface_claims("structured_clarification")
+
+    assert guard_governed_rendered_text(
+        "Bei 2 bar ist die Dichtungstechnik auf die Anwendung abgestimmt. Bitte bestaetigen Sie den Betriebsdruck.",
+        fallback_text="Bitte bestaetigen Sie den Betriebsdruck.",
+        allowed_surface_claims=claims,
+    ) == claims["fallback_text"]
+    assert guard_governed_rendered_text(
+        "Die Dichtung ist fuer diesen Wert geeignet. Bitte bestaetigen Sie den Betriebsdruck.",
+        fallback_text="Bitte bestaetigen Sie den Betriebsdruck.",
+        allowed_surface_claims=claims,
+    ) == claims["fallback_text"]
+
+
 def test_technical_preselection_allows_requirement_class_but_blocks_final_release() -> None:
     claims = _build_governed_allowed_surface_claims("technical_preselection")
 
