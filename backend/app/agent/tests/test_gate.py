@@ -200,7 +200,7 @@ class TestCallGateLLM:
         fake_client = MagicMock()
         fake_client.chat.completions.create.return_value = fake_response
 
-        with patch("openai.OpenAI", return_value=fake_client):
+        with patch("app.agent.runtime.gate.get_sync_llm", return_value=(fake_client, "test-gate-model")):
             result = _call_gate_llm("Danke")
 
         assert result.parse_error is True
