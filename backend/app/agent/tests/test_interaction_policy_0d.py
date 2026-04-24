@@ -202,117 +202,88 @@ class TestEvaluatePolicyPreChecks:
 
 
 # ---------------------------------------------------------------------------
-# 6. Graph nodes: blocked_node and meta_response_node
+# 6. Fast responder service: blocked and meta frontdoor responses
 # ---------------------------------------------------------------------------
 
 class TestBlockedAndMetaNodes:
-    def _make_state(self, policy_path: str, sealing_state: dict | None = None) -> dict:
-        from langchain_core.messages import HumanMessage
-        return {
-            "messages": [HumanMessage(content="test")],
-            "sealing_state": sealing_state or {
-                "observed": {}, "normalized": {}, "asserted": {},
-                "governance": {}, "cycle": {},
-            },
-            "working_profile": {},
-            "relevant_fact_cards": [],
-            "tenant_id": "tenant_test",
-            "turn_count": 0,
-            "max_turns": 12,
-            "policy_path": policy_path,
-            "result_form": "direct_answer",
-        }
+    def _respond(self, text: str, classification: PreGateClassification):
+        from app.services.fast_responder_service import FastResponderService
+
+        return FastResponderService().respond(text, classification)
 
     def test_blocked_node_returns_message(self):
-        from app.agent.agent.graph import blocked_node
-        from app.agent.agent.boundaries import FAST_PATH_DISCLAIMER
-
-        state = self._make_state("blocked")
-        result = blocked_node(state)
-        content = result["messages"][0].content
+        result = self._respond(
+            "Welchen Hersteller soll ich nehmen?",
+            PreGateClassification.BLOCKED,
+        )
+        content = result.content
         assert len(content) > 0
-        assert FAST_PATH_DISCLAIMER in content
+        assert result.no_case_created is True
+        assert result.source_classification is PreGateClassification.BLOCKED
         # Must NOT contain manufacturer names or material recommendations
         assert "Freudenberg" not in content
         assert "FKM" not in content
 
     def test_blocked_node_content_is_deterministic(self):
-        from app.agent.agent.graph import blocked_node
-
-        state = self._make_state("blocked")
-        r1 = blocked_node(state)["messages"][0].content
-        r2 = blocked_node(state)["messages"][0].content
+        r1 = self._respond(
+            "Welchen Hersteller soll ich nehmen?",
+            PreGateClassification.BLOCKED,
+        ).content
+        r2 = self._respond(
+            "Welchen Hersteller soll ich nehmen?",
+            PreGateClassification.BLOCKED,
+        ).content
         assert r1 == r2
 
-    def test_meta_node_empty_state_shows_all_missing(self):
-        from app.agent.agent.graph import meta_response_node
+    def test_meta_node_returns_platform_status_response(self):
+        result = self._respond(
+            "Was fehlt noch?",
+            PreGateClassification.META_QUESTION,
+        )
+        content = result.content
+        assert "SeaLAI" in content
+        assert result.no_case_created is True
+        assert result.source_classification is PreGateClassification.META_QUESTION
 
-        state = self._make_state("meta")
-        result = meta_response_node(state)
-        content = result["messages"][0].content
-        assert "fehlend" in content.lower() or "fehlen" in content.lower()
-        # No confirmed items
-        assert "Bestätigte Angaben" not in content or "Noch keine" in content
-
-    def test_meta_node_shows_confirmed_asserted_values(self):
-        from app.agent.agent.graph import meta_response_node
-
-        sealing_state = {
-            "observed": {}, "normalized": {}, "governance": {}, "cycle": {},
-            "asserted": {
-                "medium_profile": {"name": "Wasser"},
-                "operating_conditions": {"pressure": 5.0, "temperature": 80.0},
-                "machine_profile": {},
-            },
-        }
-        state = self._make_state("meta", sealing_state=sealing_state)
-        result = meta_response_node(state)
-        content = result["messages"][0].content
-        assert "Wasser" in content
-        assert "5.0" in content
-        assert "80.0" in content
+    def test_meta_node_exposes_registration_prompt(self):
+        result = self._respond(
+            "Wie ist der aktuelle Stand?",
+            PreGateClassification.META_QUESTION,
+        )
+        assert result.registration_prompt is not None
+        assert result.registration_prompt.reason == "case_creation_requires_registration"
 
     def test_meta_node_does_not_read_working_profile(self):
-        """working_profile values must NOT appear in meta response — only asserted."""
-        from app.agent.agent.graph import meta_response_node
-
-        # working_profile has a medium, asserted does not
-        state = self._make_state("meta")
-        state["working_profile"] = {"medium": "Öl", "pressure_bar": 3.0}
-        # asserted is empty
-
-        result = meta_response_node(state)
-        content = result["messages"][0].content
-        # Must NOT show "Öl" as confirmed (it's only in working_profile)
-        assert "Bestätigte Angaben" not in content or "Öl" not in content
+        """Fast responder has no engineering state input and cannot surface draft values."""
+        result = self._respond(
+            "Was hast du bisher erfasst?",
+            PreGateClassification.META_QUESTION,
+        )
+        content = result.content
+        assert "Öl" not in content
+        assert "3.0" not in content
 
     def test_route_by_policy_blocked(self):
-        from app.agent.agent.graph import route_by_policy
-        from langchain_core.messages import HumanMessage
+        from app.agent.runtime.policy import legacy_policy_path_for_pre_gate
 
-        state = self._make_state("blocked")
-        assert route_by_policy(state) == "blocked_node"
+        assert legacy_policy_path_for_pre_gate(PreGateClassification.BLOCKED) == "blocked"
 
     def test_route_by_policy_meta(self):
-        from app.agent.agent.graph import route_by_policy
+        from app.agent.runtime.policy import legacy_policy_path_for_pre_gate
 
-        state = self._make_state("meta")
-        assert route_by_policy(state) == "meta_response_node"
+        assert legacy_policy_path_for_pre_gate(PreGateClassification.META_QUESTION) == "meta"
 
     def test_route_by_policy_fast(self):
-        from app.agent.agent.graph import route_by_policy
+        from app.agent.runtime.policy import legacy_policy_path_for_pre_gate
 
-        state = self._make_state("fast")
-        assert route_by_policy(state) == "fast_guidance_node"
+        assert legacy_policy_path_for_pre_gate(PreGateClassification.GREETING) == "greeting"
 
     def test_route_by_policy_structured_default(self):
-        from app.agent.agent.graph import route_by_policy
+        from app.agent.runtime.policy import legacy_policy_path_for_pre_gate
 
-        state = self._make_state("structured")
-        assert route_by_policy(state) == "reasoning_node"
+        assert legacy_policy_path_for_pre_gate(PreGateClassification.DOMAIN_INQUIRY) == "structured"
 
-    def test_route_by_policy_unknown_defaults_to_structured(self):
-        from app.agent.agent.graph import route_by_policy
+    def test_route_by_policy_knowledge_uses_fast_path(self):
+        from app.agent.runtime.policy import legacy_policy_path_for_pre_gate
 
-        state = self._make_state("unknown_future_path")
-        assert route_by_policy(state) == "reasoning_node"
+        assert legacy_policy_path_for_pre_gate(PreGateClassification.KNOWLEDGE_QUERY) == "fast"
