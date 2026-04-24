@@ -39,12 +39,13 @@ async def test_gleitring_salzwasser_turn_does_not_jump_to_preselection() -> None
 
 
 @pytest.mark.asyncio
-async def test_chemical_pump_uses_duty_profile_but_blocks_on_missing_sealing_type() -> None:
+async def test_chemical_pump_captures_duty_profile_but_blocks_on_missing_sealing_type() -> None:
     state = await _run_governed_turn(
         "Dichtung fuer chemische Pumpe, 10 bar, 90°C, Medium Salzsaeure, Betrieb 24/7."
     )
 
-    assert state.asserted.assertions["duty_profile"].asserted_value == "continuous"
+    assert state.normalized.parameters["duty_profile"].value == "continuous"
+    assert "duty_profile" not in state.asserted.assertions
     assert "sealing_type" in state.governance.preselection_blockers
     assert state.output_response_class == "structured_clarification"
     assert state.output_reply.count("?") == 1
@@ -58,8 +59,10 @@ async def test_rwdr_turn_tracks_contamination_and_duty_without_preselection_over
     )
 
     assert state.asserted.assertions["sealing_type"].asserted_value == "rwdr"
-    assert state.asserted.assertions["duty_profile"].asserted_value == "intermittent"
-    assert state.asserted.assertions["contamination"].asserted_value == "solids_or_particles"
+    assert state.normalized.parameters["duty_profile"].value == "intermittent"
+    assert state.normalized.parameters["contamination"].value == "solids_or_particles"
+    assert "duty_profile" not in state.asserted.assertions
+    assert "contamination" not in state.asserted.assertions
     assert state.output_response_class == "structured_clarification"
     assert "temperature_c" in state.output_public["missing_fields"]
 
@@ -68,7 +71,8 @@ async def test_rwdr_turn_tracks_contamination_and_duty_without_preselection_over
 async def test_food_industry_turn_tracks_industry_and_avoids_false_preselection() -> None:
     state = await _run_governed_turn("Welche Dichtung eignet sich fuer Lebensmittelbereich bei 120°C?")
 
-    assert state.asserted.assertions["industry"].asserted_value == "food_pharma"
+    assert state.normalized.parameters["industry"].value == "food_pharma"
+    assert "industry" not in state.asserted.assertions
     assert state.output_response_class == "structured_clarification"
     assert state.output_response_class != "technical_preselection"
     assert "medium" in state.output_public["missing_fields"]
