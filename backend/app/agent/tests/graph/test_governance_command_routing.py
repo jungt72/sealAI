@@ -37,7 +37,7 @@ def _state(
 
 
 @pytest.mark.asyncio
-async def test_governance_routing_node_uses_command_goto_cycle_increment_for_continue_path() -> None:
+async def test_governance_routing_node_uses_command_goto_matching_for_preselection_blockers() -> None:
     state = _state(
         medium=("Dampf", "confirmed"),
         pressure_bar=(12.0, "confirmed"),
@@ -49,13 +49,15 @@ async def test_governance_routing_node_uses_command_goto_cycle_increment_for_con
     result = await governance_routing_node(state)
 
     assert isinstance(result, Command)
-    assert result.goto == "cycle_increment"
+    assert result.goto == "matching"
     assert "governance" in result.update
     assert result.update["governance"].gov_class == "B"
+    assert "temperature_c" in result.update["governance"].preselection_blockers
+    assert "temperature_c" in result.update["governance"].open_validation_points
 
 
 @pytest.mark.asyncio
-async def test_governance_routing_node_uses_command_goto_matching_for_terminate_path() -> None:
+async def test_governance_routing_node_uses_command_goto_matching_for_core_fields_with_preselection_blocker() -> None:
     state = _state(
         medium=("Dampf", "confirmed"),
         pressure_bar=(12.0, "confirmed"),
@@ -67,4 +69,6 @@ async def test_governance_routing_node_uses_command_goto_matching_for_terminate_
     assert isinstance(result, Command)
     assert result.goto == "matching"
     assert "governance" in result.update
-    assert result.update["governance"].gov_class == "A"
+    assert result.update["governance"].gov_class == "B"
+    assert "sealing_type" in result.update["governance"].preselection_blockers
+    assert "sealing_type" in result.update["governance"].open_validation_points
