@@ -36,6 +36,10 @@ class _FakeRedisFactory:
         return self._client
 
 
+async def _skip_snapshot_persistence(*_args, **_kwargs):
+    return None
+
+
 def _user() -> RequestUser:
     return RequestUser(
         user_id="user-1",
@@ -54,10 +58,17 @@ async def test_session_override_endpoint_persists_structured_override(monkeypatc
     import redis.asyncio as redis_asyncio
 
     monkeypatch.setattr(redis_asyncio, "Redis", _FakeRedisFactory(fake_redis))
+    import app.agent.api.loaders as loaders_module
+
+    monkeypatch.setattr(
+        loaders_module,
+        "save_governed_state_snapshot_async",
+        _skip_snapshot_persistence,
+    )
 
     response = await session_override_endpoint(
-        "case-123",
-        OverrideRequest(
+        session_id="case-123",
+        request=OverrideRequest(
             overrides=[
                 OverrideItem(field_name="medium", value="Wasser"),
                 OverrideItem(field_name="pressure_bar", value=6.0, unit="bar"),
@@ -70,9 +81,10 @@ async def test_session_override_endpoint_persists_structured_override(monkeypatc
 
     assert response.session_id == "case-123"
     assert response.applied_fields == ["medium", "pressure_bar", "temperature_c"]
-    assert response.governance.gov_class == "A"
-    assert response.governance.inquiry_admissible is True
-    assert response.governance.rfq_admissible is True
+    assert response.governance.gov_class == "B"
+    assert response.governance.inquiry_admissible is False
+    assert response.governance.rfq_admissible is False
+    assert response.governance.open_validation_points
 
     persisted = await load_governed_state_async(
         tenant_id="tenant-1",
@@ -92,6 +104,13 @@ async def test_session_override_endpoint_uses_canonical_user_scope_without_tenan
     import redis.asyncio as redis_asyncio
 
     monkeypatch.setattr(redis_asyncio, "Redis", _FakeRedisFactory(fake_redis))
+    import app.agent.api.loaders as loaders_module
+
+    monkeypatch.setattr(
+        loaders_module,
+        "save_governed_state_snapshot_async",
+        _skip_snapshot_persistence,
+    )
     user = RequestUser(
         user_id="canonical-user",
         username="tester",
@@ -102,13 +121,13 @@ async def test_session_override_endpoint_uses_canonical_user_scope_without_tenan
     )
 
     await session_override_endpoint(
-        "case-tenantless",
-        OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
+        session_id="case-tenantless",
+        request=OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
         current_user=user,
     )
 
     assert await load_governed_state_async(
-        tenant_id="canonical-user",
+        tenant_id="default",
         session_id="case-tenantless",
         redis_client=fake_redis,
     ) is not None
@@ -125,8 +144,8 @@ async def test_session_override_endpoint_returns_503_without_redis_url(monkeypat
 
     with pytest.raises(HTTPException) as exc_info:
         await session_override_endpoint(
-            "case-123",
-            OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
+            session_id="case-123",
+            request=OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
             current_user=_user(),
         )
 

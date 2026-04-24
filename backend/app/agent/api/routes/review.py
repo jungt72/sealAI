@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path
@@ -14,7 +15,7 @@ from app.agent.api.models import (
     build_public_response_core,
 )
 from app.agent.state.agent_state import AgentState
-from app.agent.state.models import UserOverride
+from app.agent.state.models import GovernedPersistenceMarker, UserOverride
 from app.agent.state.reducers import (
     reduce_observed_to_normalized,
     reduce_normalized_to_asserted,
@@ -22,7 +23,6 @@ from app.agent.state.reducers import (
 )
 from app.agent.api.deps import (
     _canonical_scope,
-    _canonical_state_revision,
     SESSION_STORE,
     RequestUser,
     get_current_request_user,
@@ -33,7 +33,6 @@ from app.agent.api.loaders import (
     _persist_review_outcome_to_live_governed_state,
 )
 from app.agent.api.utils import (
-    _governed_release_status_snapshot,
     _overlay_live_governed_snapshot,
 )
 from app.agent.domain.critical_review import (
@@ -165,6 +164,9 @@ async def session_override_endpoint(
     session_id: str = Path(...),
     current_user: RequestUser = Depends(get_current_request_user),
 ):
+    if not os.getenv("REDIS_URL"):
+        raise HTTPException(status_code=503, detail="Live governed state store is not configured")
+
     from app.agent.api.loaders import _load_live_governed_state # noqa: PLC0415
     governed = await _load_live_governed_state(
         current_user=current_user,
@@ -174,26 +176,40 @@ async def session_override_endpoint(
     if not governed:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    rev_before = governed.case_meta.state_revision
+    rev_before = 0
+    marker = governed.persistence_marker
+    if marker is not None and marker.postgres_snapshot_revision is not None:
+        rev_before = marker.postgres_snapshot_revision
 
-    if request.target == "parameters":
-        # 1. Update Observed extractions (the additive basis)
-        new_extractions = list(governed.observed.extractions)
-        for field_name, val in request.payload.items():
-            # Remove existing for this field if present
-            new_extractions = [e for e in new_extractions if e.field_name != field_name]
-            if val is not None:
-                new_extractions.append(UserOverride(field_name=field_name, value=val))
+    observed = governed.observed
+    applied_fields: list[str] = []
+    for override in request.overrides:
+        observed = observed.with_override(
+            UserOverride(
+                field_name=override.field_name,
+                override_value=override.value,
+                override_unit=override.unit,
+                turn_index=request.turn_index,
+            )
+        )
+        applied_fields.append(override.field_name)
 
-        governed.observed.extractions = new_extractions
+    normalized = reduce_observed_to_normalized(observed)
+    asserted = reduce_normalized_to_asserted(normalized)
+    governance = reduce_asserted_to_governance(asserted)
+    revision_after = rev_before + 1
+    governed = governed.model_copy(
+        update={
+            "observed": observed,
+            "normalized": normalized,
+            "asserted": asserted,
+            "governance": governance,
+            "persistence_marker": GovernedPersistenceMarker(
+                postgres_snapshot_revision=revision_after,
+            ),
+        }
+    )
 
-        # 2. Re-run deterministic reducer chain
-        governed.normalized = reduce_observed_to_normalized(governed.observed)
-        governed.asserted = reduce_normalized_to_asserted(governed.normalized)
-        governed.governance = reduce_asserted_to_governance(governed.asserted)
-
-    # 3. Persist
-    governed.case_meta.state_revision += 1
     from app.agent.api.loaders import _persist_live_governed_state # noqa: PLC0415
     await _persist_live_governed_state(
         current_user=current_user,
@@ -203,11 +219,13 @@ async def session_override_endpoint(
 
     return OverrideResponse(
         session_id=session_id,
-        revision_before=rev_before,
-        revision_after=governed.case_meta.state_revision,
+        applied_fields=applied_fields,
         governance=OverrideGovernanceResult(
             gov_class=governed.governance.gov_class,
             rfq_admissible=governed.governance.rfq_admissible,
-            release_status=_governed_release_status_snapshot(governed),
+            blocking_unknowns=list(governed.asserted.blocking_unknowns),
+            conflict_flags=list(governed.asserted.conflict_flags),
+            validity_limits=list(governed.governance.validity_limits),
+            open_validation_points=list(governed.governance.open_validation_points),
         ),
     )
