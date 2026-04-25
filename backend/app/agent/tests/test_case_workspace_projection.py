@@ -547,3 +547,14 @@ def test_workspace_projection_marks_level_five_when_critical_inputs_and_risks_ar
     assert projection.cockpit_view.readiness.is_rfq_ready is True
     assert projection.cockpit_view.readiness.missing_required_fields == []
     assert projection.cockpit_view.blockers == []
+    assert [tab.tab_id for tab in projection.deep_dive_tabs] == [
+        "analysis",
+        "medium",
+        "material",
+        "seal_type",
+    ]
+    material_tab = next(tab for tab in projection.deep_dive_tabs if tab.tab_id == "material")
+    assert material_tab.return_to_analysis == "Zurueck zur Analyse"
+    assert material_tab.next_action
+    seal_type_tab = next(tab for tab in projection.deep_dive_tabs if tab.tab_id == "seal_type")
+    assert "rwdr" in seal_type_tab.derived_direction.casefold()

@@ -344,6 +344,8 @@ CockpitSectionId = Literal[
     "risk_readiness",
 ]
 
+DeepDiveTabId = Literal["analysis", "medium", "material", "seal_type"]
+
 
 class CockpitProperty(BaseModel):
     key: str
@@ -447,11 +449,37 @@ class EngineeringCockpitView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class DeepDiveCard(BaseModel):
+    title: str
+    body: str
+    items: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DeepDiveTabProjection(BaseModel):
+    tab_id: DeepDiveTabId
+    label: str
+    status: str = "available"
+    detected: List[str] = Field(default_factory=list)
+    relevance: str = ""
+    opportunities: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+    derived_direction: str = ""
+    missing: List[str] = Field(default_factory=list)
+    next_action: Optional[str] = None
+    return_to_analysis: str = "Zurueck zur Analyse"
+    cards: List[DeepDiveCard] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CaseWorkspaceProjection(BaseModel):
     """Top-level UI-facing read model for a single engineering case."""
     request_type: Optional[RequestType] = None
     engineering_path: Optional[EngineeringPath] = None
     cockpit_view: EngineeringCockpitView = Field(default_factory=EngineeringCockpitView)
+    deep_dive_tabs: List[DeepDiveTabProjection] = Field(default_factory=list)
     case_summary: CaseSummary = Field(default_factory=CaseSummary)
     completeness: CompletenessStatus = Field(default_factory=CompletenessStatus)
     governance_status: GovernanceStatus = Field(default_factory=GovernanceStatus)

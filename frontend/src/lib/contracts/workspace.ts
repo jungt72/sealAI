@@ -85,6 +85,30 @@ export type WorkspaceMatchItem = {
   groundedFacts: WorkspaceGroundedFact[];
 };
 
+
+export type WorkspaceDeepDiveTabId = "analysis" | "medium" | "material" | "seal_type";
+
+export type WorkspaceDeepDiveCard = {
+  title: string;
+  body: string;
+  items: string[];
+};
+
+export type WorkspaceDeepDiveTab = {
+  tabId: WorkspaceDeepDiveTabId;
+  label: string;
+  status: string;
+  detected: string[];
+  relevance: string;
+  opportunities: string[];
+  risks: string[];
+  derivedDirection: string;
+  missing: string[];
+  nextAction: string | null;
+  returnToAnalysis: string;
+  cards: WorkspaceDeepDiveCard[];
+};
+
 export type WorkspaceView = {
   caseId: string;
   requestType?: string | null;
@@ -184,6 +208,7 @@ export type WorkspaceView = {
     disclaimer: string | null;
   };
   technicalDerivations?: WorkspaceTechnicalDerivation[];
+  deepDiveTabs: WorkspaceDeepDiveTab[];
   specificity: {
     materialSpecificityRequired: string;
     completenessDepth: string;

@@ -42,6 +42,8 @@ from app.api.v1.schemas.case_workspace import (
     CockpitSectionCompletion,
     CommunicationContext,
     CycleInfo,
+    DeepDiveCard,
+    DeepDiveTabProjection,
     EngineeringCockpitView,
     EngineeringCheckResult,
     EngineeringPath as WorkspaceEngineeringPath,
@@ -469,6 +471,172 @@ def _build_cockpit_view(
             ruleset_version=readiness_eval.ruleset_version,
         ),
     )
+
+
+def _stringify_value(value: Any) -> str | None:
+    if value in (None, "", []):
+        return None
+    if isinstance(value, (list, tuple, set)):
+        rendered = ", ".join(str(item) for item in value if item not in (None, ""))
+        return rendered or None
+    if isinstance(value, bool):
+        return "ja" if value else "nein"
+    return str(value)
+
+
+def _deep_value(profile: Dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = _cockpit_field_value(profile, key)
+        rendered = _stringify_value(value)
+        if rendered:
+            return rendered
+    return None
+
+
+def _compact_items(items: list[str | None], *, limit: int = 6) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _section_values(cockpit_view: EngineeringCockpitView, section_id: str) -> list[str]:
+    for section in cockpit_view.sections:
+        if section.section_id != section_id:
+            continue
+        values: list[str] = []
+        for prop in section.properties:
+            rendered = _stringify_value(prop.value)
+            if rendered:
+                unit = f" {prop.unit}" if prop.unit else ""
+                values.append(f"{prop.label}: {rendered}{unit}")
+        return values
+    return []
+
+
+def _build_deep_dive_tabs(
+    *,
+    profile: Dict[str, Any],
+    cockpit_view: EngineeringCockpitView,
+    medium_context: MediumContextSummary,
+    partner_matching: PartnerMatchingSummary,
+    communication_context: CommunicationContext,
+    technical_derivations: list[TechnicalDerivationItem],
+) -> list[DeepDiveTabProjection]:
+    medium_label = (
+        medium_context.medium_label
+        or _deep_value(profile, "medium_name", "medium")
+        or "Medium noch offen"
+    )
+    seal_type = _deep_value(profile, "sealing_type", "seal_type") or (
+        "PTFE-RWDR" if str(cockpit_view.engineering_path or "") == "rwdr" else "Dichtungstyp noch offen"
+    )
+    application = _deep_value(profile, "asset_type", "installation", "application_context") or "Anlage noch offen"
+    motion = _deep_value(profile, "motion_type", "movement_type") or "Bewegung noch offen"
+    geometry = _deep_value(profile, "geometry", "geometry_context", "shaft_diameter", "shaft_diameter_mm") or "Geometrie noch offen"
+    material_items = _compact_items([
+        item.material for item in partner_matching.material_fit_items if item.material
+    ])
+    if not material_items:
+        material_items = _compact_items([
+            _deep_value(profile, "material"),
+            _deep_value(profile, "shaft_material"),
+            "Werkstoffrichtung noch nicht belastbar eingegrenzt",
+        ])
+    risk_items = _compact_items([
+        risk.explanation_short or risk.risk_name
+        for risk in cockpit_view.risk_evaluations
+        if risk.score in {2, 3, 4, 9}
+    ], limit=4)
+    missing = _compact_items(
+        list(cockpit_view.readiness.missing_required_fields)
+        + list(cockpit_view.readiness.blocking_unknowns)
+        + list(cockpit_view.missing_mandatory_keys),
+        limit=6,
+    )
+    next_action = (
+        cockpit_view.readiness.recommended_next_question
+        or communication_context.primary_question
+        or "Naechste fehlende Pflichtangabe in der Analyse klaeren."
+    )
+    calc_items = []
+    for item in technical_derivations:
+        if item.v_surface_m_s is not None:
+            calc_items.append(f"Umfangsgeschwindigkeit: {item.v_surface_m_s} m/s")
+        if item.pv_value_mpa_m_s is not None:
+            calc_items.append(f"p·v: {item.pv_value_mpa_m_s} MPa·m/s")
+        calc_items.extend(item.notes[:2])
+
+    return [
+        DeepDiveTabProjection(
+            tab_id="analysis",
+            label="Analyse",
+            detected=_compact_items([application, motion, medium_label, seal_type]),
+            relevance="Fuehrt die fallbezogene technische Einordnung zusammen und zeigt, ob daraus bereits eine Herstelleranfrage vorbereitet werden kann.",
+            opportunities=_compact_items(["Strukturierte Anfragebasis", "sichtbare offene Punkte", "governed Projection statt Chat-Schaetzung"]),
+            risks=risk_items,
+            derived_direction=f"Aktueller Pfad: {_stringify_value(cockpit_view.engineering_path) or 'noch offen'}; Readiness Level {cockpit_view.readiness.readiness_level}.",
+            missing=missing,
+            next_action=next_action,
+            cards=[
+                DeepDiveCard(title="Was wurde erkannt?", body=" | ".join(_section_values(cockpit_view, "application_function")[:4]) or "Noch keine belastbare Anlagenprojektion."),
+                DeepDiveCard(title="Rueckfuehrung", body=next_action or "Zurueck zur Analyse."),
+            ],
+        ),
+        DeepDiveTabProjection(
+            tab_id="medium",
+            label="Medium",
+            status=medium_context.status,
+            detected=_compact_items([medium_label, medium_context.summary]),
+            relevance="Das Medium bestimmt Werkstofffenster, Schmierung, Korrosions-/Quellrisiken und offene Herstellerpruefpunkte.",
+            opportunities=_compact_items(list(medium_context.properties) + ["fruehe Werkstoff-Eingrenzung"]),
+            risks=_compact_items(list(medium_context.challenges) + risk_items, limit=5),
+            derived_direction=medium_context.summary or f"{medium_label} ist als Medium im Fallkontext erfasst, aber noch nicht final validiert.",
+            missing=_compact_items(list(medium_context.followup_points) + missing, limit=6),
+            next_action=medium_context.followup_points[0] if medium_context.followup_points else next_action,
+            cards=[
+                DeepDiveCard(title="Medium-Kontext", body=medium_context.summary or "Noch keine vertiefte Medium-Projektion verfuegbar.", items=list(medium_context.properties)),
+                DeepDiveCard(title="Grenzen", body=medium_context.disclaimer or "Medium-Hinweise bleiben orientierend bis zur Hersteller-/Datenpruefung.", items=list(medium_context.challenges)),
+            ],
+        ),
+        DeepDiveTabProjection(
+            tab_id="material",
+            label="Werkstoff",
+            detected=material_items,
+            relevance="Werkstofffragen muessen gegen Medium, Temperatur, Dynamik, Gegenlaufflaeche und Validierungsbedarf gespiegelt werden.",
+            opportunities=_compact_items(["Kandidaten koennen transparent vorqualifiziert werden", "Herstellerfreigabe bleibt finale Instanz"] + material_items[:2]),
+            risks=_compact_items(risk_items + list(partner_matching.not_ready_reasons), limit=5),
+            derived_direction=("; ".join(material_items[:3]) if material_items else "Noch keine belastbare Werkstoffrichtung."),
+            missing=_compact_items([_deep_value(profile, "shaft_material"), _deep_value(profile, "surface_finish")], limit=2) if False else _compact_items([m for m in missing if m in {"surface_finish", "shaft_material", "medium_name", "temperature_max"}] or missing[:3]),
+            next_action=next_action,
+            cards=[
+                DeepDiveCard(title="Werkstoffbasis", body="Fallbezogene Werkstoffrichtung aus Matching-/Risikoprojektion.", items=material_items),
+                DeepDiveCard(title="Validierung", body="Keine finale Werkstofffreigabe ohne Herstellerpruefung und vollstaendige Betriebsdaten.", items=list(partner_matching.open_manufacturer_questions[:4])),
+            ],
+        ),
+        DeepDiveTabProjection(
+            tab_id="seal_type",
+            label="Dichtungstyp",
+            detected=_compact_items([seal_type, geometry, motion]),
+            relevance="Der Dichtungstyp grenzt Loesungsraum, Geometrie, Berechnungen und Hersteller-Capabilities ein.",
+            opportunities=_compact_items(["Pfadlogik kann gezielt Pflichtfelder priorisieren", "Shallow Paths bleiben bewusst vorlaeufig"]),
+            risks=_compact_items([item for item in risk_items if item] + ["Dichtungstyp darf ohne Geometrie und Betriebsdaten nicht final behauptet werden"], limit=5),
+            derived_direction=f"Aktuelle Dichtungstyp-Richtung: {seal_type}.",
+            missing=_compact_items([m for m in missing if m in {"seal_location", "geometry", "shaft_diameter", "speed_rpm", "pressure_nominal"}] or missing[:3]),
+            next_action=next_action,
+            cards=[
+                DeepDiveCard(title="Typ-Richtung", body=f"{seal_type} im Kontext {motion}, {geometry}.", items=calc_items[:4]),
+                DeepDiveCard(title="Rueckfuehrung", body=next_action or "Zurueck zur Analyse."),
+            ],
+        ),
+    ]
 
 
 def _build_confirmed_facts_summary(working_profile_pillar: Dict[str, Any]) -> list[str]:
@@ -1659,10 +1827,20 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         checks=checks,
     )
 
+    deep_dive_tabs = _build_deep_dive_tabs(
+        profile=routing_profile,
+        cockpit_view=cockpit_view,
+        medium_context=medium_context_summary,
+        partner_matching=partner_matching,
+        communication_context=communication_context,
+        technical_derivations=technical_derivations,
+    )
+
     return CaseWorkspaceProjection(
         request_type=request_type,
         engineering_path=engineering_path,
         cockpit_view=cockpit_view,
+        deep_dive_tabs=deep_dive_tabs,
         case_summary=case_summary,
         governance_status=governance_status,
         claims_summary=claims_summary,

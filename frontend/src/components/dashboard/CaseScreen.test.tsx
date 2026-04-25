@@ -315,26 +315,23 @@ describe("CaseScreen", () => {
     expect(screen.getByText("Vergleichsarbeitsstand")).toBeInTheDocument();
     expect(screen.getByText("Parameter & Application")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Compare" }));
+    await user.click(screen.getByRole("button", { name: "Werkstoff" }));
 
-    expect(await screen.findByText("Vergleich NBR vs PTFE")).toBeInTheDocument();
-    expect(await screen.findByText("Kurzfazit")).toBeInTheDocument();
-    expect(await screen.findByText("FKM")).toBeInTheDocument();
-    expect(await screen.findByText("PTFE")).toBeInTheDocument();
+    expect(await screen.findByText("Was wurde erkannt?")).toBeInTheDocument();
+    expect(await screen.findByText("Warum relevant?")).toBeInTheDocument();
+    expect(await screen.findByText("Chancen & Risiken")).toBeInTheDocument();
+    expect(await screen.findByText("Fehlt noch / Rueckfuehrung")).toBeInTheDocument();
     expect(screen.getByText("PTFE-RWDR Entscheidungsraum")).toBeInTheDocument();
     expect(screen.getByText("Case ID")).toBeInTheDocument();
     expect(screen.getByText("case-42")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Deep Dive" }));
+    await user.click(screen.getByRole("button", { name: "Medium" }));
 
-    expect(await screen.findByText("Material Profile")).toBeInTheDocument();
-    expect(await screen.findByText("Properties")).toBeInTheDocument();
-    expect(await screen.findByText("Typical Applications & Limits")).toBeInTheDocument();
-    expect(await screen.findByText("Deep Notes / Sources")).toBeInTheDocument();
+    expect(await screen.findByText("Was wurde erkannt?")).toBeInTheDocument();
     expect((await screen.findAllByText("Hydraulikoel")).length).toBeGreaterThan(0);
     expect(screen.getByText("Vergleichsarbeitsstand")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Case" }));
+    await user.click(screen.getByRole("button", { name: "Analyse" }));
 
     expect(await screen.findByText("Parameter & Application")).toBeInTheDocument();
     expect(await screen.findByText("Medium Intelligence")).toBeInTheDocument();

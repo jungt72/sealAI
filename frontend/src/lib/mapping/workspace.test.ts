@@ -59,6 +59,22 @@ function legacyProjection() {
         coverage_score: 0.65,
       },
     },
+    deep_dive_tabs: [
+      {
+        tab_id: "material",
+        label: "Werkstoff",
+        status: "available",
+        detected: ["PTFE"],
+        relevance: "Werkstoff muss gegen Medium und Temperatur gespiegelt werden.",
+        opportunities: ["Materialrichtung eingrenzen"],
+        risks: ["Herstellerfreigabe erforderlich"],
+        derived_direction: "PTFE als Richtung",
+        missing: ["surface_finish"],
+        next_action: "Oberflaeche klaeren",
+        return_to_analysis: "Zurueck zur Analyse",
+        cards: [{ title: "Werkstoffbasis", body: "PTFE Richtung", items: ["PTFE"] }],
+      },
+    ],
     communication_context: {
       conversation_phase: "clarification",
       turn_goal: "clarify_primary_open_point",
@@ -249,6 +265,9 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.parameters?.speed_rpm, 6000);
   assert.equal(workspace.technicalDerivations?.[0]?.calcType, "rwdr");
   assert.equal(workspace.technicalDerivations?.[0]?.vSurfaceMPerS, 3.93);
+  assert.equal(workspace.deepDiveTabs[0]?.tabId, "material");
+  assert.equal(workspace.deepDiveTabs[0]?.cards[0]?.title, "Werkstoffbasis");
+  assert.equal(workspace.deepDiveTabs[0]?.nextAction, "Oberflaeche klaeren");
   assert.equal(workspace.evidence.evidencePresent, true);
   assert.deepEqual(workspace.evidence.sourceBackedFindings, ["medium"]);
   assert.deepEqual(workspace.evidence.evidenceGaps, ["missing_source_for_compliance"]);

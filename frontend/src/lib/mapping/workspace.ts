@@ -88,10 +88,30 @@ type RawCockpitView = {
   } | null;
 };
 
+type RawDeepDiveTab = {
+  tab_id?: string;
+  label?: string;
+  status?: string;
+  detected?: string[];
+  relevance?: string;
+  opportunities?: string[];
+  risks?: string[];
+  derived_direction?: string;
+  missing?: string[];
+  next_action?: string | null;
+  return_to_analysis?: string;
+  cards?: Array<{
+    title?: string;
+    body?: string;
+    items?: string[];
+  }>;
+};
+
 type LegacyWorkspaceProjection = {
   request_type?: string | null;
   engineering_path?: string | null;
   cockpit_view?: RawCockpitView | null;
+  deep_dive_tabs?: RawDeepDiveTab[];
   parameters?: {
     medium?: string | null;
     temperature_c?: number | null;
@@ -459,6 +479,35 @@ function mapRiskEvaluations(rawRisks: RawRiskEvaluationResult[] | undefined): En
   }));
 }
 
+
+function mapDeepDiveTabs(rawTabs: RawDeepDiveTab[] | undefined) {
+  return (rawTabs || [])
+    .filter((tab) =>
+      tab.tab_id === "analysis" ||
+      tab.tab_id === "medium" ||
+      tab.tab_id === "material" ||
+      tab.tab_id === "seal_type",
+    )
+    .map((tab) => ({
+      tabId: tab.tab_id as "analysis" | "medium" | "material" | "seal_type",
+      label: tab.label || tab.tab_id || "",
+      status: tab.status || "available",
+      detected: tab.detected || [],
+      relevance: tab.relevance || "",
+      opportunities: tab.opportunities || [],
+      risks: tab.risks || [],
+      derivedDirection: tab.derived_direction || "",
+      missing: tab.missing || [],
+      nextAction: tab.next_action ?? null,
+      returnToAnalysis: tab.return_to_analysis || "Zurueck zur Analyse",
+      cards: (tab.cards || []).map((card) => ({
+        title: card.title || "",
+        body: card.body || "",
+        items: card.items || [],
+      })),
+    }));
+}
+
 function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockpitView | null {
   const raw = projection.cockpit_view;
   if (!raw) {
@@ -649,6 +698,7 @@ export function mapWorkspaceView(
         projection.medium_context?.not_for_release_decisions !== false,
       disclaimer: projection.medium_context?.disclaimer || null,
     },
+    deepDiveTabs: mapDeepDiveTabs(projection.deep_dive_tabs),
     technicalDerivations: (projection.technical_derivations || []).map((item) => ({
       calcType: item.calc_type || "unknown",
       status: item.status || "insufficient_data",

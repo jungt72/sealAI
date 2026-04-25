@@ -29,6 +29,7 @@ import {
   type EngineeringPath,
   type EngineeringProperty,
 } from "@/lib/engineering/cockpitModel";
+import type { WorkspaceDeepDiveTab } from "@/lib/contracts/workspace";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { cn } from "@/lib/utils";
 
@@ -80,7 +81,7 @@ type OpenPointItem = {
   severity: "critical" | "attention" | "info";
 };
 
-type WorkspaceMode = "case_analysis" | "knowledge_compare" | "knowledge_deep_dive";
+type WorkspaceMode = "analysis" | "medium" | "material" | "seal_type";
 
 type CompareColumn = {
   label: string;
@@ -109,9 +110,10 @@ type DeepDiveCardData = {
 };
 
 const WORKSPACE_MODE_OPTIONS: Array<{ id: WorkspaceMode; label: string }> = [
-  { id: "case_analysis", label: "Case" },
-  { id: "knowledge_compare", label: "Compare" },
-  { id: "knowledge_deep_dive", label: "Deep Dive" },
+  { id: "analysis", label: "Analyse" },
+  { id: "medium", label: "Medium" },
+  { id: "material", label: "Werkstoff" },
+  { id: "seal_type", label: "Dichtungstyp" },
 ];
 
 const CORE_PARAMETER_FIELDS: ParameterFieldDescriptor[] = [
@@ -480,27 +482,13 @@ function dedupeTextItems(items: Array<string | null | undefined>) {
 }
 
 function deriveDefaultWorkspaceMode({
-  workspace,
-  activeResponseClass,
+  workspace: _workspace,
+  activeResponseClass: _activeResponseClass,
 }: {
   workspace: ReturnType<typeof useWorkspaceStore.getState>["workspace"] | null;
   activeResponseClass: string | null;
 }): WorkspaceMode {
-  if (
-    activeResponseClass === "candidate_shortlist" &&
-    (workspace?.matching.items.length ?? 0) > 1
-  ) {
-    return "knowledge_compare";
-  }
-
-  if (
-    !workspace?.caseId &&
-    (workspace?.mediumContext.summary || workspace?.mediumClassification.canonicalLabel)
-  ) {
-    return "knowledge_deep_dive";
-  }
-
-  return "case_analysis";
+  return "analysis";
 }
 
 function buildCompareCardData({
@@ -1196,6 +1184,129 @@ function KnowledgeDeepDiveMode({
   );
 }
 
+
+function DeepDiveTabMode({
+  mode,
+  workspace,
+  cockpit,
+}: {
+  mode: Exclude<WorkspaceMode, "analysis">;
+  workspace: ReturnType<typeof useWorkspaceStore.getState>["workspace"] | null;
+  cockpit: ReturnType<typeof useCockpitData>;
+}) {
+  const tab = workspace?.deepDiveTabs?.find((item) => item.tabId === mode) ?? buildFallbackDeepDiveTab(mode, cockpit, workspace);
+
+  return (
+    <div className="grid grid-cols-2 items-start gap-4">
+      <WorkspaceCard title="Was wurde erkannt?" eyebrow={tab.label} icon={Search}>
+        {tab.detected.length ? (
+          <div className="space-y-2">
+            {tab.detected.map((item) => (
+              <div key={item} className="rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827]">
+                {item}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <WorkspaceStateMessage title="Noch keine fallbezogene Projektion fuer diesen Tab vorhanden." />
+        )}
+      </WorkspaceCard>
+
+      <WorkspaceCard title="Warum relevant?" eyebrow={tab.status} icon={BookOpen}>
+        <p className="text-sm leading-relaxed text-[#4B5563]">
+          {tab.relevance || "SeaLAI fuehrt diesen Tab nur fallbezogen: Erkenntnis, Risiko, Ableitung und Rueckfuehrung zur Analyse."}
+        </p>
+        {tab.derivedDirection && (
+          <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-3 text-sm text-[#111827]">
+            {tab.derivedDirection}
+          </div>
+        )}
+      </WorkspaceCard>
+
+      <WorkspaceCard title="Chancen & Risiken" eyebrow="Fallbezug" icon={AlertCircle}>
+        <div className="grid gap-3">
+          <div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">Chancen</div>
+            <div className="space-y-2">
+              {(tab.opportunities.length ? tab.opportunities : ["Noch keine spezifischen Chancen projiziert."]).map((item) => (
+                <div key={item} className="rounded-[12px] border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2 text-sm text-[#166534]">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">Risiken</div>
+            <div className="space-y-2">
+              {(tab.risks.length ? tab.risks : ["Keine separaten Risiken fuer diesen Tab projiziert."]).map((item) => (
+                <div key={item} className="rounded-[12px] border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-sm text-[#92400E]">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </WorkspaceCard>
+
+      <WorkspaceCard title="Fehlt noch / Rueckfuehrung" eyebrow="Zurueck zur Analyse" icon={ArrowRight}>
+        {tab.missing.length ? (
+          <div className="space-y-2">
+            {tab.missing.map((item) => (
+              <div key={item} className="rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#4B5563]">
+                {humanize(item)}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <WorkspaceStateMessage title="Keine tab-spezifischen offenen Punkte projiziert." />
+        )}
+        <div className="rounded-[14px] border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-3 text-sm font-medium text-[#0B57D0]">
+          {tab.nextAction || tab.returnToAnalysis || "Zurueck zur Analyse"}
+        </div>
+      </WorkspaceCard>
+
+      {tab.cards.slice(0, 2).map((card) => (
+        <WorkspaceCard key={`${tab.tabId}-${card.title}`} title={card.title} eyebrow="Projection" icon={Database}>
+          <p className="text-sm leading-relaxed text-[#4B5563]">{card.body}</p>
+          {card.items.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {card.items.map((item) => (
+                <span key={item} className="rounded-full border border-[#E5E7EB] bg-[#FAFAFB] px-2.5 py-1 text-xs font-medium text-[#4B5563]">
+                  {item}
+                </span>
+              ))}
+            </div>
+          )}
+        </WorkspaceCard>
+      ))}
+    </div>
+  );
+}
+
+function buildFallbackDeepDiveTab(
+  mode: Exclude<WorkspaceMode, "analysis">,
+  cockpit: ReturnType<typeof useCockpitData>,
+  workspace: ReturnType<typeof useWorkspaceStore.getState>["workspace"] | null,
+): WorkspaceDeepDiveTab {
+  const label = WORKSPACE_MODE_OPTIONS.find((item) => item.id === mode)?.label || "Deep Dive";
+  const missing = cockpit?.view.readiness.missingRequiredFields || cockpit?.view.readiness.missingMandatoryKeys || [];
+  const medium = cockpit?.mediumStatus.label || workspace?.mediumContext.mediumLabel || "Medium noch offen";
+  return {
+    tabId: mode,
+    label,
+    status: "fallback",
+    detected: mode === "medium" ? [medium] : [],
+    relevance: "Dieser Tab ist bereits als v0.4-Arbeitsflaeche vorhanden; die Backend-Projektion wird fallbezogen erweitert, sobald mehr Daten im Case liegen.",
+    opportunities: [],
+    risks: (cockpit?.view.riskEvaluations || []).map((risk) => risk.explanationShort || risk.riskName).filter(Boolean).slice(0, 3),
+    derivedDirection: "Noch keine vollstaendige Deep-Dive-Projektion fuer diesen Tab.",
+    missing,
+    nextAction: cockpit?.view.readiness.recommendedNextQuestion || workspace?.communication?.primaryQuestion || null,
+    returnToAnalysis: "Zurueck zur Analyse",
+    cards: [],
+  };
+}
+
 function WorkspaceModeContent({
   mode,
   cockpit,
@@ -1207,12 +1318,8 @@ function WorkspaceModeContent({
   workspace: ReturnType<typeof useWorkspaceStore.getState>["workspace"] | null;
   displayRequestType: string;
 }) {
-  if (mode === "knowledge_compare") {
-    return <KnowledgeCompareMode workspace={workspace} cockpit={cockpit} />;
-  }
-
-  if (mode === "knowledge_deep_dive") {
-    return <KnowledgeDeepDiveMode workspace={workspace} cockpit={cockpit} />;
+  if (mode !== "analysis") {
+    return <DeepDiveTabMode mode={mode} workspace={workspace} cockpit={cockpit} />;
   }
 
   return (
@@ -1280,7 +1387,7 @@ function deriveContextItems({
     {
       label: "Phase",
       value: titleCase(
-        cockpit?.view.routingMetadata?.phase || cockpit?.view.readiness.status || "case_analysis",
+        cockpit?.view.routingMetadata?.phase || cockpit?.view.readiness.status || "analysis",
       ),
     },
     { label: "Completeness", value: `${Math.round((cockpit?.coverage ?? 0) * 100)}%` },
@@ -1529,8 +1636,8 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
                     ))}
                   </div>
                   <StatusBadge
-                    label={workspaceMode === "knowledge_compare" ? "compare" : titleCase(cockpit?.view.readiness.status || "case_analysis")}
-                    variant={workspaceMode === "knowledge_compare" ? "success" : cockpit?.view.readiness.isRfqReady ? "success" : "info"}
+                    label={workspaceMode === "analysis" ? titleCase(cockpit?.view.readiness.status || "analysis") : WORKSPACE_MODE_OPTIONS.find((option) => option.id === workspaceMode)?.label || "Deep Dive"}
+                    variant={cockpit?.view.readiness.isRfqReady ? "success" : "info"}
                   />
                 </div>
               </div>
