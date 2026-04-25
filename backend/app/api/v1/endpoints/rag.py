@@ -184,6 +184,106 @@ def _qdrant_delete_document(*, tenant_id: str, document_id: str) -> None:
         ),
         wait=True,
     )
+
+
+def _extract_text_preview_for_delta(path: Path, *, limit: int = 12000) -> str:
+    try:
+        from app.services.rag.rag_ingest import load_document  # noqa: PLC0415
+
+        docs = load_document(str(path))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("document_delta_text_extraction_skipped", path=str(path), reason=str(exc))
+        return ""
+    parts: list[str] = []
+    remaining = limit
+    for doc in docs:
+        content = str(getattr(doc, "page_content", "") or "").strip()
+        if not content:
+            continue
+        parts.append(content[:remaining])
+        remaining -= len(parts[-1])
+        if remaining <= 0:
+            break
+    return "\n\n".join(parts)
+
+
+async def _try_persist_document_delta_for_case(
+    *,
+    current_user: RequestUser,
+    case_id: str | None,
+    doc: RagDocument,
+    path: Path,
+) -> dict[str, Any] | None:
+    normalized_case_id = str(case_id or "").strip()
+    if not normalized_case_id:
+        return None
+    text_preview = _extract_text_preview_for_delta(path)
+    try:
+        from app.agent.api.loaders import (  # noqa: PLC0415
+            _load_live_governed_state,
+            _persist_live_governed_state,
+        )
+        from app.agent.api.utils import _with_case_event  # noqa: PLC0415
+        from app.agent.domain.case_delta import build_document_delta_event  # noqa: PLC0415
+        from app.agent.domain.document_delta import document_delta_from_text  # noqa: PLC0415
+
+        delta = document_delta_from_text(
+            text=text_preview,
+            filename=doc.filename,
+            category=doc.category,
+            tags=doc.tags or [],
+        )
+        if not delta.fields:
+            return {
+                "case_id": normalized_case_id,
+                "document_id": doc.document_id,
+                "status": "no_fields_detected",
+                "field_count": 0,
+                "fields": [],
+            }
+        governed = await _load_live_governed_state(
+            current_user=current_user,
+            session_id=normalized_case_id,
+            create_if_missing=True,
+        )
+        event = build_document_delta_event(
+            case_id=normalized_case_id,
+            document_id=doc.document_id,
+            filename=doc.filename,
+            delta=delta,
+            persistence_marker=governed.persistence_marker if governed else None,
+        )
+        updated = _with_case_event(governed, event=event) if governed else None
+        if updated is None:
+            return None
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=normalized_case_id,
+            state=updated,
+        )
+        return {
+            "case_id": normalized_case_id,
+            "document_id": doc.document_id,
+            "event_id": event.event_id,
+            "status": "proposed",
+            "field_count": len(delta.fields),
+            "fields": [field.model_dump(mode="json") for field in delta.fields],
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "document_delta_persist_failed",
+            case_id=normalized_case_id,
+            document_id=doc.document_id,
+            reason=f"{type(exc).__name__}: {exc}",
+        )
+        return {
+            "case_id": normalized_case_id,
+            "document_id": doc.document_id,
+            "status": "error",
+            "error": f"{type(exc).__name__}: {exc}",
+            "field_count": 0,
+            "fields": [],
+        }
 @router.get("/health")
 async def rag_health() -> Dict[str, Any]:
     """Health check for the RAG subsystem."""
@@ -197,6 +297,7 @@ async def upload_rag_document(
     tags: Optional[str] = Form(default=None),
     visibility: str = Form(default="private"),
     scope: str = Form(default="tenant"),
+    case_id: Optional[str] = Form(default=None),
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -284,7 +385,17 @@ async def upload_rag_document(
     if existing_doc:
         if existing_doc.status not in {"failed", "error"}:
             cleanup_upload_path(target_path)
-            return {"document_id": existing_doc.document_id, "status": existing_doc.status}
+            document_delta = await _try_persist_document_delta_for_case(
+                current_user=current_user,
+                case_id=case_id,
+                doc=existing_doc,
+                path=Path(existing_doc.path),
+            )
+            return {
+                "document_id": existing_doc.document_id,
+                "status": existing_doc.status,
+                "document_delta": document_delta,
+            }
 
         retry_dir = resolve_upload_dir(tenant_id=tenant_id, document_id=existing_doc.document_id)
         try:
@@ -326,7 +437,17 @@ async def upload_rag_document(
         await session.commit()
         await session.refresh(existing_doc)
 
-        return {"document_id": existing_doc.document_id, "status": "processing"}
+        document_delta = await _try_persist_document_delta_for_case(
+            current_user=current_user,
+            case_id=case_id,
+            doc=existing_doc,
+            path=Path(existing_doc.path),
+        )
+        return {
+            "document_id": existing_doc.document_id,
+            "status": "processing",
+            "document_delta": document_delta,
+        }
 
     doc = RagDocument(
         document_id=document_id,
@@ -348,7 +469,13 @@ async def upload_rag_document(
     await session.commit()
     await session.refresh(doc)
 
-    return {"document_id": doc.document_id, "status": doc.status}
+    document_delta = await _try_persist_document_delta_for_case(
+        current_user=current_user,
+        case_id=case_id,
+        doc=doc,
+        path=target_path,
+    )
+    return {"document_id": doc.document_id, "status": doc.status, "document_delta": document_delta}
 
 
 @router.post("/sync-paperless")

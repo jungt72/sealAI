@@ -78,17 +78,42 @@ export async function deleteRagDocument(
   );
 }
 
+export type RagDocumentDelta = {
+  case_id: string;
+  document_id: string;
+  event_id?: string;
+  status: "proposed" | "no_fields_detected" | "error" | string;
+  field_count: number;
+  fields: Array<{
+    field_name: string;
+    proposed_value: unknown;
+    unit?: string | null;
+    provenance?: string;
+    confidence?: string;
+    source_turn_index?: number;
+    status?: string;
+  }>;
+  error?: string;
+};
+
+export type RagUploadResponse = {
+  document_id: string;
+  status: string;
+  document_delta?: RagDocumentDelta | null;
+};
+
 export async function uploadRagDocument(
   file: File,
-  params: { category?: string; tags?: string; visibility?: "private" | "public" } = {},
-): Promise<{ document_id: string; status: string }> {
+  params: { category?: string; tags?: string; visibility?: "private" | "public"; caseId?: string } = {},
+): Promise<RagUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
   if (params.category) formData.append("category", params.category);
   if (params.tags) formData.append("tags", params.tags);
   if (params.visibility) formData.append("visibility", params.visibility);
+  if (params.caseId) formData.append("case_id", params.caseId);
 
-  return bffFetch<{ document_id: string; status: string }>(
+  return bffFetch<RagUploadResponse>(
     "/api/bff/rag/documents",
     {
       method: "POST",

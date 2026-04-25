@@ -126,10 +126,37 @@ def build_assistant_delta_event(
     )
 
 
+def build_document_delta_event(
+    *,
+    case_id: str,
+    document_id: str,
+    filename: str | None,
+    delta: ProposedCaseDelta,
+    persistence_marker: GovernedPersistenceMarker | None = None,
+) -> CaseEvent:
+    """Build an append-only document proposal without accepting any value."""
+    before = _revision_before(persistence_marker)
+    now = datetime.now(timezone.utc).isoformat()
+    label = filename or document_id
+    return CaseEvent(
+        case_id=case_id,
+        turn_id=f"document-{document_id}",
+        actor="system",
+        event_type="document_delta_proposed",
+        assistant_message=f"Document input proposed case fields from {label}.",
+        proposed_case_delta=delta,
+        accepted_delta={},
+        rejected_delta={},
+        state_revision_before=before,
+        state_revision_after=before + 1 if before >= 0 else 0,
+        created_at=now,
+    )
+
+
 def latest_proposed_delta_event(state: GovernedSessionState) -> CaseEvent | None:
-    """Return the newest assistant proposal with at least one proposed field."""
+    """Return the newest proposal with at least one proposed field."""
     for event in reversed(state.case_events):
-        if event.event_type != "assistant_delta_proposed":
+        if event.event_type not in {"assistant_delta_proposed", "document_delta_proposed"}:
             continue
         if event.proposed_case_delta.fields:
             return event

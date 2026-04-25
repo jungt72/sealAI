@@ -9,6 +9,7 @@ import { useAgentStream } from "@/hooks/useAgentStream";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { decideCaseDelta } from "@/lib/bff/caseDelta";
+import { uploadRagDocument } from "@/lib/ragApi";
 import type { ProposedCaseDeltaField } from "@/lib/contracts/agent";
 
 interface ChatPaneProps {
@@ -173,6 +174,9 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
   const setActiveResponseClass = useWorkspaceStore((s) => s.setActiveResponseClass);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
   const [settledDeltaKey, setSettledDeltaKey] = useState<string | null>(null);
+  const [documentDeltaFields, setDocumentDeltaFields] = useState<ProposedCaseDeltaField[]>([]);
+  const [documentUploadStatus, setDocumentUploadStatus] = useState<string | null>(null);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
 
   useEffect(() => {
     setStreamWorkspace(streamWorkspace);
@@ -189,10 +193,40 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
     const fields = streamWorkspace?.proposedCaseDelta?.fields ?? [];
     return fields.filter((field) => field.status === "proposed" || !field.status);
   }, [streamWorkspace?.proposedCaseDelta]);
-  const proposedDeltaKey = proposedDeltaFields
+  const combinedDeltaFields = documentDeltaFields.length > 0 ? documentDeltaFields : proposedDeltaFields;
+  const proposedDeltaKey = combinedDeltaFields
     .map((field) => `${field.field_name}:${String(field.proposed_value)}:${field.unit ?? ""}`)
     .join("|");
-  const visibleDeltaFields = proposedDeltaKey && settledDeltaKey !== proposedDeltaKey ? proposedDeltaFields : [];
+  const visibleDeltaFields = proposedDeltaKey && settledDeltaKey !== proposedDeltaKey ? combinedDeltaFields : [];
+
+  const handleDocumentUpload = async (file: File) => {
+    if (!currentCaseId) {
+      setDocumentUploadStatus("Bitte zuerst den Fall mit einer Nachricht starten, dann kann das Dokument dem Case zugeordnet werden.");
+      return;
+    }
+    setIsUploadingDocument(true);
+    setDocumentUploadStatus(null);
+    setDocumentDeltaFields([]);
+    try {
+      const response = await uploadRagDocument(file, { caseId: currentCaseId });
+      const fields = response.document_delta?.fields ?? [];
+      if (response.document_delta?.status === "proposed" && fields.length > 0) {
+        setDocumentDeltaFields(fields as ProposedCaseDeltaField[]);
+        setSettledDeltaKey(null);
+        setDocumentUploadStatus("Dokument analysiert. Bitte die vorgeschlagenen Case-Daten pruefen.");
+      } else if (response.document_delta?.status === "no_fields_detected") {
+        setDocumentUploadStatus("Dokument gespeichert, aber keine Case-Felder sicher erkannt.");
+      } else if (response.document_delta?.status === "error") {
+        setDocumentUploadStatus("Dokument gespeichert, Delta-Vorschlag konnte aber nicht erzeugt werden.");
+      } else {
+        setDocumentUploadStatus("Dokument gespeichert.");
+      }
+    } catch (err) {
+      setDocumentUploadStatus(err instanceof Error ? err.message : "Dokument konnte nicht hochgeladen werden.");
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  };
 
   return (
     <div className="flex h-full w-full flex-col bg-[#FBFCFE]">
@@ -216,7 +250,9 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
             <div className="mx-auto flex w-full max-w-[640px] flex-col items-center gap-4">
               <ChatComposer
                 onSend={(message) => void sendMessage(message)}
+                onUpload={(file) => void handleDocumentUpload(file)}
                 isLoading={isStreaming}
+                isUploading={isUploadingDocument}
                 autoFocus
               />
               <div className="flex w-full flex-wrap justify-center gap-2">
@@ -251,11 +287,19 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
                   fields={visibleDeltaFields}
                   onSettled={() => {
                     setSettledDeltaKey(proposedDeltaKey || null);
+                    setDocumentDeltaFields([]);
+                    setDocumentUploadStatus(null);
                     if (currentCaseId) {
                       onTurnComplete?.(currentCaseId);
                     }
                   }}
                 />
+
+                {documentUploadStatus && (
+                  <div className="ml-12 max-w-[min(720px,84%)] rounded-[10px] border border-[#E7ECF3] bg-white px-3 py-2 text-[12px] font-medium text-slate-600 shadow-sm">
+                    {documentUploadStatus}
+                  </div>
+                )}
 
                 {isStreaming && !streamingText && (
                   <div className="flex justify-start gap-3">
@@ -309,7 +353,12 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
       {hasConversation && (
         <div className="border-t border-[#E7ECF3] bg-white p-3 sm:p-4">
           <div className="mx-auto max-w-[760px]">
-            <ChatComposer onSend={(message) => void sendMessage(message)} isLoading={isStreaming} />
+            <ChatComposer
+              onSend={(message) => void sendMessage(message)}
+              onUpload={(file) => void handleDocumentUpload(file)}
+              isLoading={isStreaming}
+              isUploading={isUploadingDocument}
+            />
             <div className="mt-3 flex items-center justify-between gap-3 px-1 text-[11px] text-slate-400">
               <div className="flex items-center gap-2">
                 <Paperclip size={12} />

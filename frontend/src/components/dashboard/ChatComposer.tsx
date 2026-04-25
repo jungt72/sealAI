@@ -6,14 +6,24 @@ import { cn } from "@/lib/utils";
 
 interface ChatComposerProps {
   onSend: (message: string) => void;
+  onUpload?: (file: File) => void;
   isLoading?: boolean;
+  isUploading?: boolean;
   autoFocus?: boolean;
   externalValue?: string | null;
 }
 
-export default function ChatComposer({ onSend, isLoading, autoFocus, externalValue }: ChatComposerProps) {
+export default function ChatComposer({
+  onSend,
+  onUpload,
+  isLoading,
+  isUploading,
+  autoFocus,
+  externalValue,
+}: ChatComposerProps) {
   const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (externalValue !== undefined && externalValue !== null) {
@@ -45,7 +55,16 @@ export default function ChatComposer({ onSend, isLoading, autoFocus, externalVal
     }
   };
 
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file && onUpload && !isLoading && !isUploading) {
+      onUpload(file);
+    }
+  };
+
   const canSend = Boolean(message.trim()) && !isLoading;
+  const canUpload = Boolean(onUpload) && !isLoading && !isUploading;
 
   return (
     <form
@@ -53,10 +72,20 @@ export default function ChatComposer({ onSend, isLoading, autoFocus, externalVal
       className="w-full rounded-lg border border-slate-200 bg-white p-2 shadow-sm transition-colors focus-within:border-seal-blue/40 focus-within:shadow-md"
     >
       <div className="flex items-end gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept=".pdf,.txt,.md,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={handleFileChange}
+          disabled={!canUpload}
+        />
         <button
           type="button"
-          title="Anhang hinzufügen"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"
+          title="Anhang hinzufuegen"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={!canUpload}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Paperclip size={18} />
         </button>
