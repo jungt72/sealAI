@@ -1216,7 +1216,7 @@ function WorkspaceModeContent({
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+    <div className="grid grid-cols-2 items-start gap-4">
       <ParameterApplicationCard
         key={cockpit?.view.path ?? "no-path"}
         cockpit={cockpit}
