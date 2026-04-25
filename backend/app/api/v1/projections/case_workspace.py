@@ -26,6 +26,7 @@ from app.agent.runtime.clarification_priority import (
 )
 from app.agent.state.models import GovernedSessionState
 from app.agent.domain.checks_registry import build_registered_check_results
+from app.agent.domain.delta_conflicts import build_governed_conflict_summary
 from app.agent.domain.medium_registry import classify_medium_value
 from app.agent.domain.risk_readiness import evaluate_readiness, evaluate_risks
 from app.api.v1.schemas.case_workspace import (
@@ -41,6 +42,7 @@ from app.api.v1.schemas.case_workspace import (
     CockpitSection,
     CockpitSectionCompletion,
     CommunicationContext,
+    ConflictSummary,
     CycleInfo,
     DeepDiveCard,
     DeepDiveTabProjection,
@@ -1259,7 +1261,8 @@ def synthesize_workspace_state_from_governed(
                     state.rfq.confirmed_parameters or {}
                 ),
                 "manufacturer_questions_mandatory": [],
-                "conflicts_visible_count": len(state.rfq.blocking_findings),
+                "conflicts_visible_count": len(state.rfq.blocking_findings)
+                + int(build_governed_conflict_summary(state).get("open") or 0),
                 "buyer_assumptions_acknowledged": [],
             },
             "rfq_admissibility": {
@@ -1306,6 +1309,7 @@ def synthesize_workspace_state_from_governed(
             "rfq_state": rfq_state,
             "rfq_object": dict(state.rfq.rfq_object or {}),
             "manufacturer_state": {"data_source": "candidate_derived"},
+            "conflict_summary": build_governed_conflict_summary(state),
         },
     }
 
@@ -1814,6 +1818,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     )
     evidence_summary = _build_evidence_summary(evidence_state)
     claims_summary = _build_claims_summary(evidence_summary)
+    conflicts = ConflictSummary.model_validate(_d(system.get("conflict_summary")))
     completeness_payload = _d(working_profile_pillar.get("completeness"))
     cockpit_view = _build_cockpit_view(
         profile=routing_profile,
@@ -1845,6 +1850,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         governance_status=governance_status,
         claims_summary=claims_summary,
         evidence_summary=evidence_summary,
+        conflicts=conflicts,
         rfq_status=rfq_status,
         rfq_package=rfq_package,
         artifact_status=artifact_status,

@@ -454,6 +454,15 @@ function buildOpenPoints({
     });
   });
 
+  (workspace?.conflicts?.items ?? []).forEach((conflict) => {
+    const summary = conflict.summary || humanize(conflict.conflictType);
+    items.set(`conflict-${conflict.conflictType}-${summary}`, {
+      key: `conflict-${conflict.conflictType}-${summary}`,
+      label: summary,
+      severity: conflict.severity === "blocking" ? "critical" : "attention",
+    });
+  });
+
   (workspace?.mediumContext?.followupPoints ?? []).forEach((item) => {
     items.set(`medium-${item}`, {
       key: `medium-${item}`,
