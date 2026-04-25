@@ -23,6 +23,7 @@ from app.agent.api.deps import (
 )
 from app.agent.api.utils import (
     _fast_response_run_meta,
+    _with_case_event,
     _with_governed_conversation_turn,
     _with_light_route_progress,
     _light_structured_state,
@@ -39,6 +40,7 @@ from app.agent.api.assembly import (
     _build_fast_path_version_provenance,
     _build_structured_version_provenance,
 )
+from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.state.case_state import (
     PROJECTION_VERSION,
@@ -332,6 +334,14 @@ async def _stream_governed_graph(
             role="assistant",
             content=visible_reply,
         )
+        case_event = build_assistant_delta_event(
+            case_id=str(request.session_id or "default"),
+            turn_index=int(getattr(turn_result.result_state, "user_turn_index", 0) or turn_result.result_state.analysis_cycle or 0),
+            assistant_message=visible_reply,
+            delta=context.proposed_case_delta,
+            persistence_marker=turn_result.persisted_state.persistence_marker,
+        )
+        updated_state = _with_case_event(updated_state, event=case_event)
         await _persist_live_governed_state(
             current_user=current_user,
             session_id=request.session_id,

@@ -3,11 +3,12 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any, Optional, Dict, List
 
-from app.agent.state.models import GovernedSessionState, TurnContextContract
+from app.agent.state.models import GovernedSessionState, TurnContextContract, ProposedCaseDelta
 from app.agent.graph import GraphState
 from app.agent.state.projections import project_for_ui
 from app.agent.runtime.response_renderer import render_response
 from app.agent.graph.output_contract_assembly import build_governed_conversation_strategy_contract
+from app.agent.domain.case_delta import proposed_case_delta_from_extractions
 from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.runtime.user_facing_reply import assemble_user_facing_reply
 from app.agent.api.utils import _governed_structured_state
@@ -32,6 +33,7 @@ class GovernedReplyAssemblyContext:
     run_meta: dict[str, Any]
     ui_payload: dict[str, Any]
     deterministic_reply: str
+    proposed_case_delta: ProposedCaseDelta = dataclasses.field(default_factory=ProposedCaseDelta)
     domain_context: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 def _build_structured_version_provenance(*, decision: Any, rwdr_config_version: str | None = None) -> dict[str, Any]:
@@ -119,6 +121,11 @@ def _build_governed_reply_context(
 
     structured_state = _governed_structured_state(persisted_state, response_class)
     deterministic_reply = str(result_state.output_reply or "").strip()
+    turn_index = int(getattr(result_state, "user_turn_index", 0) or result_state.analysis_cycle or 0)
+    proposed_case_delta = proposed_case_delta_from_extractions(
+        result_state.observed.raw_extractions,
+        turn_index=turn_index,
+    )
 
     return GovernedReplyAssemblyContext(
         response_class=response_class,
@@ -129,6 +136,7 @@ def _build_governed_reply_context(
         run_meta={"version_provenance": _build_structured_version_provenance(decision=None)},
         ui_payload=ui_payload,
         deterministic_reply=deterministic_reply,
+        proposed_case_delta=proposed_case_delta,
     )
 
 def _assemble_governed_stream_payload(
@@ -151,6 +159,8 @@ def _assemble_governed_stream_payload(
     return {
         "type": "state_update",
         **public_reply,
+        "assistant_message": public_reply.get("reply"),
+        "proposed_case_delta": context.proposed_case_delta.model_dump(mode="json"),
         "assertions": context.assertions_payload,
         "conversation_strategy": context.conversation_strategy.model_dump(),
         "turn_context": context.turn_context.model_dump(),

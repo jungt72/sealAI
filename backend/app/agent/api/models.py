@@ -314,6 +314,13 @@ class ChatResponse(BaseModel):
     version_provenance: Optional[Dict[str, Any]] = None
     next_step_contract: Optional[Dict[str, Any]] = None
     structured_state: Optional[StructuredStateExposureResponse | Dict[str, Any]] = None
+    assistant_message: Optional[str] = None
+    proposed_case_delta: Optional[Dict[str, Any]] = None
+    assertions: Optional[Dict[str, Any]] = None
+    conversation_strategy: Optional[Dict[str, Any]] = None
+    turn_context: Optional[Dict[str, Any]] = None
+    ui: Optional[Dict[str, Any]] = None
+    type: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 

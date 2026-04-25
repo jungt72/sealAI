@@ -772,6 +772,48 @@ class ConversationMessage(BaseModel):
     created_at: Optional[str] = None
 
 
+class ProposedCaseDeltaField(BaseModel):
+    """One LLM-proposed state value; never authoritative until accepted."""
+
+    field_name: str
+    proposed_value: Any
+    unit: Optional[str] = None
+    provenance: Literal["user_stated", "documented", "inferred", "calculated", "confirmed", "web_hint", "missing"] = "user_stated"
+    confidence: ConfidenceLevel = "requires_confirmation"
+    source_turn_index: int = Field(default=0, ge=0)
+    status: Literal["proposed", "accepted", "rejected"] = "proposed"
+
+
+class ProposedCaseDelta(BaseModel):
+    """Structured Double Output delta proposed by the communication layer."""
+
+    fields: list[ProposedCaseDeltaField] = Field(default_factory=list)
+    source: Literal["llm", "document", "user_override", "service"] = "llm"
+    schema_version: str = "case_delta_v0_4"
+
+
+class CaseEvent(BaseModel):
+    """Append-only v0.4 event carried inside durable governed snapshots."""
+
+    event_id: str = Field(default_factory=_new_idempotency_key)
+    case_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    actor: str = "assistant"
+    event_type: Literal[
+        "assistant_delta_proposed",
+        "case_delta_accepted",
+        "case_delta_rejected",
+        "document_delta_proposed",
+    ] = "assistant_delta_proposed"
+    assistant_message: Optional[str] = None
+    proposed_case_delta: ProposedCaseDelta = Field(default_factory=ProposedCaseDelta)
+    accepted_delta: dict[str, Any] = Field(default_factory=dict)
+    rejected_delta: dict[str, Any] = Field(default_factory=dict)
+    state_revision_before: int = Field(default=0, ge=0)
+    state_revision_after: int = Field(default=0, ge=0)
+    created_at: Optional[str] = None
+
+
 class ExplorationProgressState(BaseModel):
     """Lightweight per-case progress for conversation/exploration turns.
 
@@ -842,6 +884,7 @@ class GovernedSessionState(BaseModel):
     dispatch_contract: DispatchContractState = Field(default_factory=DispatchContractState)
     medium_context: MediumContext = Field(default_factory=MediumContext)
     conversation_messages: list[ConversationMessage] = Field(default_factory=list)
+    case_events: list[CaseEvent] = Field(default_factory=list)
     exploration_progress: ExplorationProgressState = Field(default_factory=ExplorationProgressState)
     persistence_marker: GovernedPersistenceMarker | None = None
 

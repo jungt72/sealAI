@@ -17,6 +17,8 @@ from app.agent.api.deps import (
     RequestUser,
 )
 from app.agent.api.utils import (
+    _with_case_event,
+    _with_governed_conversation_turn,
     _with_light_route_progress,
     _light_structured_state,
 )
@@ -29,6 +31,7 @@ from app.agent.api.assembly import (
     _build_governed_reply_context,
     _assemble_governed_stream_payload,
 )
+from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.api.streaming import event_generator, _build_fast_path_version_provenance
 from app.agent.api.dispatch import _resolve_runtime_dispatch
 
@@ -121,6 +124,27 @@ async def _run_governed_chat_response(
         turn_context=context.turn_context,
         fallback_text=context.deterministic_reply,
     )
+
+    if visible_reply:
+        updated_state = _with_governed_conversation_turn(
+            persisted_state,
+            role="assistant",
+            content=visible_reply,
+        )
+        case_event = build_assistant_delta_event(
+            case_id=str(request.session_id or "default"),
+            turn_index=int(getattr(result_state, "user_turn_index", 0) or result_state.analysis_cycle or 0),
+            assistant_message=visible_reply,
+            delta=context.proposed_case_delta,
+            persistence_marker=persisted_state.persistence_marker,
+        )
+        updated_state = _with_case_event(updated_state, event=case_event)
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            state=updated_state,
+            pre_gate_classification=pre_gate_classification,
+        )
 
     return ChatResponse(
         session_id=request.session_id,

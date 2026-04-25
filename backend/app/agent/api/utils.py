@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
-from app.agent.state.models import ConversationMessage, GovernedSessionState, ObservedExtraction
+from app.agent.state.models import CaseEvent, ConversationMessage, GovernedSessionState, ObservedExtraction
 from app.agent.graph import GraphState
 from app.agent.state.projections import project_for_ui
 from app.agent.runtime.outward_names import normalize_outward_response_class
@@ -36,6 +36,17 @@ def _with_governed_conversation_turn(
         ConversationMessage(role=role, content=content)
     ]
     return state.model_copy(update={"conversation_messages": new_messages})
+
+
+
+def _with_case_event(
+    state: GovernedSessionState,
+    *,
+    event: CaseEvent,
+) -> GovernedSessionState:
+    """Append one v0.4 CaseEvent without mutating authoritative state slices."""
+
+    return state.model_copy(update={"case_events": list(state.case_events) + [event]})
 
 def _governed_history_slice(
     state: GovernedSessionState,
