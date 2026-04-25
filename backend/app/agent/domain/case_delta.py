@@ -13,6 +13,7 @@ from app.agent.state.models import (
     ConfidenceLevel,
     GovernedPersistenceMarker,
     ObservedExtraction,
+    GovernedSessionState,
     ProposedCaseDelta,
     ProposedCaseDeltaField,
 )
@@ -119,6 +120,72 @@ def build_assistant_delta_event(
         proposed_case_delta=delta,
         accepted_delta={},
         rejected_delta={},
+        state_revision_before=before,
+        state_revision_after=before + 1 if before >= 0 else 0,
+        created_at=now,
+    )
+
+
+def latest_proposed_delta_event(state: GovernedSessionState) -> CaseEvent | None:
+    """Return the newest assistant proposal with at least one proposed field."""
+    for event in reversed(state.case_events):
+        if event.event_type != "assistant_delta_proposed":
+            continue
+        if event.proposed_case_delta.fields:
+            return event
+    return None
+
+
+def select_delta_fields(
+    delta: ProposedCaseDelta,
+    *,
+    field_names: Iterable[str] | None = None,
+) -> list[ProposedCaseDeltaField]:
+    requested = {str(name).strip() for name in field_names or [] if str(name).strip()}
+    selected: list[ProposedCaseDeltaField] = []
+    seen: set[str] = set()
+    for field in delta.fields:
+        if field.status != "proposed":
+            continue
+        if requested and field.field_name not in requested:
+            continue
+        if field.field_name in seen:
+            continue
+        seen.add(field.field_name)
+        selected.append(field)
+    return selected
+
+
+def build_case_delta_decision_event(
+    *,
+    case_id: str,
+    action: str,
+    fields: Iterable[ProposedCaseDeltaField],
+    source_event_id: str | None = None,
+    persistence_marker: GovernedPersistenceMarker | None = None,
+) -> CaseEvent:
+    """Build an append-only user decision event for proposed case delta fields."""
+    before = _revision_before(persistence_marker)
+    now = datetime.now(timezone.utc).isoformat()
+    accepted: dict[str, Any] = {}
+    rejected: dict[str, Any] = {}
+    event_type = "case_delta_accepted" if action == "accept" else "case_delta_rejected"
+    status = "accepted" if action == "accept" else "rejected"
+    for field in fields:
+        payload = field.model_copy(update={"status": status}).model_dump(mode="json")
+        payload["source_event_id"] = source_event_id
+        if action == "accept":
+            accepted[field.field_name] = payload
+        else:
+            rejected[field.field_name] = payload
+
+    return CaseEvent(
+        case_id=case_id,
+        actor="user",
+        event_type=event_type,
+        proposed_case_delta=ProposedCaseDelta(fields=[]),
+        accepted_delta=accepted,
+        rejected_delta=rejected,
         state_revision_before=before,
         state_revision_after=before + 1 if before >= 0 else 0,
         created_at=now,

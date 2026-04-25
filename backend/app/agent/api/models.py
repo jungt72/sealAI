@@ -93,6 +93,29 @@ class OverrideResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CaseDeltaDecisionRequest(BaseModel):
+    """Payload for accepting or rejecting the newest proposed case delta."""
+
+    action: Literal["accept", "reject"]
+    field_names: list[str] = Field(default_factory=list)
+    turn_index: int = Field(default=0, ge=0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CaseDeltaDecisionResponse(BaseModel):
+    """Result of a user decision over proposed case delta fields."""
+
+    session_id: str
+    action: Literal["accept", "reject"]
+    source_event_id: str
+    applied_fields: list[str] = Field(default_factory=list)
+    rejected_fields: list[str] = Field(default_factory=list)
+    governance: OverrideGovernanceResult
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ReviewRequest(BaseModel):
     """Payload for the POST /review endpoint (human-in-the-loop decision)."""
     session_id: str = Field(..., min_length=1)

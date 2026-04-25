@@ -3,6 +3,7 @@ import type {
   AgentTurnContext,
   AgentWorkspaceUi,
   AssertionEntry,
+  ProposedCaseDelta,
 } from "@/lib/contracts/agent";
 
 export type StreamWorkspaceView = {
@@ -12,6 +13,7 @@ export type StreamWorkspaceView = {
   assertions: Record<string, AssertionEntry> | null;
   structuredState: Record<string, unknown> | null;
   turnContext: AgentTurnContext | null;
+  proposedCaseDelta: ProposedCaseDelta | null;
   ui: Required<Pick<AgentWorkspaceUi, "parameter" | "assumption" | "recommendation" | "compute" | "matching" | "rfq" | "medium_classification" | "medium_context">> &
     AgentWorkspaceUi;
 };
@@ -82,6 +84,10 @@ export function buildStreamWorkspaceView(event: AgentStateUpdateEvent): StreamWo
         ? event.structuredState
         : null,
     turnContext: normalizeTurnContext(event.turnContext),
+    proposedCaseDelta:
+      event.proposedCaseDelta && Array.isArray(event.proposedCaseDelta.fields)
+        ? event.proposedCaseDelta
+        : null,
     ui: {
       ...ui,
       parameter: {

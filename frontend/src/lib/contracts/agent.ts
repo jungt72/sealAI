@@ -177,6 +177,22 @@ export type AssertionEntry = {
   confidence: string;
 };
 
+export type ProposedCaseDeltaField = {
+  field_name: string;
+  proposed_value: unknown;
+  unit?: string | null;
+  provenance?: string;
+  confidence?: string;
+  source_turn_index?: number;
+  status?: "proposed" | "accepted" | "rejected" | string;
+};
+
+export type ProposedCaseDelta = {
+  fields: ProposedCaseDeltaField[];
+  source?: string;
+  schema_version?: string;
+};
+
 export type AgentConversationStrategy = {
   conversationPhase: string;
   turnGoal: string;
@@ -204,6 +220,7 @@ export type AgentStateUpdateEvent = {
   structuredState?: Record<string, unknown> | null;
   conversationStrategy?: AgentConversationStrategy | null;
   turnContext?: AgentTurnContext | null;
+  proposedCaseDelta?: ProposedCaseDelta | null;
   ui?: AgentWorkspaceUi;
 };
 

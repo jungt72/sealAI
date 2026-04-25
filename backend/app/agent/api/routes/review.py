@@ -12,6 +12,8 @@ from app.agent.api.models import (
     OverrideRequest,
     OverrideResponse,
     OverrideGovernanceResult,
+    CaseDeltaDecisionRequest,
+    CaseDeltaDecisionResponse,
     build_public_response_core,
 )
 from app.agent.state.agent_state import AgentState
@@ -34,6 +36,7 @@ from app.agent.api.loaders import (
 )
 from app.agent.api.utils import (
     _overlay_live_governed_snapshot,
+    _with_case_event,
 )
 from app.agent.domain.critical_review import (
     CriticalReviewRecommendationPackage,
@@ -44,6 +47,11 @@ from app.agent.domain.critical_review import (
 )
 from app.agent.state.case_state import build_visible_case_narrative, PROJECTION_VERSION
 from app.agent.state.projections import project_for_ui
+from app.agent.domain.case_delta import (
+    build_case_delta_decision_event,
+    latest_proposed_delta_event,
+    select_delta_fields,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -227,5 +235,105 @@ async def session_override_endpoint(
             conflict_flags=list(governed.asserted.conflict_flags),
             validity_limits=list(governed.governance.validity_limits),
             open_validation_points=list(governed.governance.open_validation_points),
+        ),
+    )
+
+@router.post("/session/{session_id}/case-delta", response_model=CaseDeltaDecisionResponse)
+async def session_case_delta_decision_endpoint(
+    request: CaseDeltaDecisionRequest,
+    session_id: str = Path(...),
+    current_user: RequestUser = Depends(get_current_request_user),
+):
+    if not os.getenv("REDIS_URL"):
+        raise HTTPException(status_code=503, detail="Live governed state store is not configured")
+
+    from app.agent.api.loaders import _load_live_governed_state # noqa: PLC0415
+    governed = await _load_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        create_if_missing=False,
+    )
+    if not governed:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    proposal_event = latest_proposed_delta_event(governed)
+    if proposal_event is None:
+        raise HTTPException(status_code=404, detail="No proposed case delta found")
+
+    selected_fields = select_delta_fields(
+        proposal_event.proposed_case_delta,
+        field_names=request.field_names or None,
+    )
+    if not selected_fields:
+        raise HTTPException(status_code=422, detail="No matching proposed fields selected")
+
+    rev_before = 0
+    marker = governed.persistence_marker
+    if marker is not None and marker.postgres_snapshot_revision is not None:
+        rev_before = marker.postgres_snapshot_revision
+
+    observed = governed.observed
+    applied_fields: list[str] = []
+    rejected_fields: list[str] = []
+    if request.action == "accept":
+        for field in selected_fields:
+            turn_index = request.turn_index or field.source_turn_index
+            observed = observed.with_override(
+                UserOverride(
+                    field_name=field.field_name,
+                    override_value=field.proposed_value,
+                    override_unit=field.unit,
+                    turn_index=turn_index,
+                )
+            )
+            applied_fields.append(field.field_name)
+    else:
+        rejected_fields = [field.field_name for field in selected_fields]
+
+    normalized = reduce_observed_to_normalized(observed)
+    asserted = reduce_normalized_to_asserted(normalized)
+    governance = reduce_asserted_to_governance(asserted)
+
+    revision_after = rev_before + 1
+    updated = governed.model_copy(
+        update={
+            "observed": observed,
+            "normalized": normalized,
+            "asserted": asserted,
+            "governance": governance,
+            "persistence_marker": GovernedPersistenceMarker(
+                postgres_snapshot_revision=revision_after,
+            ),
+        }
+    )
+    decision_event = build_case_delta_decision_event(
+        case_id=session_id,
+        action=request.action,
+        fields=selected_fields,
+        source_event_id=proposal_event.event_id,
+        persistence_marker=governed.persistence_marker,
+    )
+    updated = _with_case_event(updated, event=decision_event)
+
+    from app.agent.api.loaders import _persist_live_governed_state # noqa: PLC0415
+    await _persist_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        state=updated,
+    )
+
+    return CaseDeltaDecisionResponse(
+        session_id=session_id,
+        action=request.action,
+        source_event_id=proposal_event.event_id,
+        applied_fields=applied_fields,
+        rejected_fields=rejected_fields,
+        governance=OverrideGovernanceResult(
+            gov_class=updated.governance.gov_class,
+            rfq_admissible=updated.governance.rfq_admissible,
+            blocking_unknowns=list(updated.asserted.blocking_unknowns),
+            conflict_flags=list(updated.asserted.conflict_flags),
+            validity_limits=list(updated.governance.validity_limits),
+            open_validation_points=list(updated.governance.open_validation_points),
         ),
     )

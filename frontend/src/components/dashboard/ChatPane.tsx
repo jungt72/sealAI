@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Bot, CheckCircle2, ChevronRight, Paperclip, UserRound } from "lucide-react";
+import { Bot, Check, CheckCircle2, ChevronRight, Loader2, Paperclip, UserRound, X } from "lucide-react";
 
 import ChatComposer from "@/components/dashboard/ChatComposer";
 import { useAgentStream } from "@/hooks/useAgentStream";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
+import { decideCaseDelta } from "@/lib/bff/caseDelta";
+import type { ProposedCaseDeltaField } from "@/lib/contracts/agent";
 
 interface ChatPaneProps {
   caseId?: string;
@@ -59,6 +61,95 @@ function MessageBubble({
   );
 }
 
+function formatDeltaValue(field: ProposedCaseDeltaField): string {
+  const value =
+    typeof field.proposed_value === "string"
+      ? field.proposed_value
+      : JSON.stringify(field.proposed_value);
+  return [value, field.unit].filter(Boolean).join(" ");
+}
+
+function ProposedDeltaPanel({
+  caseId,
+  fields,
+  onSettled,
+}: {
+  caseId: string | undefined;
+  fields: ProposedCaseDeltaField[];
+  onSettled: () => void;
+}) {
+  const [pendingAction, setPendingAction] = useState<"accept" | "reject" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const decide = async (action: "accept" | "reject") => {
+    if (!caseId || pendingAction) {
+      return;
+    }
+    setPendingAction(action);
+    setError(null);
+    try {
+      await decideCaseDelta(
+        caseId,
+        action,
+        fields.map((field) => field.field_name),
+      );
+      onSettled();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Aenderung konnte nicht verarbeitet werden.");
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  if (!caseId || fields.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="ml-12 max-w-[min(720px,84%)] rounded-[12px] border border-[#CFE0FF] bg-[#F8FBFF] p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#315B8D]">
+            Vorgeschlagene Case-Aenderung
+          </div>
+          <div className="mt-2 grid gap-1.5">
+            {fields.map((field) => (
+              <div key={field.field_name} className="flex flex-wrap items-center gap-2 text-[12px] text-slate-700">
+                <span className="font-semibold text-slate-900">{field.field_name}</span>
+                <span className="rounded-md border border-[#DCE8FA] bg-white px-2 py-0.5 font-medium">
+                  {formatDeltaValue(field)}
+                </span>
+                {field.confidence && <span className="text-slate-500">{field.confidence}</span>}
+              </div>
+            ))}
+          </div>
+          {error && <div className="mt-2 text-[12px] font-medium text-rose-700">{error}</div>}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void decide("accept")}
+            disabled={Boolean(pendingAction)}
+            aria-label="Vorgeschlagene Aenderung uebernehmen"
+            className="grid h-8 w-8 place-items-center rounded-md border border-emerald-200 bg-white text-emerald-700 transition-colors hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {pendingAction === "accept" ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => void decide("reject")}
+            disabled={Boolean(pendingAction)}
+            aria-label="Vorgeschlagene Aenderung ablehnen"
+            className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {pendingAction === "reject" ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SUGGESTIONS = [
   "Bitte vergleiche NBR und PTFE hinsichtlich chemischer Bestaendigkeit, Temperaturbereich, Elastizitaet, Reibung, FDA-Eignung, Kosten und typischer Anwendungen.",
   "PTFE-RWDR fuer Hydraulikoel, 80 Grad Celsius und 1.500 rpm vorqualifizieren.",
@@ -80,6 +171,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
   const setStreamWorkspace = useWorkspaceStore((s) => s.setStreamWorkspace);
   const setActiveResponseClass = useWorkspaceStore((s) => s.setActiveResponseClass);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const [settledDeltaKey, setSettledDeltaKey] = useState<string | null>(null);
 
   useEffect(() => {
     setStreamWorkspace(streamWorkspace);
@@ -92,6 +184,14 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
 
   const hasConversation = messages.length > 0 || Boolean(streamingText);
   const currentCaseId = activeCaseId || caseId;
+  const proposedDeltaFields = useMemo(() => {
+    const fields = streamWorkspace?.proposedCaseDelta?.fields ?? [];
+    return fields.filter((field) => field.status === "proposed" || !field.status);
+  }, [streamWorkspace?.proposedCaseDelta]);
+  const proposedDeltaKey = proposedDeltaFields
+    .map((field) => `${field.field_name}:${String(field.proposed_value)}:${field.unit ?? ""}`)
+    .join("|");
+  const visibleDeltaFields = proposedDeltaKey && settledDeltaKey !== proposedDeltaKey ? proposedDeltaFields : [];
 
   return (
     <div className="flex h-full w-full flex-col bg-[#FBFCFE]">
@@ -156,6 +256,17 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
             ))}
 
             {streamingText && <MessageBubble role="assistant" content={streamingText} isStreaming />}
+
+            <ProposedDeltaPanel
+              caseId={currentCaseId}
+              fields={visibleDeltaFields}
+              onSettled={() => {
+                setSettledDeltaKey(proposedDeltaKey || null);
+                if (currentCaseId) {
+                  onTurnComplete?.(currentCaseId);
+                }
+              }}
+            />
 
             {isStreaming && !streamingText && (
               <div className="flex justify-start gap-3">

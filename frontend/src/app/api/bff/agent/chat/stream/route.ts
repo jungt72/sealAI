@@ -207,6 +207,10 @@ export async function POST(request: Request) {
                         : null,
                     conversationStrategy: mapConversationStrategy(payload.conversation_strategy),
                     turnContext: mapTurnContext(payload.turn_context),
+                    proposedCaseDelta:
+                      payload.proposed_case_delta && typeof payload.proposed_case_delta === "object"
+                        ? payload.proposed_case_delta
+                        : null,
                     ui: payload.ui && typeof payload.ui === "object" ? payload.ui : null,
                     assertions:
                       payload.assertions && typeof payload.assertions === "object"

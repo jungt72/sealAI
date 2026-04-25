@@ -104,6 +104,39 @@ describe("BFF agent chat stream route", () => {
     });
   });
 
+
+  it("forwards proposed case deltas from backend state_update events", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"OK","response_class":"governed_state_update","proposed_case_delta":{"schema_version":"case_delta_v0_4","fields":[{"field_name":"pressure_bar","proposed_value":4,"unit":"bar","status":"proposed"}]}}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "4 bar" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+
+    expect(payloads[1]).toMatchObject({
+      type: "state_update",
+      proposedCaseDelta: {
+        schema_version: "case_delta_v0_4",
+        fields: [{ field_name: "pressure_bar", proposed_value: 4, unit: "bar" }],
+      },
+    });
+  });
+
   it("does not forward legacy outward class aliases into the productive UI contract", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

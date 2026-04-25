@@ -1,5 +1,11 @@
 from app.agent.api.assembly import _assemble_governed_stream_payload, _build_governed_reply_context
-from app.agent.domain.case_delta import build_assistant_delta_event, proposed_case_delta_from_extractions
+from app.agent.domain.case_delta import (
+    build_assistant_delta_event,
+    build_case_delta_decision_event,
+    latest_proposed_delta_event,
+    proposed_case_delta_from_extractions,
+    select_delta_fields,
+)
 from app.agent.graph import GraphState
 from app.agent.state.models import GovernedSessionState, ObservedExtraction
 
@@ -95,3 +101,56 @@ def test_case_event_appends_to_governed_state_without_accepting_delta() -> None:
     assert len(updated.case_events) == 1
     assert updated.case_events[0].proposed_case_delta.fields[0].status == "proposed"
     assert updated.asserted.assertions == {}
+
+
+def test_case_delta_decision_event_records_accepted_fields_without_source_mutation() -> None:
+    delta = proposed_case_delta_from_extractions(
+        [
+            ObservedExtraction(field_name="pressure_bar", raw_value=4, raw_unit="bar", confidence=0.92, turn_index=1),
+            ObservedExtraction(field_name="medium", raw_value="Wasser", confidence=0.91, turn_index=1),
+        ],
+        turn_index=1,
+    )
+    proposal = build_assistant_delta_event(
+        case_id="case-1",
+        turn_index=1,
+        assistant_message="Ich habe Medium und Druck verstanden.",
+        delta=delta,
+    )
+    state = GovernedSessionState(case_events=[proposal])
+
+    latest = latest_proposed_delta_event(state)
+    assert latest is proposal
+    selected = select_delta_fields(latest.proposed_case_delta, field_names=["pressure_bar"])
+    event = build_case_delta_decision_event(
+        case_id="case-1",
+        action="accept",
+        fields=selected,
+        source_event_id=proposal.event_id,
+    )
+
+    assert proposal.proposed_case_delta.fields[0].status == "proposed"
+    assert event.event_type == "case_delta_accepted"
+    assert list(event.accepted_delta) == ["pressure_bar"]
+    assert event.accepted_delta["pressure_bar"]["status"] == "accepted"
+    assert event.accepted_delta["pressure_bar"]["source_event_id"] == proposal.event_id
+    assert event.rejected_delta == {}
+
+
+def test_case_delta_decision_event_records_rejected_fields() -> None:
+    delta = proposed_case_delta_from_extractions(
+        [ObservedExtraction(field_name="medium", raw_value="Wasser", confidence=0.92, turn_index=1)],
+        turn_index=1,
+    )
+    selected = select_delta_fields(delta)
+
+    event = build_case_delta_decision_event(
+        case_id="case-1",
+        action="reject",
+        fields=selected,
+        source_event_id="source-1",
+    )
+
+    assert event.event_type == "case_delta_rejected"
+    assert event.accepted_delta == {}
+    assert event.rejected_delta["medium"]["status"] == "rejected"
