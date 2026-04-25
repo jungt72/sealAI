@@ -1216,7 +1216,7 @@ function WorkspaceModeContent({
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
       <ParameterApplicationCard
         key={cockpit?.view.path ?? "no-path"}
         cockpit={cockpit}
@@ -1489,8 +1489,8 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
       <WorkspaceTimeline steps={timelineSteps} />
 
       <div className="min-h-0 flex-1 p-4 sm:p-5">
-        <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
-          <section className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-white shadow-[0_6px_22px_rgba(15,23,42,0.05)] md:basis-[35%] md:min-w-[340px] md:max-w-[460px] md:flex-none">
+        <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <section className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-white shadow-[0_6px_22px_rgba(15,23,42,0.05)] lg:min-w-0">
             <ChatPane
               caseId={resolvedCaseId ?? undefined}
               onCaseBound={setResolvedCaseId}
@@ -1498,7 +1498,7 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
             />
           </section>
 
-          <section className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-[#FBFCFE] shadow-[0_6px_22px_rgba(15,23,42,0.05)] md:min-w-0 md:flex-1">
+          <section className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-[#FBFCFE] shadow-[0_6px_22px_rgba(15,23,42,0.05)] lg:min-w-0">
             <div className="custom-scrollbar flex h-full min-h-0 flex-col overflow-y-auto p-4">
               <div className="mb-4 flex items-start justify-between gap-3 rounded-[18px] border border-[#E7ECF3] bg-white px-4 py-4">
                 <div>
@@ -1535,7 +1535,7 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
                 </div>
               </div>
 
-              <div className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mb-4 grid grid-cols-2 gap-2">
                 {contextItems.slice(0, 4).map((item) => (
                   <div key={item.label} className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-2.5">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
