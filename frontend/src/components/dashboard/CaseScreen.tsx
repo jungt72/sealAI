@@ -124,6 +124,18 @@ const CORE_PARAMETER_FIELDS: ParameterFieldDescriptor[] = [
   { key: "speed_rpm", label: "Drehzahl" },
 ];
 
+
+const COCKPIT_PROPERTY_ALIASES: Record<string, string[]> = {
+  medium: ["medium_name"],
+  temperature_c: ["temperature_max"],
+  pressure_bar: ["pressure_nominal"],
+  shaft_diameter_mm: ["shaft_diameter"],
+  geometry_context: ["seal_location"],
+  installation: ["asset_type"],
+  pressure_direction: ["primary_function"],
+  contamination: ["particles_present", "top_risks"],
+};
+
 const PARAMETER_TABS: Array<{ id: ParameterTabId; label: string }> = [
   { id: "rotary", label: "Rotierend" },
   { id: "rwdr", label: "RWDR" },
@@ -201,6 +213,19 @@ function buildPropertyLookup(cockpit: ReturnType<typeof useCockpitData>) {
         lookup.set(property.key, property);
       }
     });
+  });
+
+  Object.entries(COCKPIT_PROPERTY_ALIASES).forEach(([canonicalKey, aliases]) => {
+    if (lookup.has(canonicalKey)) {
+      return;
+    }
+    const aliasedProperty = aliases.map((alias) => lookup.get(alias)).find(Boolean);
+    if (aliasedProperty) {
+      lookup.set(canonicalKey, {
+        ...aliasedProperty,
+        key: canonicalKey,
+      });
+    }
   });
 
   return lookup;
