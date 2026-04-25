@@ -28,7 +28,7 @@ export function generateTechnicalSummary(data: CockpitData): string {
   lines.push("");
 
   lines.push("## 2. Bekannte Betriebsparameter");
-  const coreProps = view.sections.core_intake?.properties || [];
+  const coreProps = view.sections.operating_geometry?.properties || [];
   coreProps.forEach(p => {
     if (p.value !== null) {
       lines.push(`- ${p.label}: ${p.value}${p.unit ? ` ${p.unit}` : ""}`);

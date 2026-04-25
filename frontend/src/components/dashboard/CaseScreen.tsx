@@ -1239,7 +1239,7 @@ function deriveContextItems({
   cockpit: ReturnType<typeof useCockpitData>;
   caseId?: string;
 }): ContextItem[] {
-  const sectionProperties = cockpit?.view.sections.core_intake.properties ?? [];
+  const sectionProperties = cockpit?.view.sections.application_function.properties ?? [];
   const application =
     sectionProperties.find((property) => property.key === "installation")?.value ??
     sectionProperties.find((property) => property.key === "geometry_context")?.value;

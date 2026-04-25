@@ -338,10 +338,10 @@ class CycleInfo(BaseModel):
 
 
 CockpitSectionId = Literal[
-    "core_intake",
-    "failure_drivers",
-    "geometry_fit",
-    "rfq_liability",
+    "application_function",
+    "medium_environment",
+    "operating_geometry",
+    "risk_readiness",
 ]
 
 

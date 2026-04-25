@@ -17,8 +17,8 @@ describe("mapWorkspaceView", () => {
         },
         sections: [
           {
-            section_id: "core_intake",
-            title: "A. Grunddaten",
+            section_id: "application_function",
+            title: "1. Anlage & Funktion",
             completion: { mandatory_present: 3, mandatory_total: 4, percent: 75 },
             properties: [
               {
@@ -205,7 +205,7 @@ describe("mapWorkspaceView", () => {
     expect(workspace.engineeringPath).toBe("rwdr");
     expect(workspace.cockpit?.requestType).toBe("validation_check");
     expect(workspace.cockpit?.path).toBe("rwdr");
-    expect(workspace.cockpit?.sections.core_intake.properties[0]?.origin).toBe("fast_brain_extracted");
+    expect(workspace.cockpit?.sections.application_function.properties[0]?.origin).toBe("fast_brain_extracted");
     expect(workspace.cockpit?.checks[0]?.calcId).toBe("rwdr_circumferential_speed");
     expect(workspace.cockpit?.checks[0]?.outputKey).toBe("v_surface_m_s");
     expect(workspace.cockpit?.readiness.missingMandatoryKeys).toEqual(["geometry_context"]);

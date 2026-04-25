@@ -84,11 +84,14 @@ This direction is consistent with the product concept's chat-plus-cockpit model,
 
 When multiple docs or code paths disagree, use this order:
 
-1. `konzept/sealai_ssot_architecture_plan.md`
-2. SSoT supplements v1 / v2 / v3
-3. this `AGENTS.md`
-4. current codebase behavior
-5. older notes, legacy prompts, or convenience shortcuts
+1. `konzept/sealai_ssot_v0_4_conversational_diagnostic_cockpit.md`
+2. `konzept/sealai_ssot_architecture_plan.md`
+3. SSoT supplements v1 / v2 / v3
+4. this `AGENTS.md`
+5. current codebase behavior
+6. older notes, legacy prompts, or convenience shortcuts
+
+The v0.4 SSoT is the current product and architecture authority for the conversational diagnostic cockpit. Older SSoT documents remain useful historical context, but v0.4 wins for cockpit structure, state interaction, readiness, risk, event logging, document input, matching, and eval direction.
 
 Important:
 

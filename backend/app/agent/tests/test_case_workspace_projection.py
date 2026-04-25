@@ -293,16 +293,15 @@ def test_workspace_projection_derives_ssot_routing_fields() -> None:
     assert projection.cockpit_view.request_type == "retrofit"
     assert projection.cockpit_view.engineering_path == "ms_pump"
     assert [section.section_id for section in projection.cockpit_view.sections] == [
-        "core_intake",
-        "failure_drivers",
-        "geometry_fit",
-        "rfq_liability",
+        "application_function",
+        "medium_environment",
+        "operating_geometry",
+        "risk_readiness",
     ]
     assert projection.cockpit_view.missing_mandatory_keys == [
+        "solids_percent",
         "shaft_diameter_mm",
         "speed_rpm",
-        "viscosity",
-        "solids_percent",
         "runout_mm",
     ]
     assert projection.cockpit_view.readiness.status == "preliminary"
@@ -335,8 +334,8 @@ def test_workspace_projection_exposes_cockpit_property_provenance_when_available
         }
     )
 
-    core_intake = next(section for section in projection.cockpit_view.sections if section.section_id == "core_intake")
-    pressure_property = next(prop for prop in core_intake.properties if prop.key == "pressure_bar")
+    operating_geometry = next(section for section in projection.cockpit_view.sections if section.section_id == "operating_geometry")
+    pressure_property = next(prop for prop in operating_geometry.properties if prop.key == "pressure_nominal")
 
     assert pressure_property.origin == "user_override"
     assert pressure_property.confidence == "confirmed"

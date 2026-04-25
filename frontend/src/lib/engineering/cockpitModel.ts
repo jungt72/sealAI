@@ -9,10 +9,10 @@ export type EngineeringPath =
   | "unclear_rotary";
 
 export type EngineeringSectionId =
-  | "core_intake"
-  | "failure_drivers"
-  | "geometry_fit"
-  | "rfq_liability";
+  | "application_function"
+  | "medium_environment"
+  | "operating_geometry"
+  | "risk_readiness";
 
 export interface EngineeringProperty {
   key: string;

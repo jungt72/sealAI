@@ -124,48 +124,54 @@ _APPLICATION_LABELS: dict[str, str] = {
 
 _COCKPIT_SECTION_CONFIG: tuple[dict[str, Any], ...] = (
     {
-        "section_id": "core_intake",
-        "title": "A. Grunddaten",
+        "section_id": "application_function",
+        "title": "1. Anlage & Funktion",
         "fields": (
-            {"key": "medium", "label": "Medium / Fluid", "unit": None},
-            {"key": "temperature_c", "label": "Temperatur", "unit": "degC"},
-            {"key": "pressure_bar", "label": "Druck", "unit": "bar"},
-            {"key": "shaft_diameter_mm", "label": "Referenz-Ø", "unit": "mm"},
-            {"key": "speed_rpm", "label": "Drehzahl", "unit": "rpm"},
-            {"key": "motion_type", "label": "Bewegungsart", "unit": None},
-            {"key": "installation", "label": "Equipment-Typ", "unit": None},
-            {"key": "pressure_direction", "label": "Druckrichtung", "unit": None},
+            {"key": "asset_type", "label": "Anlage / Baugruppe", "unit": None, "aliases": ("installation", "application_context")},
+            {"key": "asset_function", "label": "Funktion", "unit": None, "aliases": ("primary_function",)},
+            {"key": "seal_location", "label": "Dichtstelle", "unit": None, "aliases": ("geometry_context",)},
+            {"key": "motion_type", "label": "Bewegungsart", "unit": None, "aliases": ("movement_type",)},
+            {"key": "primary_function", "label": "Dichtfunktion", "unit": None, "aliases": ("pressure_direction",)},
+            {"key": "consequence_of_failure", "label": "Ausfallfolge", "unit": None, "aliases": ("allowable_leakage",)},
         ),
     },
     {
-        "section_id": "failure_drivers",
-        "title": "B. Technische Risikofaktoren",
+        "section_id": "medium_environment",
+        "title": "2. Medium & Umgebung",
         "fields": (
-            {"key": "viscosity", "label": "Viskosität", "unit": "cSt"},
-            {"key": "solids_percent", "label": "Feststoffe", "unit": "%"},
-            {"key": "ph", "label": "pH-Wert", "unit": None},
-            {"key": "dry_run_possible", "label": "Trockenlauf mögl.", "unit": None},
-            {"key": "cleaning_cycles", "label": "Reinigungszyklen", "unit": None},
+            {"key": "medium_name", "label": "Medium", "unit": None, "aliases": ("medium",)},
+            {"key": "medium_category", "label": "Medienkategorie", "unit": None, "aliases": ("medium_family",)},
+            {"key": "temperature_max", "label": "Temperatur max.", "unit": "degC", "aliases": ("temperature_c",)},
+            {"key": "particles_present", "label": "Partikel", "unit": None, "aliases": ("solids_percent", "contamination")},
+            {"key": "cleaning_media", "label": "Reinigung / CIP", "unit": None, "aliases": ("cleaning_cycles",)},
+            {"key": "food_contact", "label": "Food/Pharma/ATEX", "unit": None, "aliases": ("compliance", "industry")},
+            {"key": "benetzung", "label": "Benetzung", "unit": None, "aliases": ("dry_run_possible", "duty_profile")},
         ),
     },
     {
-        "section_id": "geometry_fit",
-        "title": "C. Geometrie & Einbauraum",
+        "section_id": "operating_geometry",
+        "title": "3. Betriebsdaten & Geometrie",
         "fields": (
-            {"key": "geometry_context", "label": "Bauraum", "unit": None},
-            {"key": "shaft_material", "label": "Wellenwerkstoff", "unit": None},
-            {"key": "shaft_hardness", "label": "Wellenhärte", "unit": "HRC"},
-            {"key": "runout_mm", "label": "Rundlauf", "unit": "mm"},
-            {"key": "vibration_rms", "label": "Vibration RMS", "unit": "mm/s"},
+            {"key": "shaft_diameter", "label": "Wellendurchmesser", "unit": "mm", "aliases": ("shaft_diameter_mm",)},
+            {"key": "housing_bore", "label": "Gehäusebohrung", "unit": "mm", "aliases": ("housing_bore_mm",)},
+            {"key": "installation_width", "label": "Einbaubreite", "unit": "mm", "aliases": ("installation_width_mm",)},
+            {"key": "speed_rpm", "label": "Drehzahl", "unit": "rpm", "aliases": ()},
+            {"key": "pressure_nominal", "label": "Betriebsdruck", "unit": "bar", "aliases": ("pressure_bar",)},
+            {"key": "surface_finish", "label": "Oberfläche", "unit": None, "aliases": ("counterface_surface",)},
+            {"key": "shaft_material", "label": "Wellenwerkstoff", "unit": None, "aliases": ()},
+            {"key": "shaft_runout", "label": "Rundlauf", "unit": "mm", "aliases": ("runout_mm",)},
         ),
     },
     {
-        "section_id": "rfq_liability",
-        "title": "D. Anfrage- & Freigabereife",
+        "section_id": "risk_readiness",
+        "title": "4. Risiken & Anfrage-Reife",
         "fields": (
-            {"key": "allowable_leakage", "label": "Zul. Leckage", "unit": None},
-            {"key": "life_hours", "label": "Lebensdauer", "unit": "h"},
-            {"key": "compliance", "label": "Konformität", "unit": None},
+            {"key": "top_risks", "label": "Top-Risiken", "unit": None, "aliases": ("contamination", "medium_qualifiers")},
+            {"key": "readiness_level", "label": "Readiness Level", "unit": None, "aliases": ()},
+            {"key": "blocking_unknowns", "label": "Blockierende Unbekannte", "unit": None, "aliases": ()},
+            {"key": "recommended_next_question", "label": "Nächste Frage", "unit": None, "aliases": ()},
+            {"key": "rfq_possible", "label": "RFQ möglich", "unit": None, "aliases": ()},
+            {"key": "compliance", "label": "Norm/Hygiene/ATEX", "unit": None, "aliases": ("industry",)},
         ),
     },
 )
@@ -258,11 +264,32 @@ def _provenance_confidence(value: Any) -> str | None:
     return None
 
 
-def _cockpit_field_value(profile: Dict[str, Any], key: str) -> Any:
-    if key in profile:
-        return profile.get(key)
-    if key == "motion_type":
-        return profile.get("movement_type")
+def _first_mapping_value(mapping: Dict[str, Any], key: str, aliases: tuple[str, ...]) -> Any:
+    for candidate in (key, *aliases):
+        if candidate in mapping and mapping.get(candidate) not in (None, "", []):
+            return mapping.get(candidate)
+    return None
+
+
+def _required_key_for_field(key: str, aliases: tuple[str, ...], mandatory_keys: set[str]) -> str | None:
+    for candidate in (key, *aliases):
+        if candidate in mandatory_keys:
+            return candidate
+    return None
+
+
+def _cockpit_field_value(profile: Dict[str, Any], key: str, aliases: tuple[str, ...] = ()) -> Any:
+    for candidate in (key, *aliases):
+        if candidate in profile and profile.get(candidate) not in (None, "", []):
+            return profile.get(candidate)
+    if key == "readiness_level":
+        return profile.get("readiness_level") or profile.get("readiness")
+    if key == "blocking_unknowns":
+        return profile.get("blocking_unknowns") or profile.get("missing_required_fields")
+    if key == "recommended_next_question":
+        return profile.get("recommended_next_question") or profile.get("pending_best_next_question")
+    if key == "rfq_possible":
+        return profile.get("rfq_possible")
     return None
 
 
@@ -291,19 +318,23 @@ def _build_cockpit_sections(
             key = str(field["key"])
             if key in hidden_keys:
                 continue
-            value = _cockpit_field_value(profile, key)
-            origin = _provenance_origin(provenance_map.get(key))
+            aliases = tuple(str(alias) for alias in field.get("aliases", ()))
+            value = _cockpit_field_value(profile, key, aliases)
+            provenance_value = _first_mapping_value(provenance_map, key, aliases)
+            confidence_value = _first_mapping_value(confidence_map, key, aliases)
+            origin = _provenance_origin(provenance_value)
             confidence = (
-                str(confidence_map.get(key)).strip()
-                if confidence_map.get(key) not in (None, "")
-                else _provenance_confidence(provenance_map.get(key))
+                str(confidence_value).strip()
+                if confidence_value not in (None, "")
+                else _provenance_confidence(provenance_value)
             )
-            is_mandatory = key in mandatory_keys
+            required_key = _required_key_for_field(key, aliases, mandatory_keys)
+            is_mandatory = required_key is not None
             is_confirmed = confidence == "confirmed"
             if value in (None, "", []):
                 value = None
-                if is_mandatory:
-                    missing_mandatory_keys.append(key)
+                if required_key is not None:
+                    missing_mandatory_keys.append(required_key)
                 origin = origin or "missing"
             if is_mandatory:
                 mandatory_total += 1

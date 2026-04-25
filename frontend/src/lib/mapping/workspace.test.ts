@@ -17,8 +17,8 @@ function legacyProjection() {
       },
       sections: [
         {
-          section_id: "core_intake",
-          title: "A. Grunddaten",
+          section_id: "application_function",
+          title: "1. Anlage & Funktion",
           completion: { mandatory_present: 2, mandatory_total: 3, percent: 67 },
           properties: [
             {
@@ -231,7 +231,7 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.engineeringPath, "rwdr");
   assert.equal(workspace.cockpit?.requestType, "retrofit");
   assert.equal(workspace.cockpit?.path, "rwdr");
-  assert.equal(workspace.cockpit?.sections.core_intake.properties[0]?.origin, "user_override");
+  assert.equal(workspace.cockpit?.sections.application_function.properties[0]?.origin, "user_override");
   assert.equal(workspace.cockpit?.checks[0]?.calcId, "rwdr_circumferential_speed");
   assert.equal(workspace.cockpit?.checks[0]?.outputKey, "v_surface_m_s");
   assert.deepEqual(workspace.cockpit?.readiness.missingMandatoryKeys, ["speed_rpm"]);

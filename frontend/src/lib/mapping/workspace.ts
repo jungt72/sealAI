@@ -381,11 +381,25 @@ function emptyCockpitSection(id: EngineeringSectionId, title: string): Engineeri
 
 function defaultCockpitSections(): Record<EngineeringSectionId, EngineeringSection> {
   return {
-    core_intake: emptyCockpitSection("core_intake", "A. Grunddaten"),
-    failure_drivers: emptyCockpitSection("failure_drivers", "B. Technische Risikofaktoren"),
-    geometry_fit: emptyCockpitSection("geometry_fit", "C. Geometrie & Einbauraum"),
-    rfq_liability: emptyCockpitSection("rfq_liability", "D. Anfrage- & Freigabereife"),
+    application_function: emptyCockpitSection("application_function", "1. Anlage & Funktion"),
+    medium_environment: emptyCockpitSection("medium_environment", "2. Medium & Umgebung"),
+    operating_geometry: emptyCockpitSection("operating_geometry", "3. Betriebsdaten & Geometrie"),
+    risk_readiness: emptyCockpitSection("risk_readiness", "4. Risiken & Anfrage-Reife"),
   };
+}
+
+const LEGACY_SECTION_ID_MAP: Record<string, EngineeringSectionId> = {
+  core_intake: "application_function",
+  failure_drivers: "medium_environment",
+  geometry_fit: "operating_geometry",
+  rfq_liability: "risk_readiness",
+};
+
+function normalizeSectionId(id: string | null | undefined): EngineeringSectionId | null {
+  if (id === "application_function" || id === "medium_environment" || id === "operating_geometry" || id === "risk_readiness") {
+    return id;
+  }
+  return id ? LEGACY_SECTION_ID_MAP[id] ?? null : null;
 }
 
 function mapCockpitChecks(rawChecks: RawEngineeringCheckResult[] | undefined): EngineeringCheckResult[] {
@@ -417,8 +431,8 @@ function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockp
 
   const sections = defaultCockpitSections();
   for (const section of raw.sections || []) {
-    const id = section.section_id;
-    if (id !== "core_intake" && id !== "failure_drivers" && id !== "geometry_fit" && id !== "rfq_liability") {
+    const id = normalizeSectionId(section.section_id);
+    if (!id) {
       continue;
     }
     sections[id] = {

@@ -39,9 +39,9 @@ vi.mock("@/hooks/useCockpitData", () => ({
         routing: {},
       },
       sections: {
-        core_intake: {
-          id: "core_intake",
-          title: "A. Grunddaten",
+        application_function: {
+          id: "application_function",
+          title: "1. Anlage & Funktion",
           properties: [
             {
               key: "installation",
@@ -80,21 +80,21 @@ vi.mock("@/hooks/useCockpitData", () => ({
             percent: 50,
           },
         },
-        failure_drivers: {
-          id: "failure_drivers",
-          title: "B. Technische Risikofaktoren",
+        medium_environment: {
+          id: "medium_environment",
+          title: "2. Medium & Umgebung",
           properties: [],
           completion: { mandatoryPresent: 0, mandatoryTotal: 0, percent: 0 },
         },
-        geometry_fit: {
-          id: "geometry_fit",
-          title: "C. Geometrie & Einbauraum",
+        operating_geometry: {
+          id: "operating_geometry",
+          title: "3. Betriebsdaten & Geometrie",
           properties: [],
           completion: { mandatoryPresent: 0, mandatoryTotal: 0, percent: 0 },
         },
-        rfq_liability: {
-          id: "rfq_liability",
-          title: "D. Anfrage- & Freigabereife",
+        risk_readiness: {
+          id: "risk_readiness",
+          title: "4. Risiken & Anfrage-Reife",
           properties: [],
           completion: { mandatoryPresent: 0, mandatoryTotal: 0, percent: 0 },
         },
