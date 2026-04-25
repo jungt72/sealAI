@@ -817,6 +817,7 @@ class CaseEvent(BaseModel):
     case_id: Optional[str] = None
     turn_id: Optional[str] = None
     actor: str = "assistant"
+    actor_type: Literal["assistant", "user", "system", "service"] = "assistant"
     event_type: Literal[
         "assistant_delta_proposed",
         "case_delta_accepted",
@@ -824,12 +825,27 @@ class CaseEvent(BaseModel):
         "document_delta_proposed",
     ] = "assistant_delta_proposed"
     assistant_message: Optional[str] = None
+    source_turn_id: Optional[str] = None
+    source_document_id: Optional[str] = None
     proposed_case_delta: ProposedCaseDelta = Field(default_factory=ProposedCaseDelta)
     accepted_delta: dict[str, Any] = Field(default_factory=dict)
     rejected_delta: dict[str, Any] = Field(default_factory=dict)
+    rejection_reasons: dict[str, str] = Field(default_factory=dict)
     state_revision_before: int = Field(default=0, ge=0)
     state_revision_after: int = Field(default=0, ge=0)
+    case_revision_before: int = Field(default=0, ge=0)
+    case_revision_after: int = Field(default=0, ge=0)
+    ruleset_version: str = "v0.4-mvp-2026-04-25"
+    model_id: Optional[str] = None
     created_at: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _sync_revision_aliases(self) -> "CaseEvent":
+        if self.case_revision_before == 0 and self.state_revision_before:
+            self.case_revision_before = self.state_revision_before
+        if self.case_revision_after == 0 and self.state_revision_after:
+            self.case_revision_after = self.state_revision_after
+        return self
 
 
 class ExplorationProgressState(BaseModel):

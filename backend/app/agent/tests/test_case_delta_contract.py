@@ -74,6 +74,9 @@ def test_assistant_delta_case_event_is_append_only_non_authoritative() -> None:
     )
 
     assert event.event_type == "assistant_delta_proposed"
+    assert event.actor_type == "assistant"
+    assert event.source_turn_id == "turn-1"
+    assert event.case_revision_after == event.case_revision_before + 1
     assert event.proposed_case_delta.fields[0].field_name == "medium"
     assert event.accepted_delta == {}
     assert event.rejected_delta == {}
@@ -131,6 +134,8 @@ def test_case_delta_decision_event_records_accepted_fields_without_source_mutati
 
     assert proposal.proposed_case_delta.fields[0].status == "proposed"
     assert event.event_type == "case_delta_accepted"
+    assert event.actor_type == "user"
+    assert event.source_turn_id == proposal.event_id
     assert list(event.accepted_delta) == ["pressure_bar"]
     assert event.accepted_delta["pressure_bar"]["status"] == "accepted"
     assert event.accepted_delta["pressure_bar"]["source_event_id"] == proposal.event_id
