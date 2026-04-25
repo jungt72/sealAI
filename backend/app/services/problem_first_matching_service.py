@@ -68,7 +68,8 @@ class ProblemFirstMatchingService:
             base = sum(claim.technical_score for claim in claims) / max(1, len(claims))
             multiplier = min(1.1, max(0.9, sum(claim.verification_multiplier for claim in claims) / max(1, len(claims))))
             quantity_ok = "lot_size_capability" in coverage.met or _quantity(case.get("quantity_requested")) is None
-            matches.append(ManufacturerMatch(manufacturer_id, round(base * multiplier, 2), base, multiplier, coverage, quantity_ok, sponsored=False))
+            sponsored = any(claim.sponsored for claim in claims)
+            matches.append(ManufacturerMatch(manufacturer_id, round(base * multiplier, 2), base, multiplier, coverage, quantity_ok, sponsored=sponsored))
         return sorted(matches, key=lambda match: match.total_score, reverse=True)
 
 

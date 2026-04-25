@@ -1,72 +1,117 @@
-ANFRAGE FÜR ANGEBOT (RFQ) — SealAI v4.4.0
-==========================================
+ANFRAGEBASIS FUER HERSTELLERPRUEFUNG (RFQ) — SeaLAI v0.4
+=========================================================
 {% if is_critical_application %}
-╔══════════════════════════════════════════════════════════════╗
-║  ⚠️  KRITISCHE ANWENDUNG — INGENIEURSPRÜFUNG ERFORDERLICH  ⚠️  ║
-╠══════════════════════════════════════════════════════════════╣
-║  Dieser Bericht betrifft eine sicherheitskritische Anwendung  ║
-║  (z. B. Wasserstoff, Sauerstoff, p > 100 bar, T > 400 °C     ║
-║  oder T < –40 °C).                                           ║
-║                                                              ║
-║  Alle technischen Daten MÜSSEN durch einen zugelassenen       ║
-║  Ingenieur geprüft und bestätigt werden, bevor eine          ║
-║  Bestellung aufgegeben wird.                                  ║
-╚══════════════════════════════════════════════════════════════╝
+KRITISCHE ANWENDUNG — INGENIEURSPRUEFUNG ERFORDERLICH
+Dieser Bericht betrifft eine sicherheitskritische Anwendung. Alle technischen Daten muessen vor Bestellung durch eine befugte Fachstelle geprueft und bestaetigt werden.
 {% endif %}
 
-1. BETRIEBSPROFIL
------------------
-Medium:                   {{ medium }}
-Max. Betriebsdruck:       {{ pressure_max_bar }} bar
-Max. Betriebstemperatur:  {{ temperature_max_c }} °C
-Flanschstandard:          {{ flange_standard }}
-DN:                       {{ flange_dn }}
-PN / Class:               {{ flange_pn_or_class }}
-Verschraubung:            {{ bolt_count }}× {{ bolt_size }}
-Zyklische Belastung:      {{ "Ja" if cyclic_load else "Nein" }}
-{% if emission_class %}Emissionsklasse:          {{ emission_class }}
-{% endif %}{% if industry_sector %}Branche:                  {{ industry_sector }}
+1. KURZBESCHREIBUNG
+-------------------
+Anfrageziel:              {{ inquiry_goal | default("Herstellerpruefung einer technischen Vorauswahl", true) }}
+Kurzbeschreibung:         {{ application_summary | default("Noch nicht vollstaendig beschrieben", true) }}
+Request Type:             {{ request_type | default("noch offen", true) }}
+Technischer Pfad:         {{ engineering_path | default("noch offen", true) }}
+
+2. ANLAGE & FUNKTION
+--------------------
+Anlage / Baugruppe:       {{ asset_type | default(application_context | default("offen", true), true) }}
+Funktion:                 {{ asset_function | default(primary_function | default("offen", true), true) }}
+Ausfallfolge:             {{ consequence_of_failure | default("offen", true) }}
+Branche:                  {{ industry_sector | default(industry | default("offen", true), true) }}
+
+3. DICHTSTELLE & BEWEGUNG
+-------------------------
+Dichtstelle:              {{ seal_location | default(geometry_context | default("offen", true), true) }}
+Bewegungsart:             {{ motion_type | default(movement_type | default("offen", true), true) }}
+Dichtungstyp-Richtung:    {{ sealing_type | default(seal_type | default("offen", true), true) }}
+Dichtfunktion:            {{ sealing_direction | default(pressure_direction | default("offen", true), true) }}
+
+4. MEDIUM & UMGEBUNG
+--------------------
+Medium:                   {{ medium_name | default(medium | default("offen", true), true) }}
+Medienhinweise:           {{ medium_qualifiers | default("offen", true) }}
+Umgebung:                 {{ environment | default("offen", true) }}
+ATEX / Ex-Schutz:         {{ atex_relevance | default(atex | default("offen", true), true) }}
+Lebensmittel/Pharma:      {{ food_contact | default("offen", true) }}
+
+5. BETRIEBSDATEN
+----------------
+Temperatur min.:          {{ temperature_min | default("offen", true) }}{% if temperature_min is defined %} °C{% endif %}
+Temperatur max.:          {{ temperature_max | default(temperature_max_c | default(temperature_c | default("offen", true), true), true) }}{% if temperature_max is defined or temperature_max_c is defined or temperature_c is defined %} °C{% endif %}
+Betriebsdruck:            {{ pressure_nominal | default(pressure_bar | default(pressure_max_bar | default("offen", true), true), true) }}{% if pressure_nominal is defined or pressure_bar is defined or pressure_max_bar is defined %} bar{% endif %}
+Spitzendruck:             {{ pressure_peak | default("offen", true) }}{% if pressure_peak is defined %} bar{% endif %}
+Drehzahl:                 {{ speed_rpm | default(rpm | default("offen", true), true) }}{% if speed_rpm is defined or rpm is defined %} rpm{% endif %}
+Lastprofil:               {{ duty_profile | default("offen", true) }}
+
+6. GEOMETRIE & EINBAURAUM
+-------------------------
+Wellendurchmesser:        {{ shaft_diameter | default(shaft_diameter_mm | default("offen", true), true) }}{% if shaft_diameter is defined or shaft_diameter_mm is defined %} mm{% endif %}
+Gehaeusebohrung:          {{ housing_bore | default(housing_bore_mm | default("offen", true), true) }}{% if housing_bore is defined or housing_bore_mm is defined %} mm{% endif %}
+Einbaubreite:             {{ installation_width | default(installation_width_mm | default("offen", true), true) }}{% if installation_width is defined or installation_width_mm is defined %} mm{% endif %}
+Einbauraum / Kontext:     {{ installation | default(geometry_context | default("offen", true), true) }}
+
+7. WERKSTOFFE & OBERFLAECHEN
+----------------------------
+Kandidaten / Richtung:    {{ material_direction | default(material | default("offen", true), true) }}
+Wellenwerkstoff:          {{ shaft_material | default("offen", true) }}
+Oberflaeche:              {{ surface_finish | default(counterface_surface | default("offen", true), true) }}
+Bekannte Unvertraeglichkeiten: {{ known_incompatible_materials | default("keine angegeben", true) }}
+
+8. ERKANNTE RISIKEN
+-------------------
+{% if risks %}{% for risk in risks %}- {{ risk }}
+{% endfor %}{% elif critique_log %}{% for entry in critique_log %}- {{ entry }}
+{% endfor %}{% else %}- Noch keine belastbare Risiko-Liste erzeugt.
 {% endif %}
 
-2. AUSLEGUNGSERGEBNISSE (P4b)
-------------------------------
-Dichtungs-Innen-Ø:              {{ gasket_inner_d_mm }} mm
-Dichtungs-Außen-Ø:              {{ gasket_outer_d_mm }} mm
-Erforderliche Dichtungsspannung: {{ required_gasket_stress_mpa }} MPa
-{% if available_bolt_load_kn is not none %}Verfügbare Verschraubungskraft:  {{ available_bolt_load_kn }} kN
-{% endif %}Sicherheitsfaktor:              {{ safety_factor }}
-Temperaturgegenwert:             {{ temperature_margin_c }} K
-Druckgegenwert:                  {{ pressure_margin_bar }} bar
-
-3. QUALITÄTSPRÜFUNG (P4.5)
----------------------------
-{% if critique_log %}Befunde:
-{% for entry in critique_log %}  • {{ entry }}
-{% endfor %}{% else %}Alle Qualitätsprüfungen bestanden. Keine Befunde.
+9. BERECHNUNGEN / TECHNISCHE HINWEISE
+-------------------------------------
+{% if calculations %}{% for calc in calculations %}- {{ calc }}
+{% endfor %}{% else %}- Dichtungs-Innen-Ø: {{ gasket_inner_d_mm | default("offen", true) }} mm
+- Dichtungs-Außen-Ø: {{ gasket_outer_d_mm | default("offen", true) }} mm
+- Erforderliche Dichtungsspannung: {{ required_gasket_stress_mpa | default("offen", true) }} MPa
+- Sicherheitsfaktor: {{ safety_factor | default("offen", true) }}
 {% endif %}
 
-4. PARTNERVERMITTLUNG
-----------------------
-{% if fallback %}HINWEIS: Kein qualifizierter Partner verfügbar.
-Grund: {{ fallback_reason }}
+10. PLAUSIBLE TECHNISCHE RICHTUNG
+---------------------------------
+Technische Richtung:      {{ technical_direction | default(sealing_type | default("Vorauswahl noch nicht final belastbar", true), true) }}
+Readiness Level:          {{ readiness_level | default("offen", true) }}
+Hinweis:                  Technische Richtung ist eine Vorauswahl; finale Herstellerfreigabe bleibt erforderlich.
 
-Dieser Bericht kann für eine manuelle Anfrage ohne Partnerbranding
-verwendet werden. Bitte kontaktieren Sie einen Fachhändler direkt.
-{% else %}Vorgeschlagene Partner ({{ matched_partners | length }}):
-{% for p in matched_partners %}
-  [{{ loop.index }}] {{ p.name }}
-       Partner-ID:  {{ p.partner_id }}
-       Standort:    {{ p.locations | join(", ") }}
-       Lieferzeit:  ca. {{ p.delivery_days }} Werktage
-       Bauformen:   {{ p.supported_bauformen | join(", ") }}
-{% endfor %}{% if procurement_warning %}
-HINWEIS: {{ procurement_warning }}
+11. OFFENE PUNKTE / UNBESTAETIGTE ANNAHMEN
+------------------------------------------
+{% if open_points %}{% for item in open_points %}- {{ item }}
+{% endfor %}{% else %}- Offene Punkte muessen vor Herstellerfreigabe transparent bestaetigt werden.
+{% endif %}{% if assumptions %}{% for item in assumptions %}- Annahme: {{ item }}
+{% endfor %}{% endif %}
+
+12. FRAGEN AN DEN HERSTELLER
+----------------------------
+{% if manufacturer_questions %}{% for item in manufacturer_questions %}- {{ item }}
+{% endfor %}{% else %}- Bitte pruefen Sie die technische Eignung fuer die genannten Betriebsbedingungen.
+- Bitte bestaetigen Sie Material-/Compound-Freigabe, Geometriegrenzen und offene Validierungspunkte.
+{% endif %}
+
+13. ANFRAGEZIEL / STUECKZAHL / RUECKMELDUNG
+-------------------------------------------
+Stueckzahl:               {{ quantity_requested | default("offen", true) }}
+Ziel der Rueckmeldung:    {{ response_goal | default("technische Pruefung und Angebot, sofern passend", true) }}
+Termin / SLA:             {{ requested_response_time | default("offen", true) }}
+
+14. PARTNER- / WEITERLEITUNGSKONTEXT
+------------------------------------
+{% if fallback %}Kein qualifizierter Partner automatisch verfuegbar.
+Grund: {{ fallback_reason | default("nicht angegeben", true) }}
+{% else %}{% if matched_partners %}Vorgeschlagene Partner ({{ matched_partners | length }}):
+{% for p in matched_partners %}- {{ p.name }}{% if p.partner_id is defined %} ({{ p.partner_id }}){% endif %}
+{% endfor %}{% else %}Noch keine Partnerweiterleitung ausgewaehlt.
 {% endif %}{% endif %}
 
-══════════════════════════════════════════════════════════════════
-Erstellt von: SealAI v4.4.0  |  Datum: {{ generated_at }}
-Mandant:      {{ tenant_id }}
+=========================================================
+Erstellt von: SeaLAI v0.4  |  Datum: {{ generated_at | default("offen", true) }}
+Mandant:      {{ tenant_id | default("offen", true) }}
 
-WICHTIG: Dieser Bericht ist maschinell erstellt und ersetzt keine
-         fachkundige Beratung durch einen Dichttechnik-Spezialisten.
-══════════════════════════════════════════════════════════════════
+WICHTIG: Diese Anfragebasis ist maschinell vorbereitet. Sie ist keine finale
+Freigabe, keine Eignungsgarantie und ersetzt keine Herstellerpruefung.
+=========================================================

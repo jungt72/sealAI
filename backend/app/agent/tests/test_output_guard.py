@@ -169,3 +169,13 @@ class TestFallbackConstant:
         """The fallback text must not trigger its own guard."""
         safe, cat = check_fast_path_output(FAST_PATH_GUARD_FALLBACK)
         assert safe is True, f"Fallback text triggered its own guard: category={cat}"
+
+
+class TestFormDumpViolations:
+    def test_all_following_parameters_dump_blocked(self):
+        safe, cat = check_fast_path_output(
+            "Bitte nennen Sie alle folgenden Angaben: Medium, Druck, Temperatur, Drehzahl."
+        )
+
+        assert safe is False
+        assert cat == "form_dump"

@@ -15,3 +15,17 @@ def test_problem_first_matching_filters_by_case_requirements() -> None:
     )
     assert [match.manufacturer_id for match in matches] == ["a"]
     assert matches[0].sponsored is False
+
+
+def test_sponsoring_is_visible_but_never_changes_technical_sort_order() -> None:
+    matches = ProblemFirstMatchingService().match_manufacturers(
+        {"engineering_path": "rwdr"},
+        [
+            ManufacturerCapability("sponsored-low", "engineering_path", {"engineering_path": "rwdr"}, technical_score=70, sponsored=True),
+            ManufacturerCapability("organic-high", "engineering_path", {"engineering_path": "rwdr"}, technical_score=90, sponsored=False),
+        ],
+    )
+
+    assert [match.manufacturer_id for match in matches] == ["organic-high", "sponsored-low"]
+    assert matches[1].sponsored is True
+    assert matches[0].sponsored is False

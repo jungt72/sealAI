@@ -10,9 +10,13 @@ class OutputClass(str, Enum):
     CONVERSATIONAL_ANSWER = "conversational_answer"
     STRUCTURED_CLARIFICATION = "structured_clarification"
     GOVERNED_STATE_UPDATE = "governed_state_update"
+    MEDIUM_DEEP_DIVE = "medium_deep_dive"
+    MATERIAL_DEEP_DIVE = "material_deep_dive"
+    SEAL_TYPE_DEEP_DIVE = "seal_type_deep_dive"
     TECHNICAL_PRESELECTION = "technical_preselection"
     RCA_HYPOTHESIS = "rca_hypothesis"
     CANDIDATE_SHORTLIST = "candidate_shortlist"
+    RFQ_SUMMARY = "rfq_summary"
     INQUIRY_READY = "inquiry_ready"
 
 
@@ -26,6 +30,8 @@ class OutputClassificationInput:
     has_preselection_blockers: bool = False
     inquiry_ready: bool = False
     candidate_shortlist_ready: bool = False
+    rfq_summary_ready: bool = False
+    deep_dive_topic: str | None = None
     has_compute_results: bool = False
     recommendation_ready: bool = False
     has_blocking_evidence_gaps: bool = False
@@ -63,6 +69,13 @@ class OutputClassifier:
                 "domain_inquiry_conversation_mode",
             )
 
+        deep_dive_class = _deep_dive_output_class(input.deep_dive_topic)
+        if deep_dive_class is not None:
+            return self._result(
+                deep_dive_class,
+                f"deep_dive_{input.deep_dive_topic}",
+            )
+
         gov_class = input.governance_class
         if gov_class is None or gov_class in {"C", "D"}:
             return self._result(
@@ -87,6 +100,8 @@ class OutputClassifier:
                     OutputClass.STRUCTURED_CLARIFICATION,
                     "preselection_blockers_present",
                 )
+            if input.rfq_summary_ready:
+                return self._result(OutputClass.RFQ_SUMMARY, "rfq_summary_ready")
             if input.inquiry_ready:
                 return self._result(OutputClass.INQUIRY_READY, "inquiry_ready")
             if input.candidate_shortlist_ready:
@@ -123,3 +138,14 @@ class OutputClassifier:
             output_class=output_class,
             reasoning=reasoning,
         )
+
+
+def _deep_dive_output_class(topic: str | None) -> OutputClass | None:
+    normalized = str(topic or "").strip().lower().replace("-", "_")
+    if normalized in {"medium", "medium_deep_dive"}:
+        return OutputClass.MEDIUM_DEEP_DIVE
+    if normalized in {"material", "werkstoff", "material_deep_dive"}:
+        return OutputClass.MATERIAL_DEEP_DIVE
+    if normalized in {"seal_type", "dichtungstyp", "seal_type_deep_dive"}:
+        return OutputClass.SEAL_TYPE_DEEP_DIVE
+    return None

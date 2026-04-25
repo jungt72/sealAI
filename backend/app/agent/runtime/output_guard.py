@@ -61,12 +61,21 @@ _SUITABILITY_PATTERNS: Sequence[str] = (
     r"\b(freigegeben|zugelassen)\s+für\b",
 )
 
+# Form-dump phrases are disallowed by v0.4: SeaLAI asks one good next
+# question instead of dumping a checklist into the chat surface.
+_FORM_DUMP_PATTERNS: Sequence[str] = (
+    r"\bbitte\s+nennen\s+sie\s+alle\s+folgenden\s+angaben\b",
+    r"\bbitte\s+nenne\s+(?:mir\s+)?alle\s+folgenden\s+angaben\b",
+    r"\b(?:nennen|nenne)\s+sie\s+alle\s+folgenden\s+parameter\b",
+)
+
 # Compile all patterns once at import time
 _COMPILED: list[tuple[str, re.Pattern[str]]] = []
 for _cat, _pats in (
     ("manufacturer", _MANUFACTURER_PATTERNS),
     ("recommendation", _RECOMMENDATION_PATTERNS),
     ("suitability", _SUITABILITY_PATTERNS),
+    ("form_dump", _FORM_DUMP_PATTERNS),
 ):
     for _p in _pats:
         _COMPILED.append((_cat, re.compile(_p, re.IGNORECASE | re.UNICODE)))

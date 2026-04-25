@@ -27,9 +27,13 @@ def test_output_class_values_match_authority_set() -> None:
         "conversational_answer",
         "structured_clarification",
         "governed_state_update",
+        "medium_deep_dive",
+        "material_deep_dive",
+        "seal_type_deep_dive",
         "technical_preselection",
         "rca_hypothesis",
         "candidate_shortlist",
+        "rfq_summary",
         "inquiry_ready",
     }
 
@@ -121,6 +125,49 @@ def test_governance_a_with_preselection_blockers_stays_clarification(
             inquiry_ready=True,
         )
         is OutputClass.STRUCTURED_CLARIFICATION
+    )
+
+
+
+
+@pytest.mark.parametrize(
+    ("topic", "expected"),
+    [
+        ("medium", OutputClass.MEDIUM_DEEP_DIVE),
+        ("material", OutputClass.MATERIAL_DEEP_DIVE),
+        ("seal_type", OutputClass.SEAL_TYPE_DEEP_DIVE),
+        ("Werkstoff", OutputClass.MATERIAL_DEEP_DIVE),
+    ],
+)
+def test_deep_dive_topics_have_first_class_output_classes(
+    classifier: OutputClassifier,
+    topic: str,
+    expected: OutputClass,
+) -> None:
+    result = classifier.classify(
+        OutputClassificationInput(
+            pre_gate=PreGateClassification.DOMAIN_INQUIRY,
+            governance_class="A",
+            deep_dive_topic=topic,
+        )
+    )
+
+    assert result.output_class is expected
+    assert result.reasoning.startswith("deep_dive_")
+
+
+def test_rfq_summary_precedes_inquiry_ready_when_report_is_requested(
+    classifier: OutputClassifier,
+) -> None:
+    assert (
+        _classify(
+            classifier,
+            pre_gate=PreGateClassification.DOMAIN_INQUIRY,
+            governance_class="A",
+            rfq_summary_ready=True,
+            inquiry_ready=True,
+        )
+        is OutputClass.RFQ_SUMMARY
     )
 
 
