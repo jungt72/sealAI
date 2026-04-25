@@ -46,6 +46,18 @@ type RawEngineeringCheckResult = {
   notes?: string[];
 };
 
+type RawRiskEvaluationResult = {
+  risk_name?: string;
+  score?: number;
+  label?: string;
+  drivers?: string[];
+  missing_inputs?: string[];
+  rule_ids?: string[];
+  explanation_short?: string;
+  confidence?: string;
+  ruleset_version?: string;
+};
+
 type RawCockpitView = {
   request_type?: string | null;
   engineering_path?: string | null;
@@ -56,6 +68,7 @@ type RawCockpitView = {
   } | null;
   sections?: RawCockpitSection[];
   checks?: RawEngineeringCheckResult[];
+  risk_evaluations?: RawRiskEvaluationResult[];
   missing_mandatory_keys?: string[];
   blockers?: string[];
   readiness?: {
@@ -63,6 +76,15 @@ type RawCockpitView = {
     is_rfq_ready?: boolean;
     release_status?: string | null;
     coverage_score?: number | null;
+    readiness_level?: number | null;
+    readiness_label?: string | null;
+    missing_required_fields?: string[];
+    blocking_unknowns?: string[];
+    recommended_next_question?: string | null;
+    rfq_possible?: boolean;
+    risk_score_max?: number | null;
+    risk_label_max?: string | null;
+    ruleset_version?: string | null;
   } | null;
 };
 
@@ -423,6 +445,20 @@ function mapCockpitChecks(rawChecks: RawEngineeringCheckResult[] | undefined): E
   }));
 }
 
+function mapRiskEvaluations(rawRisks: RawRiskEvaluationResult[] | undefined): EngineeringCockpitView["riskEvaluations"] {
+  return (rawRisks || []).map((risk) => ({
+    riskName: risk.risk_name || "unknown",
+    score: typeof risk.score === "number" ? risk.score : 9,
+    label: risk.label || "unknown",
+    drivers: risk.drivers || [],
+    missingInputs: risk.missing_inputs || [],
+    ruleIds: risk.rule_ids || [],
+    explanationShort: risk.explanation_short || "",
+    confidence: risk.confidence || "medium",
+    rulesetVersion: risk.ruleset_version || "",
+  }));
+}
+
 function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockpitView | null {
   const raw = projection.cockpit_view;
   if (!raw) {
@@ -466,6 +502,7 @@ function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockp
     },
     sections,
     checks: mapCockpitChecks(raw.checks),
+    riskEvaluations: mapRiskEvaluations(raw.risk_evaluations),
     readiness: {
       isRfqReady: Boolean(raw.readiness?.is_rfq_ready),
       missingMandatoryKeys: raw.missing_mandatory_keys || [],
@@ -478,6 +515,15 @@ function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockp
           : "preliminary",
       releaseStatus: raw.readiness?.release_status || projection.governance_status.release_status,
       coverageScore: raw.readiness?.coverage_score ?? projection.completeness.coverage_score,
+      readinessLevel: raw.readiness?.readiness_level ?? undefined,
+      readinessLabel: raw.readiness?.readiness_label ?? undefined,
+      missingRequiredFields: raw.readiness?.missing_required_fields || [],
+      blockingUnknowns: raw.readiness?.blocking_unknowns || [],
+      recommendedNextQuestion: raw.readiness?.recommended_next_question ?? null,
+      rfqPossible: raw.readiness?.rfq_possible ?? undefined,
+      riskScoreMax: raw.readiness?.risk_score_max ?? undefined,
+      riskLabelMax: raw.readiness?.risk_label_max ?? undefined,
+      rulesetVersion: raw.readiness?.ruleset_version ?? undefined,
     },
     mediumContext: {
       canonicalName: projection.medium_classification?.canonical_label || null,

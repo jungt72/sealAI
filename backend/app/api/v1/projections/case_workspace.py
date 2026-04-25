@@ -27,6 +27,7 @@ from app.agent.runtime.clarification_priority import (
 from app.agent.state.models import GovernedSessionState
 from app.agent.domain.checks_registry import build_registered_check_results
 from app.agent.domain.medium_registry import classify_medium_value
+from app.agent.domain.risk_readiness import evaluate_readiness, evaluate_risks
 from app.api.v1.schemas.case_workspace import (
     ArtifactStatus,
     CaseSummary,
@@ -36,6 +37,7 @@ from app.api.v1.schemas.case_workspace import (
     CockpitProperty,
     CockpitReadinessSummary,
     CockpitRoutingMetadata,
+    RiskEvaluationResult,
     CockpitSection,
     CockpitSectionCompletion,
     CommunicationContext,
@@ -386,11 +388,12 @@ def _build_cockpit_view(
     completeness_payload: Dict[str, Any],
     checks: list[EngineeringCheckResult],
 ) -> EngineeringCockpitView:
-    sections, missing_mandatory_keys = _build_cockpit_sections(
+    initial_sections, missing_mandatory_keys = _build_cockpit_sections(
         profile=profile,
         engineering_path=engineering_path,
         reasoning=reasoning,
     )
+    del initial_sections
     blockers = [
         str(item)
         for item in dict.fromkeys(
@@ -398,15 +401,45 @@ def _build_cockpit_view(
         )
         if item
     ]
-    coverage_score = float(completeness_payload.get("coverage_score") or 0.0)
-    is_rfq_ready = bool(
-        rfq_status.rfq_ready or (not missing_mandatory_keys and coverage_score > 0.6)
+    risk_evaluations_raw = evaluate_risks(
+        profile,
+        engineering_path=str(engineering_path or "") or None,
+        missing_required_fields=[],
+        checks=checks,
     )
+    readiness_eval = evaluate_readiness(
+        profile,
+        request_type=str(request_type or "") or None,
+        engineering_path=str(engineering_path or "") or None,
+        missing_mandatory_keys=missing_mandatory_keys,
+        blockers=blockers,
+        risk_results=risk_evaluations_raw,
+    )
+    cockpit_profile = dict(profile)
+    cockpit_profile.update(readiness_eval.to_profile_patch())
+    top_risks = [
+        item.risk_name
+        for item in risk_evaluations_raw
+        if item.score in {2, 3, 4, 9}
+    ][:3]
+    if top_risks:
+        cockpit_profile["top_risks"] = top_risks
+    sections, missing_mandatory_keys = _build_cockpit_sections(
+        profile=cockpit_profile,
+        engineering_path=engineering_path,
+        reasoning=reasoning,
+    )
+    coverage_score = float(completeness_payload.get("coverage_score") or 0.0)
+    is_rfq_ready = bool(rfq_status.rfq_ready or readiness_eval.rfq_possible)
     status = (
         "rfq_ready"
         if is_rfq_ready
         else ("preliminary" if missing_mandatory_keys else "review_needed")
     )
+    risk_evaluations = [
+        RiskEvaluationResult.model_validate(item.to_dict())
+        for item in risk_evaluations_raw
+    ]
     return EngineeringCockpitView(
         request_type=request_type,
         engineering_path=engineering_path,
@@ -417,6 +450,7 @@ def _build_cockpit_view(
         ),
         sections=sections,
         checks=checks,
+        risk_evaluations=risk_evaluations,
         missing_mandatory_keys=missing_mandatory_keys,
         blockers=blockers,
         readiness=CockpitReadinessSummary(
@@ -424,6 +458,15 @@ def _build_cockpit_view(
             is_rfq_ready=is_rfq_ready,
             release_status=governance_status.release_status,
             coverage_score=coverage_score,
+            readiness_level=readiness_eval.readiness_level,
+            readiness_label=readiness_eval.readiness_label,
+            missing_required_fields=readiness_eval.missing_required_fields,
+            blocking_unknowns=readiness_eval.blocking_unknowns,
+            recommended_next_question=readiness_eval.recommended_next_question,
+            rfq_possible=readiness_eval.rfq_possible,
+            risk_score_max=readiness_eval.risk_score_max,
+            risk_label_max=readiness_eval.risk_label_max,
+            ruleset_version=readiness_eval.ruleset_version,
         ),
     )
 

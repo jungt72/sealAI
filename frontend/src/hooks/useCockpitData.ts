@@ -184,6 +184,7 @@ function projectEngineeringView(
     requestType: requestType || "nicht bestimmt",
     sections,
     checks: [],
+    riskEvaluations: [],
     readiness,
     mediumContext: {
       canonicalName: workspace?.mediumClassification?.canonicalLabel || null,

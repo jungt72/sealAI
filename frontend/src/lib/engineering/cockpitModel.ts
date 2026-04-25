@@ -61,6 +61,27 @@ export interface ReadinessState {
   status: "preliminary" | "review_needed" | "rfq_ready";
   releaseStatus?: string;
   coverageScore?: number;
+  readinessLevel?: number;
+  readinessLabel?: string;
+  missingRequiredFields?: string[];
+  blockingUnknowns?: string[];
+  recommendedNextQuestion?: string | null;
+  rfqPossible?: boolean;
+  riskScoreMax?: number;
+  riskLabelMax?: string;
+  rulesetVersion?: string;
+}
+
+export interface RiskEvaluationResult {
+  riskName: string;
+  score: number;
+  label: string;
+  drivers: string[];
+  missingInputs: string[];
+  ruleIds: string[];
+  explanationShort: string;
+  confidence: string;
+  rulesetVersion: string;
 }
 
 export interface RoutingMetadata {
@@ -75,6 +96,7 @@ export interface EngineeringCockpitView {
   routingMetadata?: RoutingMetadata;
   sections: Record<EngineeringSectionId, EngineeringSection>;
   checks: EngineeringCheckResult[];
+  riskEvaluations: RiskEvaluationResult[];
   readiness: ReadinessState;
   mediumContext: {
     canonicalName: string | null;

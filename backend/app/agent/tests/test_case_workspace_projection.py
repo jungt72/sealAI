@@ -304,6 +304,13 @@ def test_workspace_projection_derives_ssot_routing_fields() -> None:
         "speed_rpm",
         "runout_mm",
     ]
+    assert projection.cockpit_view.readiness.missing_required_fields == [
+        "seal_location",
+        "speed_rpm",
+        "shaft_diameter",
+        "food_contact",
+        "atex",
+    ]
     assert projection.cockpit_view.readiness.status == "preliminary"
 
 
@@ -450,3 +457,93 @@ def test_governed_workspace_projection_keeps_unreleased_matching_blocked() -> No
     assert projection.partner_matching.inquiry_ready is False
     assert "demo_matching_catalog" in projection.partner_matching.blocking_reasons
     assert projection.partner_matching.data_source == "demo_catalog"
+
+
+def test_workspace_projection_adds_v04_deterministic_readiness_and_risks() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-v04-readiness"},
+            "working_profile": {
+                "engineering_profile": {
+                    "medium": "Salzwasser",
+                    "temperature_c": 80.0,
+                    "pressure_bar": 4.0,
+                    "movement_type": "rotary",
+                    "installation": "Radialwellendichtring",
+                    "shaft_diameter_mm": 35.0,
+                    "speed_rpm": 1450.0,
+                    "counterface_surface": "Ra 0.3",
+                    "runout_mm": 0.03,
+                },
+                "completeness": {"missing_critical_parameters": []},
+            },
+            "reasoning": {"phase": "clarification", "state_revision": 4},
+            "system": {
+                "governance_metadata": {"release_status": "precheck_only"},
+                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    cockpit = projection.cockpit_view
+    assert cockpit.readiness.readiness_level == 4
+    assert cockpit.readiness.readiness_label == "rfq_preparable_with_open_points"
+    assert cockpit.readiness.risk_score_max == 9
+    assert cockpit.readiness.risk_label_max == "unknown"
+    assert "food_contact" in cockpit.readiness.missing_required_fields
+    assert "atex" in cockpit.readiness.missing_required_fields
+
+    risk_by_name = {item.risk_name: item for item in cockpit.risk_evaluations}
+    assert risk_by_name["corrosion_risk"].score == 3
+    assert risk_by_name["unknowns_risk"].score == 9
+    assert "food_contact" in risk_by_name["unknowns_risk"].missing_inputs
+
+    risk_section = next(section for section in cockpit.sections if section.section_id == "risk_readiness")
+    values = {prop.key: prop.value for prop in risk_section.properties}
+    assert values["readiness_level"] == 4
+    assert values["rfq_possible"] is False
+    assert values["recommended_next_question"] == "Wo genau sitzt die Dichtstelle?"
+
+
+def test_workspace_projection_marks_level_five_when_critical_inputs_and_risks_are_clear() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-v04-ready"},
+            "working_profile": {
+                "engineering_profile": {
+                    "asset_type": "agitator",
+                    "seal_location": "shaft_exit",
+                    "motion_type": "rotary",
+                    "medium_name": "Mineraloel",
+                    "temperature_max": 60.0,
+                    "pressure_nominal": 0.5,
+                    "shaft_diameter": 35.0,
+                    "geometry": "35x47x7",
+                    "speed_rpm": 500.0,
+                    "food_contact": "no",
+                    "atex": "no",
+                    "surface_finish": "Ra 0.3",
+                    "shaft_runout": 0.03,
+                    "sealing_type": "rwdr",
+                },
+                "completeness": {"missing_critical_parameters": []},
+            },
+            "reasoning": {"phase": "recommendation", "state_revision": 5},
+            "system": {
+                "governance_metadata": {"release_status": "manufacturer_validation_required"},
+                "rfq_admissibility": {"release_status": "manufacturer_validation_required", "status": "manufacturer_validation_required"},
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    assert projection.cockpit_view.readiness.readiness_level == 5
+    assert projection.cockpit_view.readiness.readiness_label == "manufacturer_ready_inquiry"
+    assert projection.cockpit_view.readiness.is_rfq_ready is True
+    assert projection.cockpit_view.readiness.missing_required_fields == []
+    assert projection.cockpit_view.blockers == []

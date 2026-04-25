@@ -388,6 +388,29 @@ class CockpitReadinessSummary(BaseModel):
     is_rfq_ready: bool = False
     release_status: str = "inadmissible"
     coverage_score: float = 0.0
+    readiness_level: int = 0
+    readiness_label: str = "no_technical_case_detected"
+    missing_required_fields: List[str] = Field(default_factory=list)
+    blocking_unknowns: List[str] = Field(default_factory=list)
+    recommended_next_question: Optional[str] = None
+    rfq_possible: bool = False
+    risk_score_max: int = 9
+    risk_label_max: str = "unknown"
+    ruleset_version: str = "v0.4-mvp-2026-04-25"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RiskEvaluationResult(BaseModel):
+    risk_name: str
+    score: int
+    label: str
+    drivers: List[str] = Field(default_factory=list)
+    missing_inputs: List[str] = Field(default_factory=list)
+    rule_ids: List[str] = Field(default_factory=list)
+    explanation_short: str = ""
+    confidence: str = "medium"
+    ruleset_version: str = "v0.4-mvp-2026-04-25"
 
     model_config = ConfigDict(extra="forbid")
 
@@ -416,6 +439,7 @@ class EngineeringCockpitView(BaseModel):
     routing_metadata: CockpitRoutingMetadata = Field(default_factory=CockpitRoutingMetadata)
     sections: List[CockpitSection] = Field(default_factory=list)
     checks: List[EngineeringCheckResult] = Field(default_factory=list)
+    risk_evaluations: List[RiskEvaluationResult] = Field(default_factory=list)
     missing_mandatory_keys: List[str] = Field(default_factory=list)
     blockers: List[str] = Field(default_factory=list)
     readiness: CockpitReadinessSummary = Field(default_factory=CockpitReadinessSummary)
