@@ -44,6 +44,95 @@ def _decided_source_event_ids(state: GovernedSessionState) -> set[str]:
     return decided
 
 
+
+def detect_delta_conflicts(
+    *,
+    current_case_state: dict[str, Any],
+    accepted_delta_candidate: dict[str, Any],
+    field_tolerances: dict[str, float] | None = None,
+    provenance_priority: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """ADR-005 service contract for deterministic delta conflict detection.
+
+    This function is intentionally independent from the UI projection. It can be
+    used before accepting a candidate delta to decide whether to accept, stale
+    dependents, or ask a resolution question.
+    """
+    field_tolerances = dict(field_tolerances or {})
+    provenance_priority = dict(provenance_priority or {})
+    conflicts: list[dict[str, Any]] = []
+
+    for field_name, candidate_payload in accepted_delta_candidate.items():
+        if isinstance(candidate_payload, dict):
+            new_value = candidate_payload.get("proposed_value", candidate_payload.get("value"))
+            new_provenance = str(candidate_payload.get("provenance") or "unknown")
+        else:
+            new_value = candidate_payload
+            new_provenance = "unknown"
+
+        current_payload = current_case_state.get(field_name)
+        if current_payload is None:
+            continue
+        if isinstance(current_payload, dict):
+            old_value = current_payload.get("value", current_payload.get("asserted_value"))
+            old_provenance = str(current_payload.get("provenance") or current_payload.get("source") or "case_state")
+        else:
+            old_value = current_payload
+            old_provenance = "case_state"
+
+        old_canonical = _canonical_value(old_value)
+        new_canonical = _canonical_value(new_value)
+        if old_canonical == new_canonical:
+            continue
+
+        tolerance = field_tolerances.get(field_name)
+        if tolerance is not None:
+            try:
+                if abs(float(str(old_value).replace(',', '.')) - float(str(new_value).replace(',', '.'))) <= tolerance:
+                    continue
+            except (TypeError, ValueError):
+                pass
+
+        old_rank = provenance_priority.get(old_provenance, 0)
+        new_rank = provenance_priority.get(new_provenance, 0)
+        resolution = "accept_new_value_and_invalidate_dependents" if new_rank >= old_rank else "requires_user_resolution"
+        severity = "blocking" if resolution == "requires_user_resolution" else "warning"
+        conflicts.append(
+            {
+                "conflict_type": "value_replacement",
+                "field": field_name,
+                "old_value": old_value,
+                "new_value": new_value,
+                "old_provenance": old_provenance,
+                "new_provenance": new_provenance,
+                "resolution": resolution,
+                "severity": severity,
+            }
+        )
+
+    severity_rank = {"none": 0, "warning": 1, "blocking": 2}
+    conflict_severity = "none"
+    for conflict in conflicts:
+        severity = str(conflict.get("severity") or "warning")
+        if severity_rank.get(severity, 0) > severity_rank.get(conflict_severity, 0):
+            conflict_severity = severity
+
+    suggested_question = None
+    blocking = [item for item in conflicts if item.get("severity") == "blocking"]
+    if blocking:
+        first = blocking[0]
+        suggested_question = (
+            f"Ich habe fuer {first['field']} zwei unterschiedliche Werte: "
+            f"{_format_value(first['old_value'])} und {_format_value(first['new_value'])}. "
+            "Welcher Wert soll fuer den Fall gelten?"
+        )
+
+    return {
+        "conflicts": conflicts,
+        "conflict_severity": conflict_severity,
+        "suggested_resolution_question": suggested_question,
+    }
+
 def build_governed_conflict_items(state: GovernedSessionState) -> list[dict[str, Any]]:
     """Expose unresolved normalized and proposed-delta conflicts for workspace UI."""
     items: list[dict[str, Any]] = []

@@ -27,6 +27,7 @@ from app.agent.runtime.clarification_priority import (
 from app.agent.state.models import GovernedSessionState
 from app.agent.domain.checks_registry import build_registered_check_results
 from app.agent.domain.delta_conflicts import build_governed_conflict_summary
+from app.agent.domain.dependency_graph import derived_values_for_projection
 from app.agent.domain.medium_registry import classify_medium_value
 from app.agent.domain.risk_readiness import evaluate_readiness, evaluate_risks
 from app.api.v1.schemas.case_workspace import (
@@ -1092,6 +1093,28 @@ def synthesize_workspace_state_from_governed(
 ) -> Dict[str, Any]:
     working_profile = _governed_working_profile(state)
     technical_derivations: list[dict[str, Any]] = []
+    for derived_item in derived_values_for_projection(state.derived):
+        value_id = str(derived_item.get("id") or derived_item.get("calculation_id") or "unknown")
+        item: dict[str, Any] = {
+            "calc_type": value_id,
+            "status": str(derived_item.get("status") or "unknown"),
+            "value": derived_item.get("value"),
+            "derived_value_id": value_id,
+            "derived_from_fields": list(derived_item.get("derived_from_fields") or []),
+            "derived_from_revision": int(derived_item.get("derived_from_revision") or 0),
+            "calculation_id": str(derived_item.get("calculation_id") or value_id),
+            "ruleset_version": derived_item.get("ruleset_version"),
+            "stale_reason": derived_item.get("stale_reason"),
+            "notes": [],
+        }
+        if value_id == "rwdr_circumferential_speed":
+            item["v_surface_m_s"] = derived_item.get("value")
+        elif value_id == "rwdr_pv_precheck":
+            item["pv_value_mpa_m_s"] = derived_item.get("value")
+        elif value_id == "rwdr_dn_value":
+            item["dn_value"] = derived_item.get("value")
+        technical_derivations.append(item)
+
     for result in list(getattr(state, "compute_results", []) or []):
         if not isinstance(result, dict):
             continue
@@ -1240,6 +1263,8 @@ def synthesize_workspace_state_from_governed(
             "last_node": "governed_live_state",
             "selected_partner_id": matching_state.get("selected_partner_id"),
             "state_revision": state.analysis_cycle,
+            "derived_artifacts_stale": bool(state.derived.stale_derived_value_ids),
+            "stale_reason": ", ".join(state.derived.stale_derived_value_ids) or None,
             "parameter_confidence": {
                 field_name: claim.confidence
                 for field_name, claim in state.asserted.assertions.items()
@@ -1652,6 +1677,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     cycle_info = CycleInfo(
         state_revision=state_revision,
         derived_artifacts_stale=bool(reasoning.get("derived_artifacts_stale", False)),
+        stale_reason=reasoning.get("stale_reason"),
     )
 
     # ── PartnerMatchingSummary ─────────────────────────────────────────────────

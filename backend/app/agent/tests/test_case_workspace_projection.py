@@ -558,3 +558,31 @@ def test_workspace_projection_marks_level_five_when_critical_inputs_and_risks_ar
     assert material_tab.next_action
     seal_type_tab = next(tab for tab in projection.deep_dive_tabs if tab.tab_id == "seal_type")
     assert "rwdr" in seal_type_tab.derived_direction.casefold()
+
+
+def test_governed_workspace_projection_exposes_stale_derived_values() -> None:
+    from app.agent.state.models import DerivedState, DerivedValue
+
+    state = GovernedSessionState(
+        derived=DerivedState(
+            derived_values={
+                "rwdr_pv_precheck": DerivedValue(
+                    value=0.42,
+                    status="stale",
+                    derived_from_fields=["pressure_bar", "shaft_diameter_mm", "speed_rpm"],
+                    derived_from_revision=3,
+                    calculation_id="rwdr_pv_precheck",
+                    stale_reason="accepted_case_delta_changed_inputs",
+                )
+            },
+            stale_derived_value_ids=["rwdr_pv_precheck"],
+        )
+    )
+
+    projection = project_case_workspace_from_governed_state(state, chat_id="case-derived")
+
+    assert projection.cycle_info.derived_artifacts_stale is True
+    assert projection.cycle_info.stale_reason == "rwdr_pv_precheck"
+    assert projection.technical_derivations[0].derived_value_id == "rwdr_pv_precheck"
+    assert projection.technical_derivations[0].status == "stale"
+    assert projection.technical_derivations[0].stale_reason == "accepted_case_delta_changed_inputs"

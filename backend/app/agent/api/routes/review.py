@@ -52,6 +52,7 @@ from app.agent.domain.case_delta import (
     latest_proposed_delta_event,
     select_delta_fields,
 )
+from app.agent.domain.dependency_graph import mark_stale_derived_values
 
 _log = logging.getLogger(__name__)
 
@@ -295,14 +296,25 @@ async def session_case_delta_decision_endpoint(
     governance = reduce_asserted_to_governance(asserted)
 
     revision_after = rev_before + 1
+    derived = governed.derived
+    if request.action == "accept" and applied_fields:
+        derived = mark_stale_derived_values(
+            derived,
+            changed_fields=applied_fields,
+            new_revision=revision_after,
+            reason="accepted_case_delta_changed_inputs",
+        )
+
     updated = governed.model_copy(
         update={
             "observed": observed,
             "normalized": normalized,
             "asserted": asserted,
+            "derived": derived,
             "governance": governance,
             "persistence_marker": GovernedPersistenceMarker(
                 postgres_snapshot_revision=revision_after,
+                postgres_case_revision=revision_after,
             ),
         }
     )

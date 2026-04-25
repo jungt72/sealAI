@@ -322,6 +322,13 @@ class TechnicalDerivationItem(BaseModel):
     v_surface_m_s: Optional[float] = None
     pv_value_mpa_m_s: Optional[float] = None
     dn_value: Optional[float] = None
+    value: Any = None
+    derived_value_id: Optional[str] = None
+    derived_from_fields: List[str] = Field(default_factory=list)
+    derived_from_revision: int = 0
+    calculation_id: Optional[str] = None
+    ruleset_version: Optional[str] = None
+    stale_reason: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")

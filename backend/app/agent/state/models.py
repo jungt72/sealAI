@@ -298,6 +298,22 @@ class AssertedState(BaseModel):
 # DerivedState / EvidenceState — W2.1 additive six-layer mapping
 # ---------------------------------------------------------------------------
 
+DerivedValueStatus = Literal["valid", "stale", "invalid", "unknown"]
+
+
+class DerivedValue(BaseModel):
+    """v0.4 typed derived value with explicit dependency/revision metadata."""
+
+    value: Any = None
+    status: DerivedValueStatus = "unknown"
+    derived_from_fields: list[str] = Field(default_factory=list)
+    derived_from_revision: int = Field(default=0, ge=0)
+    calculated_at: Optional[str] = None
+    calculation_id: str = ""
+    ruleset_version: str = "v0.4-mvp-2026-04-25"
+    stale_reason: Optional[str] = None
+
+
 class DerivedState(AssertedState):
     """Six-layer deterministic state based on AssertedState.
 
@@ -313,6 +329,8 @@ class DerivedState(AssertedState):
     applicable_norms: list[str] = Field(default_factory=list)
     requirement_class: Optional["RequirementClass"] = None
     field_status: dict[str, FieldLifecycleStatus] = Field(default_factory=dict)
+    derived_values: dict[str, DerivedValue] = Field(default_factory=dict)
+    stale_derived_value_ids: list[str] = Field(default_factory=list)
 
 
 class EvidenceState(BaseModel):
