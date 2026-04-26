@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from app.services.capability_service import ManufacturerCapabilityProfile
+
 
 @dataclass(frozen=True, slots=True)
 class CapabilityRequirement:
@@ -41,6 +43,66 @@ class ManufacturerMatch:
 
 class ProblemFirstMatchingService:
     """Case requirements filter manufacturer capabilities, never the reverse."""
+
+    def capabilities_from_profiles(
+        self,
+        profiles: Sequence[ManufacturerCapabilityProfile],
+    ) -> list[ManufacturerCapability]:
+        capabilities: list[ManufacturerCapability] = []
+        for profile in profiles:
+            score, multiplier = _profile_scores(profile)
+            for seal_type in profile.supported_seal_types:
+                capabilities.append(
+                    ManufacturerCapability(
+                        profile.manufacturer_id,
+                        "engineering_path",
+                        {"engineering_path": seal_type},
+                        technical_score=score,
+                        verification_multiplier=multiplier,
+                    )
+                )
+            for material in profile.supported_material_families:
+                capabilities.append(
+                    ManufacturerCapability(
+                        profile.manufacturer_id,
+                        "material_expertise",
+                        {"sealing_material_family": material},
+                        technical_score=score,
+                        verification_multiplier=multiplier,
+                    )
+                )
+            capabilities.append(
+                ManufacturerCapability(
+                    profile.manufacturer_id,
+                    "certification",
+                    {"atex_capable": profile.atex_capable is True},
+                    technical_score=score,
+                    verification_multiplier=multiplier,
+                )
+            )
+            capabilities.append(
+                ManufacturerCapability(
+                    profile.manufacturer_id,
+                    "lot_size_capability",
+                    {
+                        "minimum_order_pieces": (
+                            1 if profile.small_quantity_capable else 11
+                        ),
+                        "maximum_order_pieces": None,
+                        "accepts_single_pieces": profile.small_quantity_capable is True,
+                    },
+                    technical_score=score,
+                    verification_multiplier=multiplier,
+                )
+            )
+        return capabilities
+
+    def match_manufacturer_profiles(
+        self,
+        case: Mapping[str, Any],
+        profiles: Sequence[ManufacturerCapabilityProfile],
+    ) -> list[ManufacturerMatch]:
+        return self.match_manufacturers(case, self.capabilities_from_profiles(profiles))
 
     def derive_required_capabilities(self, case: Mapping[str, Any]) -> list[CapabilityRequirement]:
         requirements = []
@@ -110,3 +172,16 @@ def _quantity(raw: Any) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _profile_scores(profile: ManufacturerCapabilityProfile) -> tuple[float, float]:
+    gap_penalty = min(30.0, len(profile.open_profile_gaps) * 4.0)
+    score = max(50.0, 92.0 - gap_penalty)
+    multiplier_by_evidence = {
+        "verified": 1.1,
+        "documented": 1.03,
+        "self_declared": 0.97,
+        "weak": 0.9,
+        "unknown": 0.9,
+    }
+    return score, multiplier_by_evidence.get(profile.evidence_level, 0.9)

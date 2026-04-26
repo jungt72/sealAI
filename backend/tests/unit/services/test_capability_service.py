@@ -12,6 +12,7 @@ from app.services.capability_service import (
     CapabilityClaimUpdate,
     CapabilityService,
     CapabilityValidationError,
+    build_capability_profile,
 )
 
 
@@ -892,3 +893,90 @@ def test_service_has_no_langgraph_agent_or_fastapi_imports() -> None:
     assert "app.agent" not in source
     assert "langgraph" not in source.lower()
     assert "fastapi" not in source.lower()
+
+
+def test_build_capability_profile_projects_adr_010_fields(service: CapabilityService, db) -> None:
+    service.create_claim(
+        db,
+        _base_claim(
+            claim_id="claim-profile-base",
+            manufacturer_id="mfr-a",
+            capability_type="product_family",
+            engineering_path="rwdr",
+            sealing_material_family="ptfe_glass_filled",
+            capability_payload={
+                "supported_asset_types": ["pump", "agitator"],
+                "supported_seal_types": ["rwdr"],
+                "supported_material_families": ["ptfe_glass_filled"],
+                "industries": ["chemical"],
+                "certifications": ["ISO9001"],
+                "geographic_scope": ["DE", "EU"],
+                "diameter_min_mm": 10,
+                "diameter_max_mm": 180,
+                "pressure_min_bar": 0,
+                "pressure_max_bar": 12,
+                "temperature_min_degC": -20,
+                "temperature_max_degC": 180,
+                "food_capable": False,
+                "pharma_capable": False,
+                "response_model": "quote_after_engineering_review",
+            },
+            confidence=5,
+            atex_capable=True,
+            standard_leadtime_weeks=3,
+        ),
+    )
+    service.create_claim(
+        db,
+        _lot_claim(
+            "claim-profile-lot",
+            "mfr-a",
+            rapid_manufacturing_available=True,
+            standard_leadtime_weeks=2,
+        ),
+    )
+
+    profile = service.build_profile(db, "mfr-a")
+
+    assert profile.manufacturer_id == "mfr-a"
+    assert profile.supported_asset_types == ("agitator", "pump")
+    assert "rwdr" in profile.supported_seal_types
+    assert "ptfe_glass_filled" in profile.supported_material_families
+    assert profile.diameter_range_mm.includes(50)
+    assert profile.pressure_range_bar.includes(10)
+    assert profile.temperature_range_c.includes(150)
+    assert profile.atex_capable is True
+    assert profile.small_quantity_capable is True
+    assert profile.prototype_capable is True
+    assert profile.evidence_level == "verified"
+    assert profile.standard_leadtime_weeks == 2
+    assert profile.open_profile_gaps == ()
+
+
+def test_build_capability_profile_surfaces_open_profile_gaps(service: CapabilityService, db) -> None:
+    service.create_claim(db, _base_claim(claim_id="claim-gap", manufacturer_id="mfr-b"))
+
+    profile = service.build_profile(db, "mfr-b")
+
+    assert "supported_asset_types" in profile.open_profile_gaps
+    assert "diameter_range" in profile.open_profile_gaps
+    assert "response_model" in profile.open_profile_gaps
+    assert profile.evidence_level == "documented"
+
+
+def test_build_capability_profile_ignores_inactive_claims(service: CapabilityService, db) -> None:
+    active = service.create_claim(db, _base_claim(claim_id="claim-active", manufacturer_id="mfr-a"))
+    withdrawn = service.create_claim(
+        db,
+        _base_claim(
+            claim_id="claim-withdrawn",
+            manufacturer_id="mfr-a",
+            status="withdrawn",
+            sealing_material_family="elastomer_fkm",
+        ),
+    )
+
+    profile = build_capability_profile("mfr-a", [active, withdrawn])
+
+    assert profile.supported_material_families == ("ptfe_glass_filled",)
+    assert profile.source_claim_ids == ("claim-active",)

@@ -114,6 +114,49 @@ class ManufacturerCapabilityClaim:
     updated_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class NumericRange:
+    min: float | None = None
+    max: float | None = None
+    unit: str = ""
+
+    def includes(self, value: float | int | None) -> bool:
+        if value is None:
+            return True
+        number = float(value)
+        if self.min is not None and number < self.min:
+            return False
+        if self.max is not None and number > self.max:
+            return False
+        return True
+
+
+@dataclass(frozen=True, slots=True)
+class ManufacturerCapabilityProfile:
+    """Typed ADR-010 capability profile derived from granular claims."""
+
+    manufacturer_id: str
+    supported_asset_types: tuple[str, ...] = ()
+    supported_seal_types: tuple[str, ...] = ()
+    supported_material_families: tuple[str, ...] = ()
+    diameter_range_mm: NumericRange = NumericRange(unit="mm")
+    pressure_range_bar: NumericRange = NumericRange(unit="bar")
+    temperature_range_c: NumericRange = NumericRange(unit="degC")
+    industries: tuple[str, ...] = ()
+    certifications: tuple[str, ...] = ()
+    food_capable: bool | None = None
+    pharma_capable: bool | None = None
+    atex_capable: bool | None = None
+    small_quantity_capable: bool | None = None
+    prototype_capable: bool | None = None
+    geographic_scope: tuple[str, ...] = ()
+    response_model: str | None = None
+    evidence_level: str = "unknown"
+    standard_leadtime_weeks: int | None = None
+    source_claim_ids: tuple[str, ...] = ()
+    open_profile_gaps: tuple[str, ...] = ()
+
+
 class CapabilityValidationError(ValueError):
     pass
 
@@ -333,6 +376,31 @@ class CapabilityService:
         )
         return [self._row_to_claim(row) for row in result.mappings().all()]
 
+    def build_profile(
+        self,
+        db: Any,
+        manufacturer_id: str,
+        *,
+        status: str | None = "active",
+    ) -> ManufacturerCapabilityProfile:
+        claims = self.list_claims(db, manufacturer_id=manufacturer_id, status=status)
+        return build_capability_profile(manufacturer_id, claims)
+
+    def list_profiles(
+        self,
+        db: Any,
+        *,
+        status: str | None = "active",
+    ) -> list[ManufacturerCapabilityProfile]:
+        claims = self.list_claims(db, status=status)
+        grouped: dict[str, list[ManufacturerCapabilityClaim]] = {}
+        for claim in claims:
+            grouped.setdefault(claim.manufacturer_id, []).append(claim)
+        return [
+            build_capability_profile(manufacturer_id, grouped[manufacturer_id])
+            for manufacturer_id in sorted(grouped)
+        ]
+
     def _validate_create(self, claim: CapabilityClaimCreate) -> None:
         for field_name in (
             "claim_id",
@@ -516,3 +584,232 @@ class CapabilityService:
     @staticmethod
     def _execute(db: Any, statement: sa.TextClause, params: Mapping[str, Any]):
         return db.execute(statement, dict(params))
+
+
+def build_capability_profile(
+    manufacturer_id: str,
+    claims: list[ManufacturerCapabilityClaim] | tuple[ManufacturerCapabilityClaim, ...],
+) -> ManufacturerCapabilityProfile:
+    active_claims = [
+        claim
+        for claim in claims
+        if claim.manufacturer_id == manufacturer_id and claim.status == "active"
+    ]
+    asset_types: set[str] = set()
+    seal_types: set[str] = set()
+    material_families: set[str] = set()
+    industries: set[str] = set()
+    certifications: set[str] = set()
+    geographic_scope: set[str] = set()
+    diameter = NumericRange(unit="mm")
+    pressure = NumericRange(unit="bar")
+    temperature = NumericRange(unit="degC")
+    food_capable: bool | None = None
+    pharma_capable: bool | None = None
+    atex_capable: bool | None = None
+    small_quantity_capable: bool | None = None
+    prototype_capable: bool | None = None
+    response_model: str | None = None
+    standard_leadtime_weeks: int | None = None
+    evidence_scores: list[int] = []
+    source_claim_ids: list[str] = []
+
+    for claim in active_claims:
+        payload = claim.capability_payload if isinstance(claim.capability_payload, Mapping) else {}
+        source_claim_ids.append(claim.claim_id)
+        evidence_scores.append(int(claim.confidence))
+        if claim.engineering_path:
+            seal_types.add(str(claim.engineering_path))
+        if claim.sealing_material_family:
+            material_families.add(str(claim.sealing_material_family))
+        if claim.atex_capable is not None:
+            atex_capable = bool(claim.atex_capable)
+        if claim.accepts_single_pieces is not None:
+            small_quantity_capable = bool(claim.accepts_single_pieces)
+        if claim.rapid_manufacturing_available is not None:
+            prototype_capable = bool(claim.rapid_manufacturing_available)
+        if claim.standard_leadtime_weeks is not None:
+            standard_leadtime_weeks = _min_int(standard_leadtime_weeks, claim.standard_leadtime_weeks)
+
+        asset_types.update(_strings(payload.get("supported_asset_types")))
+        seal_types.update(_strings(payload.get("supported_seal_types")))
+        material_families.update(_strings(payload.get("supported_material_families")))
+        industries.update(_strings(payload.get("industries")))
+        certifications.update(_strings(payload.get("certifications")))
+        geographic_scope.update(_strings(payload.get("geographic_scope")))
+
+        diameter = _merge_range(diameter, payload, "diameter", "mm")
+        pressure = _merge_range(pressure, payload, "pressure", "bar")
+        temperature = _merge_range(temperature, payload, "temperature", "degC")
+
+        food_capable = _coalesce_bool(food_capable, payload.get("food_capable"))
+        pharma_capable = _coalesce_bool(pharma_capable, payload.get("pharma_capable"))
+        atex_capable = _coalesce_bool(atex_capable, payload.get("atex_capable"))
+        small_quantity_capable = _coalesce_bool(small_quantity_capable, payload.get("small_quantity_capable"))
+        prototype_capable = _coalesce_bool(prototype_capable, payload.get("prototype_capable"))
+        response_model = _first_text(response_model, payload.get("response_model"))
+
+    gaps = _profile_gaps(
+        asset_types=asset_types,
+        seal_types=seal_types,
+        material_families=material_families,
+        diameter=diameter,
+        pressure=pressure,
+        temperature=temperature,
+        geographic_scope=geographic_scope,
+        response_model=response_model,
+    )
+    return ManufacturerCapabilityProfile(
+        manufacturer_id=manufacturer_id,
+        supported_asset_types=tuple(sorted(asset_types)),
+        supported_seal_types=tuple(sorted(seal_types)),
+        supported_material_families=tuple(sorted(material_families)),
+        diameter_range_mm=diameter,
+        pressure_range_bar=pressure,
+        temperature_range_c=temperature,
+        industries=tuple(sorted(industries)),
+        certifications=tuple(sorted(certifications)),
+        food_capable=food_capable,
+        pharma_capable=pharma_capable,
+        atex_capable=atex_capable,
+        small_quantity_capable=small_quantity_capable,
+        prototype_capable=prototype_capable,
+        geographic_scope=tuple(sorted(geographic_scope)),
+        response_model=response_model,
+        evidence_level=_evidence_level(evidence_scores),
+        standard_leadtime_weeks=standard_leadtime_weeks,
+        source_claim_ids=tuple(source_claim_ids),
+        open_profile_gaps=tuple(gaps),
+    )
+
+
+def _strings(value: Any) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, Mapping):
+        values = value.values()
+    else:
+        try:
+            values = list(value)
+        except TypeError:
+            values = [value]
+    return {str(item).strip() for item in values if str(item).strip()}
+
+
+def _merge_range(
+    current: NumericRange,
+    payload: Mapping[str, Any],
+    prefix: str,
+    unit: str,
+) -> NumericRange:
+    nested = payload.get(f"{prefix}_range") if isinstance(payload.get(f"{prefix}_range"), Mapping) else {}
+    minimum = _number(_first_present(payload, f"{prefix}_min_{unit}", nested, "min"))
+    maximum = _number(_first_present(payload, f"{prefix}_max_{unit}", nested, "max"))
+    return NumericRange(
+        min=_min_non_none(current.min, minimum),
+        max=_max_non_none(current.max, maximum),
+        unit=unit,
+    )
+
+
+def _first_present(
+    primary: Mapping[str, Any],
+    primary_key: str,
+    secondary: Mapping[str, Any],
+    secondary_key: str,
+) -> Any:
+    if primary_key in primary:
+        return primary[primary_key]
+    return secondary.get(secondary_key)
+
+
+def _profile_gaps(
+    *,
+    asset_types: set[str],
+    seal_types: set[str],
+    material_families: set[str],
+    diameter: NumericRange,
+    pressure: NumericRange,
+    temperature: NumericRange,
+    geographic_scope: set[str],
+    response_model: str | None,
+) -> list[str]:
+    gaps: list[str] = []
+    if not asset_types:
+        gaps.append("supported_asset_types")
+    if not seal_types:
+        gaps.append("supported_seal_types")
+    if not material_families:
+        gaps.append("supported_material_families")
+    if diameter.min is None or diameter.max is None:
+        gaps.append("diameter_range")
+    if pressure.min is None or pressure.max is None:
+        gaps.append("pressure_range")
+    if temperature.min is None or temperature.max is None:
+        gaps.append("temperature_range")
+    if not geographic_scope:
+        gaps.append("geographic_scope")
+    if response_model is None:
+        gaps.append("response_model")
+    return gaps
+
+
+def _evidence_level(scores: list[int]) -> str:
+    if not scores:
+        return "unknown"
+    best = max(scores)
+    if best >= 5:
+        return "verified"
+    if best >= 4:
+        return "documented"
+    if best >= 2:
+        return "self_declared"
+    return "weak"
+
+
+def _coalesce_bool(current: bool | None, raw: Any) -> bool | None:
+    if raw is None:
+        return current
+    return bool(raw)
+
+
+def _first_text(current: str | None, raw: Any) -> str | None:
+    if current:
+        return current
+    text = str(raw or "").strip()
+    return text or None
+
+
+def _min_int(current: int | None, candidate: int | None) -> int | None:
+    if candidate is None:
+        return current
+    if current is None:
+        return int(candidate)
+    return min(current, int(candidate))
+
+
+def _min_non_none(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return min(left, right)
+
+
+def _max_non_none(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
+
+
+def _number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
