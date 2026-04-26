@@ -33,6 +33,8 @@ from app.agent.domain.requirement_class import (
     RequirementClassSpecialistInput,
     run_requirement_class_specialist,
 )
+from app.services.conflict_detection_service import ConflictCandidate, ConflictDetectionService
+
 from app.agent.state.models import (
     AssertedClaim,
     AssertedState,
@@ -299,6 +301,7 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
             extractions_by_field.setdefault(ext.field_name, []).append(ext)
 
     # ── Step 3: resolve parameters ───────────────────────────────────────
+    conflict_detector = ConflictDetectionService()
     parameters: dict[str, NormalizedParameter] = {}
     conflicts: list[ConflictRef] = []
     assumptions: list[AssumptionRef] = []
@@ -336,18 +339,30 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
         )
         best = exts_sorted[0]
 
-        # Conflict detection: different raw_value strings from LLM extractions
-        unique_values = {_canonical_value(e.raw_value) for e in exts}
-        if len(unique_values) > 1:
+        conflict_result = conflict_detector.detect_observed_candidates(
+            field_name,
+            [
+                ConflictCandidate(
+                    field_name=field_name,
+                    value=e.raw_value,
+                    provenance=e.source,
+                    source_turn_index=e.turn_index,
+                )
+                for e in exts
+            ],
+        )
+        for detected in conflict_result.conflicts:
             conflicts.append(ConflictRef(
                 field_name=field_name,
-                description=(
-                    f"Conflicting extractions for '{field_name}': "
-                    + ", ".join(repr(v) for v in sorted(str(v) for v in unique_values))
-                ),
-                severity="warning",
+                description=detected.description,
+                severity=detected.severity,
             ))
-            log.debug("[reducer] conflict detected for field=%s values=%s", field_name, unique_values)
+            log.debug(
+                "[reducer] conflict detected for field=%s current=%r candidate=%r",
+                field_name,
+                detected.current_value,
+                detected.candidate_value,
+            )
 
         # Confidence grade of the best extraction
         confidence: ConfidenceLevel = _extraction_confidence(best)
