@@ -32,6 +32,14 @@ def test_mutation_events_table_exists(test_db_engine_at_head):
         "tenant_id",
         "event_type",
         "payload",
+        "source_turn_id",
+        "source_document_id",
+        "proposed_delta",
+        "accepted_delta",
+        "rejected_delta",
+        "rejection_reasons",
+        "ruleset_version",
+        "model_id",
         "case_revision_before",
         "case_revision_after",
         "actor",
@@ -51,6 +59,10 @@ def test_indexes_created(test_db_engine_at_head):
         "idx_mutation_events_tenant_id",
         "idx_mutation_events_event_type",
         "idx_mutation_events_created_at",
+        "idx_mutation_events_source_turn_id",
+        "idx_mutation_events_source_document_id",
+        "idx_mutation_events_ruleset_version",
+        "idx_mutation_events_model_id",
     }
     missing = expected - indexes
     assert not missing, f"Missing indexes: {missing}"

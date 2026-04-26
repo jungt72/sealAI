@@ -390,12 +390,21 @@ class CaseService:
         actor: str,
         actor_type: ActorType,
     ) -> MutationEventModel:
+        audit_fields = _extract_mutation_audit_fields(payload)
         return MutationEventModel(
             mutation_id=str(uuid.uuid4()),
             case_id=str(case_row.id),
             tenant_id=self._require_tenant_id(tenant_id),
             event_type=event_type.value,
             payload=payload,
+            source_turn_id=audit_fields["source_turn_id"],
+            source_document_id=audit_fields["source_document_id"],
+            proposed_delta=audit_fields["proposed_delta"],
+            accepted_delta=audit_fields["accepted_delta"],
+            rejected_delta=audit_fields["rejected_delta"],
+            rejection_reasons=audit_fields["rejection_reasons"],
+            ruleset_version=audit_fields["ruleset_version"],
+            model_id=audit_fields["model_id"],
             case_revision_before=old_revision,
             case_revision_after=new_revision,
             actor=actor,
@@ -545,3 +554,38 @@ class CaseService:
         if not normalized:
             raise InvalidMutationError("tenant_id is required")
         return normalized
+
+
+def _extract_mutation_audit_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    run_meta = payload.get("run_meta") if isinstance(payload.get("run_meta"), dict) else {}
+    snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+    return {
+        "source_turn_id": _optional_string(payload.get("source_turn_id") or payload.get("turn_id")),
+        "source_document_id": _optional_string(payload.get("source_document_id") or payload.get("document_id")),
+        "proposed_delta": _dict_or_empty(payload.get("proposed_delta") or payload.get("proposed_case_delta")),
+        "accepted_delta": _dict_or_empty(payload.get("accepted_delta")),
+        "rejected_delta": _dict_or_empty(payload.get("rejected_delta")),
+        "rejection_reasons": _dict_or_empty(payload.get("rejection_reasons")),
+        "ruleset_version": _optional_string(
+            payload.get("ruleset_version")
+            or run_meta.get("ruleset_version")
+            or snapshot.get("ruleset_version")
+        ),
+        "model_id": _optional_string(
+            payload.get("model_id")
+            or run_meta.get("model_id")
+            or snapshot.get("model_id")
+            or snapshot.get("model_version")
+        ),
+    }
+
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None

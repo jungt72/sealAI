@@ -51,6 +51,30 @@ class MutationEventModel(Base):
         nullable=False,
         server_default=text("'{}'::jsonb"),
     )
+    source_turn_id = Column(String(64), nullable=True)
+    source_document_id = Column(String(64), nullable=True)
+    proposed_delta = Column(
+        JSON().with_variant(JSONB(astext_type=Text()), "postgresql"),
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    accepted_delta = Column(
+        JSON().with_variant(JSONB(astext_type=Text()), "postgresql"),
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    rejected_delta = Column(
+        JSON().with_variant(JSONB(astext_type=Text()), "postgresql"),
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    rejection_reasons = Column(
+        JSON().with_variant(JSONB(astext_type=Text()), "postgresql"),
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    ruleset_version = Column(String(64), nullable=True)
+    model_id = Column(String(128), nullable=True)
     case_revision_before = Column(Integer, nullable=False)
     case_revision_after = Column(Integer, nullable=False)
     actor = Column(String(128), nullable=False)
@@ -83,10 +107,10 @@ class MutationEventModel(Base):
             raise ValueError(f"{key} is required")
         return normalized
 
-    @validates("payload")
-    def _validate_payload(self, _key: str, value: Any) -> dict[str, Any]:
+    @validates("payload", "proposed_delta", "accepted_delta", "rejected_delta", "rejection_reasons")
+    def _validate_json_object(self, key: str, value: Any) -> dict[str, Any]:
         if not isinstance(value, dict):
-            raise ValueError("payload must be a dict")
+            raise ValueError(f"{key} must be a dict")
         return value
 
     @validates("case_revision_before", "case_revision_after")

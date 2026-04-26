@@ -68,6 +68,14 @@ def _create_sqlite_mutation_events_table(engine: Engine) -> None:
                     tenant_id VARCHAR(255) NOT NULL,
                     event_type VARCHAR(64) NOT NULL,
                     payload JSON NOT NULL DEFAULT '{}',
+                    source_turn_id VARCHAR(64),
+                    source_document_id VARCHAR(64),
+                    proposed_delta JSON NOT NULL DEFAULT '{}',
+                    accepted_delta JSON NOT NULL DEFAULT '{}',
+                    rejected_delta JSON NOT NULL DEFAULT '{}',
+                    rejection_reasons JSON NOT NULL DEFAULT '{}',
+                    ruleset_version VARCHAR(64),
+                    model_id VARCHAR(128),
                     case_revision_before INTEGER NOT NULL,
                     case_revision_after INTEGER NOT NULL,
                     actor VARCHAR(128) NOT NULL,
@@ -89,7 +97,7 @@ class TestMutationEventModelStructure:
         assert MutationEventModel.__tablename__ == "mutation_events"
 
     def test_expected_columns(self) -> None:
-        """All 10 columns declared."""
+        """All v0.4 audit columns declared."""
 
         cols = {c.name for c in MutationEventModel.__table__.columns}
         expected = {
@@ -98,6 +106,14 @@ class TestMutationEventModelStructure:
             "tenant_id",
             "event_type",
             "payload",
+            "source_turn_id",
+            "source_document_id",
+            "proposed_delta",
+            "accepted_delta",
+            "rejected_delta",
+            "rejection_reasons",
+            "ruleset_version",
+            "model_id",
             "case_revision_before",
             "case_revision_after",
             "actor",
@@ -113,6 +129,10 @@ class TestMutationEventModelStructure:
         assert str(columns.case_id.type) == "VARCHAR(36)"
         assert str(columns.tenant_id.type) == "VARCHAR(255)"
         assert str(columns.event_type.type) == "VARCHAR(64)"
+        assert str(columns.source_turn_id.type) == "VARCHAR(64)"
+        assert str(columns.source_document_id.type) == "VARCHAR(64)"
+        assert str(columns.ruleset_version.type) == "VARCHAR(64)"
+        assert str(columns.model_id.type) == "VARCHAR(128)"
         assert str(columns.case_revision_before.type) == "INTEGER"
         assert str(columns.case_revision_after.type) == "INTEGER"
         assert str(columns.actor.type) == "VARCHAR(128)"
@@ -120,6 +140,14 @@ class TestMutationEventModelStructure:
         assert not columns.case_id.nullable
         assert not columns.tenant_id.nullable
         assert not columns.payload.nullable
+        assert not columns.proposed_delta.nullable
+        assert not columns.accepted_delta.nullable
+        assert not columns.rejected_delta.nullable
+        assert not columns.rejection_reasons.nullable
+        assert columns.source_turn_id.nullable
+        assert columns.source_document_id.nullable
+        assert columns.ruleset_version.nullable
+        assert columns.model_id.nullable
         assert not columns.created_at.nullable
 
     def test_payload_default_matches_migration(self) -> None:
@@ -168,6 +196,13 @@ class TestMutationEventModelPersistence:
             tenant_id="tenant-test",
             event_type="case_created",
             payload={"any": "dict"},
+            proposed_delta={"medium": {"proposed_value": "Oel"}},
+            accepted_delta={"medium": {"status": "accepted"}},
+            rejected_delta={},
+            rejection_reasons={},
+            source_turn_id="turn-1",
+            ruleset_version="v0.4-test",
+            model_id="model-test",
             case_revision_before=0,
             case_revision_after=1,
             actor="test-user",
@@ -183,6 +218,11 @@ class TestMutationEventModelPersistence:
         )
         assert retrieved.event_type == "case_created"
         assert retrieved.payload == {"any": "dict"}
+        assert retrieved.proposed_delta == {"medium": {"proposed_value": "Oel"}}
+        assert retrieved.accepted_delta == {"medium": {"status": "accepted"}}
+        assert retrieved.source_turn_id == "turn-1"
+        assert retrieved.ruleset_version == "v0.4-test"
+        assert retrieved.model_id == "model-test"
         assert retrieved.case_revision_after - retrieved.case_revision_before == 1
 
     def test_repr_readable(self, session: Session) -> None:
@@ -224,6 +264,11 @@ class TestMutationEventModelPersistence:
     def test_payload_must_be_dict(self) -> None:
         with pytest.raises(ValueError, match="payload must be a dict"):
             MutationEventModel(payload=["not", "a", "dict"])
+
+    @pytest.mark.parametrize("field_name", ["proposed_delta", "accepted_delta", "rejected_delta", "rejection_reasons"])
+    def test_delta_columns_must_be_dict(self, field_name: str) -> None:
+        with pytest.raises(ValueError, match=f"{field_name} must be a dict"):
+            MutationEventModel(**{field_name: ["not", "a", "dict"]})
 
     @pytest.mark.parametrize(
         ("field_name", "value", "message"),

@@ -399,6 +399,44 @@ async def test_apply_mutation_with_correct_expected_revision_succeeds(
 
 
 @pytest.mark.asyncio
+async def test_apply_mutation_populates_first_class_event_audit_fields(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload(status="qualified")
+    payload.update(
+        {
+            "source_turn_id": "turn-42",
+            "source_document_id": "doc-7",
+            "proposed_case_delta": {"medium": {"proposed_value": "Oel"}},
+            "accepted_delta": {"medium": {"status": "accepted"}},
+            "rejected_delta": {"pressure_bar": {"status": "rejected"}},
+            "rejection_reasons": {"pressure_bar": "conflict"},
+            "ruleset_version": "v0.4-test",
+            "model_id": "gpt-test",
+        }
+    )
+
+    mutation = await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    assert mutation.source_turn_id == "turn-42"
+    assert mutation.source_document_id == "doc-7"
+    assert mutation.proposed_delta == {"medium": {"proposed_value": "Oel"}}
+    assert mutation.accepted_delta == {"medium": {"status": "accepted"}}
+    assert mutation.rejected_delta == {"pressure_bar": {"status": "rejected"}}
+    assert mutation.rejection_reasons == {"pressure_bar": "conflict"}
+    assert mutation.ruleset_version == "v0.4-test"
+    assert mutation.model_id == "gpt-test"
+
+
+@pytest.mark.asyncio
 async def test_apply_mutation_persists_false_readiness_case_updates(
     session: _FakeAsyncSession,
 ) -> None:
