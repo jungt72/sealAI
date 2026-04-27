@@ -1,5 +1,5 @@
 import pytest
-from app.agent.agent.tools import submit_claim
+from app.agent.graph.tools import submit_claim
 from app.agent.evidence.models import ClaimType
 from pydantic import ValidationError
 

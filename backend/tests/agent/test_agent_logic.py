@@ -1,4 +1,4 @@
-from app.agent.agent.logic import process_cycle_update
+from app.agent.domain.logic import process_cycle_update
 from app.agent.cli import create_initial_state
 
 
