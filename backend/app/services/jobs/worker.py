@@ -18,7 +18,7 @@ IngestFunc = Callable[..., Any]
 async def pick_next_rag_document(session: AsyncSession) -> RagDocument | None:
     stmt = (
         select(RagDocument)
-        .where(RagDocument.status.in_(("queued", "processing")))
+        .where(RagDocument.status.in_(("queued", "processing")), RagDocument.enabled.is_(True))
         .order_by(RagDocument.created_at.asc())
         .with_for_update(skip_locked=True)
     )
@@ -85,6 +85,12 @@ async def process_rag_document(
         if file_size is not None:
             stats["file_size"] = file_size
         doc.status = "indexed"
+        doc.extraction_status = "indexed"
+        doc.provenance = doc.provenance or "documented"
+        if doc.evidence_refs is None:
+            doc.evidence_refs = []
+        if doc.extracted_candidates is None:
+            doc.extracted_candidates = []
         doc.ingest_stats = stats
         doc.error = None
         track_rag_ingest(doc.source_system or "upload", "indexed", elapsed_ms / 1000.0)
@@ -92,6 +98,7 @@ async def process_rag_document(
             doc.size_bytes = file_size
     except Exception as exc:
         doc.status = "error"
+        doc.extraction_status = "error"
         doc.error = f"{type(exc).__name__}: {exc}"
         track_rag_ingest(doc.source_system or "upload", "error", time.perf_counter() - started)
     session.add(doc)

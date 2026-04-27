@@ -58,7 +58,7 @@ def anyio_backend() -> str:
 
 @pytest.mark.anyio
 async def test_internal_paperless_webhook_accepts_valid_payload(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(rag_endpoint.settings, "paperless_webhook_token", "secret-token")
+    monkeypatch.setattr(rag_endpoint.settings, "paperless_webhook_token", "secret-token", raising=False)
 
     async def _fake_sync(_session):
         return {"status": "success", "queued": 1, "ingest_ready": 1, "pilot_ready": 1}
@@ -80,7 +80,7 @@ async def test_internal_paperless_webhook_accepts_valid_payload(monkeypatch: pyt
 async def test_internal_paperless_webhook_rejects_missing_document_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(rag_endpoint.settings, "paperless_webhook_token", "secret-token")
+    monkeypatch.setattr(rag_endpoint.settings, "paperless_webhook_token", "secret-token", raising=False)
 
     with pytest.raises(HTTPException) as exc:
         await rag_endpoint.ingest_paperless_webhook(
@@ -94,7 +94,7 @@ async def test_internal_paperless_webhook_rejects_missing_document_id(
 
 @pytest.mark.anyio
 async def test_internal_paperless_webhook_rejects_bad_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(rag_endpoint.settings, "paperless_webhook_token", "secret-token")
+    monkeypatch.setattr(rag_endpoint.settings, "paperless_webhook_token", "secret-token", raising=False)
 
     with pytest.raises(HTTPException) as exc:
         await rag_endpoint.ingest_paperless_webhook(

@@ -15,6 +15,7 @@ def test_parse_paperless_tags_extracts_w26_target_metadata() -> None:
     assert parsed["source"] == "hersteller-name"
     assert parsed["sts_mat_codes"] == ["STS-MAT-SIC-A1"]
     assert parsed["sts_type_codes"] == ["STS-TYPE-GS-CART"]
+    assert parsed["rag_enabled"] is True
 
 
 def test_evaluate_paperless_tag_readiness_marks_pilot_ready() -> None:
@@ -33,6 +34,30 @@ def test_evaluate_paperless_tag_readiness_reports_missing_pilot_fields() -> None
         ]
     )
 
-    assert readiness["ingest_ready"] is True
+    assert readiness["rag_enabled"] is False
+    assert readiness["ingest_ready"] is False
     assert readiness["pilot_ready"] is False
     assert readiness["missing_pilot_fields"] == ["sts_type", "lang", "source"]
+
+
+def test_evaluate_paperless_tag_readiness_requires_explicit_rag_flag() -> None:
+    without_flag = evaluate_paperless_tag_readiness([
+        "doc_type:datasheet",
+        "sts_mat:STS-MAT-SIC-A1",
+        "sts_type:STS-TYPE-GS-CART",
+        "lang:de",
+        "source:hersteller-name",
+    ])
+    with_flag = evaluate_paperless_tag_readiness([
+        "sealai:rag",
+        "doc_type:datasheet",
+        "sts_mat:STS-MAT-SIC-A1",
+        "sts_type:STS-TYPE-GS-CART",
+        "lang:de",
+        "source:hersteller-name",
+    ])
+
+    assert without_flag["ingest_ready"] is False
+    assert without_flag["pilot_ready"] is False
+    assert with_flag["ingest_ready"] is True
+    assert with_flag["pilot_ready"] is True

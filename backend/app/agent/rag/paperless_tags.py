@@ -14,7 +14,19 @@ PAPERLESS_TAG_PREFIXES: dict[str, str] = {
     "industry": "industry:",
 }
 
+PAPERLESS_RAG_ENABLE_TAGS: frozenset[str] = frozenset(
+    {
+        "rag:enabled",
+        "rag:enable",
+        "rag:yes",
+        "sealai:rag",
+        "sealai-rag",
+        "sealai_rag",
+    }
+)
+
 PAPERLESS_PILOT_TAGS: tuple[str, ...] = (
+    "rag:enabled",
     "doc_type:datasheet",
     "sts_mat:STS-MAT-SIC-A1",
     "sts_type:STS-TYPE-GS-CART",
@@ -61,10 +73,16 @@ def _values_for_prefix(tags: list[str], prefix: str) -> list[str]:
     return [value for value in values if value]
 
 
+def has_paperless_rag_flag(raw_tags: Any) -> bool:
+    tags = _coerce_tags(raw_tags)
+    return any(tag.strip().lower() in PAPERLESS_RAG_ENABLE_TAGS for tag in tags)
+
+
 def parse_paperless_tags(raw_tags: Any) -> dict[str, Any]:
     tags = _coerce_tags(raw_tags)
     parsed = {
         "raw_tags": tags,
+        "rag_enabled": has_paperless_rag_flag(tags),
         "doc_type": None,
         "language": None,
         "source": None,
@@ -96,7 +114,8 @@ def evaluate_paperless_tag_readiness(raw_tags: Any) -> dict[str, Any]:
     return {
         "parsed": parsed,
         "present_fields": sorted(present_fields),
-        "ingest_ready": bool(parsed["doc_type"] and has_ingest_basis),
-        "pilot_ready": len(missing_pilot_fields) == 0,
+        "rag_enabled": bool(parsed["rag_enabled"]),
+        "ingest_ready": bool(parsed["rag_enabled"] and parsed["doc_type"] and has_ingest_basis),
+        "pilot_ready": bool(parsed["rag_enabled"] and len(missing_pilot_fields) == 0),
         "missing_pilot_fields": missing_pilot_fields,
     }

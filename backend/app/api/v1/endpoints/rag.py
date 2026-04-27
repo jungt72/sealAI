@@ -105,7 +105,7 @@ def _is_admin(user: RequestUser) -> bool:
 
 
 def _require_paperless_webhook_token(received_token: str | None) -> None:
-    expected = (settings.paperless_webhook_token or "").strip()
+    expected = (getattr(settings, "paperless_webhook_token", None) or "").strip()
     if not expected:
         raise HTTPException(
             status_code=503,
@@ -433,6 +433,11 @@ async def upload_rag_document(
         existing_doc.tags = tags_list
         existing_doc.sha256 = sha256
         existing_doc.path = str(retry_path)
+        existing_doc.enabled = True
+        existing_doc.extraction_status = "candidate_extraction_pending" if case_id else (existing_doc.extraction_status or "not_extracted")
+        existing_doc.extracted_candidates = existing_doc.extracted_candidates or []
+        existing_doc.evidence_refs = existing_doc.evidence_refs or []
+        existing_doc.provenance = "documented"
         session.add(existing_doc)
         await session.commit()
         await session.refresh(existing_doc)
@@ -463,6 +468,10 @@ async def upload_rag_document(
         tags=tags_list,
         sha256=sha256,
         path=str(target_path),
+        extraction_status="candidate_extraction_pending" if case_id else "not_extracted",
+        extracted_candidates=[],
+        evidence_refs=[],
+        provenance="documented",
     )
     doc.size_bytes = size_bytes
     session.add(doc)
@@ -538,6 +547,11 @@ async def get_rag_document(
         "status": doc.status,
         "error": doc.error,
         "ingest_stats": doc.ingest_stats,
+        "enabled": doc.enabled,
+        "extraction_status": doc.extraction_status,
+        "extracted_candidates": doc.extracted_candidates or [],
+        "evidence_refs": doc.evidence_refs or [],
+        "provenance": doc.provenance,
     }
 
 
@@ -618,6 +632,9 @@ async def reingest_rag_document(
     doc.status = "processing"
     doc.error = None
     doc.ingest_stats = None
+    doc.enabled = True
+    doc.extraction_status = doc.extraction_status or "not_extracted"
+    doc.provenance = doc.provenance or "documented"
     session.add(doc)
     await session.commit()
 
@@ -691,6 +708,11 @@ async def list_rag_documents(
                 "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
                 "ingest_stats": doc.ingest_stats,
                 "error": doc.error,
+                "enabled": doc.enabled,
+                "extraction_status": doc.extraction_status,
+                "extracted_candidates": doc.extracted_candidates or [],
+                "evidence_refs": doc.evidence_refs or [],
+                "provenance": doc.provenance,
             }
         )
     return {"items": items}
