@@ -1,4 +1,5 @@
-from app.agent.agent.selection import MANUFACTURER_VALIDATION_REPLY, build_final_reply, build_selection_state
+from app.agent.runtime.reply_builder import MANUFACTURER_VALIDATION_REPLY, build_final_reply
+from app.agent.runtime.selection import build_selection_state
 
 
 def _qualified_fact_card(evidence_id: str, *, grade_name: str = "F1") -> dict:

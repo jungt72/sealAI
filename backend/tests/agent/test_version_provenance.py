@@ -22,7 +22,7 @@ for key, value in {
 }.items():
     os.environ.setdefault(key, value)
 
-from app.agent.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
+from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from prompts.builder import PromptBuilder
 from app.agent.api.router import (
     _build_fast_path_version_provenance,
