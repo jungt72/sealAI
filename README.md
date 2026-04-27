@@ -42,4 +42,4 @@ See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, li
 - Metrics: `http://localhost:8000/metrics`
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000` (`admin` / `admin`)
-- Smoke test: `python test_monitoring.py`
+- Smoke test: `cd /home/thorsten/sealai && pytest backend/app/agent/tests -q --maxfail=1 --ignore=backend/app/agent/tests/test_agent_health.py`
