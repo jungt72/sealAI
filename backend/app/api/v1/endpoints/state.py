@@ -99,10 +99,22 @@ async def get_case_workspace(
         load_structured_residual_state,
     )
 
-    governed_state = await _load_preferred_governed_workspace_source(
-        current_user=user,
-        session_id=thread_id,
-    )
+    try:
+        governed_state = await _load_preferred_governed_workspace_source(
+            current_user=user,
+            session_id=thread_id,
+        )
+    except Exception as exc:  # pragma: no cover - exercised through integration tests
+        logger.warning(
+            "state_workspace_governed_source_unavailable",
+            extra={
+                "thread_id": thread_id,
+                "request_id": request_id,
+                "error_type": type(exc).__name__,
+            },
+        )
+        governed_state = None
+
     if governed_state is not None:
         projection = project_case_workspace_from_governed_state(governed_state, chat_id=thread_id)
     else:
@@ -472,10 +484,21 @@ async def get_graph_state_endpoint(
         load_structured_residual_state,
     )
 
-    governed_state = await _load_preferred_governed_workspace_source(
-        current_user=user,
-        session_id=chat_id,
-    )
+    try:
+        governed_state = await _load_preferred_governed_workspace_source(
+            current_user=user,
+            session_id=chat_id,
+        )
+    except Exception as exc:  # pragma: no cover - defensive production fallback
+        logger.warning(
+            "state_facade_governed_source_unavailable",
+            extra={
+                "chat_id": chat_id,
+                "request_id": request_id,
+                "error_type": type(exc).__name__,
+            },
+        )
+        governed_state = None
     logger.info(
         "state_facade_hydration",
         extra={"chat_id": chat_id, "request_id": request_id},
