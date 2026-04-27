@@ -72,6 +72,11 @@ def test_tables_and_columns_exist(test_db_engine_at_head):
             "source_kind",
             "created_by",
             "created_at",
+            "consent_status",
+            "consent_granted_at",
+            "consent_granted_by",
+            "consent_scope",
+            "dispatch_enabled",
         },
         "golden_cases": {
             "golden_case_id",
@@ -144,6 +149,7 @@ def test_fks_constraints_and_indexes_exist(test_db_engine_at_head):
     }
     assert "ck_inquiry_extracts_artifact_type" in checks_by_table["inquiry_extracts"]
     assert "ck_inquiry_extracts_source_kind" in checks_by_table["inquiry_extracts"]
+    assert "ck_inquiry_extracts_consent_status" in checks_by_table["inquiry_extracts"]
     assert "ck_golden_cases_request_type" in checks_by_table["golden_cases"]
     assert "ck_golden_cases_engineering_path" in checks_by_table["golden_cases"]
     assert "ck_golden_cases_expected_output_class" in checks_by_table["golden_cases"]
@@ -168,6 +174,7 @@ def test_fks_constraints_and_indexes_exist(test_db_engine_at_head):
         in indexes_by_table["inquiry_extracts"]
     )
     assert "ix_inquiry_extracts_artifact_type" in indexes_by_table["inquiry_extracts"]
+    assert "ix_inquiry_extracts_consent_status" in indexes_by_table["inquiry_extracts"]
     assert "ix_golden_cases_stable_key" in indexes_by_table["golden_cases"]
     assert (
         "ix_golden_cases_request_path_material" in indexes_by_table["golden_cases"]

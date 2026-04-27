@@ -188,7 +188,7 @@ class InquiryExtractService:
         case_revision = _required_int(context, "case_revision")
         if case_revision < 0:
             raise InquiryExtractValidationError("case_revision must be nonnegative")
-        if artifact_type not in {"manufacturer_inquiry", "technical_summary"}:
+        if artifact_type not in {"manufacturer_inquiry", "technical_summary", "rfq_preview"}:
             raise InquiryExtractValidationError("artifact_type is not supported")
         if source_kind not in {"case_revision", "manual", "migration"}:
             raise InquiryExtractValidationError("source_kind is not supported")
