@@ -6,7 +6,7 @@ and verifies clean output passes through unchanged.
 """
 import pytest
 
-from app.agent.agent.output_guard import (
+from app.agent.runtime.output_guard import (
     FAST_PATH_GUARD_FALLBACK,
     check_fast_path_output,
 )

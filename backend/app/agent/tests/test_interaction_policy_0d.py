@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.agent.interaction_policy import (
+from app.agent.runtime.interaction_policy import (
     _check_input_blocked,
     _is_meta_query,
     _fast_path_upgrade_to_structured,

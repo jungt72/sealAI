@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.agent.state import OutcomeLayer, SealingAIState
+from app.agent.state.agent_state import OutcomeLayer, SealingAIState
 
 
 # ---------------------------------------------------------------------------

@@ -21,8 +21,8 @@ from unittest.mock import patch
 
 import pytest
 
-from app.agent.agent.interaction_policy import evaluate_policy
-from app.agent.agent.policy import InteractionPolicyDecision
+from app.agent.runtime.interaction_policy import evaluate_policy
+from app.agent.runtime.policy import InteractionPolicyDecision
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.output_classifier import OutputClass
 

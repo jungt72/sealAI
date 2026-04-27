@@ -1,6 +1,6 @@
 import re
 
-from app.agent.agent.selection import (
+from app.agent.runtime.reply_builder import (
     MANUFACTURER_VALIDATION_REPLY,
     NEUTRAL_SCOPE_REPLY,
     SAFEGUARDED_WITHHELD_REPLY,
