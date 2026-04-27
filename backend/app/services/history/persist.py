@@ -8,7 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from langchain_core.messages import BaseMessage, messages_from_dict, messages_to_dict
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.agent.agent.state import AgentState
+from app.agent.state.agent_state import AgentState
 from app.agent.state.case_state import ensure_case_state
 from app.services.chat.conversations import upsert_conversation
 from app.services.jobs.queue import enqueue_job
