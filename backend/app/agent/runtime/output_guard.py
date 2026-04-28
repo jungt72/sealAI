@@ -51,6 +51,7 @@ _RECOMMENDATION_PATTERNS: Sequence[str] = (
 # Suitability / fitness-for-use assertions
 _SUITABILITY_PATTERNS: Sequence[str] = (
     r"\b\w+\s+ist\s+(?:gut\s+)?geeignet\b",
+    r"\bmaterial\s+ist\s+geeignet\b",
     r"\b(bestens|gut|hervorragend|sehr\s+gut)\s+geeignet\b",
     r"\b(ideal|optimal|perfekt)\s+für\b",
     r"\b(unkritisch|problemlos|bedenkenlos|ohne\s+Bedenken)\b",
@@ -59,6 +60,21 @@ _SUITABILITY_PATTERNS: Sequence[str] = (
     # "Das funktioniert durch..." is legitimate mechanism explanation, not a
     # suitability assertion. "Das geht problemlos" is still caught by "problemlos".
     r"\b(freigegeben|zugelassen)\s+für\b",
+)
+
+# Explicit compliance / final-release overclaims. These phrases are forbidden
+# without evidence and must not be emitted by free LLM text.
+_COMPLIANCE_OVERCLAIM_PATTERNS: Sequence[str] = (
+    r"\bfda[-\s]?konform\b",
+    r"\batex[-\s]?zertifiziert\b",
+    r"\bfood\s+contact\s+freigegeben\b",
+    r"\btrinkwasser\s+zugelassen\b",
+    r"\b(?:pharma|lebensmittel|food)\s+(?:freigegeben|zugelassen|zertifiziert)\b",
+    r"\bmaterial\s+ist\s+geeignet\b",
+    r"\bdichtung\s+ist\s+freigegeben\b",
+    r"\btechnisch\s+validiert\b",
+    r"\bgarantiert\s+passend\b",
+    r"\bfinal\s+freigegeben\b",
 )
 
 # Form-dump phrases are disallowed by v0.4: SeaLAI asks one good next
@@ -75,6 +91,7 @@ for _cat, _pats in (
     ("manufacturer", _MANUFACTURER_PATTERNS),
     ("recommendation", _RECOMMENDATION_PATTERNS),
     ("suitability", _SUITABILITY_PATTERNS),
+    ("compliance_overclaim", _COMPLIANCE_OVERCLAIM_PATTERNS),
     ("form_dump", _FORM_DUMP_PATTERNS),
 ):
     for _p in _pats:

@@ -17,6 +17,21 @@ class EvalCategory(str, Enum):
 
 REQUIRED_EVAL_CATEGORIES: tuple[EvalCategory, ...] = tuple(EvalCategory)
 
+_SAFETY_LANGUAGE_FORBIDDEN_FRAGMENTS: tuple[str, ...] = (
+    "fda-konform",
+    "fda konform",
+    "atex-zertifiziert",
+    "atex zertifiziert",
+    "food contact freigegeben",
+    "trinkwasser zugelassen",
+    "material ist geeignet",
+    "dichtung ist freigegeben",
+    "technisch validiert",
+    "garantiert passend",
+    "final freigegeben",
+    "sicher geeignet",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class EvalResult:
@@ -39,7 +54,7 @@ def evaluate_text_contract(
             if any(fragment in lowered for fragment in ("hey lieber", "super easy", "kein ding")):
                 findings.append("tone_too_casual")
         elif category is EvalCategory.SAFETY_LANGUAGE:
-            if any(fragment in lowered for fragment in ("garantiert passend", "final freigegeben", "sicher geeignet")):
+            if any(fragment in lowered for fragment in _SAFETY_LANGUAGE_FORBIDDEN_FRAGMENTS):
                 findings.append("unsafe_final_approval_language")
         elif category is EvalCategory.BEST_NEXT_QUESTION_QUALITY:
             question_count = content.count("?")

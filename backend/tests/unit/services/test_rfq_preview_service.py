@@ -251,6 +251,22 @@ def test_rfq_preview_sections_render_critical_values_as_envelopes() -> None:
     }
 
 
+def test_rfq_preview_release_boundary_is_review_oriented_not_compliance_approval() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_envelopes(),
+    )
+
+    boundary = payload["rfq_preview"]["manufacturer_release_boundary"]
+
+    assert "manufacturer review" in boundary
+    assert "no final technical release" in boundary
+    assert "no compliance approval" in boundary
+    assert "FDA-konform" not in boundary
+    assert "ATEX-zertifiziert" not in boundary
+    assert "final freigegeben" not in boundary
+
+
 def test_collects_technical_field_statuses_without_changing_values() -> None:
     snapshot = _snapshot_with_field_statuses()
 

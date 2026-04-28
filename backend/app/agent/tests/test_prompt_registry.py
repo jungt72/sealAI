@@ -126,6 +126,13 @@ class TestBaseTemplate:
         result = prompts.render("renderer/base.j2", _FULL_CTX)
         assert "fit_score" in result
 
+    def test_compliance_overclaim_guard_present(self):
+        result = prompts.render("renderer/base.j2", _FULL_CTX)
+        assert "FDA-/ATEX-/Food-/Pharma-/Trinkwasser-Compliance" in result
+        assert "Nachweis erforderlich" in result
+        assert "Herstellerpruefung erforderlich" in result
+        assert "keine finale Freigabe" in result
+
     def test_outward_class_rendered_when_provided(self):
         ctx = {**_FULL_CTX, "outward_class": "technical_preselection"}
         result = prompts.render("renderer/base.j2", ctx)

@@ -122,6 +122,43 @@ class TestSuitabilityViolations:
         assert cat == "suitability"
 
 
+class TestComplianceOverclaimViolations:
+    @pytest.mark.parametrize(
+        "claim",
+        [
+            "FDA-konform",
+            "ATEX-zertifiziert",
+            "Food Contact freigegeben",
+            "Trinkwasser zugelassen",
+            "Material ist geeignet",
+            "Dichtung ist freigegeben",
+            "technisch validiert",
+            "garantiert passend",
+            "final freigegeben",
+        ],
+    )
+    def test_forbidden_compliance_and_final_release_claims_blocked(self, claim):
+        safe, cat = check_fast_path_output(f"Ergebnis: {claim}.")
+
+        assert safe is False
+        assert cat in {"compliance_overclaim", "suitability"}
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Diese Anforderung ist prüfungsrelevant; Herstellerprüfung erforderlich.",
+            "Für FDA/ATEX ist ein Nachweis erforderlich; keine finale Freigabe.",
+            "Das bleibt ein offener Punkt in der Anfragebasis für Herstellerprüfung.",
+            "Dokumentation erforderlich, bevor eine Herstellerprüfung möglich ist.",
+        ],
+    )
+    def test_allowed_review_oriented_language_passes(self, text):
+        safe, cat = check_fast_path_output(text)
+
+        assert safe is True
+        assert cat is None
+
+
 # ---------------------------------------------------------------------------
 # Clean output: passes through unchanged
 # ---------------------------------------------------------------------------
