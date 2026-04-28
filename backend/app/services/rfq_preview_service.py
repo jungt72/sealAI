@@ -37,22 +37,55 @@ RFQ_PREVIEW_SECTIONS: tuple[str, ...] = (
     "Anfrageziel / Stueckzahl / gewuenschte Rueckmeldung",
 )
 
+RFQ_FIELD_GROUP_ORDER: tuple[str, ...] = (
+    "confirmed",
+    "documented",
+    "user_stated",
+    "inferred",
+    "calculated",
+    "conflicting",
+    "missing",
+    "open",
+    "needs_confirmation",
+)
+
+_RFQ_FIELD_GROUP_TITLES: dict[str, str] = {
+    "confirmed": "Confirmed values",
+    "documented": "Documented values",
+    "user_stated": "User-stated values",
+    "inferred": "Inferred candidates",
+    "calculated": "Calculated values",
+    "conflicting": "Conflicting values",
+    "missing": "Missing critical fields",
+    "open": "Open fields",
+    "needs_confirmation": "Needs confirmation",
+}
+
 _FIELD_ALIASES: dict[str, str] = {
     "application_pattern_id": "application_pattern",
     "asset_type": "equipment_type",
+    "calculated_pv_mpa_m_s": "calculated_pv_mpa_m_s",
+    "calculated_speed_m_s": "calculated_speed_m_s",
     "equipment_type": "equipment_type",
+    "medium": "medium_name",
     "medium_name": "medium_name",
     "motion_type": "motion_type",
     "pressure_nominal": "pressure_bar",
     "pressure_bar": "pressure_bar",
+    "rpm": "speed_rpm",
     "shaft_diameter": "shaft_diameter_mm",
     "shaft_diameter_mm": "shaft_diameter_mm",
+    "housing_bore": "housing_bore_diameter_mm",
+    "housing_bore_mm": "housing_bore_diameter_mm",
     "speed_rpm": "speed_rpm",
+    "surface_finish": "shaft_surface_finish",
     "temperature_c": "temperature_c",
     "temperature_max": "temperature_max_c",
     "temperature_max_c": "temperature_max_c",
     "temperature_min": "temperature_min_c",
     "temperature_min_c": "temperature_min_c",
+    "food_contact": "food_contact_required",
+    "atex_relevance": "atex_required",
 }
 
 
@@ -243,10 +276,21 @@ def build_rfq_preview_payload(
 ) -> dict[str, Any]:
     state = snapshot.state_json if isinstance(snapshot.state_json, Mapping) else {}
     technical_fields = collect_technical_fields(case_row=case_row, state=state)
-    technical_field_statuses = collect_technical_field_statuses(state)
+    technical_field_envelopes = collect_technical_field_envelopes(
+        case_row=case_row,
+        state=state,
+        technical_fields=technical_fields,
+    )
+    technical_field_statuses = tuple(
+        _technical_field_status_from_envelope(field)
+        for field in technical_field_envelopes
+    )
+    technical_field_groups = group_technical_field_envelopes(
+        technical_field_envelopes
+    )
     confirmation_required_fields = tuple(
         field["field"]
-        for field in technical_field_statuses
+        for field in technical_field_envelopes
         if field.get("confirmation_required") is True
     )
     open_points = _merge_open_points(
@@ -262,6 +306,8 @@ def build_rfq_preview_payload(
         "sealing_material_family": case_row.sealing_material_family,
         "technical_fields": technical_fields,
         "technical_field_statuses": technical_field_statuses,
+        "technical_field_envelopes": technical_field_envelopes,
+        "technical_field_groups": technical_field_groups,
         "confirmation_required_fields": confirmation_required_fields,
         "missing_fields": open_points,
         "norm_results": _deep_get_sequence(state, ("case_state", "norm_results")),
@@ -301,10 +347,12 @@ def build_rfq_preview_payload(
         "rfq_preview": {
             "purpose": "phase_1_preview_export",
             "decision_understanding": decision_understanding,
+            "technical_field_groups": technical_field_groups,
+            "technical_field_envelopes": technical_field_envelopes,
             "technical_field_statuses": technical_field_statuses,
             "confirmation_required_fields": confirmation_required_fields,
             "sections": build_rfq_sections(
-                technical_fields=technical_fields,
+                technical_field_envelopes=technical_field_envelopes,
                 open_points=open_points,
                 state={
                     "state": state,
@@ -367,6 +415,80 @@ def collect_open_points(state: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def collect_technical_field_statuses(state: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        _technical_field_status_from_envelope(field)
+        for field in _collect_state_field_envelopes(state)
+    )
+
+
+def collect_technical_field_envelopes(
+    *,
+    case_row: CaseRecord,
+    state: Mapping[str, Any],
+    technical_fields: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], ...]:
+    flat_fields = dict(
+        technical_fields
+        if technical_fields is not None
+        else collect_technical_fields(case_row=case_row, state=state)
+    )
+    envelopes: dict[str, dict[str, Any]] = {
+        field["field"]: field for field in _collect_state_field_envelopes(state)
+    }
+    for key, value in flat_fields.items():
+        envelopes.setdefault(
+            key,
+            _drop_none(
+                {
+                    "field": key,
+                    "value": value,
+                    "status": "unspecified",
+                    "provenance": "unspecified",
+                    "confidence": None,
+                    "confirmation_required": False,
+                    "evidence_refs": (),
+                }
+            ),
+        )
+
+    for missing in collect_open_points(state):
+        alias = _FIELD_ALIASES.get(missing, missing)
+        if alias not in ALLOWED_TECHNICAL_FIELD_PATHS:
+            continue
+        envelopes[alias] = {
+            "field": alias,
+            "value": None,
+            "status": "missing",
+            "provenance": "missing",
+            "confirmation_required": True,
+            "evidence_refs": (),
+        }
+
+    return tuple(envelopes[key] for key in sorted(envelopes))
+
+
+def group_technical_field_envelopes(
+    fields: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    grouped: dict[str, list[dict[str, Any]]] = {
+        key: [] for key in RFQ_FIELD_GROUP_ORDER
+    }
+    for field in fields:
+        entry = dict(field)
+        for key in _field_group_keys(field):
+            grouped.setdefault(key, []).append(entry)
+    return tuple(
+        {
+            "key": key,
+            "title": _RFQ_FIELD_GROUP_TITLES.get(key, key),
+            "fields": tuple(grouped.get(key) or ()),
+        }
+        for key in RFQ_FIELD_GROUP_ORDER
+        if grouped.get(key)
+    )
+
+
+def _collect_state_field_envelopes(state: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
     statuses: list[dict[str, Any]] = []
     seen: set[str] = set()
     for mapping in _walk_mappings(state):
@@ -379,6 +501,8 @@ def collect_technical_field_statuses(state: Mapping[str, Any]) -> tuple[dict[str
             alias = _FIELD_ALIASES.get(source_key, target_key)
             if alias not in ALLOWED_TECHNICAL_FIELD_PATHS or alias in seen:
                 continue
+            engineering_value = _engineering_value_mapping(value)
+            normalized_value = _field_envelope_value(value, engineering_value)
             status = _optional_text(value.get("status") or value.get("field_status"))
             provenance = _optional_text(value.get("provenance") or value.get("source"))
             confidence = _optional_text(value.get("confidence"))
@@ -387,14 +511,29 @@ def collect_technical_field_statuses(state: Mapping[str, Any]) -> tuple[dict[str
                 if "confirmation_required" in value
                 else value.get("requires_confirmation")
             )
-            if not any((status, provenance, confidence, confirmation_required is not None)):
+            evidence_refs = _text_tuple(value.get("evidence_refs"))
+            if not any(
+                (
+                    normalized_value is not None,
+                    engineering_value,
+                    status,
+                    provenance,
+                    confidence,
+                    confirmation_required is not None,
+                    evidence_refs,
+                )
+            ):
                 continue
             entry = {
                 "field": alias,
+                "value": normalized_value,
+                "engineering_value": engineering_value or None,
                 "status": status or "unspecified",
-                "provenance": provenance,
+                "provenance": provenance or "missing",
                 "confidence": confidence,
                 "confirmation_required": bool(confirmation_required),
+                "evidence_refs": evidence_refs,
+                "source_revision": _optional_int(value.get("source_revision")),
             }
             statuses.append(_drop_none(entry))
             seen.add(alias)
@@ -403,7 +542,7 @@ def collect_technical_field_statuses(state: Mapping[str, Any]) -> tuple[dict[str
 
 def build_rfq_sections(
     *,
-    technical_fields: Mapping[str, Any],
+    technical_field_envelopes: Sequence[Mapping[str, Any]],
     open_points: Sequence[str],
     state: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -421,7 +560,11 @@ def build_rfq_sections(
             )
         )
     )
-    values = dict(technical_fields)
+    values = {
+        str(field.get("field")): _section_field_value(field)
+        for field in technical_field_envelopes
+        if field.get("field")
+    }
     section_payloads: tuple[Any, ...] = (
         _pick(values, "equipment_type", "medium_name", "motion_type"),
         _pick(values, "equipment_type", "application_pattern"),
@@ -647,6 +790,123 @@ def _confirmation_open_points(
         suffix = f" (status: {status})" if status else ""
         result.append(f"Bestaetigung erforderlich: {field_name}{suffix}")
     return tuple(result)
+
+
+def _technical_field_status_from_envelope(field: Mapping[str, Any]) -> dict[str, Any]:
+    evidence_refs = tuple(_as_sequence(field.get("evidence_refs")))
+    return _drop_none(
+        {
+            "field": field.get("field"),
+            "status": field.get("status"),
+            "provenance": field.get("provenance"),
+            "confidence": field.get("confidence"),
+            "confirmation_required": bool(field.get("confirmation_required")),
+            "evidence_refs": evidence_refs or None,
+        }
+    )
+
+
+def _field_group_keys(field: Mapping[str, Any]) -> tuple[str, ...]:
+    status = str(field.get("status") or "").strip().lower()
+    provenance = str(field.get("provenance") or "").strip().lower()
+    confirmation_required = bool(field.get("confirmation_required"))
+    keys: list[str] = []
+    if status in {"conflict", "conflicting"}:
+        keys.append("conflicting")
+    elif status == "missing" or provenance == "missing":
+        keys.append("missing")
+    elif status == "calculated" or provenance == "calculated":
+        keys.append("calculated")
+    elif status == "confirmed":
+        keys.append("confirmed")
+    elif status == "documented" or provenance == "documented":
+        keys.append("documented")
+    elif status == "user_stated" or provenance == "user_stated":
+        keys.append("user_stated")
+    elif status == "inferred" or provenance in {"inferred", "pattern_derived"}:
+        keys.append("inferred")
+    elif status in {"candidate", "open", "unknown", "unspecified"}:
+        keys.append("open")
+    else:
+        keys.append("open")
+
+    if confirmation_required or status in {
+        "candidate",
+        "conflict",
+        "conflicting",
+        "inferred",
+        "missing",
+        "needs_confirmation",
+        "open",
+        "stale",
+    }:
+        keys.append("needs_confirmation")
+    return tuple(dict.fromkeys(keys))
+
+
+def _field_envelope_value(
+    field: Mapping[str, Any], engineering_value: Mapping[str, Any]
+) -> Any:
+    if engineering_value.get("canonical_value") is not None:
+        return engineering_value.get("canonical_value")
+    for key in ("canonical_value", "value", "raw_value", "label", "name"):
+        if key in field:
+            return _unwrap_field_value(field[key])
+    return None
+
+
+def _engineering_value_mapping(field: Mapping[str, Any]) -> dict[str, Any]:
+    value = field.get("engineering_value")
+    if isinstance(value, Mapping):
+        return _drop_none(
+            {str(key): _unwrap_field_value(item) for key, item in value.items()}
+        )
+    return _drop_none(
+        {
+            "raw_value": _unwrap_field_value(field.get("raw_value")),
+            "canonical_value": _unwrap_field_value(field.get("canonical_value")),
+            "unit": _optional_text(field.get("unit")),
+            "quantity_kind": _optional_text(field.get("quantity_kind")),
+            "interpretation": _optional_text(field.get("interpretation")),
+        }
+    )
+
+
+def _section_field_value(field: Mapping[str, Any]) -> dict[str, Any]:
+    engineering_value = _object_mapping(field.get("engineering_value"))
+    unit = engineering_value.get("unit")
+    evidence_refs = tuple(_as_sequence(field.get("evidence_refs")))
+    return _drop_none(
+        {
+            "value": field.get("value"),
+            "unit": unit,
+            "status": field.get("status") or "unspecified",
+            "provenance": field.get("provenance") or "missing",
+            "confirmation_required": bool(field.get("confirmation_required")),
+            "evidence_refs": evidence_refs or None,
+        }
+    )
+
+
+def _text_tuple(value: Any) -> tuple[str, ...]:
+    return tuple(
+        str(item).strip()
+        for item in _as_sequence(value)
+        if str(item).strip()
+    )
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _object_mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _merge_open_points(*groups: Sequence[str]) -> tuple[str, ...]:

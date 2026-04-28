@@ -85,6 +85,95 @@ def _snapshot_with_field_statuses() -> CaseStateSnapshot:
     )
 
 
+def _snapshot_with_field_envelopes() -> CaseStateSnapshot:
+    return CaseStateSnapshot(
+        case_id="case-123",
+        revision=4,
+        state_json={
+            "case_state": {
+                "case_fields": {
+                    "speed_rpm": {
+                        "field_name": "speed_rpm",
+                        "value": 1450,
+                        "engineering_value": {
+                            "raw_value": "1450 rpm",
+                            "canonical_value": 1450,
+                            "unit": "rpm",
+                            "quantity_kind": "rotational_speed",
+                        },
+                        "status": "confirmed",
+                        "provenance": "confirmed",
+                        "confidence": "confirmed",
+                        "confirmation_required": False,
+                        "source_revision": 4,
+                    },
+                    "medium_name": {
+                        "field_name": "medium_name",
+                        "value": "Salzwasser",
+                        "status": "documented",
+                        "provenance": "documented",
+                        "evidence_refs": ["upload:datasheet-1#p2"],
+                        "confidence": "confirmed",
+                        "confirmation_required": False,
+                    },
+                    "motion_type": {
+                        "field_name": "motion_type",
+                        "value": "rotary",
+                        "status": "user_stated",
+                        "provenance": "user_stated",
+                        "confidence": "confirmed",
+                        "confirmation_required": False,
+                    },
+                    "shaft_diameter_mm": {
+                        "field_name": "shaft_diameter_mm",
+                        "value": 42,
+                        "engineering_value": {
+                            "canonical_value": 42,
+                            "unit": "mm",
+                            "quantity_kind": "length",
+                        },
+                        "status": "inferred",
+                        "provenance": "inferred",
+                        "confidence": "inferred",
+                        "confirmation_required": True,
+                    },
+                    "calculated_speed_m_s": {
+                        "field_name": "calculated_speed_m_s",
+                        "value": 3.19,
+                        "engineering_value": {
+                            "canonical_value": 3.19,
+                            "unit": "m/s",
+                            "quantity_kind": "surface_speed",
+                        },
+                        "status": "confirmed",
+                        "provenance": "calculated",
+                        "confidence": "confirmed",
+                        "confirmation_required": False,
+                    },
+                    "pressure_bar": {
+                        "field_name": "pressure_bar",
+                        "value": 4,
+                        "engineering_value": {
+                            "canonical_value": 4,
+                            "unit": "bar",
+                            "quantity_kind": "pressure",
+                            "interpretation": "unknown",
+                        },
+                        "status": "conflict",
+                        "provenance": "user_stated",
+                        "confidence": "requires_confirmation",
+                        "confirmation_required": True,
+                        "evidence_refs": ["chat:turn-3", "upload:datasheet-2#p1"],
+                    },
+                },
+                "missing_required_fields": ["shaft_surface_finish"],
+                "top_risks": ["pressure_conflict"],
+                "manufacturer_review_needs": ["Druckangabe und Oberflaeche klaeren"],
+            }
+        },
+    )
+
+
 def test_collects_governed_technical_fields_from_case_and_snapshot() -> None:
     fields = collect_technical_fields(case_row=_case(), state=_snapshot().state_json)
 
@@ -95,6 +184,70 @@ def test_collects_governed_technical_fields_from_case_and_snapshot() -> None:
     assert fields["pressure_bar"] == 4
     assert fields["shaft_diameter_mm"] == 42
     assert fields["temperature_max_c"] == 80
+
+
+def test_rfq_preview_groups_casefield_envelopes_by_status_and_provenance() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_envelopes(),
+    )
+    preview = payload["rfq_preview"]
+    groups = {
+        group["key"]: {field["field"]: field for field in group["fields"]}
+        for group in preview["technical_field_groups"]
+    }
+
+    assert groups["confirmed"]["speed_rpm"]["value"] == 1450
+    assert groups["documented"]["medium_name"]["evidence_refs"] == (
+        "upload:datasheet-1#p2",
+    )
+    assert groups["user_stated"]["motion_type"]["value"] == "rotary"
+    assert groups["inferred"]["shaft_diameter_mm"]["confirmation_required"] is True
+    assert groups["calculated"]["calculated_speed_m_s"]["engineering_value"][
+        "unit"
+    ] == "m/s"
+    assert groups["conflicting"]["pressure_bar"]["evidence_refs"] == (
+        "chat:turn-3",
+        "upload:datasheet-2#p1",
+    )
+    assert groups["missing"]["shaft_surface_finish"]["value"] is None
+    assert groups["needs_confirmation"]["pressure_bar"]["status"] == "conflict"
+    assert groups["needs_confirmation"]["shaft_surface_finish"]["status"] == "missing"
+    assert "shaft_surface_finish" in preview["confirmation_required_fields"]
+    assert "pressure_bar" in preview["confirmation_required_fields"]
+
+
+def test_rfq_preview_sections_render_critical_values_as_envelopes() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_envelopes(),
+    )
+    operating_data = next(
+        section
+        for section in payload["rfq_preview"]["sections"]
+        if section["title"] == "Betriebsdaten"
+    )
+    calculations = next(
+        section
+        for section in payload["rfq_preview"]["sections"]
+        if section["title"] == "Berechnungen / technische Hinweise"
+    )
+
+    assert operating_data["content"]["pressure_bar"] == {
+        "value": 4,
+        "unit": "bar",
+        "status": "conflict",
+        "provenance": "user_stated",
+        "confirmation_required": True,
+        "evidence_refs": ("chat:turn-3", "upload:datasheet-2#p1"),
+    }
+    assert calculations["content"]["calculated_speed_m_s"] == {
+        "value": 3.19,
+        "unit": "m/s",
+        "status": "confirmed",
+        "provenance": "calculated",
+        "confirmation_required": False,
+    }
 
 
 def test_collects_technical_field_statuses_without_changing_values() -> None:

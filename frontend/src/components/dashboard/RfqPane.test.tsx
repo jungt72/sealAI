@@ -108,6 +108,40 @@ describe("RfqPane", () => {
                   status: "available",
                 },
               ],
+              technical_field_groups: [
+                {
+                  key: "documented",
+                  title: "Documented values",
+                  fields: [
+                    {
+                      field: "medium_name",
+                      value: "Salzwasser",
+                      engineering_value: { unit: null },
+                      status: "documented",
+                      provenance: "documented",
+                      confidence: "confirmed",
+                      confirmation_required: false,
+                      evidence_refs: ["doc-1#p1"],
+                    },
+                  ],
+                },
+                {
+                  key: "needs_confirmation",
+                  title: "Needs confirmation",
+                  fields: [
+                    {
+                      field: "shaft_diameter_mm",
+                      value: 42,
+                      engineering_value: { unit: "mm" },
+                      status: "needs_confirmation",
+                      provenance: "user_stated",
+                      confidence: "medium",
+                      confirmation_required: true,
+                      evidence_refs: ["doc-1#p2"],
+                    },
+                  ],
+                },
+              ],
               technical_field_statuses: [
                 {
                   field: "shaft_diameter_mm",
@@ -137,7 +171,12 @@ describe("RfqPane", () => {
     expect(screen.getByText("Wellendurchmesser bestaetigen")).toBeInTheDocument();
     expect(screen.getByText("Temperaturspitzen offen")).toBeInTheDocument();
     expect(screen.getByText("Bitte Werkstofffenster pruefen")).toBeInTheDocument();
+    expect(screen.getByText("Documented values")).toBeInTheDocument();
+    expect(screen.getByText("Needs confirmation")).toBeInTheDocument();
+    expect(screen.getByText("medium_name")).toBeInTheDocument();
+    expect(screen.getByText(/Value: Salzwasser/i)).toBeInTheDocument();
     expect(screen.getByText("shaft_diameter_mm")).toBeInTheDocument();
+    expect(screen.getByText(/Value: 42 mm/i)).toBeInTheDocument();
     expect(screen.getByText(/Evidence: doc-1#p2/i)).toBeInTheDocument();
     expect(screen.getByText("Nutzerbestätigung erforderlich")).toBeInTheDocument();
     expect(screen.getByLabelText(/keine finale technische Freigabe/i)).toBeInTheDocument();

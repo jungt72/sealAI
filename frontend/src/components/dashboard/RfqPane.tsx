@@ -32,11 +32,19 @@ type RfqPreviewSection = {
 
 type RfqFieldStatus = {
   field?: string;
+  value?: unknown;
+  engineering_value?: Record<string, unknown> | null;
   status?: string;
   provenance?: string | null;
   confidence?: string | null;
   confirmation_required?: boolean;
   evidence_refs?: string[];
+};
+
+type RfqFieldGroup = {
+  key?: string;
+  title?: string;
+  fields?: RfqFieldStatus[];
 };
 
 type RfqPreviewResponse = {
@@ -51,6 +59,7 @@ type RfqPreviewResponse = {
   payload?: {
     rfq_preview?: {
       sections?: RfqPreviewSection[];
+      technical_field_groups?: RfqFieldGroup[];
       technical_field_statuses?: RfqFieldStatus[];
       confirmation_required_fields?: string[];
       manufacturer_release_boundary?: string;
@@ -78,6 +87,7 @@ type ConsentState = {
 
 const EMPTY_SECTIONS: RfqPreviewSection[] = [];
 const EMPTY_FIELD_STATUSES: RfqFieldStatus[] = [];
+const EMPTY_FIELD_GROUPS: RfqFieldGroup[] = [];
 
 function valueToText(value: unknown): string {
   if (value === null || value === undefined || value === "") {
@@ -173,6 +183,8 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
   );
   const fieldStatuses =
     preview?.payload?.rfq_preview?.technical_field_statuses ?? EMPTY_FIELD_STATUSES;
+  const fieldGroups =
+    preview?.payload?.rfq_preview?.technical_field_groups ?? EMPTY_FIELD_GROUPS;
   const openPoints = useMemo(
     () => sectionItems(sections, /Offene Punkte|unbestaetigte Annahmen/i),
     [sections],
@@ -340,21 +352,23 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
                 <Info size={14} />
                 Field Status / Provenance / Evidence
               </div>
-              {fieldStatuses.length > 0 ? (
+              {fieldGroups.length > 0 ? (
+                <div className="grid gap-3">
+                  {fieldGroups.map((group) => (
+                    <div key={group.key || group.title} className="rounded-[12px] border border-[#E5E7EB] bg-white p-3">
+                      <div className="mb-2 text-xs font-semibold text-[#111827]">{group.title || group.key}</div>
+                      <div className="grid gap-2">
+                        {(group.fields ?? []).map((field) => (
+                          <FieldEnvelope key={`${group.key}-${field.field}-${field.status}`} field={field} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : fieldStatuses.length > 0 ? (
                 <div className="grid gap-2">
                   {fieldStatuses.map((field) => (
-                    <div key={`${field.field}-${field.status}`} className="rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-sm font-semibold text-[#111827]">{field.field || "field"}</div>
-                        <StatusBadge label={field.status || "unspecified"} variant={field.confirmation_required ? "warning" : "info"} />
-                      </div>
-                      <div className="mt-1 text-xs text-[#4B5563]">
-                        Provenance: {field.provenance || "nicht geliefert"} · Confidence: {field.confidence || "nicht geliefert"}
-                      </div>
-                      {field.evidence_refs?.length ? (
-                        <div className="mt-1 text-xs text-[#4B5563]">Evidence: {field.evidence_refs.join(", ")}</div>
-                      ) : null}
-                    </div>
+                    <FieldEnvelope key={`${field.field}-${field.status}`} field={field} />
                   ))}
                 </div>
               ) : (
@@ -415,6 +429,34 @@ function MetaTile({ label, value }: { label: string; value: string | number }) {
     <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5">
       <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">{label}</div>
       <div className="mt-1 break-all text-sm font-medium text-[#111827]">{value}</div>
+    </div>
+  );
+}
+
+function FieldEnvelope({ field }: { field: RfqFieldStatus }) {
+  const unit = field.engineering_value?.unit;
+  const value = valueToText(field.value);
+  return (
+    <div className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-[#111827]">{field.field || "field"}</div>
+        <StatusBadge label={field.status || "unspecified"} variant={field.confirmation_required ? "warning" : "info"} />
+      </div>
+      {field.value !== undefined ? (
+        <div className="mt-1 text-sm text-[#111827]">
+          Value: {value}
+          {unit ? ` ${valueToText(unit)}` : ""}
+        </div>
+      ) : null}
+      <div className="mt-1 text-xs text-[#4B5563]">
+        Provenance: {field.provenance || "nicht geliefert"} · Confidence: {field.confidence || "nicht geliefert"}
+      </div>
+      {field.evidence_refs?.length ? (
+        <div className="mt-1 text-xs text-[#4B5563]">Evidence: {field.evidence_refs.join(", ")}</div>
+      ) : null}
+      {field.confirmation_required ? (
+        <div className="mt-1 text-xs font-medium text-[#B45309]">Confirmation erforderlich</div>
+      ) : null}
     </div>
   );
 }
