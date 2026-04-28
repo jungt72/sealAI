@@ -27,7 +27,7 @@ export function getUnavailableRfqActions(
   if (!rfq.confirmed) {
     actions.push({
       id: "rfq_confirm",
-      label: "Confirm RFQ",
+      label: "RFQ-Preview bewusst bestätigen",
       reason: UNAVAILABLE_REASON,
     });
   }
@@ -35,7 +35,7 @@ export function getUnavailableRfqActions(
   if (!rfq.hasHtmlReport) {
     actions.push({
       id: "rfq_generate_document",
-      label: "Generate RFQ Document",
+      label: "Anfragebasis exportieren",
       reason: UNAVAILABLE_REASON,
     });
   }
@@ -43,7 +43,7 @@ export function getUnavailableRfqActions(
   if (!rfq.handoverInitiated) {
     actions.push({
       id: "rfq_handover",
-      label: "Start RFQ Handover",
+      label: "Manuelle Weitergabe späterer Scope",
       reason: UNAVAILABLE_REASON,
     });
   }
@@ -63,7 +63,7 @@ export function getUnavailableMatchingActions(
   return [
     {
       id: "partner_select",
-      label: "Select Partner",
+      label: "Partnerauswahl späterer Scope",
       reason: UNAVAILABLE_REASON,
     },
   ];

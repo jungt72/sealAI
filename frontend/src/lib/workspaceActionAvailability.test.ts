@@ -165,6 +165,16 @@ test("RFQ actions stay explicitly unavailable while only reads are closed", () =
   );
 });
 
+test("RFQ unavailable action labels avoid dispatch and final-release language", () => {
+  const labels = getUnavailableRfqActions(makeWorkspace()).map((action) => action.label);
+
+  assert.deepEqual(labels, [
+    "RFQ-Preview bewusst bestätigen",
+    "Anfragebasis exportieren",
+    "Manuelle Weitergabe späterer Scope",
+  ]);
+});
+
 test("RFQ unavailable actions are still shown when the panel is relevant without a draft", () => {
   const workspace = makeWorkspace({
     rfq: {
@@ -231,6 +241,12 @@ test("partner selection stays explicitly unavailable while no canonical action e
     getUnavailableMatchingActions(workspace).map((action) => action.id),
     ["partner_select"],
   );
+});
+
+test("matching unavailable action label makes partner selection a later scope", () => {
+  const labels = getUnavailableMatchingActions(makeWorkspace()).map((action) => action.label);
+
+  assert.deepEqual(labels, ["Partnerauswahl späterer Scope"]);
 });
 
 test("partner selection stays explicitly unavailable even when no candidates are listed yet", () => {
