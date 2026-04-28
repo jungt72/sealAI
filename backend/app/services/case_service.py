@@ -12,6 +12,7 @@ from app.domain.critical_field_contract import (
     PRESSURE_FIELDS,
     is_critical_technical_field,
 )
+from app.domain.derived_dependency_contract import mark_stale_snapshot_derived_values
 from app.models.case_record import CaseRecord
 from app.models.case_state_snapshot import CaseStateSnapshot
 from app.models.mutation_event_model import MutationEventModel
@@ -431,14 +432,41 @@ class CaseService:
         payload: dict[str, Any],
     ) -> CaseStateSnapshot:
         snapshot_payload = payload["snapshot"]
+        state_json = self._snapshot_state_with_stale_derived_values(
+            snapshot_payload["state_json"],
+            payload=payload,
+            revision=revision,
+        )
         return CaseStateSnapshot(
             case_id=case_id,
             revision=revision,
-            state_json=snapshot_payload["state_json"],
+            state_json=state_json,
             basis_hash=snapshot_payload.get("basis_hash"),
             ontology_version=snapshot_payload.get("ontology_version"),
             prompt_version=snapshot_payload.get("prompt_version"),
             model_version=snapshot_payload.get("model_version"),
+        )
+
+    def _snapshot_state_with_stale_derived_values(
+        self,
+        state_json: dict[str, Any],
+        *,
+        payload: dict[str, Any],
+        revision: int,
+    ) -> dict[str, Any]:
+        accepted_delta = _dict_or_empty(payload.get("accepted_delta"))
+        changed_fields = [
+            field_name
+            for field_name in accepted_delta
+            if is_critical_technical_field(field_name)
+        ]
+        if not changed_fields:
+            return state_json
+        return mark_stale_snapshot_derived_values(
+            state_json,
+            changed_fields=changed_fields,
+            new_revision=revision,
+            reason="accepted_case_delta_changed_inputs",
         )
 
     def _build_outbox(

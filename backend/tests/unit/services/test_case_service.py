@@ -187,6 +187,40 @@ def _payload(**case_updates: Any) -> dict[str, Any]:
     }
 
 
+def _accepted_engineering_delta_payload(
+    *,
+    field_name: str,
+    proposed_value: Any,
+    unit: str,
+    quantity_kind: str,
+    interpretation: str = "confirmed",
+    state_json: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = _payload()
+    payload["snapshot"]["state_json"] = state_json if state_json is not None else {}
+    payload.update(
+        {
+            "proposed_delta": {field_name: {"proposed_value": proposed_value}},
+            "accepted_delta": {
+                field_name: {
+                    "status": "accepted",
+                    "proposed_value": proposed_value,
+                    "unit": unit,
+                    "provenance": "user_stated",
+                    "engineering_value": {
+                        "raw_value": proposed_value,
+                        "canonical_value": proposed_value,
+                        "unit": unit,
+                        "quantity_kind": quantity_kind,
+                        "interpretation": interpretation,
+                    },
+                }
+            },
+        }
+    )
+    return payload
+
+
 @pytest.mark.parametrize("tenant_id", [None, "", "   "])
 def test_case_record_rejects_missing_tenant_id(tenant_id: object) -> None:
     with pytest.raises(ValueError, match="tenant_id is required"):
@@ -822,6 +856,301 @@ async def test_apply_mutation_accepts_critical_technical_field_with_engineering_
     )
 
     assert len(session.store.events) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field_name", "proposed_value", "unit", "quantity_kind", "interpretation"),
+    [
+        ("shaft_diameter_mm", 55, "mm", "diameter", "nominal"),
+        ("speed_rpm", 1800, "rpm", "rotational_speed", "nominal"),
+        ("rpm", 1800, "rpm", "rotational_speed", "nominal"),
+    ],
+)
+async def test_apply_mutation_marks_circumferential_speed_stale_for_speed_inputs(
+    session: _FakeAsyncSession,
+    field_name: str,
+    proposed_value: Any,
+    unit: str,
+    quantity_kind: str,
+    interpretation: str,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _accepted_engineering_delta_payload(
+        field_name=field_name,
+        proposed_value=proposed_value,
+        unit=unit,
+        quantity_kind=quantity_kind,
+        interpretation=interpretation,
+        state_json={
+            "derived": {
+                "derived_values": {
+                    "circumferential_speed": {
+                        "value": 3.93,
+                        "status": "valid",
+                        "derived_from_fields": ["shaft_diameter_mm", "speed_rpm"],
+                        "derived_from_revision": 0,
+                        "calculation_id": "circumferential_speed",
+                    },
+                    "pv_load": {
+                        "value": 0.39,
+                        "status": "valid",
+                        "derived_from_fields": [
+                            "pressure_nominal",
+                            "circumferential_speed",
+                        ],
+                        "derived_from_revision": 0,
+                        "calculation_id": "pv_load",
+                    },
+                },
+                "field_status": {
+                    "circumferential_speed": "valid",
+                    "pv_load": "valid",
+                },
+            }
+        },
+    )
+
+    await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    snapshot = session.store.snapshots[0]
+    derived = snapshot.state_json["derived"]
+    assert snapshot.revision == 1
+    assert derived["derived_values"]["circumferential_speed"]["status"] == "stale"
+    assert derived["derived_values"]["circumferential_speed"]["value"] == 3.93
+    assert derived["derived_values"]["pv_load"]["status"] == "stale"
+    assert "circumferential_speed" in derived["stale_derived_value_ids"]
+    assert "pv_load" in derived["stale_derived_value_ids"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field_name", ["pressure_nominal", "pressure_peak"])
+async def test_apply_mutation_marks_pv_load_stale_for_pressure_change(
+    session: _FakeAsyncSession,
+    field_name: str,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _accepted_engineering_delta_payload(
+        field_name=field_name,
+        proposed_value=6,
+        unit="bar",
+        quantity_kind="pressure",
+        interpretation="gauge",
+        state_json={
+            "derived": {
+                "derived_values": {
+                    "pv_load": {
+                        "value": 0.39,
+                        "status": "valid",
+                        "derived_from_fields": [
+                            "pressure_nominal",
+                            "circumferential_speed",
+                        ],
+                        "derived_from_revision": 0,
+                        "calculation_id": "pv_load",
+                    }
+                },
+                "field_status": {"pv_load": "valid"},
+            }
+        },
+    )
+
+    await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    derived = session.store.snapshots[0].state_json["derived"]
+    assert derived["derived_values"]["pv_load"]["status"] == "stale"
+    assert derived["derived_values"]["pv_load"]["stale_reason"] == (
+        "accepted_case_delta_changed_inputs"
+    )
+    assert derived["field_status"]["pv_load"] == "stale"
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_marks_existing_top_level_derived_values_stale(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _accepted_engineering_delta_payload(
+        field_name="speed_rpm",
+        proposed_value=1800,
+        unit="rpm",
+        quantity_kind="rotational_speed",
+        interpretation="nominal",
+        state_json={
+            "derived_values": {
+                "circumferential_speed": {
+                    "value": 3.93,
+                    "status": "valid",
+                    "derived_from_fields": ["shaft_diameter_mm", "speed_rpm"],
+                    "derived_from_revision": 0,
+                    "calculation_id": "circumferential_speed",
+                }
+            },
+            "field_status": {"circumferential_speed": "valid"},
+            "stale_derived_value_ids": [],
+        },
+    )
+
+    await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    snapshot_state = session.store.snapshots[0].state_json
+    assert snapshot_state["derived_values"]["circumferential_speed"]["status"] == (
+        "stale"
+    )
+    assert snapshot_state["derived_values"]["circumferential_speed"]["value"] == 3.93
+    assert snapshot_state["field_status"]["circumferential_speed"] == "stale"
+    assert snapshot_state["stale_derived_value_ids"] == ["circumferential_speed"]
+    assert "derived" not in snapshot_state
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_non_technical_acceptance_does_not_stale_derived_values(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload["snapshot"]["state_json"] = {
+        "derived": {
+            "derived_values": {
+                "circumferential_speed": {
+                    "value": 3.93,
+                    "status": "valid",
+                    "derived_from_fields": ["shaft_diameter_mm", "speed_rpm"],
+                    "derived_from_revision": 0,
+                    "calculation_id": "circumferential_speed",
+                }
+            },
+            "field_status": {"circumferential_speed": "valid"},
+        }
+    }
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "accepted_delta": {
+                "medium": {
+                    "status": "accepted",
+                    "proposed_value": "Wasser",
+                    "provenance": "user_stated",
+                }
+            },
+        }
+    )
+
+    await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    derived = session.store.snapshots[0].state_json["derived"]
+    assert derived["derived_values"]["circumferential_speed"]["status"] == "valid"
+    assert "stale_derived_value_ids" not in derived
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejected_only_delta_does_not_stale_derived_values(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload["snapshot"]["state_json"] = {
+        "derived": {
+            "derived_values": {
+                "circumferential_speed": {
+                    "value": 3.93,
+                    "status": "valid",
+                    "derived_from_fields": ["shaft_diameter_mm", "speed_rpm"],
+                    "derived_from_revision": 0,
+                    "calculation_id": "circumferential_speed",
+                }
+            },
+            "field_status": {"circumferential_speed": "valid"},
+        }
+    }
+    payload.update(
+        {
+            "proposed_delta": {"speed_rpm": {"proposed_value": 1800}},
+            "rejected_delta": {
+                "speed_rpm": {
+                    "status": "rejected",
+                    "proposed_value": 1800,
+                    "provenance": "user_stated",
+                }
+            },
+            "rejection_reasons": {"speed_rpm": "needs confirmation"},
+        }
+    )
+
+    await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    derived = session.store.snapshots[0].state_json["derived"]
+    assert derived["derived_values"]["circumferential_speed"]["status"] == "valid"
+    assert "stale_derived_value_ids" not in derived
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_without_accepted_delta_keeps_snapshot_unchanged(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    state_json = {
+        "derived": {
+            "derived_values": {
+                "circumferential_speed": {
+                    "value": 3.93,
+                    "status": "valid",
+                    "derived_from_fields": ["shaft_diameter_mm", "speed_rpm"],
+                    "derived_from_revision": 0,
+                    "calculation_id": "circumferential_speed",
+                }
+            },
+            "field_status": {"circumferential_speed": "valid"},
+        }
+    }
+    payload = _payload(status="active")
+    payload["snapshot"]["state_json"] = state_json
+
+    await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    assert session.store.snapshots[0].state_json == state_json
 
 
 @pytest.mark.asyncio
