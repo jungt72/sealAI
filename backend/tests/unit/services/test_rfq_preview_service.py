@@ -601,6 +601,66 @@ async def test_get_latest_preview_rejects_cross_tenant_case_id() -> None:
             user_id="user-1",
         )
 
+@pytest.mark.asyncio
+async def test_create_preview_rejects_cross_user_case_id() -> None:
+    service = RfqPreviewService(_FilteringPreviewSession([_case(), _snapshot()]))
+
+    with pytest.raises(RfqPreviewNotFound):
+        await service.create_preview_for_case(
+            case_id="case-123",
+            tenant_id="tenant-1",
+            user_id="user-2",
+            created_by="user-2",
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_latest_preview_rejects_cross_user_case_id() -> None:
+    service = RfqPreviewService(_FilteringPreviewSession([_case()]))
+
+    with pytest.raises(RfqPreviewNotFound):
+        await service.get_latest_preview_for_case(
+            case_id="case-123",
+            tenant_id="tenant-1",
+            user_id="user-2",
+        )
+
+
+@pytest.mark.asyncio
+async def test_grant_preview_consent_rejects_cross_user_case_id() -> None:
+    preview = InquiryExtractModel(
+        extract_id="preview-1",
+        case_id="case-123",
+        tenant_id="tenant-1",
+        case_revision=4,
+        artifact_type="rfq_preview",
+        payload={
+            "meta": {"case_revision": 4},
+            "consent_boundary": {
+                "open_points_acknowledgement_required": False,
+            },
+        },
+        source_kind="case_revision",
+        consent_status="not_requested",
+        consent_scope={},
+        dispatch_enabled=False,
+    )
+    service = RfqPreviewService(_FilteringPreviewSession([preview, _case()]))
+
+    with pytest.raises(RfqPreviewNotFound):
+        await service.grant_preview_consent(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-2",
+            granted_by="user-2",
+            consent_scope={
+                "shared_sections": ["rfq_preview"],
+                "user_acknowledged_no_final_release": True,
+            },
+        )
+
+    assert preview.consent_status == "not_requested"
+
 class _FakeScalarResult:
     def __init__(self, value: object) -> None:
         self._value = value
