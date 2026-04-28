@@ -27,7 +27,7 @@ def _full_asserted() -> dict:
 
 def _green_governance() -> dict:
     return {
-        "release_status": "rfq_ready",
+        "release_status": "inquiry_ready",
         "rfq_admissibility": "ready",
         "specificity_level": "compound_required",
         "unknowns_release_blocking": [],

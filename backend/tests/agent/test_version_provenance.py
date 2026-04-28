@@ -24,9 +24,11 @@ for key, value in {
 
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from prompts.builder import PromptBuilder
-from app.agent.api.router import (
+from app.agent.api.assembly import (
     _build_fast_path_version_provenance,
     _build_structured_version_provenance,
+)
+from app.agent.api.deps import (
     VISIBLE_REPLY_PROMPT_HASH,
 )
 from app.agent.case_state import (
@@ -84,8 +86,9 @@ def test_structured_provenance_has_required_fields():
     assert vp["service_version"] == DETERMINISTIC_SERVICE_VERSION
 
 
-def test_fast_path_provenance_has_no_data_version():
+def test_fast_path_provenance_has_data_version():
     decision = evaluate_interaction_policy("Was ist PTFE?")
     vp = _build_fast_path_version_provenance(decision=decision)
     assert vp["model_id"] is None
-    assert "data_version" not in vp
+    assert "data_version" in vp
+    assert vp["data_version"] == DETERMINISTIC_DATA_VERSION
