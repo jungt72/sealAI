@@ -401,8 +401,13 @@ function buildCalculationItems({
     return fromChecks;
   }
 
+  const derivations = workspace?.technicalDerivations ?? [];
+  const preferredDerivations = derivations.some((item) => item.calcType === "rwdr")
+    ? derivations.filter((item) => item.calcType === "rwdr")
+    : derivations;
+
   return (
-    workspace?.technicalDerivations?.flatMap((item) => {
+    preferredDerivations.flatMap((item) => {
       const candidates: Array<{ key: string; label: string; value: number | null }> = [
         { key: `${item.calcType}-v`, label: "Umlaufgeschwindigkeit", value: item.vSurfaceMPerS },
         { key: `${item.calcType}-pv`, label: "PV-Wert", value: item.pvValueMpaMPerS },
@@ -424,7 +429,7 @@ function buildCalculationItems({
               : item.status ? humanize(item.status) : "Aus technischer Ableitung",
         } satisfies CalculationViewModel;
       });
-    }) ?? []
+    })
   );
 }
 
@@ -947,7 +952,8 @@ function CalculationsCard({
   workspace: ReturnType<typeof useWorkspaceStore.getState>["workspace"] | null;
 }) {
   const items = buildCalculationItems({ cockpit, workspace }).slice(0, 4);
-  const stale = Boolean(workspace?.summary?.derivedArtifactsStale);
+  const hasCurrentItems = items.some((item) => item.status === "current");
+  const stale = Boolean(workspace?.summary?.derivedArtifactsStale) && !hasCurrentItems;
 
   return (
     <WorkspaceCard title="Calculations" eyebrow="Slot 3" icon={Calculator}>
