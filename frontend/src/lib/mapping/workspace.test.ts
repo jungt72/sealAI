@@ -36,7 +36,7 @@ function legacyProjection() {
       checks: [
         {
           calc_id: "rwdr_circumferential_speed",
-          label: "RWDR circumferential speed",
+          label: "Umlaufgeschwindigkeit",
           formula_version: "rwdr_calc_v1",
           required_inputs: ["shaft_diameter_mm", "speed_rpm"],
           missing_inputs: [],

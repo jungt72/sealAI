@@ -61,7 +61,7 @@ function workspaceFixture(): WorkspaceView {
       checks: [
         {
           calcId: "rwdr_circumferential_speed",
-          label: "RWDR circumferential speed",
+          label: "Umlaufgeschwindigkeit",
           formulaVersion: "rwdr_calc_v1",
           requiredInputs: ["shaft_diameter_mm", "speed_rpm"],
           missingInputs: [],

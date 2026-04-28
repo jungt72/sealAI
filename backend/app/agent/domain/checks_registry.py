@@ -27,7 +27,7 @@ class EngineeringCheckDefinition:
 REGISTERED_CHECKS: tuple[EngineeringCheckDefinition, ...] = (
     EngineeringCheckDefinition(
         calc_id="rwdr_circumferential_speed",
-        label="RWDR circumferential speed",
+        label="Umlaufgeschwindigkeit",
         formula_version="rwdr_calc_v1",
         required_inputs=("shaft_diameter_mm", "speed_rpm"),
         valid_paths=("rwdr",),
@@ -37,7 +37,7 @@ REGISTERED_CHECKS: tuple[EngineeringCheckDefinition, ...] = (
     ),
     EngineeringCheckDefinition(
         calc_id="rwdr_pv_precheck",
-        label="RWDR PV precheck",
+        label="PV-Wert",
         formula_version="rwdr_calc_v1",
         required_inputs=("shaft_diameter_mm", "speed_rpm", "pressure_bar"),
         valid_paths=("rwdr",),
@@ -50,7 +50,7 @@ REGISTERED_CHECKS: tuple[EngineeringCheckDefinition, ...] = (
     ),
     EngineeringCheckDefinition(
         calc_id="rwdr_dn_value",
-        label="RWDR Dn value",
+        label="DN-Wert",
         formula_version="rwdr_calc_v1",
         required_inputs=("shaft_diameter_mm", "speed_rpm"),
         valid_paths=("rwdr",),
