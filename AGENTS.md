@@ -2,17 +2,41 @@
 
 ## Purpose
 
-This repository builds **SeaLAI** as a conversation-first, governed engineering system for sealing technology.
+This repository builds **SeaLAI / sealingAI**.
 
-SeaLAI is not a generic chatbot, not a supplier directory, not a product catalog, not a price-comparison marketplace, and not a final engineering approval engine.
+SeaLAI is not a generic chatbot, not a product catalog, not a supplier directory, not a marketplace, not a price-comparison tool, and not a final engineering approval engine.
 
-SeaLAI is the technical qualification and decision-support layer between an unclear industrial sealing problem and a manufacturer-ready, evidence-backed RFQ.
+SeaLAI is an RFQ Qualification Copilot for sealing technology:
 
-The long-term target may include validated seal lifecycle management through a Seal Passport / Dichtstellenpass, post-RFQ validation, private reorder workflows, price-validity checks, human engineering review, and commercial partner models. These are not automatically MVP scope.
+> SeaLAI turns unclear industrial sealing situations into governed, evidence-backed, manufacturer-review-ready RFQ previews with field status, provenance, open points, risks, uncertainty, and explicit user consent.
 
-This file is the binding operating contract for coding agents working in this repository, especially Codex CLI, Claude Code, Gemini CLI, Antigravity, and similar autonomous coding agents.
+This file is the binding operating contract for autonomous coding agents working in this repository, especially Codex CLI and similar tools.
 
-Keep this file practical. Product and architecture depth belongs primarily in `konzept/konzept_sealing.md`. This file tells agents how to work safely in the repo.
+Keep this file practical. Deep product and implementation detail belongs in:
+
+```text
+konzept/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md
+```
+
+---
+
+## Current mission
+
+The current repository mission is **pilot readiness**, not feature expansion.
+
+The next implementation work must focus on making SeaLAI a controlled, trustworthy Phase-1 MVP:
+
+1. hard RFQ consent enforcement
+2. prod-safe settings and startup behavior
+3. secret/env hygiene
+4. upload/IP/LLM safety baseline
+5. backend RFQ preview integrated into the frontend main flow
+6. unsafe product copy removal
+7. RFQ output based on field envelopes
+8. tenant/IDOR hardening
+9. compliance-overclaim and prompt-injection tests
+
+Do not build broad Phase-2+ features unless explicitly instructed.
 
 ---
 
@@ -21,155 +45,37 @@ Keep this file practical. Product and architecture depth belongs primarily in `k
 Before any non-trivial task, read from the repository root:
 
 1. `AGENTS.md`
-2. `konzept/konzept_sealing.md`
-3. Relevant implementation files and tests for the task
+2. `konzept/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`
+3. relevant source files and tests for the specific task
 
-For UI, layout, cockpit, chat workspace, cards, rails, tabs, motion, styling, responsive behavior, or frontend interaction work, also read:
+For frontend/UI work, also read:
 
 4. `frontend/DESIGN.md`
 
-Do not work from memory when the current file exists in the repo. The current repository content is the evidence.
+If a directory contains another `AGENTS.md`, follow the more specific file for files inside that directory.
+
+Do not work from memory. Current repository content is the evidence.
 
 ---
 
 ## Binding authority order
 
-When documents, code, or prior notes disagree, use this order:
+Use this order when documents, code, or prior notes disagree:
 
-1. `konzept/konzept_sealing.md` — current binding SeaLAI product and architecture SSoT.
-2. `frontend/DESIGN.md` — binding frontend design SSoT for UI, motion, spacing, tokens, cockpit, chat workspace, and responsive behavior.
-3. `AGENTS.md` — binding coding-agent operating contract.
-4. Current production code and tests — evidence of current contracts and seams, not automatic product truth.
-5. Older concept files, supplements, prompts, chat notes, audit notes, or legacy implementation notes — historical context only.
+1. `AGENTS.md` for coding-agent operating rules.
+2. `konzept/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md` for SeaLAI pilot-readiness product and implementation direction.
+3. `frontend/DESIGN.md` for frontend design, layout, motion, spacing, cockpit, chat workspace, rails, tabs, and responsive behavior.
+4. Current code and tests as evidence of existing contracts and seams.
+5. Older concept files, archived notes, audit notes, prompts, chat notes, or implementation history as context only.
 
 Rules:
 
-- `konzept/konzept_sealing.md` is the current SSoT. Older concept versions must not override it.
-- Current code may be legacy, provisional, or misaligned. Do not assume it is correct.
-- Fix misalignment through small, evidence-based patches, not broad rewrites.
-- Do not add chat citations, `filecite` markers, or conversation artifacts to production docs.
-- Do not turn `AGENTS.md` into a second concept document. Keep implementation guidance here; keep product depth in `konzept/konzept_sealing.md`.
-
----
-
-## Product north star
-
-Build SeaLAI as:
-
-> **a technical qualification and decision-support system that turns unclear sealing situations into understandable, governed, manufacturer-ready RFQ preparation.**
-
-SeaLAI must help users:
-
-- understand their sealing situation
-- see what is known, missing, ambiguous, stale, risky, or unconfirmed
-- make better technical decisions before requesting a seal
-- produce a structured, manufacturer-ready RFQ preview/export
-- optionally, in later phases, request human engineering review, CAD/FEM plausibility support, or RFQ concierge support
-- optionally, in later phases, preserve validated solutions in a Seal Passport / Dichtstellenpass for safe reorder workflows
-
-SeaLAI must help manufacturers:
-
-- receive better qualified RFQs
-- see technical context, open points, evidence, and revision status
-- avoid low-quality leads
-- participate in problem-first matching without buying technical rank
-- eventually maintain capability evidence, price validity, and reorder readiness for validated solutions
-
----
-
-## Phase-1 MVP cut
-
-`konzept/konzept_sealing.md` contains the target architecture and later-phase direction. Do not implement the full target image as one task.
-
-### Phase 1 MVP scope
-
-Unless explicitly instructed otherwise, implementation work should prioritize only:
-
-1. Chat intake for technical sealing situations.
-2. Pre-gate routing and runtime dispatch boundaries.
-3. Governed Case-State.
-4. `CaseField`, `FieldStatus`, `EngineeringValue`, provenance, and evidence-ready structures.
-5. Governor hardening: schema validation, unit normalization, field status, conflict detection, event append, and revisioning.
-6. Dependency/stale handling and deterministic calculation cascade for simple, well-defined values.
-7. Readiness model.
-8. Backend projection for cockpit status.
-9. Decision Understanding MVP.
-10. RFQ preview/export.
-11. RFQ freeze revision and explicit consent.
-12. Upload/document evidence basics, where uploaded values remain candidates until governed.
-
-### Phase 1 domain focus
-
-Phase 1 focuses on:
-
-- rotating shafts
-- agitators / Rührwerke
-- pumps
-- general rotary sealing positions
-- PTFE-RWDR-near cases
-- classical RWDR cases as prequalification
-- mechanical-seal direction as shallow routing for pump / higher-pressure / demanding-media cases
-
-Other sealing paths may be recognized and routed shallowly, but must not be deeply designed unless explicitly tasked.
-
-### Out of Phase 1 unless explicitly tasked
-
-Do not start with:
-
-- automatic manufacturer matching
-- public marketplace/shop
-- payment flow
-- merchant-of-record behavior
-- automated provision logic
-- full Seal Passport lifecycle
-- private reorder checkout
-- manufacturer dashboard
-- ERP/CRM integration
-- automatic FEM pipeline
-- broad multi-country compliance engine
-- broad self-service manufacturer portal
-
-These may be later phases, but they must not distort the core governed runtime.
-
----
-
-## Later-phase features
-
-The following are target-direction features, not default MVP work:
-
-- manual manufacturer capability registry
-- manual matching pilot
-- manufacturer feedback loop
-- problem-first matching audit
-- verified capability profiles
-- human engineering review request objects
-- RFQ concierge workflow
-- CAD/FEM partner workflow
-- post-RFQ validation lifecycle
-- Seal Passport / Dichtstellenpass
-- private reorder request
-- price validity and manufacturer confirmation
-- commercial governance and provision audit
-- ERPNext / CRM export or integration
-
-Only work on these if the user explicitly asks for that phase or file.
-
----
-
-## Discovery-first rule
-
-Architecture must not outrun market validation.
-
-Before implementing Phase 2+ systems, prefer tasks that support or clarify:
-
-- 8–12 user interviews
-- 5–8 manufacturer interviews
-- 5–10 real RFQ cases
-- RFQ quality feedback
-- falsifiable hypotheses around user value and manufacturer willingness to pay
-- kill criteria for matching, reorder, FEM, and commercial models
-
-Do not treat matching, reorder, FEM, or manufacturer dashboards as validated just because they exist in the long-term concept.
+- Do not resurrect deleted concept files.
+- Do not reference deleted, archived, or superseded concept files as active SSoT.
+- Current code may be legacy, provisional, or misaligned.
+- Fix misalignment through small, evidence-based patches.
+- Do not add chat citations, file citations, or conversation artifacts to production docs.
+- Do not turn `AGENTS.md` into a second concept document.
 
 ---
 
@@ -177,56 +83,184 @@ Do not treat matching, reorder, FEM, or manufacturer dashboards as validated jus
 
 SeaLAI must not claim:
 
-- guaranteed suitability
 - final engineering release
+- guaranteed suitability
+- automatic technical approval
 - manufacturer approval unless explicitly documented
-- validated operation before post-RFQ feedback exists
 - compliance approval without evidence
+- FDA/ATEX/Food/Pharma/Drinking Water approval without actual evidence
+- validated operation before post-RFQ feedback exists
 - current reorder price without manufacturer confirmation
-- technical rank improvements due to sponsorship
+- paid technical ranking or sponsorship-based technical fit
 
 Allowed language:
 
-- technically plausible
 - suitable for manufacturer review
 - based on current information
 - still to be confirmed
 - open point
-- documented / user-stated / calculated / inferred / confirmed
-- validated by feedback, if actually recorded
+- documented
+- user-stated
+- calculated
+- inferred
+- confirmed
+- conflict
+- needs confirmation
+- evidence required
+- no final technical release
 
-Forbidden language:
+Forbidden language unless backed by explicit evidence:
 
 - guaranteed
 - final release
+- approved
+- compliant
+- certified
+- validated
+- proven in operation
 - surely fits
-- approved, unless a real approval record exists
-- compliant, unless actual compliance evidence exists
-- proven in operation, unless validation exists
+- technically released
+- recommendation as final answer
+
+---
+
+## MVP scope
+
+Unless the user explicitly says otherwise, implementation work is limited to Phase-1 pilot readiness.
+
+### In scope
+
+- dialogic intake for sealing cases
+- governed case state
+- `CaseField`
+- `FieldStatus`
+- `EngineeringValue`
+- provenance
+- evidence references
+- unit normalization
+- conflict detection
+- field confirmation
+- case revisioning
+- deterministic calculations where simple and well-defined
+- stale handling
+- readiness/open-points model
+- Decision Understanding projection
+- backend cockpit/workspace projection
+- RFQ preview/export
+- RFQ freeze on `case_revision`
+- explicit RFQ consent
+- upload/document evidence basics
+- upload-derived values as candidates, not truth
+- tests for the above
+
+### Phase-1 domain focus
+
+- rotating shafts
+- general rotary sealing positions
+- pumps
+- agitators / Rührwerke
+- classical RWDR cases
+- PTFE-RWDR-near cases
+- mechanical-seal direction only as shallow routing when pressure, media, or application suggest it
+
+Other sealing paths may be recognized shallowly, but must not be deeply designed unless explicitly tasked.
+
+### Out of scope unless explicitly tasked
+
+Do not build:
+
+- automatic manufacturer matching
+- manufacturer dashboard
+- public marketplace/shop
+- payment flow
+- merchant-of-record behavior
+- automatic dispatch to manufacturers
+- Seal Passport lifecycle
+- private reorder checkout
+- price validity logic
+- ERP/CRM/Paperless integration
+- automatic FEM/CAD pipeline
+- broad compliance engine
+- broad manufacturer self-service portal
+
+These are later-phase features and must not distort Phase-1 RFQ qualification.
+
+---
+
+## Current PR sequence
+
+When the user asks to implement pilot-readiness work, prefer this sequence:
+
+1. RFQ Consent Boundary
+2. Settings Drift and Startup Safety
+3. Secret/Env Hygiene
+4. Upload/IP Safety Baseline
+5. RFQ Preview in Frontend Main Flow
+6. Unsafe Product Copy Hardening
+7. RFQ from CaseField Envelopes
+8. Tenant Guards / IDOR Hardening
+9. Compliance-Overclaim and Prompt-Injection Tests
+10. Frontend Lint and Journey Stabilization
+
+Do not combine several PRs unless explicitly instructed.
+
+A good PR touches one bounded behavior, adds focused tests, and leaves the product closer to pilot-ready.
+
+---
+
+## Critical safety rules on this VPS
+
+Default mode is safe and conservative.
+
+Do not do any of the following unless explicitly instructed:
+
+- restart services
+- stop services
+- run production migrations
+- delete production data
+- truncate tables
+- clear Redis or checkpoints
+- reset Qdrant collections
+- change DNS/nginx/systemd production configuration
+- expose secrets
+- print `.env` values
+- print API keys
+- print tokens
+- print passwords
+- call external production APIs as a test
+- send real RFQs
+- dispatch anything to manufacturers
+- install large new dependencies without justification
+
+If secrets are found:
+
+- never output the secret value
+- output only filename, key name, and risk
+- mask values fully as `[REDACTED]`
+- recommend rotation if exposure is possible
 
 ---
 
 ## Core architectural invariants
 
-### 1. One coherent visible speaker
-
-The user experiences one calm, senior sealing engineer. Multiple backend components may contribute, but the visible answer must feel coherent, precise, and trustworthy.
-
-### 2. LLM is communication and proposal, not engineering truth
+### 1. LLM is not engineering truth
 
 The LLM may generate:
 
 - `assistant_message`
 - `proposed_case_delta`
+- extraction candidates
+- explanations
+- next-question proposals
 
 The LLM must not directly mutate authoritative engineering state.
 
-### 3. Governor is the state authority
+### 2. Governor owns state mutation
 
 All case-state changes must pass through governed backend logic:
 
 ```text
-LLM / extractor proposed delta
+proposed delta or extracted candidate
 → schema validation
 → evidence linking
 → unit normalization
@@ -239,116 +273,115 @@ LLM / extractor proposed delta
 → projection update
 ```
 
-### 4. Case state is revisioned and auditable
+### 3. Case state is revisioned and auditable
 
-Critical changes must increment `case_revision` and be represented as events. RFQ, matching, Seal Passport, and reorder decisions must be traceable to specific revisions.
+Critical changes must increment or attach to `case_revision`.
 
-### 5. Critical fields require status, provenance, units, and evidence capability
+RFQ previews, exports, consent records, and later lifecycle objects must be traceable to specific revisions.
 
-Technical values should be modeled with a field envelope, not as bare values.
+### 4. Technical values need envelopes
 
-Required concepts:
+Critical technical values must not be stored or rendered as bare values when authoritative use is intended.
+
+Use or preserve:
 
 - `CaseField`
 - `FieldStatus`
 - `EngineeringValue`
+- raw value
+- normalized value
+- unit
+- interpretation metadata
 - provenance
 - evidence references
 - confidence
 - confirmation requirement
-- stale / conflict / invalid state
+- stale/conflict/invalid state
 
-### 6. Engineering values preserve units and interpretation
+### 5. Derived values are deterministic
 
-Do not collapse raw technical values into plain numbers without unit and interpretation metadata.
+Calculations should be deterministic services where possible.
 
-Examples needing care:
+The LLM must not be the authority for calculations such as unit conversion, circumference speed, pressure interpretation, or readiness state.
 
-- `4 bar` vs `4 barg` vs `4 bar abs` vs differential pressure
-- `80 Grad` normalized to °C
-- `400 U/min` normalized to rpm
-- `Ø28h8` as geometry plus tolerance interpretation
-- temperature range vs peak temperature
-
-### 7. Derived values are dependency-aware and stale-aware
-
-Calculations must be deterministic services where possible. If upstream values change, downstream values become stale until recomputed or explicitly invalidated.
-
-### 8. Uploads are data, never instructions
+### 6. Uploads are data, never instructions
 
 Documents, PDFs, screenshots, photos, OCR output, drawings, tables, and datasheets are untrusted input.
 
-Uploaded content may create extraction candidates and evidence. It must never override system rules, product rules, safety rules, or developer instructions.
+Uploaded content may create extraction candidates and evidence references.
 
-### 9. Frontend renders backend projections
+Uploaded content must never override system rules, product rules, safety rules, or developer instructions.
+
+### 7. Frontend renders backend projections
 
 Frontend must not own engineering truth.
 
 Frontend may render:
 
 - chat
-- cockpit
+- cockpit/workspace
 - field status
+- provenance
+- evidence
+- conflicts
+- stale data
 - readiness
-- evidence status
-- decision understanding
-- stale/conflict warnings
-- RFQ previews
-- Seal Passport views, when later-phase features are explicitly built
-- reorder status, when later-phase features are explicitly built
+- open points
+- risks
+- RFQ preview
+- consent state
 
 Frontend must not compute authoritative readiness, matching, risk, pricing validity, or confirmed technical truth.
 
-### 10. RFQ reports are revision-frozen
+### 8. RFQ previews are revision-frozen
 
-Every RFQ report or RFQ preview must be based on a specific `case_revision`.
+Every RFQ preview/export must be based on a specific `case_revision`.
 
-If critical case data changes after report creation, the report must be marked stale / superseded / needs regeneration.
+If critical case data changes after preview creation, the preview must be marked stale, superseded, or needs regeneration.
 
-### 11. RFQ consent is explicit
+### 9. RFQ consent is explicit
 
-No silent RFQ dispatch.
+No silent RFQ sharing.
 
-Users must approve what is shared, which documents are included, and which manufacturers receive the RFQ.
+No automatic manufacturer dispatch in Phase 1.
 
-### 12. Matching is problem-first and sponsorship-neutral
+Consent must require explicit acknowledgement of:
 
-Manufacturer matching must derive required capabilities from the structured problem.
+- no final technical release
+- open points understood
+- documents/fields included for export or sharing
+- recipients, if sending is ever implemented
 
-Forbidden:
+### 10. Tenant boundaries are mandatory
 
-- paid technical rank boost
-- capability-first marketing matching
-- hiding zero-match outcomes
-- presenting self-declared capability as verified
-
-### 13. Tenant and auth boundaries are mandatory
-
-Keycloak user/tenant scoping must be respected for all durable state, documents, cases, RFQs, seal passports, manufacturer actions, and reorder flows.
+Keycloak user/tenant/org scoping must be respected for all durable state, documents, cases, RFQs, uploads, previews, exports, and later lifecycle objects.
 
 No cross-tenant leakage.
 
+Do not trust client-provided IDs without server-side authorization checks.
+
 ---
 
-## Decision Understanding MVP
+## Decision Understanding rules
 
 The Decision Understanding Layer is central to SeaLAI’s USP.
 
-It must not become generic education or encyclopedia content. It must explain the user’s case and improve the next decision.
+It must explain the user’s case and improve the next decision.
 
-For every real sealing case, the backend projection should be able to expose:
+It must not become generic encyclopedia content.
+
+A useful projection should expose:
 
 ```text
-DecisionUnderstandingProjection:
-- case_summary
-- understood_now[]
-- technical_meaning[]
-- plausible_directions[]
-- not_yet_decidable[]
-- key_risks[]
-- confidence_notes[]
-- next_best_question
-- manufacturer_review_needs[]
+case_summary
+understood_now[]
+technical_meaning[]
+plausible_directions[]
+not_yet_decidable[]
+key_risks[]
+confidence_notes[]
+next_best_question
+manufacturer_review_needs[]
 ```
 
 A good SeaLAI response follows this pattern:
@@ -359,21 +392,21 @@ short technical framing
 → one best next question or action
 ```
 
-Deep dives must return to the user’s case, decision, RFQ readiness, or next best action.
+Deep dives must return to the user’s case, RFQ readiness, risk, open point, or next action.
 
 ---
 
 ## Runtime routing
 
-SeaLAI must preserve a lightweight frontdoor and a governed backend.
+SeaLAI must preserve a lightweight frontdoor and governed backend.
 
-### Fast Responder
+### Fast responder
 
 Allowed only for:
 
-- `GREETING`
-- `META_QUESTION`
-- `BLOCKED`
+- greeting
+- meta question
+- blocked/unsupported interaction
 
 Rules:
 
@@ -383,93 +416,188 @@ Rules:
 - fast response
 - persona-consistent
 
-If classification is ambiguous, fail safe toward the governed path.
+If classification is ambiguous, prefer the governed path.
 
-### Knowledge Query
+### Knowledge query
 
-For general sealing knowledge, material comparisons, terminology, and learning before a real application exists.
+For general sealing knowledge, terminology, material explanations, and learning before a real application exists.
 
 Rules:
 
 - no forced case creation
-- may use knowledge service / retrieval
-- may bridge to case if the user transitions into real application data
+- may use knowledge service/retrieval
 - must distinguish general explanation from case-specific assessment
+- may bridge to governed case if the user provides real application data
 
-### Governed Domain Inquiry
+### Governed domain inquiry
 
-For real applications, operating data, RFQ intent, technical preselection, upload-derived case data, calculations, risk, readiness, RFQ, matching, Seal Passport, and reorder.
-
-Rules:
-
-- uses governed state
-- may use LangGraph if appropriate
-- must remain auditable and projection-driven
-
----
-
-## State authority hierarchy
-
-Preferred authority order:
-
-1. Postgres durable case / RFQ / Seal Passport truth
-2. Redis live/session/checkpoint state
-3. LangGraph turn state
-4. Frontend rendering state
+For real applications, operating data, RFQ intent, technical preselection, uploads, calculations, risk, readiness, RFQ, consent, and export.
 
 Rules:
 
-- frontend is never authoritative for engineering truth
-- Redis-only truth must not become the only durable basis for RFQ, Seal Passport, or reorder
-- LangGraph state is orchestration state, not final durable truth
-- all projections should state what backend source they represent
+- use governed state
+- remain auditable
+- use backend projections
+- do not bypass field status, provenance, or confirmation requirements
 
 ---
 
-## Required service seams
+## RFQ rules
 
-Prefer explicit services over route-heavy or prompt-only logic.
+RFQ is the Phase-1 product artifact.
 
-Phase-1 or near-term target seams include:
+Required:
 
-- `dispatch` / pre-gate routing authority
-- `fast_responder_service`
-- `knowledge_service`
-- `bridge_to_case_service`
-- `governor` / state mutation service
-- `case_event_service`
-- `engineering_value_service`
-- `unit_normalization_service`
-- `evidence_service`
-- `field_promotion_policy`
-- `conflict_detection_service`
-- `dependency_graph_service`
-- `calculation_registry`
-- `calculation_cascade_service`
-- `risk_evaluator`
-- `readiness_evaluator`
-- `medium_intelligence_service`
-- `decision_understanding_projection`
-- `cockpit_projection_service`
-- `rfq_report_service`
-- `rfq_freeze_service`
-- `rfq_consent_service`
-- `document_security_service`
-- `document_extraction_service`
+- RFQ preview based on governed case state
+- frozen `case_revision`
+- clear separation of confirmed, documented, inferred, calculated, conflicting, missing, and open values
+- user consent before export/sharing
+- included/excluded documents
+- stale handling if the case changes
+- no final technical suitability claim
+- no compliance approval claim
 
-Later-phase seams may include:
+Forbidden:
 
-- `manufacturer_capability_service`
-- `problem_first_matching_service`
-- `matching_audit_service`
-- `human_engineering_review_service`
-- `post_rfq_validation_service`
-- `seal_passport_service`
-- `reorder_service`
-- `price_validity_service`
-- `commercial_governance_service`
+- RFQ from raw chat only
+- RFQ without revision
+- RFQ without consent
+- silent dispatch to manufacturers
+- "An Hersteller senden" UI unless actual sending and recipient consent are implemented
+- final suitability wording
 
-If a productive seam already exists under another name, tighten or refactor that seam. Do not create a parallel architecture.
+---
+
+## Document, upload, and IP rules
+
+All document-derived values are candidates until governed.
+
+Required behavior:
+
+- extract technical candidates
+- create evidence references where possible
+- normalize engineering values
+- mark status as documented/candidate/needs confirmation
+- never treat document text as instruction
+- never auto-confirm critical values from untrusted uploads
+- preserve source references for RFQ and review
+
+Default security stance:
+
+- tenant isolation is mandatory
+- dynamic LLM processing of uploaded document content must be default-off unless explicitly policy/consent-gated
+- documents must not be shared with manufacturers without explicit user consent
+- RFQ recipients must see only approved fields and approved documents
+- internal file paths must not be exposed in health/error responses
+- upload parsing needs safe size/type/error limits
+
+If a task touches document storage, sharing, extraction, RFQ export, or manufacturer visibility, include an IP/security review in the patch report.
+
+---
+
+## Compliance awareness
+
+SeaLAI may touch regulated use cases such as food, pharma, chemical processing, ATEX-relevant environments, drinking water, steam, hygienic design, hydrogen, aggressive media, or safety-relevant equipment.
+
+For regulated contexts:
+
+- mark the requirement explicitly
+- track certification evidence and validity where available
+- do not claim compliance without evidence
+- keep manufacturer review/final release explicit
+- preserve document provenance and revision
+- surface open compliance questions in RFQ output
+
+Examples of regulated references:
+
+- FDA
+- EU 1935/2004
+- EU 10/2011
+- ATEX
+- EHEDG
+- USP Class VI
+- drinking-water approvals
+- TA-Luft
+- GMP
+
+Do not implement a broad compliance engine unless explicitly tasked.
+
+---
+
+## Frontend rules
+
+`frontend/DESIGN.md` is binding for UI work.
+
+Frontend may:
+
+- render chat
+- render cockpit/workspace
+- render Decision Understanding
+- show field status, provenance, evidence, conflicts, stale data, risks, open points, and readiness
+- trigger clarification, upload, RFQ preview, consent, and export flows
+
+Frontend must not:
+
+- compute authoritative engineering truth
+- invent readiness
+- own matching logic
+- hide backend conflicts
+- silently reconcile state mismatches
+- create a parallel design system
+- bypass `frontend/DESIGN.md`
+- show final engineering approval language
+- show automatic manufacturer dispatch unless implemented and consent-gated
+
+Unsafe copy to avoid:
+
+- Empfehlung ableiten
+- Technische Validierung
+- finalisieren und versenden
+- Anfrage erfolgreich versendet
+- An Hersteller senden
+- neutral geprüfte Auswahl
+- freigegeben
+- validiert
+- geeignet
+- zertifiziert
+- compliant
+
+Preferred copy:
+
+- RFQ-Preview
+- Anfragebasis für Herstellerprüfung
+- offene Punkte
+- Risiken
+- Datenherkunft
+- noch nicht final freigegeben
+- zur Herstellerprüfung vorbereitet
+- Export vorbereiten
+- Nutzerbestätigung erforderlich
+
+---
+
+## Backend rules
+
+Backend owns:
+
+- classification authority
+- governed state mutation
+- case events and revisions
+- engineering value normalization
+- evidence and provenance handling
+- conflict detection
+- dependency/stale propagation
+- deterministic calculations
+- risk/readiness evaluation
+- RFQ freeze
+- RFQ consent
+- document security and extraction
+- tenant scoping
+- frontend-ready projections
+
+Backend must expose frontend-ready projections.
+
+Frontend should not infer product truth from raw backend internals.
 
 ---
 
@@ -477,23 +605,19 @@ If a productive seam already exists under another name, tighten or refactor that
 
 ### Default: audit first, patch second
 
-For any non-trivial task:
+For every non-trivial task:
 
-1. Read current SSoT and relevant code/tests.
-2. Map the existing productive seam.
-3. State what is true now.
-4. State the specific misalignment.
-5. Propose the smallest productive patch.
-6. Patch only that seam.
-7. Add or update focused tests.
-8. Run relevant validation.
-9. Report exact files changed, commands, risks, and next patch.
-
-### For architecture-heavy tasks
-
-Start with a read-only audit unless explicitly asked to patch.
-
-Do not implement the target architecture as a big-bang task. The concept is the product and architecture direction; implementation must be phased, minimal, and testable.
+1. Read `AGENTS.md`.
+2. Read `konzept/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`.
+3. Inspect relevant code and tests.
+4. Map the existing productive seam.
+5. State what is true now.
+6. State the exact misalignment.
+7. Propose the smallest productive patch.
+8. Patch only that seam.
+9. Add or update focused tests.
+10. Run relevant validation.
+11. Report changed files, commands, results, risks, and next patch.
 
 ### Patch-size policy
 
@@ -502,22 +626,24 @@ A good patch:
 - touches one architectural seam or bounded behavior
 - has clear before/after behavior
 - adds or updates focused tests
-- leaves the system more aligned with SSoT
 - avoids speculative abstractions
+- avoids dead future code
+- improves pilot readiness
 
 A bad patch:
 
 - mixes state models, UI, routing, RFQ, matching, and business logic
-- creates many new files without proving the seam
-- hides broad rewrites inside a “small patch”
-- adds dead future code
-- duplicates a messy existing service instead of improving the real seam
+- creates parallel services beside the real seam
+- hides broad rewrites inside a small patch
+- implements Phase-2+ features without explicit instruction
+- adds prompt-only backend rules
+- makes frontend authoritative for engineering truth
 
 ---
 
 ## Required reporting format for patch work
 
-Every implementation summary should use:
+Every implementation summary must use:
 
 ### 1. Short diagnosis
 
@@ -558,26 +684,21 @@ Minimum:
 - focused unit or contract tests where possible
 - exact validation commands
 - expected behavior
-- no hand-wavy “should work”
+- no hand-wavy "should work"
 
 Preferred validation types:
 
-- unit tests for services
-- API contract tests for envelopes
-- projection tests for cockpit and decision understanding
+- service unit tests
+- API contract tests
+- projection tests
 - routing boundary regression tests
 - deterministic calculation tests
-- RFQ freeze / consent tests
-- matching audit tests, when matching is explicitly in scope
-
-Later-phase validation may include:
-
-- post-RFQ validation tests
-- Seal Passport lifecycle tests
-- price validity tests
-- commercial governance tests
-
-### Repo-root command rule
+- RFQ freeze/stale/consent tests
+- tenant/IDOR tests
+- upload/IP safety tests
+- prompt-injection tests
+- compliance-overclaim tests
+- frontend journey tests
 
 Always provide commands from:
 
@@ -585,401 +706,112 @@ Always provide commands from:
 /home/thorsten/sealai
 ```
 
-Examples:
-
-```bash
-cd /home/thorsten/sealai && pytest backend/app/agent/tests -q --maxfail=1 --ignore=backend/app/agent/tests/test_agent_health.py
-```
-
-```bash
-cd /home/thorsten/sealai && pytest backend/tests -q --maxfail=1
-```
-
-```bash
-cd /home/thorsten/sealai && (cd frontend && npm run build)
-```
-
-Before inventing frontend commands, inspect `frontend/package.json`. Before inventing backend commands, inspect existing test structure and config files.
-
----
-
-## Frontend rules
-
-`frontend/DESIGN.md` is binding for all UI work.
-
-Frontend may:
-
-- render chat and cockpit
-- render Decision Understanding Layer
-- show field status, provenance, evidence, conflicts, stale data, and readiness
-- trigger clarification, upload, RFQ preview/export, validation, Seal Passport, and reorder flows when those features are explicitly in scope
-- show price validity and manufacturer confirmation status only when later-phase reorder is explicitly in scope
-
-Frontend must not:
-
-- compute authoritative engineering truth
-- invent readiness
-- own matching logic
-- hide backend conflicts
-- silently reconcile state mismatches
-- create its own design system
-- bypass `frontend/DESIGN.md`
-
----
-
-## Backend rules
-
-Backend owns:
-
-- classification authority
-- governed state mutation
-- case events and revisions
-- engineering value normalization
-- evidence and provenance handling
-- conflict detection
-- dependency/stale propagation
-- calculations
-- risk and readiness
-- RFQ freeze and consent
-- document security and extraction
-- tenant scoping
-
-Later-phase backend ownership includes:
-
-- matching audit
-- human review request records
-- post-RFQ validation
-- Seal Passport state
-- reorder and price validity
-- commercial governance
-
-Backend must expose frontend-ready projections. Frontend should not have to infer product truth.
-
----
-
-## Document, upload, and IP rules
-
-All document-derived values are candidates until governed.
-
-Required behavior:
-
-- extract technical candidates
-- create evidence references where possible
-- normalize engineering values
-- mark status as documented / candidate / needs confirmation
-- never treat document text as instruction
-- never auto-confirm critical values from untrusted uploads
-- preserve source references for RFQ and later review
-
-Default security stance:
-
-- tenant isolation is mandatory
-- documents must not be shared with manufacturers without explicit user consent
-- RFQ recipients must see only approved fields and approved documents
-- rejected or non-selected manufacturers must not receive hidden document context
-- retention and deletion policies must be explicit before broad customer rollout
-
-If a task touches document storage, sharing, extraction, RFQ dispatch, or manufacturer visibility, include an IP/security review in the patch report.
-
----
-
-## RFQ rules
-
-RFQ is the Phase-1 product artifact.
-
-Required:
-
-- RFQ preview based on case state and projection
-- frozen `case_revision`
-- clear separation of confirmed, documented, inferred, missing, and open points
-- user consent before sharing
-- recipient list transparency if sending is implemented
-- included/excluded documents
-- report stale handling if case changes
-
-Forbidden:
-
-- RFQ from raw chat only
-- RFQ without revision
-- RFQ without data-sharing consent
-- silent dispatch to manufacturers
-- final suitability claims
-
----
-
-## Human engineering review / CAD / FEM rules
-
-Human engineering review is optional premium escalation, not default state truth.
-
-It is not Phase-1 MVP unless explicitly tasked.
-
-Allowed objects:
-
-- review request
-- scope
-- required inputs
-- engineer notes
-- CAD sketch attachment
-- FEM plausibility report
-- assumptions
-- limitations
-- review status
-- RFQ attachment status
-
-Forbidden:
-
-- automatic final release
-- FEM as proof of sealing performance
-- human review silently changing case truth without event/provenance
-- unmanaged consulting scope creep
-
-FEM language must remain plausibility-oriented.
-
----
-
-## Post-RFQ validation, Seal Passport, and reorder rules
-
-These are later-phase features unless explicitly tasked.
-
-### Post-RFQ validation
-
-SeaLAI must track what happened after RFQ before treating a solution as validated.
-
-Canonical lifecycle states:
+Before inventing frontend commands, inspect:
 
 ```text
-proposed
-offered
-selected
-ordered
-delivered
-installed
-in_test
-working
-working_with_limitations
-failed
-superseded
-reorderable
+frontend/package.json
 ```
 
-No solution becomes “reorderable” without validation status and stored solution identity.
+Before inventing backend commands, inspect existing test structure and config files.
 
-### Seal Passport / Dichtstellenpass
+Known useful validation commands may include:
 
-A Seal Passport is tied to a specific sealing position or application, not just a generic article.
-
-It may include:
-
-- case reference
-- validated solution
-- article number
-- drawing revision
-- manufacturer
-- certificates
-- CAD/FEM attachments
-- operating envelope
-- installation/test feedback
-- reorder status
-- price status
-- lifecycle notes
-
-### Reorder and price validity
-
-A reorder flow must check:
-
-- solution status
-- article/revision identity
-- current price status
-- price validity date
-- manufacturer confirmation
-- lead time
-- MOQ
-- certificate validity
-- replacement/discontinued status
-
-If price is expired or not confirmed, show request flow, not hard checkout.
-
-Default later-phase rule:
-
-- standard price validity: 90 days
-- manufacturer reminder: 14 days before expiry
-- expired price becomes `price_on_request`
-- user can submit reorder request with existing Seal Passport context
-
-Do not build a public marketplace shop before private Seal-Passport-based reorder is stable.
-
----
-
-## Commercial governance rules
-
-Commercial models may include, in later phases:
-
-- partner subscription
-- verified capability profile
-- accepted RFQ fee
-- engineering review fee
-- RFQ concierge fee
-- reorder service fee
-- success fee / provision where contractually clear
-
-Commercial models must not:
-
-- influence technical matching score
-- hide paid relationships
-- create pay-to-play technical ranking
-- make SeaLAI appear neutral if it is acting as paid sales agent in a specific flow
-
-Use transparent labels and audit trails.
-
-Commercial governance is not Phase-1 MVP unless explicitly tasked.
-
----
-
-## Matching rules
-
-Matching is Phase 2+ unless explicitly tasked.
-
-Required matching flow:
-
-1. derive structured problem signature
-2. derive required capabilities
-3. hard-filter must-have criteria where appropriate
-4. score technical fit
-5. show rationale, uncertainty, missing evidence, and exclusions
-6. keep sponsorship out of technical score
-
-Capability evidence matters:
-
-- self_declared
-- documented
-- platform_curated
-- verified
-
-Do not treat all capability claims equally.
-
-Cold-start rule:
-
-- bootstrap manufacturer capabilities manually where needed
-- keep evidence levels explicit
-- do not pretend unverified capability data is verified
-- do not make matching the first MVP dependency if RFQ qualification is not yet reliable
-
----
-
-## Knowledge and medium intelligence rules
-
-SeaLAI may combine:
-
-- registry-grounded knowledge
-- curated tables
-- user-provided facts
-- document-derived facts
-- LLM synthesis
-
-But must distinguish them.
-
-Never present plausible LLM synthesis as validated engineering truth.
-
-Case-specific knowledge should return to:
-
-- decision understanding
-- next best question
-- risk/readiness
-- RFQ quality
-
----
-
-## Compliance awareness
-
-SeaLAI may touch regulated use cases such as food, pharma, chemical processing, ATEX-relevant environments, drinking water, steam, hygienic design, hydrogen, or aggressive media.
-
-Do not treat certificates and standards as simple labels.
-
-For regulated contexts:
-
-- mark the requirement explicitly
-- track certification evidence and validity where available
-- do not claim compliance without evidence
-- keep manufacturer review/final release explicit
-- preserve document provenance and revision
-- surface open compliance questions in RFQ output
-
-Examples of possible regulated references include FDA, EU 1935/2004, EU 10/2011, ATEX, EHEDG, USP Class VI, drinking-water approvals, TA-Luft, and GMP.
-
-Do not implement a full compliance engine unless explicitly tasked.
-
----
-
-## Journey-level tests
-
-Layer tests are not enough.
-
-When implementing user-visible lifecycle behavior, add or preserve journey tests where feasible, for example:
-
-```text
-unclear problem
-→ governed case
-→ Decision Understanding projection
-→ RFQ preview
-→ RFQ freeze
-→ user consent
-→ manufacturer-ready export
+```bash
+cd /home/thorsten/sealai && python -m pytest backend/app/api/tests/test_rfq_endpoint.py -q
 ```
 
-Later-phase example:
-
-```text
-RFQ
-→ manufacturer solution selected
-→ installed/tested feedback
-→ validated Seal Passport
-→ reorder request with price validity check
+```bash
+cd /home/thorsten/sealai && python -m pytest backend/app/agent/tests/test_case_delta_contract.py backend/app/agent/tests/test_normalization.py backend/app/agent/tests/test_governed_runtime_seam.py -q
 ```
 
-Do not create broad E2E tests that require unavailable external services unless the repo already provides suitable fakes/mocks.
+```bash
+cd /home/thorsten/sealai && npm --prefix frontend run test:run
+```
+
+```bash
+cd /home/thorsten/sealai && npm --prefix frontend run lint
+```
+
+Run only relevant tests unless explicitly asked for full-suite validation.
 
 ---
 
-## Anti-patterns
+## Test expectations by current pilot-readiness PR
 
-Avoid:
+### PR 1 — RFQ Consent Boundary
 
-1. Architecture cosplay — fancy abstractions without production value.
-2. Hidden rewrites — broad changes disguised as small patches.
-3. Prompt as backend — durable engineering rules only in prompts.
-4. UI concealment — frontend hiding backend authority problems.
-5. Duplicate truth — competing Redis/Postgres/frontend/LangGraph authorities.
-6. Duplicate seam — new service beside the real messy seam.
-7. Overeager persistence — cases for greetings or simple meta questions.
-8. Overblocking — pushing light interactions into heavy governed flows.
-9. False empathy — gushy, dramatic, or emoji-heavy voice.
-10. Silent assumption loading — auto-confirming critical fields.
-11. Pay-to-play matching — sponsorship influences technical fit.
-12. RFQ without revision.
-13. Reorder without validation.
-14. Price without validity.
-15. ERP gravity — ERP/CRM concerns distorting core runtime too early.
-16. Big-bang target architecture — trying to implement the full target image in one patch.
-17. Discovery bypass — building Phase 2+ systems without user/manufacturer validation.
-18. Compliance hand-waving — treating regulated contexts as simple boolean flags.
+Required tests:
 
----
+- missing `user_acknowledged_no_final_release` is rejected
+- open points present plus missing `user_acknowledged_open_points` is rejected
+- valid acknowledgements are accepted
+- stale preview is rejected
+- `dispatch_enabled` remains false
 
-## Prompting contract for coding agents
+### PR 2 — Settings and Startup Safety
 
-Good task prompts should include:
+Required tests:
 
-- Task Summary
-- Architectural intent
-- Current suspected seam
-- Files to inspect first
-- Constraints / invariants
-- Expected artifacts
-- Tests required
-- Validation commands
-- Explicit forbidden moves
+- all referenced settings exist
+- production-safe defaults do not clear Redis/checkpoints
+- worker startup is explicitly gated
+- docs/openapi exposure is environment-gated if changed
+- config import smoke test passes
 
-For complex tasks, produce a plan or read-only audit before patching.
+### PR 3 — Secret/Env Hygiene
+
+Required checks:
+
+- no real `.env` files are versioned
+- examples use placeholders only
+- Keycloak exports do not contain live secrets or are marked rotation-required
+- output never prints secret values
+
+### PR 4 — Upload/IP Safety
+
+Required tests:
+
+- dynamic LLM metadata extraction is disabled by default
+- unsafe/spoofed uploads are rejected or safely handled
+- internal paths are redacted from health/error responses
+- parser errors are safe
+- upload-derived values remain candidates
+
+### PR 5 — RFQ Preview Frontend Flow
+
+Required tests:
+
+- RFQ preview loads from backend/BFF
+- open points are visible
+- consent acknowledgements are required
+- stale preview state is visible
+- forbidden product copy does not appear in the main flow
+- no automatic manufacturer dispatch is shown
+
+### PR 6 — RFQ Field Envelopes
+
+Required tests:
+
+- confirmed/documented/user-stated/inferred/calculated/conflicting/missing fields are separated
+- critical values include status/provenance/evidence where available
+- no bare critical value appears as authoritative RFQ truth
+
+### PR 7 — Tenant Guards
+
+Required tests:
+
+- user A cannot read user B case/RFQ/document
+- user A cannot consent user B preview
+- cross-tenant IDs return 403 or 404
+- no client-provided ID is trusted without server-side authorization
+
+### PR 8 — Compliance and Prompt Injection
+
+Required tests:
+
+- FDA/ATEX/Food/Pharma/Drinking Water overclaims are rejected or rewritten safely
+- uploaded document instructions cannot override product/system rules
+- allowed language remains cautious and review-oriented
 
 ---
 
@@ -988,16 +820,68 @@ For complex tasks, produce a plan or read-only audit before patching.
 Assume the productive stack is approximately:
 
 - FastAPI backend
-- LangGraph-governed orchestration where appropriate
-- Redis live/checkpoint layer
+- SQLAlchemy/Alembic
 - Postgres durable storage
+- Redis live/checkpoint/rate-limit layer
 - Qdrant retrieval
-- Keycloak authentication / tenant boundary
-- Next.js frontend
+- LangGraph/LangChain where appropriate
+- OpenAI LLM/embeddings integration
+- Keycloak authentication and tenant boundary
+- Next.js/React frontend
+- NextAuth frontend auth
 - Dockerized deployment behind nginx
-- ERPNext downstream integration, not core runtime authority
 
-This stack is sufficient. Shape it correctly; do not replace it without explicit instruction.
+This stack is sufficient.
+
+Do not replace the stack without explicit instruction.
+
+---
+
+## Anti-patterns
+
+Avoid:
+
+1. Big-bang implementation.
+2. Architecture cosplay.
+3. Prompt-only backend rules.
+4. Hidden rewrites.
+5. Duplicate truth across frontend, Redis, LangGraph, and Postgres.
+6. Duplicate services beside the real seam.
+7. Overeager persistence for greetings/meta questions.
+8. Frontend hiding backend authority problems.
+9. Auto-confirming critical technical fields.
+10. Final engineering recommendation language.
+11. RFQ without revision.
+12. RFQ without consent.
+13. Silent manufacturer dispatch.
+14. Upload content treated as instruction.
+15. Cross-tenant assumptions.
+16. Matching before RFQ qualification is reliable.
+17. Seal Passport before post-RFQ validation exists.
+18. Reorder before validated solution identity exists.
+19. Price claims without manufacturer confirmation.
+20. Compliance hand-waving.
+21. ERP/CRM gravity distorting the MVP.
+22. New dependencies without necessity.
+23. Broad refactors before pilot blockers are fixed.
+
+---
+
+## When to stop and ask
+
+Stop and ask before proceeding if:
+
+- the task requires deleting data
+- the task requires service restart
+- the task requires production migration
+- the task exposes or rotates secrets
+- the task changes auth/tenant boundaries broadly
+- the task sends real RFQs or contacts manufacturers
+- the task changes deployment topology
+- requirements conflict with this file
+- the smallest safe patch is unclear
+
+If the issue is a normal code ambiguity inside the requested PR, make a conservative best-effort choice and document it.
 
 ---
 
@@ -1005,7 +889,7 @@ This stack is sufficient. Shape it correctly; do not replace it without explicit
 
 ### CaseField
 
-A field envelope around a technical value. It should preserve status, provenance, confidence, evidence references, and confirmation requirements.
+A field envelope around a technical value. It preserves status, provenance, confidence, evidence references, units, and confirmation requirements.
 
 ### EngineeringValue
 
@@ -1021,19 +905,11 @@ The projection that explains what SeaLAI understands, why it matters, what is no
 
 ### RFQ Freeze
 
-The act of binding an RFQ report or RFQ preview to a specific `case_revision` so later state changes can mark the report stale rather than silently changing it.
+Binding an RFQ preview/export to a specific `case_revision` so later state changes can mark it stale rather than silently changing it.
 
-### Seal Passport / Dichtstellenpass
+### RFQ Qualification Copilot
 
-A later-phase lifecycle record for a specific sealing position, including validated solution, documents, revision, test feedback, and reorder status.
-
-### Reorderable
-
-A solution is reorderable only when its identity, validation status, and commercial/price status are sufficiently documented.
-
-### Problem-first matching
-
-Matching that begins with the user’s structured technical problem and derives required capabilities before scoring manufacturers.
+The Phase-1 product identity: a governed assistant that turns unclear sealing situations into manufacturer-review-ready RFQ preparation, not final product selection.
 
 ---
 
@@ -1042,16 +918,16 @@ Matching that begins with the user’s structured technical problem and derives 
 When in doubt, choose the path that:
 
 - preserves the current SSoT
-- keeps SeaLAI conversation-first for the user
+- keeps SeaLAI focused on RFQ qualification
 - keeps engineering truth governed in the backend
 - makes uncertainty visible
-- preserves neutrality
+- preserves provenance and evidence
+- respects tenant boundaries
 - avoids duplicate architecture
-- respects the Phase-1 MVP cut
-- does not build Phase 2+ without explicit instruction
+- avoids Phase-2+ scope creep
 - produces the smallest reliable patch
-- adds evidence for the next agent
+- adds tests or evidence for the next agent
 
 SeaLAI should increasingly feel like:
 
-> **one experienced sealing engineer on the surface, backed by a disciplined, auditable engineering system underneath.**
+> one experienced sealing engineer on the surface, backed by a disciplined, auditable engineering system underneath.
