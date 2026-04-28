@@ -69,10 +69,11 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       return;
     }
     let isCurrent = true;
-    historyLoadedCaseIdRef.current = caseId;
+    const historyCaseId = caseId;
+    historyLoadedCaseIdRef.current = historyCaseId;
     async function restoreInitialHistory() {
       try {
-        const restored = await fetchHistory(caseId);
+        const restored = await fetchHistory(historyCaseId);
         if (!isCurrent || restored.length === 0) return;
         setMessages((current) => (current.length > 0 ? current : restored));
       } catch (err: unknown) {

@@ -1295,7 +1295,7 @@ function DeepDiveTabMode({
 }
 
 function buildFallbackDeepDiveTab(
-  mode: Exclude<WorkspaceMode, "analysis">,
+  mode: Exclude<WorkspaceMode, "analysis" | "rfq">,
   cockpit: ReturnType<typeof useCockpitData>,
   workspace: ReturnType<typeof useWorkspaceStore.getState>["workspace"] | null,
 ): WorkspaceDeepDiveTab {
