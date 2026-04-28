@@ -21,6 +21,7 @@ import type { LucideIcon } from "lucide-react";
 
 import ChatPane from "@/components/dashboard/ChatPane";
 import { StatusBadge } from "@/components/dashboard/CockpitElements";
+import RfqPane from "@/components/dashboard/RfqPane";
 import { useCockpitData } from "@/hooks/useCockpitData";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import {
@@ -81,7 +82,7 @@ type OpenPointItem = {
   severity: "critical" | "attention" | "info";
 };
 
-type WorkspaceMode = "analysis" | "medium" | "material" | "seal_type";
+type WorkspaceMode = "analysis" | "medium" | "material" | "seal_type" | "rfq";
 
 type CompareColumn = {
   label: string;
@@ -114,6 +115,7 @@ const WORKSPACE_MODE_OPTIONS: Array<{ id: WorkspaceMode; label: string }> = [
   { id: "medium", label: "Medium" },
   { id: "material", label: "Werkstoff" },
   { id: "seal_type", label: "Dichtungstyp" },
+  { id: "rfq", label: "RFQ-Preview" },
 ];
 
 const CORE_PARAMETER_FIELDS: ParameterFieldDescriptor[] = [
@@ -1199,7 +1201,7 @@ function DeepDiveTabMode({
   workspace,
   cockpit,
 }: {
-  mode: Exclude<WorkspaceMode, "analysis">;
+  mode: Exclude<WorkspaceMode, "analysis" | "rfq">;
   workspace: ReturnType<typeof useWorkspaceStore.getState>["workspace"] | null;
   cockpit: ReturnType<typeof useCockpitData>;
 }) {
@@ -1320,13 +1322,19 @@ function WorkspaceModeContent({
   mode,
   cockpit,
   workspace,
+  caseId,
   displayRequestType,
 }: {
   mode: WorkspaceMode;
   cockpit: ReturnType<typeof useCockpitData>;
   workspace: ReturnType<typeof useWorkspaceStore.getState>["workspace"] | null;
+  caseId?: string;
   displayRequestType: string;
 }) {
+  if (mode === "rfq") {
+    return <RfqPane data={cockpit} caseId={caseId} />;
+  }
+
   if (mode !== "analysis") {
     return <DeepDiveTabMode mode={mode} workspace={workspace} cockpit={cockpit} />;
   }
@@ -1366,7 +1374,7 @@ function deriveTimelineSteps(cockpit: ReturnType<typeof useCockpitData>): Timeli
     "Frage verstehen",
     "Vergleich aufbauen",
     "Unterschiede bewerten",
-    "Empfehlung ableiten",
+    "Anfragebasis vorbereiten",
   ].map((label, index) => ({
     label,
     status: index < activeIndex ? "done" : index === activeIndex ? "active" : "pending",
@@ -1676,6 +1684,7 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
                       mode={workspaceMode}
                       cockpit={cockpit}
                       workspace={workspace}
+                      caseId={resolvedCaseId ?? undefined}
                       displayRequestType={displayRequestType}
                     />
                   </motion.div>

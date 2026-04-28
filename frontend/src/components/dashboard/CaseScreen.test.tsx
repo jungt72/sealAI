@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import CaseScreen from "./CaseScreen";
 
@@ -232,12 +232,16 @@ vi.mock("@/lib/store/workspaceStore", () => ({
 }));
 
 describe("CaseScreen", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("renders the workspace shell with timeline, stable context header and collapsible utility rail", async () => {
     const user = userEvent.setup();
     render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
 
     expect(screen.getByText("Frage verstehen")).toBeInTheDocument();
-    expect(screen.getByText("Empfehlung ableiten")).toBeInTheDocument();
+    expect(screen.getByText("Anfragebasis vorbereiten")).toBeInTheDocument();
     expect(screen.getByText("PTFE-RWDR Entscheidungsraum")).toBeInTheDocument();
     expect(screen.getAllByText("Hydraulikpumpe").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("Hydraulikoel").length).toBeGreaterThanOrEqual(2);
@@ -336,5 +340,57 @@ describe("CaseScreen", () => {
     expect(await screen.findByText("Parameter & Application")).toBeInTheDocument();
     expect(await screen.findByText("Medium Intelligence")).toBeInTheDocument();
     expect(screen.getByText("PTFE-RWDR Entscheidungsraum")).toBeInTheDocument();
+  });
+
+  it("exposes the backend RFQ preview journey in the main workspace mode", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          preview_id: "preview-main",
+          case_id: "case-42",
+          case_revision: 3,
+          current_case_revision: 3,
+          stale: false,
+          consent_status: "not_requested",
+          dispatch_enabled: false,
+          created_at: null,
+          payload: {
+            rfq_preview: {
+              sections: [
+                { index: 10, title: "Offene Punkte / unbestaetigte Annahmen", content: ["Temperaturfenster bestaetigen"], status: "open" },
+                { index: 8, title: "Erkannte Risiken", content: ["Druckspitzen offen"], status: "available" },
+              ],
+              technical_field_statuses: [
+                {
+                  field: "temperature_c",
+                  status: "documented",
+                  provenance: "datasheet",
+                  confidence: "high",
+                  confirmation_required: false,
+                },
+              ],
+            },
+          },
+        }),
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
+    await user.click(screen.getByRole("button", { name: "RFQ-Preview" }));
+
+    expect((await screen.findAllByText("RFQ-Preview")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Temperaturfenster bestaetigen")).toBeInTheDocument();
+    expect(screen.getByText("frozen revision 3")).toBeInTheDocument();
+    expect(screen.getByText("Druckspitzen offen")).toBeInTheDocument();
+    expect(screen.getByText("temperature_c")).toBeInTheDocument();
+    expect(screen.getByText("Nutzerbestätigung erforderlich")).toBeInTheDocument();
+    expect(screen.queryByText(["An Hersteller", "senden"].join(" "))).not.toBeInTheDocument();
+    expect(screen.queryByText(["Finalisieren", "und versenden"].join(" "))).not.toBeInTheDocument();
+    expect(screen.queryByText(["Technische", "Validierung"].join(" "))).not.toBeInTheDocument();
+    expect(screen.queryByText(["Empfehlung", "ableiten"].join(" "))).not.toBeInTheDocument();
+    expect(screen.queryByText(["neutral geprüfte", "Auswahl"].join(" "))).not.toBeInTheDocument();
   });
 });

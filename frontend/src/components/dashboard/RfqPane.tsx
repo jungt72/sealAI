@@ -1,18 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
-import { CockpitData } from "@/hooks/useCockpitData";
-import { generateTechnicalSummary } from "@/lib/engineering/artifacts";
-import { 
-  Send, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Building2, 
-  ShieldCheck, 
-  Info
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  Info,
+  RefreshCw,
+  ShieldAlert,
 } from "lucide-react";
-import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
+
 import { StatusBadge } from "./CockpitElements";
+import type { CockpitData } from "@/hooks/useCockpitData";
+import {
+  buildRfqPreviewConsentReadPath,
+  buildRfqPreviewReadPath,
+} from "@/lib/bff/workspace";
 import { cn } from "@/lib/utils";
 
 interface RfqPaneProps {
@@ -20,139 +23,459 @@ interface RfqPaneProps {
   caseId?: string;
 }
 
+type RfqPreviewSection = {
+  index?: number;
+  title?: string;
+  content?: unknown;
+  status?: string;
+};
+
+type RfqFieldStatus = {
+  field?: string;
+  status?: string;
+  provenance?: string | null;
+  confidence?: string | null;
+  confirmation_required?: boolean;
+  evidence_refs?: string[];
+};
+
+type RfqPreviewResponse = {
+  preview_id: string;
+  case_id: string;
+  case_revision: number;
+  current_case_revision: number;
+  stale: boolean;
+  consent_status: string;
+  dispatch_enabled: boolean;
+  created_at: string | null;
+  payload?: {
+    rfq_preview?: {
+      sections?: RfqPreviewSection[];
+      technical_field_statuses?: RfqFieldStatus[];
+      confirmation_required_fields?: string[];
+      manufacturer_release_boundary?: string;
+    };
+    consent_boundary?: {
+      status?: string;
+      open_points_acknowledgement_required?: boolean;
+      no_final_release_acknowledgement_required?: boolean;
+      requires_explicit_user_consent_before_sharing?: boolean;
+      automatic_dispatch_allowed?: boolean;
+    };
+    decision_understanding?: {
+      key_risks?: string[];
+      manufacturer_review_needs?: string[];
+      not_yet_decidable?: string[];
+    };
+  };
+};
+
+type ConsentState = {
+  noFinalRelease: boolean;
+  openPoints: boolean;
+  exportSharing: boolean;
+};
+
+const EMPTY_SECTIONS: RfqPreviewSection[] = [];
+const EMPTY_FIELD_STATUSES: RfqFieldStatus[] = [];
+
+function valueToText(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "Noch offen";
+  }
+  if (Array.isArray(value)) {
+    return value.map(valueToText).join(", ");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${key}: ${valueToText(item)}`)
+      .join("; ");
+  }
+  return String(value);
+}
+
+function sectionItems(sections: RfqPreviewSection[], matcher: RegExp): string[] {
+  return sections
+    .filter((section) => matcher.test(section.title || ""))
+    .flatMap((section) => {
+      const content = section.content;
+      if (Array.isArray(content)) {
+        return content.map(valueToText);
+      }
+      if (content && typeof content === "object") {
+        return Object.entries(content as Record<string, unknown>).map(
+          ([key, value]) => `${key}: ${valueToText(value)}`,
+        );
+      }
+      return content ? [valueToText(content)] : [];
+    })
+    .filter(Boolean);
+}
+
+function getErrorMessage(body: unknown, fallback: string) {
+  if (body && typeof body === "object") {
+    const record = body as {
+      error?: { message?: string };
+      detail?: { message?: string; code?: string } | string;
+    };
+    if (typeof record.detail === "string") {
+      return record.detail || fallback;
+    }
+    return record.error?.message || record.detail?.message || record.detail?.code || fallback;
+  }
+  return fallback;
+}
+
 export default function RfqPane({ data, caseId }: RfqPaneProps) {
-  const [isSending, setIsSending] = useState(false);
-  const [isSent, setIsSent] = useState(false);
+  const [preview, setPreview] = useState<RfqPreviewResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [consent, setConsent] = useState<ConsentState>({
+    noFinalRelease: false,
+    openPoints: false,
+    exportSharing: false,
+  });
 
-  if (!data || !caseId) return null;
-
-  const isReady = data.view.readiness.isRfqReady;
-  const summary = generateTechnicalSummary(data);
-  const backendMatchingAvailable = false;
-
-  const handleSend = async () => {
-    if (!isReady || !backendMatchingAvailable) return;
-    
-    setIsSending(true);
+  const loadPreview = async () => {
+    if (!caseId) {
+      return;
+    }
+    setIsLoading(true);
     setError(null);
     try {
-      setIsSent(true);
+      const response = await fetch(buildRfqPreviewReadPath(caseId), { cache: "no-store" });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (response.status === 404) {
+          setPreview(null);
+          return;
+        }
+        throw new Error(getErrorMessage(body, "RFQ-Preview konnte nicht geladen werden."));
+      }
+      setPreview(body as RfqPreviewResponse);
     } catch (err) {
-      console.error("RFQ Submit Error:", err);
-      setError("Anfrage konnte nicht gesendet werden.");
+      setError(err instanceof Error ? err.message : "RFQ-Preview konnte nicht geladen werden.");
     } finally {
-      setIsSending(false);
+      setIsLoading(false);
     }
   };
 
-  if (isSent) {
+  useEffect(() => {
+    void loadPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId]);
+
+  const sections = useMemo(
+    () => preview?.payload?.rfq_preview?.sections ?? EMPTY_SECTIONS,
+    [preview?.payload?.rfq_preview?.sections],
+  );
+  const fieldStatuses =
+    preview?.payload?.rfq_preview?.technical_field_statuses ?? EMPTY_FIELD_STATUSES;
+  const openPoints = useMemo(
+    () => sectionItems(sections, /Offene Punkte|unbestaetigte Annahmen/i),
+    [sections],
+  );
+  const risks = useMemo(
+    () => [
+      ...sectionItems(sections, /Risiken/i),
+      ...(preview?.payload?.decision_understanding?.key_risks ?? []),
+    ],
+    [preview?.payload?.decision_understanding?.key_risks, sections],
+  );
+  const manufacturerReviewNeeds = useMemo(
+    () => [
+      ...sectionItems(sections, /Fragen an den Hersteller/i),
+      ...(preview?.payload?.decision_understanding?.manufacturer_review_needs ?? []),
+    ],
+    [preview?.payload?.decision_understanding?.manufacturer_review_needs, sections],
+  );
+  const consentReady =
+    consent.noFinalRelease &&
+    consent.openPoints &&
+    consent.exportSharing &&
+    Boolean(preview) &&
+    !preview?.stale;
+
+  const createPreview = async () => {
+    if (!caseId) {
+      return;
+    }
+    setIsCreating(true);
+    setError(null);
+    try {
+      const response = await fetch(buildRfqPreviewReadPath(caseId), { method: "POST" });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(getErrorMessage(body, "RFQ-Preview konnte nicht vorbereitet werden."));
+      }
+      setPreview(body as RfqPreviewResponse);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "RFQ-Preview konnte nicht vorbereitet werden.");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const grantConsent = async () => {
+    if (!caseId || !preview || !consentReady) {
+      return;
+    }
+    setIsGrantingConsent(true);
+    setError(null);
+    try {
+      const sharedSections = sections
+        .map((section) => section.title || `section_${section.index}`)
+        .filter(Boolean);
+      const response = await fetch(buildRfqPreviewConsentReadPath(caseId, preview.preview_id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shared_sections: sharedSections.length > 0 ? sharedSections : ["RFQ-Preview"],
+          shared_documents: [],
+          intended_recipients: [],
+          user_acknowledged_no_final_release: consent.noFinalRelease,
+          user_acknowledged_open_points: consent.openPoints,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(getErrorMessage(body, "Nutzerbestätigung konnte nicht gespeichert werden."));
+      }
+      setPreview(body as RfqPreviewResponse);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nutzerbestätigung konnte nicht gespeichert werden.");
+    } finally {
+      setIsGrantingConsent(false);
+    }
+  };
+
+  if (!data || !caseId) {
     return (
-      <div className="flex h-full items-center justify-center p-12 bg-slate-50/30">
-        <div className="max-w-md w-full bg-white rounded-3xl border border-emerald-100 p-10 text-center shadow-xl shadow-emerald-500/5">
-          <div className="mx-auto w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
-            <CheckCircle2 size={40} className="text-emerald-500" />
-          </div>
-          <h2 className="text-2xl font-bold text-seal-blue mb-2">Anfrage erfolgreich versendet</h2>
-          <p className="text-muted-foreground mb-8">
-            Ihre technische Anfrage wurde über den backend-bestätigten Anfrageprozess übermittelt.
-          </p>
-        </div>
+      <div className="rounded-[18px] border border-dashed border-[#D1D5DB] bg-white p-4 text-sm text-[#6B7280]">
+        RFQ-Preview wird sichtbar, sobald der Fall im Backend gebunden ist.
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-50/30 overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="mx-auto max-w-5xl">
-          {/* HEADER */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10 pb-6 border-b border-border/50">
-            <div>
-              <h1 className="text-2xl font-bold text-seal-blue">Anfrage-Prozess (RFQ)</h1>
-              <p className="text-sm text-muted-foreground mt-1">Finalisieren und versenden Sie Ihre technische Anfrage an qualifizierte Hersteller.</p>
+    <div className="grid gap-4">
+      <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[#F0F2F5] pb-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6B7280]">
+              Anfragebasis fuer Herstellerpruefung
             </div>
-            <div className="flex items-center gap-4">
-               {error && (
-                 <div className="text-[11px] text-rose-600 font-medium bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-100">
-                   {error}
-                 </div>
-               )}
-               {!isReady && (
-                 <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-xs font-medium">
-                   <AlertTriangle size={14} /> Anfrage blockiert
-                 </div>
-               )}
-               <button 
-                onClick={handleSend}
-                disabled={!isReady || !backendMatchingAvailable || isSending}
-                className={cn(
-                  "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg",
-                  isReady && backendMatchingAvailable
-                    ? "bg-seal-blue text-white hover:opacity-90 active:scale-95 shadow-seal-blue/20"
-                    : "bg-slate-200 text-muted-foreground cursor-not-allowed shadow-none"
-                )}
-              >
-                {isSending ? "Wird gesendet..." : "An Hersteller senden"}
-                {!isSending && <Send size={16} />}
-              </button>
-            </div>
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-[#111827]">RFQ-Preview</h2>
           </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* LEFT: SUMMARY & DATA */}
-            <div className="lg:col-span-7 flex flex-col gap-6">
-              <div className="rounded-2xl border border-border bg-white shadow-sm overflow-hidden">
-                <div className="px-6 py-3 border-b border-border bg-slate-50 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-seal-blue">
-                    <ShieldCheck size={18} />
-                    <span className="text-xs font-bold uppercase tracking-widest">Technische Validierung</span>
-                  </div>
-                  <StatusBadge 
-                    label={data.view.readiness.status} 
-                    variant={isReady ? "success" : "warning"} 
-                  />
-                </div>
-                <div className="p-6 prose-print max-h-[500px] overflow-y-auto custom-scrollbar bg-slate-50/30">
-                  <MarkdownRenderer>{summary}</MarkdownRenderer>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 flex items-start gap-3">
-                <Info className="text-blue-600 shrink-0 mt-0.5" size={18} />
-                <div className="text-sm text-blue-800">
-                  <p className="font-bold">Hersteller-Prüfvorbehalt</p>
-                  <p className="opacity-80">Finale technische Prüfung erfolgt durch den Hersteller. SealingAI dient als qualifizierte Entscheidungsgrundlage.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT: MANUFACTURER MATCHING */}
-            <div className="lg:col-span-5 flex flex-col gap-6">
-              <div className="flex flex-col gap-4">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                  <Building2 size={14} /> Backend-Matching ausstehend
-                </h3>
-                
-                <div className="rounded-2xl border border-dashed border-border bg-white p-5">
-                  <div className="flex items-start gap-3">
-                    <Info className="text-muted-foreground shrink-0 mt-0.5" size={18} />
-                    <div>
-                      <p className="text-sm font-semibold text-seal-blue">
-                        Noch keine backend-bestätigte Herstellerliste
-                      </p>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        Hersteller-Matching wird erst angezeigt, wenn der Backend-Prozess
-                        eine strukturierte, neutral geprüfte Auswahl liefert.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {preview && (
+              <>
+                <StatusBadge label={preview.stale ? "stale preview" : "current preview"} variant={preview.stale ? "warning" : "success"} />
+                <StatusBadge label={`frozen revision ${preview.case_revision}`} variant="info" />
+                <StatusBadge label={`current revision ${preview.current_case_revision}`} variant="default" />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => void loadPreview()}
+              disabled={isLoading}
+              className="flex h-9 w-9 items-center justify-center rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] text-[#4B5563] transition-colors hover:bg-[#F0F2F5]"
+              aria-label="RFQ-Preview neu laden"
+            >
+              <RefreshCw size={15} className={cn(isLoading && "animate-spin")} />
+            </button>
           </div>
         </div>
-      </div>
+
+        {error && (
+          <div className="mb-4 flex items-start gap-2 rounded-[12px] border border-[#FDECEC] bg-[#FDECEC] px-3 py-2 text-sm text-[#991B1B]">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            {error}
+          </div>
+        )}
+
+        {!preview ? (
+          <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-4">
+            <div className="flex items-start gap-3">
+              <FileText className="mt-0.5 shrink-0 text-[#0B57D0]" size={18} />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-[#111827]">Noch keine Backend-RFQ-Preview fuer diesen Fall geladen.</div>
+                <p className="mt-1 text-sm text-[#4B5563]">
+                  Die Anfragebasis wird aus dem Backend auf eine Case Revision eingefroren. Lokale Demo-Zusammenfassungen werden hier nicht als Produktwahrheit genutzt.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void createPreview()}
+                  disabled={isCreating}
+                  className="mt-3 rounded-[14px] bg-[#0B57D0] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0847AD] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
+                >
+                  {isCreating ? "RFQ-Preview wird vorbereitet..." : "RFQ-Preview vorbereiten"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {preview.stale && (
+              <div className="flex items-start gap-2 rounded-[12px] border border-[#FFF4E5] bg-[#FFF4E5] px-3 py-2 text-sm text-[#9A3412]">
+                <ShieldAlert size={16} className="mt-0.5 shrink-0" />
+                Diese RFQ-Preview ist stale: frozen Revision {preview.case_revision}, aktuelle Revision {preview.current_case_revision}. Bitte neu vorbereiten, bevor Nutzerbestätigung oder Export genutzt wird.
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <MetaTile label="Preview ID" value={preview.preview_id} />
+              <MetaTile label="Consent" value={preview.consent_status} />
+              <MetaTile label="Dispatch" value={preview.dispatch_enabled ? "enabled" : "disabled"} />
+            </div>
+
+            <ListPanel title="Offene Punkte" items={openPoints} empty="Keine offenen Punkte in der Preview projiziert." tone="warning" />
+            <ListPanel title="Risiken" items={risks} empty="Keine separaten Risiken in der Preview projiziert." tone="warning" />
+            <ListPanel title="Herstellerpruefung" items={manufacturerReviewNeeds} empty="Keine separaten Prueffragen in der Preview projiziert." tone="neutral" />
+
+            <section className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
+                <Info size={14} />
+                Field Status / Provenance / Evidence
+              </div>
+              {fieldStatuses.length > 0 ? (
+                <div className="grid gap-2">
+                  {fieldStatuses.map((field) => (
+                    <div key={`${field.field}-${field.status}`} className="rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-[#111827]">{field.field || "field"}</div>
+                        <StatusBadge label={field.status || "unspecified"} variant={field.confirmation_required ? "warning" : "info"} />
+                      </div>
+                      <div className="mt-1 text-xs text-[#4B5563]">
+                        Provenance: {field.provenance || "nicht geliefert"} · Confidence: {field.confidence || "nicht geliefert"}
+                      </div>
+                      {field.evidence_refs?.length ? (
+                        <div className="mt-1 text-xs text-[#4B5563]">Evidence: {field.evidence_refs.join(", ")}</div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-[12px] border border-dashed border-[#D1D5DB] bg-white px-3 py-3 text-sm text-[#6B7280]">
+                  Backend hat fuer diese Preview noch keine Field-Status-Projektion geliefert.
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[14px] border border-[#E5E7EB] bg-white p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
+                    Nutzerbestätigung erforderlich
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-[#111827]">Consent / Export vorbereiten</div>
+                </div>
+                {preview.consent_status === "granted" && (
+                  <StatusBadge label="RFQ-Preview exportbereit" variant="success" />
+                )}
+              </div>
+              <div className="space-y-2">
+                <ConsentCheckbox
+                  checked={consent.noFinalRelease}
+                  onChange={(checked) => setConsent((current) => ({ ...current, noFinalRelease: checked }))}
+                  label="Ich verstehe, dass diese RFQ-Preview keine finale technische Freigabe ist."
+                />
+                <ConsentCheckbox
+                  checked={consent.openPoints}
+                  onChange={(checked) => setConsent((current) => ({ ...current, openPoints: checked }))}
+                  label="Ich verstehe die offenen Punkte und dass diese vom Hersteller geprüft werden müssen."
+                />
+                <ConsentCheckbox
+                  checked={consent.exportSharing}
+                  onChange={(checked) => setConsent((current) => ({ ...current, exportSharing: checked }))}
+                  label="Ich möchte diese Anfragebasis nur nach explizitem Einverständnis exportieren oder weitergeben."
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => void grantConsent()}
+                disabled={!consentReady || isGrantingConsent}
+                className="mt-3 flex items-center gap-2 rounded-[14px] bg-[#0B57D0] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0847AD] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
+              >
+                <CheckCircle2 size={16} />
+                {isGrantingConsent ? "Nutzerbestätigung wird gespeichert..." : "Nutzerbestätigung speichern"}
+              </button>
+            </section>
+          </div>
+        )}
+      </section>
     </div>
+  );
+}
+
+function MetaTile({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">{label}</div>
+      <div className="mt-1 break-all text-sm font-medium text-[#111827]">{value}</div>
+    </div>
+  );
+}
+
+function ListPanel({
+  title,
+  items,
+  empty,
+  tone,
+}: {
+  title: string;
+  items: string[];
+  empty: string;
+  tone: "warning" | "neutral";
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">{title}</div>
+      {items.length > 0 ? (
+        <div className="space-y-2">
+          {items.slice(0, 8).map((item) => (
+            <div
+              key={item}
+              className={cn(
+                "rounded-[12px] border px-3 py-2 text-sm",
+                tone === "warning"
+                  ? "border-[#FFF4E5] bg-[#FFF4E5] text-[#9A3412]"
+                  : "border-[#E5E7EB] bg-white text-[#4B5563]",
+              )}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-[12px] border border-dashed border-[#D1D5DB] bg-white px-3 py-3 text-sm text-[#6B7280]">
+          {empty}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ConsentCheckbox({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label className="flex items-start gap-3 rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2 text-sm text-[#111827]">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-4 w-4 rounded border-[#D1D5DB]"
+      />
+      <span>{label}</span>
+    </label>
   );
 }

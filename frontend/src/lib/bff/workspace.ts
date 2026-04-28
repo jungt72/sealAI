@@ -31,6 +31,22 @@ export function buildRfqDocumentBackendReadPath(caseId: string): string {
   return `${buildWorkspaceBackendReadPath(caseId)}/rfq-document`;
 }
 
+export function buildRfqPreviewReadPath(caseId: string): string {
+  return `/api/bff/rfq/${encodeURIComponent(caseId)}/preview`;
+}
+
+export function buildRfqPreviewBackendPath(caseId: string): string {
+  return `/api/v1/rfq/preview?case_id=${encodeURIComponent(caseId)}`;
+}
+
+export function buildRfqPreviewConsentReadPath(caseId: string, previewId: string): string {
+  return `/api/bff/rfq/${encodeURIComponent(caseId)}/preview/${encodeURIComponent(previewId)}/consent`;
+}
+
+export function buildRfqPreviewConsentBackendPath(previewId: string): string {
+  return `/api/v1/rfq/preview/${encodeURIComponent(previewId)}/consent`;
+}
+
 export async function fetchWorkspace(caseId: string): Promise<WorkspaceView> {
   const response = await fetch(buildWorkspaceReadPath(caseId), {
     cache: "no-store",
