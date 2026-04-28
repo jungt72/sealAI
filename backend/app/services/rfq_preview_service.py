@@ -238,7 +238,16 @@ def build_rfq_preview_payload(
 ) -> dict[str, Any]:
     state = snapshot.state_json if isinstance(snapshot.state_json, Mapping) else {}
     technical_fields = collect_technical_fields(case_row=case_row, state=state)
-    open_points = collect_open_points(state)
+    technical_field_statuses = collect_technical_field_statuses(state)
+    confirmation_required_fields = tuple(
+        field["field"]
+        for field in technical_field_statuses
+        if field.get("confirmation_required") is True
+    )
+    open_points = _merge_open_points(
+        collect_open_points(state),
+        _confirmation_open_points(technical_field_statuses),
+    )
     context = {
         "case_id": str(case_row.id),
         "tenant_id": str(case_row.tenant_id),
@@ -247,6 +256,8 @@ def build_rfq_preview_payload(
         "engineering_path": case_row.engineering_path,
         "sealing_material_family": case_row.sealing_material_family,
         "technical_fields": technical_fields,
+        "technical_field_statuses": technical_field_statuses,
+        "confirmation_required_fields": confirmation_required_fields,
         "missing_fields": open_points,
         "norm_results": _deep_get_sequence(state, ("case_state", "norm_results")),
         "advisory_results": _deep_get_sequence(
@@ -285,6 +296,8 @@ def build_rfq_preview_payload(
         "rfq_preview": {
             "purpose": "phase_1_preview_export",
             "decision_understanding": decision_understanding,
+            "technical_field_statuses": technical_field_statuses,
+            "confirmation_required_fields": confirmation_required_fields,
             "sections": build_rfq_sections(
                 technical_fields=technical_fields,
                 open_points=open_points,
@@ -303,6 +316,8 @@ def build_rfq_preview_payload(
             "status": "not_requested",
             "automatic_dispatch_allowed": False,
             "requires_explicit_user_consent_before_sharing": True,
+            "open_points_acknowledgement_required": bool(open_points),
+            "no_final_release_acknowledgement_required": True,
         },
     }
 
@@ -344,6 +359,41 @@ def collect_open_points(state: Mapping[str, Any]) -> tuple[str, ...]:
                 if text and text not in candidates:
                     candidates.append(text)
     return tuple(candidates[:24])
+
+
+def collect_technical_field_statuses(state: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    statuses: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for mapping in _walk_mappings(state):
+        for source_key, target_key in _FIELD_ALIASES.items():
+            if source_key not in mapping:
+                continue
+            value = mapping[source_key]
+            if not isinstance(value, Mapping):
+                continue
+            alias = _FIELD_ALIASES.get(source_key, target_key)
+            if alias not in ALLOWED_TECHNICAL_FIELD_PATHS or alias in seen:
+                continue
+            status = _optional_text(value.get("status") or value.get("field_status"))
+            provenance = _optional_text(value.get("provenance") or value.get("source"))
+            confidence = _optional_text(value.get("confidence"))
+            confirmation_required = _bool_or_none(
+                value.get("confirmation_required")
+                if "confirmation_required" in value
+                else value.get("requires_confirmation")
+            )
+            if not any((status, provenance, confidence, confirmation_required is not None)):
+                continue
+            entry = {
+                "field": alias,
+                "status": status or "unspecified",
+                "provenance": provenance,
+                "confidence": confidence,
+                "confirmation_required": bool(confirmation_required),
+            }
+            statuses.append(_drop_none(entry))
+            seen.add(alias)
+    return tuple(statuses)
 
 
 def build_rfq_sections(
@@ -543,3 +593,64 @@ def _default_manufacturer_questions(open_points: Sequence[str]) -> tuple[str, ..
             "Bitte technische Eignung und offene Auslegungsdaten herstellerseitig pruefen.",
         )
     return tuple(f"Bitte klaeren: {point}" for point in open_points[:6])
+
+
+def _confirmation_open_points(
+    field_statuses: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    result: list[str] = []
+    open_statuses = {
+        "candidate",
+        "conflict",
+        "inferred",
+        "invalid",
+        "needs_confirmation",
+        "stale",
+        "unconfirmed",
+    }
+    for field in field_statuses:
+        field_name = str(field.get("field") or "").strip()
+        if not field_name:
+            continue
+        status = str(field.get("status") or "").strip()
+        requires_confirmation = bool(field.get("confirmation_required"))
+        if not requires_confirmation and status not in open_statuses:
+            continue
+        suffix = f" (status: {status})" if status else ""
+        result.append(f"Bestaetigung erforderlich: {field_name}{suffix}")
+    return tuple(result)
+
+
+def _merge_open_points(*groups: Sequence[str]) -> tuple[str, ...]:
+    result: list[str] = []
+    for group in groups:
+        for item in group:
+            text = str(item).strip()
+            if text and text not in result:
+                result.append(text)
+    return tuple(result[:24])
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _bool_or_none(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "ja"}:
+            return True
+        if normalized in {"false", "0", "no", "nein"}:
+            return False
+    return bool(value)
+
+
+def _drop_none(mapping: Mapping[str, Any]) -> dict[str, Any]:
+    return {str(key): value for key, value in mapping.items() if value is not None}

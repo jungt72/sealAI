@@ -92,6 +92,15 @@ class TestRfqHandoverNode:
         assert result.rfq.selected_manufacturer_ref is None
 
     @pytest.mark.asyncio
+    async def test_matching_handover_is_not_phase_1_preview_path(self):
+        result = await rfq_handover_node(_base_state())
+
+        assert result.rfq.rfq_ready is False
+        assert result.rfq.rfq_object == {}
+        assert result.rfq.rfq_send_payload == {}
+        assert any("matching" in note for note in result.rfq.notes)
+
+    @pytest.mark.asyncio
     async def test_not_ready_when_matching_is_not_released(self):
         result = await rfq_handover_node(
             _base_state().model_copy(

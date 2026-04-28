@@ -4,11 +4,14 @@ import pytest
 
 from app.models.case_record import CaseRecord
 from app.models.case_state_snapshot import CaseStateSnapshot
+from app.models.inquiry_extract import InquiryExtractModel
 from app.services.rfq_preview_service import (
     RFQ_PREVIEW_SECTIONS,
     RfqPreviewError,
+    _view,
     build_rfq_preview_payload,
     collect_open_points,
+    collect_technical_field_statuses,
     collect_technical_fields,
     normalize_consent_scope,
 )
@@ -48,6 +51,38 @@ def _snapshot() -> CaseStateSnapshot:
     )
 
 
+def _snapshot_with_field_statuses() -> CaseStateSnapshot:
+    return CaseStateSnapshot(
+        case_id="case-123",
+        revision=4,
+        state_json={
+            "case_state": {
+                "medium_name": {
+                    "canonical_value": "Salzwasser",
+                    "status": "documented",
+                    "provenance": "upload:datasheet-1",
+                    "confidence": 0.86,
+                    "confirmation_required": False,
+                },
+                "pressure_nominal": {
+                    "canonical_value": 4,
+                    "unit": "bar",
+                    "status": "candidate",
+                    "provenance": "user",
+                    "confidence": 0.62,
+                    "confirmation_required": True,
+                },
+                "shaft_diameter": {
+                    "canonical_value": 42,
+                    "unit": "mm",
+                    "status": "inferred",
+                    "requires_confirmation": True,
+                },
+            }
+        },
+    )
+
+
 def test_collects_governed_technical_fields_from_case_and_snapshot() -> None:
     fields = collect_technical_fields(case_row=_case(), state=_snapshot().state_json)
 
@@ -58,6 +93,31 @@ def test_collects_governed_technical_fields_from_case_and_snapshot() -> None:
     assert fields["pressure_bar"] == 4
     assert fields["shaft_diameter_mm"] == 42
     assert fields["temperature_max_c"] == 80
+
+
+def test_collects_technical_field_statuses_without_changing_values() -> None:
+    snapshot = _snapshot_with_field_statuses()
+
+    fields = collect_technical_fields(case_row=_case(), state=snapshot.state_json)
+    statuses = collect_technical_field_statuses(snapshot.state_json)
+
+    assert fields["medium_name"] == "Salzwasser"
+    assert fields["pressure_bar"] == 4
+    assert fields["shaft_diameter_mm"] == 42
+    assert {
+        "field": "medium_name",
+        "status": "documented",
+        "provenance": "upload:datasheet-1",
+        "confidence": "0.86",
+        "confirmation_required": False,
+    } in statuses
+    assert {
+        "field": "pressure_bar",
+        "status": "candidate",
+        "provenance": "user",
+        "confidence": "0.62",
+        "confirmation_required": True,
+    } in statuses
 
 
 def test_rfq_preview_payload_is_frozen_and_has_all_v07_sections() -> None:
@@ -91,6 +151,36 @@ def test_rfq_preview_payload_is_frozen_and_has_all_v07_sections() -> None:
     )
 
 
+def test_rfq_preview_marks_unconfirmed_fields_as_open_points_not_release() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_statuses(),
+    )
+
+    assert payload["meta"]["case_revision"] == 4
+    assert payload["rfq_preview"]["confirmation_required_fields"] == (
+        "pressure_bar",
+        "shaft_diameter_mm",
+    )
+    assert {
+        "field": "pressure_bar",
+        "status": "candidate",
+        "provenance": "user",
+        "confidence": "0.62",
+        "confirmation_required": True,
+    } in payload["rfq_preview"]["technical_field_statuses"]
+    assert any(
+        "Bestaetigung erforderlich: pressure_bar" in item
+        for item in payload["manufacturer_extract"]["open_points"]
+    )
+    assert (
+        payload["consent_boundary"]["open_points_acknowledgement_required"] is True
+    )
+    release_boundary = payload["rfq_preview"]["manufacturer_release_boundary"].lower()
+    assert "no final technical release" in release_boundary
+    assert "approved" not in release_boundary
+
+
 def test_manufacturer_extract_is_allowlisted_and_revision_bound() -> None:
     payload = build_rfq_preview_payload(case_row=_case(), snapshot=_snapshot())
     extract = payload["manufacturer_extract"]
@@ -100,6 +190,44 @@ def test_manufacturer_extract_is_allowlisted_and_revision_bound() -> None:
     assert extract["technical_parameters"]["medium_name"] == "Salzwasser"
     assert "customer_metadata" not in extract
     assert extract["privacy_boundary"]["mode"] == "allowlist"
+
+
+def test_rfq_preview_does_not_require_matching_or_manufacturer_shortlist() -> None:
+    snapshot = _snapshot()
+    snapshot.state_json["case_state"]["matching"] = {
+        "items": [{"manufacturer": "ShouldNotBeRequired"}],
+        "manufacturer_shortlist": ["ShouldNotLeak"],
+    }
+
+    payload = build_rfq_preview_payload(case_row=_case(), snapshot=snapshot)
+
+    assert payload["meta"]["artifact_type"] == "rfq_preview"
+    assert payload["consent_boundary"]["automatic_dispatch_allowed"] is False
+    assert "matching" not in payload["rfq_preview"]
+    assert "manufacturer_shortlist" not in payload["rfq_preview"]
+    assert "manufacturer_shortlist" not in payload["manufacturer_extract"]
+
+
+def test_rfq_preview_view_is_stale_when_case_revision_changes() -> None:
+    row = InquiryExtractModel(
+        extract_id="preview-1",
+        case_id="case-123",
+        tenant_id="tenant-1",
+        case_revision=4,
+        artifact_type="rfq_preview",
+        payload={"meta": {"case_revision": 4}},
+        source_kind="case_revision",
+        consent_status="not_requested",
+        consent_scope={},
+        dispatch_enabled=False,
+    )
+
+    view = _view(row, current_case_revision=5)
+
+    assert view.case_revision == 4
+    assert view.current_case_revision == 5
+    assert view.stale is True
+    assert view.dispatch_enabled is False
 
 
 def test_open_points_are_deduplicated() -> None:
