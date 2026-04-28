@@ -190,6 +190,8 @@ def _derive_engineering_path(
             "radial shaft",
             "simmerring",
             "lip seal",
+            "shaft_sealing",
+            "wellenabdichtung",
         ),
     ):
         return "rwdr"
@@ -215,7 +217,14 @@ def _derive_engineering_path(
                 "simmerring",
                 "gearbox",
                 "lip seal",
+                "shaft_sealing",
+                "wellenabdichtung",
             ),
+        ):
+            return "rwdr"
+        if any(
+            profile.get(key) not in (None, "", [], {})
+            for key in ("shaft_diameter_mm", "shaft_diameter", "diameter", "speed_rpm")
         ):
             return "rwdr"
         return "unclear_rotary"

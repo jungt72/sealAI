@@ -257,11 +257,6 @@ def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asser
                         asserted_value=4.0,
                         confidence="confirmed",
                     ),
-                    "installation": AssertedClaim(
-                        field_name="installation",
-                        asserted_value="Radialwellendichtring",
-                        confidence="confirmed",
-                    ),
                 }
             ),
             derived=DerivedState(

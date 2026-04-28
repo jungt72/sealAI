@@ -611,8 +611,52 @@ class TestResponseClassConsistency:
 
         assert strategy.primary_question is not None
         assert "2 bar" in strategy.primary_question
-        assert "bestaetigen" in strategy.primary_question
+        assert "Ueberdruck" in strategy.primary_question
+        assert "Differenzdruck" in strategy.primary_question
         assert "Wie hoch ist der Betriebsdruck" not in strategy.primary_question
+
+    def test_barg_pressure_interpretation_is_not_asked_again(self):
+        state = GraphState(
+            normalized=reduce_observed_to_normalized(
+                ObservedState().with_extraction(
+                    ObservedExtraction(
+                        field_name="pressure_bar",
+                        raw_value=4.0,
+                        raw_unit="barg",
+                        confidence=0.92,
+                    )
+                )
+            ),
+            asserted=AssertedState(
+                assertions={"medium": _claim("medium", "Salzwasser", "confirmed")},
+                blocking_unknowns=["pressure_bar", "temperature_c"],
+            ),
+            governance=_gov(
+                gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]
+            ),
+            medium_classification=MediumClassificationState(
+                canonical_label="Salzwasser",
+                family="waessrig_salzhaltig",
+                confidence="high",
+                status="recognized",
+                normalization_source="deterministic_alias_map",
+                mapping_confidence="confirmed",
+            ),
+        )
+
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
+
+        assert strategy.primary_question is not None
+        assert "Betriebsdruck" not in strategy.primary_question
+        assert "Differenzdruck" not in strategy.primary_question
+        assert "Ueberdruck" not in strategy.primary_question
+        assert (
+            "Einbausituation" in strategy.primary_question
+            or "Temperatur" in strategy.primary_question
+        )
+
 
     def test_filled_shaft_diameter_is_not_asked_again(self):
         state = GraphState(

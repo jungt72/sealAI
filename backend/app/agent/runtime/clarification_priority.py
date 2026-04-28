@@ -155,6 +155,14 @@ def _display_value(value: object) -> object:
     return value
 
 
+def _pressure_interpretation(state: GovernedSessionState) -> str:
+    normalized = state.normalized.parameters.get("pressure_bar")
+    if normalized is None:
+        return ""
+    engineering_value = getattr(normalized, "engineering_value", None)
+    return str(getattr(engineering_value, "interpretation", "") or "").strip()
+
+
 def _observed_confirmation_priority(
     state: GovernedSessionState,
     field_name: str,
@@ -164,6 +172,9 @@ def _observed_confirmation_priority(
         return None
     display = _display_value(value)
     if field_name == "pressure_bar":
+        interpretation = _pressure_interpretation(state)
+        if interpretation in {"gauge", "absolute", "differential"}:
+            return None
         return ClarificationPriority(
             focus_key=field_name,
             question=(
@@ -417,6 +428,8 @@ def select_clarification_priority(
             if confirmation_priority is not None:
                 return confirmation_priority
             if _has_value(state, field_name):
+                if field_name == "pressure_bar" and _pressure_interpretation(state) in {"gauge", "absolute", "differential"}:
+                    continue
                 priority = _priority_from_field(field_name)
                 if priority is not None:
                     return priority
