@@ -48,6 +48,7 @@ from app.agent.domain.critical_review import (
 from app.agent.state.case_state import build_visible_case_narrative, PROJECTION_VERSION
 from app.agent.state.projections import project_for_ui
 from app.agent.domain.case_delta import (
+    acceptance_block_reason,
     build_case_delta_decision_event,
     latest_proposed_delta_event,
     select_delta_fields,
@@ -276,8 +277,29 @@ async def session_case_delta_decision_endpoint(
     observed = governed.observed
     applied_fields: list[str] = []
     rejected_fields: list[str] = []
+    decision_fields = selected_fields
     if request.action == "accept":
+        acceptable_fields = []
+        blocked_reasons: dict[str, str] = {}
         for field in selected_fields:
+            block_reason = acceptance_block_reason(field)
+            if block_reason is not None:
+                rejected_fields.append(field.field_name)
+                blocked_reasons[field.field_name] = block_reason
+                continue
+            acceptable_fields.append(field)
+
+        if not acceptable_fields:
+            reason_text = "; ".join(
+                f"{name}: {reason}" for name, reason in blocked_reasons.items()
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=f"No proposed fields can be accepted yet. {reason_text}",
+            )
+
+        decision_fields = acceptable_fields
+        for field in acceptable_fields:
             turn_index = request.turn_index or field.source_turn_index
             observed = observed.with_override(
                 UserOverride(
@@ -321,7 +343,7 @@ async def session_case_delta_decision_endpoint(
     decision_event = build_case_delta_decision_event(
         case_id=session_id,
         action=request.action,
-        fields=selected_fields,
+        fields=decision_fields,
         source_event_id=proposal_event.event_id,
         persistence_marker=governed.persistence_marker,
     )

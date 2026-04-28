@@ -199,7 +199,7 @@ def select_delta_fields(
     return selected
 
 
-def _acceptance_block_reason(field: ProposedCaseDeltaField) -> str | None:
+def acceptance_block_reason(field: ProposedCaseDeltaField) -> str | None:
     if field.field_name not in PRESSURE_FIELDS:
         return None
     engineering_value = field.engineering_value
@@ -230,7 +230,7 @@ def build_case_delta_decision_event(
     status = "accepted" if action == "accept" else "rejected"
     for field in fields:
         if action == "accept":
-            block_reason = _acceptance_block_reason(field)
+            block_reason = acceptance_block_reason(field)
             if block_reason is not None:
                 raise ValueError(
                     f"{field.field_name} cannot be accepted: {block_reason}"
