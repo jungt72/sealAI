@@ -863,3 +863,84 @@ class TestPhase1LiveCanon:
 
         assert committed["case_state"]["case_meta"]["runtime_path"] == "governed_graph"
         assert reply == "governed_graph"
+
+
+class _FakeExplorationDelta:
+    def __init__(self, content: str):
+        self.content = content
+
+
+class _FakeExplorationChoice:
+    def __init__(self, content: str):
+        self.delta = _FakeExplorationDelta(content)
+
+
+class _FakeExplorationChunk:
+    def __init__(self, content: str):
+        self.choices = [_FakeExplorationChoice(content)]
+
+
+class _FakeExplorationStream:
+    def __init__(self, parts: list[str]):
+        self._parts = parts
+
+    def __aiter__(self):
+        self._iter = iter(self._parts)
+        return self
+
+    async def __anext__(self):
+        try:
+            return _FakeExplorationChunk(next(self._iter))
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+class TestExplorationReplyPromptRegistry:
+    @pytest.mark.asyncio
+    async def test_exploration_reply_renders_prompt_registry_template(self):
+        from app.agent.api.streaming import _stream_exploration_reply
+
+        fake_client = MagicMock()
+        fake_client.chat.completions.create = AsyncMock(
+            return_value=_FakeExplorationStream(["PTFE ", "und FKM bleiben herstellerseitig zu pruefen."])
+        )
+        fake_openai = MagicMock()
+        fake_openai.AsyncOpenAI.return_value = fake_client
+
+        with patch("app.agent.api.streaming._retrieve_for_exploration_query", AsyncMock(return_value=[])), \
+             patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
+            frames = await _collect_frames(
+                _stream_exploration_reply(
+                    "Vergleiche PTFE und FKM fuer Salzwasser.",
+                    tenant_id="tenant-1",
+                )
+            )
+
+        assert frames[-1] == "data: [DONE]\n\n"
+        payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
+        assert any(payload.get("type") == "text_chunk" for payload in payloads)
+        state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
+        assert "PTFE" in state_update["reply"]
+        assert fake_client.chat.completions.create.call_args.kwargs["model"]
+
+    @pytest.mark.asyncio
+    async def test_exploration_reply_returns_error_frame_on_model_failure(self):
+        from app.agent.api.streaming import _stream_exploration_reply
+
+        fake_client = MagicMock()
+        fake_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("model unavailable"))
+        fake_openai = MagicMock()
+        fake_openai.AsyncOpenAI.return_value = fake_client
+
+        with patch("app.agent.api.streaming._retrieve_for_exploration_query", AsyncMock(return_value=[])), \
+             patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
+            frames = await _collect_frames(
+                _stream_exploration_reply(
+                    "Vergleiche PTFE und FKM.",
+                    tenant_id="tenant-1",
+                )
+            )
+
+        assert frames[-1] == "data: [DONE]\n\n"
+        payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
+        assert any(payload.get("type") == "error" for payload in payloads)

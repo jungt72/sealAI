@@ -1,6 +1,7 @@
 import logging
 import json
 import dataclasses
+import os
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, Literal, Optional
 
@@ -183,35 +184,48 @@ async def _stream_exploration_reply(
     except Exception:
         _log.warning("exploration_retrieval_failed tenant=%s query=%s", tenant_id, query.topic[:64])
 
-    system_prompt = prompts["explore"].render(
-        rag_context=rag_context,
-        intent=query.query_intent,
-        parameters=query.detected_parameters,
-    )
+    try:
+        system_prompt = prompts.render(
+            "exploration/explore.j2",
+            {
+                "rag_context": rag_context,
+                "intent": query.query_intent,
+                "parameters": query.detected_parameters,
+                "topic": message,
+            },
+        )
 
-    client = _openai.AsyncOpenAI()
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
-        ],
-        stream=True,
-    )
+        model = (
+            os.getenv("SEALAI_EXPLORATION_MODEL")
+            or os.getenv("SEALAI_CONVERSATION_MODEL")
+            or "gpt-4o-mini"
+        )
+        client = _openai.AsyncOpenAI()
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message},
+            ],
+            stream=True,
+        )
 
-    full_reply = ""
-    async for chunk in response:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            full_reply += delta
-            yield f"data: {json.dumps({'type': 'text_chunk', 'text': delta}, default=str)}\n\n"
+        full_reply = ""
+        async for chunk in response:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                full_reply += delta
+                yield f"data: {json.dumps({'type': 'text_chunk', 'text': delta}, default=str)}\n\n"
 
-    state_update_event = {
-        "type": "state_update",
-        "reply": full_reply,
-        "response_class": "conversational_answer",
-    }
-    yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
+        state_update_event = {
+            "type": "state_update",
+            "reply": full_reply,
+            "response_class": "conversational_answer",
+        }
+        yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
+    except Exception as exc:  # noqa: BLE001
+        _log.error("exploration_stream_failed: %s: %s", type(exc).__name__, exc)
+        yield f"data: {json.dumps({'type': 'error', 'message': 'Vergleichsantwort momentan nicht verfuegbar - bitte erneut versuchen.'}, default=str)}\n\n"
     yield "data: [DONE]\n\n"
 
 async def _stream_light_runtime(
