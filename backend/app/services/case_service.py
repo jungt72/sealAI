@@ -12,6 +12,10 @@ from app.models.case_record import CaseRecord
 from app.models.case_state_snapshot import CaseStateSnapshot
 from app.models.mutation_event_model import MutationEventModel
 from app.models.outbox_model import OutboxModel
+from app.services.conflict_detection_service import (
+    ConflictCandidate,
+    ConflictDetectionService,
+)
 
 
 class CaseMutationError(Exception):
@@ -66,6 +70,10 @@ class CaseService:
                     f"case {case_id} revision mismatch: expected "
                     f"{expected_revision}, got {old_revision}"
                 )
+            await self._validate_acceptance_against_latest_snapshot(
+                case_id=str(case_row.id),
+                payload=payload,
+            )
 
             new_revision = old_revision + 1
             self._apply_case_updates(case_row, payload.get("case_updates", {}))
@@ -491,6 +499,135 @@ class CaseService:
             raise InvalidMutationError("payload.snapshot.state_json must be a dict")
         case_updates = payload.get("case_updates", {})
         self._validate_case_updates(case_updates, payload_key="payload.case_updates")
+        self._validate_delta_audit_contract(payload)
+
+    def _validate_delta_audit_contract(self, payload: dict[str, Any]) -> None:
+        proposed_delta = _dict_or_empty(
+            payload.get("proposed_delta") or payload.get("proposed_case_delta")
+        )
+        accepted_delta = _dict_or_empty(payload.get("accepted_delta"))
+        rejected_delta = _dict_or_empty(payload.get("rejected_delta"))
+
+        if not accepted_delta and not rejected_delta:
+            return
+        if not proposed_delta:
+            raise InvalidMutationError(
+                "accepted_delta/rejected_delta require proposed_delta"
+            )
+        proposed_fields = _delta_field_names(proposed_delta)
+        decided_fields = set(accepted_delta) | set(rejected_delta)
+        unknown_decisions = sorted(decided_fields.difference(proposed_fields))
+        if unknown_decisions:
+            raise InvalidMutationError(
+                "accepted_delta/rejected_delta fields must exist in proposed_delta: "
+                f"{', '.join(unknown_decisions)}"
+            )
+
+        overlap = set(accepted_delta).intersection(rejected_delta)
+        if overlap:
+            field_list = ", ".join(sorted(overlap))
+            raise InvalidMutationError(
+                f"fields cannot be both accepted and rejected: {field_list}"
+            )
+
+        for field_name, field_payload in accepted_delta.items():
+            self._validate_delta_field_payload(
+                field_name=field_name,
+                field_payload=field_payload,
+                expected_status="accepted",
+                require_provenance=True,
+            )
+        for field_name, field_payload in rejected_delta.items():
+            self._validate_delta_field_payload(
+                field_name=field_name,
+                field_payload=field_payload,
+                expected_status="rejected",
+                require_provenance=False,
+            )
+
+    def _validate_delta_field_payload(
+        self,
+        *,
+        field_name: str,
+        field_payload: Any,
+        expected_status: str,
+        require_provenance: bool,
+    ) -> None:
+        if not isinstance(field_name, str) or not field_name.strip():
+            raise InvalidMutationError("delta field names must be non-empty strings")
+        if not isinstance(field_payload, dict):
+            raise InvalidMutationError(f"{expected_status}_delta.{field_name} must be a dict")
+        if field_payload.get("status") != expected_status:
+            raise InvalidMutationError(
+                f"{expected_status}_delta.{field_name}.status must be {expected_status}"
+            )
+        if require_provenance and not str(field_payload.get("provenance") or "").strip():
+            raise InvalidMutationError(
+                f"{expected_status}_delta.{field_name}.provenance is required"
+            )
+        if not any(
+            key in field_payload
+            for key in ("proposed_value", "value", "raw_value", "canonical_value")
+        ):
+            raise InvalidMutationError(
+                f"{expected_status}_delta.{field_name} must include a value"
+            )
+
+    async def _validate_acceptance_against_latest_snapshot(
+        self,
+        *,
+        case_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        accepted_delta = _dict_or_empty(payload.get("accepted_delta"))
+        if not accepted_delta:
+            return
+
+        latest = await self._latest_snapshot(case_id)
+        if latest is None or not isinstance(latest.state_json, dict):
+            return
+
+        candidates = [
+            ConflictCandidate(
+                field_name=field_name,
+                value=_delta_payload_value(field_payload),
+                provenance=str(field_payload.get("provenance") or "unknown"),
+                source_ref=_optional_string(field_payload.get("source_event_id")),
+            )
+            for field_name, field_payload in accepted_delta.items()
+            if isinstance(field_payload, dict)
+        ]
+        result = ConflictDetectionService().detect(
+            _conflict_detection_state_view(latest.state_json),
+            candidates,
+        )
+        blocking_fields = {
+            conflict.field_name
+            for conflict in result.conflicts
+            if conflict.severity == "blocking"
+        }
+        if not blocking_fields:
+            return
+
+        resolution = payload.get("conflict_resolution")
+        resolved_fields: set[str] = set()
+        if isinstance(resolution, dict):
+            # Payload-local override for this mutation only: callers must list
+            # blocking fields they intentionally accept despite the snapshot.
+            raw_fields = resolution.get("accepted_fields")
+            if isinstance(raw_fields, list):
+                resolved_fields = {
+                    str(field).strip()
+                    for field in raw_fields
+                    if str(field).strip()
+                }
+
+        unresolved = sorted(blocking_fields.difference(resolved_fields))
+        if unresolved:
+            raise InvalidMutationError(
+                "accepted_delta conflicts with current case state; "
+                f"explicit conflict_resolution.accepted_fields required for: {', '.join(unresolved)}"
+            )
 
     def _validate_case_updates(
         self,
@@ -582,6 +719,48 @@ def _extract_mutation_audit_fields(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _conflict_detection_state_view(state_json: dict[str, Any]) -> dict[str, Any]:
+    view = dict(state_json)
+
+    normalized = state_json.get("normalized")
+    if isinstance(normalized, dict):
+        normalized_parameters = normalized.get("parameters")
+        if isinstance(normalized_parameters, dict):
+            view["parameters"] = {
+                **normalized_parameters,
+                **_dict_or_empty(view.get("parameters")),
+            }
+
+    asserted = state_json.get("asserted")
+    if isinstance(asserted, dict):
+        asserted_assertions = asserted.get("assertions")
+        if isinstance(asserted_assertions, dict):
+            view["assertions"] = {
+                **asserted_assertions,
+                **_dict_or_empty(view.get("assertions")),
+            }
+
+    return view
+
+
+def _delta_payload_value(value: dict[str, Any]) -> Any:
+    for key in ("proposed_value", "value", "raw_value", "canonical_value"):
+        if key in value:
+            return value[key]
+    return None
+
+
+def _delta_field_names(delta: dict[str, Any]) -> set[str]:
+    fields = delta.get("fields")
+    if isinstance(fields, list):
+        return {
+            str(item.get("field_name")).strip()
+            for item in fields
+            if isinstance(item, dict) and str(item.get("field_name")).strip()
+        }
+    return {str(field).strip() for field in delta if str(field).strip()}
 
 
 def _optional_string(value: Any) -> str | None:

@@ -408,9 +408,23 @@ async def test_apply_mutation_populates_first_class_event_audit_fields(
         {
             "source_turn_id": "turn-42",
             "source_document_id": "doc-7",
-            "proposed_case_delta": {"medium": {"proposed_value": "Oel"}},
-            "accepted_delta": {"medium": {"status": "accepted"}},
-            "rejected_delta": {"pressure_bar": {"status": "rejected"}},
+            "proposed_case_delta": {
+                "medium": {"proposed_value": "Oel"},
+                "pressure_bar": {"proposed_value": 4},
+            },
+            "accepted_delta": {
+                "medium": {
+                    "status": "accepted",
+                    "proposed_value": "Oel",
+                    "provenance": "user_stated",
+                }
+            },
+            "rejected_delta": {
+                "pressure_bar": {
+                    "status": "rejected",
+                    "proposed_value": 4,
+                }
+            },
             "rejection_reasons": {"pressure_bar": "conflict"},
             "ruleset_version": "v0.4-test",
             "model_id": "gpt-test",
@@ -428,12 +442,453 @@ async def test_apply_mutation_populates_first_class_event_audit_fields(
 
     assert mutation.source_turn_id == "turn-42"
     assert mutation.source_document_id == "doc-7"
-    assert mutation.proposed_delta == {"medium": {"proposed_value": "Oel"}}
-    assert mutation.accepted_delta == {"medium": {"status": "accepted"}}
-    assert mutation.rejected_delta == {"pressure_bar": {"status": "rejected"}}
+    assert mutation.proposed_delta == {
+        "medium": {"proposed_value": "Oel"},
+        "pressure_bar": {"proposed_value": 4},
+    }
+    assert mutation.accepted_delta == {
+        "medium": {
+            "status": "accepted",
+            "proposed_value": "Oel",
+            "provenance": "user_stated",
+        }
+    }
+    assert mutation.rejected_delta == {
+        "pressure_bar": {
+            "status": "rejected",
+            "proposed_value": 4,
+        }
+    }
     assert mutation.rejection_reasons == {"pressure_bar": "conflict"}
     assert mutation.ruleset_version == "v0.4-test"
     assert mutation.model_id == "gpt-test"
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejects_accepted_delta_without_proposal(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload["accepted_delta"] = {
+        "medium": {
+            "status": "accepted",
+            "proposed_value": "Wasser",
+            "provenance": "user_stated",
+        }
+    }
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="accepted_delta/rejected_delta require proposed_delta",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    case_row = await session.get(CaseRecord, case_id)
+    assert case_row is not None
+    assert case_row.case_revision == 0
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejects_rejected_delta_without_proposal(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload["rejected_delta"] = {
+        "medium": {
+            "status": "rejected",
+            "proposed_value": "Wasser",
+        }
+    }
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="accepted_delta/rejected_delta require proposed_delta",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    case_row = await session.get(CaseRecord, case_id)
+    assert case_row is not None
+    assert case_row.case_revision == 0
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejects_accepted_delta_without_provenance(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "accepted_delta": {
+                "medium": {
+                    "status": "accepted",
+                    "proposed_value": "Wasser",
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="accepted_delta.medium.provenance is required",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejects_delta_field_accepted_and_rejected(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "accepted_delta": {
+                "medium": {
+                    "status": "accepted",
+                    "proposed_value": "Wasser",
+                    "provenance": "user_stated",
+                }
+            },
+            "rejected_delta": {
+                "medium": {
+                    "status": "rejected",
+                    "proposed_value": "Wasser",
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="fields cannot be both accepted and rejected: medium",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejects_accepted_delta_without_value(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "accepted_delta": {
+                "medium": {
+                    "status": "accepted",
+                    "provenance": "user_stated",
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="accepted_delta.medium must include a value",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejects_rejected_delta_without_value(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "rejected_delta": {
+                "medium": {
+                    "status": "rejected",
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="rejected_delta.medium must include a value",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejects_delta_decision_for_unproposed_field(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "accepted_delta": {
+                "pressure_bar": {
+                    "status": "accepted",
+                    "proposed_value": 4,
+                    "provenance": "user_stated",
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="fields must exist in proposed_delta: pressure_bar",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_detects_conflict_in_nested_normalized_parameters(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    session.store.snapshots.append(
+        CaseStateSnapshot(
+            case_id=case_id,
+            revision=0,
+            state_json={
+                "normalized": {
+                    "parameters": {
+                        "medium": {"value": "Oel", "source": "confirmed"}
+                    }
+                }
+            },
+        )
+    )
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "accepted_delta": {
+                "medium": {
+                    "status": "accepted",
+                    "proposed_value": "Wasser",
+                    "provenance": "user_stated",
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="explicit conflict_resolution.accepted_fields required for: medium",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    case_row = await session.get(CaseRecord, case_id)
+    assert case_row is not None
+    assert case_row.case_revision == 0
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_accepts_equivalent_nested_normalized_parameter(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    session.store.snapshots.append(
+        CaseStateSnapshot(
+            case_id=case_id,
+            revision=0,
+            state_json={
+                "normalized": {
+                    "parameters": {
+                        "temperature_max": {"value": 80.0, "source": "confirmed"}
+                    }
+                }
+            },
+        )
+    )
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"temperature_max": {"proposed_value": "80.4 C"}},
+            "accepted_delta": {
+                "temperature_max": {
+                    "status": "accepted",
+                    "proposed_value": "80.4 C",
+                    "provenance": "user_stated",
+                }
+            },
+        }
+    )
+
+    mutation = await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    assert mutation.accepted_delta["temperature_max"]["status"] == "accepted"
+    case_row = await session.get(CaseRecord, case_id)
+    assert case_row is not None
+    assert case_row.case_revision == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_blocks_silent_lower_priority_value_replacement(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    session.store.snapshots.append(
+        CaseStateSnapshot(
+            case_id=case_id,
+            revision=0,
+            state_json={"medium": {"value": "Oel", "provenance": "confirmed"}},
+        )
+    )
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "accepted_delta": {
+                "medium": {
+                    "status": "accepted",
+                    "proposed_value": "Wasser",
+                    "provenance": "user_stated",
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="explicit conflict_resolution.accepted_fields required for: medium",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    case_row = await session.get(CaseRecord, case_id)
+    assert case_row is not None
+    assert case_row.case_revision == 0
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_allows_explicitly_resolved_value_replacement(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    session.store.snapshots.append(
+        CaseStateSnapshot(
+            case_id=case_id,
+            revision=0,
+            state_json={"medium": {"value": "Oel", "provenance": "confirmed"}},
+        )
+    )
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"medium": {"proposed_value": "Wasser"}},
+            "accepted_delta": {
+                "medium": {
+                    "status": "accepted",
+                    "proposed_value": "Wasser",
+                    "provenance": "user_stated",
+                }
+            },
+            "conflict_resolution": {"accepted_fields": ["medium"]},
+        }
+    )
+
+    mutation = await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    assert mutation.accepted_delta["medium"]["status"] == "accepted"
+    case_row = await session.get(CaseRecord, case_id)
+    assert case_row is not None
+    assert case_row.case_revision == 1
 
 
 @pytest.mark.asyncio
