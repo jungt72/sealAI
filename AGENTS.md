@@ -4,21 +4,27 @@
 
 This repository builds **SeaLAI** as a conversation-first, governed engineering system for sealing technology.
 
-SeaLAI is not a generic chatbot, not a supplier directory, not a catalog, and not a final engineering approval engine. It is a technical qualification and lifecycle platform that helps users understand sealing situations, make better technical decisions, create manufacturer-ready RFQs, and later manage validated seal solutions through a Seal Passport / Dichtstellenpass.
+SeaLAI is not a generic chatbot, not a supplier directory, not a product catalog, not a price-comparison marketplace, and not a final engineering approval engine.
+
+SeaLAI is the technical qualification and decision-support layer between an unclear industrial sealing problem and a manufacturer-ready, evidence-backed RFQ.
+
+The long-term target may include validated seal lifecycle management through a Seal Passport / Dichtstellenpass, post-RFQ validation, private reorder workflows, price-validity checks, human engineering review, and commercial partner models. These are not automatically MVP scope.
 
 This file is the binding operating contract for coding agents working in this repository, especially Codex CLI, Claude Code, Gemini CLI, Antigravity, and similar autonomous coding agents.
+
+Keep this file practical. Product and architecture depth belongs primarily in `konzept/konzept_sealing.md`. This file tells agents how to work safely in the repo.
 
 ---
 
 ## Required first read
 
-Before non-trivial work, read these files from the repo root:
+Before any non-trivial task, read from the repository root:
 
 1. `AGENTS.md`
 2. `konzept/konzept_sealing.md`
 3. Relevant implementation files and tests for the task
 
-For all frontend, cockpit, layout, motion, card, chat-workspace, responsive, or UI styling work, also read:
+For UI, layout, cockpit, chat workspace, cards, rails, tabs, motion, styling, responsive behavior, or frontend interaction work, also read:
 
 4. `frontend/DESIGN.md`
 
@@ -30,18 +36,19 @@ Do not work from memory when the current file exists in the repo. The current re
 
 When documents, code, or prior notes disagree, use this order:
 
-1. `konzept/konzept_sealing.md` — current binding SeaLAI functional and architecture target specification.
-2. `frontend/DESIGN.md` — binding frontend design source of truth for UI, layout, motion, spacing, tokens, and responsive behavior.
-3. `AGENTS.md` — binding agent operating contract.
-4. Current production code and tests — evidence of existing contracts and seams, not automatic product truth.
-5. Older concept files, supplements, prompts, chat notes, or implementation notes — historical context only.
+1. `konzept/konzept_sealing.md` — current binding SeaLAI product and architecture SSoT.
+2. `frontend/DESIGN.md` — binding frontend design SSoT for UI, motion, spacing, tokens, cockpit, chat workspace, and responsive behavior.
+3. `AGENTS.md` — binding coding-agent operating contract.
+4. Current production code and tests — evidence of current contracts and seams, not automatic product truth.
+5. Older concept files, supplements, prompts, chat notes, audit notes, or legacy implementation notes — historical context only.
 
-Important:
+Rules:
 
 - `konzept/konzept_sealing.md` is the current SSoT. Older concept versions must not override it.
 - Current code may be legacy, provisional, or misaligned. Do not assume it is correct.
 - Fix misalignment through small, evidence-based patches, not broad rewrites.
-- Do not include old chat citations or `filecite` markers in production docs.
+- Do not add chat citations, `filecite` markers, or conversation artifacts to production docs.
+- Do not turn `AGENTS.md` into a second concept document. Keep implementation guidance here; keep product depth in `konzept/konzept_sealing.md`.
 
 ---
 
@@ -49,16 +56,16 @@ Important:
 
 Build SeaLAI as:
 
-> **the technical qualification and lifecycle layer between an unclear industrial sealing problem and a validated, manufacturer-ready sealing solution.**
+> **a technical qualification and decision-support system that turns unclear sealing situations into understandable, governed, manufacturer-ready RFQ preparation.**
 
 SeaLAI must help users:
 
 - understand their sealing situation
-- see what is known, missing, ambiguous, stale, or risky
-- make better technical decisions
-- produce a structured, manufacturer-ready RFQ
-- optionally request human engineering review, CAD/FEM plausibility analysis, or RFQ concierge support
-- later preserve the validated solution in a Seal Passport for safe reorder workflows
+- see what is known, missing, ambiguous, stale, risky, or unconfirmed
+- make better technical decisions before requesting a seal
+- produce a structured, manufacturer-ready RFQ preview/export
+- optionally, in later phases, request human engineering review, CAD/FEM plausibility support, or RFQ concierge support
+- optionally, in later phases, preserve validated solutions in a Seal Passport / Dichtstellenpass for safe reorder workflows
 
 SeaLAI must help manufacturers:
 
@@ -66,7 +73,103 @@ SeaLAI must help manufacturers:
 - see technical context, open points, evidence, and revision status
 - avoid low-quality leads
 - participate in problem-first matching without buying technical rank
-- maintain price validity and reorder readiness for validated solutions
+- eventually maintain capability evidence, price validity, and reorder readiness for validated solutions
+
+---
+
+## Phase-1 MVP cut
+
+`konzept/konzept_sealing.md` contains the target architecture and later-phase direction. Do not implement the full target image as one task.
+
+### Phase 1 MVP scope
+
+Unless explicitly instructed otherwise, implementation work should prioritize only:
+
+1. Chat intake for technical sealing situations.
+2. Pre-gate routing and runtime dispatch boundaries.
+3. Governed Case-State.
+4. `CaseField`, `FieldStatus`, `EngineeringValue`, provenance, and evidence-ready structures.
+5. Governor hardening: schema validation, unit normalization, field status, conflict detection, event append, and revisioning.
+6. Dependency/stale handling and deterministic calculation cascade for simple, well-defined values.
+7. Readiness model.
+8. Backend projection for cockpit status.
+9. Decision Understanding MVP.
+10. RFQ preview/export.
+11. RFQ freeze revision and explicit consent.
+12. Upload/document evidence basics, where uploaded values remain candidates until governed.
+
+### Phase 1 domain focus
+
+Phase 1 focuses on:
+
+- rotating shafts
+- agitators / Rührwerke
+- pumps
+- general rotary sealing positions
+- PTFE-RWDR-near cases
+- classical RWDR cases as prequalification
+- mechanical-seal direction as shallow routing for pump / higher-pressure / demanding-media cases
+
+Other sealing paths may be recognized and routed shallowly, but must not be deeply designed unless explicitly tasked.
+
+### Out of Phase 1 unless explicitly tasked
+
+Do not start with:
+
+- automatic manufacturer matching
+- public marketplace/shop
+- payment flow
+- merchant-of-record behavior
+- automated provision logic
+- full Seal Passport lifecycle
+- private reorder checkout
+- manufacturer dashboard
+- ERP/CRM integration
+- automatic FEM pipeline
+- broad multi-country compliance engine
+- broad self-service manufacturer portal
+
+These may be later phases, but they must not distort the core governed runtime.
+
+---
+
+## Later-phase features
+
+The following are target-direction features, not default MVP work:
+
+- manual manufacturer capability registry
+- manual matching pilot
+- manufacturer feedback loop
+- problem-first matching audit
+- verified capability profiles
+- human engineering review request objects
+- RFQ concierge workflow
+- CAD/FEM partner workflow
+- post-RFQ validation lifecycle
+- Seal Passport / Dichtstellenpass
+- private reorder request
+- price validity and manufacturer confirmation
+- commercial governance and provision audit
+- ERPNext / CRM export or integration
+
+Only work on these if the user explicitly asks for that phase or file.
+
+---
+
+## Discovery-first rule
+
+Architecture must not outrun market validation.
+
+Before implementing Phase 2+ systems, prefer tasks that support or clarify:
+
+- 8–12 user interviews
+- 5–8 manufacturer interviews
+- 5–10 real RFQ cases
+- RFQ quality feedback
+- falsifiable hypotheses around user value and manufacturer willingness to pay
+- kill criteria for matching, reorder, FEM, and commercial models
+
+Do not treat matching, reorder, FEM, or manufacturer dashboards as validated just because they exist in the long-term concept.
 
 ---
 
@@ -78,6 +181,7 @@ SeaLAI must not claim:
 - final engineering release
 - manufacturer approval unless explicitly documented
 - validated operation before post-RFQ feedback exists
+- compliance approval without evidence
 - current reorder price without manufacturer confirmation
 - technical rank improvements due to sponsorship
 
@@ -97,6 +201,7 @@ Forbidden language:
 - final release
 - surely fits
 - approved, unless a real approval record exists
+- compliant, unless actual compliance evidence exists
 - proven in operation, unless validation exists
 
 ---
@@ -136,7 +241,7 @@ LLM / extractor proposed delta
 
 ### 4. Case state is revisioned and auditable
 
-Critical changes must increment `case_revision` and be represented as events. RFQ, matching, seal passport, and reorder decisions must be traceable to specific revisions.
+Critical changes must increment `case_revision` and be represented as events. RFQ, matching, Seal Passport, and reorder decisions must be traceable to specific revisions.
 
 ### 5. Critical fields require status, provenance, units, and evidence capability
 
@@ -144,6 +249,7 @@ Technical values should be modeled with a field envelope, not as bare values.
 
 Required concepts:
 
+- `CaseField`
 - `FieldStatus`
 - `EngineeringValue`
 - provenance
@@ -152,7 +258,7 @@ Required concepts:
 - confirmation requirement
 - stale / conflict / invalid state
 
-### 6. Engineering values must preserve units and interpretation
+### 6. Engineering values preserve units and interpretation
 
 Do not collapse raw technical values into plain numbers without unit and interpretation metadata.
 
@@ -188,14 +294,14 @@ Frontend may render:
 - decision understanding
 - stale/conflict warnings
 - RFQ previews
-- seal passport views
-- reorder status
+- Seal Passport views, when later-phase features are explicitly built
+- reorder status, when later-phase features are explicitly built
 
 Frontend must not compute authoritative readiness, matching, risk, pricing validity, or confirmed technical truth.
 
 ### 10. RFQ reports are revision-frozen
 
-Every RFQ report must be based on a specific `case_revision`.
+Every RFQ report or RFQ preview must be based on a specific `case_revision`.
 
 If critical case data changes after report creation, the report must be marked stale / superseded / needs regeneration.
 
@@ -216,53 +322,7 @@ Forbidden:
 - hiding zero-match outcomes
 - presenting self-declared capability as verified
 
-### 13. Human engineering is premium escalation, not default truth
-
-Human engineering review, CAD sketches, FEM plausibility analysis, and RFQ concierge workflows are optional premium escalation paths.
-
-They do not replace manufacturer release. FEM output is plausibility support, not proof of sealing performance.
-
-### 14. Post-RFQ validation gates reorder
-
-A seal solution must not become safely reorderable just because it was proposed or quoted.
-
-Track lifecycle status:
-
-```text
-proposed → offered → selected → ordered → installed → in_test → validated → reorderable
-```
-
-A private reorder flow requires a validated or clearly status-marked solution, stored article/revision data, and no unresolved critical negative feedback.
-
-### 15. Seal Passport is lifecycle truth for a specific sealing position
-
-A Seal Passport / Dichtstellenpass stores the validated or status-marked sealing solution for a specific application / sealing position.
-
-It must include revision, article, drawing, certificate, validation, price, and reorder status where available.
-
-### 16. Prices need validity and manufacturer confirmation
-
-SeaLAI must not show expired prices as hard order prices.
-
-Required price concepts:
-
-- `price_valid_until`
-- `last_confirmed_by_manufacturer`
-- `price_status`
-- MOQ
-- lead time
-- article availability
-- replacement / discontinued status
-
-If a price is expired or unconfirmed, the user sees “current price required” / “Nachbestellung anfragen”, not a guaranteed checkout price.
-
-### 17. Commercial flows must remain transparent
-
-Provision, partner status, accepted-RFQ fees, reorder fees, and verified capability products must not compromise perceived neutrality.
-
-If SeaLAI may receive compensation, the commercial role must be transparent in the relevant UX and contracts.
-
-### 18. Tenant and auth boundaries are mandatory
+### 13. Tenant and auth boundaries are mandatory
 
 Keycloak user/tenant scoping must be respected for all durable state, documents, cases, RFQs, seal passports, manufacturer actions, and reorder flows.
 
@@ -270,28 +330,28 @@ No cross-tenant leakage.
 
 ---
 
-## SeaLAI voice contract
+## Decision Understanding MVP
 
-SeaLAI should sound like:
+The Decision Understanding Layer is central to SeaLAI’s USP.
 
-- a senior sealing engineer
-- calm and precise
-- friendly but not theatrical
-- honest about uncertainty
-- structured but not form-like
-- able to explain trade-offs
-- able to teach while qualifying
+It must not become generic education or encyclopedia content. It must explain the user’s case and improve the next decision.
 
-SeaLAI must not sound like:
+For every real sealing case, the backend projection should be able to expose:
 
-- a generic AI assistant
-- a marketing bot
-- a rigid decision tree
-- a manufacturer sales rep
-- an overconfident oracle
-- a legalistic disclaimer machine
+```text
+DecisionUnderstandingProjection:
+- case_summary
+- understood_now[]
+- technical_meaning[]
+- plausible_directions[]
+- not_yet_decidable[]
+- key_risks[]
+- confidence_notes[]
+- next_best_question
+- manufacturer_review_needs[]
+```
 
-Good interaction pattern:
+A good SeaLAI response follows this pattern:
 
 ```text
 short technical framing
@@ -299,29 +359,11 @@ short technical framing
 → one best next question or action
 ```
 
----
-
-## Decision Understanding Layer
-
-SeaLAI must not only collect data. It must help the user understand the technical decision.
-
-For every real sealing case, the system should be able to project:
-
-- currently understood
-- technical meaning
-- plausible technical direction
-- what is not yet decidable
-- key risks
-- next best decision
-- what a manufacturer needs for review
-
-This layer is central to SeaLAI’s USP.
-
-Do not turn deep dives into generic encyclopedia pages. All explanations should return to the user’s case, decision, RFQ readiness, or next best action.
+Deep dives must return to the user’s case, decision, RFQ readiness, or next best action.
 
 ---
 
-## Runtime routing direction
+## Runtime routing
 
 SeaLAI must preserve a lightweight frontdoor and a governed backend.
 
@@ -351,12 +393,12 @@ Rules:
 
 - no forced case creation
 - may use knowledge service / retrieval
-- may bridge to case if user transitions into real application data
+- may bridge to case if the user transitions into real application data
 - must distinguish general explanation from case-specific assessment
 
 ### Governed Domain Inquiry
 
-For real applications, operating data, RFQ intent, matching, technical preselection, upload-derived case data, calculations, risk, readiness, RFQ, seal passport, and reorder.
+For real applications, operating data, RFQ intent, technical preselection, upload-derived case data, calculations, risk, readiness, RFQ, matching, Seal Passport, and reorder.
 
 Rules:
 
@@ -366,16 +408,33 @@ Rules:
 
 ---
 
+## State authority hierarchy
+
+Preferred authority order:
+
+1. Postgres durable case / RFQ / Seal Passport truth
+2. Redis live/session/checkpoint state
+3. LangGraph turn state
+4. Frontend rendering state
+
+Rules:
+
+- frontend is never authoritative for engineering truth
+- Redis-only truth must not become the only durable basis for RFQ, Seal Passport, or reorder
+- LangGraph state is orchestration state, not final durable truth
+- all projections should state what backend source they represent
+
+---
+
 ## Required service seams
 
 Prefer explicit services over route-heavy or prompt-only logic.
 
-Target or equivalent seams include:
+Phase-1 or near-term target seams include:
 
 - `dispatch` / pre-gate routing authority
 - `fast_responder_service`
 - `knowledge_service`
-- `knowledge_session_context_service`
 - `bridge_to_case_service`
 - `governor` / state mutation service
 - `case_event_service`
@@ -397,6 +456,9 @@ Target or equivalent seams include:
 - `rfq_consent_service`
 - `document_security_service`
 - `document_extraction_service`
+
+Later-phase seams may include:
+
 - `manufacturer_capability_service`
 - `problem_first_matching_service`
 - `matching_audit_service`
@@ -408,24 +470,6 @@ Target or equivalent seams include:
 - `commercial_governance_service`
 
 If a productive seam already exists under another name, tighten or refactor that seam. Do not create a parallel architecture.
-
----
-
-## State authority hierarchy
-
-Preferred authority order:
-
-1. Postgres durable case / RFQ / seal passport truth
-2. Redis live/session/checkpoint state
-3. LangGraph turn state
-4. Frontend rendering state
-
-Rules:
-
-- frontend is never authoritative for engineering truth
-- Redis-only truth must not become the only durable basis for RFQ, seal passport, or reorder
-- LangGraph state is orchestration state, not final durable truth
-- all projections should state what backend source they represent
 
 ---
 
@@ -449,7 +493,7 @@ For any non-trivial task:
 
 Start with a read-only audit unless explicitly asked to patch.
 
-Do not implement v0.6 as a big-bang task. v0.6 is the target architecture and product direction; implementation must be phased, minimal, and testable.
+Do not implement the target architecture as a big-bang task. The concept is the product and architecture direction; implementation must be phased, minimal, and testable.
 
 ### Patch-size policy
 
@@ -524,9 +568,14 @@ Preferred validation types:
 - routing boundary regression tests
 - deterministic calculation tests
 - RFQ freeze / consent tests
-- seal passport lifecycle tests
+- matching audit tests, when matching is explicitly in scope
+
+Later-phase validation may include:
+
+- post-RFQ validation tests
+- Seal Passport lifecycle tests
 - price validity tests
-- matching audit tests
+- commercial governance tests
 
 ### Repo-root command rule
 
@@ -563,8 +612,8 @@ Frontend may:
 - render chat and cockpit
 - render Decision Understanding Layer
 - show field status, provenance, evidence, conflicts, stale data, and readiness
-- trigger clarification, upload, RFQ, validation, seal passport, and reorder flows
-- show price validity and manufacturer confirmation status
+- trigger clarification, upload, RFQ preview/export, validation, Seal Passport, and reorder flows when those features are explicitly in scope
+- show price validity and manufacturer confirmation status only when later-phase reorder is explicitly in scope
 
 Frontend must not:
 
@@ -593,18 +642,22 @@ Backend owns:
 - risk and readiness
 - RFQ freeze and consent
 - document security and extraction
+- tenant scoping
+
+Later-phase backend ownership includes:
+
 - matching audit
 - human review request records
 - post-RFQ validation
-- seal passport state
+- Seal Passport state
 - reorder and price validity
-- tenant scoping
+- commercial governance
 
 Backend must expose frontend-ready projections. Frontend should not have to infer product truth.
 
 ---
 
-## Document and upload rules
+## Document, upload, and IP rules
 
 All document-derived values are candidates until governed.
 
@@ -618,11 +671,21 @@ Required behavior:
 - never auto-confirm critical values from untrusted uploads
 - preserve source references for RFQ and later review
 
+Default security stance:
+
+- tenant isolation is mandatory
+- documents must not be shared with manufacturers without explicit user consent
+- RFQ recipients must see only approved fields and approved documents
+- rejected or non-selected manufacturers must not receive hidden document context
+- retention and deletion policies must be explicit before broad customer rollout
+
+If a task touches document storage, sharing, extraction, RFQ dispatch, or manufacturer visibility, include an IP/security review in the patch report.
+
 ---
 
 ## RFQ rules
 
-RFQ is a central product artifact, not an afterthought.
+RFQ is the Phase-1 product artifact.
 
 Required:
 
@@ -630,7 +693,7 @@ Required:
 - frozen `case_revision`
 - clear separation of confirmed, documented, inferred, missing, and open points
 - user consent before sharing
-- recipient list transparency
+- recipient list transparency if sending is implemented
 - included/excluded documents
 - report stale handling if case changes
 
@@ -646,7 +709,9 @@ Forbidden:
 
 ## Human engineering review / CAD / FEM rules
 
-Human engineering review is optional premium escalation.
+Human engineering review is optional premium escalation, not default state truth.
+
+It is not Phase-1 MVP unless explicitly tasked.
 
 Allowed objects:
 
@@ -672,26 +737,34 @@ FEM language must remain plausibility-oriented.
 
 ---
 
-## Post-RFQ validation rules
+## Post-RFQ validation, Seal Passport, and reorder rules
 
-SeaLAI must track what happened after RFQ.
+These are later-phase features unless explicitly tasked.
 
-Important lifecycle facts:
+### Post-RFQ validation
 
-- which manufacturer solution was selected
-- which article / drawing / revision was delivered
-- whether it was installed
-- whether it was tested
-- whether it worked
-- under which conditions
-- whether it became the validated / reorderable solution
-- whether it failed or was superseded
+SeaLAI must track what happened after RFQ before treating a solution as validated.
+
+Canonical lifecycle states:
+
+```text
+proposed
+offered
+selected
+ordered
+delivered
+installed
+in_test
+working
+working_with_limitations
+failed
+superseded
+reorderable
+```
 
 No solution becomes “reorderable” without validation status and stored solution identity.
 
----
-
-## Seal Passport / Dichtstellenpass rules
+### Seal Passport / Dichtstellenpass
 
 A Seal Passport is tied to a specific sealing position or application, not just a generic article.
 
@@ -710,11 +783,7 @@ It may include:
 - price status
 - lifecycle notes
 
-It must preserve revision and validation state.
-
----
-
-## Reorder and price validity rules
+### Reorder and price validity
 
 A reorder flow must check:
 
@@ -730,20 +799,20 @@ A reorder flow must check:
 
 If price is expired or not confirmed, show request flow, not hard checkout.
 
-Default MVP rule:
+Default later-phase rule:
 
 - standard price validity: 90 days
 - manufacturer reminder: 14 days before expiry
 - expired price becomes `price_on_request`
-- user can submit reorder request with existing seal passport context
+- user can submit reorder request with existing Seal Passport context
 
-Do not build a public marketplace shop before private seal-passport reorder is stable.
+Do not build a public marketplace shop before private Seal-Passport-based reorder is stable.
 
 ---
 
 ## Commercial governance rules
 
-Commercial models may include:
+Commercial models may include, in later phases:
 
 - partner subscription
 - verified capability profile
@@ -762,9 +831,13 @@ Commercial models must not:
 
 Use transparent labels and audit trails.
 
+Commercial governance is not Phase-1 MVP unless explicitly tasked.
+
 ---
 
 ## Matching rules
+
+Matching is Phase 2+ unless explicitly tasked.
 
 Required matching flow:
 
@@ -777,12 +850,19 @@ Required matching flow:
 
 Capability evidence matters:
 
-- self-declared
+- self_declared
 - documented
-- platform-curated
+- platform_curated
 - verified
 
 Do not treat all capability claims equally.
+
+Cold-start rule:
+
+- bootstrap manufacturer capabilities manually where needed
+- keep evidence levels explicit
+- do not pretend unverified capability data is verified
+- do not make matching the first MVP dependency if RFQ qualification is not yet reliable
 
 ---
 
@@ -809,26 +889,54 @@ Case-specific knowledge should return to:
 
 ---
 
-## Immediate implementation priority
+## Compliance awareness
 
-Unless a specific task overrides this, prefer this order:
+SeaLAI may touch regulated use cases such as food, pharma, chemical processing, ATEX-relevant environments, drinking water, steam, hygienic design, hydrogen, or aggressive media.
 
-0. SSoT alignment and read-only architecture rebaseline
-1. State foundation: `CaseField`, `FieldStatus`, `EngineeringValue`, evidence-ready structures
-2. Governor hardening: schema, units, provenance/status, conflict, events
-3. Dependency/stale and calculation cascade
-4. Projection/cockpit status and Decision Understanding Layer
-5. RFQ freeze revision and consent
-6. Document security and extraction evidence
-7. Manufacturer capability evidence and matching audit
-8. Human engineering review request objects
-9. Post-RFQ validation lifecycle
-10. Seal Passport MVP
-11. Reorder request flow and price validity
-12. Commercial governance and provision audit
-13. ERP/CRM/export integrations
+Do not treat certificates and standards as simple labels.
 
-Do not start with public shop, payment flow, automatic FEM pipeline, or merchant-of-record behavior.
+For regulated contexts:
+
+- mark the requirement explicitly
+- track certification evidence and validity where available
+- do not claim compliance without evidence
+- keep manufacturer review/final release explicit
+- preserve document provenance and revision
+- surface open compliance questions in RFQ output
+
+Examples of possible regulated references include FDA, EU 1935/2004, EU 10/2011, ATEX, EHEDG, USP Class VI, drinking-water approvals, TA-Luft, and GMP.
+
+Do not implement a full compliance engine unless explicitly tasked.
+
+---
+
+## Journey-level tests
+
+Layer tests are not enough.
+
+When implementing user-visible lifecycle behavior, add or preserve journey tests where feasible, for example:
+
+```text
+unclear problem
+→ governed case
+→ Decision Understanding projection
+→ RFQ preview
+→ RFQ freeze
+→ user consent
+→ manufacturer-ready export
+```
+
+Later-phase example:
+
+```text
+RFQ
+→ manufacturer solution selected
+→ installed/tested feedback
+→ validated Seal Passport
+→ reorder request with price validity check
+```
+
+Do not create broad E2E tests that require unavailable external services unless the repo already provides suitable fakes/mocks.
 
 ---
 
@@ -851,7 +959,9 @@ Avoid:
 13. Reorder without validation.
 14. Price without validity.
 15. ERP gravity — ERP/CRM concerns distorting core runtime too early.
-16. Big-bang v0.6 — trying to implement the full target image in one patch.
+16. Big-bang target architecture — trying to implement the full target image in one patch.
+17. Discovery bypass — building Phase 2+ systems without user/manufacturer validation.
+18. Compliance hand-waving — treating regulated contexts as simple boolean flags.
 
 ---
 
@@ -891,6 +1001,42 @@ This stack is sufficient. Shape it correctly; do not replace it without explicit
 
 ---
 
+## Glossary
+
+### CaseField
+
+A field envelope around a technical value. It should preserve status, provenance, confidence, evidence references, and confirmation requirements.
+
+### EngineeringValue
+
+A normalized technical value with unit, raw input, canonical value, and interpretation metadata.
+
+### Governor
+
+The backend authority that validates proposed changes, applies rules, records events, updates state, triggers recalculation, and produces projections.
+
+### Decision Understanding Layer
+
+The projection that explains what SeaLAI understands, why it matters, what is not yet decidable, and which next decision or question is most useful.
+
+### RFQ Freeze
+
+The act of binding an RFQ report or RFQ preview to a specific `case_revision` so later state changes can mark the report stale rather than silently changing it.
+
+### Seal Passport / Dichtstellenpass
+
+A later-phase lifecycle record for a specific sealing position, including validated solution, documents, revision, test feedback, and reorder status.
+
+### Reorderable
+
+A solution is reorderable only when its identity, validation status, and commercial/price status are sufficiently documented.
+
+### Problem-first matching
+
+Matching that begins with the user’s structured technical problem and derives required capabilities before scoring manufacturers.
+
+---
+
 ## Final instruction
 
 When in doubt, choose the path that:
@@ -901,6 +1047,8 @@ When in doubt, choose the path that:
 - makes uncertainty visible
 - preserves neutrality
 - avoids duplicate architecture
+- respects the Phase-1 MVP cut
+- does not build Phase 2+ without explicit instruction
 - produces the smallest reliable patch
 - adds evidence for the next agent
 
