@@ -144,6 +144,17 @@ class TestClassifyMessageAsKnowledgeOverride:
     def test_vergleiche_uppercase_returns_exploration_answer(self):
         assert classify_message_as_knowledge_override("VERGLEICHE NBR und PTFE") == "exploration_answer"
 
+    def test_comparison_with_concrete_operating_data_remains_governed(self):
+        assert (
+            classify_message_as_knowledge_override(
+                "Vergleiche PTFE und FKM fuer eine rotierende Welle mit Salzwasser bei 80 Grad und 4 barg."
+            )
+            is None
+        )
+
+    def test_comparison_with_pressure_and_temperature_remains_governed(self):
+        assert classify_message_as_knowledge_override("PTFE vs FKM bei 80 Grad und 4 bar") is None
+
 
 # ---------------------------------------------------------------------------
 # Integration tests: _determine_response_class with pending_message
