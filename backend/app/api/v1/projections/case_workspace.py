@@ -11,6 +11,7 @@ same workspace contract without inventing a parallel projection path.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict
 
 from app.api.v1.projections.ptfe_rwdr_enrichment import (
@@ -984,6 +985,55 @@ def _technical_derivation_from_live_calc_tile(
     )
 
 
+def _float_from_profile(profile: Dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = profile.get(key)
+        if value in (None, ""):
+            continue
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            return float(str(value).replace(",", ".").strip())
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _technical_derivation_from_current_profile(
+    profile: Dict[str, Any],
+) -> TechnicalDerivationItem | None:
+    shaft_diameter_mm = _float_from_profile(
+        profile, "shaft_diameter_mm", "shaft_diameter", "diameter"
+    )
+    speed_rpm = _float_from_profile(profile, "speed_rpm", "rpm", "speed")
+    if shaft_diameter_mm is None or speed_rpm is None:
+        return None
+
+    v_surface_m_s = math.pi * shaft_diameter_mm / 1000.0 * speed_rpm / 60.0
+    pressure_bar = _float_from_profile(
+        profile, "pressure_bar", "pressure_nominal", "pressure_max_bar", "pressure"
+    )
+    pv_value_mpa_m_s = (
+        pressure_bar * 0.1 * v_surface_m_s if pressure_bar is not None else None
+    )
+    dn_value = shaft_diameter_mm * speed_rpm
+
+    return TechnicalDerivationItem(
+        calc_type="rwdr",
+        status="ok",
+        v_surface_m_s=round(v_surface_m_s, 2),
+        pv_value_mpa_m_s=(
+            round(pv_value_mpa_m_s, 2) if pv_value_mpa_m_s is not None else None
+        ),
+        dn_value=round(dn_value, 2),
+        notes=[
+            "Deterministisch aus aktuellen Workspace-Parametern berechnet; keine Herstellerfreigabe."
+        ],
+    )
+
+
 def _build_technical_derivations(
     *,
     working_profile_pillar: Dict[str, Any],
@@ -997,14 +1047,21 @@ def _build_technical_derivations(
             items.append(TechnicalDerivationItem.model_validate(item))
         except Exception:
             continue
-    if items:
-        return items
 
     live_calc_tile = _d(working_profile_pillar.get("live_calc_tile")) or _d(
         system.get("live_calc_tile")
     )
-    live_calc_derivation = _technical_derivation_from_live_calc_tile(live_calc_tile)
-    return [live_calc_derivation] if live_calc_derivation is not None else []
+    profile = _d(working_profile_pillar.get("engineering_profile")) or _d(
+        working_profile_pillar.get("extracted_params")
+    )
+    live_calc_derivation = _technical_derivation_from_live_calc_tile(
+        live_calc_tile
+    ) or _technical_derivation_from_current_profile(profile)
+    if live_calc_derivation is not None and not any(
+        item.calc_type == "rwdr" for item in items
+    ):
+        items.insert(0, live_calc_derivation)
+    return items
 
 
 def _build_engineering_checks(

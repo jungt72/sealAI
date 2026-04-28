@@ -2,6 +2,7 @@ from app.agent.state.models import (
     AssertedClaim,
     AssertedState,
     ContextHintState,
+    DerivedState,
     EvidenceState,
     GovernanceState,
     GovernedSessionState,
@@ -234,6 +235,53 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
         "not a final effective contact-pressure PV model"
         in checks_by_id["rwdr_pv_precheck"].guardrails
     )
+
+
+def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asserted_fields() -> None:
+    projection = project_case_workspace_from_governed_state(
+        GovernedSessionState(
+            asserted=AssertedState(
+                assertions={
+                    "shaft_diameter_mm": AssertedClaim(
+                        field_name="shaft_diameter_mm",
+                        asserted_value=42.0,
+                        confidence="confirmed",
+                    ),
+                    "speed_rpm": AssertedClaim(
+                        field_name="speed_rpm",
+                        asserted_value=1450.0,
+                        confidence="confirmed",
+                    ),
+                    "pressure_bar": AssertedClaim(
+                        field_name="pressure_bar",
+                        asserted_value=4.0,
+                        confidence="confirmed",
+                    ),
+                    "installation": AssertedClaim(
+                        field_name="installation",
+                        asserted_value="Radialwellendichtring",
+                        confidence="confirmed",
+                    ),
+                }
+            ),
+            derived=DerivedState(
+                stale_derived_value_ids=["rwdr_circumferential_speed"]
+            ),
+            motion_hint=ContextHintState(label="rotary", confidence="high"),
+            application_hint=ContextHintState(label="shaft_sealing", confidence="medium"),
+        ),
+        chat_id="case-live-rwdr",
+    )
+
+    checks_by_id = {check.calc_id: check for check in projection.cockpit_view.checks}
+
+    assert projection.cockpit_view.engineering_path == "rwdr"
+    assert checks_by_id["rwdr_circumferential_speed"].value == 3.19
+    assert checks_by_id["rwdr_circumferential_speed"].status == "ok"
+    assert checks_by_id["rwdr_pv_precheck"].value == 1.28
+    assert checks_by_id["rwdr_pv_precheck"].status == "ok"
+    assert checks_by_id["rwdr_dn_value"].value == 60900.0
+    assert projection.technical_derivations[0].calc_type == "rwdr"
 
 
 def test_workspace_projection_exposes_missing_input_fallback_for_registered_checks() -> (

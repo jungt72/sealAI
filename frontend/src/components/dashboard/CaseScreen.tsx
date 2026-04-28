@@ -379,12 +379,14 @@ function buildCalculationItems({
   const fromChecks: CalculationViewModel[] =
     cockpit?.view.checks.map((check) => {
       const hasCheckValue = check.value !== null && check.value !== undefined && check.value !== "";
-      const status: CalculationStatus = stale ? "stale" : hasCheckValue ? "current" : "blocked";
-      const detail = stale
-        ? workspace?.summary?.staleReason || "Kennwert muss nach upstream Aenderung neu bestaetigt werden."
-        : check.missingInputs.length > 0
-          ? `Fehlende Inputs: ${check.missingInputs.join(", ")}`
-          : humanize(check.status);
+      const status: CalculationStatus = hasCheckValue ? "current" : stale ? "stale" : "blocked";
+      const detail = hasCheckValue
+        ? humanize(check.status)
+        : stale
+          ? workspace?.summary?.staleReason || "Kennwert muss nach upstream Aenderung neu bestaetigt werden."
+          : check.missingInputs.length > 0
+            ? `Fehlende Inputs: ${check.missingInputs.join(", ")}`
+            : humanize(check.status);
 
       return {
         key: check.calcId,
@@ -408,15 +410,18 @@ function buildCalculationItems({
       ];
 
       return candidates.map((candidate) => {
-        const status: CalculationStatus = stale ? "stale" : candidate.value !== null ? "current" : "blocked";
+        const hasCandidateValue = candidate.value !== null;
+        const status: CalculationStatus = hasCandidateValue ? "current" : stale ? "stale" : "blocked";
         return {
           key: candidate.key,
           label: candidate.label,
-          value: candidate.value !== null ? String(candidate.value) : "Nicht verfuegbar",
+          value: hasCandidateValue ? String(candidate.value) : "Nicht verfuegbar",
           status,
-          detail: stale
-            ? workspace?.summary?.staleReason || "Kennwert muss neu bestaetigt werden."
-            : item.status ? humanize(item.status) : "Aus technischer Ableitung",
+          detail: hasCandidateValue
+            ? item.status ? humanize(item.status) : "Aus technischer Ableitung"
+            : stale
+              ? workspace?.summary?.staleReason || "Kennwert muss neu bestaetigt werden."
+              : item.status ? humanize(item.status) : "Aus technischer Ableitung",
         } satisfies CalculationViewModel;
       });
     }) ?? []

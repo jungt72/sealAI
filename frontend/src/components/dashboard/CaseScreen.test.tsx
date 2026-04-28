@@ -300,8 +300,8 @@ describe("CaseScreen", () => {
     const calculationsScoped = within(calculationsCard as HTMLElement);
     expect(calculationsScoped.getByText("Umlaufgeschwindigkeit")).toBeInTheDocument();
     expect(calculationsScoped.getByText("5.2 m/s")).toBeInTheDocument();
-    expect(calculationsScoped.getAllByText("stale").length).toBeGreaterThan(0);
-    expect(calculationsScoped.getByText("Upstream-Werte wurden geaendert.")).toBeInTheDocument();
+    expect(calculationsScoped.getAllByText("current").length).toBeGreaterThan(0);
+    expect(calculationsScoped.queryByText("Upstream-Werte wurden geaendert.")).not.toBeInTheDocument();
 
     const openPointsCard = screen.getByText("Open Points / Next Step").closest("section");
     expect(openPointsCard).not.toBeNull();
