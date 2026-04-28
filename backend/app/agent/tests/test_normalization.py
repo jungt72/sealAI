@@ -588,6 +588,17 @@ class TestBackwardCompatLayer:
         assert "pressure_bar" in result
         assert abs(result["pressure_bar"] - 200.0) < 0.1
 
+    @pytest.mark.parametrize("text, raw_unit", [
+        ("Betriebsdruck 4 barg", "barg"),
+        ("Betriebsdruck 4 bara", "bara"),
+        ("Betriebsdruck 4 bar(g)", "bar(g)"),
+    ])
+    def test_extract_parameters_preserves_pressure_interpretation_unit(self, text, raw_unit):
+        result = extract_parameters(text)
+
+        assert result["pressure_bar"] == pytest.approx(4.0)
+        assert result["pressure_unit"].lower().replace(" ", "") == raw_unit
+
     def test_extract_parameters_pressure_mpa(self):
         result = extract_parameters("Betriebsdruck 1.5 MPa")
         assert "pressure_bar" in result

@@ -210,7 +210,7 @@ def _regex_params_to_extractions(
     if "temperature_c" in params:
         _add("temperature_c", params["temperature_c"], _REGEX_CONFIDENCE, "°C")
     if "pressure_bar" in params:
-        _add("pressure_bar", params["pressure_bar"], _REGEX_CONFIDENCE, "bar")
+        _add("pressure_bar", params["pressure_bar"], _REGEX_CONFIDENCE, params.get("pressure_unit") or "bar")
     if "diameter_mm" in params:
         _add("shaft_diameter_mm", params["diameter_mm"], _REGEX_CONFIDENCE, "mm")
     if "speed_rpm" in params:

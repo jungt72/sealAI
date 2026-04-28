@@ -166,9 +166,12 @@ def _observed_confirmation_priority(
     if field_name == "pressure_bar":
         return ClarificationPriority(
             focus_key=field_name,
-            question=f"Koennen Sie bestaetigen, dass der Betriebsdruck {display} bar betraegt?",
-            reason="Der Druck ist erkannt, aber noch nicht bestaetigt; ohne Bestaetigung bleibt er release-blocking.",
-            open_point_label=f"Betriebsdruck bestaetigen ({display} bar erkannt)",
+            question=(
+                f"Der Betriebsdruck {display} bar ist erkannt; ist das als Ueberdruck (barg), "
+                "Absolutdruck (bara) oder Differenzdruck zu verstehen?"
+            ),
+            reason="Der Druckwert ist erkannt, aber seine technische Interpretation fehlt; ohne barg/bara/Differenzdruck bleibt er release-blocking.",
+            open_point_label=f"Druckinterpretation klaeren ({display} bar erkannt)",
         )
     if field_name == "temperature_c":
         return ClarificationPriority(

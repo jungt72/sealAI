@@ -1109,13 +1109,20 @@ def extract_parameters(text: str) -> dict[str, Any]:
         temp_value, _ = normalize_unit_value(value, unit)
         extracted["temperature_raw"] = raw
         extracted["temperature_c"] = temp_value
-    pressure_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(bar|psi|mpa|kpa)\b", text, re.I)
+    pressure_match = re.search(
+        r"(\d+(?:[.,]\d+)?)\s*(bar(?:\s*[\(\[]?\s*[ag]\s*[\)\]]?)?|barg|bara|psi|mpa|kpa)(?=$|[\s,.;])",
+        text,
+        re.I,
+    )
     if pressure_match:
         raw = pressure_match.group(0)
         value = float(pressure_match.group(1).replace(",", "."))
-        pressure_value, _ = normalize_unit_value(value, pressure_match.group(2))
+        raw_unit = pressure_match.group(2)
+        pressure_value, normalized_unit = normalize_unit_value(value, raw_unit)
         extracted["pressure_raw"] = raw
         extracted["pressure_bar"] = pressure_value
+        extracted["pressure_unit"] = raw_unit
+        extracted["pressure_normalized_unit"] = normalized_unit
     diameter_value = extract_shaft_diameter_mm(text)
     if diameter_value is not None:
         extracted["diameter_mm"] = diameter_value

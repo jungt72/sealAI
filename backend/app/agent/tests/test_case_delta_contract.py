@@ -201,6 +201,33 @@ def test_case_delta_decision_event_rejects_unknown_pressure_acceptance() -> None
         )
 
 
+def test_case_delta_accepts_interpreted_gauge_pressure() -> None:
+    delta = proposed_case_delta_from_extractions(
+        [
+            ObservedExtraction(
+                field_name="pressure_bar",
+                raw_value=4,
+                raw_unit="barg",
+                confidence=0.92,
+                turn_index=1,
+            )
+        ],
+        turn_index=1,
+    )
+    selected = select_delta_fields(delta)
+
+    event = build_case_delta_decision_event(
+        case_id="case-1",
+        action="accept",
+        fields=selected,
+        source_event_id="source-1",
+    )
+
+    pressure_payload = event.accepted_delta["pressure_bar"]
+    assert pressure_payload["engineering_value"]["interpretation"] == "gauge"
+    assert pressure_payload["status"] == "accepted"
+
+
 def test_case_delta_decision_event_records_rejected_fields() -> None:
     delta = proposed_case_delta_from_extractions(
         [ObservedExtraction(field_name="medium", raw_value="Wasser", confidence=0.92, turn_index=1)],
