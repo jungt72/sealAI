@@ -3,6 +3,8 @@ set -euo pipefail
 
 cd /home/thorsten/sealai/frontend
 
+REPO_ROOT="/home/thorsten/sealai"
+
 echo ">> Installing dependencies"
 npm ci --prefer-offline
 
@@ -41,5 +43,11 @@ done
 echo ">> PM2 status"
 pm2 list
 
-echo ">> Done"
+if [[ "${SKIP_LIVE_SMOKE:-0}" != "1" ]]; then
+  echo ">> Running live pilot readiness smoke"
+  BASE_URL="${BASE_URL:-https://sealai.net}" "${REPO_ROOT}/ops/smoke-live-pilot-readiness.sh"
+else
+  echo ">> Live pilot readiness smoke skipped by SKIP_LIVE_SMOKE=1"
+fi
 
+echo ">> Done"
