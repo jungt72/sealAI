@@ -34,6 +34,7 @@ Coverage:
     23. output_public does NOT contain 'assertions' key (Invariant 8)
     24. _determine_response_class returns correct class for all gov_classes
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -49,6 +50,7 @@ from app.agent.graph.nodes.output_contract_node import (
     build_governed_conversation_strategy_contract,
     output_contract_node,
 )
+from app.agent.state.reducers import reduce_observed_to_normalized
 from app.agent.state.models import (
     AssertedClaim,
     AssertedState,
@@ -61,8 +63,8 @@ from app.agent.state.models import (
     ManufacturerMappingState,
     MediumCaptureState,
     MediumClassificationState,
-    NormalizedParameter,
-    NormalizedState,
+    ObservedExtraction,
+    ObservedState,
     EvidenceState,
     MatchingState,
     RequirementClass,
@@ -76,6 +78,7 @@ from app.agent.state.models import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _claim(field: str, value, confidence: str = "confirmed") -> AssertedClaim:
     return AssertedClaim(field_name=field, asserted_value=value, confidence=confidence)
@@ -97,15 +100,28 @@ def _gov(
 
 def _full_a_state(with_compute: bool = False) -> GraphState:
     assertions = {
-        "medium":        _claim("medium",        "Dampf",  "confirmed"),
-        "pressure_bar":  _claim("pressure_bar",  12.0,     "confirmed"),
-        "temperature_c": _claim("temperature_c", 180.0,    "confirmed"),
+        "medium": _claim("medium", "Dampf", "confirmed"),
+        "pressure_bar": _claim("pressure_bar", 12.0, "confirmed"),
+        "temperature_c": _claim("temperature_c", 180.0, "confirmed"),
     }
     governance = _gov(gov_class="A", rfq_admissible=True)
-    compute = [{"calc_type": "rwdr", "status": "ok", "v_surface_m_s": 3.93,
-                "pv_value_mpa_m_s": 0.39, "dn_value": 75000.0,
-                "dn_warning": False, "pv_warning": False,
-                "hrc_warning": False, "notes": []}] if with_compute else []
+    compute = (
+        [
+            {
+                "calc_type": "rwdr",
+                "status": "ok",
+                "v_surface_m_s": 3.93,
+                "pv_value_mpa_m_s": 0.39,
+                "dn_value": 75000.0,
+                "dn_warning": False,
+                "pv_warning": False,
+                "hrc_warning": False,
+                "notes": [],
+            }
+        ]
+        if with_compute
+        else []
+    )
     return GraphState(
         asserted=AssertedState(assertions=assertions),
         governance=governance,
@@ -115,11 +131,14 @@ def _full_a_state(with_compute: bool = False) -> GraphState:
 
 def _b_state(missing: list[str] | None = None) -> GraphState:
     assertions = {
-        "medium":       _claim("medium",       "Dampf", "confirmed"),
-        "pressure_bar": _claim("pressure_bar", 12.0,    "confirmed"),
+        "medium": _claim("medium", "Dampf", "confirmed"),
+        "pressure_bar": _claim("pressure_bar", 12.0, "confirmed"),
     }
-    governance = _gov(gov_class="B", rfq_admissible=False,
-                      open_validation_points=missing or ["temperature_c"])
+    governance = _gov(
+        gov_class="B",
+        rfq_admissible=False,
+        open_validation_points=missing or ["temperature_c"],
+    )
     return GraphState(
         asserted=AssertedState(
             assertions=assertions,
@@ -130,15 +149,30 @@ def _b_state(missing: list[str] | None = None) -> GraphState:
 
 
 _REQUIRED_KEYS = {
-    "response_class", "gov_class", "inquiry_admissible",
-    "parameters", "missing_fields", "conflicts",
-    "validity_notes", "open_points", "compute", "matching", "rfq", "dispatch", "norm", "export_profile", "manufacturer_mapping", "dispatch_contract", "message",
+    "response_class",
+    "gov_class",
+    "inquiry_admissible",
+    "parameters",
+    "missing_fields",
+    "conflicts",
+    "validity_notes",
+    "open_points",
+    "compute",
+    "matching",
+    "rfq",
+    "dispatch",
+    "norm",
+    "export_profile",
+    "manufacturer_mapping",
+    "dispatch_contract",
+    "message",
 }
 
 
 # ---------------------------------------------------------------------------
 # 1–6. Response class selection
 # ---------------------------------------------------------------------------
+
 
 class TestResponseClassSelection:
     def test_none_gov_class_clarification(self):
@@ -224,7 +258,9 @@ class TestResponseClassSelection:
         )
         assert _determine_response_class(state) == "technical_preselection"
 
-    def test_class_a_with_requirement_class_and_boundary_anchor_becomes_recommendation(self):
+    def test_class_a_with_requirement_class_and_boundary_anchor_becomes_recommendation(
+        self,
+    ):
         state = _full_a_state(with_compute=False).model_copy(
             update={
                 "asserted": AssertedState(
@@ -232,7 +268,9 @@ class TestResponseClassSelection:
                         "medium": _claim("medium", "Dampf", "confirmed"),
                         "pressure_bar": _claim("pressure_bar", 12.0, "confirmed"),
                         "temperature_c": _claim("temperature_c", 180.0, "confirmed"),
-                        "geometry_context": _claim("geometry_context", "Nut im Gehaeuse", "confirmed"),
+                        "geometry_context": _claim(
+                            "geometry_context", "Nut im Gehaeuse", "confirmed"
+                        ),
                     }
                 ),
                 "governance": GovernanceState(
@@ -286,12 +324,15 @@ class TestResponseClassSelection:
 # 7. output_response_class matches output_public["response_class"]
 # ---------------------------------------------------------------------------
 
+
 class TestResponseClassConsistency:
     @pytest.mark.asyncio
     async def test_response_class_consistent(self):
         for state in [GraphState(), _b_state(), _full_a_state(), _full_a_state(True)]:
             result = await output_contract_node(state)
-            assert result.output_response_class == result.output_public["response_class"]
+            assert (
+                result.output_response_class == result.output_public["response_class"]
+            )
 
     def test_family_only_medium_changes_primary_question(self):
         state = GraphState(
@@ -299,7 +340,9 @@ class TestResponseClassConsistency:
                 assertions={"pressure_bar": _claim("pressure_bar", 12.0, "confirmed")},
                 blocking_unknowns=["medium", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["medium", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["medium", "temperature_c"]
+            ),
             medium_capture=MediumCaptureState(
                 raw_mentions=["alkalische reinigungsloesung"],
                 primary_raw_text="alkalische reinigungsloesung",
@@ -314,9 +357,14 @@ class TestResponseClassConsistency:
             ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
         assert strategy.primary_question is not None
-        assert "Reinigungsloesung" in strategy.primary_question or "Stoff" in strategy.primary_question
+        assert (
+            "Reinigungsloesung" in strategy.primary_question
+            or "Stoff" in strategy.primary_question
+        )
 
     def test_mentioned_unclassified_medium_changes_primary_question(self):
         state = GraphState(
@@ -324,7 +372,9 @@ class TestResponseClassConsistency:
                 assertions={"pressure_bar": _claim("pressure_bar", 12.0, "confirmed")},
                 blocking_unknowns=["medium", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["medium", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["medium", "temperature_c"]
+            ),
             medium_capture=MediumCaptureState(
                 raw_mentions=["XY-Compound 4711"],
                 primary_raw_text="XY-Compound 4711",
@@ -339,17 +389,23 @@ class TestResponseClassConsistency:
             ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
         assert strategy.primary_question is not None
         assert "XY-Compound 4711" in strategy.primary_question
 
-    def test_recognized_medium_uses_targeted_followup_instead_of_generic_medium_question(self):
+    def test_recognized_medium_uses_targeted_followup_instead_of_generic_medium_question(
+        self,
+    ):
         state = GraphState(
             asserted=AssertedState(
                 assertions={"pressure_bar": _claim("pressure_bar", 12.0, "confirmed")},
                 blocking_unknowns=["medium", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["medium", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["medium", "temperature_c"]
+            ),
             medium_capture=MediumCaptureState(
                 raw_mentions=["dampf"],
                 primary_raw_text="dampf",
@@ -367,10 +423,14 @@ class TestResponseClassConsistency:
             ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
         assert strategy.primary_question is not None
         assert "Sattdampf" in strategy.primary_question
-        assert "Welches Medium soll abgedichtet werden?" not in strategy.primary_question
+        assert (
+            "Welches Medium soll abgedichtet werden?" not in strategy.primary_question
+        )
 
     def test_unavailable_medium_keeps_generic_medium_question(self):
         state = GraphState(
@@ -378,20 +438,28 @@ class TestResponseClassConsistency:
                 assertions={"pressure_bar": _claim("pressure_bar", 12.0, "confirmed")},
                 blocking_unknowns=["medium", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["medium", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["medium", "temperature_c"]
+            ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
         assert strategy.primary_question == "Welches Medium soll abgedichtet werden?"
 
-    def test_recognized_medium_without_application_anchor_prioritizes_application_before_pressure(self):
+    def test_recognized_medium_without_application_anchor_prioritizes_application_before_pressure(
+        self,
+    ):
         state = GraphState(
             pending_message="ich muss salzwasser draussen halten",
             asserted=AssertedState(
                 assertions={"medium": _claim("medium", "Salzwasser", "confirmed")},
                 blocking_unknowns=["pressure_bar", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]
+            ),
             medium_capture=MediumCaptureState(
                 raw_mentions=["salzwasser"],
                 primary_raw_text="salzwasser",
@@ -408,10 +476,15 @@ class TestResponseClassConsistency:
             ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
 
         assert strategy.primary_question is not None
-        assert "Einbausituation" in strategy.primary_question or "bewegten Stelle" in strategy.primary_question
+        assert (
+            "Einbausituation" in strategy.primary_question
+            or "bewegten Stelle" in strategy.primary_question
+        )
         assert "Betriebsdruck" not in strategy.primary_question
 
     def test_rotary_context_prioritizes_rotary_core_parameter_before_pressure(self):
@@ -421,7 +494,9 @@ class TestResponseClassConsistency:
                 assertions={"medium": _claim("medium", "Salzwasser", "confirmed")},
                 blocking_unknowns=["pressure_bar", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]
+            ),
             medium_capture=MediumCaptureState(
                 raw_mentions=["salzwasser"],
                 primary_raw_text="salzwasser",
@@ -438,19 +513,28 @@ class TestResponseClassConsistency:
             ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
 
         assert strategy.primary_question is not None
-        assert "Drehzahl" in strategy.primary_question or "Wellendurchmesser" in strategy.primary_question
+        assert (
+            "Drehzahl" in strategy.primary_question
+            or "Wellendurchmesser" in strategy.primary_question
+        )
         assert "Betriebsdruck" not in strategy.primary_question
 
-    def test_persisted_rotary_hint_prioritizes_rotary_core_parameter_after_followup_turn(self):
+    def test_persisted_rotary_hint_prioritizes_rotary_core_parameter_after_followup_turn(
+        self,
+    ):
         state = GraphState(
             asserted=AssertedState(
                 assertions={"medium": _claim("medium", "Salzwasser", "confirmed")},
                 blocking_unknowns=["pressure_bar", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]
+            ),
             medium_capture=MediumCaptureState(
                 raw_mentions=["salzwasser"],
                 primary_raw_text="salzwasser",
@@ -481,30 +565,36 @@ class TestResponseClassConsistency:
             ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
 
         assert strategy.primary_question is not None
-        assert "Drehzahl" in strategy.primary_question or "Wellendurchmesser" in strategy.primary_question
+        assert (
+            "Drehzahl" in strategy.primary_question
+            or "Wellendurchmesser" in strategy.primary_question
+        )
         assert "Betriebsdruck" not in strategy.primary_question
 
     def test_observed_unasserted_pressure_asks_for_confirmation_not_missing_value(self):
         state = GraphState(
-            normalized=NormalizedState(
-                parameters={
-                    "pressure_bar": NormalizedParameter(
+            normalized=reduce_observed_to_normalized(
+                ObservedState().with_extraction(
+                    ObservedExtraction(
                         field_name="pressure_bar",
-                        value=2.0,
-                        unit="bar",
-                        confidence="requires_confirmation",
-                    ),
-                },
-                parameter_status={"pressure_bar": "observed"},
+                        raw_value=2.0,
+                        raw_unit="bar",
+                        confidence=0.3,
+                    )
+                )
             ),
             asserted=AssertedState(
                 assertions={"medium": _claim("medium", "Oel", "confirmed")},
                 blocking_unknowns=["pressure_bar", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]
+            ),
             medium_classification=MediumClassificationState(
                 canonical_label="Oel",
                 family="oelhaltig",
@@ -515,7 +605,9 @@ class TestResponseClassConsistency:
             ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
 
         assert strategy.primary_question is not None
         assert "2 bar" in strategy.primary_question
@@ -531,7 +623,9 @@ class TestResponseClassConsistency:
                 },
                 blocking_unknowns=["pressure_bar", "temperature_c"],
             ),
-            governance=_gov(gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]),
+            governance=_gov(
+                gov_class="B", open_validation_points=["pressure_bar", "temperature_c"]
+            ),
             medium_capture=MediumCaptureState(
                 raw_mentions=["salzwasser"],
                 primary_raw_text="salzwasser",
@@ -562,17 +656,23 @@ class TestResponseClassConsistency:
             ),
         )
 
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
 
         assert strategy.primary_question is not None
         assert "Wellendurchmesser" not in strategy.primary_question
         assert "Betriebsdruck" not in strategy.primary_question
-        assert "Drehzahl" in strategy.primary_question or "Einbausituation" in strategy.primary_question
+        assert (
+            "Drehzahl" in strategy.primary_question
+            or "Einbausituation" in strategy.primary_question
+        )
 
 
 # ---------------------------------------------------------------------------
 # 8. output_public required keys (Invariant 8 shape)
 # ---------------------------------------------------------------------------
+
 
 class TestOutputPublicShape:
     @pytest.mark.asyncio
@@ -643,7 +743,9 @@ class TestOutputPublicShape:
                             candidate_ids=["registry-ptfe-g25-acme"],
                         )
                     ],
-                    matching_notes=["Matching uses the current demo manufacturer catalog."],
+                    matching_notes=[
+                        "Matching uses the current demo manufacturer catalog."
+                    ],
                 )
             }
         )
@@ -671,12 +773,14 @@ class TestOutputPublicShape:
                     rfq_ready=True,
                     rfq_admissible=True,
                     selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
-                    recipient_refs=[{"manufacturer_name": "Acme", "qualified_for_rfq": True}],
+                    recipient_refs=[
+                        {"manufacturer_name": "Acme", "qualified_for_rfq": True}
+                    ],
                     qualified_material_ids=["registry-ptfe-g25-acme"],
                     confirmed_parameters={"medium": "Wasser"},
                     dimensions={"shaft_diameter_mm": 50.0},
                     notes=["Governed output is releasable and handover-ready."],
-                )
+                ),
             }
         )
         result = await output_contract_node(state)
@@ -696,9 +800,13 @@ class TestOutputPublicShape:
                     dispatch_ready=True,
                     dispatch_status="envelope_ready",
                     selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
-                    recipient_refs=[{"manufacturer_name": "Acme", "qualified_for_rfq": True}],
+                    recipient_refs=[
+                        {"manufacturer_name": "Acme", "qualified_for_rfq": True}
+                    ],
                     transport_channel="internal_transport_envelope",
-                    dispatch_notes=["Internal transport envelope is ready for later sender/connector consumption."],
+                    dispatch_notes=[
+                        "Internal transport envelope is ready for later sender/connector consumption."
+                    ],
                 )
             }
         )
@@ -785,7 +893,9 @@ class TestOutputPublicShape:
                     mapped_product_family="Flachdichtung",
                     mapped_material_family="PTFE",
                     geometry_export_hint="dn_mm=50.0",
-                    mapping_notes=["Mapping remains category-level only; no SKU or compound code is inferred."],
+                    mapping_notes=[
+                        "Mapping remains category-level only; no SKU or compound code is inferred."
+                    ],
                 )
             }
         )
@@ -818,7 +928,9 @@ class TestOutputPublicShape:
                     rfq_ready=True,
                     dispatch_ready=True,
                     mapping_summary="material_family=PTFE",
-                    handover_notes=["Connector-ready contract remains systemneutral and transport-free."],
+                    handover_notes=[
+                        "Connector-ready contract remains systemneutral and transport-free."
+                    ],
                 )
             }
         )
@@ -839,6 +951,7 @@ class TestOutputPublicShape:
 # ---------------------------------------------------------------------------
 # 9–11. Parameters, missing_fields, conflicts
 # ---------------------------------------------------------------------------
+
 
 class TestOutputPublicContent:
     @pytest.mark.asyncio
@@ -885,6 +998,7 @@ class TestOutputPublicContent:
 # 12. inquiry_admissible
 # ---------------------------------------------------------------------------
 
+
 class TestInquiryAdmissible:
     @pytest.mark.asyncio
     async def test_class_a_inquiry_admissible_true(self):
@@ -910,6 +1024,7 @@ class TestInquiryAdmissible:
 # ---------------------------------------------------------------------------
 # 13–14. Compute summary
 # ---------------------------------------------------------------------------
+
 
 class TestComputeSummary:
     @pytest.mark.asyncio
@@ -942,6 +1057,7 @@ class TestComputeSummary:
 # 15–19. Reply text content
 # ---------------------------------------------------------------------------
 
+
 class TestReplyText:
     @pytest.mark.asyncio
     async def test_reply_non_empty_all_classes(self):
@@ -956,10 +1072,15 @@ class TestReplyText:
         state = _b_state(missing=["temperature_c"])
         result = await output_contract_node(state)
         # The reply should reference temperature somehow
-        assert "temperature" in result.output_reply.lower() or "temperatur" in result.output_reply.lower()
+        assert (
+            "temperature" in result.output_reply.lower()
+            or "temperatur" in result.output_reply.lower()
+        )
 
     @pytest.mark.asyncio
-    async def test_clarification_reply_prioritizes_single_missing_question_without_formula_reason_block(self):
+    async def test_clarification_reply_prioritizes_single_missing_question_without_formula_reason_block(
+        self,
+    ):
         state = _b_state(missing=["pressure_bar", "temperature_c"])
         result = await output_contract_node(state)
 
@@ -996,9 +1117,13 @@ class TestReplyText:
         assert "welcher betriebsdruck" in result.output_reply.lower()
         assert "widerspr" not in result.output_reply.lower()
 
-    def test_clarification_reply_uses_conversation_strategy_question_and_reason_operatively(self):
+    def test_clarification_reply_uses_conversation_strategy_question_and_reason_operatively(
+        self,
+    ):
         state = _b_state(missing=["medium", "pressure_bar"])
-        strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+        strategy = build_governed_conversation_strategy_contract(
+            state, "structured_clarification"
+        )
 
         reply = _reply_clarification(state, strategy)
 
@@ -1024,8 +1149,14 @@ class TestReplyText:
 
         assert result.output_response_class == "structured_clarification"
         assert result.output_reply.count("?") == 1
-        assert "Dichtungstyp" in result.output_reply or "Dichtprinzip" in result.output_reply
-        assert result.output_public["preselection_blockers"] == ["sealing_type", "duty_profile"]
+        assert (
+            "Dichtungstyp" in result.output_reply
+            or "Dichtprinzip" in result.output_reply
+        )
+        assert result.output_public["preselection_blockers"] == [
+            "sealing_type",
+            "duty_profile",
+        ]
 
     def test_clarification_reply_falls_back_cleanly_without_strategy(self):
         state = _b_state(missing=["temperature_c"])
@@ -1035,7 +1166,9 @@ class TestReplyText:
         assert "temperatur" in reply.lower()
         assert "einsatzfenster" not in reply.lower()
 
-    def test_governed_state_update_uses_priority_question_when_one_decisive_field_is_missing(self):
+    def test_governed_state_update_uses_priority_question_when_one_decisive_field_is_missing(
+        self,
+    ):
         state = GraphState(
             asserted=AssertedState(
                 assertions={
@@ -1047,7 +1180,9 @@ class TestReplyText:
                 blocking_unknowns=["speed_rpm"],
             ),
             governance=_gov(gov_class="A"),
-            motion_hint=ContextHintState(label="rotary", confidence="high", source_turn_index=1),
+            motion_hint=ContextHintState(
+                label="rotary", confidence="high", source_turn_index=1
+            ),
         )
 
         reply = _reply_state_update(state)
@@ -1101,6 +1236,7 @@ class TestReplyText:
     async def test_rfq_reply_uses_turn_context_summaries(self):
         from unittest.mock import patch as _patch
         from app.agent.domain.admissibility import AdmissibilityResult
+
         state = _full_a_state(with_compute=True).model_copy(
             update={
                 "matching": MatchingState(
@@ -1126,7 +1262,9 @@ class TestReplyText:
                 ),
             }
         )
-        _admissible = AdmissibilityResult(admissible=True, blocking_reasons=(), basis_hash="test")
+        _admissible = AdmissibilityResult(
+            admissible=True, blocking_reasons=(), basis_hash="test"
+        )
         with (
             _patch(
                 "app.agent.graph.nodes.output_contract_node.check_inquiry_admissibility",
@@ -1184,6 +1322,7 @@ class TestReplyText:
 # 20. Immutability
 # ---------------------------------------------------------------------------
 
+
 class TestImmutability:
     @pytest.mark.asyncio
     async def test_observed_unchanged(self):
@@ -1225,13 +1364,16 @@ class TestImmutability:
 # 21. No LLM call
 # ---------------------------------------------------------------------------
 
+
 class TestNoLLM:
     @pytest.mark.asyncio
     async def test_openai_never_called(self):
         state = _full_a_state(with_compute=True)
         with patch("openai.AsyncOpenAI") as mock_cls:
             mock_cls.return_value.chat.completions.create = AsyncMock(
-                side_effect=AssertionError("LLM must not be called in output_contract_node")
+                side_effect=AssertionError(
+                    "LLM must not be called in output_contract_node"
+                )
             )
             result = await output_contract_node(state)
         mock_cls.assert_not_called()
@@ -1242,15 +1384,16 @@ class TestNoLLM:
 # Fast-confirm path: 4+ core params → assumptions instead of questions
 # ---------------------------------------------------------------------------
 
+
 def _four_core_params_state(missing_optional: list[str] | None = None) -> GraphState:
     """State with 4+ confirmed core params and only optional fields missing."""
     assertions = {
-        "medium":           _claim("medium",           "Salzwasser", "confirmed"),
-        "sealing_type":     _claim("sealing_type",     "RWDR",       "confirmed"),
-        "temperature_c":    _claim("temperature_c",    80.0,         "confirmed"),
-        "pressure_bar":     _claim("pressure_bar",     10.0,         "confirmed"),
-        "shaft_diameter_mm":_claim("shaft_diameter_mm", 50.0,        "confirmed"),
-        "speed_rpm":        _claim("speed_rpm",        6000.0,       "confirmed"),
+        "medium": _claim("medium", "Salzwasser", "confirmed"),
+        "sealing_type": _claim("sealing_type", "RWDR", "confirmed"),
+        "temperature_c": _claim("temperature_c", 80.0, "confirmed"),
+        "pressure_bar": _claim("pressure_bar", 10.0, "confirmed"),
+        "shaft_diameter_mm": _claim("shaft_diameter_mm", 50.0, "confirmed"),
+        "speed_rpm": _claim("speed_rpm", 6000.0, "confirmed"),
     }
     governance = _gov(
         gov_class="B",
@@ -1278,35 +1421,43 @@ class TestFastConfirmPath:
 
     def test_is_fast_confirm_false_with_only_3_core_params(self):
         assertions = {
-            "medium":       _claim("medium",       "Salzwasser", "confirmed"),
-            "temperature_c":_claim("temperature_c", 80.0,        "confirmed"),
-            "pressure_bar": _claim("pressure_bar",  10.0,        "confirmed"),
+            "medium": _claim("medium", "Salzwasser", "confirmed"),
+            "temperature_c": _claim("temperature_c", 80.0, "confirmed"),
+            "pressure_bar": _claim("pressure_bar", 10.0, "confirmed"),
         }
         state = GraphState(
-            asserted=AssertedState(assertions=assertions, blocking_unknowns=["installation"]),
+            asserted=AssertedState(
+                assertions=assertions, blocking_unknowns=["installation"]
+            ),
             governance=_gov(gov_class="B"),
         )
         assert _is_fast_confirm_applicable(state) is False
 
     def test_is_fast_confirm_false_when_required_field_missing(self):
         assertions = {
-            "medium":           _claim("medium",           "Salzwasser", "confirmed"),
-            "sealing_type":     _claim("sealing_type",     "RWDR",       "confirmed"),
-            "temperature_c":    _claim("temperature_c",    80.0,         "confirmed"),
-            "pressure_bar":     _claim("pressure_bar",     10.0,         "confirmed"),
-            "shaft_diameter_mm":_claim("shaft_diameter_mm", 50.0,        "confirmed"),
+            "medium": _claim("medium", "Salzwasser", "confirmed"),
+            "sealing_type": _claim("sealing_type", "RWDR", "confirmed"),
+            "temperature_c": _claim("temperature_c", 80.0, "confirmed"),
+            "pressure_bar": _claim("pressure_bar", 10.0, "confirmed"),
+            "shaft_diameter_mm": _claim("shaft_diameter_mm", 50.0, "confirmed"),
         }
         state = GraphState(
-            asserted=AssertedState(assertions=assertions, blocking_unknowns=["speed_rpm"]),
+            asserted=AssertedState(
+                assertions=assertions, blocking_unknowns=["speed_rpm"]
+            ),
             governance=_gov(gov_class="B"),
         )
         assert _is_fast_confirm_applicable(state) is False
 
     def test_is_fast_confirm_false_with_conflict(self):
         state = _four_core_params_state(missing_optional=["installation"])
-        state = state.model_copy(update={
-            "asserted": state.asserted.model_copy(update={"conflict_flags": ["pressure_bar"]})
-        })
+        state = state.model_copy(
+            update={
+                "asserted": state.asserted.model_copy(
+                    update={"conflict_flags": ["pressure_bar"]}
+                )
+            }
+        )
         assert _is_fast_confirm_applicable(state) is False
 
     # ── _determine_response_class upgrades B → governed_state_update ────────
@@ -1317,26 +1468,30 @@ class TestFastConfirmPath:
 
     def test_response_class_stays_clarification_when_below_threshold(self):
         assertions = {
-            "medium":       _claim("medium",       "Salzwasser", "confirmed"),
-            "temperature_c":_claim("temperature_c", 80.0,        "confirmed"),
-            "pressure_bar": _claim("pressure_bar",  10.0,        "confirmed"),
+            "medium": _claim("medium", "Salzwasser", "confirmed"),
+            "temperature_c": _claim("temperature_c", 80.0, "confirmed"),
+            "pressure_bar": _claim("pressure_bar", 10.0, "confirmed"),
         }
         state = GraphState(
-            asserted=AssertedState(assertions=assertions, blocking_unknowns=["installation"]),
+            asserted=AssertedState(
+                assertions=assertions, blocking_unknowns=["installation"]
+            ),
             governance=_gov(gov_class="B"),
         )
         assert _determine_response_class(state) == "structured_clarification"
 
     def test_response_class_stays_clarification_when_required_field_missing(self):
         assertions = {
-            "medium":           _claim("medium",           "Salzwasser", "confirmed"),
-            "sealing_type":     _claim("sealing_type",     "RWDR",       "confirmed"),
-            "temperature_c":    _claim("temperature_c",    80.0,         "confirmed"),
-            "pressure_bar":     _claim("pressure_bar",     10.0,         "confirmed"),
-            "shaft_diameter_mm":_claim("shaft_diameter_mm", 50.0,        "confirmed"),
+            "medium": _claim("medium", "Salzwasser", "confirmed"),
+            "sealing_type": _claim("sealing_type", "RWDR", "confirmed"),
+            "temperature_c": _claim("temperature_c", 80.0, "confirmed"),
+            "pressure_bar": _claim("pressure_bar", 10.0, "confirmed"),
+            "shaft_diameter_mm": _claim("shaft_diameter_mm", 50.0, "confirmed"),
         }
         state = GraphState(
-            asserted=AssertedState(assertions=assertions, blocking_unknowns=["speed_rpm"]),
+            asserted=AssertedState(
+                assertions=assertions, blocking_unknowns=["speed_rpm"]
+            ),
             governance=_gov(gov_class="B"),
         )
         assert _determine_response_class(state) == "structured_clarification"
@@ -1375,11 +1530,11 @@ class TestFastConfirmPath:
 
     def test_conflict_keeps_structured_clarification(self):
         assertions = {
-            "medium":           _claim("medium",           "Salzwasser", "confirmed"),
-            "sealing_type":     _claim("sealing_type",     "RWDR",       "confirmed"),
-            "temperature_c":    _claim("temperature_c",    80.0,         "confirmed"),
-            "pressure_bar":     _claim("pressure_bar",     10.0,         "confirmed"),
-            "shaft_diameter_mm":_claim("shaft_diameter_mm", 50.0,        "confirmed"),
+            "medium": _claim("medium", "Salzwasser", "confirmed"),
+            "sealing_type": _claim("sealing_type", "RWDR", "confirmed"),
+            "temperature_c": _claim("temperature_c", 80.0, "confirmed"),
+            "pressure_bar": _claim("pressure_bar", 10.0, "confirmed"),
+            "shaft_diameter_mm": _claim("shaft_diameter_mm", 50.0, "confirmed"),
         }
         state = GraphState(
             asserted=AssertedState(
@@ -1395,7 +1550,9 @@ class TestFastConfirmPath:
 
     def test_golden_path_gleitring_80c_salzwasser_6000rpm_10bar(self):
         """'Gleitring 80°C Salzwasser 6000rpm 10bar' → governed_state_update, no question."""
-        state = _four_core_params_state(missing_optional=["installation", "duty_profile"])
+        state = _four_core_params_state(
+            missing_optional=["installation", "duty_profile"]
+        )
         assert _determine_response_class(state) == "governed_state_update"
         reply = _reply_state_update(state)
         assert "?" not in reply

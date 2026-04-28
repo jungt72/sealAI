@@ -1,9 +1,14 @@
-from app.agent.domain.case_delta import build_document_delta_event, latest_proposed_delta_event
+from app.agent.domain.case_delta import (
+    build_document_delta_event,
+    latest_proposed_delta_event,
+)
 from app.agent.domain.document_delta import document_delta_from_text
 from app.agent.state.models import GovernedSessionState
 
 
-def test_document_delta_extracts_technical_fields_as_non_authoritative_proposal() -> None:
+def test_document_delta_extracts_technical_fields_as_non_authoritative_proposal() -> (
+    None
+):
     delta = document_delta_from_text(
         text="Medium Oel. Betriebsdruck 4 bar. Temperatur max 80 degC. Drehzahl 1500 rpm. Welle 30 mm. PTFE RWDR.",
         filename="rwdr-datenblatt.txt",
@@ -44,9 +49,13 @@ def test_document_delta_event_is_latest_reviewable_case_delta() -> None:
     assert latest.rejected_delta == {}
     assert state.asserted.assertions == {}
 
+
 from app.agent.domain.delta_conflicts import build_governed_conflict_summary
-from app.agent.state.models import NormalizedParameter, NormalizedState
-from app.api.v1.projections.case_workspace import project_case_workspace_from_governed_state
+from app.agent.state.models import ObservedState, UserOverride
+from app.agent.state.reducers import reduce_observed_to_normalized
+from app.api.v1.projections.case_workspace import (
+    project_case_workspace_from_governed_state,
+)
 
 
 def test_document_delta_conflict_is_projected_until_delta_decision() -> None:
@@ -57,24 +66,20 @@ def test_document_delta_conflict_is_projected_until_delta_decision() -> None:
         filename="case.txt",
         delta=delta,
     )
+    observed = ObservedState()
+    observed = observed.with_override(
+        UserOverride(field_name="medium", override_value="Wasser", turn_index=1)
+    )
+    observed = observed.with_override(
+        UserOverride(
+            field_name="pressure_bar",
+            override_value=4,
+            override_unit="bar",
+            turn_index=1,
+        )
+    )
     state = GovernedSessionState(
-        normalized=NormalizedState(
-            parameters={
-                "medium": NormalizedParameter(
-                    field_name="medium",
-                    value="Wasser",
-                    confidence="confirmed",
-                    source="user_override",
-                ),
-                "pressure_bar": NormalizedParameter(
-                    field_name="pressure_bar",
-                    value=4,
-                    unit="bar",
-                    confidence="confirmed",
-                    source="user_override",
-                ),
-            }
-        ),
+        normalized=reduce_observed_to_normalized(observed),
         case_events=[event],
     )
 
@@ -83,7 +88,10 @@ def test_document_delta_conflict_is_projected_until_delta_decision() -> None:
 
     assert summary["open"] == 2
     assert summary["by_severity"]["blocking"] == 2
-    assert {item["field_name"] for item in summary["items"]} == {"medium", "pressure_bar"}
+    assert {item["field_name"] for item in summary["items"]} == {
+        "medium",
+        "pressure_bar",
+    }
     assert projection.conflicts.open == 2
     assert projection.conflicts.items[0]["conflict_type"] == "DELTA_SOURCE_CONFLICT"
     assert projection.rfq_package.conflicts_visible_count == 2
