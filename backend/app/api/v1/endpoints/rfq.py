@@ -20,6 +20,10 @@ from app.services.rfq_preview_service import (
 router = APIRouter()
 
 
+def _request_tenant_id(user: RequestUser) -> str:
+    return str(user.tenant_id or "default")
+
+
 class RfqPreviewConsentRequest(BaseModel):
     shared_sections: list[str] = Field(..., min_length=1)
     shared_documents: list[str] = Field(default_factory=list)
@@ -40,6 +44,7 @@ async def create_rfq_preview(
     try:
         view = await service.create_preview_for_case(
             case_id=case_id,
+            tenant_id=_request_tenant_id(user),
             user_id=user.user_id,
             created_by=user.user_id,
         )
@@ -66,7 +71,11 @@ async def get_rfq_preview(
     request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
     service = RfqPreviewService(session)
     try:
-        view = await service.get_latest_preview_for_case(case_id=case_id, user_id=user.user_id)
+        view = await service.get_latest_preview_for_case(
+            case_id=case_id,
+            tenant_id=_request_tenant_id(user),
+            user_id=user.user_id,
+        )
     except RfqPreviewNotFound as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -88,6 +97,7 @@ async def grant_rfq_preview_consent(
     try:
         view = await service.grant_preview_consent(
             preview_id=preview_id,
+            tenant_id=_request_tenant_id(user),
             user_id=user.user_id,
             granted_by=user.user_id,
             consent_scope=body.model_dump(),

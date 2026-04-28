@@ -438,6 +438,7 @@ async def _load_governed_state_snapshot_projection_source(
     if revision is not None:
         snapshot = await get_governed_case_snapshot_by_revision_async(
             case_number=case_id,
+            tenant_id=tenant_id,
             user_id=owner_id,
             revision=revision,
         )
@@ -472,6 +473,7 @@ async def _load_guarded_workspace_projection_source(
     if redis_state is None:
         snapshot = await get_latest_governed_case_snapshot_async(
             case_number=case_id,
+            tenant_id=tenant_id,
             user_id=owner_id,
         )
         if snapshot and snapshot.state_json:
@@ -488,6 +490,7 @@ async def _load_guarded_workspace_projection_source(
     ):
         snapshot = await get_latest_governed_case_snapshot_async(
             case_number=case_id,
+            tenant_id=tenant_id,
             user_id=owner_id,
         )
         if (

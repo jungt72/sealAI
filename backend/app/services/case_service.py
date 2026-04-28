@@ -290,6 +290,7 @@ class CaseService:
         self,
         *,
         case_number: str,
+        tenant_id: str,
         user_id: str,
     ) -> tuple[CaseRecord, CaseStateSnapshot] | None:
         """Return the latest persisted snapshot for a case-number read path."""
@@ -297,6 +298,7 @@ class CaseService:
         return await self.get_snapshot_by_revision_for_case_number(
             case_number=case_number,
             revision=None,
+            tenant_id=tenant_id,
             user_id=user_id,
         )
 
@@ -305,14 +307,17 @@ class CaseService:
         *,
         case_number: str,
         revision: int | None,
+        tenant_id: str,
         user_id: str,
     ) -> tuple[CaseRecord, CaseStateSnapshot] | None:
         """Return a specific or latest snapshot with a required owner guard."""
 
         self._validate_snapshot_read_scope(case_number=case_number, user_id=user_id)
+        tenant_id = self._require_tenant_id(tenant_id)
         if revision is not None and revision < 0:
             raise InvalidMutationError("revision must be non-negative")
         case_query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+        case_query = case_query.where(CaseRecord.tenant_id == tenant_id)
         case_query = case_query.where(CaseRecord.user_id == user_id)
         case_result = await self._session.execute(case_query)
         case_row = case_result.scalar_one_or_none()
@@ -336,15 +341,18 @@ class CaseService:
         self,
         *,
         case_number: str,
+        tenant_id: str,
         user_id: str,
         limit: int = 50,
     ) -> list[CaseStateSnapshot]:
         """List snapshot revisions newest first for a case-number read path."""
 
         self._validate_snapshot_read_scope(case_number=case_number, user_id=user_id)
+        tenant_id = self._require_tenant_id(tenant_id)
         if limit < 1:
             raise InvalidMutationError("limit must be positive")
         case_query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+        case_query = case_query.where(CaseRecord.tenant_id == tenant_id)
         case_query = case_query.where(CaseRecord.user_id == user_id)
         case_result = await self._session.execute(case_query)
         case_row = case_result.scalar_one_or_none()

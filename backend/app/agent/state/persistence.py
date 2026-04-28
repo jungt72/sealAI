@@ -271,7 +271,11 @@ async def save_governed_state_snapshot_async(
     async with AsyncSessionLocal() as session:
         service = CaseService(session)
         case_result = await session.execute(
-            select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+            select(CaseRecord)
+            .where(CaseRecord.case_number == case_number)
+            .where(CaseRecord.user_id == user_id)
+            .where(CaseRecord.tenant_id == tenant_id)
+            .limit(1)
         )
         case_row = case_result.scalar_one_or_none()
         if case_row is None:
@@ -337,6 +341,7 @@ async def get_case_by_number_async(
     *,
     case_number: str,
     user_id: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Load a case row by productive case number with optional owner guard."""
 
@@ -357,6 +362,8 @@ async def get_case_by_number_async(
         query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
         if user_id is not None:
             query = query.where(CaseRecord.user_id == user_id)
+        if tenant_id is not None:
+            query = query.where(CaseRecord.tenant_id == tenant_id)
         result = await session.execute(query)
         case_row = result.scalar_one_or_none()
         if case_row is None:
@@ -375,6 +382,7 @@ async def get_case_by_number_async(
 async def list_cases_async(
     *,
     user_id: str,
+    tenant_id: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """List owned governed case rows newest first with latest snapshot revision when available."""
@@ -394,12 +402,14 @@ async def list_cases_async(
         return []
 
     async with AsyncSessionLocal() as session:
-        case_result = await session.execute(
+        case_query = (
             select(CaseRecord)
             .where(CaseRecord.user_id == user_id)
-            .order_by(CaseRecord.updated_at.desc())
-            .limit(limit)
         )
+        if tenant_id is not None:
+            case_query = case_query.where(CaseRecord.tenant_id == tenant_id)
+        case_query = case_query.order_by(CaseRecord.updated_at.desc()).limit(limit)
+        case_result = await session.execute(case_query)
         case_rows = list(case_result.scalars().all())
         service = CaseService(session)
         items: list[dict[str, Any]] = []
@@ -423,11 +433,13 @@ async def list_cases_async(
 async def get_latest_governed_case_snapshot_async(
     *,
     case_number: str,
+    tenant_id: str,
     user_id: str | None = None,
 ) -> GovernedCaseSnapshotRead | None:
     return await get_governed_case_snapshot_by_revision_async(
         case_number=case_number,
         revision=None,
+        tenant_id=tenant_id,
         user_id=user_id,
     )
 
@@ -436,6 +448,7 @@ async def get_governed_case_snapshot_by_revision_async(
     *,
     case_number: str,
     revision: int | None,
+    tenant_id: str,
     user_id: str | None = None,
 ) -> GovernedCaseSnapshotRead | None:
     """Load the latest or a targeted governed Postgres snapshot for a case."""
@@ -455,6 +468,7 @@ async def get_governed_case_snapshot_by_revision_async(
         result = await CaseService(session).get_snapshot_by_revision_for_case_number(
             case_number=case_number,
             revision=revision,
+            tenant_id=tenant_id,
             user_id=user_id,
         )
         if result is None:
@@ -479,6 +493,7 @@ async def get_governed_case_snapshot_by_revision_async(
 async def list_governed_case_snapshots_async(
     *,
     case_number: str,
+    tenant_id: str,
     user_id: str | None = None,
     limit: int = 50,
 ) -> list[GovernedCaseSnapshotRevisionRead]:
@@ -498,6 +513,7 @@ async def list_governed_case_snapshots_async(
     async with AsyncSessionLocal() as session:
         snapshot_rows = await CaseService(session).list_snapshot_revisions_for_case_number(
             case_number=case_number,
+            tenant_id=tenant_id,
             user_id=user_id,
             limit=limit,
         )
@@ -574,7 +590,11 @@ async def get_or_create_case(
 
     # Fast path — existing case
     result = await db.execute(
-        select(CaseRecord).where(CaseRecord.session_id == session_id).limit(1)
+        select(CaseRecord)
+        .where(CaseRecord.session_id == session_id)
+        .where(CaseRecord.user_id == user_id)
+        .where(CaseRecord.tenant_id == tenant_id)
+        .limit(1)
     )
     case = result.scalar_one_or_none()
     if case is not None:

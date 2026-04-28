@@ -1600,6 +1600,7 @@ async def test_get_latest_snapshot_for_case_number_reads_newest_revision(
 
     result = await CaseService(session).get_latest_snapshot_for_case_number(
         case_number="CASE-READ-1",
+        tenant_id="tenant-1",
         user_id="user-1",
     )
 
@@ -1624,6 +1625,7 @@ async def test_get_snapshot_by_revision_for_case_number_uses_target_revision(
 
     result = await CaseService(session).get_snapshot_by_revision_for_case_number(
         case_number="CASE-READ-2",
+        tenant_id="tenant-1",
         revision=1,
         user_id="user-1",
     )
@@ -1641,6 +1643,7 @@ async def test_snapshot_reads_require_matching_owner_guard(
     case_id = await _insert_case(
         session,
         case_number="CASE-READ-3",
+        tenant_id="tenant-1",
         user_id="owner-1",
     )
     session.store.snapshots.append(
@@ -1649,7 +1652,31 @@ async def test_snapshot_reads_require_matching_owner_guard(
 
     result = await CaseService(session).get_latest_snapshot_for_case_number(
         case_number="CASE-READ-3",
+        tenant_id="tenant-1",
         user_id="owner-2",
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_reads_require_matching_tenant_guard(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(
+        session,
+        case_number="CASE-READ-TENANT",
+        tenant_id="tenant-1",
+        user_id="owner-1",
+    )
+    session.store.snapshots.append(
+        CaseStateSnapshot(case_id=case_id, revision=1, state_json={"revision": 1})
+    )
+
+    result = await CaseService(session).get_latest_snapshot_for_case_number(
+        case_number="CASE-READ-TENANT",
+        tenant_id="tenant-2",
+        user_id="owner-1",
     )
 
     assert result is None
@@ -1662,6 +1689,7 @@ async def test_snapshot_read_rejects_missing_owner_guard(
     with pytest.raises(InvalidMutationError, match="user_id is required"):
         await CaseService(session).get_latest_snapshot_for_case_number(
             case_number="CASE-READ-OWNER",
+            tenant_id="tenant-1",
             user_id=None,  # type: ignore[arg-type]
         )
 
@@ -1673,6 +1701,7 @@ async def test_snapshot_read_rejects_negative_revision(
     with pytest.raises(InvalidMutationError, match="revision must be non-negative"):
         await CaseService(session).get_snapshot_by_revision_for_case_number(
             case_number="CASE-READ-NEGATIVE",
+            tenant_id="tenant-1",
             revision=-1,
             user_id="user-1",
         )
@@ -1693,6 +1722,7 @@ async def test_list_snapshot_revisions_for_case_number_reads_newest_first(
 
     items = await CaseService(session).list_snapshot_revisions_for_case_number(
         case_number="CASE-READ-4",
+        tenant_id="tenant-1",
         user_id="user-1",
         limit=2,
     )
@@ -1707,6 +1737,7 @@ async def test_list_snapshot_revisions_rejects_missing_owner_guard(
     with pytest.raises(InvalidMutationError, match="user_id is required"):
         await CaseService(session).list_snapshot_revisions_for_case_number(
             case_number="CASE-READ-LIST-OWNER",
+            tenant_id="tenant-1",
             user_id=None,  # type: ignore[arg-type]
         )
 
@@ -1718,6 +1749,7 @@ async def test_list_snapshot_revisions_rejects_non_positive_limit(
     with pytest.raises(InvalidMutationError, match="limit must be positive"):
         await CaseService(session).list_snapshot_revisions_for_case_number(
             case_number="CASE-READ-LIST-LIMIT",
+            tenant_id="tenant-1",
             user_id="user-1",
             limit=0,
         )

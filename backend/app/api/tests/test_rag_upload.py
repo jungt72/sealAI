@@ -72,6 +72,9 @@ class DummyResult:
     def first(self):
         return self._items[0] if self._items else None
 
+    def scalar_one_or_none(self):
+        return self._items[0] if self._items else None
+
     def all(self):
         return self._items
 
@@ -93,6 +96,7 @@ class DummySession:
         items = list(self.docs.values())
         tenant_id = None
         sha256 = None
+        document_id = None
         for criterion in getattr(stmt, "_where_criteria", []):
             left = getattr(criterion, "left", None)
             right = getattr(criterion, "right", None)
@@ -102,14 +106,21 @@ class DummySession:
                 tenant_id = value
             elif name == "sha256":
                 sha256 = value
+            elif name == "document_id":
+                document_id = value
         if tenant_id is not None:
             items = [item for item in items if item.tenant_id == tenant_id]
         if sha256 is not None:
             items = [item for item in items if item.sha256 == sha256]
+        if document_id is not None:
+            items = [item for item in items if item.document_id == document_id]
         return DummyResult(items)
 
     async def get(self, _model, key):
         return self.docs.get(key)
+
+    async def delete(self, obj) -> None:
+        self.docs.pop(getattr(obj, "document_id"), None)
 
 
 class DummyUploadFile:
@@ -188,6 +199,115 @@ async def test_rag_upload_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     stored = next(iter(dummy_session.docs.values()))
     assert Path(stored.path).exists()
     assert stored.route_key == "general_technical_doc"
+
+
+@pytest.mark.anyio
+async def test_rag_document_read_rejects_cross_tenant_document_id(tmp_path: Path) -> None:
+    _configure_upload_root(tmp_path)
+    dummy_session = DummySession()
+    other_doc = RagDocument(
+        document_id="doc-other",
+        tenant_id="tenant-b",
+        status="processing",
+        visibility="private",
+        filename="other.txt",
+        content_type="text/plain",
+        size_bytes=5,
+        category=None,
+        tags=None,
+        sha256="hash-other",
+        path=str(tmp_path / "other.txt"),
+    )
+    dummy_session.add(other_doc)
+    user_a = RequestUser(user_id="tenant-a", username="user", sub="tenant-a", roles=[])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await rag_endpoint.get_rag_document(
+            document_id="doc-other",
+            current_user=user_a,
+            session=dummy_session,
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_rag_document_admin_cannot_read_other_private_tenant_document(tmp_path: Path) -> None:
+    _configure_upload_root(tmp_path)
+    dummy_session = DummySession()
+    dummy_session.add(
+        RagDocument(
+            document_id="doc-private",
+            tenant_id="tenant-b",
+            status="processing",
+            visibility="private",
+            filename="private.txt",
+            content_type="text/plain",
+            size_bytes=5,
+            category=None,
+            tags=None,
+            sha256="hash-private",
+            path=str(tmp_path / "private.txt"),
+        )
+    )
+    admin_a = RequestUser(
+        user_id="tenant-a",
+        username="admin",
+        sub="tenant-a",
+        roles=["admin"],
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await rag_endpoint.get_rag_document(
+            document_id="doc-private",
+            current_user=admin_a,
+            session=dummy_session,
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_rag_document_health_reingest_and_delete_reject_cross_tenant_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _configure_upload_root(tmp_path)
+    dummy_session = DummySession()
+    other_path = tmp_path / "other.txt"
+    other_path.write_text("hello")
+    dummy_session.add(
+        RagDocument(
+            document_id="doc-other",
+            tenant_id="tenant-b",
+            status="indexed",
+            visibility="private",
+            filename="other.txt",
+            content_type="text/plain",
+            size_bytes=5,
+            category=None,
+            tags=None,
+            sha256="hash-other",
+            path=str(other_path),
+        )
+    )
+    monkeypatch.setattr(rag_endpoint, "_qdrant_vector_count", lambda **_kwargs: 1)
+    monkeypatch.setattr(rag_endpoint, "_qdrant_delete_document", lambda **_kwargs: None)
+    user_a = RequestUser(user_id="tenant-a", username="user", sub="tenant-a", roles=[])
+
+    for call in (
+        rag_endpoint.rag_document_health_check,
+        rag_endpoint.reingest_rag_document,
+        rag_endpoint.delete_rag_document,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await call(
+                document_id="doc-other",
+                current_user=user_a,
+                session=dummy_session,
+            )
+        assert exc_info.value.status_code == 404
+    assert "doc-other" in dummy_session.docs
 
 
 @pytest.mark.anyio

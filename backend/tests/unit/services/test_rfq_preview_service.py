@@ -8,6 +8,7 @@ from app.models.inquiry_extract import InquiryExtractModel
 from app.services.rfq_preview_service import (
     RFQ_PREVIEW_SECTIONS,
     RfqPreviewError,
+    RfqPreviewNotFound,
     RfqPreviewService,
     RfqPreviewStaleError,
     _view,
@@ -483,6 +484,7 @@ async def test_grant_preview_consent_rejects_stale_preview() -> None:
     with pytest.raises(RfqPreviewStaleError):
         await service.grant_preview_consent(
             preview_id="preview-1",
+            tenant_id="tenant-1",
             user_id="user-1",
             granted_by="user-1",
             consent_scope={
@@ -518,6 +520,7 @@ async def test_grant_preview_consent_keeps_dispatch_disabled() -> None:
 
     view = await service.grant_preview_consent(
         preview_id="preview-1",
+        tenant_id="tenant-1",
         user_id="user-1",
         granted_by="user-1",
         consent_scope={
@@ -534,6 +537,53 @@ async def test_grant_preview_consent_keeps_dispatch_disabled() -> None:
     assert preview.payload["consent_boundary"]["automatic_dispatch_allowed"] is False
     assert preview.payload["consent_boundary"]["phase"] == "phase_1_preview_export_only"
 
+
+@pytest.mark.asyncio
+async def test_grant_preview_consent_rejects_cross_tenant_preview_id() -> None:
+    preview = InquiryExtractModel(
+        extract_id="preview-1",
+        case_id="case-123",
+        tenant_id="tenant-2",
+        case_revision=4,
+        artifact_type="rfq_preview",
+        payload={
+            "meta": {"case_revision": 4},
+            "consent_boundary": {
+                "open_points_acknowledgement_required": False,
+            },
+        },
+        source_kind="case_revision",
+        consent_status="not_requested",
+        consent_scope={},
+        dispatch_enabled=False,
+    )
+    service = RfqPreviewService(_FilteringPreviewSession([preview, _case()]))
+
+    with pytest.raises(RfqPreviewNotFound):
+        await service.grant_preview_consent(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-1",
+            granted_by="user-1",
+            consent_scope={
+                "shared_sections": ["rfq_preview"],
+                "user_acknowledged_no_final_release": True,
+            },
+        )
+
+    assert preview.consent_status == "not_requested"
+
+
+@pytest.mark.asyncio
+async def test_get_latest_preview_rejects_cross_tenant_case_id() -> None:
+    service = RfqPreviewService(_FilteringPreviewSession([_case()]))
+
+    with pytest.raises(RfqPreviewNotFound):
+        await service.get_latest_preview_for_case(
+            case_id="case-123",
+            tenant_id="tenant-2",
+            user_id="user-1",
+        )
 
 class _FakeScalarResult:
     def __init__(self, value: object) -> None:
@@ -555,3 +605,15 @@ class _FakeConsentSession:
 
     async def refresh(self, _row: object) -> None:
         return None
+
+
+class _FilteringPreviewSession(_FakeConsentSession):
+    async def execute(self, statement: object) -> _FakeScalarResult:
+        rows = list(self._results)
+        for criterion in getattr(statement, "_where_criteria", []):
+            left = getattr(criterion, "left", None)
+            right = getattr(criterion, "right", None)
+            field_name = getattr(left, "name", None)
+            expected = getattr(right, "value", None)
+            rows = [row for row in rows if getattr(row, field_name, None) == expected]
+        return _FakeScalarResult(rows[0] if rows else None)

@@ -102,8 +102,30 @@ QDRANT_API_KEY = (os.getenv("QDRANT_API_KEY") or "").strip() or None
 QDRANT_COLLECTION = (os.getenv("QDRANT_COLLECTION") or "sealai_knowledge").strip()
 
 
-def _is_admin(user: RequestUser) -> bool:
-    return "admin" in (user.roles or [])
+async def _load_rag_document_for_user(
+    *,
+    session: AsyncSession,
+    document_id: str,
+    current_user: RequestUser,
+    allow_shared_admin: bool = False,
+) -> RagDocument | None:
+    request_tenant_id = _request_tenant_id(current_user)
+    result = await session.execute(
+        select(RagDocument)
+        .where(RagDocument.document_id == document_id)
+        .where(RagDocument.tenant_id == request_tenant_id)
+        .limit(1)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is not None or not (allow_shared_admin and is_rag_admin(current_user)):
+        return doc
+    shared_result = await session.execute(
+        select(RagDocument)
+        .where(RagDocument.document_id == document_id)
+        .where(RagDocument.tenant_id == RAG_SHARED_TENANT_ID)
+        .limit(1)
+    )
+    return shared_result.scalar_one_or_none()
 
 
 def _require_paperless_webhook_token(received_token: str | None) -> None:
@@ -539,14 +561,14 @@ async def get_rag_document(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await _load_rag_document_for_user(
+        session=session,
+        document_id=document_id,
+        current_user=current_user,
+        allow_shared_admin=True,
+    )
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-
-    request_tenant_id = _request_tenant_id(current_user)
-    if doc.tenant_id != request_tenant_id:
-        if not (doc.visibility == "public" and _is_admin(current_user)):
-            raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     return {
         "document_id": doc.document_id,
@@ -567,12 +589,14 @@ async def rag_document_health_check(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await _load_rag_document_for_user(
+        session=session,
+        document_id=document_id,
+        current_user=current_user,
+        allow_shared_admin=True,
+    )
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    request_tenant_id = _request_tenant_id(current_user)
-    if doc.tenant_id != request_tenant_id:
-        raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     file_exists = Path(doc.path).exists()
     qdrant_points = 0
@@ -618,15 +642,14 @@ async def reingest_rag_document(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await _load_rag_document_for_user(
+        session=session,
+        document_id=document_id,
+        current_user=current_user,
+        allow_shared_admin=True,
+    )
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    request_tenant_id = _request_tenant_id(current_user)
-    if doc.tenant_id != request_tenant_id:
-        if doc.tenant_id == RAG_SHARED_TENANT_ID and is_rag_admin(current_user):
-            pass
-        else:
-            raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     if not Path(doc.path).exists():
         raise HTTPException(
@@ -652,15 +675,14 @@ async def delete_rag_document(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await _load_rag_document_for_user(
+        session=session,
+        document_id=document_id,
+        current_user=current_user,
+        allow_shared_admin=True,
+    )
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    request_tenant_id = _request_tenant_id(current_user)
-    if doc.tenant_id != request_tenant_id:
-        if doc.tenant_id == RAG_SHARED_TENANT_ID and is_rag_admin(current_user):
-            pass
-        else:
-            raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     try:
         _qdrant_delete_document(tenant_id=doc.tenant_id, document_id=doc.document_id)

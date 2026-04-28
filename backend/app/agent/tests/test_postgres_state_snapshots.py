@@ -182,6 +182,7 @@ class _Store:
 
 class _FakeCaseRecord:
     case_number = _Attr("case_number")
+    tenant_id = _Attr("tenant_id")
     user_id = _Attr("user_id")
     updated_at = _Attr("updated_at")
 
@@ -392,6 +393,7 @@ class _FakeCaseService:
         *,
         case_number,
         revision,
+        tenant_id=None,
         user_id=None,
     ):
         case_row = next(
@@ -399,6 +401,7 @@ class _FakeCaseService:
                 case
                 for case in self._session._store.cases
                 if case.case_number == case_number
+                and (tenant_id is None or case.tenant_id == tenant_id)
                 and (user_id is None or case.user_id == user_id)
             ),
             None,
@@ -422,11 +425,13 @@ class _FakeCaseService:
         self,
         *,
         case_number,
+        tenant_id=None,
         user_id=None,
     ):
         return await self.get_snapshot_by_revision_for_case_number(
             case_number=case_number,
             revision=None,
+            tenant_id=tenant_id,
             user_id=user_id,
         )
 
@@ -434,6 +439,7 @@ class _FakeCaseService:
         self,
         *,
         case_number,
+        tenant_id=None,
         user_id=None,
         limit=50,
     ):
@@ -442,6 +448,7 @@ class _FakeCaseService:
                 case
                 for case in self._session._store.cases
                 if case.case_number == case_number
+                and (tenant_id is None or case.tenant_id == tenant_id)
                 and (user_id is None or case.user_id == user_id)
             ),
             None,
@@ -919,8 +926,16 @@ async def test_get_case_and_latest_snapshot_reads_latest_revision() -> None:
             user_id="user-1",
             tenant_id="tenant-1",
         )
-        case_row = await get_case_by_number_async(case_number="case-read", user_id="user-1")
-        snapshot = await get_latest_governed_case_snapshot_async(case_number="case-read", user_id="user-1")
+        case_row = await get_case_by_number_async(
+            case_number="case-read",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        )
+        snapshot = await get_latest_governed_case_snapshot_async(
+            case_number="case-read",
+            tenant_id="tenant-1",
+            user_id="user-1",
+        )
 
     assert case_row is not None
     assert case_row["case_number"] == "case-read"
@@ -952,6 +967,7 @@ async def test_get_governed_snapshot_by_revision_reads_targeted_revision() -> No
         )
         snapshot = await get_governed_case_snapshot_by_revision_async(
             case_number="case-rev-read",
+            tenant_id="tenant-1",
             revision=1,
             user_id="user-1",
         )
@@ -976,9 +992,10 @@ async def test_workspace_revision_projection_loader_reads_snapshot_with_owner_gu
         def from_url(cls, url: str, decode_responses: bool):
             raise AssertionError("revisioned workspace snapshot reads must not touch Redis")
 
-    async def _fake_get_snapshot_by_revision(*, case_number, revision, user_id=None):
+    async def _fake_get_snapshot_by_revision(*, case_number, revision, tenant_id=None, user_id=None):
         captured["case_number"] = case_number
         captured["revision"] = revision
+        captured["tenant_id"] = tenant_id
         captured["user_id"] = user_id
         return _SnapshotRead(state_json=_state(analysis_cycle=7).model_dump(mode="json"))
 
@@ -1007,6 +1024,7 @@ async def test_workspace_revision_projection_loader_reads_snapshot_with_owner_gu
     assert captured == {
         "case_number": "case-rev-read",
         "revision": 3,
+        "tenant_id": "tenant-1",
         "user_id": "user-1",
     }
 
@@ -1045,8 +1063,9 @@ async def test_guarded_workspace_projection_prefers_latest_snapshot_on_marker_ma
             )
             return redis_state.model_dump_json()
 
-    async def _fake_get_latest_snapshot(*, case_number, user_id=None):
+    async def _fake_get_latest_snapshot(*, case_number, tenant_id=None, user_id=None):
         captured["case_number"] = case_number
+        captured["tenant_id"] = tenant_id
         captured["user_id"] = user_id
         return _SnapshotRead(
             revision=5,
@@ -1071,7 +1090,11 @@ async def test_guarded_workspace_projection_prefers_latest_snapshot_on_marker_ma
 
     assert state is not None
     assert state.analysis_cycle == 9
-    assert captured == {"case_number": "case-guarded", "user_id": "user-1"}
+    assert captured == {
+        "case_number": "case-guarded",
+        "tenant_id": "tenant-1",
+        "user_id": "user-1",
+    }
 
 
 @pytest.mark.asyncio
@@ -1147,7 +1170,7 @@ async def test_guarded_workspace_projection_marker_mismatch_keeps_redis_primary(
             )
             return redis_state.model_dump_json()
 
-    async def _fake_get_latest_snapshot(*, case_number, user_id=None):
+    async def _fake_get_latest_snapshot(*, case_number, tenant_id=None, user_id=None):
         return _SnapshotRead(
             revision=6,
             state_json=_state(analysis_cycle=10, medium="Dampf").model_dump(mode="json"),
@@ -1196,7 +1219,7 @@ async def test_guarded_workspace_projection_without_redis_uses_latest_snapshot_f
         async def get(self, key):
             return None
 
-    async def _fake_get_latest_snapshot(*, case_number, user_id=None):
+    async def _fake_get_latest_snapshot(*, case_number, tenant_id=None, user_id=None):
         return _SnapshotRead(
             revision=4,
             state_json=_state(analysis_cycle=8, medium="Dampf").model_dump(mode="json"),
@@ -1316,7 +1339,7 @@ async def test_list_cases_reads_owned_cases_newest_first_with_latest_revision() 
         store.cases[0].updated_at = "2026-04-08T00:00:00+00:00"
         store.cases[1].updated_at = "2026-04-09T00:00:00+00:00"
         store.cases[2].updated_at = "2026-04-10T00:00:00+00:00"
-        items = await list_cases_async(user_id="user-1")
+        items = await list_cases_async(user_id="user-1", tenant_id="tenant-1")
 
     assert [item["case_number"] for item in items] == ["case-b", "case-a"]
     assert [item["latest_revision"] for item in items] == [1, 1]
@@ -1339,7 +1362,11 @@ async def test_list_case_snapshots_reads_revisions_newest_first() -> None:
             user_id="user-1",
             tenant_id="tenant-1",
         )
-        items = await list_governed_case_snapshots_async(case_number="case-list", user_id="user-1")
+        items = await list_governed_case_snapshots_async(
+            case_number="case-list",
+            tenant_id="tenant-1",
+            user_id="user-1",
+        )
 
     assert [item.revision for item in items] == [2, 1]
     assert items[0].basis_hash is not None

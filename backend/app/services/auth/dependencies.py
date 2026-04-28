@@ -143,7 +143,11 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     zurückgegeben. Ausschließlich für lokales Testen — niemals in Produktion.
     """
     # --- DEV BYPASS (nur wenn explizit aktiviert) ---
-    if os.getenv("BYPASS_AUTH") == "1" and x_bypass_auth == "1":
+    if (
+        getattr(settings, "is_dev_or_test", False)
+        and os.getenv("BYPASS_AUTH") == "1"
+        and x_bypass_auth == "1"
+    ):
         return _DEV_BYPASS_USER
 
     if not authorization or not authorization.startswith("Bearer "):

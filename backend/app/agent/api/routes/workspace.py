@@ -23,7 +23,7 @@ from app.agent.state.persistence import (
     list_governed_case_snapshots_async,
     get_governed_case_snapshot_by_revision_async,
 )
-from app.services.auth.dependencies import RequestUser, get_current_request_user, canonical_user_id
+from app.services.auth.dependencies import RequestUser, get_current_request_user
 from app.agent.api.deps import _canonical_scope
 from app.agent.api.loaders import (
     _load_live_governed_state,
@@ -41,8 +41,8 @@ async def list_cases(
     limit: int = Query(50, ge=1, le=200),
     current_user: RequestUser = Depends(get_current_request_user),
 ):
-    owner_id = canonical_user_id(current_user)
-    items = await list_cases_async(user_id=owner_id, limit=limit)
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id="cases")
+    items = await list_cases_async(user_id=owner_id, tenant_id=tenant_id, limit=limit)
     return [CaseListItemResponse(**item) for item in items]
 
 @router.get("/cases/{case_id}", response_model=CaseMetadataResponse)
@@ -50,8 +50,12 @@ async def get_case_metadata(
     case_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
 ):
-    owner_id = canonical_user_id(current_user)
-    case_data = await get_case_by_number_async(case_number=case_id, user_id=owner_id)
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
+    case_data = await get_case_by_number_async(
+        case_number=case_id,
+        user_id=owner_id,
+        tenant_id=tenant_id,
+    )
     if not case_data:
         raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found")
     return CaseMetadataResponse(**case_data)
@@ -61,9 +65,11 @@ async def get_latest_case_snapshot(
     case_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
 ):
-    owner_id = canonical_user_id(current_user)
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
     snapshot = await get_latest_governed_case_snapshot_async(
-        case_number=case_id, user_id=owner_id
+        case_number=case_id,
+        tenant_id=tenant_id,
+        user_id=owner_id,
     )
     if not snapshot:
         raise HTTPException(status_code=404, detail=f"No snapshots found for case '{case_id}'")
@@ -82,9 +88,12 @@ async def list_case_snapshots(
     limit: int = Query(50, ge=1, le=200),
     current_user: RequestUser = Depends(get_current_request_user),
 ):
-    owner_id = canonical_user_id(current_user)
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
     snapshots = await list_governed_case_snapshots_async(
-        case_number=case_id, user_id=owner_id, limit=limit
+        case_number=case_id,
+        tenant_id=tenant_id,
+        user_id=owner_id,
+        limit=limit,
     )
     return [
         GovernedSnapshotRevisionListItemResponse(
@@ -101,9 +110,12 @@ async def get_case_snapshot_by_revision(
     revision: int = Path(..., ge=0),
     current_user: RequestUser = Depends(get_current_request_user),
 ):
-    owner_id = canonical_user_id(current_user)
+    tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
     snapshot = await get_governed_case_snapshot_by_revision_async(
-        case_number=case_id, user_id=owner_id, revision=revision
+        case_number=case_id,
+        tenant_id=tenant_id,
+        user_id=owner_id,
+        revision=revision,
     )
     if not snapshot:
         raise HTTPException(

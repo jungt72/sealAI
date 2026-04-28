@@ -31,6 +31,7 @@ async def get_live_chat_history(
     if not governed:
         snapshot = await get_latest_governed_case_snapshot_async(
             case_number=case_id,
+            tenant_id=tenant_id,
             user_id=owner_id,
         )
         if snapshot and snapshot.state_json:

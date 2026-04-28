@@ -130,16 +130,17 @@ class RfqPreviewService:
         self,
         *,
         case_id: str,
+        tenant_id: str,
         user_id: str,
         created_by: str,
     ) -> RfqPreviewView:
-        case_row = await self._load_owned_case(case_id=case_id, user_id=user_id)
+        case_row = await self._load_owned_case(case_id=case_id, tenant_id=tenant_id, user_id=user_id)
         snapshot = await self._latest_snapshot(case_id=case_id)
         if case_row is None or snapshot is None:
             raise RfqPreviewNotFound("case not found")
 
         revision = int(case_row.case_revision or snapshot.revision or 0)
-        existing = await self._load_preview(case_id=case_id, case_revision=revision)
+        existing = await self._load_preview(case_id=case_id, tenant_id=tenant_id, case_revision=revision)
         if existing is not None:
             return _view(existing, current_case_revision=revision)
 
@@ -169,14 +170,16 @@ class RfqPreviewService:
         self,
         *,
         case_id: str,
+        tenant_id: str,
         user_id: str,
     ) -> RfqPreviewView:
-        case_row = await self._load_owned_case(case_id=case_id, user_id=user_id)
+        case_row = await self._load_owned_case(case_id=case_id, tenant_id=tenant_id, user_id=user_id)
         if case_row is None:
             raise RfqPreviewNotFound("case not found")
         result = await self._session.execute(
             select(InquiryExtractModel)
             .where(InquiryExtractModel.case_id == case_id)
+            .where(InquiryExtractModel.tenant_id == tenant_id)
             .where(InquiryExtractModel.artifact_type == RFQ_PREVIEW_ARTIFACT_TYPE)
             .order_by(
                 InquiryExtractModel.case_revision.desc(),
@@ -193,6 +196,7 @@ class RfqPreviewService:
         self,
         *,
         preview_id: str,
+        tenant_id: str,
         user_id: str,
         granted_by: str,
         consent_scope: Mapping[str, Any],
@@ -200,13 +204,14 @@ class RfqPreviewService:
         result = await self._session.execute(
             select(InquiryExtractModel)
             .where(InquiryExtractModel.extract_id == preview_id)
+            .where(InquiryExtractModel.tenant_id == tenant_id)
             .limit(1)
         )
         row = result.scalar_one_or_none()
         if row is None:
             raise RfqPreviewNotFound("rfq preview not found")
         case_row = await self._load_owned_case(
-            case_id=str(row.case_id), user_id=user_id
+            case_id=str(row.case_id), tenant_id=tenant_id, user_id=user_id
         )
         if case_row is None:
             raise RfqPreviewNotFound("case not found")
@@ -239,11 +244,12 @@ class RfqPreviewService:
         return _view(row, current_case_revision=current_revision)
 
     async def _load_owned_case(
-        self, *, case_id: str, user_id: str
+        self, *, case_id: str, tenant_id: str, user_id: str
     ) -> CaseRecord | None:
         result = await self._session.execute(
             select(CaseRecord)
             .where(CaseRecord.id == case_id)
+            .where(CaseRecord.tenant_id == tenant_id)
             .where(CaseRecord.user_id == user_id)
             .limit(1)
         )
@@ -259,11 +265,12 @@ class RfqPreviewService:
         return result.scalar_one_or_none()
 
     async def _load_preview(
-        self, *, case_id: str, case_revision: int
+        self, *, case_id: str, tenant_id: str, case_revision: int
     ) -> InquiryExtractModel | None:
         result = await self._session.execute(
             select(InquiryExtractModel)
             .where(InquiryExtractModel.case_id == case_id)
+            .where(InquiryExtractModel.tenant_id == tenant_id)
             .where(InquiryExtractModel.case_revision == case_revision)
             .where(InquiryExtractModel.artifact_type == RFQ_PREVIEW_ARTIFACT_TYPE)
             .limit(1)

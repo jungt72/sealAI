@@ -31,6 +31,21 @@ def test_get_current_request_user_rejects_invalid_token(monkeypatch: pytest.Monk
     assert "expired access token" in str(exc_info.value.detail)
 
 
+def test_bypass_auth_is_disabled_outside_dev_or_test(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BYPASS_AUTH", "1")
+    monkeypatch.setattr(dependencies.settings, "is_dev_or_test", False, raising=False)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            dependencies.get_current_request_user(
+                authorization=None,
+                x_bypass_auth="1",
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+
+
 def test_get_current_ws_user_rejects_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_verify(token: str) -> dict[str, str]:
         raise ValueError("jwt invalid")
