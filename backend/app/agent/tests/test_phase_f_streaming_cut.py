@@ -923,6 +923,34 @@ class TestExplorationReplyPromptRegistry:
         assert "PTFE" in state_update["reply"]
         assert fake_client.chat.completions.create.call_args.kwargs["model"]
 
+
+    @pytest.mark.asyncio
+    async def test_exploration_reply_buffers_and_guards_unsafe_model_text(self):
+        from app.agent.api.streaming import _stream_exploration_reply
+        from app.agent.runtime.output_guard import FAST_PATH_GUARD_FALLBACK
+
+        fake_client = MagicMock()
+        fake_client.chat.completions.create = AsyncMock(
+            return_value=_FakeExplorationStream(["PTFE ist geeignet und ideal fuer diesen Fall."])
+        )
+        fake_openai = MagicMock()
+        fake_openai.AsyncOpenAI.return_value = fake_client
+
+        with patch("app.agent.api.streaming._retrieve_for_exploration_query", AsyncMock(return_value=[])), \
+             patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
+            frames = await _collect_frames(
+                _stream_exploration_reply(
+                    "Vergleiche PTFE und FKM fuer Salzwasser.",
+                    tenant_id="tenant-1",
+                )
+            )
+
+        payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
+        text_chunks = [payload["text"] for payload in payloads if payload.get("type") == "text_chunk"]
+        assert text_chunks == [FAST_PATH_GUARD_FALLBACK]
+        assert all("geeignet" not in chunk.lower() for chunk in text_chunks)
+        assert any(payload.get("type") == "turn_complete" for payload in payloads)
+
     @pytest.mark.asyncio
     async def test_exploration_reply_returns_error_frame_on_model_failure(self):
         from app.agent.api.streaming import _stream_exploration_reply

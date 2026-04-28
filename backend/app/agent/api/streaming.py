@@ -32,6 +32,8 @@ from app.agent.api.utils import (
 from app.agent.api.loaders import (
     _persist_live_governed_state,
     _build_light_runtime_context,
+    _load_live_knowledge_session_context,
+    _persist_live_knowledge_session_context,
 )
 from app.agent.api.governed_runtime import run_governed_graph_turn
 from app.agent.api.assembly import (
@@ -165,6 +167,10 @@ async def _stream_exploration_reply(
     import openai as _openai  # noqa: PLC0415
     from app.agent.evidence.exploration_query import ExplorationQuery  # noqa: PLC0415
     from app.agent.prompts import prompts  # noqa: PLC0415
+    from app.agent.runtime.output_guard import (  # noqa: PLC0415
+        FAST_PATH_GUARD_FALLBACK,
+        check_fast_path_output,
+    )
 
     query = ExplorationQuery(
         topic=message,
@@ -215,7 +221,18 @@ async def _stream_exploration_reply(
             delta = chunk.choices[0].delta.content
             if delta:
                 full_reply += delta
-                yield f"data: {json.dumps({'type': 'text_chunk', 'text': delta}, default=str)}\n\n"
+
+        safe, violation_category = check_fast_path_output(full_reply)
+        if not safe:
+            _log.warning(
+                "exploration_output_guarded category=%s topic=%s",
+                violation_category,
+                query.topic[:64],
+            )
+            full_reply = FAST_PATH_GUARD_FALLBACK
+
+        if full_reply:
+            yield f"data: {json.dumps({'type': 'text_chunk', 'text': full_reply}, default=str)}\n\n"
 
         state_update_event = {
             "type": "state_update",
@@ -223,6 +240,7 @@ async def _stream_exploration_reply(
             "response_class": "conversational_answer",
         }
         yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
+        yield f"data: {json.dumps({'type': 'turn_complete'}, default=str)}\n\n"
     except Exception as exc:  # noqa: BLE001
         _log.error("exploration_stream_failed: %s: %s", type(exc).__name__, exc)
         yield f"data: {json.dumps({'type': 'error', 'message': 'Vergleichsantwort momentan nicht verfuegbar - bitte erneut versuchen.'}, default=str)}\n\n"
@@ -245,6 +263,67 @@ async def _stream_light_runtime(
         governed_state_override=governed_state_override,
     )
     final_reply = ""
+    persisted_light_state: GovernedSessionState | None = None
+
+    async def _persist_light_turn_once() -> GovernedSessionState:
+        nonlocal governed, persisted_light_state
+        if persisted_light_state is not None:
+            return persisted_light_state
+        updated = _with_light_route_progress(
+            governed,
+            role="user",
+            content=message,
+            pre_gate_classification=mode,
+        )
+        if final_reply:
+            updated = _with_light_route_progress(
+                updated,
+                role="assistant",
+                content=final_reply,
+                pre_gate_classification=mode,
+            )
+        if mode == "EXPLORATION" and request.session_id and os.getenv("REDIS_URL"):
+            try:
+                from app.services.knowledge_case_bridge_service import KnowledgeCaseBridgeService  # noqa: PLC0415
+
+                bridge_service = KnowledgeCaseBridgeService()
+                knowledge_context = await _load_live_knowledge_session_context(
+                    current_user=current_user,
+                    session_id=request.session_id,
+                )
+                knowledge_context = bridge_service.update_context(
+                    message,
+                    context=knowledge_context,
+                    session_id=request.session_id,
+                    role="user",
+                )
+                if final_reply:
+                    knowledge_context = bridge_service.update_context(
+                        final_reply,
+                        context=knowledge_context,
+                        role="assistant",
+                    )
+                await _persist_live_knowledge_session_context(
+                    current_user=current_user,
+                    session_id=request.session_id,
+                    context=knowledge_context,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _log.warning(
+                    "[runtime_authority] exploration knowledge context persist failed (%s: %s)",
+                    type(exc).__name__,
+                    exc,
+                )
+        if os.getenv("REDIS_URL"):
+            await _persist_live_governed_state(
+                current_user=current_user,
+                session_id=request.session_id,
+                state=updated,
+                pre_gate_classification=mode,
+            )
+        persisted_light_state = updated
+        governed = updated
+        return updated
 
     if mode == "EXPLORATION" and request.session_id:
         tenant_id, _, _ = _canonical_scope(current_user, case_id=request.session_id)
@@ -266,8 +345,15 @@ async def _stream_light_runtime(
             yield frame
             continue
 
+        raw_frame_data = frame[6:].strip()
+        if raw_frame_data == "[DONE]":
+            if request.session_id:
+                await _persist_light_turn_once()
+            yield frame
+            continue
+
         try:
-            payload = json.loads(frame[6:].strip())
+            payload = json.loads(raw_frame_data)
         except Exception:
             yield frame
             continue
@@ -279,8 +365,11 @@ async def _stream_light_runtime(
 
         if event_type == "state_update":
             final_reply += payload.get("reply") or ""
+            state_for_projection = governed
+            if request.session_id:
+                state_for_projection = await _persist_light_turn_once()
             payload["response_class"] = "conversational_answer"
-            payload["structured_state"] = _light_structured_state(governed)
+            payload["structured_state"] = _light_structured_state(state_for_projection)
             payload["policy_path"] = mode.lower()
             yield f"data: {json.dumps(payload, default=str)}\n\n"
             continue
@@ -293,19 +382,8 @@ async def _stream_light_runtime(
             continue
 
         if event_type == "turn_complete":
-            if final_reply:
-                updated = _with_light_route_progress(
-                    governed,
-                    role="assistant",
-                    content=final_reply,
-                    pre_gate_classification=mode,
-                )
-                await _persist_live_governed_state(
-                    current_user=current_user,
-                    session_id=request.session_id,
-                    state=updated,
-                    pre_gate_classification=mode,
-                )
+            if request.session_id:
+                await _persist_light_turn_once()
             yield frame
             continue
         if event_type == "error":
