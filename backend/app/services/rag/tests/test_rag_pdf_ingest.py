@@ -126,6 +126,7 @@ async def test_pdf_chunks_include_page_number_and_tenant(monkeypatch: pytest.Mon
     fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
     pipeline, captured = _build_pipeline()
     bm25_captured = _capture_bm25(monkeypatch)
+    monkeypatch.setattr(rag_ingest, "RAG_DOCUMENT_CONTENT_LLM_ENABLED", True)
 
     def _fake_platinum_extraction(*, text: str, filename: str):
         return SimpleNamespace(manufacturer="SealAI", product_name=filename, operating_points=[], safety_exclusions=[])
@@ -228,6 +229,7 @@ async def test_pdf_specialized_routes_keep_platinum_path(
     fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
     pipeline, captured = _build_pipeline()
     _capture_bm25(monkeypatch)
+    monkeypatch.setattr(rag_ingest, "RAG_DOCUMENT_CONTENT_LLM_ENABLED", True)
     specialized_calls = {"count": 0}
 
     def _fake_platinum_extraction(*, text: str, filename: str):
@@ -266,3 +268,32 @@ async def test_pdf_specialized_routes_keep_platinum_path(
     assert points, "Expected specialized PDF ingestion to produce chunks"
     payload = getattr(points[0], "payload", None) or {}
     assert "document_meta" in payload
+
+
+@pytest.mark.anyio
+async def test_pdf_specialized_route_uses_generic_path_when_document_llm_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
+    pipeline, captured = _build_pipeline()
+    _capture_bm25(monkeypatch)
+    monkeypatch.setattr(rag_ingest, "RAG_DOCUMENT_CONTENT_LLM_ENABLED", False)
+
+    def _unexpected_platinum(*args, **kwargs):
+        raise AssertionError("document-content LLM path must be disabled by default policy")
+
+    monkeypatch.setattr(rag_ingest, "_extract_platinum_structured_llm", _unexpected_platinum)
+
+    stats = pipeline.process_document(
+        str(fixture_path),
+        tenant_id="tenant-1",
+        document_id="doc-llm-disabled",
+        visibility="public",
+        route_key="material_datasheet",
+    )
+
+    points = captured.get("points") or []
+    assert stats.chunks > 0
+    assert points
+    payload = getattr(points[0], "payload", None) or {}
+    assert "document_meta" not in payload

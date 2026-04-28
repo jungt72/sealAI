@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     qdrant_collection: str = "sealai_knowledge"
     qdrant_collection_ltm: Optional[str] = "sealai_ltm"
     rag_k: int = 4
+    rag_document_llm_processing_enabled: bool = False
+    rag_dynamic_metadata_llm_enabled: bool = False
+    rag_dynamic_metadata_llm_model: str = "gpt-4.1-mini"
+    rag_dynamic_metadata_max_chars: int = 12000
+    rag_max_pages: int = 80
+    rag_max_chunks: int = 400
     gotenberg_url: Optional[str] = None
     tika_url: Optional[str] = None
     paperless_url: Optional[str] = None

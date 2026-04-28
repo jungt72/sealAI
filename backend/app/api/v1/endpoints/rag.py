@@ -31,15 +31,17 @@ from app.services.auth.dependencies import RequestUser, get_current_request_user
 
 from app.services.rag.route_resolver import resolve_route_key
 from app.services.rag.utils import (
-    ALLOWED_CT,
-    ALLOWED_EXT,
+    MAGIC_READ_BYTES,
     RAG_UPLOAD_MAX_BYTES,
     cleanup_upload_path,
     ensure_upload_directory,
     find_existing_document,
     normalize_tags,
+    redact_internal_paths,
     resolve_upload_dir,
+    safe_error_message,
     sanitize_filename,
+    validate_upload_signature,
 )
 
 router = APIRouter(prefix="/rag", tags=["rag"])
@@ -192,7 +194,7 @@ def _extract_text_preview_for_delta(path: Path, *, limit: int = 12000) -> str:
 
         docs = load_document(str(path))
     except Exception as exc:  # noqa: BLE001
-        logger.debug("document_delta_text_extraction_skipped", path=str(path), reason=str(exc))
+        logger.debug("document_delta_text_extraction_skipped", reason=safe_error_message(exc))
         return ""
     parts: list[str] = []
     remaining = limit
@@ -274,13 +276,13 @@ async def _try_persist_document_delta_for_case(
             "document_delta_persist_failed",
             case_id=normalized_case_id,
             document_id=doc.document_id,
-            reason=f"{type(exc).__name__}: {exc}",
+            reason=safe_error_message(exc),
         )
         return {
             "case_id": normalized_case_id,
             "document_id": doc.document_id,
             "status": "error",
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": "document_candidate_extraction_failed",
             "field_count": 0,
             "fields": [],
         }
@@ -321,16 +323,6 @@ async def upload_rag_document(
     document_id = uuid.uuid4().hex
     safe_name = sanitize_filename(file.filename or "")
     ext = Path(safe_name).suffix.lower()
-    if ext not in ALLOWED_EXT:
-        raise HTTPException(
-            status_code=415, detail=error_detail("unsupported_extension", extension=ext or None)
-        )
-    content_type = getattr(file, "content_type", None)
-    if content_type and content_type not in ALLOWED_CT:
-        raise HTTPException(
-            status_code=415,
-            detail=error_detail("unsupported_content_type", content_type=content_type),
-        )
     target_dir = resolve_upload_dir(tenant_id=tenant_id, document_id=document_id)
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -349,12 +341,17 @@ async def upload_rag_document(
 
     digest = hashlib.sha256()
     byte_count = 0
+    signature_sample = b""
+    content_type = None
     with target_path.open("wb") as handle:
         while True:
             chunk = await file.read(1024 * 1024)
             if not chunk:
                 break
             byte_count += len(chunk)
+            if len(signature_sample) < MAGIC_READ_BYTES:
+                remaining = MAGIC_READ_BYTES - len(signature_sample)
+                signature_sample += chunk[:remaining]
             if byte_count > RAG_UPLOAD_MAX_BYTES:
                 await file.close()
                 try:
@@ -372,6 +369,15 @@ async def upload_rag_document(
             digest.update(chunk)
             handle.write(chunk)
     await file.close()
+    try:
+        content_type = validate_upload_signature(
+            extension=ext,
+            content_type=getattr(file, "content_type", None),
+            sample=signature_sample,
+        )
+    except HTTPException:
+        cleanup_upload_path(target_path)
+        raise
     sha256 = digest.hexdigest()
     try:
         size_bytes = target_path.stat().st_size
@@ -545,8 +551,8 @@ async def get_rag_document(
     return {
         "document_id": doc.document_id,
         "status": doc.status,
-        "error": doc.error,
-        "ingest_stats": doc.ingest_stats,
+        "error": redact_internal_paths(doc.error),
+        "ingest_stats": redact_internal_paths(doc.ingest_stats),
         "enabled": doc.enabled,
         "extraction_status": doc.extraction_status,
         "extracted_candidates": doc.extracted_candidates or [],
@@ -574,7 +580,7 @@ async def rag_document_health_check(
     try:
         qdrant_points = _qdrant_vector_count(tenant_id=doc.tenant_id, document_id=doc.document_id)
     except Exception as exc:
-        qdrant_error = f"{type(exc).__name__}: {exc}"
+        qdrant_error = safe_error_message(exc)
 
     status_now = str(doc.status or "")
     indexed_like = status_now in {"indexed", "done"}
@@ -595,7 +601,6 @@ async def rag_document_health_check(
         "status": status_now,
         "collection": QDRANT_COLLECTION,
         "filesystem": {
-            "path": doc.path,
             "exists": file_exists,
         },
         "qdrant": {
@@ -626,7 +631,7 @@ async def reingest_rag_document(
     if not Path(doc.path).exists():
         raise HTTPException(
             status_code=409,
-            detail=error_detail("source_file_missing", path=doc.path),
+            detail=error_detail("source_file_missing"),
         )
 
     doc.status = "processing"
@@ -706,8 +711,8 @@ async def list_rag_documents(
                 "status": doc.status,
                 "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
-                "ingest_stats": doc.ingest_stats,
-                "error": doc.error,
+                "ingest_stats": redact_internal_paths(doc.ingest_stats),
+                "error": redact_internal_paths(doc.error),
                 "enabled": doc.enabled,
                 "extraction_status": doc.extraction_status,
                 "extracted_candidates": doc.extracted_candidates or [],

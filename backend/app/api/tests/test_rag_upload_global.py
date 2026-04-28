@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import HTTPException
 from app.api.v1.endpoints import rag as rag_endpoint
 from app.services.auth.dependencies import RequestUser
+from app.services.rag import utils as rag_utils
 from typing import Optional
 
 class DummyResult:
@@ -53,13 +54,12 @@ def anyio_backend() -> str:
 @pytest.mark.anyio
 async def test_rag_upload_global_admin_allowed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    rag_utils.UPLOAD_ROOT = str(tmp_path)
+    rag_utils._UPLOAD_DIR_READY = False
+    monkeypatch.setenv("REDIS_URL", "")
     
     # Mock is_rag_admin
     monkeypatch.setattr("app.api.v1.endpoints.rag.is_rag_admin", lambda user: True)
-    
-    async def fake_enqueue(_channel: str, _payload):
-        return None
-    monkeypatch.setattr(rag_endpoint, "enqueue_job", fake_enqueue)
 
     user = RequestUser(user_id="user123", username="admin_user", sub="user123", roles=["sealai-admin"])
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
@@ -80,6 +80,9 @@ async def test_rag_upload_global_admin_allowed(monkeypatch: pytest.MonkeyPatch, 
 @pytest.mark.anyio
 async def test_rag_upload_global_non_admin_denied(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    rag_utils.UPLOAD_ROOT = str(tmp_path)
+    rag_utils._UPLOAD_DIR_READY = False
+    monkeypatch.setenv("REDIS_URL", "")
     
     # Mock is_rag_admin
     monkeypatch.setattr("app.api.v1.endpoints.rag.is_rag_admin", lambda user: False)
@@ -101,4 +104,3 @@ async def test_rag_upload_global_non_admin_denied(monkeypatch: pytest.MonkeyPatc
         assert exc.status_code == 403
     else:
         raise AssertionError("Expected 403 for non-admin attempting global upload")
-

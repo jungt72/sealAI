@@ -48,7 +48,12 @@ os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
+os.environ.setdefault("nextauth_url", "http://localhost:3000")
+os.environ.setdefault("nextauth_secret", "test-secret")
+os.environ.setdefault("keycloak_issuer", "http://localhost/realms/test")
 os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.json")
+os.environ.setdefault("keycloak_client_id", "test-client")
+os.environ.setdefault("keycloak_client_secret", "test-secret")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 from app.api.v1.endpoints import rag as rag_endpoint  # noqa: E402
@@ -136,6 +141,7 @@ def _configure_upload_root(tmp_path: Path) -> None:
     rag_endpoint.UPLOAD_ROOT = str(tmp_path)
     rag_utils.UPLOAD_ROOT = str(tmp_path)
     rag_utils._UPLOAD_DIR_READY = False
+    os.environ["REDIS_URL"] = ""
 
 
 @pytest.mark.anyio
@@ -342,3 +348,106 @@ async def test_rag_document_access_prefers_tenant_claim_over_user_id(tmp_path: P
     )
 
     assert payload["document_id"] == "doc-1"
+
+
+@pytest.mark.anyio
+async def test_rag_document_health_does_not_expose_internal_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _configure_upload_root(tmp_path)
+    dummy_session = DummySession()
+    internal_path = tmp_path / "tenant-1" / "doc-1" / "original.txt"
+    internal_path.parent.mkdir(parents=True)
+    internal_path.write_text("hello", encoding="utf-8")
+    doc = RagDocument(
+        document_id="doc-1",
+        tenant_id="tenant-1",
+        status="indexed",
+        visibility="private",
+        filename="doc.txt",
+        content_type="text/plain",
+        size_bytes=5,
+        category=None,
+        tags=None,
+        sha256=hashlib.sha256(b"hello").hexdigest(),
+        path=str(internal_path),
+    )
+    dummy_session.add(doc)
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+    monkeypatch.setattr(rag_endpoint, "_qdrant_vector_count", lambda **_kwargs: 1)
+
+    payload = await rag_endpoint.rag_document_health_check(
+        document_id="doc-1",
+        current_user=user,
+        session=dummy_session,
+    )
+
+    assert "path" not in payload["filesystem"]
+    assert str(tmp_path) not in str(payload)
+
+
+@pytest.mark.anyio
+async def test_rag_reingest_missing_file_error_does_not_expose_internal_path(tmp_path: Path) -> None:
+    _configure_upload_root(tmp_path)
+    dummy_session = DummySession()
+    doc = RagDocument(
+        document_id="doc-1",
+        tenant_id="tenant-1",
+        status="indexed",
+        visibility="private",
+        filename="doc.txt",
+        content_type="text/plain",
+        size_bytes=5,
+        category=None,
+        tags=None,
+        sha256=hashlib.sha256(b"hello").hexdigest(),
+        path=str(tmp_path / "tenant-1" / "doc-1" / "missing.txt"),
+    )
+    dummy_session.add(doc)
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+
+    try:
+        await rag_endpoint.reingest_rag_document(
+            document_id="doc-1",
+            current_user=user,
+            session=dummy_session,
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 409
+        assert exc.detail == {"error": "source_file_missing"}
+        assert str(tmp_path) not in str(exc.detail)
+    else:
+        raise AssertionError("Expected source_file_missing")
+
+
+@pytest.mark.anyio
+async def test_rag_document_status_redacts_stored_parser_error_path(tmp_path: Path) -> None:
+    _configure_upload_root(tmp_path)
+    dummy_session = DummySession()
+    internal_path = tmp_path / "tenant-1" / "doc-1" / "original.txt"
+    doc = RagDocument(
+        document_id="doc-1",
+        tenant_id="tenant-1",
+        status="error",
+        visibility="private",
+        filename="doc.txt",
+        content_type="text/plain",
+        size_bytes=5,
+        category=None,
+        tags=None,
+        sha256=hashlib.sha256(b"hello").hexdigest(),
+        path=str(internal_path),
+        error=f"ParserError: failed at {internal_path}",
+    )
+    dummy_session.add(doc)
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+
+    payload = await rag_endpoint.get_rag_document(
+        document_id="doc-1",
+        current_user=user,
+        session=dummy_session,
+    )
+
+    assert "[REDACTED_PATH]" in payload["error"]
+    assert str(tmp_path) not in payload["error"]

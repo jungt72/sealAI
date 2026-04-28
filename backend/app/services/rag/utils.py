@@ -13,8 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.errors import error_detail
+from app.common.redaction import redact_internal_paths, safe_error_message
 from app.models.rag_document import RagDocument
-from app.core.config import settings
 
 logger = structlog.get_logger("services.rag.utils")
 
@@ -22,13 +22,70 @@ UPLOAD_ROOT = (os.getenv("RAG_UPLOAD_DIR") or "/app/data/uploads").strip() or "/
 RAG_UPLOAD_MAX_BYTES = int(os.getenv("RAG_UPLOAD_MAX_BYTES", str(50 * 1024 * 1024)))
 ALLOWED_VISIBILITY = {"private", "public"}
 ALLOWED_EXT = {".pdf", ".txt", ".md", ".docx"}
-ALLOWED_CT = {
+ALLOWED_CT: dict[str, set[str]] = {
+    ".pdf": {"application/pdf"},
+    ".txt": {"text/plain"},
+    ".md": {"text/markdown", "text/plain"},
+    ".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+}
+ALLOWED_CONTENT_TYPES = {
     "application/pdf",
     "text/plain",
     "text/markdown",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+MAGIC_READ_BYTES = 4096
+_DOCX_ZIP_MAGIC = b"PK\x03\x04"
 _UPLOAD_DIR_READY = False
+
+
+def _looks_like_text(sample: bytes) -> bool:
+    if not sample:
+        return True
+    if b"\x00" in sample:
+        return False
+    try:
+        sample.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        try:
+            sample.decode("latin-1")
+            return True
+        except UnicodeDecodeError:
+            return False
+
+
+def validate_upload_signature(*, extension: str, content_type: str | None, sample: bytes) -> str:
+    ext = extension.lower()
+    if ext not in ALLOWED_EXT:
+        raise HTTPException(
+            status_code=415, detail=error_detail("unsupported_extension", extension=ext or None)
+        )
+
+    normalized_content_type = (content_type or "").split(";", 1)[0].strip().lower() or None
+    allowed_for_ext = ALLOWED_CT.get(ext, set())
+    if normalized_content_type and normalized_content_type not in allowed_for_ext:
+        raise HTTPException(
+            status_code=415,
+            detail=error_detail("unsupported_content_type", content_type=normalized_content_type),
+        )
+
+    if ext == ".pdf" and not sample.startswith(b"%PDF-"):
+        raise HTTPException(status_code=415, detail=error_detail("upload_signature_mismatch"))
+    if ext == ".docx" and not sample.startswith(_DOCX_ZIP_MAGIC):
+        raise HTTPException(status_code=415, detail=error_detail("upload_signature_mismatch"))
+    if ext in {".txt", ".md"} and not _looks_like_text(sample):
+        raise HTTPException(status_code=415, detail=error_detail("upload_signature_mismatch"))
+
+    if normalized_content_type:
+        return normalized_content_type
+    if ext == ".pdf":
+        return "application/pdf"
+    if ext == ".docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if ext == ".md":
+        return "text/markdown"
+    return "text/plain"
 
 def normalize_tags(raw: Optional[str]) -> Optional[List[str]]:
     if not raw:

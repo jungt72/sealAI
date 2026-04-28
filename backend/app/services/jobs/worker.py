@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.database import AsyncSessionLocal
 from app.models.rag_document import RagDocument
 from app.observability.metrics import track_rag_ingest
+from app.common.redaction import safe_error_message
 
 IngestFunc = Callable[..., Any]
 
@@ -100,7 +101,7 @@ async def process_rag_document(
     except Exception as exc:
         doc.status = "error"
         doc.extraction_status = "error"
-        doc.error = f"{type(exc).__name__}: {exc}"
+        doc.error = safe_error_message(exc)
         track_rag_ingest(doc.source_system or "upload", "error", time.perf_counter() - started)
     session.add(doc)
     await session.commit()
