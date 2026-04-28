@@ -1,9 +1,26 @@
-# Envs
-.env*
+# Env files
+#
+# Real env files, host-local overrides, backups, and rollback snapshots must
+# never be committed. Example/template files are allowed only when they contain
+# placeholders.
+.env
+.env.*
+*.env
+*.env.*
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+*.env.bak
+*.env.backup
+*.env.rollback*
+*.env.save*
+.env*.bak*
+.env*.backup*
+.env*.rollback*
+.env*.save*
 !.env.example
 !.env.prod.example
-backend/.env
-frontend/.env
 
 # Node / Next
 node_modules/
@@ -84,9 +101,11 @@ frontend_backup_*/
 code_dump_*.txt
 *.dump
 *.log
-*.env
-.env.*
-!.env.prod.example
+realm-export*.json
+*realm*backup*.json
+keycloak-realm-backup/
+!keycloak/realm-export.json
+!keycloak/import/realm-export.json
 
 # runtime data
 /data/
