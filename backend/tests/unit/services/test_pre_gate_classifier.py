@@ -65,11 +65,29 @@ def test_knowledge_query_examples(classifier: PreGateClassifier, text: str) -> N
 @pytest.mark.parametrize(
     "text",
     [
+        "Warum ist PTFE in meinem Fall kritisch?",
+        "Erklär mir das für diese Anwendung genauer.",
+        "Welche Rolle spielt der Druck dabei?",
+        "Bitte tiefer erklären.",
+    ],
+)
+def test_deep_dive_examples(classifier: PreGateClassifier, text: str) -> None:
+    result = classifier.classify(text)
+
+    assert result.classification is PreGateClassification.DEEP_DIVE
+    assert result.confidence >= 0.8
+    assert result.escalate_to_graph is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "Ich brauche eine Dichtung für meine Pumpe.",
         "Berechne RWDR für 50 mm Welle und 3000 rpm.",
         "Wir haben Leckage am Getriebe.",
         "I need a replacement seal for a pump.",
         "PTFE Dichtung für Welle prüfen.",
+        "Pumpe mit Ethanol 150 °C und 10 bar.",
     ],
 )
 def test_domain_inquiry_examples(classifier: PreGateClassifier, text: str) -> None:
@@ -95,6 +113,23 @@ def test_blocked_examples(classifier: PreGateClassifier, text: str) -> None:
     assert result.classification is PreGateClassification.BLOCKED
     assert result.confidence > 0.8
     assert result.escalate_to_graph is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Korrigiere das bitte.",
+        "Das stimmt nicht, gemeint war Ethanol.",
+        "Nicht 10 bar sondern 4 bar.",
+        "Ich meinte eigentlich 150 C.",
+    ],
+)
+def test_recovery_examples(classifier: PreGateClassifier, text: str) -> None:
+    result = classifier.classify(text)
+
+    assert result.classification is PreGateClassification.RECOVERY
+    assert result.confidence > 0.8
+    assert result.escalate_to_graph is True
 
 
 @pytest.mark.parametrize("text", ["", "   ", "PTFE?", "passt das?"])

@@ -33,6 +33,7 @@ def _user() -> RequestUser:
         ("Hallo", PreGateClassification.GREETING, "CONVERSATION"),
         ("Was kann SeaLAI?", PreGateClassification.META_QUESTION, "CONVERSATION"),
         ("Was ist PTFE?", PreGateClassification.KNOWLEDGE_QUERY, "CONVERSATION"),
+        ("Warum ist PTFE in meinem Fall kritisch?", PreGateClassification.DEEP_DIVE, "CONVERSATION"),
         ("Welchen Hersteller empfiehlst du?", PreGateClassification.BLOCKED, "CONVERSATION"),
     ],
 )
@@ -48,7 +49,12 @@ async def test_runtime_dispatch_uses_pre_gate_before_three_mode_gate(
 
     assert dispatch.pre_gate_classification == classification.value
     assert dispatch.runtime_mode == runtime_mode
-    expected_gate_route = "CONVERSATION" if classification is not PreGateClassification.KNOWLEDGE_QUERY else runtime_mode
+    expected_gate_route = (
+        "CONVERSATION"
+        if classification
+        not in {PreGateClassification.KNOWLEDGE_QUERY, PreGateClassification.DEEP_DIVE}
+        else runtime_mode
+    )
     assert dispatch.gate_route == expected_gate_route
     assert dispatch.gate_applied is False
     assert dispatch.gate_reason.startswith("pre_gate:")
@@ -60,10 +66,14 @@ async def test_runtime_dispatch_uses_pre_gate_before_three_mode_gate(
         assert dispatch.fast_response is not None
         assert dispatch.fast_response.no_case_created is True
         assert dispatch.knowledge_response is None
-    elif classification is PreGateClassification.KNOWLEDGE_QUERY:
+    elif classification in {
+        PreGateClassification.KNOWLEDGE_QUERY,
+        PreGateClassification.DEEP_DIVE,
+    }:
         assert dispatch.fast_response is None
         assert dispatch.knowledge_response is not None
         assert dispatch.knowledge_response.no_case_created is True
+        assert dispatch.knowledge_response.source_classification is classification
     else:
         assert dispatch.fast_response is None
         assert dispatch.knowledge_response is None
@@ -73,6 +83,8 @@ def test_pre_gate_adapter_keeps_three_mode_gate_values_separate() -> None:
     assert _runtime_mode_for_pre_gate(PreGateClassification.GREETING.value) == "CONVERSATION"
     assert _runtime_mode_for_pre_gate(PreGateClassification.META_QUESTION.value) == "CONVERSATION"
     assert _runtime_mode_for_pre_gate(PreGateClassification.KNOWLEDGE_QUERY.value) == "GOVERNED"
+    assert _runtime_mode_for_pre_gate(PreGateClassification.DEEP_DIVE.value) == "GOVERNED"
+    assert _runtime_mode_for_pre_gate(PreGateClassification.RECOVERY.value) == "GOVERNED"
     assert _runtime_mode_for_pre_gate(PreGateClassification.BLOCKED.value) == "CONVERSATION"
     assert _runtime_mode_for_pre_gate(PreGateClassification.DOMAIN_INQUIRY.value) == "GOVERNED"
 
@@ -185,6 +197,36 @@ async def test_knowledge_chat_path_uses_knowledge_service_without_case_creation(
 
 
 @pytest.mark.asyncio
+async def test_deep_dive_chat_path_uses_knowledge_service_without_case_creation(monkeypatch) -> None:
+    async def fail_light_runtime(*args, **kwargs):
+        raise AssertionError("Deep dive must not enter light runtime")
+
+    async def fail_persist(*args, **kwargs):
+        raise AssertionError("Deep dive must not persist governed state")
+
+    async def fail_governed(*args, **kwargs):
+        raise AssertionError("Deep dive must not invoke governed graph")
+
+    monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_light_runtime)
+    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
+    monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+
+    response = await chat_endpoint(
+        ChatRequest(
+            message="Warum ist PTFE in meinem Fall kritisch?",
+            session_id="deep-dive-no-case",
+        ),
+        current_user=_user(),
+    )
+
+    assert response.response_class == "conversational_answer"
+    assert response.policy_path == "knowledge"
+    assert response.run_meta["knowledge_service"]["source_classification"] == "DEEP_DIVE"
+    assert response.run_meta["knowledge_service"]["no_case_created"] is True
+    assert response.structured_state is None
+
+
+@pytest.mark.asyncio
 async def test_knowledge_query_dispatch_persists_only_transient_bridge_context(monkeypatch) -> None:
     load_context = AsyncMock(return_value=None)
     save_context = AsyncMock()
@@ -234,6 +276,33 @@ async def test_domain_inquiry_chat_path_stays_governed_and_keeps_reply_contract(
 
     assert response.response_class == "conversational_answer"
     governed_runner.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_recovery_dispatch_stays_governed_without_fast_or_knowledge_path(monkeypatch) -> None:
+    gate_decider = AsyncMock(side_effect=AssertionError("recovery must not hit second gate"))
+    load_state = AsyncMock(return_value=None)
+
+    monkeypatch.setattr("app.agent.runtime.gate.decide_route_async", gate_decider)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message="Das stimmt nicht, gemeint war Ethanol.",
+            session_id="recovery-governed",
+        ),
+        current_user=_user(),
+    )
+
+    assert dispatch.pre_gate_classification == PreGateClassification.RECOVERY.value
+    assert dispatch.runtime_mode == "GOVERNED"
+    assert dispatch.gate_route == "GOVERNED"
+    assert dispatch.gate_applied is False
+    assert dispatch.gate_reason == "pre_gate:deterministic_recovery"
+    assert dispatch.fast_response is None
+    assert dispatch.knowledge_response is None
+    gate_decider.assert_not_awaited()
+    load_state.assert_not_awaited()
 
 
 @pytest.mark.asyncio

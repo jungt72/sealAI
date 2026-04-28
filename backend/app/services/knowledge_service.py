@@ -31,10 +31,17 @@ class KnowledgeService:
     def __init__(self, *, factcard_store: FactCardStore | None = None) -> None:
         self._store = factcard_store or FactCardStore.get_instance()
 
-    def answer(self, user_input: str, *, max_cards: int = 3) -> KnowledgeResponse:
+    def answer(
+        self,
+        user_input: str,
+        *,
+        max_cards: int = 3,
+        source_classification: PreGateClassification = PreGateClassification.KNOWLEDGE_QUERY,
+    ) -> KnowledgeResponse:
         cards = self._store.match_query_to_cards((user_input or "").lower())[:max_cards]
         if not cards:
             return KnowledgeResponse(
+                source_classification=source_classification,
                 content=(
                     "Dazu habe ich in der kuratierten SeaLAI-Wissensbasis noch keinen "
                     "belastbaren Eintrag gefunden. Ich kann daraus keinen technischen Fall "
@@ -71,7 +78,11 @@ class KnowledgeService:
             "Das ist eine Wissensantwort, kein angelegter technischer Fall "
             "und keine Herstellerfreigabe."
         )
-        return KnowledgeResponse(content="\n".join(lines), citations=tuple(sources))
+        return KnowledgeResponse(
+            content="\n".join(lines),
+            source_classification=source_classification,
+            citations=tuple(sources),
+        )
 
     def _source_for(self, source_id: str) -> KnowledgeSource | None:
         source_map: dict[str, Any] = getattr(self._store, "_sources", {})

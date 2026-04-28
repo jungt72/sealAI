@@ -81,12 +81,18 @@ async def _resolve_runtime_dispatch(
                 fast_response=fast_response,
             )
 
-        if pre_gate.classification is PreGateClassification.KNOWLEDGE_QUERY:
+        if pre_gate.classification in {
+            PreGateClassification.KNOWLEDGE_QUERY,
+            PreGateClassification.DEEP_DIVE,
+        }:
             from dataclasses import replace  # noqa: PLC0415
             from app.services.knowledge_service import KnowledgeService  # noqa: PLC0415
             from app.services.knowledge_case_bridge_service import KnowledgeCaseBridgeService  # noqa: PLC0415
 
-            knowledge_response = KnowledgeService().answer(request.message)
+            knowledge_response = KnowledgeService().answer(
+                request.message,
+                source_classification=pre_gate.classification,
+            )
             if request.session_id:
                 try:
                     bridge_service = KnowledgeCaseBridgeService()

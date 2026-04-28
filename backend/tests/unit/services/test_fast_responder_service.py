@@ -39,6 +39,8 @@ def test_fast_responder_handles_only_non_case_pre_gate_classes(
     [
         PreGateClassification.KNOWLEDGE_QUERY,
         PreGateClassification.DOMAIN_INQUIRY,
+        PreGateClassification.DEEP_DIVE,
+        PreGateClassification.RECOVERY,
     ],
 )
 def test_fast_responder_rejects_full_graph_classifications(

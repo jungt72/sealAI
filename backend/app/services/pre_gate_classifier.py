@@ -54,6 +54,21 @@ class PreGateClassifier:
                 "deterministic_policy_block",
             )
 
+        if self._matches(_RECOVERY_PATTERNS, text):
+            return self._result(
+                PreGateClassification.RECOVERY,
+                0.82,
+                "deterministic_recovery",
+                escalate_to_graph=True,
+            )
+
+        if self._matches(_DEEP_DIVE_PATTERNS, text):
+            return self._result(
+                PreGateClassification.DEEP_DIVE,
+                0.8,
+                "deterministic_deep_dive",
+            )
+
         if self._matches(_KNOWLEDGE_QUERY_PATTERNS, text):
             return self._result(
                 PreGateClassification.KNOWLEDGE_QUERY,
@@ -96,7 +111,10 @@ class PreGateClassifier:
         *,
         escalate_to_graph: bool = False,
     ) -> ClassificationResult:
-        if classification is PreGateClassification.DOMAIN_INQUIRY:
+        if classification in {
+            PreGateClassification.DOMAIN_INQUIRY,
+            PreGateClassification.RECOVERY,
+        }:
             escalate_to_graph = True
         return ClassificationResult(
             classification=classification,
@@ -151,10 +169,25 @@ _DOMAIN_INQUIRY_PATTERNS = _compile(
     r"\b(pumpe|getriebe|welle|gehäuse|shaft|pump|gearbox)\b.*\b(dichtung|seal|rwdr|ptfe)\b",
 )
 
+_DEEP_DIVE_PATTERNS = _compile(
+    r"\b(warum|weshalb|wieso)\b.*\b(mein(?:em|er|en)?\s+fall|dies(?:em|er|en)\s+fall|dabei|dafür|dafuer|diese\s+anwendung)\b",
+    r"\b(erklär\w*|erklaer\w*|erläutere|erlaeutere)\b.*\b(mein(?:em|er|en)?\s+fall|dies(?:em|er|en)\s+fall|dabei|dafür|dafuer|diese\s+anwendung)\b",
+    r"\b(was\s+bedeutet|welche\s+rolle\s+spielt)\b.*\b(mein(?:em|er|en)?\s+fall|dies(?:em|er|en)\s+fall|dabei|dafür|dafuer|diese\s+anwendung)\b",
+    r"\b(warum|weshalb|wieso)\b.*\b(ptfe|fkm|nbr|epdm|rwdr|gleitringdichtung|radialwellendichtring|werkstoff|medium|druck|temperatur)\b",
+    r"\b(deep\s*dive|vertief\w*|tiefer\s+erklären|tiefer\s+erklaeren)\b",
+)
+
 _KNOWLEDGE_QUERY_PATTERNS = _compile(
     r"^\s*(was\s+ist|was\s+bedeutet|was\s+versteht|erklär\w*|erklaer\w*|definiere)\b",
     r"^\s*(what\s+is|explain|define)\b",
     r"\b(unterschied\s+zwischen|vergleich\s+zwischen|difference\s+between)\b",
     r"^\s*vergleich\b",
     r"\b(wie\s+funktioniert\s+(ein|eine)\b|how\s+does\s+(a|an)\b)",
+)
+
+_RECOVERY_PATTERNS = _compile(
+    r"\b(korrigier\w*|korrektur|berichtige|ändere|aendere)\b",
+    r"\b(das\s+stimmt\s+nicht|das\s+war\s+falsch|falsch\b|nicht\s+korrekt)\b",
+    r"\b(nicht\s+sondern|nicht\b.+\bsondern|sondern\s+eigentlich|stattdessen|gemeint\s+war|ich\s+meinte)\b",
+    r"\b(vergiss\s+das|nimm\s+das\s+zurück|nimm\s+das\s+zurueck)\b",
 )

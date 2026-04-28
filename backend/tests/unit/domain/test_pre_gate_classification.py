@@ -12,20 +12,24 @@ def test_pre_gate_classification_contains_exactly_authority_values() -> None:
         "GREETING",
         "META_QUESTION",
         "KNOWLEDGE_QUERY",
-        "BLOCKED",
         "DOMAIN_INQUIRY",
+        "DEEP_DIVE",
+        "RECOVERY",
+        "BLOCKED",
     }
 
     assert {member.value for member in PreGateClassification} == expected
-    assert len(PreGateClassification) == 5
+    assert len(PreGateClassification) == 7
 
 
 def test_pre_gate_classification_string_values_are_stable() -> None:
     assert PreGateClassification.GREETING.value == "GREETING"
     assert PreGateClassification.META_QUESTION.value == "META_QUESTION"
     assert PreGateClassification.KNOWLEDGE_QUERY.value == "KNOWLEDGE_QUERY"
-    assert PreGateClassification.BLOCKED.value == "BLOCKED"
     assert PreGateClassification.DOMAIN_INQUIRY.value == "DOMAIN_INQUIRY"
+    assert PreGateClassification.DEEP_DIVE.value == "DEEP_DIVE"
+    assert PreGateClassification.RECOVERY.value == "RECOVERY"
+    assert PreGateClassification.BLOCKED.value == "BLOCKED"
 
 
 def test_unknown_pre_gate_classification_value_fails() -> None:
