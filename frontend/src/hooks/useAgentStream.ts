@@ -18,11 +18,12 @@ type UseAgentStreamOptions = {
 };
 
 export function useAgentStream(options: UseAgentStreamOptions = {}) {
+  const { initialCaseId, onCaseBound, onTurnComplete } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeCaseId, setActiveCaseId] = useState<string | null>(options.initialCaseId || null);
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(initialCaseId || null);
   const [streamWorkspace, setStreamWorkspace] = useState<StreamWorkspaceView | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -30,20 +31,23 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const historyLoadedCaseIdRef = useRef<string | null>(null);
   const streamRequestIdRef = useRef(0);
   const finalizedRequestIdRef = useRef<number | null>(null);
-  const latestCaseIdRef = useRef<string | null>(options.initialCaseId || null);
+  const latestCaseIdRef = useRef<string | null>(initialCaseId || null);
+
+  const fetchHistory = useCallback(async (caseId: string) => {
+    const response = await fetch(`/api/bff/agent/chat/history/${encodeURIComponent(caseId)}`);
+    if (!response.ok) {
+      return [];
+    }
+    const data = (await response.json()) as { messages?: Array<{ role: string; content: string }> } | null;
+    return (data?.messages ?? [])
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+  }, []);
 
   const syncHistory = useCallback(
     async (caseId: string, mode: "restore" | "merge" = "merge") => {
       try {
-        const response = await fetch(`/api/bff/agent/chat/history/${encodeURIComponent(caseId)}`);
-        if (!response.ok) {
-          return;
-        }
-        const data = (await response.json()) as { messages?: Array<{ role: string; content: string }> } | null;
-        if (!data?.messages?.length) return;
-        const restored: ChatMessage[] = data.messages
-          .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+        const restored = await fetchHistory(caseId);
         if (restored.length === 0) return;
         setMessages((current) => {
           if (mode === "restore") {
@@ -55,18 +59,31 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
         console.warn("[useAgentStream] History load failed:", err);
       }
     },
-    [],
+    [fetchHistory],
   );
 
   // Restore chat history on mount when a caseId is given (page reload)
   useEffect(() => {
-    const caseId = options.initialCaseId;
+    const caseId = initialCaseId;
     if (!caseId || historyLoadedCaseIdRef.current === caseId) {
       return;
     }
+    let isCurrent = true;
     historyLoadedCaseIdRef.current = caseId;
-    void syncHistory(caseId, "restore");
-  }, [options.initialCaseId, syncHistory]);
+    async function restoreInitialHistory() {
+      try {
+        const restored = await fetchHistory(caseId);
+        if (!isCurrent || restored.length === 0) return;
+        setMessages((current) => (current.length > 0 ? current : restored));
+      } catch (err: unknown) {
+        console.warn("[useAgentStream] History load failed:", err);
+      }
+    }
+    void restoreInitialHistory();
+    return () => {
+      isCurrent = false;
+    };
+  }, [fetchHistory, initialCaseId]);
 
   const finalizeAssistantTurn = useCallback((requestId: number) => {
     if (streamRequestIdRef.current !== requestId || finalizedRequestIdRef.current === requestId) {
@@ -81,7 +98,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     if (!finalText) {
       if (latestCaseIdRef.current) {
         void syncHistory(latestCaseIdRef.current);
-        options.onTurnComplete?.(latestCaseIdRef.current);
+        onTurnComplete?.(latestCaseIdRef.current);
       }
       return;
     }
@@ -95,9 +112,9 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     });
     if (latestCaseIdRef.current) {
       void syncHistory(latestCaseIdRef.current);
-      options.onTurnComplete?.(latestCaseIdRef.current);
+      onTurnComplete?.(latestCaseIdRef.current);
     }
-  }, [options, syncHistory]);
+  }, [onTurnComplete, syncHistory]);
 
   const sendMessage = useCallback(
     async (message: string) => {
@@ -170,7 +187,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
             if (type === "case_bound" && typeof payload.caseId === "string") {
               latestCaseIdRef.current = payload.caseId;
               setActiveCaseId(payload.caseId);
-              options.onCaseBound?.(payload.caseId);
+              onCaseBound?.(payload.caseId);
               return;
             }
 
@@ -218,7 +235,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
         setIsStreaming(false);
       }
     },
-    [activeCaseId, finalizeAssistantTurn, isStreaming, options],
+    [activeCaseId, finalizeAssistantTurn, isStreaming, onCaseBound, syncHistory],
   );
 
   const cancelStream = useCallback(() => {

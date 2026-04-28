@@ -21,13 +21,23 @@ export default function ChatComposer({
   autoFocus,
   externalValue,
 }: ChatComposerProps) {
-  const [message, setMessage] = useState("");
+  const [draft, setDraft] = useState(() => ({
+    lastExternalValue: externalValue ?? null,
+    message: externalValue ?? "",
+  }));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const message = draft.message;
+
+  if (draft.lastExternalValue !== (externalValue ?? null)) {
+    setDraft((current) => ({
+      lastExternalValue: externalValue ?? null,
+      message: externalValue ?? current.message,
+    }));
+  }
 
   useEffect(() => {
     if (externalValue !== undefined && externalValue !== null) {
-      setMessage(externalValue);
       textareaRef.current?.focus();
     }
   }, [externalValue]);
@@ -38,6 +48,13 @@ export default function ChatComposer({
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 220)}px`;
     }
   }, [message]);
+
+  const setMessage = (nextMessage: string) => {
+    setDraft((current) => ({
+      ...current,
+      message: nextMessage,
+    }));
+  };
 
   const handleSubmit = (event?: React.FormEvent) => {
     event?.preventDefault();

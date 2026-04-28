@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -1577,7 +1577,18 @@ function UtilityRail({
 }
 
 export default function CaseScreen({ caseId, initialRequestType }: CaseScreenProps) {
-  const [resolvedCaseId, setResolvedCaseId] = useState<string | null>(caseId ?? null);
+  const propCaseId = caseId ?? null;
+  const [caseBinding, setCaseBinding] = useState(() => ({
+    propCaseId,
+    resolvedCaseId: propCaseId,
+  }));
+  if (caseBinding.propCaseId !== propCaseId) {
+    setCaseBinding({
+      propCaseId,
+      resolvedCaseId: propCaseId,
+    });
+  }
+  const resolvedCaseId = caseBinding.resolvedCaseId;
   const workspaceResult = useWorkspace(resolvedCaseId);
   const cockpit = useCockpitData();
   const workspace = useWorkspaceStore((state) => state.workspace);
@@ -1588,10 +1599,12 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
   const contextItems = useMemo(() => deriveContextItems({ cockpit, caseId: resolvedCaseId ?? undefined }), [resolvedCaseId, cockpit]);
   const [modeOverride, setModeOverride] = useState<WorkspaceMode | null>(null);
   const [isUtilityRailOpen, setIsUtilityRailOpen] = useState(false);
-
-  useEffect(() => {
-    setResolvedCaseId(caseId ?? null);
-  }, [caseId]);
+  const handleCaseBound = useCallback((nextCaseId: string) => {
+    setCaseBinding((current) => ({
+      ...current,
+      resolvedCaseId: nextCaseId,
+    }));
+  }, []);
 
   useEffect(() => {
     setWorkspace(workspaceResult.workspace);
@@ -1617,7 +1630,7 @@ export default function CaseScreen({ caseId, initialRequestType }: CaseScreenPro
           <section className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-white shadow-[0_6px_22px_rgba(15,23,42,0.05)] lg:min-w-0">
             <ChatPane
               caseId={resolvedCaseId ?? undefined}
-              onCaseBound={setResolvedCaseId}
+              onCaseBound={handleCaseBound}
               onTurnComplete={() => void workspaceResult.refresh()}
             />
           </section>
