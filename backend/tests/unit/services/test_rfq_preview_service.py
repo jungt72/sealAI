@@ -8,6 +8,8 @@ from app.models.inquiry_extract import InquiryExtractModel
 from app.services.rfq_preview_service import (
     RFQ_PREVIEW_SECTIONS,
     RfqPreviewError,
+    RfqPreviewService,
+    RfqPreviewStaleError,
     _view,
     build_rfq_preview_payload,
     collect_open_points,
@@ -256,3 +258,147 @@ def test_consent_scope_requires_visible_shared_sections() -> None:
     assert scope["shared_documents"] == ("doc-1",)
     assert scope["intended_recipients"] == ("manual-export",)
     assert scope["user_acknowledged_no_final_release"] is True
+
+
+def test_consent_scope_requires_no_final_release_acknowledgement() -> None:
+    with pytest.raises(RfqPreviewError, match="user_acknowledged_no_final_release"):
+        normalize_consent_scope(
+            {
+                "shared_sections": ["rfq_preview"],
+                "user_acknowledged_open_points": True,
+            }
+        )
+
+
+def test_consent_scope_requires_open_points_acknowledgement_when_needed() -> None:
+    with pytest.raises(RfqPreviewError, match="user_acknowledged_open_points"):
+        normalize_consent_scope(
+            {
+                "shared_sections": ["rfq_preview"],
+                "user_acknowledged_no_final_release": True,
+            },
+            open_points_acknowledgement_required=True,
+        )
+
+
+def test_consent_scope_accepts_valid_acknowledgements_and_ignores_dispatch_flag() -> None:
+    scope = normalize_consent_scope(
+        {
+            "shared_sections": ["rfq_preview"],
+            "shared_documents": [],
+            "intended_recipients": ["manual-export"],
+            "user_acknowledged_open_points": True,
+            "user_acknowledged_no_final_release": True,
+            "dispatch_enabled": True,
+        },
+        open_points_acknowledgement_required=True,
+    )
+
+    assert scope == {
+        "shared_sections": ("rfq_preview",),
+        "shared_documents": (),
+        "intended_recipients": ("manual-export",),
+        "user_acknowledged_open_points": True,
+        "user_acknowledged_no_final_release": True,
+    }
+    assert "dispatch_enabled" not in scope
+
+
+@pytest.mark.asyncio
+async def test_grant_preview_consent_rejects_stale_preview() -> None:
+    preview = InquiryExtractModel(
+        extract_id="preview-1",
+        case_id="case-123",
+        tenant_id="tenant-1",
+        case_revision=4,
+        artifact_type="rfq_preview",
+        payload={
+            "meta": {"case_revision": 4},
+            "consent_boundary": {
+                "open_points_acknowledgement_required": False,
+            },
+        },
+        source_kind="case_revision",
+        consent_status="not_requested",
+        consent_scope={},
+        dispatch_enabled=False,
+    )
+    case_row = _case()
+    case_row.case_revision = 5
+    service = RfqPreviewService(_FakeConsentSession([preview, case_row]))
+
+    with pytest.raises(RfqPreviewStaleError):
+        await service.grant_preview_consent(
+            preview_id="preview-1",
+            user_id="user-1",
+            granted_by="user-1",
+            consent_scope={
+                "shared_sections": ["rfq_preview"],
+                "user_acknowledged_no_final_release": True,
+            },
+        )
+
+    assert preview.consent_status == "not_requested"
+    assert preview.dispatch_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_grant_preview_consent_keeps_dispatch_disabled() -> None:
+    preview = InquiryExtractModel(
+        extract_id="preview-1",
+        case_id="case-123",
+        tenant_id="tenant-1",
+        case_revision=4,
+        artifact_type="rfq_preview",
+        payload={
+            "meta": {"case_revision": 4},
+            "consent_boundary": {
+                "open_points_acknowledgement_required": True,
+            },
+        },
+        source_kind="case_revision",
+        consent_status="not_requested",
+        consent_scope={},
+        dispatch_enabled=False,
+    )
+    service = RfqPreviewService(_FakeConsentSession([preview, _case()]))
+
+    view = await service.grant_preview_consent(
+        preview_id="preview-1",
+        user_id="user-1",
+        granted_by="user-1",
+        consent_scope={
+            "shared_sections": ["rfq_preview"],
+            "user_acknowledged_open_points": True,
+            "user_acknowledged_no_final_release": True,
+            "dispatch_enabled": True,
+        },
+    )
+
+    assert view.consent_status == "granted"
+    assert view.dispatch_enabled is False
+    assert preview.dispatch_enabled is False
+    assert preview.payload["consent_boundary"]["automatic_dispatch_allowed"] is False
+    assert preview.payload["consent_boundary"]["phase"] == "phase_1_preview_export_only"
+
+
+class _FakeScalarResult:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object:
+        return self._value
+
+
+class _FakeConsentSession:
+    def __init__(self, results: list[object]) -> None:
+        self._results = list(results)
+
+    async def execute(self, _statement: object) -> _FakeScalarResult:
+        return _FakeScalarResult(self._results.pop(0))
+
+    async def commit(self) -> None:
+        return None
+
+    async def refresh(self, _row: object) -> None:
+        return None

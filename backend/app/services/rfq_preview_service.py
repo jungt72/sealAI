@@ -181,7 +181,12 @@ class RfqPreviewService:
         if int(row.case_revision) != current_revision:
             raise RfqPreviewStaleError("rfq preview is stale and must be regenerated")
 
-        normalized_scope = normalize_consent_scope(consent_scope)
+        normalized_scope = normalize_consent_scope(
+            consent_scope,
+            open_points_acknowledgement_required=_open_points_acknowledgement_required(
+                row.payload
+            ),
+        )
         row.consent_status = "granted"
         row.consent_granted_at = datetime.now(timezone.utc)
         row.consent_granted_by = granted_by
@@ -474,7 +479,11 @@ def build_rfq_sections(
     ]
 
 
-def normalize_consent_scope(value: Mapping[str, Any]) -> dict[str, Any]:
+def normalize_consent_scope(
+    value: Mapping[str, Any],
+    *,
+    open_points_acknowledgement_required: bool = False,
+) -> dict[str, Any]:
     scope = dict(value or {})
     shared_sections = tuple(
         str(item).strip()
@@ -493,16 +502,26 @@ def normalize_consent_scope(value: Mapping[str, Any]) -> dict[str, Any]:
     )
     if not shared_sections:
         raise RfqPreviewError("consent_scope.shared_sections is required")
+    user_acknowledged_no_final_release = bool(
+        scope.get("user_acknowledged_no_final_release")
+    )
+    user_acknowledged_open_points = bool(
+        scope.get("user_acknowledged_open_points")
+    )
+    if not user_acknowledged_no_final_release:
+        raise RfqPreviewError(
+            "user_acknowledged_no_final_release is required for RFQ preview consent"
+        )
+    if open_points_acknowledgement_required and not user_acknowledged_open_points:
+        raise RfqPreviewError(
+            "user_acknowledged_open_points is required while RFQ preview has open points"
+        )
     return {
         "shared_sections": shared_sections,
         "shared_documents": shared_documents,
         "intended_recipients": intended_recipients,
-        "user_acknowledged_open_points": bool(
-            scope.get("user_acknowledged_open_points")
-        ),
-        "user_acknowledged_no_final_release": bool(
-            scope.get("user_acknowledged_no_final_release")
-        ),
+        "user_acknowledged_open_points": user_acknowledged_open_points,
+        "user_acknowledged_no_final_release": user_acknowledged_no_final_release,
     }
 
 
@@ -518,6 +537,15 @@ def _view(row: InquiryExtractModel, *, current_case_revision: int) -> RfqPreview
         payload=dict(row.payload or {}),
         created_at=row.created_at,
     )
+
+
+def _open_points_acknowledgement_required(payload: Any) -> bool:
+    if not isinstance(payload, Mapping):
+        return False
+    consent_boundary = payload.get("consent_boundary")
+    if isinstance(consent_boundary, Mapping):
+        return bool(consent_boundary.get("open_points_acknowledgement_required"))
+    return False
 
 
 def _add_field(target: dict[str, Any], key: str, value: Any) -> None:
