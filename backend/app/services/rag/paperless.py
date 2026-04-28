@@ -22,12 +22,15 @@ from app.services.rag.constants import (
 from app.services.rag.route_resolver import coerce_tag_strings, resolve_route_key
 from app.services.rag.utils import (
     ALLOWED_EXT,
+    MAGIC_READ_BYTES,
+    RAG_UPLOAD_MAX_BYTES,
     cleanup_upload_path,
     ensure_upload_directory,
     find_existing_document,
     find_existing_document_by_source,
     resolve_upload_dir,
     sanitize_filename,
+    validate_upload_signature,
 )
 
 logger = structlog.get_logger("services.rag.paperless")
@@ -273,6 +276,44 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                     continue
 
                 content = dl_res.content
+                if len(content) > RAG_UPLOAD_MAX_BYTES:
+                    logger.warning(
+                        "paperless_sync_skipped_size",
+                        id=p_id,
+                        size_bytes=len(content),
+                        max_bytes=RAG_UPLOAD_MAX_BYTES,
+                    )
+                    if existing_source_doc and await _disable_existing_paperless_doc(
+                        session,
+                        existing_source_doc,
+                        reason="paperless_file_too_large",
+                    ):
+                        removed += 1
+                    errors += 1
+                    continue
+
+                try:
+                    content_type = validate_upload_signature(
+                        extension=ext,
+                        content_type=dl_res.headers.get("content-type"),
+                        sample=content[:MAGIC_READ_BYTES],
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "paperless_sync_skipped_signature",
+                        id=p_id,
+                        ext=ext,
+                        reason=str(exc),
+                    )
+                    if existing_source_doc and await _disable_existing_paperless_doc(
+                        session,
+                        existing_source_doc,
+                        reason="paperless_signature_invalid",
+                    ):
+                        removed += 1
+                    errors += 1
+                    continue
+
                 sha256 = hashlib.sha256(content).hexdigest()
 
                 existing = existing_source_doc
@@ -294,6 +335,7 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                         existing.source_document_id = p_source_document_id or existing.source_document_id
                         existing.source_modified_at = p_source_modified_at
                         existing.filename = safe_name
+                        existing.content_type = content_type
                         existing.size_bytes = len(content)
                         existing.route_key = route_key
                         existing.tags = p_tags or existing.tags
@@ -328,6 +370,7 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                 doc.error = None
                 doc.visibility = RAG_VISIBILITY_PUBLIC
                 doc.filename = safe_name
+                doc.content_type = content_type
                 doc.size_bytes = len(content)
                 doc.sha256 = sha256
                 doc.path = str(target_path)

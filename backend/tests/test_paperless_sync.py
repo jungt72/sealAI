@@ -83,10 +83,11 @@ class DummySession:
 
 
 class _DummyResponse:
-    def __init__(self, status_code: int, payload=None, content: bytes = b"") -> None:
+    def __init__(self, status_code: int, payload=None, content: bytes = b"", headers=None) -> None:
         self.status_code = status_code
         self._payload = payload
         self.content = content
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -194,7 +195,7 @@ async def test_paperless_sync_reuses_existing_document_for_changed_source(
     _configure_upload_root(tmp_path)
 
     old_content = b"old"
-    new_content = b"new"
+    new_content = b"%PDF-1.7\nnew"
     session = DummySession()
     existing_dir = tmp_path / RAG_SHARED_TENANT_ID / "doc-1"
     existing_dir.mkdir(parents=True, exist_ok=True)
@@ -252,6 +253,71 @@ async def test_paperless_sync_reuses_existing_document_for_changed_source(
     assert stored.route_key == "standard_or_norm"
     assert stored.tags == ["rag:enabled", "doc_type:datasheet", "norm", "knowledge", "sts_mat:PTFE"]
     assert existing_path.read_bytes() == new_content
+
+
+@pytest.mark.anyio
+async def test_paperless_sync_rejects_signature_mismatch_and_disables_existing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(paperless_mod.settings, "paperless_url", "https://paperless.example", raising=False)
+    monkeypatch.setattr(paperless_mod.settings, "paperless_token", "token", raising=False)
+    monkeypatch.setattr(paperless_mod, "_delete_qdrant_document", lambda **_kwargs: True)
+    _configure_upload_root(tmp_path)
+
+    existing_dir = tmp_path / RAG_SHARED_TENANT_ID / "doc-bad"
+    existing_dir.mkdir(parents=True, exist_ok=True)
+    existing_path = existing_dir / "original.pdf"
+    existing_path.write_bytes(b"%PDF-1.7\nold")
+    session = DummySession()
+    session.add(
+        RagDocument(
+            document_id="doc-bad",
+            tenant_id=RAG_SHARED_TENANT_ID,
+            status="indexed",
+            visibility="public",
+            filename="old.pdf",
+            size_bytes=12,
+            sha256=hashlib.sha256(b"%PDF-1.7\nold").hexdigest(),
+            path=str(existing_path),
+            tags=["rag:enabled", "doc_type:datasheet", "sts_mat:PTFE"],
+            route_key="material_datasheet",
+            source_system="paperless",
+            source_document_id="11",
+            source_modified_at=paperless_mod._parse_source_modified_at("2026-03-11T10:00:00Z"),
+        )
+    )
+
+    base = "https://paperless.example"
+    responses = {
+        f"{base}/api/tags/?page_size=500": _DummyResponse(200, payload={"results": []}),
+        f"{base}/api/documents/?page_size=100": _DummyResponse(
+            200,
+            payload={
+                "results": [
+                    {
+                        "id": 11,
+                        "title": "Spec",
+                        "original_file_name": "spec.pdf",
+                        "modified": "2026-03-12T10:00:00Z",
+                        "tags": ["rag:enabled", "doc_type:datasheet", "sts_mat:PTFE"],
+                    }
+                ]
+            },
+        ),
+        f"{base}/api/documents/11/download/": _DummyResponse(200, content=b"not-a-pdf"),
+    }
+    _install_httpx_stub(monkeypatch, responses)
+
+    result = await paperless_mod.sync_paperless_to_rag(session)
+
+    assert result["queued"] == 0
+    assert result["errors"] == 1
+    assert result["removed"] == 1
+    stored = session.docs["doc-bad"]
+    assert stored.enabled is False
+    assert stored.status == "removed"
+    assert stored.error == "paperless_signature_invalid"
+    assert not existing_path.exists()
 
 
 def test_route_key_resolver_is_deterministic() -> None:
