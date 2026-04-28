@@ -142,13 +142,17 @@ def _require_paperless_webhook_token(received_token: str | None) -> None:
         )
 
 
+def _safe_backend_error_detail(code: str, exc: BaseException) -> dict[str, Any]:
+    return error_detail(code, reason=safe_error_message(exc))
+
+
 def _qdrant_client():
     try:
         from qdrant_client import QdrantClient  # type: ignore
     except Exception as exc:
         raise HTTPException(
             status_code=503,
-            detail=error_detail("qdrant_client_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+            detail=_safe_backend_error_detail("qdrant_client_unavailable", exc),
         ) from exc
     return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
@@ -159,7 +163,7 @@ def _qdrant_vector_count(*, tenant_id: str, document_id: str) -> int:
     except Exception as exc:
         raise HTTPException(
             status_code=503,
-            detail=error_detail("qdrant_models_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+            detail=_safe_backend_error_detail("qdrant_models_unavailable", exc),
         ) from exc
     client = _qdrant_client()
     result = client.count(
@@ -187,7 +191,7 @@ def _qdrant_delete_document(*, tenant_id: str, document_id: str) -> None:
     except Exception as exc:
         raise HTTPException(
             status_code=503,
-            detail=error_detail("qdrant_models_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+            detail=_safe_backend_error_detail("qdrant_models_unavailable", exc),
         ) from exc
     client = _qdrant_client()
     client.delete(
@@ -689,7 +693,7 @@ async def delete_rag_document(
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=error_detail("qdrant_delete_failed", reason=f"{type(exc).__name__}: {exc}"),
+            detail=_safe_backend_error_detail("qdrant_delete_failed", exc),
         ) from exc
 
     path = Path(doc.path)
