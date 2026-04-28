@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.database import AsyncSessionLocal
 from app.models.rag_document import RagDocument
 from app.observability.metrics import track_rag_ingest
@@ -120,7 +121,7 @@ async def process_once(
 
 
 async def start_job_worker() -> None:
-    poll_sec = float(os.getenv("JOB_WORKER_POLL_SEC", "1.5"))
+    poll_sec = settings.job_worker_poll_sec
     while True:
         async with AsyncSessionLocal() as session:
             processed = await process_once(session)

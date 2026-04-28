@@ -18,6 +18,7 @@ from starlette.requests import Request
 
 from app.api.v1.api import api_router
 from app.api.v1.endpoints.rag import ensure_upload_directory, internal_router as rag_internal_router
+from app.core.config import settings
 from app.observability.health import run_all_health_checks
 from app.services.rag.qdrant_bootstrap import bootstrap_rag_collection
 from app.services.jobs.worker import start_job_worker
@@ -27,23 +28,6 @@ from app.agent.api.router import router as agent_router
 
 log = logging.getLogger("uvicorn.error")
 slog = structlog.get_logger("app.main")
-
-
-def _bool_env(name: str, default: str = "0") -> bool:
-    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
-
-
-APP_NAME = os.getenv("APP_NAME", "sealAI-backend")
-APP_VERSION = os.getenv("APP_VERSION", os.getenv("GIT_SHA", "dev"))
-APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "https://sealai.net")
-ENABLE_CORS = _bool_env("ENABLE_CORS", "1")
-WARMUP_ON_START = _bool_env("WARMUP_ON_START", "0")
-JOB_WORKER_ENABLED = _bool_env("JOB_WORKER_ENABLED", "1")
-DEV_CLEAR_LANGGRAPH_CHECKPOINTS_ON_STARTUP = _bool_env(
-    "DEV_CLEAR_LANGGRAPH_CHECKPOINTS_ON_STARTUP",
-    "1" if APP_ENV in {"dev", "development", "local", "test"} else "0",
-)
 
 CHECKPOINTER_NAMESPACE = "sealai_agent"
 
@@ -103,9 +87,15 @@ class _PrometheusMiddleware(BaseHTTPMiddleware):
 # ---------------------------------------------------------------------------
 
 async def _clear_langgraph_checkpoints_for_dev_run() -> None:
-    if not DEV_CLEAR_LANGGRAPH_CHECKPOINTS_ON_STARTUP:
+    if not settings.dev_clear_langgraph_checkpoints_on_startup:
         return
-    redis_url = os.getenv("LANGGRAPH_V2_REDIS_URL") or os.getenv("REDIS_URL")
+    if not settings.is_dev_or_test:
+        log.warning(
+            "LangGraph checkpoint clear skipped: app_env=%s is not dev/test.",
+            settings.normalized_app_env,
+        )
+        return
+    redis_url = settings.langgraph_v2_redis_url or settings.REDIS_URL or settings.redis_url
     if not redis_url:
         log.warning("LangGraph checkpoint clear skipped: no redis url configured.")
         return
@@ -148,20 +138,27 @@ async def _clear_langgraph_checkpoints_for_dev_run() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    log.info("Starting %s v%s", APP_NAME, APP_VERSION)
+    log.info("Starting %s v%s", settings.app_name, settings.app_version)
     ensure_upload_directory()
     await _clear_langgraph_checkpoints_for_dev_run()
-    bootstrap_status = bootstrap_rag_collection()
-    log.info("Qdrant bootstrap status: %s", bootstrap_status)
+    if settings.qdrant_bootstrap_on_startup:
+        bootstrap_status = bootstrap_rag_collection()
+        log.info("Qdrant bootstrap status: %s", bootstrap_status)
+    else:
+        log.info("Qdrant bootstrap skipped: qdrant_bootstrap_on_startup=false")
 
-    # Audit log table bootstrap
-    await _bootstrap_audit_log()
+    if settings.audit_log_bootstrap_on_startup:
+        await _bootstrap_audit_log()
+    else:
+        log.info("Audit log table bootstrap skipped: audit_log_bootstrap_on_startup=false")
 
-    if WARMUP_ON_START:
+    if settings.warmup_on_start:
         log.info("Warmup aktiviert.")
     worker_task = None
-    if JOB_WORKER_ENABLED:
+    if settings.job_worker_enabled:
         worker_task = asyncio.create_task(start_job_worker())
+    else:
+        log.info("Job worker startup skipped: job_worker_enabled=false")
     app.state.warmed_up = True
     yield
     if worker_task:
@@ -170,7 +167,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await worker_task
         except Exception:
             pass
-    log.info("Stopping %s", APP_NAME)
+    log.info("Stopping %s", settings.app_name)
 
 
 async def _bootstrap_audit_log() -> None:
@@ -204,7 +201,6 @@ async def _bootstrap_audit_log() -> None:
 # ---------------------------------------------------------------------------
 
 def create_app() -> FastAPI:
-    from app.core.config import settings
     from app.observability import metrics as _metrics  # noqa: F401
 
     # LangSmith tracing
@@ -215,17 +211,18 @@ def create_app() -> FastAPI:
         log.info("LangSmith tracing enabled (project=%s)", settings.langchain_project)
 
     app = FastAPI(
-        title=APP_NAME,
-        version=APP_VERSION,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        title=settings.app_name,
+        version=settings.app_version,
+        docs_url="/docs" if settings.fastapi_docs_enabled else None,
+        redoc_url="/redoc" if settings.fastapi_docs_enabled else None,
+        openapi_url="/openapi.json" if settings.fastapi_docs_enabled else None,
         lifespan=lifespan,
     )
 
-    if ENABLE_CORS:
+    if settings.enable_cors:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=[FRONTEND_ORIGIN, "http://localhost:3000", "http://127.0.0.1:3000"],
+            allow_origins=[settings.frontend_origin, "http://localhost:3000", "http://127.0.0.1:3000"],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -253,11 +250,11 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     async def root():
-        return {"ok": True, "name": APP_NAME, "version": APP_VERSION}
+        return {"ok": True, "name": settings.app_name, "version": settings.app_version}
 
     @app.get("/version")
     async def version():
-        return {"version": APP_VERSION}
+        return {"version": settings.app_version}
 
     @app.get("/healthz")
     async def health():

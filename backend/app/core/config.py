@@ -1,11 +1,25 @@
 from typing import Optional
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 import os
-import sys
-import structlog
 
 class Settings(BaseSettings):
+    # Application / startup controls
+    app_name: str = "sealAI-backend"
+    app_version: str = Field(default_factory=lambda: os.getenv("GIT_SHA", "dev"))
+    app_env: str = "development"
+    frontend_origin: str = "https://sealai.net"
+    enable_cors: bool = True
+    warmup_on_start: bool = False
+    job_worker_enabled: bool = False
+    job_worker_poll_sec: float = 1.5
+    dev_clear_langgraph_checkpoints_on_startup: bool = False
+    langgraph_v2_redis_url: Optional[str] = None
+    qdrant_bootstrap_on_startup: bool = False
+    audit_log_bootstrap_on_startup: bool = False
+    fastapi_docs_enabled: bool = False
+
     # Datenbank
     postgres_user: str
     postgres_password: str
@@ -25,6 +39,7 @@ class Settings(BaseSettings):
 
     # Qdrant - Festgelegt auf sealai_knowledge
     qdrant_url: str
+    qdrant_api_key: Optional[str] = None
     qdrant_collection: str = "sealai_knowledge"
     qdrant_collection_ltm: Optional[str] = "sealai_ltm"
     rag_k: int = 4
@@ -37,6 +52,7 @@ class Settings(BaseSettings):
     # Weiteres (Redis, Auth, Memory etc.)
     redis_url: str
     REDIS_URL: str = "redis://redis:6379/0"
+    ltm_enable: bool = False
     chat_history_ttl_days: int = 30
     chat_max_conversations_per_user: int = 50
     nextauth_url: str
@@ -50,6 +66,7 @@ class Settings(BaseSettings):
     # LangSmith / OpenTelemetry tracing (auto-picked up by LangChain via os.environ)
     langchain_tracing_v2: bool = False
     langchain_api_key: Optional[str] = None
+    langchain_endpoint: Optional[str] = None
     langchain_project: str = "sealai-phase-h"
 
     # Prometheus metrics
@@ -71,6 +88,18 @@ class Settings(BaseSettings):
     @property
     def backend_keycloak_issuer(self) -> str:
         return self.keycloak_issuer
+
+    @property
+    def normalized_app_env(self) -> str:
+        return (self.app_env or "").strip().lower()
+
+    @property
+    def is_dev_or_test(self) -> bool:
+        return self.normalized_app_env in {"dev", "development", "local", "test"}
+
+    @property
+    def QDRANT_COLLECTION_NAME(self) -> str:
+        return self.qdrant_collection
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
