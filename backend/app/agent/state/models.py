@@ -25,6 +25,7 @@ Relation to existing state.py:
   These Pydantic models are the TARGET state for the new governed execution path
   (graph/nodes/*) introduced in Phase F-C.
 """
+
 from __future__ import annotations
 
 import re
@@ -37,7 +38,10 @@ from app.agent.services.medium_context import MediumContext
 
 try:
     import ulid
-except ModuleNotFoundError:  # pragma: no cover - compatibility fallback for local test envs
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - compatibility fallback for local test envs
+
     class _UlidCompat:
         @staticmethod
         def new() -> str:
@@ -53,9 +57,11 @@ def _new_idempotency_key() -> str:
         return str(ulid.ULID())  # type: ignore[call-arg]
     return uuid.uuid4().hex
 
+
 # ---------------------------------------------------------------------------
 # Shared sub-types
 # ---------------------------------------------------------------------------
+
 
 class MappingConfidence(str):
     """Confidence grade for a normalized parameter value.
@@ -63,6 +69,7 @@ class MappingConfidence(str):
     Mirrors domain/normalization.MappingConfidence — redefined here to keep
     state/models.py self-contained without a circular import.
     """
+
     CONFIRMED = "confirmed"
     ESTIMATED = "estimated"
     INFERRED = "inferred"
@@ -84,6 +91,58 @@ FieldLifecycleStatus = Literal[
     "stale",
     "contradicted",
 ]
+
+FieldStatus = Literal[
+    "missing",
+    "candidate",
+    "documented",
+    "inferred",
+    "user_stated",
+    "confirmed",
+    "conflict",
+    "stale",
+    "invalid",
+    "unknown",
+]
+
+Provenance = Literal[
+    "user_stated",
+    "documented",
+    "calculated",
+    "inferred",
+    "confirmed",
+    "web_hint",
+    "pattern_derived",
+    "missing",
+]
+
+
+class EngineeringValue(BaseModel):
+    """Normalized technical value envelope from v0.7."""
+
+    raw_value: Any = None
+    canonical_value: Any = None
+    unit: Optional[str] = None
+    quantity_kind: Optional[str] = None
+    interpretation: Optional[str] = None
+    normalized_at: Optional[str] = None
+    normalization_warnings: list[str] = Field(default_factory=list)
+
+
+class CaseField(BaseModel):
+    """Governed field envelope for critical technical values."""
+
+    field_name: str
+    value: Any = None
+    engineering_value: EngineeringValue = Field(default_factory=EngineeringValue)
+    status: FieldStatus = "unknown"
+    provenance: Provenance = "missing"
+    evidence_refs: list[str] = Field(default_factory=list)
+    confidence: ConfidenceLevel = "requires_confirmation"
+    confirmation_required: bool = True
+    source_revision: int = 0
+    updated_at: Optional[str] = None
+
 
 MediumClassificationStatus = Literal[
     "recognized",
@@ -111,6 +170,7 @@ MediumFamily = Literal[
 # ---------------------------------------------------------------------------
 # ObservedState — Phase F-B.1
 # ---------------------------------------------------------------------------
+
 
 class ObservedExtraction(BaseModel):
     """A single value extracted by the LLM from a user message.
@@ -181,7 +241,9 @@ class ObservedState(BaseModel):
         return self.model_copy(
             update={
                 "raw_extractions": self.raw_extractions + [extraction],
-                "source_turns": sorted(set(self.source_turns + [extraction.turn_index])),
+                "source_turns": sorted(
+                    set(self.source_turns + [extraction.turn_index])
+                ),
             }
         )
 
@@ -198,6 +260,7 @@ class ObservedState(BaseModel):
 # ---------------------------------------------------------------------------
 # NormalizedState — Phase F-B.1
 # ---------------------------------------------------------------------------
+
 
 class NormalizedParameter(BaseModel):
     """A single parameter after normalization and unit harmonization.
@@ -220,6 +283,36 @@ class NormalizedParameter(BaseModel):
 
     source_turn: Optional[int] = None
     """Turn index of the source extraction or override."""
+
+    status: FieldStatus = "candidate"
+    provenance: Provenance = "inferred"
+    engineering_value: EngineeringValue = Field(default_factory=EngineeringValue)
+    case_field: Optional[CaseField] = None
+
+    @model_validator(mode="after")
+    def _hydrate_case_field(self) -> "NormalizedParameter":
+        if self.case_field is None:
+            self.case_field = CaseField(
+                field_name=self.field_name,
+                value=self.value,
+                engineering_value=(
+                    self.engineering_value
+                    if self.engineering_value.canonical_value is not None
+                    else EngineeringValue(
+                        raw_value=self.value,
+                        canonical_value=self.value,
+                        unit=self.unit,
+                        quantity_kind=self.field_name,
+                    )
+                ),
+                status=self.status,
+                provenance=self.provenance,
+                confidence=self.confidence,
+                confirmation_required=self.confidence == "requires_confirmation"
+                or self.status in {"candidate", "inferred", "unknown"},
+                source_revision=self.source_turn or 0,
+            )
+        return self
 
 
 class ConflictRef(BaseModel):
@@ -257,12 +350,26 @@ class NormalizedState(BaseModel):
     """Implicit assumptions introduced during normalization."""
 
     parameter_status: dict[str, FieldLifecycleStatus] = Field(default_factory=dict)
-    """Per-field canonical status for downstream consumers."""
+    """Per-field legacy lifecycle status for downstream consumers."""
+
+    case_fields: dict[str, CaseField] = Field(default_factory=dict)
+    """v0.7 governed field envelopes keyed by field_name."""
+
+    @model_validator(mode="after")
+    def _hydrate_case_fields(self) -> "NormalizedState":
+        if not self.case_fields:
+            self.case_fields = {
+                field_name: param.case_field
+                for field_name, param in self.parameters.items()
+                if param.case_field is not None
+            }
+        return self
 
 
 # ---------------------------------------------------------------------------
 # AssertedState — Phase F-B.1
 # ---------------------------------------------------------------------------
+
 
 class AssertedClaim(BaseModel):
     """A single promoted technical value.
@@ -276,6 +383,33 @@ class AssertedClaim(BaseModel):
     """References to evidence claims that support this assertion."""
 
     confidence: ConfidenceLevel = "confirmed"
+    status: FieldStatus = "confirmed"
+    provenance: Provenance = "confirmed"
+    engineering_value: EngineeringValue = Field(default_factory=EngineeringValue)
+    case_field: Optional[CaseField] = None
+
+    @model_validator(mode="after")
+    def _hydrate_case_field(self) -> "AssertedClaim":
+        if self.case_field is None:
+            self.case_field = CaseField(
+                field_name=self.field_name,
+                value=self.asserted_value,
+                engineering_value=(
+                    self.engineering_value
+                    if self.engineering_value.canonical_value is not None
+                    else EngineeringValue(
+                        raw_value=self.asserted_value,
+                        canonical_value=self.asserted_value,
+                        quantity_kind=self.field_name,
+                    )
+                ),
+                status=self.status,
+                provenance=self.provenance,
+                evidence_refs=list(self.evidence_refs),
+                confidence=self.confidence,
+                confirmation_required=False,
+            )
+        return self
 
 
 class AssertedState(BaseModel):
@@ -459,6 +593,7 @@ class ContextHintState(BaseModel):
 # MatchingState — Phase G Block 1
 # ---------------------------------------------------------------------------
 
+
 class ManufacturerRef(BaseModel):
     """Minimal deterministic manufacturer reference for outward-safe matching."""
 
@@ -495,13 +630,16 @@ class MatchingState(BaseModel):
     data_source: str = "candidate_derived"
     selected_manufacturer_ref: Optional[ManufacturerRef] = None
     manufacturer_refs: list[ManufacturerRef] = Field(default_factory=list)
-    manufacturer_capabilities: list[ManufacturerCapability] = Field(default_factory=list)
+    manufacturer_capabilities: list[ManufacturerCapability] = Field(
+        default_factory=list
+    )
     matching_notes: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
 # RFQState — Phase G Block 2
 # ---------------------------------------------------------------------------
+
 
 class RecipientRef(BaseModel):
     """Minimal recipient reference for RFQ handover."""
@@ -539,6 +677,7 @@ class RfqState(BaseModel):
 # ---------------------------------------------------------------------------
 # DispatchState — Phase G Block 3
 # ---------------------------------------------------------------------------
+
 
 class DispatchState(BaseModel):
     """Deterministic dispatch/transport preparation slice for the governed path."""
@@ -578,6 +717,7 @@ class CaseLifecycleState(BaseModel):
 # SealAINormState — Phase H.1
 # ---------------------------------------------------------------------------
 
+
 class SealaiNormIdentity(BaseModel):
     """Stable identity slice for the neutral SealAI norm object."""
 
@@ -611,7 +751,9 @@ class SealaiNormState(BaseModel):
     status: str = "pending"
     identity: SealaiNormIdentity = Field(default_factory=SealaiNormIdentity)
     application_summary: Optional[str] = None
-    operating_conditions: SealaiNormOperatingConditions = Field(default_factory=SealaiNormOperatingConditions)
+    operating_conditions: SealaiNormOperatingConditions = Field(
+        default_factory=SealaiNormOperatingConditions
+    )
     geometry: dict[str, Any] = Field(default_factory=dict)
     material: SealaiNormMaterial = Field(default_factory=SealaiNormMaterial)
     assumptions: list[str] = Field(default_factory=list)
@@ -624,6 +766,7 @@ class SealaiNormState(BaseModel):
 # ---------------------------------------------------------------------------
 # ExportProfileState — Phase H.2
 # ---------------------------------------------------------------------------
+
 
 class ExportProfileState(BaseModel):
     """Versioned export-profile view derived from norm + commercial readiness."""
@@ -647,6 +790,7 @@ class ExportProfileState(BaseModel):
 # ManufacturerMappingState — Phase H.3
 # ---------------------------------------------------------------------------
 
+
 class ManufacturerMappingState(BaseModel):
     """Bounded manufacturer-mapping layer derived from export_profile + catalog."""
 
@@ -663,6 +807,7 @@ class ManufacturerMappingState(BaseModel):
 # ---------------------------------------------------------------------------
 # DispatchContractState — Phase I.1
 # ---------------------------------------------------------------------------
+
 
 class DispatchContractState(BaseModel):
     """Systemneutraler connector-ready handover contract for later adapters."""
@@ -796,7 +941,15 @@ class ProposedCaseDeltaField(BaseModel):
     field_name: str
     proposed_value: Any
     unit: Optional[str] = None
-    provenance: Literal["user_stated", "documented", "inferred", "calculated", "confirmed", "web_hint", "missing"] = "user_stated"
+    provenance: Literal[
+        "user_stated",
+        "documented",
+        "inferred",
+        "calculated",
+        "confirmed",
+        "web_hint",
+        "missing",
+    ] = "user_stated"
     confidence: ConfidenceLevel = "requires_confirmation"
     source_turn_index: int = Field(default=0, ge=0)
     status: Literal["proposed", "accepted", "rejected"] = "proposed"
@@ -888,6 +1041,7 @@ class GovernedPersistenceMarker(BaseModel):
 # Combined governed session state (convenience wrapper)
 # ---------------------------------------------------------------------------
 
+
 class GovernedSessionState(BaseModel):
     """Full governed session state with legacy and six-layer slices.
 
@@ -904,7 +1058,9 @@ class GovernedSessionState(BaseModel):
     governance: GovernanceState = Field(default_factory=GovernanceState)
     decision: DecisionState = Field(default_factory=DecisionState)
     medium_capture: MediumCaptureState = Field(default_factory=MediumCaptureState)
-    medium_classification: MediumClassificationState = Field(default_factory=MediumClassificationState)
+    medium_classification: MediumClassificationState = Field(
+        default_factory=MediumClassificationState
+    )
     application_hint: ContextHintState = Field(default_factory=ContextHintState)
     motion_hint: ContextHintState = Field(default_factory=ContextHintState)
     matching: MatchingState = Field(default_factory=MatchingState)
@@ -914,12 +1070,18 @@ class GovernedSessionState(BaseModel):
     case_lifecycle: CaseLifecycleState = Field(default_factory=CaseLifecycleState)
     sealai_norm: SealaiNormState = Field(default_factory=SealaiNormState)
     export_profile: ExportProfileState = Field(default_factory=ExportProfileState)
-    manufacturer_mapping: ManufacturerMappingState = Field(default_factory=ManufacturerMappingState)
-    dispatch_contract: DispatchContractState = Field(default_factory=DispatchContractState)
+    manufacturer_mapping: ManufacturerMappingState = Field(
+        default_factory=ManufacturerMappingState
+    )
+    dispatch_contract: DispatchContractState = Field(
+        default_factory=DispatchContractState
+    )
     medium_context: MediumContext = Field(default_factory=MediumContext)
     conversation_messages: list[ConversationMessage] = Field(default_factory=list)
     case_events: list[CaseEvent] = Field(default_factory=list)
-    exploration_progress: ExplorationProgressState = Field(default_factory=ExplorationProgressState)
+    exploration_progress: ExplorationProgressState = Field(
+        default_factory=ExplorationProgressState
+    )
     persistence_marker: GovernedPersistenceMarker | None = None
 
     analysis_cycle: int = Field(default=0, ge=0)
@@ -962,9 +1124,15 @@ class GovernedSessionState(BaseModel):
             action_payload: dict[str, Any] = {}
 
             if isinstance(rfq_payload, (dict, RfqState)):
-                rfq_state = rfq_payload if isinstance(rfq_payload, RfqState) else RfqState.model_validate(rfq_payload)
+                rfq_state = (
+                    rfq_payload
+                    if isinstance(rfq_payload, RfqState)
+                    else RfqState.model_validate(rfq_payload)
+                )
                 action_payload["inquiry_sent"] = bool(rfq_state.rfq_send_payload)
-                action_payload["missing_for_inquiry"] = list(rfq_state.required_corrections)
+                action_payload["missing_for_inquiry"] = list(
+                    rfq_state.required_corrections
+                )
                 action_payload["handover_status"] = rfq_state.handover_status
 
             if isinstance(dispatch_payload, (dict, DispatchState)):

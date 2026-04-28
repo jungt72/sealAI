@@ -10,6 +10,7 @@ Covers:
   - Architecture invariants: no direct construction of Normalized/Governance
     from call-site code (grep-based integration checks)
 """
+
 from __future__ import annotations
 
 import re
@@ -42,6 +43,7 @@ from app.agent.state.reducers import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _observed(*extractions: ObservedExtraction, overrides=()) -> ObservedState:
     obs = ObservedState()
     for e in extractions:
@@ -52,10 +54,10 @@ def _observed(*extractions: ObservedExtraction, overrides=()) -> ObservedState:
 
 
 # Float confidence values mapping to each ConfidenceLevel bucket
-_CONF_CONFIRMED = 1.0        # ≥ 0.90 → "confirmed"
-_CONF_ESTIMATED = 0.80       # ≥ 0.70 → "estimated"
-_CONF_INFERRED = 0.60        # ≥ 0.50 → "inferred"
-_CONF_REQUIRES = 0.30        # < 0.50 → "requires_confirmation"
+_CONF_CONFIRMED = 1.0  # ≥ 0.90 → "confirmed"
+_CONF_ESTIMATED = 0.80  # ≥ 0.70 → "estimated"
+_CONF_INFERRED = 0.60  # ≥ 0.50 → "inferred"
+_CONF_REQUIRES = 0.30  # < 0.50 → "requires_confirmation"
 
 
 def _ext(field, value, confidence=_CONF_CONFIRMED, turn=0, unit=None):
@@ -137,6 +139,7 @@ def _full_asserted(
 # F-B.2.1 — reduce_observed_to_normalized
 # ---------------------------------------------------------------------------
 
+
 class TestReducerObservedToNormalized:
 
     def test_basic_single_extraction(self):
@@ -158,7 +161,9 @@ class TestReducerObservedToNormalized:
     def test_user_override_wins_over_llm(self):
         obs = _observed(
             _ext("medium", "Wasser"),
-            overrides=[UserOverride(field_name="medium", override_value="Öl", turn_index=1)],
+            overrides=[
+                UserOverride(field_name="medium", override_value="Öl", turn_index=1)
+            ],
         )
         result = reduce_observed_to_normalized(obs)
 
@@ -170,7 +175,11 @@ class TestReducerObservedToNormalized:
     def test_user_override_wins_even_with_lower_llm_confidence(self):
         obs = _observed(
             _ext("pressure_bar", 10.0, confidence=_CONF_CONFIRMED),
-            overrides=[UserOverride(field_name="pressure_bar", override_value=5.0, turn_index=2)],
+            overrides=[
+                UserOverride(
+                    field_name="pressure_bar", override_value=5.0, turn_index=2
+                )
+            ],
         )
         result = reduce_observed_to_normalized(obs)
 
@@ -227,6 +236,48 @@ class TestReducerObservedToNormalized:
         result = reduce_observed_to_normalized(obs)
         assert result.parameters["pressure_bar"].unit == "bar"
 
+    def test_v07_case_field_envelope_is_built_for_confirmed_user_statement(self):
+        obs = _observed(_ext("pressure_bar", 6.0, unit="bar", turn=3))
+        result = reduce_observed_to_normalized(obs)
+
+        param = result.parameters["pressure_bar"]
+        field = result.case_fields["pressure_bar"]
+        assert param.case_field == field
+        assert field.field_name == "pressure_bar"
+        assert field.value == 6.0
+        assert field.status == "user_stated"
+        assert field.provenance == "user_stated"
+        assert field.engineering_value.raw_value == 6.0
+        assert field.engineering_value.canonical_value == 6.0
+        assert field.engineering_value.unit == "bar"
+        assert field.confirmation_required is False
+        assert field.source_revision == 3
+
+    def test_v07_candidate_field_requires_confirmation(self):
+        obs = _observed(_ext("medium", "unklar", confidence=_CONF_REQUIRES, turn=2))
+        result = reduce_observed_to_normalized(obs)
+
+        field = result.case_fields["medium"]
+        assert field.status == "candidate"
+        assert field.provenance == "user_stated"
+        assert field.confirmation_required is True
+        assert result.parameters["medium"].case_field == field
+
+    def test_v07_user_override_becomes_confirmed_case_field(self):
+        obs = _observed(
+            _ext("medium", "Wasser"),
+            overrides=[
+                UserOverride(field_name="medium", override_value="Oel", turn_index=4)
+            ],
+        )
+        result = reduce_observed_to_normalized(obs)
+
+        field = result.case_fields["medium"]
+        assert field.status == "confirmed"
+        assert field.provenance == "user_stated"
+        assert field.confirmation_required is False
+        assert field.source_revision == 4
+
     def test_multiple_fields_independent(self):
         obs = _observed(
             _ext("medium", "Wasser"),
@@ -256,9 +307,37 @@ class TestReducerObservedToNormalized:
 # F-B.2.2 — reduce_normalized_to_asserted
 # ---------------------------------------------------------------------------
 
+
+def test_v07_asserted_claim_keeps_documented_case_field_envelope():
+    normalized = NormalizedState(
+        parameters={
+            "medium": NormalizedParameter(
+                field_name="medium",
+                value="Salzwasser",
+                confidence="confirmed",
+            )
+        }
+    )
+    asserted = reduce_normalized_to_asserted(
+        normalized,
+        evidence=[SimpleClaim("claim-1", "medium", "Salzwasser", "confirmed")],
+    )
+
+    claim = asserted.assertions["medium"]
+    assert claim.status == "confirmed"
+    assert claim.provenance == "documented"
+    assert claim.case_field is not None
+    assert claim.case_field.status == "confirmed"
+    assert claim.case_field.provenance == "documented"
+    assert claim.case_field.evidence_refs == ["claim-1"]
+    assert claim.case_field.engineering_value.canonical_value == "Salzwasser"
+
+
 class TestReducerNormalizedToAsserted:
 
-    def _normalized_with(self, *, source: str = "user_override", **fields) -> NormalizedState:
+    def _normalized_with(
+        self, *, source: str = "user_override", **fields
+    ) -> NormalizedState:
         """Build NormalizedState with given field→(value, confidence) pairs."""
         params = {}
         for fname, (val, conf) in fields.items():
@@ -330,24 +409,28 @@ class TestReducerNormalizedToAsserted:
 
     def test_evidence_upgrades_inferred_to_confirmed(self):
         norm = self._normalized_with(source="llm", pressure_bar=(6.0, "inferred"))
-        evidence = [SimpleClaim(
-            claim_id="C1",
-            field_name="pressure_bar",
-            value=6.0,
-            confidence="confirmed",
-        )]
+        evidence = [
+            SimpleClaim(
+                claim_id="C1",
+                field_name="pressure_bar",
+                value=6.0,
+                confidence="confirmed",
+            )
+        ]
         result = reduce_normalized_to_asserted(norm, evidence=evidence)
         assert result.assertions["pressure_bar"].confidence == "confirmed"
         assert "C1" in result.assertions["pressure_bar"].evidence_refs
 
     def test_evidence_must_match_candidate_value_to_promote(self):
         norm = self._normalized_with(source="llm", pressure_bar=(6.0, "confirmed"))
-        evidence = [SimpleClaim(
-            claim_id="C-value-conflict",
-            field_name="pressure_bar",
-            value=8.0,
-            confidence="confirmed",
-        )]
+        evidence = [
+            SimpleClaim(
+                claim_id="C-value-conflict",
+                field_name="pressure_bar",
+                value=8.0,
+                confidence="confirmed",
+            )
+        ]
 
         result = reduce_normalized_to_asserted(norm, evidence=evidence)
 
@@ -356,33 +439,43 @@ class TestReducerNormalizedToAsserted:
 
     def test_evidence_does_not_upgrade_requires_confirmation(self):
         norm = self._normalized_with(medium=("?", "requires_confirmation"))
-        evidence = [SimpleClaim(
-            claim_id="C2",
-            field_name="medium",
-            value="Wasser",
-            confidence="confirmed",
-        )]
+        evidence = [
+            SimpleClaim(
+                claim_id="C2",
+                field_name="medium",
+                value="Wasser",
+                confidence="confirmed",
+            )
+        ]
         result = reduce_normalized_to_asserted(norm, evidence=evidence)
         # requires_confirmation is never asserted, even with evidence
         assert "medium" not in result.assertions
         assert "medium" in result.blocking_unknowns
 
     def test_user_override_needs_no_evidence(self):
-        norm = self._normalized_with(source="user_override", medium=("Wasser", "confirmed"))
+        norm = self._normalized_with(
+            source="user_override", medium=("Wasser", "confirmed")
+        )
         result = reduce_normalized_to_asserted(norm, evidence=None)
         assert "medium" in result.assertions
         assert result.assertions["medium"].evidence_refs == []
 
     def test_blocking_conflict_goes_to_conflict_flags(self):
         from app.agent.state.models import ConflictRef
+
         norm = NormalizedState(
             parameters={
                 "medium": NormalizedParameter(
-                    field_name="medium", value="Wasser", confidence="confirmed", source="user_override"
+                    field_name="medium",
+                    value="Wasser",
+                    confidence="confirmed",
+                    source="user_override",
                 )
             },
             conflicts=[
-                ConflictRef(field_name="medium", description="Conflict!", severity="blocking")
+                ConflictRef(
+                    field_name="medium", description="Conflict!", severity="blocking"
+                )
             ],
         )
         result = reduce_normalized_to_asserted(norm)
@@ -390,14 +483,20 @@ class TestReducerNormalizedToAsserted:
 
     def test_warning_conflict_does_not_go_to_conflict_flags(self):
         from app.agent.state.models import ConflictRef
+
         norm = NormalizedState(
             parameters={
                 "medium": NormalizedParameter(
-                    field_name="medium", value="Wasser", confidence="confirmed", source="user_override"
+                    field_name="medium",
+                    value="Wasser",
+                    confidence="confirmed",
+                    source="user_override",
                 )
             },
             conflicts=[
-                ConflictRef(field_name="medium", description="Soft conflict", severity="warning")
+                ConflictRef(
+                    field_name="medium", description="Soft conflict", severity="warning"
+                )
             ],
         )
         result = reduce_normalized_to_asserted(norm)
@@ -423,6 +522,7 @@ class TestReducerNormalizedToAsserted:
 # ---------------------------------------------------------------------------
 # F-B.2.3 — reduce_asserted_to_governance
 # ---------------------------------------------------------------------------
+
 
 class TestReducerAssertedToGovernanceClassA:
 
@@ -483,13 +583,19 @@ class TestReducerAssertedToGovernanceClassB:
         asserted = AssertedState(
             assertions={
                 "medium": AssertedClaim(
-                    field_name="medium", asserted_value="Salzwasser", confidence="confirmed"
+                    field_name="medium",
+                    asserted_value="Salzwasser",
+                    confidence="confirmed",
                 ),
                 "pressure_bar": AssertedClaim(
-                    field_name="pressure_bar", asserted_value=6.0, confidence="confirmed"
+                    field_name="pressure_bar",
+                    asserted_value=6.0,
+                    confidence="confirmed",
                 ),
                 "temperature_c": AssertedClaim(
-                    field_name="temperature_c", asserted_value=40.0, confidence="confirmed"
+                    field_name="temperature_c",
+                    asserted_value=40.0,
+                    confidence="confirmed",
                 ),
             },
             blocking_unknowns=[],
@@ -504,10 +610,26 @@ class TestReducerAssertedToGovernanceClassB:
     def test_mechanical_seal_requires_duty_and_installation_before_preselection(self):
         asserted = AssertedState(
             assertions={
-                "medium": AssertedClaim(field_name="medium", asserted_value="Salzwasser", confidence="confirmed"),
-                "pressure_bar": AssertedClaim(field_name="pressure_bar", asserted_value=10.0, confidence="confirmed"),
-                "temperature_c": AssertedClaim(field_name="temperature_c", asserted_value=80.0, confidence="confirmed"),
-                "sealing_type": AssertedClaim(field_name="sealing_type", asserted_value="mechanical_seal", confidence="confirmed"),
+                "medium": AssertedClaim(
+                    field_name="medium",
+                    asserted_value="Salzwasser",
+                    confidence="confirmed",
+                ),
+                "pressure_bar": AssertedClaim(
+                    field_name="pressure_bar",
+                    asserted_value=10.0,
+                    confidence="confirmed",
+                ),
+                "temperature_c": AssertedClaim(
+                    field_name="temperature_c",
+                    asserted_value=80.0,
+                    confidence="confirmed",
+                ),
+                "sealing_type": AssertedClaim(
+                    field_name="sealing_type",
+                    asserted_value="mechanical_seal",
+                    confidence="confirmed",
+                ),
             },
             blocking_unknowns=[],
             conflict_flags=[],
@@ -523,11 +645,29 @@ class TestReducerAssertedToGovernanceClassB:
     def test_regulated_industry_requires_compliance_qualifier(self):
         asserted = AssertedState(
             assertions={
-                "medium": AssertedClaim(field_name="medium", asserted_value="Wasser", confidence="confirmed"),
-                "pressure_bar": AssertedClaim(field_name="pressure_bar", asserted_value=3.0, confidence="confirmed"),
-                "temperature_c": AssertedClaim(field_name="temperature_c", asserted_value=120.0, confidence="confirmed"),
-                "sealing_type": AssertedClaim(field_name="sealing_type", asserted_value="general_seal", confidence="confirmed"),
-                "industry": AssertedClaim(field_name="industry", asserted_value="food_pharma", confidence="confirmed"),
+                "medium": AssertedClaim(
+                    field_name="medium", asserted_value="Wasser", confidence="confirmed"
+                ),
+                "pressure_bar": AssertedClaim(
+                    field_name="pressure_bar",
+                    asserted_value=3.0,
+                    confidence="confirmed",
+                ),
+                "temperature_c": AssertedClaim(
+                    field_name="temperature_c",
+                    asserted_value=120.0,
+                    confidence="confirmed",
+                ),
+                "sealing_type": AssertedClaim(
+                    field_name="sealing_type",
+                    asserted_value="general_seal",
+                    confidence="confirmed",
+                ),
+                "industry": AssertedClaim(
+                    field_name="industry",
+                    asserted_value="food_pharma",
+                    confidence="confirmed",
+                ),
             },
             blocking_unknowns=[],
             conflict_flags=[],
@@ -557,9 +697,11 @@ class TestReducerAssertedToGovernanceClassC:
 
     def test_class_c_conflict_flags(self):
         asserted = AssertedState(
-            assertions={"medium": AssertedClaim(
-                field_name="medium", asserted_value="Wasser", confidence="confirmed"
-            )},
+            assertions={
+                "medium": AssertedClaim(
+                    field_name="medium", asserted_value="Wasser", confidence="confirmed"
+                )
+            },
             blocking_unknowns=[],
             conflict_flags=["medium"],
         )
@@ -570,8 +712,12 @@ class TestReducerAssertedToGovernanceClassC:
     def test_class_c_no_cycle_exceeded_but_all_core_present(self):
         """Cycle exceeded has no effect when there are no blocking unknowns."""
         asserted = _full_asserted()
-        result = reduce_asserted_to_governance(asserted, analysis_cycle=99, max_cycles=3)
-        assert result.gov_class == "A"  # cycle_exceeded only matters when blockers exist
+        result = reduce_asserted_to_governance(
+            asserted, analysis_cycle=99, max_cycles=3
+        )
+        assert (
+            result.gov_class == "A"
+        )  # cycle_exceeded only matters when blockers exist
 
 
 class TestReducerAssertedToGovernanceClassD:
@@ -580,7 +726,9 @@ class TestReducerAssertedToGovernanceClassD:
         asserted = AssertedState(
             assertions={
                 "shaft_diameter_mm": AssertedClaim(
-                    field_name="shaft_diameter_mm", asserted_value=50, confidence="confirmed"
+                    field_name="shaft_diameter_mm",
+                    asserted_value=50,
+                    confidence="confirmed",
                 ),
             },
             blocking_unknowns=[],
@@ -606,7 +754,9 @@ class TestReducerAssertedToGovernanceClassD:
                     field_name="pressure_bar", asserted_value=6.0, confidence="inferred"
                 ),
                 "temperature_c": AssertedClaim(
-                    field_name="temperature_c", asserted_value=80.0, confidence="inferred"
+                    field_name="temperature_c",
+                    asserted_value=80.0,
+                    confidence="inferred",
                 ),
             },
             blocking_unknowns=[],
@@ -640,7 +790,9 @@ class TestGovernanceReturnContract:
                     field_name="pressure_bar", asserted_value=6.0, confidence="inferred"
                 ),
                 "temperature_c": AssertedClaim(
-                    field_name="temperature_c", asserted_value=80.0, confidence="confirmed"
+                    field_name="temperature_c",
+                    asserted_value=80.0,
+                    confidence="confirmed",
                 ),
             },
             blocking_unknowns=[],
@@ -656,10 +808,14 @@ class TestGovernanceReturnContract:
                     field_name="medium", asserted_value="Wasser", confidence="confirmed"
                 ),
                 "pressure_bar": AssertedClaim(
-                    field_name="pressure_bar", asserted_value=6.0, confidence="confirmed"
+                    field_name="pressure_bar",
+                    asserted_value=6.0,
+                    confidence="confirmed",
                 ),
                 "temperature_c": AssertedClaim(
-                    field_name="temperature_c", asserted_value=80.0, confidence="confirmed"
+                    field_name="temperature_c",
+                    asserted_value=80.0,
+                    confidence="confirmed",
                 ),
                 "material": AssertedClaim(
                     field_name="material", asserted_value="FKM", confidence="confirmed"
@@ -701,7 +857,9 @@ class TestGovernanceReturnContract:
                 scope_of_validity=("specialist_scope",),
             )
 
-        monkeypatch.setattr("app.agent.state.reducers.run_requirement_class_specialist", _specialist)
+        monkeypatch.setattr(
+            "app.agent.state.reducers.run_requirement_class_specialist", _specialist
+        )
 
         result = reduce_asserted_to_governance(_full_asserted())
 
@@ -712,6 +870,7 @@ class TestGovernanceReturnContract:
 # ---------------------------------------------------------------------------
 # Architecture invariants — grep-based integration checks (F-B.2 spec)
 # ---------------------------------------------------------------------------
+
 
 class TestNoDirectWriteToNormalized:
     """
@@ -799,14 +958,21 @@ class TestNoDirectWriteToGovernance:
 # Full pipeline integration
 # ---------------------------------------------------------------------------
 
+
 class TestFullPipeline:
 
     def test_pipeline_class_b_from_legacy_three_field_observations(self):
         obs = ObservedState()
-        for field, value in [("medium", "Wasser"), ("pressure_bar", 6.0), ("temperature_c", 80.0)]:
-            obs = obs.with_extraction(ObservedExtraction(
-                field_name=field, raw_value=value, confidence=1.0, turn_index=0
-            ))
+        for field, value in [
+            ("medium", "Wasser"),
+            ("pressure_bar", 6.0),
+            ("temperature_c", 80.0),
+        ]:
+            obs = obs.with_extraction(
+                ObservedExtraction(
+                    field_name=field, raw_value=value, confidence=1.0, turn_index=0
+                )
+            )
 
         normalized = reduce_observed_to_normalized(obs)
         asserted = reduce_normalized_to_asserted(normalized)
@@ -818,7 +984,9 @@ class TestFullPipeline:
 
     def test_pipeline_class_b_missing_two_core_fields(self):
         obs = ObservedState().with_extraction(
-            ObservedExtraction(field_name="medium", raw_value="Dampf", confidence=1.0, turn_index=0)
+            ObservedExtraction(
+                field_name="medium", raw_value="Dampf", confidence=1.0, turn_index=0
+            )
         )
         normalized = reduce_observed_to_normalized(obs)
         asserted = reduce_normalized_to_asserted(normalized)
@@ -830,12 +998,18 @@ class TestFullPipeline:
 
     def test_pipeline_class_b_from_promoted_user_overrides(self):
         obs = ObservedState()
-        for field, value in [("medium", "Wasser"), ("pressure_bar", 6.0), ("temperature_c", 80.0)]:
-            obs = obs.with_override(UserOverride(
-                field_name=field,
-                override_value=value,
-                turn_index=0,
-            ))
+        for field, value in [
+            ("medium", "Wasser"),
+            ("pressure_bar", 6.0),
+            ("temperature_c", 80.0),
+        ]:
+            obs = obs.with_override(
+                UserOverride(
+                    field_name=field,
+                    override_value=value,
+                    turn_index=0,
+                )
+            )
 
         normalized = reduce_observed_to_normalized(obs)
         asserted = reduce_normalized_to_asserted(normalized)

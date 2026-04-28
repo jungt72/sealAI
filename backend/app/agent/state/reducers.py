@@ -23,6 +23,7 @@ Evidence type (Claim):
   (Phase G/H) will provide richer Claim objects — they must satisfy
   this protocol to be accepted by reduce_normalized_to_asserted().
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,16 +34,22 @@ from app.agent.domain.requirement_class import (
     RequirementClassSpecialistInput,
     run_requirement_class_specialist,
 )
-from app.services.conflict_detection_service import ConflictCandidate, ConflictDetectionService
+from app.services.conflict_detection_service import (
+    ConflictCandidate,
+    ConflictDetectionService,
+)
 
 from app.agent.state.models import (
     AssertedClaim,
+    CaseField,
     AssertedState,
     AssumptionRef,
     ConflictRef,
     ConfidenceLevel,
     DecisionState,
     DerivedState,
+    EngineeringValue,
+    FieldStatus,
     GovernanceState,
     GovernedSessionState,
     GovClass,
@@ -60,7 +67,12 @@ DEPENDENCY_MAP: dict[str, list[str]] = {
     "temperature_max": ["material_suitability", "requirement_class", "preselection"],
     "temperature_c": ["material_suitability", "requirement_class", "preselection"],
     "medium": ["material_suitability", "requirement_class", "applicable_norms"],
-    "medium_qualifiers": ["material_suitability", "requirement_class", "applicable_norms", "preselection"],
+    "medium_qualifiers": [
+        "material_suitability",
+        "requirement_class",
+        "applicable_norms",
+        "preselection",
+    ],
     "rpm": ["pv_value", "velocity", "material_suitability"],
     "shaft_diameter": ["pv_value", "velocity"],
     "shaft_diameter_mm": ["pv_value", "velocity"],
@@ -73,7 +85,11 @@ DEPENDENCY_MAP: dict[str, list[str]] = {
     "installation": ["requirement_class", "preselection"],
     "geometry_context": ["requirement_class", "preselection"],
     "contamination": ["material_suitability", "requirement_class", "preselection"],
-    "counterface_surface": ["material_suitability", "requirement_class", "preselection"],
+    "counterface_surface": [
+        "material_suitability",
+        "requirement_class",
+        "preselection",
+    ],
     "tolerances": ["material_suitability", "requirement_class", "preselection"],
     "industry": ["requirement_class", "applicable_norms", "preselection"],
     "compliance": ["requirement_class", "applicable_norms", "preselection"],
@@ -106,7 +122,11 @@ def _extraction_confidence(e: Any) -> ConfidenceLevel:
     """
     c = e.confidence
     if isinstance(c, str):
-        return c if c in ("confirmed", "estimated", "inferred", "requires_confirmation") else "requires_confirmation"
+        return (
+            c
+            if c in ("confirmed", "estimated", "inferred", "requires_confirmation")
+            else "requires_confirmation"
+        )
     try:
         return _float_to_confidence(float(c))
     except (TypeError, ValueError):
@@ -119,11 +139,13 @@ def _extraction_confidence(e: Any) -> ConfidenceLevel:
 
 # Minimum set of fields that must be asserted at CONFIRMED or ESTIMATED
 # confidence before Class A governance is reachable.
-_CORE_REQUIRED_FIELDS: frozenset[str] = frozenset({
-    "medium",
-    "pressure_bar",
-    "temperature_c",
-})
+_CORE_REQUIRED_FIELDS: frozenset[str] = frozenset(
+    {
+        "medium",
+        "pressure_bar",
+        "temperature_c",
+    }
+)
 
 _PRESELECTION_BLOCKER_BASE_FIELDS: tuple[str, ...] = (
     "medium",
@@ -140,9 +162,7 @@ _ASSUMABLE_FIELDS: tuple[str, ...] = (
     "medium_qualifiers",
 )
 
-_OPTIONAL_CONTEXT_FIELDS: tuple[str, ...] = (
-    "industry",
-)
+_OPTIONAL_CONTEXT_FIELDS: tuple[str, ...] = ("industry",)
 
 _SEALING_TYPE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "mechanical_seal": ("duty_profile", "installation"),
@@ -152,32 +172,42 @@ _SEALING_TYPE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "packing": ("installation",),
 }
 
-_ROTARY_CONTEXT_FIELDS: frozenset[str] = frozenset({
-    "shaft_diameter_mm",
-    "speed_rpm",
-})
+_ROTARY_CONTEXT_FIELDS: frozenset[str] = frozenset(
+    {
+        "shaft_diameter_mm",
+        "speed_rpm",
+    }
+)
 
-_REGULATED_INDUSTRIES: frozenset[str] = frozenset({
-    "food_pharma",
-})
+_REGULATED_INDUSTRIES: frozenset[str] = frozenset(
+    {
+        "food_pharma",
+    }
+)
 
-_REGULATORY_COMPLIANCE_VALUES: frozenset[str] = frozenset({
-    "food_contact",
-    "atex",
-    "norm_or_regulatory",
-})
+_REGULATORY_COMPLIANCE_VALUES: frozenset[str] = frozenset(
+    {
+        "food_contact",
+        "atex",
+        "norm_or_regulatory",
+    }
+)
 
 # Fields at INFERRED or REQUIRES_CONFIRMATION confidence → blocking_unknowns
-_BLOCKING_CONFIDENCE_LEVELS: frozenset[ConfidenceLevel] = frozenset({
-    "requires_confirmation",
-})
+_BLOCKING_CONFIDENCE_LEVELS: frozenset[ConfidenceLevel] = frozenset(
+    {
+        "requires_confirmation",
+    }
+)
 
 # Fields at these confidence levels may be asserted (with caveats)
-_ASSERTABLE_CONFIDENCE_LEVELS: frozenset[ConfidenceLevel] = frozenset({
-    "confirmed",
-    "estimated",
-    "inferred",
-})
+_ASSERTABLE_CONFIDENCE_LEVELS: frozenset[ConfidenceLevel] = frozenset(
+    {
+        "confirmed",
+        "estimated",
+        "inferred",
+    }
+)
 
 
 def _asserted_value(assertions: dict[str, AssertedClaim], field_name: str) -> Any:
@@ -195,7 +225,9 @@ def _has_asserted(assertions: dict[str, AssertedClaim], field_name: str) -> bool
     return _asserted_value(assertions, field_name) not in (None, "")
 
 
-def _missing(assertions: dict[str, AssertedClaim], fields: tuple[str, ...]) -> list[str]:
+def _missing(
+    assertions: dict[str, AssertedClaim], fields: tuple[str, ...]
+) -> list[str]:
     return [field for field in fields if not _has_asserted(assertions, field)]
 
 
@@ -208,29 +240,40 @@ class TechnicalReadinessAssessment:
     type_sensitive_required: list[str] = field(default_factory=list)
 
 
-def _technical_readiness_assessment(asserted: AssertedState) -> TechnicalReadinessAssessment:
+def _technical_readiness_assessment(
+    asserted: AssertedState,
+) -> TechnicalReadinessAssessment:
     assertions = asserted.assertions
     blockers = _missing(assertions, _PRESELECTION_BLOCKER_BASE_FIELDS)
     type_sensitive: list[str] = []
 
     sealing_type = str(_asserted_value(assertions, "sealing_type") or "").strip()
     if sealing_type in _SEALING_TYPE_REQUIRED_FIELDS:
-        type_sensitive.extend(_missing(assertions, _SEALING_TYPE_REQUIRED_FIELDS[sealing_type]))
-    elif any(_has_asserted(assertions, field) for field in _ROTARY_CONTEXT_FIELDS) and "sealing_type" not in blockers:
+        type_sensitive.extend(
+            _missing(assertions, _SEALING_TYPE_REQUIRED_FIELDS[sealing_type])
+        )
+    elif (
+        any(_has_asserted(assertions, field) for field in _ROTARY_CONTEXT_FIELDS)
+        and "sealing_type" not in blockers
+    ):
         blockers.append("sealing_type")
 
     industry = _asserted_value(assertions, "industry")
     compliance = _asserted_value(assertions, "compliance")
     compliance_blockers: list[str] = []
     if any(_value_contains(industry, item) for item in _REGULATED_INDUSTRIES):
-        if not any(_value_contains(compliance, item) for item in _REGULATORY_COMPLIANCE_VALUES):
+        if not any(
+            _value_contains(compliance, item) for item in _REGULATORY_COMPLIANCE_VALUES
+        ):
             compliance_blockers.append("compliance")
 
     missing_but_assumable = _missing(assertions, _ASSUMABLE_FIELDS)
     optional_context = _missing(assertions, _OPTIONAL_CONTEXT_FIELDS)
 
     return TechnicalReadinessAssessment(
-        preselection_blockers=list(dict.fromkeys(blockers + type_sensitive + compliance_blockers)),
+        preselection_blockers=list(
+            dict.fromkeys(blockers + type_sensitive + compliance_blockers)
+        ),
         missing_but_assumable=missing_but_assumable,
         optional_context=optional_context,
         compliance_blockers=compliance_blockers,
@@ -241,6 +284,7 @@ def _technical_readiness_assessment(asserted: AssertedState) -> TechnicalReadine
 # ---------------------------------------------------------------------------
 # Evidence protocol (minimal — full implementation in Phase G evidence layer)
 # ---------------------------------------------------------------------------
+
 
 class Claim(Protocol):
     """Protocol for evidence claims accepted by reduce_normalized_to_asserted."""
@@ -256,6 +300,100 @@ class Claim(Protocol):
 
     @property
     def confidence(self) -> ConfidenceLevel: ...
+
+
+def _field_status_for_normalized(
+    *,
+    source: str,
+    confidence: ConfidenceLevel,
+) -> FieldStatus:
+    if source == "user_override":
+        return "confirmed"
+    if confidence == "confirmed":
+        return "user_stated"
+    if confidence == "requires_confirmation":
+        return "candidate"
+    if confidence == "inferred":
+        return "inferred"
+    return "candidate"
+
+
+def _provenance_for_normalized(*, source: str, confidence: ConfidenceLevel) -> str:
+    if source == "user_override":
+        return "user_stated"
+    if confidence == "inferred":
+        return "inferred"
+    return "user_stated"
+
+
+def _engineering_value(
+    *,
+    field_name: str,
+    raw_value: Any,
+    value: Any,
+    unit: str | None,
+) -> EngineeringValue:
+    return EngineeringValue(
+        raw_value=raw_value,
+        canonical_value=value,
+        unit=unit,
+        quantity_kind=field_name,
+    )
+
+
+def _case_field_from_normalized(
+    *,
+    field_name: str,
+    value: Any,
+    raw_value: Any,
+    unit: str | None,
+    confidence: ConfidenceLevel,
+    source: str,
+    source_turn: int | None,
+) -> CaseField:
+    status = _field_status_for_normalized(source=source, confidence=confidence)
+    provenance = _provenance_for_normalized(source=source, confidence=confidence)
+    return CaseField(
+        field_name=field_name,
+        value=value,
+        engineering_value=_engineering_value(
+            field_name=field_name,
+            raw_value=raw_value,
+            value=value,
+            unit=unit,
+        ),
+        status=status,
+        provenance=provenance,
+        confidence=confidence,
+        confirmation_required=status in {"candidate", "inferred", "unknown"},
+        source_revision=source_turn or 0,
+    )
+
+
+def _asserted_case_field(
+    *,
+    field_name: str,
+    value: Any,
+    unit: str | None,
+    confidence: ConfidenceLevel,
+    evidence_refs: list[str],
+    provenance: str,
+) -> CaseField:
+    return CaseField(
+        field_name=field_name,
+        value=value,
+        engineering_value=_engineering_value(
+            field_name=field_name,
+            raw_value=value,
+            value=value,
+            unit=unit,
+        ),
+        status="confirmed",
+        provenance=provenance,
+        evidence_refs=evidence_refs,
+        confidence=confidence,
+        confirmation_required=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -274,6 +412,7 @@ class SimpleClaim:
 # ---------------------------------------------------------------------------
 # F-B.2.1 — reduce_observed_to_normalized
 # ---------------------------------------------------------------------------
+
 
 def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
     """Derive NormalizedState from ObservedState.
@@ -314,6 +453,15 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
         # User override takes absolute priority
         if field_name in override_by_field:
             ov = override_by_field[field_name]
+            case_field = _case_field_from_normalized(
+                field_name=field_name,
+                value=ov.override_value,
+                raw_value=ov.override_value,
+                unit=ov.override_unit,
+                confidence="confirmed",
+                source="user_override",
+                source_turn=ov.turn_index,
+            )
             parameters[field_name] = NormalizedParameter(
                 field_name=field_name,
                 value=ov.override_value,
@@ -321,9 +469,17 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
                 confidence="confirmed",
                 source="user_override",
                 source_turn=ov.turn_index,
+                status=case_field.status,
+                provenance=case_field.provenance,
+                engineering_value=case_field.engineering_value,
+                case_field=case_field,
             )
             parameter_status[field_name] = "observed"
-            log.debug("[reducer] field=%s source=user_override value=%r", field_name, ov.override_value)
+            log.debug(
+                "[reducer] field=%s source=user_override value=%r",
+                field_name,
+                ov.override_value,
+            )
             continue
 
         exts = extractions_by_field.get(field_name, [])
@@ -331,7 +487,12 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
             continue
 
         # Sort by confidence (desc) then turn_index (desc — more recent wins ties)
-        _CONF_RANK = {"confirmed": 4, "estimated": 3, "inferred": 2, "requires_confirmation": 1}
+        _CONF_RANK = {
+            "confirmed": 4,
+            "estimated": 3,
+            "inferred": 2,
+            "requires_confirmation": 1,
+        }
         exts_sorted = sorted(
             exts,
             key=lambda e: (_CONF_RANK.get(_extraction_confidence(e), 0), e.turn_index),
@@ -352,11 +513,13 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
             ],
         )
         for detected in conflict_result.conflicts:
-            conflicts.append(ConflictRef(
-                field_name=field_name,
-                description=detected.description,
-                severity=detected.severity,
-            ))
+            conflicts.append(
+                ConflictRef(
+                    field_name=field_name,
+                    description=detected.description,
+                    severity=detected.severity,
+                )
+            )
             log.debug(
                 "[reducer] conflict detected for field=%s current=%r candidate=%r",
                 field_name,
@@ -368,14 +531,25 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
         confidence: ConfidenceLevel = _extraction_confidence(best)
 
         if confidence == "requires_confirmation":
-            assumptions.append(AssumptionRef(
-                field_name=field_name,
-                description=f"'{field_name}' requires user confirmation (value: {best.raw_value!r})",
-            ))
+            assumptions.append(
+                AssumptionRef(
+                    field_name=field_name,
+                    description=f"'{field_name}' requires user confirmation (value: {best.raw_value!r})",
+                )
+            )
             parameter_status[field_name] = "assumed"
         else:
             parameter_status[field_name] = "observed"
 
+        case_field = _case_field_from_normalized(
+            field_name=field_name,
+            value=best.raw_value,
+            raw_value=best.raw_value,
+            unit=best.raw_unit,
+            confidence=confidence,
+            source="llm",
+            source_turn=best.turn_index,
+        )
         parameters[field_name] = NormalizedParameter(
             field_name=field_name,
             value=best.raw_value,
@@ -383,6 +557,10 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
             confidence=confidence,
             source="llm",
             source_turn=best.turn_index,
+            status=case_field.status,
+            provenance=case_field.provenance,
+            engineering_value=case_field.engineering_value,
+            case_field=case_field,
         )
 
     return NormalizedState(
@@ -391,6 +569,11 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
         conflicts=conflicts,
         assumptions=assumptions,
         parameter_status=parameter_status,
+        case_fields={
+            field_name: param.case_field
+            for field_name, param in parameters.items()
+            if param.case_field is not None
+        },
     )
 
 
@@ -405,6 +588,7 @@ def _canonical_value(v: Any) -> str:
 # ---------------------------------------------------------------------------
 # F-B.2.2 — reduce_normalized_to_asserted
 # ---------------------------------------------------------------------------
+
 
 def reduce_normalized_to_asserted(
     normalized: NormalizedState,
@@ -427,10 +611,17 @@ def reduce_normalized_to_asserted(
 
     # Build evidence index: field_name → best claim
     evidence_index: dict[str, Claim] = {}
-    _CONF_RANK = {"confirmed": 4, "estimated": 3, "inferred": 2, "requires_confirmation": 1}
+    _CONF_RANK = {
+        "confirmed": 4,
+        "estimated": 3,
+        "inferred": 2,
+        "requires_confirmation": 1,
+    }
     for claim in evidence:
         existing = evidence_index.get(claim.field_name)
-        if existing is None or _CONF_RANK.get(claim.confidence, 0) > _CONF_RANK.get(existing.confidence, 0):
+        if existing is None or _CONF_RANK.get(claim.confidence, 0) > _CONF_RANK.get(
+            existing.confidence, 0
+        ):
             evidence_index[claim.field_name] = claim
 
     assertions: dict[str, AssertedClaim] = {}
@@ -447,11 +638,23 @@ def reduce_normalized_to_asserted(
             continue
 
         if param.source == "user_override":
+            asserted_case_field = _asserted_case_field(
+                field_name=field_name,
+                value=param.value,
+                unit=param.unit,
+                confidence=confidence,
+                evidence_refs=[],
+                provenance="user_stated",
+            )
             assertions[field_name] = AssertedClaim(
                 field_name=field_name,
                 asserted_value=param.value,
                 evidence_refs=[],
                 confidence=confidence,
+                status=asserted_case_field.status,
+                provenance=asserted_case_field.provenance,
+                engineering_value=asserted_case_field.engineering_value,
+                case_field=asserted_case_field,
             )
             continue
 
@@ -476,16 +679,31 @@ def reduce_normalized_to_asserted(
             )
             continue
 
+        asserted_case_field = _asserted_case_field(
+            field_name=field_name,
+            value=param.value,
+            unit=param.unit,
+            confidence=ev.confidence,
+            evidence_refs=[ev.claim_id],
+            provenance="documented",
+        )
         assertions[field_name] = AssertedClaim(
             field_name=field_name,
             asserted_value=param.value,
             evidence_refs=[ev.claim_id],
             confidence=ev.confidence,
+            status=asserted_case_field.status,
+            provenance=asserted_case_field.provenance,
+            engineering_value=asserted_case_field.engineering_value,
+            case_field=asserted_case_field,
         )
 
     # ── Conflict flags from blocking conflicts ───────────────────────────
     for conflict in normalized.conflicts:
-        if conflict.severity == "blocking" and conflict.field_name not in conflict_flags:
+        if (
+            conflict.severity == "blocking"
+            and conflict.field_name not in conflict_flags
+        ):
             conflict_flags.append(conflict.field_name)
 
     # ── Core fields missing entirely → blocking unknowns ─────────────────
@@ -515,6 +733,7 @@ def reduce_normalized_to_asserted(
 # F-B.2.3 — reduce_asserted_to_governance
 # ---------------------------------------------------------------------------
 
+
 def reduce_asserted_to_governance(
     asserted: AssertedState,
     *,
@@ -536,13 +755,16 @@ def reduce_asserted_to_governance(
     Returns a new GovernanceState. Never mutates inputs.
     """
     core_asserted = {
-        f for f in _CORE_REQUIRED_FIELDS
+        f
+        for f in _CORE_REQUIRED_FIELDS
         if f in asserted.assertions
         and asserted.assertions[f].confidence in ("confirmed", "estimated")
     }
     readiness = _technical_readiness_assessment(asserted)
     effective_blocking_unknowns = list(
-        dict.fromkeys(list(asserted.blocking_unknowns) + list(readiness.preselection_blockers))
+        dict.fromkeys(
+            list(asserted.blocking_unknowns) + list(readiness.preselection_blockers)
+        )
     )
     has_blocking_unknowns = bool(effective_blocking_unknowns)
     has_conflict_flags = bool(asserted.conflict_flags)
