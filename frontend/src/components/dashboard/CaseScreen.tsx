@@ -965,7 +965,7 @@ function CalculationsCard({
         <>
           <div className="flex flex-wrap gap-2">
             <StatusBadge label={stale ? "stale" : "current view"} variant={stale ? "warning" : "info"} />
-            {workspace?.summary?.staleReason && <StatusBadge label="input changed" variant="default" />}
+            {stale && workspace?.summary?.staleReason && <StatusBadge label="input changed" variant="default" />}
           </div>
 
           <div className="grid gap-3">
