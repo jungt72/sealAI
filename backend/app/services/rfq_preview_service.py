@@ -15,6 +15,9 @@ from app.services.inquiry_extract_service import (
     InquiryExtractService,
     validate_manufacturer_view,
 )
+from app.services.decision_understanding_service import (
+    build_decision_understanding_payload,
+)
 
 RFQ_PREVIEW_ARTIFACT_TYPE = "rfq_preview"
 RFQ_PREVIEW_SCHEMA_VERSION = "rfq_preview_v0.7.0"
@@ -142,7 +145,10 @@ class RfqPreviewService:
             select(InquiryExtractModel)
             .where(InquiryExtractModel.case_id == case_id)
             .where(InquiryExtractModel.artifact_type == RFQ_PREVIEW_ARTIFACT_TYPE)
-            .order_by(InquiryExtractModel.case_revision.desc(), InquiryExtractModel.created_at.desc())
+            .order_by(
+                InquiryExtractModel.case_revision.desc(),
+                InquiryExtractModel.created_at.desc(),
+            )
             .limit(1)
         )
         row = result.scalar_one_or_none()
@@ -159,12 +165,16 @@ class RfqPreviewService:
         consent_scope: Mapping[str, Any],
     ) -> RfqPreviewView:
         result = await self._session.execute(
-            select(InquiryExtractModel).where(InquiryExtractModel.extract_id == preview_id).limit(1)
+            select(InquiryExtractModel)
+            .where(InquiryExtractModel.extract_id == preview_id)
+            .limit(1)
         )
         row = result.scalar_one_or_none()
         if row is None:
             raise RfqPreviewNotFound("rfq preview not found")
-        case_row = await self._load_owned_case(case_id=str(row.case_id), user_id=user_id)
+        case_row = await self._load_owned_case(
+            case_id=str(row.case_id), user_id=user_id
+        )
         if case_row is None:
             raise RfqPreviewNotFound("case not found")
         current_revision = int(case_row.case_revision or 0)
@@ -190,7 +200,9 @@ class RfqPreviewService:
         await self._session.refresh(row)
         return _view(row, current_case_revision=current_revision)
 
-    async def _load_owned_case(self, *, case_id: str, user_id: str) -> CaseRecord | None:
+    async def _load_owned_case(
+        self, *, case_id: str, user_id: str
+    ) -> CaseRecord | None:
         result = await self._session.execute(
             select(CaseRecord)
             .where(CaseRecord.id == case_id)
@@ -208,7 +220,9 @@ class RfqPreviewService:
         )
         return result.scalar_one_or_none()
 
-    async def _load_preview(self, *, case_id: str, case_revision: int) -> InquiryExtractModel | None:
+    async def _load_preview(
+        self, *, case_id: str, case_revision: int
+    ) -> InquiryExtractModel | None:
         result = await self._session.execute(
             select(InquiryExtractModel)
             .where(InquiryExtractModel.case_id == case_id)
@@ -219,7 +233,9 @@ class RfqPreviewService:
         return result.scalar_one_or_none()
 
 
-def build_rfq_preview_payload(*, case_row: CaseRecord, snapshot: CaseStateSnapshot) -> dict[str, Any]:
+def build_rfq_preview_payload(
+    *, case_row: CaseRecord, snapshot: CaseStateSnapshot
+) -> dict[str, Any]:
     state = snapshot.state_json if isinstance(snapshot.state_json, Mapping) else {}
     technical_fields = collect_technical_fields(case_row=case_row, state=state)
     open_points = collect_open_points(state)
@@ -233,10 +249,24 @@ def build_rfq_preview_payload(*, case_row: CaseRecord, snapshot: CaseStateSnapsh
         "technical_fields": technical_fields,
         "missing_fields": open_points,
         "norm_results": _deep_get_sequence(state, ("case_state", "norm_results")),
-        "advisory_results": _deep_get_sequence(state, ("case_state", "advisory_results")),
-        "article_references": _deep_get_sequence(state, ("case_state", "article_references")),
-        "manufacturer_facing_notes": _deep_get_sequence(state, ("case_state", "manufacturer_facing_notes")),
+        "advisory_results": _deep_get_sequence(
+            state, ("case_state", "advisory_results")
+        ),
+        "article_references": _deep_get_sequence(
+            state, ("case_state", "article_references")
+        ),
+        "manufacturer_facing_notes": _deep_get_sequence(
+            state, ("case_state", "manufacturer_facing_notes")
+        ),
     }
+    decision_understanding = build_decision_understanding_payload(
+        {
+            "case": context,
+            "state": state,
+            "technical_fields": technical_fields,
+            "missing_fields": open_points,
+        }
+    )
     manufacturer_extract = InquiryExtractService().build_inquiry_extract_payload(
         context,
         artifact_type=RFQ_PREVIEW_ARTIFACT_TYPE,
@@ -254,15 +284,20 @@ def build_rfq_preview_payload(*, case_row: CaseRecord, snapshot: CaseStateSnapsh
         },
         "rfq_preview": {
             "purpose": "phase_1_preview_export",
+            "decision_understanding": decision_understanding,
             "sections": build_rfq_sections(
                 technical_fields=technical_fields,
                 open_points=open_points,
-                state=state,
+                state={
+                    "state": state,
+                    "decision_understanding": decision_understanding,
+                },
             ),
             "manufacturer_release_boundary": (
                 "RFQ preview for manufacturer review; no final technical release, no compliance approval."
             ),
         },
+        "decision_understanding": decision_understanding,
         "manufacturer_extract": manufacturer_extract,
         "consent_boundary": {
             "status": "not_requested",
@@ -272,7 +307,9 @@ def build_rfq_preview_payload(*, case_row: CaseRecord, snapshot: CaseStateSnapsh
     }
 
 
-def collect_technical_fields(*, case_row: CaseRecord, state: Mapping[str, Any]) -> dict[str, Any]:
+def collect_technical_fields(
+    *, case_row: CaseRecord, state: Mapping[str, Any]
+) -> dict[str, Any]:
     collected: dict[str, Any] = {}
     for key, value in {
         "application_pattern_id": case_row.application_pattern_id,
@@ -283,14 +320,25 @@ def collect_technical_fields(*, case_row: CaseRecord, state: Mapping[str, Any]) 
     for mapping in _walk_mappings(state):
         for source_key, target_key in _FIELD_ALIASES.items():
             if source_key in mapping:
-                _add_field(collected, target_key, _unwrap_field_value(mapping[source_key]))
-    return {key: collected[key] for key in sorted(collected) if key in ALLOWED_TECHNICAL_FIELD_PATHS}
+                _add_field(
+                    collected, target_key, _unwrap_field_value(mapping[source_key])
+                )
+    return {
+        key: collected[key]
+        for key in sorted(collected)
+        if key in ALLOWED_TECHNICAL_FIELD_PATHS
+    }
 
 
 def collect_open_points(state: Mapping[str, Any]) -> tuple[str, ...]:
     candidates: list[str] = []
     for mapping in _walk_mappings(state):
-        for key in ("missing_required_fields", "blocking_unknowns", "open_points", "not_yet_decidable"):
+        for key in (
+            "missing_required_fields",
+            "blocking_unknowns",
+            "open_points",
+            "not_yet_decidable",
+        ):
             for item in _as_sequence(mapping.get(key)):
                 text = str(item).strip()
                 if text and text not in candidates:
@@ -304,22 +352,63 @@ def build_rfq_sections(
     open_points: Sequence[str],
     state: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    top_risks = tuple(str(item) for item in _as_sequence(_first_value_for_keys(state, ("top_risks", "key_risks", "risks"))))
+    top_risks = tuple(
+        str(item)
+        for item in _as_sequence(
+            _first_value_for_keys(state, ("top_risks", "key_risks", "risks"))
+        )
+    )
     manufacturer_questions = tuple(
-        str(item) for item in _as_sequence(_first_value_for_keys(state, ("manufacturer_review_needs", "manufacturer_questions")))
+        str(item)
+        for item in _as_sequence(
+            _first_value_for_keys(
+                state, ("manufacturer_review_needs", "manufacturer_questions")
+            )
+        )
     )
     values = dict(technical_fields)
     section_payloads: tuple[Any, ...] = (
         _pick(values, "equipment_type", "medium_name", "motion_type"),
         _pick(values, "equipment_type", "application_pattern"),
         _pick(values, "motion_type", "seal_type"),
-        _pick(values, "medium_name", "medium_concentration", "food_contact_required", "atex_required"),
-        _pick(values, "temperature_c", "temperature_min_c", "temperature_max_c", "pressure_bar", "speed_rpm"),
-        _pick(values, "shaft_diameter_mm", "housing_bore_diameter_mm", "seal_width_mm", "shaft_surface_finish"),
-        _pick(values, "sealing_material_family", "shaft_hardness_hrc", "shaft_lead_present"),
+        _pick(
+            values,
+            "medium_name",
+            "medium_concentration",
+            "food_contact_required",
+            "atex_required",
+        ),
+        _pick(
+            values,
+            "temperature_c",
+            "temperature_min_c",
+            "temperature_max_c",
+            "pressure_bar",
+            "speed_rpm",
+        ),
+        _pick(
+            values,
+            "shaft_diameter_mm",
+            "housing_bore_diameter_mm",
+            "seal_width_mm",
+            "shaft_surface_finish",
+        ),
+        _pick(
+            values,
+            "sealing_material_family",
+            "shaft_hardness_hrc",
+            "shaft_lead_present",
+        ),
         top_risks,
         _pick(values, "calculated_speed_m_s", "calculated_pv_mpa_m_s"),
-        tuple(str(item) for item in _as_sequence(_first_value_for_keys(state, ("plausible_directions", "technical_direction")))),
+        tuple(
+            str(item)
+            for item in _as_sequence(
+                _first_value_for_keys(
+                    state, ("plausible_directions", "technical_direction")
+                )
+            )
+        ),
         tuple(open_points),
         manufacturer_questions or _default_manufacturer_questions(open_points),
         _pick(values, "quantity_requested", "lead_time_criticality", "production_mode"),
@@ -337,17 +426,33 @@ def build_rfq_sections(
 
 def normalize_consent_scope(value: Mapping[str, Any]) -> dict[str, Any]:
     scope = dict(value or {})
-    shared_sections = tuple(str(item).strip() for item in _as_sequence(scope.get("shared_sections")) if str(item).strip())
-    shared_documents = tuple(str(item).strip() for item in _as_sequence(scope.get("shared_documents")) if str(item).strip())
-    intended_recipients = tuple(str(item).strip() for item in _as_sequence(scope.get("intended_recipients")) if str(item).strip())
+    shared_sections = tuple(
+        str(item).strip()
+        for item in _as_sequence(scope.get("shared_sections"))
+        if str(item).strip()
+    )
+    shared_documents = tuple(
+        str(item).strip()
+        for item in _as_sequence(scope.get("shared_documents"))
+        if str(item).strip()
+    )
+    intended_recipients = tuple(
+        str(item).strip()
+        for item in _as_sequence(scope.get("intended_recipients"))
+        if str(item).strip()
+    )
     if not shared_sections:
         raise RfqPreviewError("consent_scope.shared_sections is required")
     return {
         "shared_sections": shared_sections,
         "shared_documents": shared_documents,
         "intended_recipients": intended_recipients,
-        "user_acknowledged_open_points": bool(scope.get("user_acknowledged_open_points")),
-        "user_acknowledged_no_final_release": bool(scope.get("user_acknowledged_no_final_release")),
+        "user_acknowledged_open_points": bool(
+            scope.get("user_acknowledged_open_points")
+        ),
+        "user_acknowledged_no_final_release": bool(
+            scope.get("user_acknowledged_no_final_release")
+        ),
     }
 
 
@@ -395,7 +500,9 @@ def _walk_mappings(value: Any) -> tuple[Mapping[str, Any], ...]:
     return tuple(found)
 
 
-def _deep_get_sequence(mapping: Mapping[str, Any], path: tuple[str, ...]) -> tuple[Any, ...]:
+def _deep_get_sequence(
+    mapping: Mapping[str, Any], path: tuple[str, ...]
+) -> tuple[Any, ...]:
     current: Any = mapping
     for part in path:
         if not isinstance(current, Mapping):
@@ -423,10 +530,16 @@ def _first_value_for_keys(mapping: Mapping[str, Any], keys: tuple[str, ...]) -> 
 
 
 def _pick(mapping: Mapping[str, Any], *keys: str) -> dict[str, Any]:
-    return {key: mapping[key] for key in keys if key in mapping and mapping[key] not in (None, "", (), [], {})}
+    return {
+        key: mapping[key]
+        for key in keys
+        if key in mapping and mapping[key] not in (None, "", (), [], {})
+    }
 
 
 def _default_manufacturer_questions(open_points: Sequence[str]) -> tuple[str, ...]:
     if not open_points:
-        return ("Bitte technische Eignung und offene Auslegungsdaten herstellerseitig pruefen.",)
+        return (
+            "Bitte technische Eignung und offene Auslegungsdaten herstellerseitig pruefen.",
+        )
     return tuple(f"Bitte klaeren: {point}" for point in open_points[:6])

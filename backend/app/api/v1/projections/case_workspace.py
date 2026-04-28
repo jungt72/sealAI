@@ -30,6 +30,9 @@ from app.agent.domain.delta_conflicts import build_governed_conflict_summary
 from app.agent.domain.dependency_graph import derived_values_for_projection
 from app.agent.domain.medium_registry import classify_medium_value
 from app.agent.domain.risk_readiness import evaluate_readiness, evaluate_risks
+from app.services.decision_understanding_service import (
+    build_decision_understanding_projection,
+)
 from app.api.v1.schemas.case_workspace import (
     ArtifactStatus,
     CaseSummary,
@@ -134,51 +137,181 @@ _COCKPIT_SECTION_CONFIG: tuple[dict[str, Any], ...] = (
         "section_id": "application_function",
         "title": "1. Anlage & Funktion",
         "fields": (
-            {"key": "asset_type", "label": "Anlage / Baugruppe", "unit": None, "aliases": ("installation", "application_context")},
-            {"key": "asset_function", "label": "Funktion", "unit": None, "aliases": ("primary_function",)},
-            {"key": "seal_location", "label": "Dichtstelle", "unit": None, "aliases": ("geometry_context",)},
-            {"key": "motion_type", "label": "Bewegungsart", "unit": None, "aliases": ("movement_type",)},
-            {"key": "primary_function", "label": "Dichtfunktion", "unit": None, "aliases": ("pressure_direction",)},
-            {"key": "consequence_of_failure", "label": "Ausfallfolge", "unit": None, "aliases": ("allowable_leakage",)},
+            {
+                "key": "asset_type",
+                "label": "Anlage / Baugruppe",
+                "unit": None,
+                "aliases": ("installation", "application_context"),
+            },
+            {
+                "key": "asset_function",
+                "label": "Funktion",
+                "unit": None,
+                "aliases": ("primary_function",),
+            },
+            {
+                "key": "seal_location",
+                "label": "Dichtstelle",
+                "unit": None,
+                "aliases": ("geometry_context",),
+            },
+            {
+                "key": "motion_type",
+                "label": "Bewegungsart",
+                "unit": None,
+                "aliases": ("movement_type",),
+            },
+            {
+                "key": "primary_function",
+                "label": "Dichtfunktion",
+                "unit": None,
+                "aliases": ("pressure_direction",),
+            },
+            {
+                "key": "consequence_of_failure",
+                "label": "Ausfallfolge",
+                "unit": None,
+                "aliases": ("allowable_leakage",),
+            },
         ),
     },
     {
         "section_id": "medium_environment",
         "title": "2. Medium & Umgebung",
         "fields": (
-            {"key": "medium_name", "label": "Medium", "unit": None, "aliases": ("medium",)},
-            {"key": "medium_category", "label": "Medienkategorie", "unit": None, "aliases": ("medium_family",)},
-            {"key": "temperature_max", "label": "Temperatur max.", "unit": "degC", "aliases": ("temperature_c",)},
-            {"key": "particles_present", "label": "Partikel", "unit": None, "aliases": ("solids_percent", "contamination")},
-            {"key": "cleaning_media", "label": "Reinigung / CIP", "unit": None, "aliases": ("cleaning_cycles",)},
-            {"key": "food_contact", "label": "Food/Pharma/ATEX", "unit": None, "aliases": ("compliance", "industry")},
-            {"key": "benetzung", "label": "Benetzung", "unit": None, "aliases": ("dry_run_possible", "duty_profile")},
+            {
+                "key": "medium_name",
+                "label": "Medium",
+                "unit": None,
+                "aliases": ("medium",),
+            },
+            {
+                "key": "medium_category",
+                "label": "Medienkategorie",
+                "unit": None,
+                "aliases": ("medium_family",),
+            },
+            {
+                "key": "temperature_max",
+                "label": "Temperatur max.",
+                "unit": "degC",
+                "aliases": ("temperature_c",),
+            },
+            {
+                "key": "particles_present",
+                "label": "Partikel",
+                "unit": None,
+                "aliases": ("solids_percent", "contamination"),
+            },
+            {
+                "key": "cleaning_media",
+                "label": "Reinigung / CIP",
+                "unit": None,
+                "aliases": ("cleaning_cycles",),
+            },
+            {
+                "key": "food_contact",
+                "label": "Food/Pharma/ATEX",
+                "unit": None,
+                "aliases": ("compliance", "industry"),
+            },
+            {
+                "key": "benetzung",
+                "label": "Benetzung",
+                "unit": None,
+                "aliases": ("dry_run_possible", "duty_profile"),
+            },
         ),
     },
     {
         "section_id": "operating_geometry",
         "title": "3. Betriebsdaten & Geometrie",
         "fields": (
-            {"key": "shaft_diameter", "label": "Wellendurchmesser", "unit": "mm", "aliases": ("shaft_diameter_mm",)},
-            {"key": "housing_bore", "label": "Gehäusebohrung", "unit": "mm", "aliases": ("housing_bore_mm",)},
-            {"key": "installation_width", "label": "Einbaubreite", "unit": "mm", "aliases": ("installation_width_mm",)},
+            {
+                "key": "shaft_diameter",
+                "label": "Wellendurchmesser",
+                "unit": "mm",
+                "aliases": ("shaft_diameter_mm",),
+            },
+            {
+                "key": "housing_bore",
+                "label": "Gehäusebohrung",
+                "unit": "mm",
+                "aliases": ("housing_bore_mm",),
+            },
+            {
+                "key": "installation_width",
+                "label": "Einbaubreite",
+                "unit": "mm",
+                "aliases": ("installation_width_mm",),
+            },
             {"key": "speed_rpm", "label": "Drehzahl", "unit": "rpm", "aliases": ()},
-            {"key": "pressure_nominal", "label": "Betriebsdruck", "unit": "bar", "aliases": ("pressure_bar",)},
-            {"key": "surface_finish", "label": "Oberfläche", "unit": None, "aliases": ("counterface_surface",)},
-            {"key": "shaft_material", "label": "Wellenwerkstoff", "unit": None, "aliases": ()},
-            {"key": "shaft_runout", "label": "Rundlauf", "unit": "mm", "aliases": ("runout_mm",)},
+            {
+                "key": "pressure_nominal",
+                "label": "Betriebsdruck",
+                "unit": "bar",
+                "aliases": ("pressure_bar",),
+            },
+            {
+                "key": "surface_finish",
+                "label": "Oberfläche",
+                "unit": None,
+                "aliases": ("counterface_surface",),
+            },
+            {
+                "key": "shaft_material",
+                "label": "Wellenwerkstoff",
+                "unit": None,
+                "aliases": (),
+            },
+            {
+                "key": "shaft_runout",
+                "label": "Rundlauf",
+                "unit": "mm",
+                "aliases": ("runout_mm",),
+            },
         ),
     },
     {
         "section_id": "risk_readiness",
         "title": "4. Risiken & Anfrage-Reife",
         "fields": (
-            {"key": "top_risks", "label": "Top-Risiken", "unit": None, "aliases": ("contamination", "medium_qualifiers")},
-            {"key": "readiness_level", "label": "Readiness Level", "unit": None, "aliases": ()},
-            {"key": "blocking_unknowns", "label": "Blockierende Unbekannte", "unit": None, "aliases": ()},
-            {"key": "recommended_next_question", "label": "Nächste Frage", "unit": None, "aliases": ()},
-            {"key": "rfq_possible", "label": "RFQ möglich", "unit": None, "aliases": ()},
-            {"key": "compliance", "label": "Norm/Hygiene/ATEX", "unit": None, "aliases": ("industry",)},
+            {
+                "key": "top_risks",
+                "label": "Top-Risiken",
+                "unit": None,
+                "aliases": ("contamination", "medium_qualifiers"),
+            },
+            {
+                "key": "readiness_level",
+                "label": "Readiness Level",
+                "unit": None,
+                "aliases": (),
+            },
+            {
+                "key": "blocking_unknowns",
+                "label": "Blockierende Unbekannte",
+                "unit": None,
+                "aliases": (),
+            },
+            {
+                "key": "recommended_next_question",
+                "label": "Nächste Frage",
+                "unit": None,
+                "aliases": (),
+            },
+            {
+                "key": "rfq_possible",
+                "label": "RFQ möglich",
+                "unit": None,
+                "aliases": (),
+            },
+            {
+                "key": "compliance",
+                "label": "Norm/Hygiene/ATEX",
+                "unit": None,
+                "aliases": ("industry",),
+            },
         ),
     },
 )
@@ -271,30 +404,40 @@ def _provenance_confidence(value: Any) -> str | None:
     return None
 
 
-def _first_mapping_value(mapping: Dict[str, Any], key: str, aliases: tuple[str, ...]) -> Any:
+def _first_mapping_value(
+    mapping: Dict[str, Any], key: str, aliases: tuple[str, ...]
+) -> Any:
     for candidate in (key, *aliases):
         if candidate in mapping and mapping.get(candidate) not in (None, "", []):
             return mapping.get(candidate)
     return None
 
 
-def _required_key_for_field(key: str, aliases: tuple[str, ...], mandatory_keys: set[str]) -> str | None:
+def _required_key_for_field(
+    key: str, aliases: tuple[str, ...], mandatory_keys: set[str]
+) -> str | None:
     for candidate in (key, *aliases):
         if candidate in mandatory_keys:
             return candidate
     return None
 
 
-def _cockpit_field_value(profile: Dict[str, Any], key: str, aliases: tuple[str, ...] = ()) -> Any:
+def _cockpit_field_value(
+    profile: Dict[str, Any], key: str, aliases: tuple[str, ...] = ()
+) -> Any:
     for candidate in (key, *aliases):
         if candidate in profile and profile.get(candidate) not in (None, "", []):
             return profile.get(candidate)
     if key == "readiness_level":
         return profile.get("readiness_level") or profile.get("readiness")
     if key == "blocking_unknowns":
-        return profile.get("blocking_unknowns") or profile.get("missing_required_fields")
+        return profile.get("blocking_unknowns") or profile.get(
+            "missing_required_fields"
+        )
     if key == "recommended_next_question":
-        return profile.get("recommended_next_question") or profile.get("pending_best_next_question")
+        return profile.get("recommended_next_question") or profile.get(
+            "pending_best_next_question"
+        )
     if key == "rfq_possible":
         return profile.get("rfq_possible")
     return None
@@ -423,9 +566,7 @@ def _build_cockpit_view(
     cockpit_profile = dict(profile)
     cockpit_profile.update(readiness_eval.to_profile_patch())
     top_risks = [
-        item.risk_name
-        for item in risk_evaluations_raw
-        if item.score in {2, 3, 4, 9}
+        item.risk_name for item in risk_evaluations_raw if item.score in {2, 3, 4, 9}
     ][:3]
     if top_risks:
         cockpit_profile["top_risks"] = top_risks
@@ -539,25 +680,46 @@ def _build_deep_dive_tabs(
         or "Medium noch offen"
     )
     seal_type = _deep_value(profile, "sealing_type", "seal_type") or (
-        "PTFE-RWDR" if str(cockpit_view.engineering_path or "") == "rwdr" else "Dichtungstyp noch offen"
+        "PTFE-RWDR"
+        if str(cockpit_view.engineering_path or "") == "rwdr"
+        else "Dichtungstyp noch offen"
     )
-    application = _deep_value(profile, "asset_type", "installation", "application_context") or "Anlage noch offen"
-    motion = _deep_value(profile, "motion_type", "movement_type") or "Bewegung noch offen"
-    geometry = _deep_value(profile, "geometry", "geometry_context", "shaft_diameter", "shaft_diameter_mm") or "Geometrie noch offen"
-    material_items = _compact_items([
-        item.material for item in partner_matching.material_fit_items if item.material
-    ])
+    application = (
+        _deep_value(profile, "asset_type", "installation", "application_context")
+        or "Anlage noch offen"
+    )
+    motion = (
+        _deep_value(profile, "motion_type", "movement_type") or "Bewegung noch offen"
+    )
+    geometry = (
+        _deep_value(
+            profile,
+            "geometry",
+            "geometry_context",
+            "shaft_diameter",
+            "shaft_diameter_mm",
+        )
+        or "Geometrie noch offen"
+    )
+    material_items = _compact_items(
+        [item.material for item in partner_matching.material_fit_items if item.material]
+    )
     if not material_items:
-        material_items = _compact_items([
-            _deep_value(profile, "material"),
-            _deep_value(profile, "shaft_material"),
-            "Werkstoffrichtung noch nicht belastbar eingegrenzt",
-        ])
-    risk_items = _compact_items([
-        risk.explanation_short or risk.risk_name
-        for risk in cockpit_view.risk_evaluations
-        if risk.score in {2, 3, 4, 9}
-    ], limit=4)
+        material_items = _compact_items(
+            [
+                _deep_value(profile, "material"),
+                _deep_value(profile, "shaft_material"),
+                "Werkstoffrichtung noch nicht belastbar eingegrenzt",
+            ]
+        )
+    risk_items = _compact_items(
+        [
+            risk.explanation_short or risk.risk_name
+            for risk in cockpit_view.risk_evaluations
+            if risk.score in {2, 3, 4, 9}
+        ],
+        limit=4,
+    )
     missing = _compact_items(
         list(cockpit_view.readiness.missing_required_fields)
         + list(cockpit_view.readiness.blocking_unknowns)
@@ -583,14 +745,28 @@ def _build_deep_dive_tabs(
             label="Analyse",
             detected=_compact_items([application, motion, medium_label, seal_type]),
             relevance="Fuehrt die fallbezogene technische Einordnung zusammen und zeigt, ob daraus bereits eine Herstelleranfrage vorbereitet werden kann.",
-            opportunities=_compact_items(["Strukturierte Anfragebasis", "sichtbare offene Punkte", "governed Projection statt Chat-Schaetzung"]),
+            opportunities=_compact_items(
+                [
+                    "Strukturierte Anfragebasis",
+                    "sichtbare offene Punkte",
+                    "governed Projection statt Chat-Schaetzung",
+                ]
+            ),
             risks=risk_items,
             derived_direction=f"Aktueller Pfad: {_stringify_value(cockpit_view.engineering_path) or 'noch offen'}; Readiness Level {cockpit_view.readiness.readiness_level}.",
             missing=missing,
             next_action=next_action,
             cards=[
-                DeepDiveCard(title="Was wurde erkannt?", body=" | ".join(_section_values(cockpit_view, "application_function")[:4]) or "Noch keine belastbare Anlagenprojektion."),
-                DeepDiveCard(title="Rueckfuehrung", body=next_action or "Zurueck zur Analyse."),
+                DeepDiveCard(
+                    title="Was wurde erkannt?",
+                    body=" | ".join(
+                        _section_values(cockpit_view, "application_function")[:4]
+                    )
+                    or "Noch keine belastbare Anlagenprojektion.",
+                ),
+                DeepDiveCard(
+                    title="Rueckfuehrung", body=next_action or "Zurueck zur Analyse."
+                ),
             ],
         ),
         DeepDiveTabProjection(
@@ -599,14 +775,33 @@ def _build_deep_dive_tabs(
             status=medium_context.status,
             detected=_compact_items([medium_label, medium_context.summary]),
             relevance="Das Medium bestimmt Werkstofffenster, Schmierung, Korrosions-/Quellrisiken und offene Herstellerpruefpunkte.",
-            opportunities=_compact_items(list(medium_context.properties) + ["fruehe Werkstoff-Eingrenzung"]),
+            opportunities=_compact_items(
+                list(medium_context.properties) + ["fruehe Werkstoff-Eingrenzung"]
+            ),
             risks=_compact_items(list(medium_context.challenges) + risk_items, limit=5),
-            derived_direction=medium_context.summary or f"{medium_label} ist als Medium im Fallkontext erfasst, aber noch nicht final validiert.",
-            missing=_compact_items(list(medium_context.followup_points) + missing, limit=6),
-            next_action=medium_context.followup_points[0] if medium_context.followup_points else next_action,
+            derived_direction=medium_context.summary
+            or f"{medium_label} ist als Medium im Fallkontext erfasst, aber noch nicht final validiert.",
+            missing=_compact_items(
+                list(medium_context.followup_points) + missing, limit=6
+            ),
+            next_action=(
+                medium_context.followup_points[0]
+                if medium_context.followup_points
+                else next_action
+            ),
             cards=[
-                DeepDiveCard(title="Medium-Kontext", body=medium_context.summary or "Noch keine vertiefte Medium-Projektion verfuegbar.", items=list(medium_context.properties)),
-                DeepDiveCard(title="Grenzen", body=medium_context.disclaimer or "Medium-Hinweise bleiben orientierend bis zur Hersteller-/Datenpruefung.", items=list(medium_context.challenges)),
+                DeepDiveCard(
+                    title="Medium-Kontext",
+                    body=medium_context.summary
+                    or "Noch keine vertiefte Medium-Projektion verfuegbar.",
+                    items=list(medium_context.properties),
+                ),
+                DeepDiveCard(
+                    title="Grenzen",
+                    body=medium_context.disclaimer
+                    or "Medium-Hinweise bleiben orientierend bis zur Hersteller-/Datenpruefung.",
+                    items=list(medium_context.challenges),
+                ),
             ],
         ),
         DeepDiveTabProjection(
@@ -614,14 +809,57 @@ def _build_deep_dive_tabs(
             label="Werkstoff",
             detected=material_items,
             relevance="Werkstofffragen muessen gegen Medium, Temperatur, Dynamik, Gegenlaufflaeche und Validierungsbedarf gespiegelt werden.",
-            opportunities=_compact_items(["Kandidaten koennen transparent vorqualifiziert werden", "Herstellerfreigabe bleibt finale Instanz"] + material_items[:2]),
-            risks=_compact_items(risk_items + list(partner_matching.not_ready_reasons), limit=5),
-            derived_direction=("; ".join(material_items[:3]) if material_items else "Noch keine belastbare Werkstoffrichtung."),
-            missing=_compact_items([_deep_value(profile, "shaft_material"), _deep_value(profile, "surface_finish")], limit=2) if False else _compact_items([m for m in missing if m in {"surface_finish", "shaft_material", "medium_name", "temperature_max"}] or missing[:3]),
+            opportunities=_compact_items(
+                [
+                    "Kandidaten koennen transparent vorqualifiziert werden",
+                    "Herstellerfreigabe bleibt finale Instanz",
+                ]
+                + material_items[:2]
+            ),
+            risks=_compact_items(
+                risk_items + list(partner_matching.not_ready_reasons), limit=5
+            ),
+            derived_direction=(
+                "; ".join(material_items[:3])
+                if material_items
+                else "Noch keine belastbare Werkstoffrichtung."
+            ),
+            missing=(
+                _compact_items(
+                    [
+                        _deep_value(profile, "shaft_material"),
+                        _deep_value(profile, "surface_finish"),
+                    ],
+                    limit=2,
+                )
+                if False
+                else _compact_items(
+                    [
+                        m
+                        for m in missing
+                        if m
+                        in {
+                            "surface_finish",
+                            "shaft_material",
+                            "medium_name",
+                            "temperature_max",
+                        }
+                    ]
+                    or missing[:3]
+                )
+            ),
             next_action=next_action,
             cards=[
-                DeepDiveCard(title="Werkstoffbasis", body="Fallbezogene Werkstoffrichtung aus Matching-/Risikoprojektion.", items=material_items),
-                DeepDiveCard(title="Validierung", body="Keine finale Werkstofffreigabe ohne Herstellerpruefung und vollstaendige Betriebsdaten.", items=list(partner_matching.open_manufacturer_questions[:4])),
+                DeepDiveCard(
+                    title="Werkstoffbasis",
+                    body="Fallbezogene Werkstoffrichtung aus Matching-/Risikoprojektion.",
+                    items=material_items,
+                ),
+                DeepDiveCard(
+                    title="Validierung",
+                    body="Keine finale Werkstofffreigabe ohne Herstellerpruefung und vollstaendige Betriebsdaten.",
+                    items=list(partner_matching.open_manufacturer_questions[:4]),
+                ),
             ],
         ),
         DeepDiveTabProjection(
@@ -629,14 +867,45 @@ def _build_deep_dive_tabs(
             label="Dichtungstyp",
             detected=_compact_items([seal_type, geometry, motion]),
             relevance="Der Dichtungstyp grenzt Loesungsraum, Geometrie, Berechnungen und Hersteller-Capabilities ein.",
-            opportunities=_compact_items(["Pfadlogik kann gezielt Pflichtfelder priorisieren", "Shallow Paths bleiben bewusst vorlaeufig"]),
-            risks=_compact_items([item for item in risk_items if item] + ["Dichtungstyp darf ohne Geometrie und Betriebsdaten nicht final behauptet werden"], limit=5),
+            opportunities=_compact_items(
+                [
+                    "Pfadlogik kann gezielt Pflichtfelder priorisieren",
+                    "Shallow Paths bleiben bewusst vorlaeufig",
+                ]
+            ),
+            risks=_compact_items(
+                [item for item in risk_items if item]
+                + [
+                    "Dichtungstyp darf ohne Geometrie und Betriebsdaten nicht final behauptet werden"
+                ],
+                limit=5,
+            ),
             derived_direction=f"Aktuelle Dichtungstyp-Richtung: {seal_type}.",
-            missing=_compact_items([m for m in missing if m in {"seal_location", "geometry", "shaft_diameter", "speed_rpm", "pressure_nominal"}] or missing[:3]),
+            missing=_compact_items(
+                [
+                    m
+                    for m in missing
+                    if m
+                    in {
+                        "seal_location",
+                        "geometry",
+                        "shaft_diameter",
+                        "speed_rpm",
+                        "pressure_nominal",
+                    }
+                ]
+                or missing[:3]
+            ),
             next_action=next_action,
             cards=[
-                DeepDiveCard(title="Typ-Richtung", body=f"{seal_type} im Kontext {motion}, {geometry}.", items=calc_items[:4]),
-                DeepDiveCard(title="Rueckfuehrung", body=next_action or "Zurueck zur Analyse."),
+                DeepDiveCard(
+                    title="Typ-Richtung",
+                    body=f"{seal_type} im Kontext {motion}, {geometry}.",
+                    items=calc_items[:4],
+                ),
+                DeepDiveCard(
+                    title="Rueckfuehrung", body=next_action or "Zurueck zur Analyse."
+                ),
             ],
         ),
     ]
@@ -933,9 +1202,9 @@ def _build_communication_context(
     ):
         focus_priority = select_next_focus_from_known_context(
             known_fields=known_fields,
-            medium_status="recognized"
-            if profile.get("medium") not in (None, "")
-            else "unknown",
+            medium_status=(
+                "recognized" if profile.get("medium") not in (None, "") else "unknown"
+            ),
             current_text=" ".join(str(item) for item in confirmed_facts_summary),
             application_anchor_present=bool(
                 profile.get("application_context")
@@ -1094,14 +1363,18 @@ def synthesize_workspace_state_from_governed(
     working_profile = _governed_working_profile(state)
     technical_derivations: list[dict[str, Any]] = []
     for derived_item in derived_values_for_projection(state.derived):
-        value_id = str(derived_item.get("id") or derived_item.get("calculation_id") or "unknown")
+        value_id = str(
+            derived_item.get("id") or derived_item.get("calculation_id") or "unknown"
+        )
         item: dict[str, Any] = {
             "calc_type": value_id,
             "status": str(derived_item.get("status") or "unknown"),
             "value": derived_item.get("value"),
             "derived_value_id": value_id,
             "derived_from_fields": list(derived_item.get("derived_from_fields") or []),
-            "derived_from_revision": int(derived_item.get("derived_from_revision") or 0),
+            "derived_from_revision": int(
+                derived_item.get("derived_from_revision") or 0
+            ),
             "calculation_id": str(derived_item.get("calculation_id") or value_id),
             "ruleset_version": derived_item.get("ruleset_version"),
             "stale_reason": derived_item.get("stale_reason"),
@@ -1162,9 +1435,11 @@ def synthesize_workspace_state_from_governed(
                     else None
                 ),
                 "fit_reasons": list(capability.capability_hints),
-                "viability_status": "viable"
-                if capability.qualified_for_rfq
-                else "manufacturer_validation_required",
+                "viability_status": (
+                    "viable"
+                    if capability.qualified_for_rfq
+                    else "manufacturer_validation_required"
+                ),
             }
             for capability in state.matching.manufacturer_capabilities
         ],
@@ -1201,11 +1476,15 @@ def synthesize_workspace_state_from_governed(
     phase = (
         "rfq_handover"
         if state.rfq.rfq_ready
-        else "matching"
-        if state.matching.status == "matched_primary_candidate"
-        else "recommendation"
-        if state.governance.gov_class in {"A", "B"}
-        else "clarification"
+        else (
+            "matching"
+            if state.matching.status == "matched_primary_candidate"
+            else (
+                "recommendation"
+                if state.governance.gov_class in {"A", "B"}
+                else "clarification"
+            )
+        )
     )
     missing_critical = list(
         dict.fromkeys(
@@ -1239,9 +1518,9 @@ def synthesize_workspace_state_from_governed(
     completeness = {
         "coverage_score": coverage_score,
         "coverage_gaps": missing_critical,
-        "completeness_depth": "governed"
-        if state.governance.gov_class in {"A", "B"}
-        else "precheck",
+        "completeness_depth": (
+            "governed" if state.governance.gov_class in {"A", "B"} else "precheck"
+        ),
         "missing_critical_parameters": missing_critical,
         "analysis_complete": analysis_complete,
         "recommendation_ready": analysis_complete,
@@ -1718,9 +1997,11 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
                     or ""
                 ),
                 "cluster": str(candidate.get("viability_status") or "viable"),
-                "specificity": "compound_specific"
-                if candidate.get("grade_name")
-                else "family_only",
+                "specificity": (
+                    "compound_specific"
+                    if candidate.get("grade_name")
+                    else "family_only"
+                ),
                 "requires_validation": bool(
                     str(candidate.get("viability_status") or "viable") != "viable"
                     or release_status == "manufacturer_validation_required"
@@ -1866,12 +2147,28 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         communication_context=communication_context,
         technical_derivations=technical_derivations,
     )
+    decision_understanding_state = {
+        "profile": routing_profile,
+        "parameters": parameters,
+        "readiness": cockpit_view.readiness.model_dump(),
+        "risks": [item.model_dump() for item in cockpit_view.risk_evaluations],
+        "communication_context": communication_context.model_dump(),
+        "medium_context": medium_context_summary.model_dump(),
+        "partner_matching": partner_matching.model_dump(),
+        "governance_status": governance_status.model_dump(),
+        "rfq_status": rfq_status.model_dump(),
+        "evidence_summary": evidence_summary.model_dump(),
+    }
+    decision_understanding = build_decision_understanding_projection(
+        decision_understanding_state
+    )
 
     return CaseWorkspaceProjection(
         request_type=request_type,
         engineering_path=engineering_path,
         cockpit_view=cockpit_view,
         deep_dive_tabs=deep_dive_tabs,
+        decision_understanding=decision_understanding,
         case_summary=case_summary,
         governance_status=governance_status,
         claims_summary=claims_summary,

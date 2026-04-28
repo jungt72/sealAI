@@ -52,14 +52,58 @@ def test_workspace_projection_includes_clarification_communication_context() -> 
 
     assert projection.communication_context.conversation_phase == "clarification"
     assert projection.communication_context.turn_goal == "clarify_primary_open_point"
-    assert projection.communication_context.primary_question == "Koennen Sie Betriebsdruck noch einordnen?"
+    assert (
+        projection.communication_context.primary_question
+        == "Koennen Sie Betriebsdruck noch einordnen?"
+    )
     assert projection.communication_context.supporting_reason is not None
     assert "Medium: Dampf" in projection.communication_context.confirmed_facts_summary
     assert "Betriebsdruck" in projection.communication_context.open_points_summary
     assert "Medium" not in projection.communication_context.open_points_summary
 
 
-def test_workspace_projection_exposes_medium_context_as_separate_orienting_slice() -> None:
+def test_workspace_projection_exposes_decision_understanding_projection() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-dul"},
+            "working_profile": {
+                "engineering_profile": {
+                    "asset_type": "Pumpe",
+                    "medium": "Ethanol",
+                    "temperature_c": 150,
+                    "pressure_bar": 10,
+                },
+                "completeness": {
+                    "missing_critical_parameters": ["seal_location", "speed_rpm"]
+                },
+            },
+            "reasoning": {"phase": "clarification", "state_revision": 7},
+            "system": {
+                "governance_metadata": {"release_status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    assert projection.decision_understanding.case_summary
+    assert "Medium: Ethanol" in projection.decision_understanding.understood_now
+    assert any(
+        "Gleitringdichtung" in item
+        for item in projection.decision_understanding.plausible_directions
+    )
+    assert "seal_location" in projection.decision_understanding.not_yet_decidable
+    assert projection.decision_understanding.next_best_question is not None
+
+
+def test_workspace_projection_exposes_medium_context_as_separate_orienting_slice() -> (
+    None
+):
     projection = project_case_workspace(
         {
             "conversation": {"thread_id": "case-456"},
@@ -70,7 +114,10 @@ def test_workspace_projection_exposes_medium_context_as_separate_orienting_slice
             "reasoning": {"phase": "recommendation", "state_revision": 4},
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
-                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
                 "medium_context": {
                     "medium_label": "Salzwasser",
                     "status": "available",
@@ -115,7 +162,10 @@ def test_workspace_projection_exposes_live_calc_as_technical_derivation() -> Non
             "reasoning": {"phase": "recommendation", "state_revision": 4},
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
-                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
                 "matching_state": {},
                 "rfq_state": {},
                 "manufacturer_state": {},
@@ -154,7 +204,10 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
             "reasoning": {"phase": "recommendation", "state_revision": 4},
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
-                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
                 "matching_state": {},
                 "rfq_state": {},
                 "manufacturer_state": {},
@@ -177,10 +230,15 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
         "speed_rpm",
     ]
     assert checks_by_id["rwdr_pv_precheck"].value == 0.39
-    assert "not a final effective contact-pressure PV model" in checks_by_id["rwdr_pv_precheck"].guardrails
+    assert (
+        "not a final effective contact-pressure PV model"
+        in checks_by_id["rwdr_pv_precheck"].guardrails
+    )
 
 
-def test_workspace_projection_exposes_missing_input_fallback_for_registered_checks() -> None:
+def test_workspace_projection_exposes_missing_input_fallback_for_registered_checks() -> (
+    None
+):
     projection = project_case_workspace(
         {
             "conversation": {"thread_id": "case-missing-check-inputs"},
@@ -196,7 +254,10 @@ def test_workspace_projection_exposes_missing_input_fallback_for_registered_chec
             "reasoning": {"phase": "clarification", "state_revision": 4},
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
-                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
                 "matching_state": {},
                 "rfq_state": {},
                 "manufacturer_state": {},
@@ -209,7 +270,10 @@ def test_workspace_projection_exposes_missing_input_fallback_for_registered_chec
     assert checks_by_id["rwdr_circumferential_speed"].status == "insufficient_data"
     assert checks_by_id["rwdr_circumferential_speed"].missing_inputs == ["speed_rpm"]
     assert checks_by_id["rwdr_circumferential_speed"].value is None
-    assert checks_by_id["rwdr_pv_precheck"].missing_inputs == ["speed_rpm", "pressure_bar"]
+    assert checks_by_id["rwdr_pv_precheck"].missing_inputs == [
+        "speed_rpm",
+        "pressure_bar",
+    ]
     assert checks_by_id["rwdr_pv_precheck"].fallback_behavior == (
         "insufficient_data_when_required_inputs_missing"
     )
@@ -239,7 +303,10 @@ def test_workspace_projection_exposes_structured_canonical_parameters() -> None:
             "reasoning": {"phase": "recommendation", "state_revision": 4},
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
-                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
                 "matching_state": {},
                 "rfq_state": {},
                 "manufacturer_state": {},
@@ -275,12 +342,18 @@ def test_workspace_projection_derives_ssot_routing_fields() -> None:
                     "geometry_locked": True,
                     "old_part_known": True,
                 },
-                "completeness": {"coverage_score": 0.7, "missing_critical_parameters": []},
+                "completeness": {
+                    "coverage_score": 0.7,
+                    "missing_critical_parameters": [],
+                },
             },
             "reasoning": {"phase": "clarification", "state_revision": 1},
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
-                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
                 "matching_state": {},
                 "rfq_state": {},
                 "manufacturer_state": {},
@@ -314,7 +387,9 @@ def test_workspace_projection_derives_ssot_routing_fields() -> None:
     assert projection.cockpit_view.readiness.status == "preliminary"
 
 
-def test_workspace_projection_exposes_cockpit_property_provenance_when_available() -> None:
+def test_workspace_projection_exposes_cockpit_property_provenance_when_available() -> (
+    None
+):
     projection = project_case_workspace(
         {
             "conversation": {"thread_id": "case-provenance"},
@@ -324,7 +399,10 @@ def test_workspace_projection_exposes_cockpit_property_provenance_when_available
                     "temperature_c": 40.0,
                     "pressure_bar": 5.0,
                 },
-                "completeness": {"coverage_score": 0.5, "missing_critical_parameters": []},
+                "completeness": {
+                    "coverage_score": 0.5,
+                    "missing_critical_parameters": [],
+                },
             },
             "reasoning": {
                 "phase": "clarification",
@@ -333,7 +411,10 @@ def test_workspace_projection_exposes_cockpit_property_provenance_when_available
             },
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
-                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
                 "matching_state": {},
                 "rfq_state": {},
                 "manufacturer_state": {},
@@ -341,15 +422,23 @@ def test_workspace_projection_exposes_cockpit_property_provenance_when_available
         }
     )
 
-    operating_geometry = next(section for section in projection.cockpit_view.sections if section.section_id == "operating_geometry")
-    pressure_property = next(prop for prop in operating_geometry.properties if prop.key == "pressure_nominal")
+    operating_geometry = next(
+        section
+        for section in projection.cockpit_view.sections
+        if section.section_id == "operating_geometry"
+    )
+    pressure_property = next(
+        prop for prop in operating_geometry.properties if prop.key == "pressure_nominal"
+    )
 
     assert pressure_property.origin == "user_override"
     assert pressure_property.confidence == "confirmed"
     assert pressure_property.is_confirmed is True
 
 
-def test_governed_workspace_projection_reframes_after_linear_and_medium_correction() -> None:
+def test_governed_workspace_projection_reframes_after_linear_and_medium_correction() -> (
+    None
+):
     projection = project_case_workspace_from_governed_state(
         GovernedSessionState(
             analysis_cycle=3,
@@ -385,13 +474,19 @@ def test_governed_workspace_projection_reframes_after_linear_and_medium_correcti
         chat_id="case-789",
     )
 
-    assert projection.communication_context.primary_question == "Welche Geometrie oder vorhandene Bauform liegt an der Dichtstelle vor?"
+    assert (
+        projection.communication_context.primary_question
+        == "Welche Geometrie oder vorhandene Bauform liegt an der Dichtstelle vor?"
+    )
     assert projection.communication_context.confirmed_facts_summary[:3] == [
         "Bewegungsart: linear",
         "Anwendung: lineare Abdichtung",
         "Medium: Wasser mit Reinigeranteil",
     ]
-    assert all("Welle" not in item and "RWDR" not in item for item in projection.communication_context.open_points_summary)
+    assert all(
+        "Welle" not in item and "RWDR" not in item
+        for item in projection.communication_context.open_points_summary
+    )
     assert projection.rfq_status.rfq_ready is False
     assert projection.partner_matching.matching_ready is False
 
@@ -401,8 +496,12 @@ def test_governed_workspace_projection_exposes_evidence_basis_classes() -> None:
         GovernedSessionState(
             asserted=AssertedState(
                 assertions={
-                    "medium": AssertedClaim(field_name="medium", asserted_value="Salzwasser"),
-                    "pressure_bar": AssertedClaim(field_name="pressure_bar", asserted_value=10.0),
+                    "medium": AssertedClaim(
+                        field_name="medium", asserted_value="Salzwasser"
+                    ),
+                    "pressure_bar": AssertedClaim(
+                        field_name="pressure_bar", asserted_value=10.0
+                    ),
                 }
             ),
             governance=GovernanceState(
@@ -429,7 +528,10 @@ def test_governed_workspace_projection_exposes_evidence_basis_classes() -> None:
     assert projection.claims_summary.by_origin["evidence"] == 1
     assert projection.claims_summary.by_origin["deterministic"] == 1
     assert projection.governance_status.assumptions_active == ["installation"]
-    assert "missing_source_for_compliance" in projection.governance_status.unknowns_manufacturer_validation
+    assert (
+        "missing_source_for_compliance"
+        in projection.governance_status.unknowns_manufacturer_validation
+    )
 
 
 def test_governed_workspace_projection_keeps_unreleased_matching_blocked() -> None:
@@ -480,7 +582,10 @@ def test_workspace_projection_adds_v04_deterministic_readiness_and_risks() -> No
             "reasoning": {"phase": "clarification", "state_revision": 4},
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
-                "rfq_admissibility": {"release_status": "precheck_only", "status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
                 "matching_state": {},
                 "rfq_state": {},
                 "manufacturer_state": {},
@@ -501,14 +606,20 @@ def test_workspace_projection_adds_v04_deterministic_readiness_and_risks() -> No
     assert risk_by_name["unknowns_risk"].score == 9
     assert "food_contact" in risk_by_name["unknowns_risk"].missing_inputs
 
-    risk_section = next(section for section in cockpit.sections if section.section_id == "risk_readiness")
+    risk_section = next(
+        section
+        for section in cockpit.sections
+        if section.section_id == "risk_readiness"
+    )
     values = {prop.key: prop.value for prop in risk_section.properties}
     assert values["readiness_level"] == 4
     assert values["rfq_possible"] is False
     assert values["recommended_next_question"] == "Wo genau sitzt die Dichtstelle?"
 
 
-def test_workspace_projection_marks_level_five_when_critical_inputs_and_risks_are_clear() -> None:
+def test_workspace_projection_marks_level_five_when_critical_inputs_and_risks_are_clear() -> (
+    None
+):
     projection = project_case_workspace(
         {
             "conversation": {"thread_id": "case-v04-ready"},
@@ -533,8 +644,13 @@ def test_workspace_projection_marks_level_five_when_critical_inputs_and_risks_ar
             },
             "reasoning": {"phase": "recommendation", "state_revision": 5},
             "system": {
-                "governance_metadata": {"release_status": "manufacturer_validation_required"},
-                "rfq_admissibility": {"release_status": "manufacturer_validation_required", "status": "manufacturer_validation_required"},
+                "governance_metadata": {
+                    "release_status": "manufacturer_validation_required"
+                },
+                "rfq_admissibility": {
+                    "release_status": "manufacturer_validation_required",
+                    "status": "manufacturer_validation_required",
+                },
                 "matching_state": {},
                 "rfq_state": {},
                 "manufacturer_state": {},
@@ -543,7 +659,10 @@ def test_workspace_projection_marks_level_five_when_critical_inputs_and_risks_ar
     )
 
     assert projection.cockpit_view.readiness.readiness_level == 5
-    assert projection.cockpit_view.readiness.readiness_label == "manufacturer_ready_inquiry"
+    assert (
+        projection.cockpit_view.readiness.readiness_label
+        == "manufacturer_ready_inquiry"
+    )
     assert projection.cockpit_view.readiness.is_rfq_ready is True
     assert projection.cockpit_view.readiness.missing_required_fields == []
     assert projection.cockpit_view.blockers == []
@@ -553,10 +672,14 @@ def test_workspace_projection_marks_level_five_when_critical_inputs_and_risks_ar
         "material",
         "seal_type",
     ]
-    material_tab = next(tab for tab in projection.deep_dive_tabs if tab.tab_id == "material")
+    material_tab = next(
+        tab for tab in projection.deep_dive_tabs if tab.tab_id == "material"
+    )
     assert material_tab.return_to_analysis == "Zurueck zur Analyse"
     assert material_tab.next_action
-    seal_type_tab = next(tab for tab in projection.deep_dive_tabs if tab.tab_id == "seal_type")
+    seal_type_tab = next(
+        tab for tab in projection.deep_dive_tabs if tab.tab_id == "seal_type"
+    )
     assert "rwdr" in seal_type_tab.derived_direction.casefold()
 
 
@@ -569,7 +692,11 @@ def test_governed_workspace_projection_exposes_stale_derived_values() -> None:
                 "rwdr_pv_precheck": DerivedValue(
                     value=0.42,
                     status="stale",
-                    derived_from_fields=["pressure_bar", "shaft_diameter_mm", "speed_rpm"],
+                    derived_from_fields=[
+                        "pressure_bar",
+                        "shaft_diameter_mm",
+                        "speed_rpm",
+                    ],
                     derived_from_revision=3,
                     calculation_id="rwdr_pv_precheck",
                     stale_reason="accepted_case_delta_changed_inputs",
@@ -579,10 +706,15 @@ def test_governed_workspace_projection_exposes_stale_derived_values() -> None:
         )
     )
 
-    projection = project_case_workspace_from_governed_state(state, chat_id="case-derived")
+    projection = project_case_workspace_from_governed_state(
+        state, chat_id="case-derived"
+    )
 
     assert projection.cycle_info.derived_artifacts_stale is True
     assert projection.cycle_info.stale_reason == "rwdr_pv_precheck"
     assert projection.technical_derivations[0].derived_value_id == "rwdr_pv_precheck"
     assert projection.technical_derivations[0].status == "stale"
-    assert projection.technical_derivations[0].stale_reason == "accepted_case_delta_changed_inputs"
+    assert (
+        projection.technical_derivations[0].stale_reason
+        == "accepted_case_delta_changed_inputs"
+    )

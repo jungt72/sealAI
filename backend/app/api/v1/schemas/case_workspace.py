@@ -83,6 +83,7 @@ class GovernanceStatus(BaseModel):
 
 class ElevationHint(BaseModel):
     """Patch C4: Structured hint for specificity elevation."""
+
     label: str
     field_key: Optional[str] = None
     reason: str = ""
@@ -195,6 +196,7 @@ class RFQPackageSummary(BaseModel):
     Surfaces the redacted operating context, mandatory questions, and
     buyer assumptions from the internal RFQDraft artifact.  Read-only.
     """
+
     has_draft: bool = False
     rfq_id: Optional[str] = None
     rfq_basis_status: str = "inadmissible"
@@ -208,6 +210,7 @@ class RFQPackageSummary(BaseModel):
 
 class FactVariant(BaseModel):
     """Patch C2: A variant value for a grounded fact from a different source."""
+
     value: str
     source: str
     source_rank: float = 0.0
@@ -217,13 +220,14 @@ class FactVariant(BaseModel):
 
 class GroundedFact(BaseModel):
     """Patch C1a: Typed grounding for technical material facts."""
+
     name: str
     value: str
     unit: Optional[str] = None
     source: str
     source_rank: float = 0.0
     grounding_basis: str = "metadata"
-    
+
     # Patch C2: Divergence detection
     is_divergent: bool = False
     variants: List[FactVariant] = Field(default_factory=list)
@@ -233,6 +237,7 @@ class GroundedFact(BaseModel):
 
 class MaterialFitItem(BaseModel):
     """A single candidate material's manufacturer fit assessment."""
+
     material: str = ""
     cluster: str = "viable"
     specificity: str = "family_only"
@@ -250,6 +255,7 @@ class PartnerMatchingSummary(BaseModel):
     data_source indicates the actual basis — 'candidate_derived' when no
     real partner database is connected, 'partner_db' when a live catalog exists.
     """
+
     matching_ready: bool = False
     shortlist_ready: bool = False
     inquiry_ready: bool = False
@@ -378,7 +384,9 @@ class CockpitSectionCompletion(BaseModel):
 class CockpitSection(BaseModel):
     section_id: CockpitSectionId
     title: str
-    completion: CockpitSectionCompletion = Field(default_factory=CockpitSectionCompletion)
+    completion: CockpitSectionCompletion = Field(
+        default_factory=CockpitSectionCompletion
+    )
     properties: List[CockpitProperty] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -445,7 +453,9 @@ class EngineeringCheckResult(BaseModel):
 class EngineeringCockpitView(BaseModel):
     request_type: Optional[RequestType] = None
     engineering_path: Optional[EngineeringPath] = None
-    routing_metadata: CockpitRoutingMetadata = Field(default_factory=CockpitRoutingMetadata)
+    routing_metadata: CockpitRoutingMetadata = Field(
+        default_factory=CockpitRoutingMetadata
+    )
     sections: List[CockpitSection] = Field(default_factory=list)
     checks: List[EngineeringCheckResult] = Field(default_factory=list)
     risk_evaluations: List[RiskEvaluationResult] = Field(default_factory=list)
@@ -481,29 +491,57 @@ class DeepDiveTabProjection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class DecisionUnderstandingProjection(BaseModel):
+    case_summary: str = ""
+    understood_now: List[str] = Field(default_factory=list)
+    technical_meaning: List[str] = Field(default_factory=list)
+    plausible_directions: List[str] = Field(default_factory=list)
+    not_yet_decidable: List[str] = Field(default_factory=list)
+    key_risks: List[str] = Field(default_factory=list)
+    confidence_notes: List[str] = Field(default_factory=list)
+    next_best_question: Optional[str] = None
+    manufacturer_review_needs: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CaseWorkspaceProjection(BaseModel):
     """Top-level UI-facing read model for a single engineering case."""
+
     request_type: Optional[RequestType] = None
     engineering_path: Optional[EngineeringPath] = None
     cockpit_view: EngineeringCockpitView = Field(default_factory=EngineeringCockpitView)
     deep_dive_tabs: List[DeepDiveTabProjection] = Field(default_factory=list)
+    decision_understanding: DecisionUnderstandingProjection = Field(
+        default_factory=DecisionUnderstandingProjection
+    )
     case_summary: CaseSummary = Field(default_factory=CaseSummary)
     completeness: CompletenessStatus = Field(default_factory=CompletenessStatus)
     governance_status: GovernanceStatus = Field(default_factory=GovernanceStatus)
     specificity: SpecificityInfo = Field(default_factory=SpecificityInfo)
-    candidate_clusters: CandidateClusterSummary = Field(default_factory=CandidateClusterSummary)
+    candidate_clusters: CandidateClusterSummary = Field(
+        default_factory=CandidateClusterSummary
+    )
     conflicts: ConflictSummary = Field(default_factory=ConflictSummary)
     claims_summary: ClaimsSummary = Field(default_factory=ClaimsSummary)
     evidence_summary: EvidenceSummary = Field(default_factory=EvidenceSummary)
-    manufacturer_questions: ManufacturerQuestions = Field(default_factory=ManufacturerQuestions)
+    manufacturer_questions: ManufacturerQuestions = Field(
+        default_factory=ManufacturerQuestions
+    )
     rfq_status: RFQStatus = Field(default_factory=RFQStatus)
     artifact_status: ArtifactStatus = Field(default_factory=ArtifactStatus)
     rfq_package: RFQPackageSummary = Field(default_factory=RFQPackageSummary)
-    partner_matching: PartnerMatchingSummary = Field(default_factory=PartnerMatchingSummary)
-    communication_context: CommunicationContext = Field(default_factory=CommunicationContext)
+    partner_matching: PartnerMatchingSummary = Field(
+        default_factory=PartnerMatchingSummary
+    )
+    communication_context: CommunicationContext = Field(
+        default_factory=CommunicationContext
+    )
     parameters: Dict[str, Any] = Field(default_factory=dict)
     medium_capture: MediumCaptureSummary = Field(default_factory=MediumCaptureSummary)
-    medium_classification: MediumClassificationSummary = Field(default_factory=MediumClassificationSummary)
+    medium_classification: MediumClassificationSummary = Field(
+        default_factory=MediumClassificationSummary
+    )
     medium_context: MediumContextSummary = Field(default_factory=MediumContextSummary)
     technical_derivations: List[TechnicalDerivationItem] = Field(default_factory=list)
     cycle_info: CycleInfo = Field(default_factory=CycleInfo)

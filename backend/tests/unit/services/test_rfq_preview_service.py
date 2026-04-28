@@ -67,11 +67,28 @@ def test_rfq_preview_payload_is_frozen_and_has_all_v07_sections() -> None:
     assert payload["meta"]["case_revision"] == 4
     assert payload["meta"]["source_snapshot_revision"] == 4
     assert payload["meta"]["rfq_freeze"] is True
-    assert payload["consent_boundary"]["requires_explicit_user_consent_before_sharing"] is True
+    assert (
+        payload["consent_boundary"]["requires_explicit_user_consent_before_sharing"]
+        is True
+    )
     assert payload["consent_boundary"]["automatic_dispatch_allowed"] is False
-    assert [section["title"] for section in payload["rfq_preview"]["sections"]] == list(RFQ_PREVIEW_SECTIONS)
+    assert [section["title"] for section in payload["rfq_preview"]["sections"]] == list(
+        RFQ_PREVIEW_SECTIONS
+    )
     assert len(payload["rfq_preview"]["sections"]) == 13
-    assert "final technical release" in payload["rfq_preview"]["manufacturer_release_boundary"]
+    assert (
+        "final technical release"
+        in payload["rfq_preview"]["manufacturer_release_boundary"]
+    )
+    assert payload["decision_understanding"]["case_summary"]
+    assert (
+        payload["rfq_preview"]["decision_understanding"]
+        == payload["decision_understanding"]
+    )
+    assert any(
+        "Salzwasser" in item
+        for item in payload["decision_understanding"]["understood_now"]
+    )
 
 
 def test_manufacturer_extract_is_allowlisted_and_revision_bound() -> None:
@@ -86,7 +103,10 @@ def test_manufacturer_extract_is_allowlisted_and_revision_bound() -> None:
 
 
 def test_open_points_are_deduplicated() -> None:
-    state = {"a": {"open_points": ["speed", "speed"]}, "b": {"blocking_unknowns": ["pressure"]}}
+    state = {
+        "a": {"open_points": ["speed", "speed"]},
+        "b": {"blocking_unknowns": ["pressure"]},
+    }
 
     assert collect_open_points(state) == ("speed", "pressure")
 
