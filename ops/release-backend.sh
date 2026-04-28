@@ -75,4 +75,12 @@ for i in {1..30}; do
 done
 
 docker exec backend sh -lc "curl -fsS http://127.0.0.1:8000/health"
+
+if [[ "${SKIP_LIVE_SMOKE:-0}" != "1" ]]; then
+  echo ">> Running live pilot readiness smoke"
+  BASE_URL="${BASE_URL:-https://sealai.net}" ./ops/smoke-live-pilot-readiness.sh
+else
+  echo ">> Live pilot readiness smoke skipped by SKIP_LIVE_SMOKE=1"
+fi
+
 echo ">> Done"
