@@ -363,21 +363,21 @@ function buildLifecycleSteps(projection: LegacyWorkspaceProjection): WorkspaceLi
   });
 
   steps.push({
-    label: "RFQ Draft",
+    label: "RFQ-Preview",
     status: rfq_package.has_draft ? "done" : "pending",
     detail: rfq_package.has_draft ? rfq_status.release_status.replace(/_/g, " ") : undefined,
     iconName: "FileText",
   });
 
   steps.push({
-    label: "Document Generated",
+    label: "Export vorbereiten",
     status: rfq_status.has_html_report ? "done" : rfq_package.has_draft ? "active" : "pending",
     detail: rfq_status.has_pdf ? "PDF available" : rfq_status.has_html_report ? "HTML report" : undefined,
     iconName: "FileDown",
   });
 
   steps.push({
-    label: "Partner Matching",
+    label: "Herstellerpruefung erforderlich",
     status: partner_matching.matching_ready ? "active" : "pending",
     detail: partner_matching.material_fit_items.length > 0
       ? `${partner_matching.material_fit_items.length} candidate${partner_matching.material_fit_items.length === 1 ? "" : "s"}`
@@ -387,7 +387,7 @@ function buildLifecycleSteps(projection: LegacyWorkspaceProjection): WorkspaceLi
 
   if (rfq_status.handover_initiated) {
     steps.push({
-      label: "RFQ Submitted",
+      label: "Export vorbereitet",
       status: "done",
       detail: partner_matching.selected_partner_id || undefined,
       iconName: "Zap",

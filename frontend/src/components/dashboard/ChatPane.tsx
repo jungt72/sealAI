@@ -333,8 +333,8 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
               <div className="mt-2 flex flex-wrap gap-2 pb-3">
                 {[
                   "Medienliste pruefen",
-                  "Dichtungsprofile empfehlen",
-                  "Weitere Werkstoffe vergleichen",
+                  "RFQ-Preview vorbereiten",
+                  "Offene Punkte klaeren",
                 ].map((item) => (
                   <button
                     key={item}
@@ -362,7 +362,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
             <div className="mt-3 flex items-center justify-between gap-3 px-1 text-[11px] text-slate-400">
               <div className="flex items-center gap-2">
                 <Paperclip size={12} />
-                Technische Vorqualifizierung. Herstellerfreigabe bleibt finale Instanz.
+                Anfragebasis fuer Herstellerpruefung. Keine finale technische Freigabe.
               </div>
               <div className="hidden items-center gap-1 md:flex">
                 Details anzeigen

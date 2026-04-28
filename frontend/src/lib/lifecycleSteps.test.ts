@@ -8,12 +8,12 @@ function workspaceView(): WorkspaceView {
   return {
     caseId: "case-123",
     lifecycle: {
-      currentStep: "Partner Matching",
+      currentStep: "Herstellerpruefung erforderlich",
       completedSteps: ["Case Started", "Governed Review"],
       steps: [
         { label: "Case Started", status: "done", iconName: "Layers" },
         { label: "Governed Review", status: "done", iconName: "Shield" },
-        { label: "Partner Matching", status: "active", iconName: "Factory" },
+        { label: "Herstellerpruefung erforderlich", status: "active", iconName: "Factory" },
       ],
     },
     summary: {

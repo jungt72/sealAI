@@ -328,7 +328,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
             <div className="grid gap-3 sm:grid-cols-3">
               <MetaTile label="Preview ID" value={preview.preview_id} />
               <MetaTile label="Consent" value={preview.consent_status} />
-              <MetaTile label="Dispatch" value={preview.dispatch_enabled ? "enabled" : "disabled"} />
+              <MetaTile label="Weitergabe" value={preview.dispatch_enabled ? "aktiv" : "nicht vorgesehen"} />
             </div>
 
             <ListPanel title="Offene Punkte" items={openPoints} empty="Keine offenen Punkte in der Preview projiziert." tone="warning" />
