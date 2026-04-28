@@ -707,6 +707,124 @@ async def test_apply_mutation_rejects_delta_decision_for_unproposed_field(
 
 
 @pytest.mark.asyncio
+async def test_apply_mutation_rejects_accepted_critical_technical_field_without_engineering_value(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"pressure_nominal": {"proposed_value": 4}},
+            "accepted_delta": {
+                "pressure_nominal": {
+                    "status": "accepted",
+                    "proposed_value": 4,
+                    "unit": "bar",
+                    "provenance": "user_stated",
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="accepted_delta.pressure_nominal.engineering_value is required",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_rejects_pressure_acceptance_with_unknown_interpretation(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"pressure_nominal": {"proposed_value": 4}},
+            "accepted_delta": {
+                "pressure_nominal": {
+                    "status": "accepted",
+                    "proposed_value": 4,
+                    "unit": "bar",
+                    "provenance": "user_stated",
+                    "engineering_value": {
+                        "raw_value": 4,
+                        "canonical_value": 4,
+                        "unit": "bar",
+                        "quantity_kind": "pressure",
+                        "interpretation": "unknown",
+                    },
+                }
+            },
+        }
+    )
+
+    with pytest.raises(
+        InvalidMutationError,
+        match="accepted_delta.pressure_nominal.engineering_value.interpretation requires confirmation",
+    ):
+        await CaseService(session).apply_mutation(
+            case_id=case_id,
+            expected_revision=0,
+            event_type=MutationEventType.FIELD_UPDATED,
+            payload=payload,
+            actor="user-1",
+            actor_type=ActorType.USER,
+        )
+
+    assert len(session.store.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_mutation_accepts_critical_technical_field_with_engineering_value(
+    session: _FakeAsyncSession,
+) -> None:
+    case_id = await _insert_case(session)
+    payload = _payload()
+    payload.update(
+        {
+            "proposed_delta": {"pressure_nominal": {"proposed_value": 4}},
+            "accepted_delta": {
+                "pressure_nominal": {
+                    "status": "accepted",
+                    "proposed_value": 4,
+                    "unit": "barg",
+                    "provenance": "user_stated",
+                    "engineering_value": {
+                        "raw_value": 4,
+                        "canonical_value": 4,
+                        "unit": "bar",
+                        "quantity_kind": "pressure",
+                        "interpretation": "gauge",
+                    },
+                }
+            },
+        }
+    )
+
+    await CaseService(session).apply_mutation(
+        case_id=case_id,
+        expected_revision=0,
+        event_type=MutationEventType.FIELD_UPDATED,
+        payload=payload,
+        actor="user-1",
+        actor_type=ActorType.USER,
+    )
+
+    assert len(session.store.events) == 1
+
+
+@pytest.mark.asyncio
 async def test_apply_mutation_detects_conflict_in_nested_normalized_parameters(
     session: _FakeAsyncSession,
 ) -> None:
@@ -784,6 +902,13 @@ async def test_apply_mutation_accepts_equivalent_nested_normalized_parameter(
                     "status": "accepted",
                     "proposed_value": "80.4 C",
                     "provenance": "user_stated",
+                    "engineering_value": {
+                        "raw_value": "80.4 C",
+                        "canonical_value": 80.4,
+                        "unit": "degC",
+                        "quantity_kind": "temperature",
+                        "interpretation": "celsius",
+                    },
                 }
             },
         }

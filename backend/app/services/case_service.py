@@ -8,6 +8,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.mutation_events import ActorType, MutationEventType
+from app.domain.critical_field_contract import (
+    PRESSURE_FIELDS,
+    is_critical_technical_field,
+)
 from app.models.case_record import CaseRecord
 from app.models.case_state_snapshot import CaseStateSnapshot
 from app.models.mutation_event_model import MutationEventModel
@@ -572,6 +576,39 @@ class CaseService:
             raise InvalidMutationError(
                 f"{expected_status}_delta.{field_name} must include a value"
             )
+        if expected_status == "accepted":
+            self._validate_accepted_critical_field_contract(field_name, field_payload)
+
+    def _validate_accepted_critical_field_contract(
+        self,
+        field_name: str,
+        field_payload: dict[str, Any],
+    ) -> None:
+        if not is_critical_technical_field(field_name):
+            return
+        engineering_value = field_payload.get("engineering_value")
+        if not isinstance(engineering_value, dict):
+            raise InvalidMutationError(
+                f"accepted_delta.{field_name}.engineering_value is required for critical technical fields"
+            )
+        required_keys = {"raw_value", "canonical_value", "unit", "quantity_kind"}
+        missing = sorted(
+            key
+            for key in required_keys
+            if engineering_value.get(key) in (None, "")
+        )
+        if missing:
+            raise InvalidMutationError(
+                f"accepted_delta.{field_name}.engineering_value missing: {', '.join(missing)}"
+            )
+        if field_name in PRESSURE_FIELDS:
+            payload_interpretation = str(
+                engineering_value.get("interpretation") or ""
+            ).strip()
+            if payload_interpretation in {"", "unknown"}:
+                raise InvalidMutationError(
+                    f"accepted_delta.{field_name}.engineering_value.interpretation requires confirmation"
+                )
 
     async def _validate_acceptance_against_latest_snapshot(
         self,

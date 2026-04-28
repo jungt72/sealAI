@@ -20,9 +20,19 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
+from app.domain.critical_field_contract import (
+    CRITICAL_CASE_FIELDS,
+    MM_FIELDS,
+    PRESSURE_FIELDS,
+    RPM_FIELDS,
+    TEMPERATURE_FIELDS,
+    is_critical_case_field,
+    is_critical_technical_field,
+)
 from app.agent.domain.medium_registry import (
     classify_medium_value,
     extract_medium_mentions,
@@ -89,6 +99,32 @@ class NormalizedEntity:
     domain_type: str
     confidence: MappingConfidence
     warning_message: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CriticalFieldNormalization:
+    """EngineeringValue-light contract for v0.7 critical technical fields."""
+
+    field_name: str
+    raw_value: Any
+    canonical_value: Optional[Any]
+    unit: Optional[str]
+    quantity_kind: str
+    interpretation: Optional[str]
+    confidence: MappingConfidence
+    normalization_warnings: tuple[str, ...] = ()
+    normalized_at: Optional[str] = None
+
+    def as_engineering_value_dict(self) -> dict[str, Any]:
+        return {
+            "raw_value": self.raw_value,
+            "canonical_value": self.canonical_value,
+            "unit": self.unit,
+            "quantity_kind": self.quantity_kind,
+            "interpretation": self.interpretation,
+            "normalized_at": self.normalized_at,
+            "normalization_warnings": list(self.normalization_warnings),
+        }
 
 
 @dataclass(frozen=True)
@@ -177,7 +213,17 @@ _TEMP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _PRESSURE_PATTERN = re.compile(
-    r"^([+-]?\d+(?:[.,]\d+)?)\s*(bar|psi|mpa|kpa)\s*$",
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(bar(?:\s*[\(\[]?\s*[ag]\s*[\)\]]?)?|barg|bara|psi|mpa|kpa)\s*$",
+    re.IGNORECASE,
+)
+
+_RPM_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:rpm|u[/.]?\s*min|1\s*/\s*min|min-?1)\s*$",
+    re.IGNORECASE,
+)
+
+_MM_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:mm|millimeter)\s*$",
     re.IGNORECASE,
 )
 
@@ -352,6 +398,28 @@ def _parse_temp_input(raw: Any) -> Optional[tuple[float, str]]:
     return (float(m.group(1)), m.group(2).upper()) if m else None
 
 
+def _coerce_number(raw: Any) -> float | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    text = str(raw or "").strip().replace(",", ".")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _value_with_unit(raw_value: Any, unit: str | None) -> Any:
+    if unit is None or str(unit).strip() == "":
+        return raw_value
+    if isinstance(raw_value, str) and re.search(r"[a-z°]", raw_value, re.IGNORECASE):
+        return raw_value
+    return f"{raw_value} {unit}"
+
+
 def _normalize_temperature_entity(raw: Any) -> NormalizedEntity:
     parsed = _parse_temp_input(raw)
     if parsed is None:
@@ -373,7 +441,14 @@ def _parse_pressure_input(raw: Any) -> Optional[tuple[float, str]]:
         return float(raw), "bar"
     text = str(raw).strip().replace(",", ".")
     m = _PRESSURE_PATTERN.match(text)
-    return (float(m.group(1)), m.group(2).lower()) if m else None
+    if not m:
+        return None
+    unit = re.sub(r"[\s\(\)\[\]]", "", m.group(2).lower())
+    if unit in {"barg", "bara"}:
+        unit = "bar"
+    elif unit.startswith("bar"):
+        unit = "bar"
+    return float(m.group(1)), unit
 
 
 def _normalize_pressure_entity(raw: Any) -> NormalizedEntity:
@@ -387,6 +462,108 @@ def _normalize_pressure_entity(raw: Any) -> NormalizedEntity:
     bar_val = round(value * factor, 4)
     warn = f"Umgerechnet von {value} {unit.upper()} → {bar_val} bar" if unit != "bar" else None
     return NormalizedEntity(raw, bar_val, "pressure", MappingConfidence.CONFIRMED, warn)
+
+
+def _pressure_interpretation(raw: Any, unit: str | None = None) -> str:
+    text = f"{raw or ''} {unit or ''}".casefold()
+    if re.search(r"\b(?:delta\s*p|differential|differenzdruck|dp|Δp)\b", text):
+        return "differential"
+    if re.search(r"\b(?:barg|bar\s*[\(\[]?\s*g\s*[\)\]]?|gauge|ueberdruck|überdruck)\b", text):
+        return "gauge"
+    if re.search(r"\b(?:bara|bar\s*[\(\[]?\s*a\s*[\)\]]?|absolute?|abs)\b", text):
+        return "absolute"
+    return "unknown"
+
+
+def _critical_field_quantity(field_name: str) -> tuple[str, str | None]:
+    if field_name in TEMPERATURE_FIELDS:
+        return "temperature", "degC"
+    if field_name in PRESSURE_FIELDS:
+        return "pressure", "bar"
+    if field_name in RPM_FIELDS:
+        return "rotational_speed", "rpm"
+    if field_name in MM_FIELDS:
+        return "length", "mm"
+    return field_name, None
+
+
+def normalize_critical_field_value(
+    field_name: str,
+    raw_value: Any,
+    *,
+    unit: str | None = None,
+) -> CriticalFieldNormalization | None:
+    """Normalize a known critical technical field into EngineeringValue shape.
+
+    The helper is intentionally small and deterministic. It does not replace a
+    future unit engine; it only prevents pressure/temp/rpm/mm values from being
+    treated as dimensionless accepted truth.
+    """
+
+    field_name = str(field_name or "").strip()
+    if not is_critical_technical_field(field_name):
+        return None
+
+    quantity_kind, canonical_unit = _critical_field_quantity(field_name)
+    warnings: list[str] = []
+    confidence = MappingConfidence.CONFIRMED
+    canonical_value: Any = None
+    interpretation: str | None = None
+    raw_with_unit = _value_with_unit(raw_value, unit)
+
+    if field_name in TEMPERATURE_FIELDS:
+        entity = _normalize_temperature_entity(raw_with_unit)
+        canonical_value = entity.normalized_value
+        if entity.warning_message:
+            warnings.append(entity.warning_message)
+        confidence = entity.confidence
+        interpretation = "celsius"
+    elif field_name in PRESSURE_FIELDS:
+        entity = _normalize_pressure_entity(raw_with_unit)
+        canonical_value = entity.normalized_value
+        if entity.warning_message:
+            warnings.append(entity.warning_message)
+        confidence = entity.confidence
+        interpretation = _pressure_interpretation(raw_value, unit)
+        if interpretation == "unknown":
+            warnings.append("pressure_interpretation_unknown")
+            confidence = MappingConfidence.REQUIRES_CONFIRMATION
+    elif field_name in RPM_FIELDS:
+        match = _RPM_PATTERN.match(str(raw_with_unit).strip().replace(",", "."))
+        if match:
+            canonical_value = float(match.group(1))
+        else:
+            canonical_value = _coerce_number(raw_value) if field_name == "speed_rpm" else None
+            if canonical_value is None:
+                confidence = MappingConfidence.REQUIRES_CONFIRMATION
+                warnings.append("rotational_speed_unit_required")
+        interpretation = "rotational_speed"
+    elif field_name in MM_FIELDS:
+        match = _MM_PATTERN.match(str(raw_with_unit).strip().replace(",", "."))
+        if match:
+            canonical_value = float(match.group(1))
+        else:
+            canonical_value = _coerce_number(raw_value) if field_name.endswith("_mm") else None
+            if canonical_value is None:
+                confidence = MappingConfidence.REQUIRES_CONFIRMATION
+                warnings.append("length_unit_required")
+        interpretation = "diameter" if "diameter" in field_name or "bore" in field_name else "width"
+
+    if canonical_value is None and confidence == MappingConfidence.CONFIRMED:
+        confidence = MappingConfidence.REQUIRES_CONFIRMATION
+        warnings.append("normalization_required")
+
+    return CriticalFieldNormalization(
+        field_name=field_name,
+        raw_value=raw_value,
+        canonical_value=canonical_value,
+        unit=canonical_unit,
+        quantity_kind=quantity_kind,
+        interpretation=interpretation,
+        confidence=confidence,
+        normalization_warnings=tuple(dict.fromkeys(warnings)),
+        normalized_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 def _normalize_material_entity(raw: Any) -> NormalizedEntity:

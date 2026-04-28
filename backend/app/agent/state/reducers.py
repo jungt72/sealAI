@@ -34,6 +34,10 @@ from app.agent.domain.requirement_class import (
     RequirementClassSpecialistInput,
     run_requirement_class_specialist,
 )
+from app.agent.domain.normalization import (
+    MappingConfidence,
+    normalize_critical_field_value,
+)
 from app.services.conflict_detection_service import (
     ConflictCandidate,
     ConflictDetectionService,
@@ -332,7 +336,15 @@ def _engineering_value(
     raw_value: Any,
     value: Any,
     unit: str | None,
+    raw_unit: str | None = None,
 ) -> EngineeringValue:
+    normalized = normalize_critical_field_value(
+        field_name,
+        raw_value,
+        unit=raw_unit if raw_unit is not None else unit,
+    )
+    if normalized is not None:
+        return EngineeringValue(**normalized.as_engineering_value_dict())
     return EngineeringValue(
         raw_value=raw_value,
         canonical_value=value,
@@ -341,12 +353,31 @@ def _engineering_value(
     )
 
 
+def _normalize_case_field_value(
+    *,
+    field_name: str,
+    raw_value: Any,
+    unit: str | None,
+    confidence: ConfidenceLevel,
+) -> tuple[Any, str | None, ConfidenceLevel]:
+    normalized = normalize_critical_field_value(field_name, raw_value, unit=unit)
+    if normalized is None:
+        return raw_value, unit, confidence
+    normalized_confidence = (
+        "requires_confirmation"
+        if normalized.confidence == MappingConfidence.REQUIRES_CONFIRMATION
+        else confidence
+    )
+    return normalized.canonical_value, normalized.unit, normalized_confidence
+
+
 def _case_field_from_normalized(
     *,
     field_name: str,
     value: Any,
     raw_value: Any,
     unit: str | None,
+    raw_unit: str | None = None,
     confidence: ConfidenceLevel,
     source: str,
     source_turn: int | None,
@@ -361,6 +392,7 @@ def _case_field_from_normalized(
             raw_value=raw_value,
             value=value,
             unit=unit,
+            raw_unit=raw_unit,
         ),
         status=status,
         provenance=provenance,
@@ -387,6 +419,7 @@ def _asserted_case_field(
             raw_value=value,
             value=value,
             unit=unit,
+            raw_unit=unit,
         ),
         status="confirmed",
         provenance=provenance,
@@ -453,20 +486,27 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
         # User override takes absolute priority
         if field_name in override_by_field:
             ov = override_by_field[field_name]
-            case_field = _case_field_from_normalized(
+            normalized_value, normalized_unit, normalized_confidence = _normalize_case_field_value(
                 field_name=field_name,
-                value=ov.override_value,
                 raw_value=ov.override_value,
                 unit=ov.override_unit,
                 confidence="confirmed",
+            )
+            case_field = _case_field_from_normalized(
+                field_name=field_name,
+                value=normalized_value,
+                raw_value=ov.override_value,
+                unit=normalized_unit,
+                raw_unit=ov.override_unit,
+                confidence=normalized_confidence,
                 source="user_override",
                 source_turn=ov.turn_index,
             )
             parameters[field_name] = NormalizedParameter(
                 field_name=field_name,
-                value=ov.override_value,
-                unit=ov.override_unit,
-                confidence="confirmed",
+                value=normalized_value,
+                unit=normalized_unit,
+                confidence=normalized_confidence,
                 source="user_override",
                 source_turn=ov.turn_index,
                 status=case_field.status,
@@ -478,7 +518,7 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
             log.debug(
                 "[reducer] field=%s source=user_override value=%r",
                 field_name,
-                ov.override_value,
+                normalized_value,
             )
             continue
 
@@ -529,6 +569,12 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
 
         # Confidence grade of the best extraction
         confidence: ConfidenceLevel = _extraction_confidence(best)
+        normalized_value, normalized_unit, confidence = _normalize_case_field_value(
+            field_name=field_name,
+            raw_value=best.raw_value,
+            unit=best.raw_unit,
+            confidence=confidence,
+        )
 
         if confidence == "requires_confirmation":
             assumptions.append(
@@ -543,17 +589,18 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
 
         case_field = _case_field_from_normalized(
             field_name=field_name,
-            value=best.raw_value,
+            value=normalized_value,
             raw_value=best.raw_value,
-            unit=best.raw_unit,
+            unit=normalized_unit,
+            raw_unit=best.raw_unit,
             confidence=confidence,
             source="llm",
             source_turn=best.turn_index,
         )
         parameters[field_name] = NormalizedParameter(
             field_name=field_name,
-            value=best.raw_value,
-            unit=best.raw_unit,
+            value=normalized_value,
+            unit=normalized_unit,
             confidence=confidence,
             source="llm",
             source_turn=best.turn_index,

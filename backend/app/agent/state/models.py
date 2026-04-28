@@ -951,6 +951,8 @@ class ProposedCaseDeltaField(BaseModel):
         "missing",
     ] = "user_stated"
     confidence: ConfidenceLevel = "requires_confirmation"
+    engineering_value: Optional[EngineeringValue] = None
+    confirmation_required: bool = True
     source_turn_index: int = Field(default=0, ge=0)
     status: Literal["proposed", "accepted", "rejected"] = "proposed"
 

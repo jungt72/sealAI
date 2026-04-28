@@ -1,3 +1,5 @@
+import pytest
+
 from app.agent.api.assembly import _assemble_governed_stream_payload, _build_governed_reply_context
 from app.agent.domain.case_delta import (
     build_assistant_delta_event,
@@ -22,8 +24,39 @@ def test_proposed_case_delta_uses_current_turn_extractions_only() -> None:
 
     assert [field.field_name for field in delta.fields] == ["pressure_bar"]
     assert delta.fields[0].status == "proposed"
-    assert delta.fields[0].confidence == "inferred"
+    assert delta.fields[0].confidence == "requires_confirmation"
     assert delta.fields[0].unit == "bar"
+    assert delta.fields[0].engineering_value is not None
+    assert delta.fields[0].engineering_value.unit == "bar"
+    assert delta.fields[0].engineering_value.interpretation == "unknown"
+    assert delta.fields[0].confirmation_required is True
+
+
+def test_proposed_case_delta_allows_shared_critical_contract_fields() -> None:
+    field_values = {
+        "pressure_peak": (6, "barg"),
+        "housing_bore": (62, "mm"),
+        "housing_bore_mm": (62, None),
+        "installation_width": (10, "mm"),
+        "installation_width_mm": (10, None),
+        "food_contact": (True, None),
+        "atex_relevance": (False, None),
+    }
+    delta = proposed_case_delta_from_extractions(
+        [
+            ObservedExtraction(
+                field_name=field_name,
+                raw_value=raw_value,
+                raw_unit=unit,
+                confidence=0.92,
+                turn_index=3,
+            )
+            for field_name, (raw_value, unit) in field_values.items()
+        ],
+        turn_index=3,
+    )
+
+    assert {field.field_name for field in delta.fields} == set(field_values)
 
 
 def test_governed_stream_payload_exposes_structured_double_output() -> None:
@@ -109,7 +142,7 @@ def test_case_event_appends_to_governed_state_without_accepting_delta() -> None:
 def test_case_delta_decision_event_records_accepted_fields_without_source_mutation() -> None:
     delta = proposed_case_delta_from_extractions(
         [
-            ObservedExtraction(field_name="pressure_bar", raw_value=4, raw_unit="bar", confidence=0.92, turn_index=1),
+            ObservedExtraction(field_name="pressure_bar", raw_value=4, raw_unit="barg", confidence=0.92, turn_index=1),
             ObservedExtraction(field_name="medium", raw_value="Wasser", confidence=0.91, turn_index=1),
         ],
         turn_index=1,
@@ -139,7 +172,33 @@ def test_case_delta_decision_event_records_accepted_fields_without_source_mutati
     assert list(event.accepted_delta) == ["pressure_bar"]
     assert event.accepted_delta["pressure_bar"]["status"] == "accepted"
     assert event.accepted_delta["pressure_bar"]["source_event_id"] == proposal.event_id
+    assert event.accepted_delta["pressure_bar"]["engineering_value"]["unit"] == "bar"
+    assert event.accepted_delta["pressure_bar"]["engineering_value"]["interpretation"] == "gauge"
     assert event.rejected_delta == {}
+
+
+def test_case_delta_decision_event_rejects_unknown_pressure_acceptance() -> None:
+    delta = proposed_case_delta_from_extractions(
+        [
+            ObservedExtraction(
+                field_name="pressure_bar",
+                raw_value=4,
+                raw_unit="bar",
+                confidence=0.92,
+                turn_index=1,
+            )
+        ],
+        turn_index=1,
+    )
+    selected = select_delta_fields(delta)
+
+    with pytest.raises(ValueError, match="pressure_bar cannot be accepted"):
+        build_case_delta_decision_event(
+            case_id="case-1",
+            action="accept",
+            fields=selected,
+            source_event_id="source-1",
+        )
 
 
 def test_case_delta_decision_event_records_rejected_fields() -> None:

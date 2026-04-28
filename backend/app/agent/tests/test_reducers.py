@@ -237,7 +237,7 @@ class TestReducerObservedToNormalized:
         assert result.parameters["pressure_bar"].unit == "bar"
 
     def test_v07_case_field_envelope_is_built_for_confirmed_user_statement(self):
-        obs = _observed(_ext("pressure_bar", 6.0, unit="bar", turn=3))
+        obs = _observed(_ext("pressure_bar", 6.0, unit="barg", turn=3))
         result = reduce_observed_to_normalized(obs)
 
         param = result.parameters["pressure_bar"]
@@ -250,8 +250,37 @@ class TestReducerObservedToNormalized:
         assert field.engineering_value.raw_value == 6.0
         assert field.engineering_value.canonical_value == 6.0
         assert field.engineering_value.unit == "bar"
+        assert field.engineering_value.quantity_kind == "pressure"
+        assert field.engineering_value.interpretation == "gauge"
         assert field.confirmation_required is False
         assert field.source_revision == 3
+
+    def test_v07_pressure_without_interpretation_stays_candidate(self):
+        obs = _observed(_ext("pressure_bar", 6.0, unit="bar", turn=3))
+        result = reduce_observed_to_normalized(obs)
+
+        field = result.case_fields["pressure_bar"]
+        assert result.parameters["pressure_bar"].confidence == "requires_confirmation"
+        assert field.status == "candidate"
+        assert field.confirmation_required is True
+        assert field.engineering_value.interpretation == "unknown"
+        assert "pressure_interpretation_unknown" in field.engineering_value.normalization_warnings
+
+    def test_v07_temperature_and_mm_values_get_engineering_units(self):
+        obs = _observed(
+            _ext("temperature_max", "80 °C", turn=1),
+            _ext("housing_bore", "62 mm", turn=1),
+        )
+        result = reduce_observed_to_normalized(obs)
+
+        temperature = result.case_fields["temperature_max"].engineering_value
+        diameter = result.case_fields["housing_bore"].engineering_value
+        assert result.parameters["temperature_max"].value == pytest.approx(80.0)
+        assert temperature.unit == "degC"
+        assert temperature.interpretation == "celsius"
+        assert result.parameters["housing_bore"].value == 62.0
+        assert diameter.unit == "mm"
+        assert diameter.quantity_kind == "length"
 
     def test_v07_candidate_field_requires_confirmation(self):
         obs = _observed(_ext("medium", "unklar", confidence=_CONF_REQUIRES, turn=2))

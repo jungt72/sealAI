@@ -20,10 +20,14 @@ import pytest
 
 from app.agent.domain.medium_registry import classify_medium_text, classify_medium_value
 from app.agent.domain.normalization import (
+    CRITICAL_CASE_FIELDS,
     MappingConfidence,
     MediumSpecialistInput,
     MediumSpecialistResult,
     NormalizedEntity,
+    is_critical_case_field,
+    is_critical_technical_field,
+    normalize_critical_field_value,
     normalize_parameter,
     run_medium_specialist,
     confidence_to_identity_class,
@@ -190,6 +194,97 @@ class TestPressureNormalization:
     def test_warning_present_for_unit_conversion(self):
         e = normalize_parameter("pressure", "100 psi")
         assert e.warning_message is not None
+
+
+class TestCriticalFieldNormalizationContract:
+    def test_v07_critical_fields_are_explicit(self):
+        assert "pressure_nominal" in CRITICAL_CASE_FIELDS
+        assert is_critical_case_field("shaft_diameter")
+        assert is_critical_technical_field("temperature_max")
+        assert not is_critical_technical_field("asset_type")
+
+    @pytest.mark.parametrize(
+        "raw, expected_value, expects_warning",
+        [
+            ("80 °C", 80.0, False),
+            ("176 F", 80.0, True),
+        ],
+    )
+    def test_temperature_keeps_celsius_engineering_value(
+        self,
+        raw,
+        expected_value,
+        expects_warning,
+    ):
+        result = normalize_critical_field_value("temperature_max", raw)
+
+        assert result is not None
+        assert result.canonical_value == pytest.approx(expected_value, abs=0.01)
+        assert result.unit == "degC"
+        assert result.quantity_kind == "temperature"
+        assert result.interpretation == "celsius"
+        assert result.confidence == MappingConfidence.CONFIRMED
+        assert bool(result.normalization_warnings) is expects_warning
+
+    @pytest.mark.parametrize("raw", ["4 barg", "4 bar(g)"])
+    def test_pressure_barg_keeps_gauge_interpretation(self, raw):
+        result = normalize_critical_field_value("pressure_nominal", raw)
+
+        assert result is not None
+        assert result.canonical_value == pytest.approx(4.0)
+        assert result.unit == "bar"
+        assert result.quantity_kind == "pressure"
+        assert result.interpretation == "gauge"
+        assert result.confidence == MappingConfidence.CONFIRMED
+
+    def test_pressure_bara_keeps_absolute_interpretation(self):
+        result = normalize_critical_field_value("pressure_nominal", "4 bara")
+
+        assert result is not None
+        assert result.canonical_value == pytest.approx(4.0)
+        assert result.unit == "bar"
+        assert result.quantity_kind == "pressure"
+        assert result.interpretation == "absolute"
+        assert result.confidence == MappingConfidence.CONFIRMED
+
+    def test_pressure_bar_without_interpretation_requires_confirmation(self):
+        result = normalize_critical_field_value("pressure_nominal", "4 bar")
+
+        assert result is not None
+        assert result.interpretation == "unknown"
+        assert result.confidence == MappingConfidence.REQUIRES_CONFIRMATION
+        assert "pressure_interpretation_unknown" in result.normalization_warnings
+
+    @pytest.mark.parametrize("raw", ["400 rpm", "400 1/min"])
+    def test_rpm_is_not_dimensionless(self, raw):
+        rpm = normalize_critical_field_value("speed_rpm", raw)
+
+        assert rpm is not None
+        assert rpm.canonical_value == 400.0
+        assert rpm.unit == "rpm"
+        assert rpm.quantity_kind == "rotational_speed"
+
+    @pytest.mark.parametrize("field_name", ["shaft_diameter", "housing_bore", "installation_width"])
+    def test_mm_values_are_not_dimensionless(self, field_name):
+        diameter = normalize_critical_field_value(field_name, "42 mm")
+
+        assert diameter is not None
+        assert diameter.canonical_value == 42.0
+        assert diameter.unit == "mm"
+        assert diameter.quantity_kind == "length"
+
+    def test_rpm_and_mm_are_not_dimensionless(self):
+        rpm = normalize_critical_field_value("speed_rpm", "1450 1/min")
+        diameter = normalize_critical_field_value("shaft_diameter", "42 mm")
+
+        assert rpm is not None
+        assert rpm.canonical_value == 1450.0
+        assert rpm.unit == "rpm"
+        assert rpm.quantity_kind == "rotational_speed"
+        assert diameter is not None
+        assert diameter.canonical_value == 42.0
+        assert diameter.unit == "mm"
+        assert diameter.quantity_kind == "length"
 
 
 # ---------------------------------------------------------------------------

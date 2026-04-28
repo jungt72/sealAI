@@ -11,42 +11,37 @@ from typing import Any, Iterable
 from app.agent.state.models import (
     CaseEvent,
     ConfidenceLevel,
+    EngineeringValue,
     GovernedPersistenceMarker,
     ObservedExtraction,
     GovernedSessionState,
     ProposedCaseDelta,
     ProposedCaseDeltaField,
 )
+from app.agent.domain.normalization import (
+    MappingConfidence,
+    normalize_critical_field_value,
+)
+from app.domain.critical_field_contract import CRITICAL_CASE_FIELDS, PRESSURE_FIELDS
 
-_ALLOWED_DELTA_FIELDS: frozenset[str] = frozenset({
-    "asset_type",
-    "seal_location",
-    "motion_type",
-    "medium",
-    "medium_name",
-    "temperature_c",
-    "temperature_min",
-    "temperature_max",
-    "pressure_bar",
-    "pressure_nominal",
-    "speed_rpm",
-    "shaft_diameter_mm",
-    "shaft_diameter",
-    "geometry_context",
-    "geometry",
-    "sealing_type",
-    "pressure_direction",
-    "duty_profile",
-    "installation",
-    "contamination",
-    "counterface_surface",
-    "surface_finish",
-    "tolerances",
-    "industry",
-    "compliance",
-    "medium_qualifiers",
-    "material",
-})
+_ALLOWED_DELTA_FIELDS: frozenset[str] = CRITICAL_CASE_FIELDS | frozenset(
+    {
+        "medium",
+        "geometry_context",
+        "geometry",
+        "sealing_type",
+        "pressure_direction",
+        "duty_profile",
+        "installation",
+        "contamination",
+        "counterface_surface",
+        "tolerances",
+        "industry",
+        "compliance",
+        "medium_qualifiers",
+        "material",
+    }
+)
 
 
 def confidence_from_extraction(value: float | str | None) -> ConfidenceLevel:
@@ -80,6 +75,21 @@ def proposed_case_delta_from_extractions(
             continue
         if extraction.raw_value in (None, "", []):
             continue
+        confidence = confidence_from_extraction(extraction.confidence)
+        engineering_value = None
+        confirmation_required = confidence == "requires_confirmation"
+        normalized = normalize_critical_field_value(
+            field_name,
+            extraction.raw_value,
+            unit=extraction.raw_unit,
+        )
+        if normalized is not None:
+            engineering_value = EngineeringValue(**normalized.as_engineering_value_dict())
+            if normalized.confidence == MappingConfidence.REQUIRES_CONFIRMATION:
+                confidence = "requires_confirmation"
+                confirmation_required = True
+            else:
+                confirmation_required = False
         seen.add(field_name)
         fields.append(
             ProposedCaseDeltaField(
@@ -87,7 +97,9 @@ def proposed_case_delta_from_extractions(
                 proposed_value=extraction.raw_value,
                 unit=extraction.raw_unit,
                 provenance="user_stated" if extraction.source in {"llm", "user"} else "inferred",
-                confidence=confidence_from_extraction(extraction.confidence),
+                confidence=confidence,
+                engineering_value=engineering_value,
+                confirmation_required=confirmation_required,
                 source_turn_index=extraction.turn_index,
                 status="proposed",
             )
@@ -187,6 +199,20 @@ def select_delta_fields(
     return selected
 
 
+def _acceptance_block_reason(field: ProposedCaseDeltaField) -> str | None:
+    if field.field_name not in PRESSURE_FIELDS:
+        return None
+    engineering_value = field.engineering_value
+    interpretation = (
+        str(engineering_value.interpretation or "").strip()
+        if engineering_value is not None
+        else ""
+    )
+    if interpretation in {"", "unknown"}:
+        return "pressure interpretation requires confirmation before acceptance"
+    return None
+
+
 def build_case_delta_decision_event(
     *,
     case_id: str,
@@ -203,6 +229,12 @@ def build_case_delta_decision_event(
     event_type = "case_delta_accepted" if action == "accept" else "case_delta_rejected"
     status = "accepted" if action == "accept" else "rejected"
     for field in fields:
+        if action == "accept":
+            block_reason = _acceptance_block_reason(field)
+            if block_reason is not None:
+                raise ValueError(
+                    f"{field.field_name} cannot be accepted: {block_reason}"
+                )
         payload = field.model_copy(update={"status": status}).model_dump(mode="json")
         payload["source_event_id"] = source_event_id
         if action == "accept":
