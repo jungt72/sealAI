@@ -386,10 +386,18 @@ def _fast_response_run_meta(fast_response: Any) -> dict[str, Any]:
 
 def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
     citations = [
-        dataclasses.asdict(citation)
+        citation.as_dict()
+        if hasattr(citation, "as_dict")
+        else dataclasses.asdict(citation)
         for citation in tuple(getattr(knowledge_response, "citations", ()) or ())
         if dataclasses.is_dataclass(citation)
     ]
+    answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
+    answer_contract = (
+        answer_view.as_dict()
+        if hasattr(answer_view, "as_dict")
+        else None
+    )
     return {
         "knowledge_service": {
             "source_classification": getattr(
@@ -400,6 +408,7 @@ def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
             "output_class": getattr(knowledge_response, "output_class", "conversational_answer"),
             "no_case_created": bool(getattr(knowledge_response, "no_case_created", True)),
             "citations": citations,
+            "knowledge_answer": answer_contract,
         }
     }
 
