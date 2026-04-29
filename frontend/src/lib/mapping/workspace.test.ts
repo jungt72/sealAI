@@ -276,6 +276,23 @@ function legacyProjection() {
       open_manufacturer_questions: ["Compound approval?"],
       selected_partner_id: null,
       data_source: "candidate_derived",
+      manufacturer_fit_matrix: {
+        status: "fit_computed",
+        disclosure: "Partnernetzwerk-Disclosure. Herstellerprüfung bleibt erforderlich.",
+        eligible_partner_count: 2,
+        no_suitable_partner_reason: null,
+        rows: [
+          {
+            manufacturer_id: "partner-a",
+            fit_score: 93.5,
+            verification_level: "documented",
+            fit_reasons: ["seal_type:rwdr"],
+            gaps: [],
+            missing_requirements: [],
+            source_claim_ids: ["claim-a"],
+          },
+        ],
+      },
     },
     rfq_status: {
       release_status: "manufacturer_validation_required",
@@ -343,6 +360,10 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.matching.shortlistReady, true);
   assert.equal(workspace.matching.inquiryReady, false);
   assert.deepEqual(workspace.matching.blockingReasons, ["manufacturer_validation_required"]);
+  assert.equal(workspace.matching.manufacturerFitMatrix?.status, "fit_computed");
+  assert.equal(workspace.matching.manufacturerFitMatrix?.rows[0]?.manufacturerId, "partner-a");
+  assert.equal(workspace.matching.manufacturerFitMatrix?.rows[0]?.fitScore, 93.5);
+  assert.equal(workspace.matching.manufacturerFitMatrix?.rows[0]?.verificationLevel, "documented");
   assert.equal(workspace.rfq.documentUrl, "/api/bff/rfq/case-123/document");
   assert.equal(workspace.communication?.conversationPhase, "clarification");
   assert.equal(workspace.communication?.primaryQuestion, "Koennen Sie den Betriebsdruck noch einordnen?");

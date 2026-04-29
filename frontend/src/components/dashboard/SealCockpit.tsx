@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, Calculator, CheckCircle2, CircleDot, ClipboardList } from "lucide-react";
 
 import { DecisionUnderstandingPanel } from "@/components/dashboard/DecisionUnderstandingPanel";
+import { ManufacturerFitPanel } from "@/components/dashboard/ManufacturerFitPanel";
 import type { WorkspaceView } from "@/lib/contracts/workspace";
 import {
   type CalculationEvidenceMetric,
@@ -215,6 +216,9 @@ export function SealCockpit({ data, workspace }: { data: SealCockpitOverview; wo
             <CockpitStatusStrip items={data.statusStrip} />
             <div className="px-4 pt-4">
               <DecisionUnderstandingPanel workspace={workspace} />
+            </div>
+            <div className="px-4 pt-4">
+              <ManufacturerFitPanel workspace={workspace} />
             </div>
             <div className="grid grid-cols-1 gap-4 px-4 pt-4 xl:grid-cols-2">
               <ParameterDataCard rows={data.parameters.rows} warning={data.parameters.warning} />

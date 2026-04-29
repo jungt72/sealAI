@@ -85,6 +85,24 @@ export type WorkspaceMatchItem = {
   groundedFacts: WorkspaceGroundedFact[];
 };
 
+export type WorkspaceManufacturerFitRow = {
+  manufacturerId: string;
+  fitScore: number | null;
+  verificationLevel: string;
+  fitReasons: string[];
+  gaps: string[];
+  missingRequirements: string[];
+  sourceClaimIds: string[];
+};
+
+export type WorkspaceManufacturerFitMatrix = {
+  status: string;
+  disclosure: string;
+  rows: WorkspaceManufacturerFitRow[];
+  noSuitablePartnerReason: string | null;
+  eligiblePartnerCount: number;
+};
+
 
 export type WorkspaceDeepDiveTabId = "analysis" | "medium" | "material" | "seal_type";
 
@@ -329,6 +347,7 @@ export type WorkspaceView = {
     openManufacturerQuestions: string[];
     selectedPartnerId: string | null;
     dataSource: string;
+    manufacturerFitMatrix?: WorkspaceManufacturerFitMatrix | null;
   };
   rfq: {
     status: "unavailable" | "draft" | "ready";

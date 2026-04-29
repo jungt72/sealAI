@@ -388,7 +388,9 @@ type LegacyWorkspaceProjection = {
     open_manufacturer_questions: string[];
     selected_partner_id?: string | null;
     data_source: string;
+    manufacturer_fit_matrix?: RawManufacturerFitMatrix | null;
   };
+  manufacturer_fit_matrix?: RawManufacturerFitMatrix | null;
   rfq_status: {
     release_status: string;
     rfq_confirmed: boolean;
@@ -417,6 +419,63 @@ type LegacyWorkspaceProjection = {
     stale_reason: string | null;
   };
 };
+
+type RawManufacturerFitMatrix = {
+  status?: string;
+  disclosure?: string;
+  rows?: Array<{
+    manufacturer_id?: string;
+    fit_score?: number | string | null;
+    verification_level?: string;
+    fit_reasons?: string[];
+    gaps?: string[];
+    missing_requirements?: string[];
+    source_claim_ids?: string[];
+  }>;
+  no_suitable_partner_reason?: string | null;
+  eligible_partner_count?: number;
+};
+
+function asStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function mapManufacturerFitMatrix(raw?: RawManufacturerFitMatrix | null) {
+  if (!raw) {
+    return null;
+  }
+  return {
+    status: String(raw.status || "unknown"),
+    disclosure: String(raw.disclosure || ""),
+    rows: (raw.rows || [])
+      .map((row) => ({
+        manufacturerId: String(row.manufacturer_id || "").trim(),
+        fitScore: asNumber(row.fit_score),
+        verificationLevel: String(row.verification_level || "unknown"),
+        fitReasons: asStrings(row.fit_reasons),
+        gaps: asStrings(row.gaps),
+        missingRequirements: asStrings(row.missing_requirements),
+        sourceClaimIds: asStrings(row.source_claim_ids),
+      }))
+      .filter((row) => row.manufacturerId),
+    noSuitablePartnerReason: raw.no_suitable_partner_reason || null,
+    eligiblePartnerCount: typeof raw.eligible_partner_count === "number" ? raw.eligible_partner_count : 0,
+  };
+}
 
 function releaseClassFromStatus(status: string): "A" | "B" | "C" | "D" | null {
   switch (status) {
@@ -984,6 +1043,9 @@ export function mapWorkspaceView(
       openManufacturerQuestions: projection.partner_matching.open_manufacturer_questions,
       selectedPartnerId: projection.partner_matching.selected_partner_id || null,
       dataSource: projection.partner_matching.data_source,
+      manufacturerFitMatrix: mapManufacturerFitMatrix(
+        projection.partner_matching.manufacturer_fit_matrix || projection.manufacturer_fit_matrix,
+      ),
     },
     rfq: {
       status: rfqReady ? "ready" : projection.rfq_package.has_draft ? "draft" : "unavailable",
