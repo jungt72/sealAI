@@ -67,9 +67,18 @@ _SUITABILITY_PATTERNS: Sequence[str] = (
 _COMPLIANCE_OVERCLAIM_PATTERNS: Sequence[str] = (
     r"\bfda[-\s]?konform\b",
     r"\batex[-\s]?zertifiziert\b",
+    r"\b(?:fda|atex|ehedg|ta[-\s]?luft|trinkwasser|usp|gmp)[-\s]?"
+    r"(?:konform|zugelassen|zertifiziert|freigegeben|bestätigt|bestaetigt)\b",
+    r"\b(?:eu\s*1935/2004|eu\s*10/2011)[-\s]?"
+    r"(?:konform|zugelassen|zertifiziert|freigegeben|bestätigt|bestaetigt)\b",
+    r"\b(?:fda|atex|ehedg|ta[-\s]?luft|trinkwasser|usp|gmp)[-\s]?"
+    r"konformität\s+(?:bestätigt|bestaetigt)\b",
+    r"\b(?:konform|zugelassen|zertifiziert|freigegeben)\s+(?:nach|gemäß|gemaess)\b",
     r"\bfood\s+contact\s+freigegeben\b",
     r"\btrinkwasser\s+zugelassen\b",
     r"\b(?:pharma|lebensmittel|food)\s+(?:freigegeben|zugelassen|zertifiziert)\b",
+    r"\bchemisch\s+(?:beständig|bestaendig|geeignet)\b",
+    r"\b\w+\s+ist\s+(?:chemisch\s+)?(?:beständig|bestaendig)\s+gegen\b",
     r"\bmaterial\s+ist\s+geeignet\b",
     r"\bdichtung\s+ist\s+freigegeben\b",
     r"\btechnisch\s+validiert\b",

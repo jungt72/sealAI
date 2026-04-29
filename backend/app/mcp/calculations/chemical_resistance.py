@@ -1,12 +1,12 @@
 """
 Chemische Beständigkeitstabelle — Deterministisch
-Quelle: Parker Chemical Resistance Guide + intern validierte Daten
+Quelle: Parker Chemical Resistance Guide + kuratierte Tabellenhinweise
 Kein LLM. Lookup-only.
 
 Bewertung:
-  A = beständig (empfohlen)
-  B = bedingt beständig (Rückfrage empfohlen)
-  C = nicht beständig (gesperrt)
+  A = positiver Tabellenhinweis
+  B = prüfungsrelevanter Tabellenhinweis
+  C = kritischer Tabellenhinweis
   X = unbekannt (HITL erforderlich)
 
 Abdeckung v1: 11 Medien × 8 Werkstoffe = 88 Einträge
@@ -276,20 +276,20 @@ def lookup(medium: str, material: str) -> ResistanceResult:
             medium=medium,
             material=material_key,
             rating="X",
-            note="Kombination nicht bewertet — HITL erforderlich.",
+            note=_build_public_note("X", None),
             temp_limit_c=None,
             source="intern",
-            recommendation="Manuelles Expert-Review erforderlich.",
+            recommendation=_build_recommendation("X", None),
         )
 
     return ResistanceResult(
         medium=medium,
         material=material_key,
         rating=entry.rating,
-        note=entry.note,
+        note=_build_public_note(entry.rating, entry.temp_limit_c),
         temp_limit_c=entry.temp_limit_c,
         source=entry.source,
-        recommendation=_build_recommendation(entry),
+        recommendation=_build_recommendation(entry.rating, entry.temp_limit_c),
     )
 
 
@@ -306,10 +306,10 @@ def get_compatible_materials(medium: str) -> list[ResistanceResult]:
             medium=medium,
             material=mat,
             rating=e.rating,
-            note=e.note,
+            note=_build_public_note(e.rating, e.temp_limit_c),
             temp_limit_c=e.temp_limit_c,
             source=e.source,
-            recommendation=_build_recommendation(e),
+            recommendation=_build_recommendation(e.rating, e.temp_limit_c),
         )
         for mat, e in RESISTANCE_TABLE.get(medium_key, {}).items()
         if e.rating in ("A", "B")
@@ -317,13 +317,25 @@ def get_compatible_materials(medium: str) -> list[ResistanceResult]:
     return sorted(results, key=lambda r: r.rating)  # A vor B
 
 
-def _build_recommendation(entry: ResistanceEntry) -> str:
+def _build_public_note(rating: Rating, temp_limit_c: Optional[int]) -> str:
     base = {
-        "A": "Einsatz empfohlen.",
-        "B": "Bedingt geeignet — Rückfrage mit Anwendungsdetails empfohlen.",
-        "C": "Nicht geeignet — alternativen Werkstoff wählen.",
-        "X": "Nicht bewertet — Expertenrückfrage erforderlich.",
-    }[entry.rating]
-    if entry.temp_limit_c is not None:
-        base += f" Temperaturgrenze: max. {entry.temp_limit_c} °C."
+        "A": "Tabellenhinweis positiv. Konkreter Werkstoff-Grade, Betriebsbedingungen und Herstellerprüfung bleiben maßgeblich.",
+        "B": "Tabellenhinweis prüfungsrelevant. Anwendungsdetails und Herstellerprüfung erforderlich.",
+        "C": "Tabellenhinweis kritisch. Alternative Materialrichtung und Herstellerprüfung erforderlich.",
+        "X": "Kombination nicht bewertet. Expert Review und Herstellerprüfung erforderlich.",
+    }[rating]
+    if temp_limit_c is not None:
+        base += f" Temperaturhinweis aus Tabelle: bis {temp_limit_c} °C."
+    return base
+
+
+def _build_recommendation(rating: Rating, temp_limit_c: Optional[int]) -> str:
+    base = {
+        "A": "Als Anfragebasis plausibel; Herstellerprüfung erforderlich.",
+        "B": "Prüfungsrelevant; Anwendungsdetails und Herstellerprüfung erforderlich.",
+        "C": "Kritischer Hinweis; alternative Materialrichtung und Herstellerprüfung erforderlich.",
+        "X": "Nicht bewertet; Expert Review und Herstellerprüfung erforderlich.",
+    }[rating]
+    if temp_limit_c is not None:
+        base += f" Temperaturhinweis aus Tabelle: bis {temp_limit_c} °C."
     return base

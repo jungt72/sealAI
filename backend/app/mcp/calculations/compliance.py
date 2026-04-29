@@ -45,7 +45,7 @@ class ComplianceFlag(str, Enum):
 @dataclass
 class FlagResult:
     flag: ComplianceFlag
-    passed: bool          # True = konform
+    passed: bool          # True = internal deterministic rule condition passed
     severity: str         # "ok" | "warning" | "blocker"
     reasons: list[str]
     norm_ref: str
@@ -166,7 +166,10 @@ def _check_fda(mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[
             flag=ComplianceFlag.FDA,
             passed=True,
             severity="ok",
-            reasons=[f"{mat} ist FDA-konform nach 21 CFR 177."],
+            reasons=[
+                f"{mat}: Tabellenhinweis für FDA-relevante Anfragebasis vorhanden; "
+                "Compound- und Dokumentnachweis für Herstellerprüfung erforderlich."
+            ],
             norm_ref="FDA 21 CFR 177.1550 / 177.2600",
         )
     if mat in _FDA_WARN:
@@ -174,14 +177,20 @@ def _check_fda(mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[
             flag=ComplianceFlag.FDA,
             passed=True,
             severity="warning",
-            reasons=[f"{mat}: nur mit spezifiziertem Food-Grade-Compound FDA-konform."],
+            reasons=[
+                f"{mat}: FDA-Relevanz nur über spezifizierten Food-Grade-Compound und "
+                "Dokumentnachweis prüfbar."
+            ],
             norm_ref="FDA 21 CFR 177.2600 / SAE J200",
         )
     return FlagResult(
         flag=ComplianceFlag.FDA,
         passed=False,
         severity="blocker",
-        reasons=[f"{mat} ist nicht FDA-zugelassen für Lebensmittelkontakt."],
+        reasons=[
+            f"{mat}: kein positiver Tabellenhinweis für FDA-relevanten Lebensmittelkontakt; "
+            "alternative Richtung und Herstellerprüfung erforderlich."
+        ],
         norm_ref="FDA 21 CFR 177.1550 / 177.2600",
     )
 
@@ -195,7 +204,10 @@ def _check_atex(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: Op
             flag=ComplianceFlag.ATEX,
             passed=True,
             severity="ok",
-            reasons=["Medium nicht brennbar — keine ATEX-Einschränkung."],
+            reasons=[
+                "Aus dem Medium ergibt sich kein Brennbarkeits-Hinweis in der Tabelle; "
+                "ATEX-Zone und Anlagenkontext bleiben prüfungsrelevant."
+            ],
             norm_ref="EU 2014/34/EU / EN 13463-1",
         )
 
@@ -206,7 +218,8 @@ def _check_atex(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: Op
             severity="warning",
             reasons=[
                 f"{mat} in brennbarer Atmosphäre ({medium_raw}): "
-                "antistatischer PTFE-Grade erforderlich (Leitfähigkeit < 10⁹ Ω)."
+                "antistatischer PTFE-Grade und Nachweis für Herstellerprüfung erforderlich "
+                "(Leitfähigkeit < 10⁹ Ω als Prüfkriterium)."
             ],
             norm_ref="EU 2014/34/EU / EN 13463-1",
         )
@@ -217,7 +230,8 @@ def _check_atex(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: Op
         severity="warning",
         reasons=[
             f"{mat} in brennbarer Atmosphäre ({medium_raw}): "
-            "antistatischen Compound bestätigen (EN 13463-1 §5.7)."
+            "antistatischen Compound und Nachweis für Herstellerprüfung klären "
+            "(EN 13463-1 §5.7 als Prüfkriterium)."
         ],
         norm_ref="EU 2014/34/EU / EN 13463-1",
     )
@@ -229,7 +243,10 @@ def _check_ehedg(mat: str, _med: Optional[str], _t: Optional[float], _p: Optiona
             flag=ComplianceFlag.EHEDG,
             passed=True,
             severity="ok",
-            reasons=[f"{mat} ist EHEDG-kompatibel."],
+            reasons=[
+                f"{mat}: Tabellenhinweis für hygienerelevante Anfragebasis vorhanden; "
+                "Werkstoff-Grade, Konstruktion und Dokumentnachweis prüfen."
+            ],
             norm_ref="EHEDG Doc. 8 / EN 1935/2004",
         )
     if mat in _EHEDG_WARN:
@@ -238,8 +255,8 @@ def _check_ehedg(mat: str, _med: Optional[str], _t: Optional[float], _p: Optiona
             passed=True,
             severity="warning",
             reasons=[
-                f"{mat}: nur EHEDG-zertifizierter Compound geeignet — "
-                "Compound-Datenblatt prüfen."
+                f"{mat}: hygienerelevant nur mit passendem Compound und Nachweis prüfbar; "
+                "Compound-Datenblatt und Herstellerprüfung erforderlich."
             ],
             norm_ref="EHEDG Doc. 8 / EN 1935/2004",
         )
@@ -247,7 +264,10 @@ def _check_ehedg(mat: str, _med: Optional[str], _t: Optional[float], _p: Optiona
         flag=ComplianceFlag.EHEDG,
         passed=False,
         severity="blocker",
-        reasons=[f"{mat} ist für EHEDG-Anwendungen nicht freigegeben."],
+        reasons=[
+            f"{mat}: kritischer Tabellenhinweis für EHEDG-nahe Anwendungen; "
+            "alternative Richtung und Herstellerprüfung erforderlich."
+        ],
         norm_ref="EHEDG Doc. 8 / EN 1935/2004",
     )
 
@@ -259,14 +279,20 @@ def _check_ta_luft(mat: str, _med: Optional[str], _t: Optional[float], _p: Optio
             flag=ComplianceFlag.TA_LUFT,
             passed=True,
             severity="ok",
-            reasons=[f"{mat} ist AED-zertifizierbar — TA-Luft-konform."],
+            reasons=[
+                f"{mat}: AED-/TA-Luft-Nachweis wirkt prinzipiell prüfbar; "
+                "Dokumentation und Herstellerprüfung erforderlich."
+            ],
             norm_ref="VDI 2440 / TA-Luft 2021 §5.2.5",
         )
     return FlagResult(
         flag=ComplianceFlag.TA_LUFT,
         passed=False,
         severity="blocker",
-        reasons=[f"{mat} ist nicht AED-zertifizierbar — nicht TA-Luft-konform."],
+        reasons=[
+            f"{mat}: kein positiver Tabellenhinweis für AED-/TA-Luft-Nachweis; "
+            "alternative Richtung und Herstellerprüfung erforderlich."
+        ],
         norm_ref="VDI 2440 / TA-Luft 2021 §5.2.5",
     )
 
@@ -280,7 +306,10 @@ def _check_norsok(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: 
             flag=ComplianceFlag.NORSOK,
             passed=True,
             severity="ok",
-            reasons=["Medium kein Sour-Service — NORSOK M-710 nicht anwendbar."],
+            reasons=[
+                "Aus dem Medium ergibt sich kein Sour-Service-Hinweis in der Tabelle; "
+                "NORSOK-Relevanz bleibt über Anwendung und Herstellerprüfung zu klären."
+            ],
             norm_ref="NORSOK M-710 / ISO 23936-1/-2",
         )
 
@@ -289,7 +318,10 @@ def _check_norsok(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: 
             flag=ComplianceFlag.NORSOK,
             passed=True,
             severity="ok",
-            reasons=[f"{mat} erfüllt NORSOK M-710 für Sour-Service."],
+            reasons=[
+                f"{mat}: positiver Tabellenhinweis für NORSOK-nahe Anfragebasis; "
+                "Compound-Qualifikation und Herstellerprüfung erforderlich."
+            ],
             norm_ref="NORSOK M-710 / ISO 23936-1/-2",
         )
     if mat in _NORSOK_WARN:
@@ -298,8 +330,8 @@ def _check_norsok(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: 
             passed=True,
             severity="warning",
             reasons=[
-                f"{mat}: begrenzte NORSOK-Scope-Freigabe — "
-                "Compound-Qualifikation nach ISO 23936 prüfen."
+                f"{mat}: begrenzter NORSOK-Tabellenhinweis; "
+                "Compound-Qualifikation nach ISO 23936 und Herstellerprüfung erforderlich."
             ],
             norm_ref="NORSOK M-710 / ISO 23936-1/-2",
         )
@@ -307,7 +339,10 @@ def _check_norsok(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: 
         flag=ComplianceFlag.NORSOK,
         passed=False,
         severity="blocker",
-        reasons=[f"{mat} ist für NORSOK M-710 Sour-Service nicht zugelassen."],
+        reasons=[
+            f"{mat}: kritischer Tabellenhinweis für NORSOK M-710 Sour-Service; "
+            "alternative Richtung und Herstellerprüfung erforderlich."
+        ],
         norm_ref="NORSOK M-710 / ISO 23936-1/-2",
     )
 
@@ -334,9 +369,9 @@ def _check_ped(mat: str, medium_raw: Optional[str], _t: Optional[float], pressur
         reasons=[
             f"PED anwendbar (p = {p} bar). "
             + (
-                "Gruppe 1 (Gefahrmedium) — erhöhte Konformitätsanforderungen."
+                "Gruppe 1 (Gefahrmedium) — erhöhte Einstufungs- und Nachweispflichten prüfen."
                 if group1
-                else "Gruppe 2 — Standard-Konformitätsdokumentation erforderlich."
+                else "Gruppe 2 — Einstufung und Dokumentationsbedarf prüfen."
             )
         ],
         norm_ref="EU PED 2014/68/EU / EN 13480-3",
@@ -350,14 +385,20 @@ def _check_aed(mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[
             flag=ComplianceFlag.AED,
             passed=True,
             severity="ok",
-            reasons=[f"{mat} ist AED-zertifizierbar (Außendichtheitsnachweis möglich)."],
+            reasons=[
+                f"{mat}: AED-/Außendichtheitsnachweis wirkt prinzipiell prüfbar; "
+                "Dokumentation und Herstellerprüfung erforderlich."
+            ],
             norm_ref="VDI 2440 / DIN EN ISO 15848-1",
         )
     return FlagResult(
         flag=ComplianceFlag.AED,
         passed=False,
         severity="blocker",
-        reasons=[f"{mat} ist nicht AED-zertifizierbar — kein Außendichtheitsnachweis möglich."],
+        reasons=[
+            f"{mat}: kein positiver Tabellenhinweis für AED-/Außendichtheitsnachweis; "
+            "alternative Richtung und Herstellerprüfung erforderlich."
+        ],
         norm_ref="VDI 2440 / DIN EN ISO 15848-1",
     )
 
