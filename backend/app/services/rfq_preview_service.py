@@ -117,6 +117,59 @@ class RfqPreviewView:
     created_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class RFQExportDocument:
+    export_generated: bool
+    preview_id: str
+    case_id: str
+    case_revision: int
+    generated_from_case_revision: int
+    artifact_type: str
+    export_format: str
+    dispatch_enabled: bool
+    automatic_dispatch_allowed: bool
+    no_final_technical_release: bool
+    included_sections: tuple[str, ...]
+    excluded_sections: tuple[str, ...]
+    omitted_disallowed_content: tuple[str, ...]
+    content: dict[str, Any]
+    event_names: tuple[str, ...]
+    created_at: datetime | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "export_generated": self.export_generated,
+            "preview_id": self.preview_id,
+            "case_id": self.case_id,
+            "case_revision": self.case_revision,
+            "generated_from_case_revision": self.generated_from_case_revision,
+            "artifact_type": self.artifact_type,
+            "export_format": self.export_format,
+            "dispatch_enabled": self.dispatch_enabled,
+            "automatic_dispatch_allowed": self.automatic_dispatch_allowed,
+            "no_final_technical_release": self.no_final_technical_release,
+            "included_sections": self.included_sections,
+            "excluded_sections": self.excluded_sections,
+            "omitted_disallowed_content": self.omitted_disallowed_content,
+            "content": self.content,
+            "event_names": self.event_names,
+            "created_at": self.created_at,
+        }
+
+
+RFQExportPayload = dict[str, Any]
+
+
+class RfqExportBlockedError(RfqPreviewError):
+    def __init__(self, message: str, *, event_names: Sequence[str] = ()) -> None:
+        super().__init__(message)
+        self.event_names = tuple(event_names) or (
+            "ExportBlocked",
+            "ExternalDispatchBlocked",
+            "RFQDispatchDisabled",
+        )
+
+
 class RfqPreviewService:
     """Create and govern Phase-1 RFQ preview artifacts.
 
@@ -256,6 +309,51 @@ class RfqPreviewService:
         await self._session.commit()
         await self._session.refresh(row)
         return _view(row, current_case_revision=current_revision)
+
+    async def generate_export(
+        self,
+        *,
+        preview_id: str,
+        tenant_id: str,
+        user_id: str,
+    ) -> RFQExportDocument:
+        result = await self._session.execute(
+            select(InquiryExtractModel)
+            .where(InquiryExtractModel.extract_id == preview_id)
+            .where(InquiryExtractModel.tenant_id == tenant_id)
+            .where(InquiryExtractModel.artifact_type == RFQ_PREVIEW_ARTIFACT_TYPE)
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise RfqPreviewNotFound("rfq preview not found")
+
+        case_row = await self._load_owned_case(
+            case_id=str(row.case_id), tenant_id=tenant_id, user_id=user_id
+        )
+        if case_row is None:
+            raise RfqPreviewNotFound("case not found")
+
+        current_revision = int(case_row.case_revision or 0)
+        if int(row.case_revision) != current_revision:
+            raise RfqPreviewStaleError("rfq preview is stale and must be regenerated")
+
+        raw_payload = row.payload if isinstance(row.payload, Mapping) else {}
+        _require_dispatch_disabled(row, payload=raw_payload)
+        payload = _harden_rfq_payload_contract(
+            row.payload,
+            case_revision=int(row.case_revision),
+            current_case_revision=current_revision,
+        )
+        consent_scope = _require_export_consent(row, payload=payload)
+        _require_dispatch_disabled(row, payload=payload)
+
+        return build_rfq_export_document(
+            row=row,
+            payload=payload,
+            consent_scope=consent_scope,
+            current_case_revision=current_revision,
+        )
 
     async def _load_owned_case(
         self, *, case_id: str, tenant_id: str, user_id: str
@@ -428,6 +526,104 @@ def build_rfq_preview_payload(
             ),
         },
     }
+
+
+def build_rfq_export_document(
+    *,
+    row: InquiryExtractModel,
+    payload: Mapping[str, Any],
+    consent_scope: Mapping[str, Any],
+    current_case_revision: int,
+) -> RFQExportDocument:
+    meta = _object_mapping(payload.get("meta"))
+    rfq_preview = _object_mapping(payload.get("rfq_preview"))
+    generated_from_case_revision = int(
+        meta.get("generated_from_case_revision")
+        or rfq_preview.get("generated_from_case_revision")
+        or row.case_revision
+    )
+    sections, excluded_sections = _allowlisted_export_sections(
+        rfq_preview.get("sections"),
+        consent_scope=consent_scope,
+    )
+    technical_fields = _allowlisted_export_technical_fields(
+        rfq_preview.get("technical_field_envelopes")
+        or rfq_preview.get("technical_field_statuses")
+    )
+    evidence_refs = _allowlisted_evidence_refs(
+        tuple(rfq_preview.get("evidence_refs_summary", {}).get("items", ()))
+        if isinstance(rfq_preview.get("evidence_refs_summary"), Mapping)
+        else ()
+    )
+    if not evidence_refs:
+        evidence_refs = _allowlisted_evidence_refs(
+            ref
+            for field in technical_fields
+            for ref in _as_sequence(field.get("evidence_refs"))
+        )
+    content = _drop_empty(
+        {
+            "title": "RFQ Preview - Anfragebasis fuer Herstellerpruefung",
+            "safe_case_reference": {"case_id": str(row.case_id)},
+            "preview_reference": {"preview_id": str(row.extract_id)},
+            "revision": {
+                "case_revision": int(row.case_revision),
+                "generated_from_case_revision": generated_from_case_revision,
+                "current_case_revision": int(current_case_revision),
+            },
+            "notices": {
+                "no_final_technical_release": True,
+                "manufacturer_review_required": True,
+                "notice": "No final technical release. Manufacturer review required.",
+            },
+            "technical_fields": technical_fields,
+            "open_points": _allowlisted_text_sequence(
+                _open_points_for_export(rfq_preview, sections)
+            ),
+            "risks": _allowlisted_text_sequence(_risks_for_export(sections, payload)),
+            "manufacturer_review_notes": _allowlisted_text_sequence(
+                _manufacturer_review_notes_for_export(sections, payload)
+            ),
+            "evidence_references": evidence_refs,
+            "source_validation_summary": _allowlisted_source_validation_summary(
+                rfq_preview.get("source_validation_summary")
+                or payload.get("source_validation_summary")
+            ),
+            "consent_acknowledgement_summary": _consent_export_summary(consent_scope),
+        }
+    )
+    included_sections = tuple(content.keys())
+    omitted = (
+        "raw_preview_payload",
+        "raw_uploaded_document_content",
+        "internal_paths",
+        "secrets_or_tokens",
+        "non_allowlisted_metadata",
+        "external_dispatch",
+    )
+    return RFQExportDocument(
+        export_generated=True,
+        preview_id=str(row.extract_id),
+        case_id=str(row.case_id),
+        case_revision=int(row.case_revision),
+        generated_from_case_revision=generated_from_case_revision,
+        artifact_type=RFQ_PREVIEW_ARTIFACT_TYPE,
+        export_format="json",
+        dispatch_enabled=False,
+        automatic_dispatch_allowed=False,
+        no_final_technical_release=True,
+        included_sections=included_sections,
+        excluded_sections=excluded_sections + omitted,
+        omitted_disallowed_content=omitted,
+        content=content,
+        event_names=(
+            "RFQConsentGranted",
+            "ExportGenerated",
+            "ExternalDispatchBlocked",
+            "RFQDispatchDisabled",
+        ),
+        created_at=row.created_at,
+    )
 
 
 def collect_technical_fields(
@@ -781,6 +977,350 @@ def normalize_consent_scope(
         "user_acknowledged_no_final_release": user_acknowledged_no_final_release,
         "user_acknowledged_export_intent": user_acknowledged_export_intent,
     }
+
+
+def _require_export_consent(
+    row: InquiryExtractModel,
+    *,
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    if str(row.consent_status) != "granted":
+        raise RfqExportBlockedError("RFQ preview consent is required before export")
+    consent_scope = row.consent_scope if isinstance(row.consent_scope, Mapping) else {}
+    try:
+        return normalize_consent_scope(
+            consent_scope,
+            open_points_acknowledgement_required=_open_points_acknowledgement_required(
+                payload
+            ),
+        )
+    except RfqPreviewError as exc:
+        raise RfqExportBlockedError(str(exc)) from exc
+
+
+def _require_dispatch_disabled(
+    row: InquiryExtractModel,
+    *,
+    payload: Mapping[str, Any],
+) -> None:
+    consent_boundary = _object_mapping(payload.get("consent_boundary"))
+    meta = _object_mapping(payload.get("meta"))
+    rfq_preview = _object_mapping(payload.get("rfq_preview"))
+    if bool(row.dispatch_enabled):
+        raise RfqExportBlockedError("RFQ dispatch must remain disabled for manual export")
+    if any(
+        bool(mapping.get("dispatch_enabled"))
+        for mapping in (consent_boundary, meta, rfq_preview)
+    ):
+        raise RfqExportBlockedError("RFQ dispatch must remain disabled for manual export")
+    if any(
+        bool(mapping.get("automatic_dispatch_allowed"))
+        for mapping in (consent_boundary, meta, rfq_preview)
+    ):
+        raise RfqExportBlockedError("automatic dispatch is not allowed for manual export")
+
+
+def _allowlisted_export_sections(
+    value: Any,
+    *,
+    consent_scope: Mapping[str, Any],
+) -> tuple[tuple[dict[str, Any], ...], tuple[str, ...]]:
+    consented = {
+        str(item).strip()
+        for item in _as_sequence(consent_scope.get("shared_sections"))
+        if str(item).strip()
+    }
+    include_all = bool(
+        {"rfq_preview", "RFQ-Preview", "RFQ Preview", "preview"}.intersection(consented)
+    )
+    allowed_titles = set(RFQ_PREVIEW_SECTIONS)
+    sections: list[dict[str, Any]] = []
+    excluded: list[str] = []
+    for item in _as_sequence(value):
+        section = _object_mapping(item)
+        title = _optional_text(section.get("title"))
+        if not title:
+            continue
+        if title not in allowed_titles:
+            excluded.append("non_allowlisted_section")
+            continue
+        if not include_all and title not in consented:
+            excluded.append("section_not_in_consent_scope")
+            continue
+        content = _safe_json_value(section.get("content"))
+        sections.append(
+            _drop_empty(
+                {
+                    "index": _optional_int(section.get("index")),
+                    "title": title,
+                    "status": _safe_text(section.get("status")),
+                    "content": content,
+                }
+            )
+        )
+    return tuple(sections), tuple(dict.fromkeys(excluded))
+
+
+def _allowlisted_export_technical_fields(value: Any) -> tuple[dict[str, Any], ...]:
+    fields: list[dict[str, Any]] = []
+    for item in _as_sequence(value):
+        field = _object_mapping(item)
+        field_key = _optional_text(field.get("field") or field.get("field_key"))
+        if field_key not in ALLOWED_TECHNICAL_FIELD_PATHS:
+            continue
+        engineering_value = _object_mapping(field.get("engineering_value"))
+        fields.append(
+            _drop_empty(
+                {
+                    "field": field_key,
+                    "label": _safe_text(field.get("label")),
+                    "value": _safe_json_value(field.get("value")),
+                    "engineering_value": _allowlisted_engineering_value(
+                        engineering_value
+                    ),
+                    "unit": _safe_text(field.get("unit")),
+                    "normalized_value": _safe_json_value(field.get("normalized_value")),
+                    "normalized_unit": _safe_text(field.get("normalized_unit")),
+                    "status": _safe_text(field.get("status")),
+                    "source_type": _safe_text(field.get("source_type")),
+                    "validation_status": _safe_text(field.get("validation_status")),
+                    "confirmation_required": bool(field.get("confirmation_required")),
+                    "evidence_refs": _allowlisted_evidence_refs(
+                        field.get("evidence_refs")
+                    ),
+                }
+            )
+        )
+    return tuple(fields)
+
+
+def _allowlisted_engineering_value(value: Mapping[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "raw_value",
+        "canonical_value",
+        "unit",
+        "quantity_kind",
+        "interpretation",
+    }
+    return _drop_empty(
+        {
+            key: _safe_json_value(value.get(key))
+            for key in sorted(allowed)
+            if key in value
+        }
+    )
+
+
+def _open_points_for_export(
+    rfq_preview: Mapping[str, Any],
+    sections: Sequence[Mapping[str, Any]],
+) -> tuple[Any, ...]:
+    summary = _object_mapping(rfq_preview.get("open_points_summary"))
+    items = _as_sequence(summary.get("items"))
+    if items:
+        return items
+    return tuple(
+        content
+        for section in sections
+        if "Offene Punkte" in str(section.get("title") or "")
+        for content in _flatten_text_items(section.get("content"))
+    )
+
+
+def _risks_for_export(
+    sections: Sequence[Mapping[str, Any]],
+    payload: Mapping[str, Any],
+) -> tuple[Any, ...]:
+    decision = _object_mapping(payload.get("decision_understanding"))
+    return (
+        tuple(
+            content
+            for section in sections
+            if "Risiken" in str(section.get("title") or "")
+            for content in _flatten_text_items(section.get("content"))
+        )
+        + _as_sequence(decision.get("key_risks"))
+    )
+
+
+def _manufacturer_review_notes_for_export(
+    sections: Sequence[Mapping[str, Any]],
+    payload: Mapping[str, Any],
+) -> tuple[Any, ...]:
+    decision = _object_mapping(payload.get("decision_understanding"))
+    return (
+        tuple(
+            content
+            for section in sections
+            if "Fragen an den Hersteller" in str(section.get("title") or "")
+            for content in _flatten_text_items(section.get("content"))
+        )
+        + _as_sequence(decision.get("manufacturer_review_needs"))
+    )
+
+
+def _allowlisted_source_validation_summary(value: Any) -> dict[str, Any]:
+    summary = _object_mapping(value)
+    return _drop_empty(
+        {
+            "total_fields": _optional_int(summary.get("total_fields")),
+            "by_source_type": _safe_count_mapping(summary.get("by_source_type")),
+            "by_validation_status": _safe_count_mapping(
+                summary.get("by_validation_status")
+            ),
+            "unvalidated_count": _optional_int(summary.get("unvalidated_count")),
+            "candidate_count": _optional_int(summary.get("candidate_count")),
+            "conflicting_count": _optional_int(summary.get("conflicting_count")),
+            "unknown_count": _optional_int(summary.get("unknown_count")),
+            "not_final_release": True,
+        }
+    )
+
+
+def _consent_export_summary(consent_scope: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "status": "granted",
+        "user_acknowledged_no_final_release": bool(
+            consent_scope.get("user_acknowledged_no_final_release")
+        ),
+        "user_acknowledged_open_points": bool(
+            consent_scope.get("user_acknowledged_open_points")
+        ),
+        "user_acknowledged_export_intent": bool(
+            consent_scope.get("user_acknowledged_export_intent")
+        ),
+        "shared_sections": _allowlisted_text_sequence(
+            consent_scope.get("shared_sections")
+        ),
+        "shared_document_refs": _allowlisted_evidence_refs(
+            consent_scope.get("shared_documents")
+        ),
+        "manual_export_only": True,
+    }
+
+
+def _safe_count_mapping(value: Any) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for key, item in _object_mapping(value).items():
+        text = _safe_text(key)
+        if not text:
+            continue
+        number = _optional_int(item)
+        if number is not None:
+            result[text] = number
+    return result
+
+
+def _allowlisted_text_sequence(value: Any) -> tuple[str, ...]:
+    result: list[str] = []
+    for item in _as_sequence(value):
+        text = _safe_text(item)
+        if text and text not in result:
+            result.append(text)
+    return tuple(result)
+
+
+def _allowlisted_evidence_refs(value: Any) -> tuple[str, ...]:
+    result: list[str] = []
+    for item in _as_sequence(value):
+        text = _safe_text(item)
+        if not text or text == "[REDACTED]":
+            continue
+        if not _is_safe_reference(text):
+            continue
+        if text not in result:
+            result.append(text)
+    return tuple(result[:48])
+
+
+def _flatten_text_items(value: Any) -> tuple[str, ...]:
+    if isinstance(value, Mapping):
+        return tuple(
+            text
+            for key, item in value.items()
+            for text in _flatten_text_items(f"{key}: {item}")
+        )
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return tuple(text for item in value for text in _flatten_text_items(item))
+    text = _safe_text(value)
+    return (text,) if text else ()
+
+
+def _safe_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _drop_empty(
+            {str(key): _safe_json_value(item) for key, item in value.items()}
+        )
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return tuple(
+            item
+            for item in (_safe_json_value(item) for item in value)
+            if item not in (None, "", (), [], {})
+        )
+    return _safe_text(value) if isinstance(value, str) else value
+
+
+def _safe_text(value: Any) -> str | None:
+    text = _optional_text(value)
+    if not text:
+        return None
+    if _looks_like_internal_path(text) or _looks_like_secret(text):
+        return "[REDACTED]"
+    return text[:500]
+
+
+def _is_safe_reference(value: str) -> bool:
+    if _looks_like_internal_path(value) or _looks_like_secret(value):
+        return False
+    if "/" in value or "\\" in value:
+        return False
+    allowed_prefixes = (
+        "chat:",
+        "document:",
+        "evidence:",
+        "paperless:",
+        "rag:",
+        "source:",
+        "upload:",
+    )
+    if value.startswith(allowed_prefixes):
+        return True
+    return all(char.isalnum() or char in {"-", "_", ".", "#", ":"} for char in value)
+
+
+def _looks_like_internal_path(value: str) -> bool:
+    lowered = value.casefold()
+    if lowered.startswith(("file://", "/")):
+        return True
+    if ":\\" in value or "\\\\" in value:
+        return True
+    return any(
+        marker in lowered
+        for marker in (
+            "/home/",
+            "/tmp/",
+            "/var/",
+            "/etc/",
+            "/usr/",
+            ".env",
+        )
+    )
+
+
+def _looks_like_secret(value: str) -> bool:
+    lowered = value.casefold()
+    secret_markers = (
+        "api_key",
+        "apikey",
+        "authorization:",
+        "bearer ",
+        "client_secret",
+        "password",
+        "private_key",
+        "secret=",
+        "token=",
+    )
+    return any(marker in lowered for marker in secret_markers)
 
 
 def _view(row: InquiryExtractModel, *, current_case_revision: int) -> RfqPreviewView:
@@ -1199,3 +1739,11 @@ def _bool_or_none(value: Any) -> bool | None:
 
 def _drop_none(mapping: Mapping[str, Any]) -> dict[str, Any]:
     return {str(key): value for key, value in mapping.items() if value is not None}
+
+
+def _drop_empty(mapping: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): value
+        for key, value in mapping.items()
+        if value is not None and value != "" and value != () and value != [] and value != {}
+    }

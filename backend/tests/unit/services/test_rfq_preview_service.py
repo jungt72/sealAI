@@ -9,6 +9,7 @@ from app.models.case_state_snapshot import CaseStateSnapshot
 from app.models.inquiry_extract import InquiryExtractModel
 from app.services.rfq_preview_service import (
     RFQ_PREVIEW_SECTIONS,
+    RfqExportBlockedError,
     RfqPreviewError,
     RfqPreviewNotFound,
     RfqPreviewService,
@@ -174,6 +175,45 @@ def _snapshot_with_field_envelopes() -> CaseStateSnapshot:
                 "manufacturer_review_needs": ["Druckangabe und Oberflaeche klaeren"],
             }
         },
+    )
+
+
+def _valid_consent_scope() -> dict[str, object]:
+    return {
+        "shared_sections": ["rfq_preview"],
+        "shared_documents": [],
+        "intended_recipients": ["manual-export"],
+        "user_acknowledged_open_points": True,
+        "user_acknowledged_no_final_release": True,
+        "user_acknowledged_export_intent": True,
+    }
+
+
+def _consented_preview(
+    *,
+    payload: dict[str, object] | None = None,
+    consent_scope: dict[str, object] | None = None,
+    consent_status: str = "granted",
+    case_revision: int = 4,
+    tenant_id: str = "tenant-1",
+    dispatch_enabled: bool = False,
+) -> InquiryExtractModel:
+    return InquiryExtractModel(
+        extract_id="preview-1",
+        case_id="case-123",
+        tenant_id=tenant_id,
+        case_revision=case_revision,
+        artifact_type="rfq_preview",
+        payload=payload
+        if payload is not None
+        else build_rfq_preview_payload(
+            case_row=_case(),
+            snapshot=_snapshot_with_field_envelopes(),
+        ),
+        source_kind="case_revision",
+        consent_status=consent_status,
+        consent_scope=consent_scope if consent_scope is not None else _valid_consent_scope(),
+        dispatch_enabled=dispatch_enabled,
     )
 
 
@@ -760,6 +800,194 @@ async def test_grant_preview_consent_rejects_cross_user_case_id() -> None:
         )
 
     assert preview.consent_status == "not_requested"
+
+
+@pytest.mark.asyncio
+async def test_generate_export_blocks_without_consent() -> None:
+    preview = _consented_preview(consent_status="not_requested", consent_scope={})
+    service = RfqPreviewService(_FakeConsentSession([preview, _case()]))
+
+    with pytest.raises(RfqExportBlockedError, match="consent") as exc_info:
+        await service.generate_export(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-1",
+        )
+
+    assert "ExportBlocked" in exc_info.value.event_names
+    assert "ExternalDispatchBlocked" in exc_info.value.event_names
+    assert "RFQDispatchDisabled" in exc_info.value.event_names
+    assert preview.dispatch_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_generate_export_blocks_stale_preview() -> None:
+    preview = _consented_preview(case_revision=4)
+    case_row = _case()
+    case_row.case_revision = 5
+    service = RfqPreviewService(_FakeConsentSession([preview, case_row]))
+
+    with pytest.raises(RfqPreviewStaleError):
+        await service.generate_export(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_export_blocks_missing_export_intent_acknowledgement() -> None:
+    scope = _valid_consent_scope()
+    scope["user_acknowledged_export_intent"] = False
+    preview = _consented_preview(consent_scope=scope)
+    service = RfqPreviewService(_FakeConsentSession([preview, _case()]))
+
+    with pytest.raises(RfqExportBlockedError, match="export_intent"):
+        await service.generate_export(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_export_rejects_cross_tenant_preview_id() -> None:
+    preview = _consented_preview(tenant_id="tenant-2")
+    service = RfqPreviewService(_FilteringPreviewSession([preview, _case()]))
+
+    with pytest.raises(RfqPreviewNotFound):
+        await service.generate_export(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_export_rejects_cross_user_case_id() -> None:
+    preview = _consented_preview()
+    service = RfqPreviewService(_FilteringPreviewSession([preview, _case()]))
+
+    with pytest.raises(RfqPreviewNotFound):
+        await service.generate_export(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-2",
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_export_succeeds_after_valid_consent_with_allowlisted_payload() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_envelopes(),
+    )
+    payload["documents"] = {
+        "hidden": {
+            "path": "/home/thorsten/sealai/private/customer.pdf",
+            "content": "raw hidden document content password=super-secret",
+        }
+    }
+    payload["internal_metadata"] = {"token": "token=abc123"}
+    payload["rfq_preview"]["sections"].append(
+        {
+            "index": 99,
+            "title": "Internal Customer Metadata",
+            "content": "raw hidden document content",
+            "status": "hidden",
+        }
+    )
+    payload["rfq_preview"]["technical_field_envelopes"][0]["evidence_refs"] = (
+        "upload:datasheet-1#p2",
+        "/home/thorsten/sealai/private/customer.pdf",
+        "token=abc123",
+    )
+    preview = _consented_preview(payload=payload)
+    service = RfqPreviewService(_FakeConsentSession([preview, _case()]))
+
+    document = await service.generate_export(
+        preview_id="preview-1",
+        tenant_id="tenant-1",
+        user_id="user-1",
+    )
+    export_payload = document.as_dict()
+    serialized = json.dumps(export_payload, sort_keys=True).casefold()
+
+    assert export_payload["export_generated"] is True
+    assert export_payload["artifact_type"] == "rfq_preview"
+    assert export_payload["case_revision"] == 4
+    assert export_payload["generated_from_case_revision"] == 4
+    assert export_payload["export_format"] == "json"
+    assert export_payload["no_final_technical_release"] is True
+    assert export_payload["dispatch_enabled"] is False
+    assert export_payload["automatic_dispatch_allowed"] is False
+    assert "RFQConsentGranted" in export_payload["event_names"]
+    assert "ExportGenerated" in export_payload["event_names"]
+    assert "ExternalDispatchBlocked" in export_payload["event_names"]
+    assert "RFQDispatchDisabled" in export_payload["event_names"]
+    assert set(export_payload["included_sections"]).issubset(
+        {
+            "title",
+            "safe_case_reference",
+            "preview_reference",
+            "revision",
+            "notices",
+            "technical_fields",
+            "open_points",
+            "risks",
+            "manufacturer_review_notes",
+            "evidence_references",
+            "source_validation_summary",
+            "consent_acknowledgement_summary",
+        }
+    )
+    assert "/home/thorsten" not in serialized
+    assert "private/customer.pdf" not in serialized
+    assert "raw hidden document content" not in serialized
+    assert "super-secret" not in serialized
+    assert "token=abc123" not in serialized
+    assert "internal customer metadata" not in serialized
+    assert "approved" not in serialized
+    assert "certified" not in serialized
+    assert "suitable" not in serialized
+    assert "sent to manufacturer" not in serialized
+    assert "automatic dispatch" not in serialized
+    assert export_payload["content"]["evidence_references"] == (
+        "upload:datasheet-1#p2",
+        "chat:turn-3",
+        "upload:datasheet-2#p1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_generate_export_blocks_if_dispatch_is_enabled() -> None:
+    preview = _consented_preview(dispatch_enabled=True)
+    service = RfqPreviewService(_FakeConsentSession([preview, _case()]))
+
+    with pytest.raises(RfqExportBlockedError, match="dispatch"):
+        await service.generate_export(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_generate_export_blocks_if_automatic_dispatch_allowed_in_preview_payload() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_envelopes(),
+    )
+    payload["consent_boundary"]["automatic_dispatch_allowed"] = True
+    preview = _consented_preview(payload=payload)
+    service = RfqPreviewService(_FakeConsentSession([preview, _case()]))
+
+    with pytest.raises(RfqExportBlockedError, match="automatic dispatch"):
+        await service.generate_export(
+            preview_id="preview-1",
+            tenant_id="tenant-1",
+            user_id="user-1",
+        )
 
 class _FakeScalarResult:
     def __init__(self, value: object) -> None:

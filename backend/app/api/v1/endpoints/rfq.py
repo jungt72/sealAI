@@ -10,6 +10,7 @@ from app.common.errors import error_detail
 from app.database import get_db
 from app.services.auth.dependencies import RequestUser, get_current_request_user
 from app.services.rfq_preview_service import (
+    RfqExportBlockedError,
     RfqPreviewError,
     RfqPreviewNotFound,
     RfqPreviewService,
@@ -85,6 +86,53 @@ async def get_rfq_preview(
     return _preview_response(view)
 
 
+@router.get("/preview/{preview_id}/export")
+async def get_rfq_preview_export(
+    preview_id: str,
+    raw_request: Request,
+    user: RequestUser = Depends(get_current_request_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    service = RfqPreviewService(session)
+    try:
+        document = await service.generate_export(
+            preview_id=preview_id,
+            tenant_id=_request_tenant_id(user),
+            user_id=user.user_id,
+        )
+    except RfqPreviewStaleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=error_detail(
+                "rfq_export_stale",
+                request_id=request_id,
+                message=str(exc),
+                event_names=(
+                    "ExportBlocked",
+                    "ExternalDispatchBlocked",
+                    "RFQDispatchDisabled",
+                ),
+            ),
+        ) from exc
+    except RfqPreviewNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rfq_preview_not_found", request_id=request_id),
+        ) from exc
+    except RfqExportBlockedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(
+                "rfq_export_blocked",
+                request_id=request_id,
+                message=str(exc),
+                event_names=exc.event_names,
+            ),
+        ) from exc
+    return _json_safe(document.as_dict())
+
+
 @router.post("/preview/{preview_id}/consent")
 async def grant_rfq_preview_consent(
     preview_id: str,
@@ -150,4 +198,6 @@ def _json_safe(value: Any) -> Any:
         return [_json_safe(item) for item in value]
     if isinstance(value, list):
         return [_json_safe(item) for item in value]
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
     return value
