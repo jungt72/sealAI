@@ -11,6 +11,7 @@ interface ChatComposerProps {
   isUploading?: boolean;
   autoFocus?: boolean;
   externalValue?: string | null;
+  placeholder?: string;
 }
 
 export default function ChatComposer({
@@ -20,6 +21,7 @@ export default function ChatComposer({
   isUploading,
   autoFocus,
   externalValue,
+  placeholder = "Beschreibe deine Anwendung, das Medium oder die Anforderungen ...",
 }: ChatComposerProps) {
   const [draft, setDraft] = useState(() => ({
     lastExternalValue: externalValue ?? null,
@@ -86,7 +88,7 @@ export default function ChatComposer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full rounded-lg border border-slate-200 bg-white p-2 shadow-sm transition-colors focus-within:border-seal-blue/40 focus-within:shadow-md"
+      className="w-full rounded-[16px] border border-[#D1D5DB] bg-white p-2 shadow-[0_4px_18px_rgba(15,23,42,0.06)] transition-colors focus-within:border-[#0B57D0] focus-within:shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
     >
       <div className="flex items-end gap-2">
         <input
@@ -113,7 +115,7 @@ export default function ChatComposer({
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="PTFE-RWDR Fall, Medium, Druck, Temperatur oder Ausfallbild beschreiben..."
+          placeholder={placeholder}
           className="max-h-[220px] min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-slate-950 placeholder:text-slate-400 focus:outline-none"
           disabled={isLoading}
           autoFocus={autoFocus}
@@ -126,7 +128,7 @@ export default function ChatComposer({
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
             canSend
-              ? "bg-seal-blue text-white hover:bg-[#0a2e68]"
+              ? "bg-[#0B57D0] text-white hover:bg-[#0847AD]"
               : "cursor-not-allowed bg-slate-100 text-slate-400",
           )}
         >

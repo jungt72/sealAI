@@ -76,6 +76,7 @@ function workspaceView(): WorkspaceView {
       notForReleaseDecisions: true,
       disclaimer: null,
     },
+    deepDiveTabs: [],
     specificity: {
       materialSpecificityRequired: "family_only",
       completenessDepth: "prequalification",

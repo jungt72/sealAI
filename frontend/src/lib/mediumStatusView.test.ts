@@ -16,6 +16,7 @@ describe("mediumStatusView", () => {
       assertions: null,
       structuredState: null,
       turnContext: null,
+      proposedCaseDelta: null,
       ui: {
         parameter: { parameters: [], parameter_count: 0, needs_confirmation: false },
         assumption: { items: [], open_points: [], has_open_points: false },

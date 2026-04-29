@@ -141,11 +141,7 @@ export default function DashboardShell({
             </Link>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F7FB] p-3">
-          <div className="h-full overflow-hidden rounded-[20px] border border-[#E7ECF3] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
-            {children}
-          </div>
-        </div>
+        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F7FB]">{children}</div>
       </main>
     </div>
   );

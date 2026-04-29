@@ -51,6 +51,7 @@ function cockpitData(): CockpitData {
         },
       },
       checks: [],
+      riskEvaluations: [],
       readiness: {
         isRfqReady: true,
         missingMandatoryKeys: [],

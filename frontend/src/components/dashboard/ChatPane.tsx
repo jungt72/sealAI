@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Bot, Check, ChevronRight, Loader2, Paperclip, UserRound, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Loader2, Paperclip, SendHorizontal, UserRound, X } from "lucide-react";
 
 import ChatComposer from "@/components/dashboard/ChatComposer";
 import { useAgentStream } from "@/hooks/useAgentStream";
@@ -152,11 +152,9 @@ function ProposedDeltaPanel({
 }
 
 const ROUTING_SUGGESTIONS = [
-  "Ich brauche eine Dichtung, bin aber beim Dichttyp noch unsicher.",
-  "PTFE-RWDR fuer eine rotierende Welle vorqualifizieren.",
-  "Gleitringdichtung fuer eine Pumpe klaeren.",
-  "Bestehende Dichtung faellt aus: Schadensbild analysieren.",
-  "Nur Medium und Betriebsdaten pruefen.",
+  "PTFE-RWDR für rotierende Welle",
+  "Gleitringdichtung für Pumpe",
+  "Bestehende Dichtung analysieren",
 ];
 
 export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPaneProps) {
@@ -229,45 +227,27 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#FBFCFE]">
-      <div className="flex h-[58px] shrink-0 items-center border-b border-[#E7ECF3] bg-white px-5">
-        <div className="flex items-center gap-2 text-[18px] font-semibold text-[#1F2937]">
-          <span className="grid h-7 w-7 place-items-center rounded-lg bg-[#EEF4FF] text-[#0B5BD3]">
-            <Bot size={16} />
-          </span>
-          Chat
-        </div>
+    <div className="flex h-full w-full flex-col bg-transparent">
+      <div className="flex h-[44px] shrink-0 items-center px-1">
+        <div className="text-[15px] font-semibold text-[#111827]">Chat</div>
       </div>
 
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         <div
           className={cn(
-            "mx-auto flex min-h-full w-full max-w-[760px] flex-col px-4 sm:px-5",
-            hasConversation ? "py-5" : "justify-center py-8",
+            "mx-auto flex min-h-full w-full max-w-[760px] flex-col px-1",
+            hasConversation ? "py-4" : "justify-center py-8",
           )}
         >
           {!hasConversation ? (
-            <div className="mx-auto flex w-full max-w-[640px] flex-col items-center gap-4">
-              <ChatComposer
-                onSend={(message) => void sendMessage(message)}
-                onUpload={(file) => void handleDocumentUpload(file)}
-                isLoading={isStreaming}
-                isUploading={isUploadingDocument}
-                autoFocus
-              />
-              <div className="flex w-full flex-wrap justify-center gap-2">
-                {ROUTING_SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => void sendMessage(suggestion)}
-                    disabled={isStreaming}
-                    className="rounded-full border border-[#D9E5F7] bg-white px-3 py-2 text-[12px] font-medium leading-5 text-[#315B8D] shadow-sm transition-colors hover:border-[#AFC7EC] hover:bg-[#F8FBFF] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
+            <div className="mx-auto flex w-full max-w-[620px] flex-col items-center text-center">
+              <div className="grid h-16 w-16 place-items-center rounded-full border border-[#D7E5FF] bg-[#EAF2FF] text-[#0B57D0] shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+                <Bot size={28} />
               </div>
+              <h1 className="mt-5 text-[26px] font-semibold tracking-tight text-[#111827]">Hallo Thorsten,</h1>
+              <p className="mt-3 max-w-[520px] text-[15px] leading-7 text-[#4B5563]">
+                Beschreibe deine Dichtungssituation und erhalte fokussierte Empfehlungen, Vergleiche und technische Analysen.
+              </p>
             </div>
           ) : (
             <>
@@ -351,7 +331,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
       </div>
 
       {hasConversation && (
-        <div className="border-t border-[#E7ECF3] bg-white p-3 sm:p-4">
+        <div className="p-1 pt-3">
           <div className="mx-auto max-w-[760px]">
             <ChatComposer
               onSend={(message) => void sendMessage(message)}
@@ -368,6 +348,33 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
                 Details anzeigen
                 <ChevronRight size={12} />
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {!hasConversation && (
+        <div className="p-1 pt-3">
+          <div className="mx-auto max-w-[760px]">
+            <ChatComposer
+              onSend={(message) => void sendMessage(message)}
+              onUpload={(file) => void handleDocumentUpload(file)}
+              isLoading={isStreaming}
+              isUploading={isUploadingDocument}
+              autoFocus
+            />
+            <div className="mt-3 flex w-full flex-wrap justify-center gap-2">
+              {ROUTING_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => void sendMessage(suggestion)}
+                  disabled={isStreaming}
+                  className="inline-flex items-center gap-2 rounded-full border border-[#D9E5F7] bg-white px-3 py-2 text-[12px] font-medium leading-5 text-[#315B8D] shadow-sm transition-colors hover:border-[#AFC7EC] hover:bg-[#F8FBFF] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <SendHorizontal size={13} />
+                  {suggestion}
+                </button>
+              ))}
             </div>
           </div>
         </div>

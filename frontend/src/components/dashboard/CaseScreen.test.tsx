@@ -1,9 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import { within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { WorkspaceView } from "@/lib/contracts/workspace";
 
 import CaseScreen from "./CaseScreen";
+
+const workspaceHookState = vi.hoisted((): { workspace: WorkspaceView | null } => ({
+  workspace: null,
+}));
 
 vi.mock("@/components/dashboard/ChatPane", () => ({
   default: ({ caseId }: { caseId?: string }) => (
@@ -11,388 +17,324 @@ vi.mock("@/components/dashboard/ChatPane", () => ({
   ),
 }));
 
-vi.mock("@/hooks/useCockpitData", () => ({
-  useCockpitData: () => ({
-    parameters: {
-      temperature_c: 80,
-      motion_type: "rotierend",
-    },
-    coverage: 0.58,
-    releaseStatus: "manufacturer_validation_required",
-    mediumStatus: {
-      status: "available",
-      statusLabel: "verfuegbar",
-      tone: "success",
-      label: "Hydraulikoel",
-      family: "oel",
-      confidence: "high",
-      rawMention: "Hydraulikoel",
-      summary: "Mineraloelbasiertes Medium mit typischen Anforderungen an Temperatur und Alterung.",
-      nextStepHint: "Bitte Temperaturbereich und Druckspitzen bestaetigen.",
-    },
-    view: {
-      path: "rwdr",
-      requestType: "retrofit",
-      routingMetadata: {
-        phase: "parameter_clarification",
-        lastNode: null,
-        routing: {},
-      },
-      sections: {
-        application_function: {
-          id: "application_function",
-          title: "1. Anlage & Funktion",
-          properties: [
-            {
-              key: "installation",
-              label: "Application",
-              value: "Hydraulikpumpe",
-              unit: "",
-              origin: "user_override",
-              confidence: "confirmed",
-              isConfirmed: true,
-              isMandatory: true,
-            },
-            {
-              key: "pressure_bar",
-              label: "Druck",
-              value: 25,
-              unit: "bar",
-              origin: "user_override",
-              confidence: "confirmed",
-              isConfirmed: true,
-              isMandatory: true,
-            },
-            {
-              key: "speed_rpm",
-              label: "Drehzahl",
-              value: 1500,
-              unit: "rpm",
-              origin: "fast_brain_extracted",
-              confidence: "extracted",
-              isConfirmed: false,
-              isMandatory: true,
-            },
-          ],
-          completion: {
-            mandatoryPresent: 3,
-            mandatoryTotal: 5,
-            percent: 50,
-          },
-        },
-        medium_environment: {
-          id: "medium_environment",
-          title: "2. Medium & Umgebung",
-          properties: [],
-          completion: { mandatoryPresent: 0, mandatoryTotal: 0, percent: 0 },
-        },
-        operating_geometry: {
-          id: "operating_geometry",
-          title: "3. Betriebsdaten & Geometrie",
-          properties: [],
-          completion: { mandatoryPresent: 0, mandatoryTotal: 0, percent: 0 },
-        },
-        risk_readiness: {
-          id: "risk_readiness",
-          title: "4. Risiken & Anfrage-Reife",
-          properties: [],
-          completion: { mandatoryPresent: 0, mandatoryTotal: 0, percent: 0 },
-        },
-      },
-      checks: [
-        {
-          calcId: "rwdr_circumferential_speed",
-          label: "Umlaufgeschwindigkeit",
-          formulaVersion: "v1",
-          requiredInputs: [],
-          missingInputs: [],
-          validPaths: ["rwdr"],
-          outputKey: "v_surface_m_s",
-          unit: "m/s",
-          status: "ok",
-          value: 5.2,
-          fallbackBehavior: "insufficient_input",
-          guardrails: [],
-          notes: [],
-        },
-      ],
-      readiness: {
-        isRfqReady: false,
-        missingMandatoryKeys: ["shaft_diameter_mm"],
-        blockers: [],
-        status: "preliminary",
-        releaseStatus: "manufacturer_validation_required",
-        coverageScore: 0.58,
-      },
-      mediumContext: {
-        canonicalName: "Hydraulikoel",
-        isConfirmed: true,
-        properties: ["schmierend", "waermealterung beachten"],
-        riskFlags: ["Temperaturspitzen"],
-      },
-    },
+vi.mock("@/hooks/useWorkspace", () => ({
+  useWorkspace: () => ({
+    workspace: workspaceHookState.workspace,
+    isLoading: false,
+    refresh: vi.fn(),
   }),
 }));
 
 vi.mock("@/lib/store/workspaceStore", () => ({
   useWorkspaceStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
-      workspace: {
-        caseId: "case-42",
-        cockpit: null,
-        communication: {
-          primaryQuestion: "Welcher Wellendurchmesser liegt vor?",
-          openPointsSummary: ["Wellendurchmesser fehlt"],
-        },
-        mediumContext: {
-          summary: "Hydraulikoel ist als oelhaltiges Medium nur orientierend eingeordnet.",
-          followupPoints: ["Additivpaket pruefen", "Viskositaet bei Betriebstemperatur nennen"],
-        },
-        summary: {
-          derivedArtifactsStale: true,
-          staleReason: "Upstream-Werte wurden geaendert.",
-        },
-        technicalDerivations: [
-          {
-            calcType: "rwdr",
-            status: "ok",
-            vSurfaceMPerS: 5.2,
-            pvValueMpaMPerS: 0.41,
-            dnValue: 75000,
-            notes: [],
-          },
-        ],
-        mediumClassification: {
-          canonicalLabel: "Hydraulikoel",
-        },
-        matching: {
-          items: [
-            {
-              material: "FKM",
-              cluster: "preferred",
-              specificity: "family_only",
-              requiresValidation: false,
-              fitBasis: "Gute Baseline fuer oelhaltige Anwendungen.",
-              groundedFacts: [
-                {
-                  name: "Temperaturfenster",
-                  value: "80",
-                  unit: "C",
-                  source: "registry",
-                  sourceRank: 1,
-                  groundingBasis: "source_backed",
-                  isDivergent: false,
-                  variants: [],
-                },
-              ],
-            },
-            {
-              material: "PTFE",
-              cluster: "secondary",
-              specificity: "compound_required",
-              requiresValidation: true,
-              fitBasis: "Hohe chemische Robustheit, aber Validierung noetig.",
-              groundedFacts: [
-                {
-                  name: "Chemische Robustheit",
-                  value: "hoch",
-                  unit: null,
-                  source: "medium_context",
-                  sourceRank: 2,
-                  groundingBasis: "summary",
-                  isDivergent: false,
-                  variants: [],
-                },
-              ],
-            },
-          ],
-        },
-        specificity: {
-          materialSpecificityRequired: "compound_required",
-        },
-        manufacturerQuestions: {
-          mandatory: ["Werkstofffreigabe"],
-        },
-        evidence: {
-          sourceBackedFindings: ["Registry-backed medium mapping vorhanden"],
-          deterministicFindings: ["Pfad RWDR ist gesetzt"],
-        },
-        governance: {
-          notes: ["Produktive Compare-Projektion steht noch aus."],
-          unknownsBlocking: ["Compound-Freigabe offen"],
-        },
-        parameters: {
-          installation: "Hydraulikpumpe",
-        },
-      },
-      activeResponseClass: null,
       setWorkspace: vi.fn(),
       setWorkspaceLoading: vi.fn(),
     }),
 }));
 
+function workspaceFixture(): WorkspaceView {
+  return {
+    caseId: "case-42",
+    requestType: "retrofit",
+    engineeringPath: "rwdr",
+    cockpit: null,
+    communication: {
+      conversationPhase: "clarification",
+      primaryQuestion: "Welche Gegenlauffläche ist dokumentiert?",
+      supportingReason: "Temperatur und Drehzahl erlauben eine erste Belastungseinordnung, aber die Oberfläche bleibt prüfungsrelevant.",
+      confirmedFactsSummary: ["Medium: Wasser-Glykol"],
+      openPointsSummary: ["Gegenlauffläche"],
+    },
+    parameters: {
+      medium: "Wasser-Glykol",
+      temperature_c: 85,
+      pressure_bar: 1.8,
+      sealing_type: "RWDR",
+      shaft_diameter_mm: 42,
+      speed_rpm: 1200,
+      geometry_context: "rotierende Welle im Pumpenkopf",
+      counterface_surface: "noch zu bestätigen",
+      motion_type: "rotary",
+    },
+    lifecycle: {
+      currentStep: null,
+      completedSteps: [],
+      steps: [],
+    },
+    summary: {
+      turnCount: 3,
+      maxTurns: 12,
+      analysisCycleId: 1,
+      stateRevision: 2,
+      assertedProfileRevision: 1,
+      derivedArtifactsStale: false,
+      staleReason: null,
+    },
+    completeness: {
+      coverageScore: 0.72,
+      coveragePercent: 72,
+      coverageGaps: ["counterface_surface"],
+      completenessDepth: "prequalification",
+      missingCriticalParameters: ["runout_mm"],
+      analysisComplete: false,
+      recommendationReady: false,
+    },
+    governance: {
+      releaseStatus: "manufacturer_validation_required",
+      releaseClass: "C",
+      scopeOfValidity: [],
+      assumptions: [],
+      unknownsBlocking: [],
+      unknownsManufacturerValidation: ["Gegenlauffläche"],
+      gateFailures: [],
+      notes: [],
+      requiredDisclaimers: ["Keine finale technische Freigabe."],
+      verificationPassed: true,
+    },
+    mediumCapture: {
+      rawMentions: ["Wasser-Glykol"],
+      primaryRawText: "Wasser-Glykol",
+      sourceTurnRef: "turn-1",
+      sourceTurnIndex: 1,
+    },
+    mediumClassification: {
+      canonicalLabel: "Wasser-Glykol",
+      family: "glycol_water",
+      confidence: "medium",
+      status: "available",
+      normalizationSource: "backend",
+      mappingConfidence: "medium",
+      matchedAlias: null,
+      sourceRegistryKey: null,
+      followupQuestion: null,
+    },
+    mediumContext: {
+      mediumLabel: "Wasser-Glykol",
+      status: "available",
+      scope: "case",
+      summary: "Medium für Herstellerprüfung dokumentieren.",
+      properties: ["wasserbasiert"],
+      challenges: ["Schmierfähigkeit"],
+      followupPoints: [],
+      confidence: "medium",
+      sourceType: "workspace",
+      notForReleaseDecisions: true,
+      disclaimer: "Herstellerprüfung erforderlich.",
+    },
+    technicalDerivations: [
+      {
+        calcType: "rwdr",
+        status: "ok",
+        vSurfaceMPerS: 2.64,
+        pvValueMpaMPerS: 0.48,
+        dnValue: 50400,
+        notes: ["Backend-Ableitung aus Durchmesser und Drehzahl."],
+      },
+    ],
+    deepDiveTabs: [
+      {
+        tabId: "analysis",
+        label: "Analyse",
+        status: "available",
+        detected: ["RWDR"],
+        relevance: "Herstellerprüfung vorbereiten.",
+        opportunities: [],
+        risks: ["Gegenlauffläche offen"],
+        derivedDirection: "RWDR-Anfragebasis für Herstellerprüfung, keine finale technische Freigabe.",
+        missing: ["counterface_surface"],
+        nextAction: "Gegenlauffläche klären",
+        returnToAnalysis: "Zurück zur Analyse",
+        cards: [],
+      },
+    ],
+    specificity: {
+      materialSpecificityRequired: "compound_required",
+      completenessDepth: "prequalification",
+      elevationPossible: true,
+      elevationTarget: "compound_required",
+      elevationHints: [],
+    },
+    candidates: {
+      viable: [],
+      manufacturerValidationRequired: [],
+      excluded: [],
+      total: 0,
+    },
+    conflicts: {
+      total: 0,
+      open: 0,
+      resolved: 0,
+      bySeverity: {},
+      items: [],
+    },
+    claims: {
+      total: 0,
+      byType: {},
+      byOrigin: {},
+      items: [],
+    },
+    evidence: {
+      evidencePresent: false,
+      evidenceCount: 0,
+      trustedSourcesPresent: false,
+      evidenceSupportedTopics: [],
+      sourceBackedFindings: [],
+      deterministicFindings: ["v_surface_m_s"],
+      assumptionBasedFindings: [],
+      unresolvedOpenPoints: ["counterface_surface"],
+      evidenceGaps: ["counterface_surface"],
+    },
+    manufacturerQuestions: {
+      mandatory: ["Welche Gegenlauffläche und Oberflächenrauheit sind dokumentiert?"],
+      openQuestions: [],
+      totalOpen: 1,
+    },
+    matching: {
+      ready: false,
+      shortlistReady: false,
+      inquiryReady: false,
+      notReadyReasons: [],
+      blockingReasons: ["manufacturer_validation_required"],
+      items: [],
+      openManufacturerQuestions: [],
+      selectedPartnerId: null,
+      dataSource: "none",
+    },
+    rfq: {
+      status: "draft",
+      rfq_ready: false,
+      releaseStatus: "manufacturer_validation_required",
+      confirmed: false,
+      blockers: ["counterface_surface"],
+      openPoints: ["counterface_surface"],
+      hasPdf: false,
+      hasHtmlReport: false,
+      hasDraft: true,
+      documentUrl: null,
+      handoverReady: false,
+      handoverInitiated: false,
+      package: {
+        rfqId: null,
+        basisStatus: "draft",
+        operatingContextRedacted: {},
+        manufacturerQuestionsMandatory: [],
+        conflictsVisibleCount: 0,
+        buyerAssumptionsAcknowledged: [],
+      },
+    },
+  };
+}
+
 describe("CaseScreen", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+  beforeEach(() => {
+    workspaceHookState.workspace = null;
   });
 
-  it("renders the workspace shell with timeline, stable context header and collapsible utility rail", async () => {
-    const user = userEvent.setup();
+  it("renders the open chat surface beside the tabbed SealAI cockpit", () => {
     render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
 
-    expect(screen.getByText("Frage verstehen")).toBeInTheDocument();
-    expect(screen.getByText("Anfragebasis vorbereiten")).toBeInTheDocument();
-    expect(screen.getByText("PTFE-RWDR Entscheidungsraum")).toBeInTheDocument();
-    expect(screen.getAllByText("Hydraulikpumpe").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("Hydraulikoel").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
 
-    const toggle = screen.getByRole("button", { name: /utility rail aufklappen/i });
-    await user.click(toggle);
-
-    expect(screen.getByRole("button", { name: /utility rail einklappen/i })).toBeInTheDocument();
-    expect(screen.getByText("Utility Rail")).toBeInTheDocument();
-    expect(screen.getByText("Kontext ohne Chat-Duplikat")).toBeInTheDocument();
-    expect(screen.getByText("Welcher Wellendurchmesser liegt vor?")).toBeInTheDocument();
+    const tabs = screen.getByRole("tablist", { name: "SealAI Cockpit" });
+    expect(within(tabs).getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
+    expect(within(tabs).getByRole("tab", { name: "Parameter" })).toBeInTheDocument();
+    expect(within(tabs).getByRole("tab", { name: "Medium" })).toBeInTheDocument();
+    expect(within(tabs).getByRole("tab", { name: "Anwendung" })).toBeInTheDocument();
+    expect(within(tabs).getByRole("tab", { name: "Werkstoff" })).toBeInTheDocument();
+    expect(within(tabs).getByRole("tab", { name: "Berechnung" })).toBeInTheDocument();
+    expect(within(tabs).getByRole("tab", { name: "Briefing" })).toBeInTheDocument();
   });
 
-  it("renders productive parameter tabs and field statuses without mutating business state", async () => {
-    const user = userEvent.setup();
-    render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
+  it("renders the requested overview status strip and four cockpit cards", () => {
+    render(<CaseScreen caseId="case-42" />);
 
-    expect(screen.getByText("Aktiver technischer Pfad")).toBeInTheDocument();
-    const parameterCard = screen.getByText("Parameter & Application").closest("section");
-    expect(parameterCard).not.toBeNull();
-    const scoped = within(parameterCard as HTMLElement);
+    expect(screen.getByText("Dichtungsfall")).toBeInTheDocument();
+    expect(screen.getByText("Noch nicht eingeordnet")).toBeInTheDocument();
+    expect(screen.getByText("Datenreife")).toBeInTheDocument();
+    expect(screen.getByText("0 % belastbar")).toBeInTheDocument();
+    expect(screen.getAllByText("Lösungsraum").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Noch offen").length).toBeGreaterThan(0);
+    expect(screen.getByText("Kritische Lücken")).toBeInTheDocument();
+    expect(screen.getByText("Medium · Temperatur · Anwendung · Druck · Drehzahl")).toBeInTheDocument();
+    expect(screen.getByText("Berechnungsstatus")).toBeInTheDocument();
+    expect(screen.getByText("0 von 5 Nachweisen belastbar")).toBeInTheDocument();
 
-    expect(scoped.getByText("Rwdr")).toBeInTheDocument();
-    expect(scoped.getAllByText("confirmed").length).toBeGreaterThan(0);
-    expect(scoped.getByRole("tab", { name: "RWDR" })).toHaveAttribute("aria-selected", "true");
-    expect(scoped.getByText("Kernparameter")).toBeInTheDocument();
-    expect(scoped.getByText("Pfadspezifische Zusatzparameter")).toBeInTheDocument();
-    expect(scoped.getAllByText("Hydraulikpumpe").length).toBeGreaterThan(0);
-    expect(scoped.getAllByText("inferred").length).toBeGreaterThan(0);
-    expect(scoped.getAllByText("missing").length).toBeGreaterThan(0);
-    expect(scoped.getAllByText("optional").length).toBeGreaterThan(0);
-
-    const rwdrTab = scoped.getByRole("tab", { name: "RWDR" });
-    rwdrTab.focus();
-    await user.keyboard("{ArrowRight}");
-
-    expect(scoped.getByRole("tab", { name: "Hydraulik" })).toHaveAttribute("aria-selected", "true");
-    expect(scoped.getByText("ui view")).toBeInTheDocument();
-    expect(screen.getByText("PTFE-RWDR Entscheidungsraum")).toBeInTheDocument();
-    expect(screen.getByText("Welcher Wellendurchmesser liegt vor?")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Parameter & Datenlage" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Kritische Treiber" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Lösung & Konsequenz" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Berechnungen & Nachweise" })).toBeInTheDocument();
   });
 
-  it("renders productive medium, calculation and open-point cards from existing projections", () => {
-    render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
+  it("renders an honest empty and missing state without productive mock values", () => {
+    render(<CaseScreen caseId="case-42" />);
 
-    const mediumCard = screen.getByText("Medium Intelligence").closest("section");
-    expect(mediumCard).not.toBeNull();
-    const mediumScoped = within(mediumCard as HTMLElement);
-    expect(mediumScoped.getByText("Hydraulikoel")).toBeInTheDocument();
-    expect(mediumScoped.getByText(/Hydraulikoel ist als oelhaltiges Medium/i)).toBeInTheDocument();
-    expect(mediumScoped.getByText("Additivpaket pruefen")).toBeInTheDocument();
+    expect(screen.getByText("Kritisch offen: Medium · Temperatur · Anwendung · Druck · Drehzahl")).toBeInTheDocument();
+    expect(screen.getByText("Anfragebasis noch offen")).toBeInTheDocument();
+    expect(screen.getByText("Umfangsgeschwindigkeit")).toBeInTheDocument();
+    expect(screen.getAllByText("Nicht berechenbar")).toHaveLength(5);
+    expect(screen.getAllByText("Fehlende Eingaben: Wellendurchmesser · Drehzahl").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Wichtig für Wärmeentwicklung und dynamische Beanspruchung/i)).toBeInTheDocument();
 
-    const calculationsCard = screen.getByText("Calculations").closest("section");
-    expect(calculationsCard).not.toBeNull();
-    const calculationsScoped = within(calculationsCard as HTMLElement);
-    expect(calculationsScoped.getByText("Umlaufgeschwindigkeit")).toBeInTheDocument();
-    expect(calculationsScoped.getByText("5.2 m/s")).toBeInTheDocument();
-    expect(calculationsScoped.getAllByText("current").length).toBeGreaterThan(0);
-    expect(calculationsScoped.queryByText("stale")).not.toBeInTheDocument();
-    expect(calculationsScoped.queryByText("input changed")).not.toBeInTheDocument();
-    expect(calculationsScoped.queryByText("Upstream-Werte wurden geaendert.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
+    expect(screen.queryByText("PTFE-RWDR vorqualifiziert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("3,0 m/s")).not.toBeInTheDocument();
 
-    const openPointsCard = screen.getByText("Open Points / Next Step").closest("section");
-    expect(openPointsCard).not.toBeNull();
-    const openPointsScoped = within(openPointsCard as HTMLElement);
-    expect(openPointsScoped.getByText("shaft diameter mm")).toBeInTheDocument();
-    expect(openPointsScoped.getByText("Wellendurchmesser fehlt")).toBeInTheDocument();
-    expect(openPointsScoped.getByText("Welcher Wellendurchmesser liegt vor?")).toBeInTheDocument();
-  });
-
-  it("switches the right cockpit column in place while keeping the context header stable", async () => {
-    const user = userEvent.setup();
-    render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
-
-    expect(screen.getByText("PTFE-RWDR Entscheidungsraum")).toBeInTheDocument();
-    expect(screen.getByText("Vergleichsarbeitsstand")).toBeInTheDocument();
-    expect(screen.getByText("Parameter & Application")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Werkstoff" }));
-
-    expect(await screen.findByText("Was wurde erkannt?")).toBeInTheDocument();
-    expect(await screen.findByText("Warum relevant?")).toBeInTheDocument();
-    expect(await screen.findByText("Chancen & Risiken")).toBeInTheDocument();
-    expect(await screen.findByText("Fehlt noch / Rueckfuehrung")).toBeInTheDocument();
-    expect(screen.getByText("PTFE-RWDR Entscheidungsraum")).toBeInTheDocument();
-    expect(screen.getByText("Case ID")).toBeInTheDocument();
-    expect(screen.getByText("case-42")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Medium" }));
-
-    expect(await screen.findByText("Was wurde erkannt?")).toBeInTheDocument();
-    expect((await screen.findAllByText("Hydraulikoel")).length).toBeGreaterThan(0);
-    expect(screen.getByText("Vergleichsarbeitsstand")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Analyse" }));
-
-    expect(await screen.findByText("Parameter & Application")).toBeInTheDocument();
-    expect(await screen.findByText("Medium Intelligence")).toBeInTheDocument();
-    expect(screen.getByText("PTFE-RWDR Entscheidungsraum")).toBeInTheDocument();
-  });
-
-  it("exposes the backend RFQ preview journey in the main workspace mode", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          preview_id: "preview-main",
-          case_id: "case-42",
-          case_revision: 3,
-          current_case_revision: 3,
-          stale: false,
-          consent_status: "not_requested",
-          dispatch_enabled: false,
-          created_at: null,
-          payload: {
-            rfq_preview: {
-              sections: [
-                { index: 10, title: "Offene Punkte / unbestaetigte Annahmen", content: ["Temperaturfenster bestaetigen"], status: "open" },
-                { index: 8, title: "Erkannte Risiken", content: ["Druckspitzen offen"], status: "available" },
-              ],
-              technical_field_statuses: [
-                {
-                  field: "temperature_c",
-                  status: "documented",
-                  provenance: "datasheet",
-                  confidence: "high",
-                  confirmation_required: false,
-                },
-              ],
-            },
-          },
-        }),
-      }),
-    );
-    const user = userEvent.setup();
-
-    render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
-    await user.click(screen.getByRole("button", { name: "RFQ-Preview" }));
-
-    expect((await screen.findAllByText("RFQ-Preview")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Temperaturfenster bestaetigen")).toBeInTheDocument();
-    expect(screen.getByText("frozen revision 3")).toBeInTheDocument();
-    expect(screen.getByText("Druckspitzen offen")).toBeInTheDocument();
-    expect(screen.getByText("temperature_c")).toBeInTheDocument();
-    expect(screen.getByText("Nutzerbestätigung erforderlich")).toBeInTheDocument();
     expect(screen.queryByText(["An Hersteller", "senden"].join(" "))).not.toBeInTheDocument();
-    expect(screen.queryByText(["Finalisieren", "und versenden"].join(" "))).not.toBeInTheDocument();
+    expect(screen.queryByText(["finalisieren", "und versenden"].join(" "))).not.toBeInTheDocument();
     expect(screen.queryByText(["Technische", "Validierung"].join(" "))).not.toBeInTheDocument();
-    expect(screen.queryByText(["Empfehlung", "ableiten"].join(" "))).not.toBeInTheDocument();
-    expect(screen.queryByText(["neutral geprüfte", "Auswahl"].join(" "))).not.toBeInTheDocument();
+  });
+
+  it("renders /dashboard/new without legacy cockpit mock values", () => {
+    render(<CaseScreen />);
+
+    expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane new");
+    expect(screen.getByText("0 % belastbar")).toBeInTheDocument();
+    expect(screen.getByText("0 von 5 Nachweisen belastbar")).toBeInTheDocument();
+    expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
+    expect(screen.queryByText("35-90 °C")).not.toBeInTheDocument();
+    expect(screen.queryByText("2,5 bar")).not.toBeInTheDocument();
+    expect(screen.queryByText("1.450 rpm")).not.toBeInTheDocument();
+    expect(screen.queryByText("40 mm")).not.toBeInTheDocument();
+    expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
+  });
+
+  it("maps a real workspace fixture into the cockpit ViewModel", () => {
+    workspaceHookState.workspace = workspaceFixture();
+
+    render(<CaseScreen caseId="case-42" />);
+
+    expect(screen.getAllByText("Rotierende Welle / RWDR").length).toBeGreaterThan(0);
+    expect(screen.getByText("72 % belastbar")).toBeInTheDocument();
+    expect(screen.getByText("Wasser-Glykol")).toBeInTheDocument();
+    expect(screen.getByText("85 °C")).toBeInTheDocument();
+    expect(screen.getByText("1.8 bar")).toBeInTheDocument();
+    expect(screen.getByText("1200 rpm")).toBeInTheDocument();
+    expect(screen.getByText("42 mm")).toBeInTheDocument();
+    expect(screen.getByText("2.64 m/s")).toBeInTheDocument();
+    expect(screen.getByText("0.48 MPa·m/s")).toBeInTheDocument();
+    expect(screen.getByText("50400")).toBeInTheDocument();
+    expect(screen.getAllByText("Welche Gegenlauffläche und Oberflächenrauheit sind dokumentiert?").length).toBeGreaterThan(0);
+    expect(screen.getByText(/keine finale technische Freigabe/i)).toBeInTheDocument();
+
+    expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
+    expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
+  });
+
+  it("switches cockpit tabs in place without leaving the dashboard shell", async () => {
+    const user = userEvent.setup();
+    render(<CaseScreen caseId="case-42" />);
+
+    await user.click(screen.getByRole("tab", { name: "Berechnung" }));
+
+    expect(screen.getByRole("tab", { name: "Berechnung" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/Dieser Cockpit-Tab ist vorbereitet/i)).toBeInTheDocument();
+    expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
+
+    await user.click(screen.getByRole("tab", { name: "Übersicht" }));
+
+    expect(screen.getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "Berechnungen & Nachweise" })).toBeInTheDocument();
   });
 });

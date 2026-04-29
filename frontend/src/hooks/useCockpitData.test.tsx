@@ -75,6 +75,7 @@ function workspaceFixture(): WorkspaceView {
           notes: [],
         },
       ],
+      riskEvaluations: [],
       readiness: {
         isRfqReady: false,
         missingMandatoryKeys: ["pressure_bar"],
@@ -159,6 +160,7 @@ function workspaceFixture(): WorkspaceView {
       notForReleaseDecisions: true,
       disclaimer: null,
     },
+    deepDiveTabs: [],
     specificity: {
       materialSpecificityRequired: "family_only",
       completenessDepth: "precheck",
