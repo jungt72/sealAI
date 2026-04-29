@@ -112,7 +112,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.technical_inquiry_summary: ArtifactTypeMetadata(
         artifact_type=ArtifactType.technical_inquiry_summary,
         label="Technical Inquiry Summary",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(
@@ -125,7 +125,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.compatibility_matrix: ArtifactTypeMetadata(
         artifact_type=ArtifactType.compatibility_matrix,
         label="Compatibility Matrix",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.compatibility_inquiry,),

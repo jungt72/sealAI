@@ -48,25 +48,30 @@ def test_artifact_type_serializes_as_string() -> None:
     assert json.loads(json.dumps(payload)) == {"artifact_type": "rfq_preview"}
 
 
-def test_rfq_preview_is_the_only_implemented_artifact_type() -> None:
+def test_phase_one_artifact_types_are_implemented() -> None:
     assert artifact_type_metadata(ArtifactType.rfq_preview).implemented_status is (
         ArtifactImplementedStatus.implemented
     )
     assert is_artifact_type_implemented("rfq_preview") is True
+    assert is_artifact_type_implemented("technical_inquiry_summary") is True
+    assert is_artifact_type_implemented("compatibility_matrix") is True
 
     implemented = {
         item.artifact_type
         for item in all_artifact_type_metadata()
         if item.implemented_status is ArtifactImplementedStatus.implemented
     }
-    assert implemented == {ArtifactType.rfq_preview}
+    assert implemented == {
+        ArtifactType.rfq_preview,
+        ArtifactType.technical_inquiry_summary,
+        ArtifactType.compatibility_matrix,
+    }
 
 
 @pytest.mark.parametrize(
     "artifact_type",
     [
         ArtifactType.manufacturer_fit_matrix,
-        ArtifactType.compatibility_matrix,
         ArtifactType.complaint_intake,
         ArtifactType.failure_analysis_intake,
         ArtifactType.customer_reply_draft,
@@ -108,7 +113,7 @@ def test_legacy_summary_artifacts_map_conservatively(
     assert normalize_artifact_type(legacy_value) is ArtifactType.technical_inquiry_summary
     assert view.artifact_type_mapped_from_legacy_artifact is True
     assert view.event_name == "ArtifactTypeMappedFromLegacyArtifact"
-    assert is_artifact_type_implemented(legacy_value) is False
+    assert is_artifact_type_implemented(legacy_value) is True
 
 
 def test_unknown_artifacts_are_not_exportable_by_default() -> None:
@@ -125,8 +130,6 @@ def test_unknown_artifacts_are_not_exportable_by_default() -> None:
     "artifact_type",
     [
         ArtifactType.manufacturer_fit_matrix,
-        ArtifactType.technical_inquiry_summary,
-        ArtifactType.compatibility_matrix,
         ArtifactType.complaint_intake,
         ArtifactType.failure_analysis_intake,
         ArtifactType.replacement_sheet,
