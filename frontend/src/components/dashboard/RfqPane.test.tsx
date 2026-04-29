@@ -181,7 +181,7 @@ describe("RfqPane", () => {
     expect(screen.getByText("Nutzerbestätigung erforderlich")).toBeInTheDocument();
     expect(screen.getByLabelText(/keine finale technische Freigabe/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/offenen Punkte/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/explizitem Einverständnis/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/manuelle, von mir kontrollierte Weitergabe/i)).toBeInTheDocument();
     expect(screen.queryByText("EagleBurgmann")).not.toBeInTheDocument();
     expect(screen.queryByText("John Crane")).not.toBeInTheDocument();
     expect(screen.queryByText("Flowserve")).not.toBeInTheDocument();
@@ -253,13 +253,16 @@ describe("RfqPane", () => {
     await user.click(screen.getByLabelText(/offenen Punkte/i));
     expect(screen.getByRole("button", { name: /Nutzerbestätigung speichern/i })).toBeDisabled();
 
-    await user.click(screen.getByLabelText(/explizitem Einverständnis/i));
+    await user.click(screen.getByLabelText(/manuelle, von mir kontrollierte Weitergabe/i));
     await user.click(screen.getByRole("button", { name: /Nutzerbestätigung speichern/i }));
 
     expect(await screen.findByText("RFQ-Preview exportbereit")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/bff/rfq/case-1/preview/preview-2/consent",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"intended_recipients":["manual-export-by-user"]'),
+      }),
     );
   });
 });

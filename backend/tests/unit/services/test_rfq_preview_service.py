@@ -430,11 +430,23 @@ def test_consent_scope_requires_visible_shared_sections() -> None:
     assert scope["user_acknowledged_no_final_release"] is True
 
 
+def test_consent_scope_requires_intended_recipients() -> None:
+    with pytest.raises(RfqPreviewError, match="intended_recipients"):
+        normalize_consent_scope(
+            {
+                "shared_sections": ["rfq_preview"],
+                "user_acknowledged_no_final_release": True,
+                "user_acknowledged_open_points": True,
+            }
+        )
+
+
 def test_consent_scope_requires_no_final_release_acknowledgement() -> None:
     with pytest.raises(RfqPreviewError, match="user_acknowledged_no_final_release"):
         normalize_consent_scope(
             {
                 "shared_sections": ["rfq_preview"],
+                "intended_recipients": ["manual-export"],
                 "user_acknowledged_open_points": True,
             }
         )
@@ -445,6 +457,7 @@ def test_consent_scope_requires_open_points_acknowledgement_when_needed() -> Non
         normalize_consent_scope(
             {
                 "shared_sections": ["rfq_preview"],
+                "intended_recipients": ["manual-export"],
                 "user_acknowledged_no_final_release": True,
             },
             open_points_acknowledgement_required=True,
@@ -541,6 +554,7 @@ async def test_grant_preview_consent_keeps_dispatch_disabled() -> None:
         granted_by="user-1",
         consent_scope={
             "shared_sections": ["rfq_preview"],
+            "intended_recipients": ["manual-export"],
             "user_acknowledged_open_points": True,
             "user_acknowledged_no_final_release": True,
             "dispatch_enabled": True,

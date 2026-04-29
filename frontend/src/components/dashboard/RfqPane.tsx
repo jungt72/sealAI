@@ -246,7 +246,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
         body: JSON.stringify({
           shared_sections: sharedSections.length > 0 ? sharedSections : ["RFQ-Preview"],
           shared_documents: [],
-          intended_recipients: [],
+          intended_recipients: ["manual-export-by-user"],
           user_acknowledged_no_final_release: consent.noFinalRelease,
           user_acknowledged_open_points: consent.openPoints,
         }),
@@ -404,7 +404,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
                 <ConsentCheckbox
                   checked={consent.exportSharing}
                   onChange={(checked) => setConsent((current) => ({ ...current, exportSharing: checked }))}
-                  label="Ich möchte diese Anfragebasis nur nach explizitem Einverständnis exportieren oder weitergeben."
+                  label="Ich möchte diese Anfragebasis nur als manuelle, von mir kontrollierte Weitergabe nutzen."
                 />
               </div>
               <button

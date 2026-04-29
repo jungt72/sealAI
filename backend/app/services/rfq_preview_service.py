@@ -652,6 +652,8 @@ def normalize_consent_scope(
     )
     if not shared_sections:
         raise RfqPreviewError("consent_scope.shared_sections is required")
+    if not intended_recipients:
+        raise RfqPreviewError("consent_scope.intended_recipients is required")
     user_acknowledged_no_final_release = bool(
         scope.get("user_acknowledged_no_final_release")
     )
