@@ -437,3 +437,59 @@ async def test_paperless_sync_removes_existing_document_when_source_disappears(
     assert stored.enabled is False
     assert stored.status == "removed"
     assert stored.error == "paperless_source_missing"
+
+
+@pytest.mark.anyio
+async def test_process_pending_paperless_documents_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    docs = [
+        RagDocument(
+            document_id="doc-a",
+            tenant_id=RAG_SHARED_TENANT_ID,
+            status="processing",
+            visibility="public",
+            filename="a.pdf",
+            sha256="a",
+            path="/tmp/a.pdf",
+            source_system="paperless",
+            source_document_id="1",
+        ),
+        RagDocument(
+            document_id="doc-b",
+            tenant_id=RAG_SHARED_TENANT_ID,
+            status="processing",
+            visibility="public",
+            filename="b.pdf",
+            sha256="b",
+            path="/tmp/b.pdf",
+            source_system="paperless",
+            source_document_id="2",
+        ),
+    ]
+
+    async def _fake_pick(_session):
+        if not docs:
+            return None
+        return docs[0]
+
+    async def _fake_process_once(_session, *, picker):
+        doc = await picker(_session)
+        if doc is None:
+            return False
+        calls.append(doc.document_id)
+        docs.pop(0)
+        return True
+
+    monkeypatch.setattr(paperless_mod, "_pick_next_pending_paperless_document", _fake_pick)
+    monkeypatch.setattr("app.services.jobs.worker.process_once", _fake_process_once)
+
+    result = await paperless_mod.process_pending_paperless_documents(object(), limit=1)
+
+    assert result == {
+        "processed": 1,
+        "errors": 0,
+        "limit": 1,
+        "document_ids": ["doc-a"],
+    }
+    assert calls == ["doc-a"]
+    assert [doc.document_id for doc in docs] == ["doc-b"]

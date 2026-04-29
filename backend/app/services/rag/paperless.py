@@ -11,6 +11,8 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.common.redaction import safe_error_message
+
 from app.agent.rag.paperless_tags import evaluate_paperless_tag_readiness
 from app.core.config import settings
 from app.models.rag_document import RagDocument
@@ -130,6 +132,67 @@ async def _disable_existing_paperless_doc(
     session.add(doc)
     await session.commit()
     return True
+
+
+async def _pick_next_pending_paperless_document(session: AsyncSession) -> RagDocument | None:
+    result = await session.execute(
+        select(RagDocument)
+        .where(
+            RagDocument.tenant_id == RAG_SHARED_TENANT_ID,
+            RagDocument.source_system == _PAPERLESS_SOURCE_SYSTEM,
+            RagDocument.status.in_(("queued", "processing")),
+            RagDocument.enabled.is_(True),
+        )
+        .order_by(RagDocument.created_at.asc())
+        .with_for_update(skip_locked=True)
+    )
+    return result.scalars().first()
+
+
+async def process_pending_paperless_documents(
+    session: AsyncSession,
+    *,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Index pending Paperless RAG records through the normal RAG worker path.
+
+    This is intentionally bounded and explicit. It gives the internal Paperless
+    webhook a safe automatic ingest path without enabling the global startup
+    worker in production.
+    """
+    from app.services.jobs.worker import process_once
+
+    max_documents = max(0, int(limit if limit is not None else settings.paperless_sync_process_limit))
+    processed = 0
+    errors = 0
+    document_ids: list[str] = []
+    for _ in range(max_documents):
+        before = await _pick_next_pending_paperless_document(session)
+        if before is None:
+            break
+        document_ids.append(before.document_id)
+        try:
+            did_process = await process_once(
+                session,
+                picker=_pick_next_pending_paperless_document,
+            )
+        except Exception as exc:  # pragma: no cover - defensive boundary around worker side effects
+            logger.warning(
+                "paperless_process_pending_failed",
+                document_id=before.document_id,
+                reason=safe_error_message(exc),
+            )
+            errors += 1
+            continue
+        if not did_process:
+            break
+        processed += 1
+    return {
+        "processed": processed,
+        "errors": errors,
+        "limit": max_documents,
+        "document_ids": document_ids,
+    }
 
 
 async def _list_existing_paperless_docs(session: AsyncSession) -> list[RagDocument]:

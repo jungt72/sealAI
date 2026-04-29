@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     paperless_url: Optional[str] = None
     paperless_token: Optional[str] = None
     paperless_webhook_token: Optional[str] = None
+    paperless_sync_process_limit: int = 3
 
     # Weiteres (Redis, Auth, Memory etc.)
     redis_url: str

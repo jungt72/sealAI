@@ -521,6 +521,8 @@ async def upload_rag_document(
 
 @router.post("/sync-paperless")
 async def sync_paperless(
+    process: bool = Query(default=False),
+    limit: int | None = Query(default=None, ge=0, le=25),
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -528,8 +530,13 @@ async def sync_paperless(
     if not is_rag_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin rights required for Paperless sync")
 
-    from app.services.rag.paperless import sync_paperless_to_rag
-    return await sync_paperless_to_rag(session)
+    from app.services.rag.paperless import process_pending_paperless_documents, sync_paperless_to_rag
+
+    result = await sync_paperless_to_rag(session)
+    if process:
+        result = dict(result)
+        result["processing"] = await process_pending_paperless_documents(session, limit=limit)
+    return result
 
 
 @internal_router.post("/ingest")
@@ -549,13 +556,15 @@ async def ingest_paperless_webhook(
             detail=error_detail("paperless_webhook_invalid_payload", field="document_id"),
         )
 
-    from app.services.rag.paperless import sync_paperless_to_rag
+    from app.services.rag.paperless import process_pending_paperless_documents, sync_paperless_to_rag
 
     result = await sync_paperless_to_rag(session)
+    processing = await process_pending_paperless_documents(session)
     return {
         "status": "accepted",
         "document_id": str(document_id),
         "sync": result,
+        "processing": processing,
     }
 
 

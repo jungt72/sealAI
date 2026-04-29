@@ -63,7 +63,11 @@ async def test_internal_paperless_webhook_accepts_valid_payload(monkeypatch: pyt
     async def _fake_sync(_session):
         return {"status": "success", "queued": 1, "ingest_ready": 1, "pilot_ready": 1}
 
+    async def _fake_process(_session):
+        return {"processed": 1, "errors": 0, "limit": 3, "document_ids": ["doc-1"]}
+
     monkeypatch.setattr("app.services.rag.paperless.sync_paperless_to_rag", _fake_sync)
+    monkeypatch.setattr("app.services.rag.paperless.process_pending_paperless_documents", _fake_process)
 
     payload = await rag_endpoint.ingest_paperless_webhook(
         payload={"document_id": 123},
@@ -74,6 +78,8 @@ async def test_internal_paperless_webhook_accepts_valid_payload(monkeypatch: pyt
     assert payload["status"] == "accepted"
     assert payload["document_id"] == "123"
     assert payload["sync"]["queued"] == 1
+    assert payload["processing"]["processed"] == 1
+    assert payload["processing"]["document_ids"] == ["doc-1"]
 
 
 @pytest.mark.anyio
