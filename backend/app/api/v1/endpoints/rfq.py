@@ -30,6 +30,7 @@ class RfqPreviewConsentRequest(BaseModel):
     intended_recipients: list[str] = Field(default_factory=list)
     user_acknowledged_open_points: bool = False
     user_acknowledged_no_final_release: bool = False
+    user_acknowledged_export_intent: bool = False
 
 
 @router.post("/preview")

@@ -265,5 +265,9 @@ describe("RfqPane", () => {
         body: expect.stringContaining('"intended_recipients":["manual-export-by-user"]'),
       }),
     );
+    const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    expect(lastCall?.[1]?.body).toContain(
+      '"user_acknowledged_export_intent":true',
+    );
   });
 });

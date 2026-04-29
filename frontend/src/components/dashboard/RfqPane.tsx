@@ -249,6 +249,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
           intended_recipients: ["manual-export-by-user"],
           user_acknowledged_no_final_release: consent.noFinalRelease,
           user_acknowledged_open_points: consent.openPoints,
+          user_acknowledged_export_intent: consent.exportSharing,
         }),
       });
       const body = await response.json().catch(() => null);

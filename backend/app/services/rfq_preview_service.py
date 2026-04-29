@@ -11,6 +11,7 @@ from app.models.case_record import CaseRecord
 from app.models.case_state_snapshot import CaseStateSnapshot
 from app.models.inquiry_extract import InquiryExtractModel
 from app.domain.artifact_type import ArtifactType
+from app.domain.source_validation import source_validation_metadata
 from app.services.inquiry_extract_service import (
     ALLOWED_TECHNICAL_FIELD_PATHS,
     InquiryExtractService,
@@ -22,6 +23,7 @@ from app.services.decision_understanding_service import (
 
 RFQ_PREVIEW_ARTIFACT_TYPE = ArtifactType.rfq_preview.value
 RFQ_PREVIEW_SCHEMA_VERSION = "rfq_preview_v0.7.0"
+RFQ_PREVIEW_CONTRACT_VERSION = "rfq_preview_contract_v0.8.3"
 RFQ_PREVIEW_SECTIONS: tuple[str, ...] = (
     "Kurzbeschreibung der Anwendung",
     "Anlage & Funktion",
@@ -232,11 +234,22 @@ class RfqPreviewService:
         row.consent_scope = normalized_scope
         row.dispatch_enabled = False
         row.payload = {
-            **dict(row.payload or {}),
+            **_harden_rfq_payload_contract(
+                row.payload,
+                case_revision=int(row.case_revision),
+                current_case_revision=current_revision,
+            ),
             "consent_boundary": {
                 "status": "granted",
                 "scope": normalized_scope,
+                "required_acknowledgements": _required_acknowledgements(
+                    open_points_acknowledgement_required=_open_points_acknowledgement_required(
+                        row.payload
+                    ),
+                    matching_included=False,
+                ),
                 "automatic_dispatch_allowed": False,
+                "dispatch_enabled": False,
                 "phase": "phase_1_preview_export_only",
             },
         }
@@ -305,6 +318,11 @@ def build_rfq_preview_payload(
         collect_open_points(state),
         _confirmation_open_points(technical_field_statuses),
     )
+    source_validation_summary = build_source_validation_summary(
+        technical_field_envelopes
+    )
+    open_points_summary = build_open_points_summary(open_points)
+    evidence_refs_summary = build_evidence_refs_summary(technical_field_envelopes)
     context = {
         "case_id": str(case_row.id),
         "tenant_id": str(case_row.tenant_id),
@@ -345,20 +363,40 @@ def build_rfq_preview_payload(
     return {
         "meta": {
             "schema_version": RFQ_PREVIEW_SCHEMA_VERSION,
+            "contract_version": RFQ_PREVIEW_CONTRACT_VERSION,
             "artifact_type": RFQ_PREVIEW_ARTIFACT_TYPE,
             "case_id": str(case_row.id),
             "case_revision": int(case_row.case_revision or snapshot.revision or 0),
+            "generated_from_case_revision": int(
+                case_row.case_revision or snapshot.revision or 0
+            ),
             "source_snapshot_revision": int(snapshot.revision),
             "source_kind": "case_revision",
             "rfq_freeze": True,
+            "preview_status": "current",
+            "no_final_technical_release": True,
+            "dispatch_enabled": False,
+            "automatic_dispatch_allowed": False,
         },
         "rfq_preview": {
             "purpose": "phase_1_preview_export",
+            "artifact_type": RFQ_PREVIEW_ARTIFACT_TYPE,
+            "case_revision": int(case_row.case_revision or snapshot.revision or 0),
+            "generated_from_case_revision": int(
+                case_row.case_revision or snapshot.revision or 0
+            ),
+            "preview_status": "current",
+            "no_final_technical_release": True,
+            "dispatch_enabled": False,
+            "automatic_dispatch_allowed": False,
             "decision_understanding": decision_understanding,
             "technical_field_groups": technical_field_groups,
             "technical_field_envelopes": technical_field_envelopes,
             "technical_field_statuses": technical_field_statuses,
             "confirmation_required_fields": confirmation_required_fields,
+            "source_validation_summary": source_validation_summary,
+            "open_points_summary": open_points_summary,
+            "evidence_refs_summary": evidence_refs_summary,
             "sections": build_rfq_sections(
                 technical_field_envelopes=technical_field_envelopes,
                 open_points=open_points,
@@ -373,12 +411,21 @@ def build_rfq_preview_payload(
         },
         "decision_understanding": decision_understanding,
         "manufacturer_extract": manufacturer_extract,
+        "source_validation_summary": source_validation_summary,
+        "open_points_summary": open_points_summary,
+        "evidence_refs_summary": evidence_refs_summary,
         "consent_boundary": {
             "status": "not_requested",
             "automatic_dispatch_allowed": False,
+            "dispatch_enabled": False,
             "requires_explicit_user_consent_before_sharing": True,
             "open_points_acknowledgement_required": bool(open_points),
             "no_final_release_acknowledgement_required": True,
+            "export_intent_acknowledgement_required": True,
+            "required_acknowledgements": _required_acknowledgements(
+                open_points_acknowledgement_required=bool(open_points),
+                matching_included=False,
+            ),
         },
     }
 
@@ -472,7 +519,57 @@ def collect_technical_field_envelopes(
             "evidence_refs": (),
         }
 
-    return tuple(envelopes[key] for key in sorted(envelopes))
+    return tuple(
+        _enrich_technical_field_envelope(envelopes[key]) for key in sorted(envelopes)
+    )
+
+
+def build_source_validation_summary(
+    fields: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    by_source_type: dict[str, int] = {}
+    by_validation_status: dict[str, int] = {}
+    for field in fields:
+        source_type = str(field.get("source_type") or "unknown")
+        validation_status = str(field.get("validation_status") or "unknown")
+        by_source_type[source_type] = by_source_type.get(source_type, 0) + 1
+        by_validation_status[validation_status] = (
+            by_validation_status.get(validation_status, 0) + 1
+        )
+    return {
+        "total_fields": len(tuple(fields)),
+        "by_source_type": by_source_type,
+        "by_validation_status": by_validation_status,
+        "unvalidated_count": by_validation_status.get("unvalidated", 0),
+        "candidate_count": by_validation_status.get("candidate", 0),
+        "conflicting_count": by_validation_status.get("conflicting", 0),
+        "unknown_count": by_validation_status.get("unknown", 0),
+        "not_final_release": True,
+    }
+
+
+def build_open_points_summary(open_points: Sequence[str]) -> dict[str, Any]:
+    items = tuple(str(item).strip() for item in open_points if str(item).strip())
+    return {
+        "count": len(items),
+        "items": items,
+        "acknowledgement_required": bool(items),
+    }
+
+
+def build_evidence_refs_summary(
+    fields: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    refs: list[str] = []
+    for field in fields:
+        for ref in _as_sequence(field.get("evidence_refs")):
+            text = str(ref).strip()
+            if text and text not in refs:
+                refs.append(text)
+    return {
+        "count": len(refs),
+        "items": tuple(refs),
+    }
 
 
 def group_technical_field_envelopes(
@@ -661,9 +758,16 @@ def normalize_consent_scope(
     user_acknowledged_open_points = bool(
         scope.get("user_acknowledged_open_points")
     )
+    user_acknowledged_export_intent = bool(
+        scope.get("user_acknowledged_export_intent")
+    )
     if not user_acknowledged_no_final_release:
         raise RfqPreviewError(
             "user_acknowledged_no_final_release is required for RFQ preview consent"
+        )
+    if not user_acknowledged_export_intent:
+        raise RfqPreviewError(
+            "user_acknowledged_export_intent is required for RFQ preview consent"
         )
     if open_points_acknowledgement_required and not user_acknowledged_open_points:
         raise RfqPreviewError(
@@ -675,6 +779,7 @@ def normalize_consent_scope(
         "intended_recipients": intended_recipients,
         "user_acknowledged_open_points": user_acknowledged_open_points,
         "user_acknowledged_no_final_release": user_acknowledged_no_final_release,
+        "user_acknowledged_export_intent": user_acknowledged_export_intent,
     }
 
 
@@ -687,7 +792,11 @@ def _view(row: InquiryExtractModel, *, current_case_revision: int) -> RfqPreview
         stale=int(row.case_revision) != int(current_case_revision),
         consent_status=str(row.consent_status),
         dispatch_enabled=bool(row.dispatch_enabled),
-        payload=dict(row.payload or {}),
+        payload=_harden_rfq_payload_contract(
+            row.payload,
+            case_revision=int(row.case_revision),
+            current_case_revision=current_case_revision,
+        ),
         created_at=row.created_at,
     )
 
@@ -803,12 +912,18 @@ def _confirmation_open_points(
 
 
 def _technical_field_status_from_envelope(field: Mapping[str, Any]) -> dict[str, Any]:
+    if "source_type" not in field or "validation_status" not in field:
+        field = _enrich_technical_field_envelope(field)
     evidence_refs = tuple(_as_sequence(field.get("evidence_refs")))
     return _drop_none(
         {
             "field": field.get("field"),
+            "field_key": field.get("field_key") or field.get("field"),
+            "label": field.get("label"),
             "status": field.get("status"),
             "provenance": field.get("provenance"),
+            "source_type": field.get("source_type"),
+            "validation_status": field.get("validation_status"),
             "confidence": field.get("confidence"),
             "confirmation_required": bool(field.get("confirmation_required")),
             "evidence_refs": evidence_refs or None,
@@ -884,18 +999,150 @@ def _engineering_value_mapping(field: Mapping[str, Any]) -> dict[str, Any]:
 
 def _section_field_value(field: Mapping[str, Any]) -> dict[str, Any]:
     engineering_value = _object_mapping(field.get("engineering_value"))
-    unit = engineering_value.get("unit")
+    unit = field.get("unit") or engineering_value.get("unit")
     evidence_refs = tuple(_as_sequence(field.get("evidence_refs")))
     return _drop_none(
         {
             "value": field.get("value"),
             "unit": unit,
+            "normalized_value": field.get("normalized_value"),
+            "normalized_unit": field.get("normalized_unit"),
             "status": field.get("status") or "unspecified",
             "provenance": field.get("provenance") or "missing",
+            "source_type": field.get("source_type") or "unknown",
+            "validation_status": field.get("validation_status") or "unknown",
             "confirmation_required": bool(field.get("confirmation_required")),
             "evidence_refs": evidence_refs or None,
         }
     )
+
+
+def _enrich_technical_field_envelope(field: Mapping[str, Any]) -> dict[str, Any]:
+    field_key = str(field.get("field") or field.get("field_key") or "").strip()
+    status = _optional_text(field.get("status")) or "unspecified"
+    provenance = field.get("provenance")
+    conflict = status.lower() in {"conflict", "conflicting"}
+    metadata = source_validation_metadata(
+        status=status,
+        provenance=provenance,
+        origin=field.get("origin"),
+        source_type=field.get("source_type"),
+        validation_status=field.get("validation_status"),
+        conflict=conflict,
+    )
+    engineering_value = _object_mapping(field.get("engineering_value"))
+    normalized_value = field.get("normalized_value")
+    if normalized_value is None:
+        normalized_value = engineering_value.get("canonical_value")
+    normalized_unit = field.get("normalized_unit") or engineering_value.get("unit")
+    unit = field.get("unit") or engineering_value.get("unit")
+    notes = tuple(_text_tuple(field.get("notes")))
+    enriched = {
+        **dict(field),
+        "field": field_key,
+        "field_key": field_key,
+        "label": field.get("label") or _field_label(field_key),
+        "unit": unit,
+        "normalized_value": normalized_value,
+        "normalized_unit": normalized_unit,
+        "source_type": metadata.source_type.value,
+        "validation_status": metadata.validation_status.value,
+        "authoritative": metadata.authoritative,
+        "not_for_release_decisions": metadata.not_for_release_decisions,
+        "source_validation_events": metadata.event_names,
+        "notes": notes or None,
+    }
+    result = _drop_none(enriched)
+    if "value" in field and "value" not in result:
+        result["value"] = None
+    return result
+
+
+def _field_label(field_key: str) -> str:
+    return field_key.replace("_", " ").strip().title() if field_key else "Field"
+
+
+def _required_acknowledgements(
+    *,
+    open_points_acknowledgement_required: bool,
+    matching_included: bool,
+) -> dict[str, bool]:
+    return {
+        "user_acknowledged_no_final_release": True,
+        "user_acknowledged_open_points": bool(open_points_acknowledgement_required),
+        "user_acknowledged_export_intent": True,
+        "user_acknowledged_partner_network_disclosure": bool(matching_included),
+    }
+
+
+def _harden_rfq_payload_contract(
+    payload: Any,
+    *,
+    case_revision: int,
+    current_case_revision: int,
+) -> dict[str, Any]:
+    result = dict(payload) if isinstance(payload, Mapping) else {}
+    stale = int(case_revision) != int(current_case_revision)
+    preview_status = "stale" if stale else "current"
+    meta = dict(result.get("meta") if isinstance(result.get("meta"), Mapping) else {})
+    meta.update(
+        {
+            "contract_version": meta.get(
+                "contract_version", RFQ_PREVIEW_CONTRACT_VERSION
+            ),
+            "artifact_type": RFQ_PREVIEW_ARTIFACT_TYPE,
+            "case_revision": int(case_revision),
+            "generated_from_case_revision": int(
+                meta.get("generated_from_case_revision") or case_revision
+            ),
+            "preview_status": preview_status,
+            "no_final_technical_release": True,
+            "dispatch_enabled": False,
+            "automatic_dispatch_allowed": False,
+        }
+    )
+    result["meta"] = meta
+
+    rfq_preview = dict(
+        result.get("rfq_preview")
+        if isinstance(result.get("rfq_preview"), Mapping)
+        else {}
+    )
+    rfq_preview.update(
+        {
+            "artifact_type": RFQ_PREVIEW_ARTIFACT_TYPE,
+            "case_revision": int(case_revision),
+            "generated_from_case_revision": int(
+                rfq_preview.get("generated_from_case_revision") or case_revision
+            ),
+            "preview_status": preview_status,
+            "no_final_technical_release": True,
+            "dispatch_enabled": False,
+            "automatic_dispatch_allowed": False,
+        }
+    )
+    result["rfq_preview"] = rfq_preview
+
+    open_points_required = _open_points_acknowledgement_required(result)
+    consent_boundary = dict(
+        result.get("consent_boundary")
+        if isinstance(result.get("consent_boundary"), Mapping)
+        else {}
+    )
+    consent_boundary.update(
+        {
+            "automatic_dispatch_allowed": False,
+            "dispatch_enabled": False,
+            "no_final_release_acknowledgement_required": True,
+            "export_intent_acknowledgement_required": True,
+            "required_acknowledgements": _required_acknowledgements(
+                open_points_acknowledgement_required=open_points_required,
+                matching_included=False,
+            ),
+        }
+    )
+    result["consent_boundary"] = consent_boundary
+    return result
 
 
 def _text_tuple(value: Any) -> tuple[str, ...]:

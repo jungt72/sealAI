@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.models.case_record import CaseRecord
@@ -218,6 +220,39 @@ def test_rfq_preview_groups_casefield_envelopes_by_status_and_provenance() -> No
     assert "pressure_bar" in preview["confirmation_required_fields"]
 
 
+def test_rfq_preview_field_envelopes_include_source_validation_contract() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_envelopes(),
+    )
+    fields = {
+        field["field"]: field
+        for field in payload["rfq_preview"]["technical_field_envelopes"]
+    }
+
+    assert fields["medium_name"]["source_type"] == "uploaded_evidence"
+    assert fields["medium_name"]["validation_status"] == "documented"
+    assert fields["medium_name"]["validation_status"] != "validated"
+    assert fields["shaft_diameter_mm"]["source_type"] == "inferred"
+    assert fields["shaft_diameter_mm"]["validation_status"] == "candidate"
+    assert fields["calculated_speed_m_s"]["source_type"] == (
+        "deterministic_calculation"
+    )
+    assert fields["calculated_speed_m_s"]["validation_status"] == "calculated"
+    assert fields["pressure_bar"]["validation_status"] == "conflicting"
+    assert fields["shaft_surface_finish"]["source_type"] == "unknown"
+    assert fields["shaft_surface_finish"]["validation_status"] == "unknown"
+    assert fields["shaft_surface_finish"]["authoritative"] is False
+    assert payload["rfq_preview"]["source_validation_summary"][
+        "by_validation_status"
+    ]["candidate"] >= 1
+    assert payload["rfq_preview"]["evidence_refs_summary"]["items"] == (
+        "upload:datasheet-1#p2",
+        "chat:turn-3",
+        "upload:datasheet-2#p1",
+    )
+
+
 def test_rfq_preview_sections_render_critical_values_as_envelopes() -> None:
     payload = build_rfq_preview_payload(
         case_row=_case(),
@@ -234,21 +269,21 @@ def test_rfq_preview_sections_render_critical_values_as_envelopes() -> None:
         if section["title"] == "Berechnungen / technische Hinweise"
     )
 
-    assert operating_data["content"]["pressure_bar"] == {
-        "value": 4,
-        "unit": "bar",
-        "status": "conflict",
-        "provenance": "user_stated",
-        "confirmation_required": True,
-        "evidence_refs": ("chat:turn-3", "upload:datasheet-2#p1"),
-    }
-    assert calculations["content"]["calculated_speed_m_s"] == {
-        "value": 3.19,
-        "unit": "m/s",
-        "status": "confirmed",
-        "provenance": "calculated",
-        "confirmation_required": False,
-    }
+    pressure = operating_data["content"]["pressure_bar"]
+    assert pressure["value"] == 4
+    assert pressure["unit"] == "bar"
+    assert pressure["status"] == "conflict"
+    assert pressure["source_type"] == "user_stated"
+    assert pressure["validation_status"] == "conflicting"
+    assert pressure["confirmation_required"] is True
+    assert pressure["evidence_refs"] == ("chat:turn-3", "upload:datasheet-2#p1")
+
+    calculated_speed = calculations["content"]["calculated_speed_m_s"]
+    assert calculated_speed["value"] == 3.19
+    assert calculated_speed["unit"] == "m/s"
+    assert calculated_speed["source_type"] == "deterministic_calculation"
+    assert calculated_speed["validation_status"] == "calculated"
+    assert calculated_speed["confirmation_required"] is False
 
 
 def test_rfq_preview_release_boundary_is_review_oriented_not_compliance_approval() -> None:
@@ -276,20 +311,15 @@ def test_collects_technical_field_statuses_without_changing_values() -> None:
     assert fields["medium_name"] == "Salzwasser"
     assert fields["pressure_bar"] == 4
     assert fields["shaft_diameter_mm"] == 42
-    assert {
-        "field": "medium_name",
-        "status": "documented",
-        "provenance": "upload:datasheet-1",
-        "confidence": "0.86",
-        "confirmation_required": False,
-    } in statuses
-    assert {
-        "field": "pressure_bar",
-        "status": "candidate",
-        "provenance": "user",
-        "confidence": "0.62",
-        "confirmation_required": True,
-    } in statuses
+    by_field = {status["field"]: status for status in statuses}
+    assert by_field["medium_name"]["status"] == "documented"
+    assert by_field["medium_name"]["source_type"] == "uploaded_evidence"
+    assert by_field["medium_name"]["validation_status"] == "documented"
+    assert by_field["medium_name"]["confidence"] == "0.86"
+    assert by_field["pressure_bar"]["status"] == "candidate"
+    assert by_field["pressure_bar"]["source_type"] == "user_stated"
+    assert by_field["pressure_bar"]["validation_status"] == "candidate"
+    assert by_field["pressure_bar"]["confirmation_required"] is True
 
 
 def test_rfq_preview_payload_is_frozen_and_has_all_v07_sections() -> None:
@@ -297,13 +327,28 @@ def test_rfq_preview_payload_is_frozen_and_has_all_v07_sections() -> None:
 
     assert payload["meta"]["artifact_type"] == "rfq_preview"
     assert payload["meta"]["case_revision"] == 4
+    assert payload["meta"]["generated_from_case_revision"] == 4
+    assert payload["meta"]["preview_status"] == "current"
     assert payload["meta"]["source_snapshot_revision"] == 4
     assert payload["meta"]["rfq_freeze"] is True
+    assert payload["meta"]["no_final_technical_release"] is True
+    assert payload["meta"]["dispatch_enabled"] is False
+    assert payload["meta"]["automatic_dispatch_allowed"] is False
     assert (
         payload["consent_boundary"]["requires_explicit_user_consent_before_sharing"]
         is True
     )
     assert payload["consent_boundary"]["automatic_dispatch_allowed"] is False
+    assert payload["consent_boundary"]["dispatch_enabled"] is False
+    assert payload["consent_boundary"]["required_acknowledgements"][
+        "user_acknowledged_no_final_release"
+    ] is True
+    assert payload["consent_boundary"]["required_acknowledgements"][
+        "user_acknowledged_export_intent"
+    ] is True
+    assert payload["consent_boundary"]["required_acknowledgements"][
+        "user_acknowledged_partner_network_disclosure"
+    ] is False
     assert [section["title"] for section in payload["rfq_preview"]["sections"]] == list(
         RFQ_PREVIEW_SECTIONS
     )
@@ -334,13 +379,15 @@ def test_rfq_preview_marks_unconfirmed_fields_as_open_points_not_release() -> No
         "pressure_bar",
         "shaft_diameter_mm",
     )
-    assert {
-        "field": "pressure_bar",
-        "status": "candidate",
-        "provenance": "user",
-        "confidence": "0.62",
-        "confirmation_required": True,
-    } in payload["rfq_preview"]["technical_field_statuses"]
+    by_field = {
+        field["field"]: field
+        for field in payload["rfq_preview"]["technical_field_statuses"]
+    }
+    assert by_field["pressure_bar"]["status"] == "candidate"
+    assert by_field["pressure_bar"]["provenance"] == "user"
+    assert by_field["pressure_bar"]["source_type"] == "user_stated"
+    assert by_field["pressure_bar"]["validation_status"] == "candidate"
+    assert by_field["pressure_bar"]["confirmation_required"] is True
     assert any(
         "Bestaetigung erforderlich: pressure_bar" in item
         for item in payload["manufacturer_extract"]["open_points"]
@@ -378,6 +425,25 @@ def test_rfq_preview_does_not_require_matching_or_manufacturer_shortlist() -> No
     assert "matching" not in payload["rfq_preview"]
     assert "manufacturer_shortlist" not in payload["rfq_preview"]
     assert "manufacturer_shortlist" not in payload["manufacturer_extract"]
+    assert payload["consent_boundary"]["required_acknowledgements"][
+        "user_acknowledged_partner_network_disclosure"
+    ] is False
+
+
+def test_rfq_preview_payload_has_no_unsafe_positive_release_or_approval_wording() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_envelopes(),
+    )
+
+    serialized = json.dumps(payload, sort_keys=True).casefold()
+
+    assert "approved" not in serialized
+    assert "certified" not in serialized
+    assert "compliant" not in serialized
+    assert "suitable" not in serialized
+    assert "manufacturer approval" not in serialized
+    assert "automatic dispatch" not in serialized
 
 
 def test_rfq_preview_view_is_stale_when_case_revision_changes() -> None:
@@ -422,12 +488,14 @@ def test_consent_scope_requires_visible_shared_sections() -> None:
             "intended_recipients": ["manual-export"],
             "user_acknowledged_open_points": True,
             "user_acknowledged_no_final_release": True,
+            "user_acknowledged_export_intent": True,
         }
     )
     assert scope["shared_sections"] == ("1", "2")
     assert scope["shared_documents"] == ("doc-1",)
     assert scope["intended_recipients"] == ("manual-export",)
     assert scope["user_acknowledged_no_final_release"] is True
+    assert scope["user_acknowledged_export_intent"] is True
 
 
 def test_consent_scope_requires_intended_recipients() -> None:
@@ -448,6 +516,7 @@ def test_consent_scope_requires_no_final_release_acknowledgement() -> None:
                 "shared_sections": ["rfq_preview"],
                 "intended_recipients": ["manual-export"],
                 "user_acknowledged_open_points": True,
+                "user_acknowledged_export_intent": True,
             }
         )
 
@@ -459,8 +528,21 @@ def test_consent_scope_requires_open_points_acknowledgement_when_needed() -> Non
                 "shared_sections": ["rfq_preview"],
                 "intended_recipients": ["manual-export"],
                 "user_acknowledged_no_final_release": True,
+                "user_acknowledged_export_intent": True,
             },
             open_points_acknowledgement_required=True,
+        )
+
+
+def test_consent_scope_requires_export_intent_acknowledgement() -> None:
+    with pytest.raises(RfqPreviewError, match="user_acknowledged_export_intent"):
+        normalize_consent_scope(
+            {
+                "shared_sections": ["rfq_preview"],
+                "intended_recipients": ["manual-export"],
+                "user_acknowledged_no_final_release": True,
+                "user_acknowledged_open_points": True,
+            },
         )
 
 
@@ -472,6 +554,7 @@ def test_consent_scope_accepts_valid_acknowledgements_and_ignores_dispatch_flag(
             "intended_recipients": ["manual-export"],
             "user_acknowledged_open_points": True,
             "user_acknowledged_no_final_release": True,
+            "user_acknowledged_export_intent": True,
             "dispatch_enabled": True,
         },
         open_points_acknowledgement_required=True,
@@ -483,6 +566,7 @@ def test_consent_scope_accepts_valid_acknowledgements_and_ignores_dispatch_flag(
         "intended_recipients": ("manual-export",),
         "user_acknowledged_open_points": True,
         "user_acknowledged_no_final_release": True,
+        "user_acknowledged_export_intent": True,
     }
     assert "dispatch_enabled" not in scope
 
@@ -557,6 +641,7 @@ async def test_grant_preview_consent_keeps_dispatch_disabled() -> None:
             "intended_recipients": ["manual-export"],
             "user_acknowledged_open_points": True,
             "user_acknowledged_no_final_release": True,
+            "user_acknowledged_export_intent": True,
             "dispatch_enabled": True,
         },
     )
@@ -565,6 +650,7 @@ async def test_grant_preview_consent_keeps_dispatch_disabled() -> None:
     assert view.dispatch_enabled is False
     assert preview.dispatch_enabled is False
     assert preview.payload["consent_boundary"]["automatic_dispatch_allowed"] is False
+    assert preview.payload["consent_boundary"]["dispatch_enabled"] is False
     assert preview.payload["consent_boundary"]["phase"] == "phase_1_preview_export_only"
 
 

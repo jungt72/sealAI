@@ -258,22 +258,26 @@ def test_phase_1_mvp_journey_projects_decision_cockpit_and_tabs() -> None:
 def test_phase_1_mvp_journey_builds_frozen_rfq_preview_without_dispatch() -> None:
     payload = build_rfq_preview_payload(case_row=_rfq_case(), snapshot=_rfq_snapshot())
 
-    assert payload["meta"] == {
-        "schema_version": "rfq_preview_v0.7.0",
-        "artifact_type": "rfq_preview",
-        "case_id": "journey-salzwasser-001",
-        "case_revision": 6,
-        "source_snapshot_revision": 6,
-        "source_kind": "case_revision",
-        "rfq_freeze": True,
-    }
-    assert payload["consent_boundary"] == {
-        "status": "not_requested",
-        "automatic_dispatch_allowed": False,
-        "requires_explicit_user_consent_before_sharing": True,
-        "open_points_acknowledgement_required": True,
-        "no_final_release_acknowledgement_required": True,
-    }
+    assert payload["meta"]["schema_version"] == "rfq_preview_v0.7.0"
+    assert payload["meta"]["artifact_type"] == "rfq_preview"
+    assert payload["meta"]["case_id"] == "journey-salzwasser-001"
+    assert payload["meta"]["case_revision"] == 6
+    assert payload["meta"]["generated_from_case_revision"] == 6
+    assert payload["meta"]["source_snapshot_revision"] == 6
+    assert payload["meta"]["source_kind"] == "case_revision"
+    assert payload["meta"]["rfq_freeze"] is True
+    assert payload["meta"]["no_final_technical_release"] is True
+    assert payload["meta"]["automatic_dispatch_allowed"] is False
+    assert payload["consent_boundary"]["status"] == "not_requested"
+    assert payload["consent_boundary"]["automatic_dispatch_allowed"] is False
+    assert payload["consent_boundary"]["dispatch_enabled"] is False
+    assert (
+        payload["consent_boundary"]["requires_explicit_user_consent_before_sharing"]
+        is True
+    )
+    assert payload["consent_boundary"]["open_points_acknowledgement_required"] is True
+    assert payload["consent_boundary"]["no_final_release_acknowledgement_required"] is True
+    assert payload["consent_boundary"]["export_intent_acknowledgement_required"] is True
 
     sections = payload["rfq_preview"]["sections"]
     assert [section["title"] for section in sections] == list(RFQ_PREVIEW_SECTIONS)
@@ -304,6 +308,7 @@ def test_phase_1_mvp_journey_builds_frozen_rfq_preview_without_dispatch() -> Non
             "intended_recipients": ["manual-review-only"],
             "user_acknowledged_open_points": True,
             "user_acknowledged_no_final_release": True,
+            "user_acknowledged_export_intent": True,
         },
         open_points_acknowledgement_required=True,
     )
