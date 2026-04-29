@@ -93,6 +93,86 @@ function legacyProjection() {
       installation: "rotierende Wellenabdichtung",
       motion_type: "rotary",
     },
+    medium_context: {
+      medium_label: "Steam",
+      status: "available",
+      scope: "case",
+      summary: "Steam context",
+      properties: ["hot"],
+      challenges: ["burn"],
+      followup_points: ["pressure source"],
+      confidence: "medium",
+      source_type: "rag_verified",
+      validation_status: "documented",
+      not_for_release_decisions: true,
+      disclaimer: "No release decision.",
+    },
+    seal_application_profile: {
+      seal_family: "rotary",
+      seal_type: "radial_shaft_seal",
+      seal_type_confidence: 0.82,
+      confidence_band: "high",
+      matched_alias: "RWDR",
+      ambiguous: false,
+      candidate_types: [],
+      application_domain: "shaft_sealing",
+      motion_type: "rotary",
+      standard_refs: [],
+      type_specific_missing_hints: ["surface_finish"],
+      notes: [],
+      source: "seal_type_normalizer",
+    },
+    decision_understanding: {
+      case_summary: "Steam RWDR case with open surface finish.",
+      understood_now: ["Medium: Steam"],
+      technical_meaning: ["Temperature drives material review."],
+      plausible_directions: ["RWDR inquiry basis"],
+      not_yet_decidable: ["surface_finish"],
+      key_risks: ["temperature"],
+      confidence_notes: ["source-backed but incomplete"],
+      next_best_question: "Which surface finish is documented?",
+      manufacturer_review_needs: ["compound approval"],
+      needs_analysis: {
+        primary_need: "retrofit",
+        secondary_needs: ["technical_clarification"],
+        urgency: "normal",
+        user_side: "buyer",
+        context_side: "maintenance",
+        confidence: 0.7,
+        notes: [],
+      },
+      current_state_analysis: {
+        known_fields: ["medium"],
+        missing_fields: ["surface_finish"],
+        uncertain_fields: [],
+        conflicting_fields: [],
+        evidence_backed_fields: ["medium"],
+        seal_type_status: "candidate",
+        readiness_hint: "prequalification",
+        confidence: 0.6,
+      },
+      next_best_questions: [
+        {
+          question: "Which surface finish is documented?",
+          reason: "Surface finish drives seal lip review.",
+          focus_key: "surface_finish",
+          priority: 1,
+          expected_answer_type: "text",
+          applies_to_case_type: "retrofit",
+          applies_to_seal_type: "radial_shaft_seal",
+          source: "next_best_question_service",
+          max_questions_policy: "ask_1_to_3_targeted_questions",
+        },
+      ],
+      completeness_score: {
+        score: 0.65,
+        missing_critical_count: 1,
+        known_critical_count: 4,
+        uncertainty_count: 1,
+        conflict_count: 0,
+        notes: [],
+      },
+    },
     case_summary: {
       thread_id: "case-123",
       turn_count: 4,
@@ -245,6 +325,11 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.caseId, "case-123");
   assert.equal(workspace.requestType, "retrofit");
   assert.equal(workspace.engineeringPath, "rwdr");
+  assert.equal(workspace.decisionUnderstanding?.caseSummary, "Steam RWDR case with open surface finish.");
+  assert.deepEqual(workspace.decisionUnderstanding?.understoodNow, ["Medium: Steam"]);
+  assert.equal(workspace.decisionUnderstanding?.nextBestQuestions[0]?.reason, "Surface finish drives seal lip review.");
+  assert.equal(workspace.sealApplicationProfile?.sealType, "radial_shaft_seal");
+  assert.equal(workspace.mediumContext.validationStatus, "documented");
   assert.equal(workspace.cockpit?.requestType, "retrofit");
   assert.equal(workspace.cockpit?.path, "rwdr");
   assert.equal(workspace.cockpit?.sections.application_function.properties[0]?.origin, "user_override");

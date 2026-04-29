@@ -1,4 +1,13 @@
-import type { WorkspaceView, WorkspaceLifecycleStep } from "@/lib/contracts/workspace";
+import type {
+  WorkspaceCompletenessScore,
+  WorkspaceCurrentStateAnalysis,
+  WorkspaceDecisionUnderstanding,
+  WorkspaceLifecycleStep,
+  WorkspaceNeedsAnalysis,
+  WorkspaceNextBestQuestion,
+  WorkspaceSealApplicationProfile,
+  WorkspaceView,
+} from "@/lib/contracts/workspace";
 import type {
   EngineeringCockpitView,
   EngineeringCheckResult,
@@ -107,9 +116,90 @@ type RawDeepDiveTab = {
   }>;
 };
 
+type RawNeedsAnalysis = {
+  primary_need?: string;
+  secondary_needs?: string[];
+  urgency?: string;
+  user_side?: string | null;
+  context_side?: string | null;
+  confidence?: number;
+  notes?: string[];
+};
+
+type RawCurrentStateAnalysis = {
+  known_fields?: string[];
+  missing_fields?: string[];
+  uncertain_fields?: string[];
+  conflicting_fields?: string[];
+  evidence_backed_fields?: string[];
+  seal_type_status?: string;
+  readiness_hint?: string;
+  confidence?: number;
+};
+
+type RawNextBestQuestion = {
+  question?: string;
+  reason?: string;
+  focus_key?: string;
+  priority?: number;
+  expected_answer_type?: string;
+  applies_to_case_type?: string;
+  applies_to_seal_type?: string;
+  source?: string;
+  max_questions_policy?: string;
+};
+
+type RawCompletenessScore = {
+  score?: number;
+  missing_critical_count?: number;
+  known_critical_count?: number;
+  uncertainty_count?: number;
+  conflict_count?: number;
+  notes?: string[];
+};
+
+type RawDecisionUnderstanding = {
+  case_summary?: string;
+  understood_now?: string[];
+  technical_meaning?: string[];
+  plausible_directions?: string[];
+  not_yet_decidable?: string[];
+  key_risks?: string[];
+  confidence_notes?: string[];
+  next_best_question?: string | null;
+  manufacturer_review_needs?: string[];
+  needs_analysis?: RawNeedsAnalysis;
+  current_state_analysis?: RawCurrentStateAnalysis;
+  next_best_questions?: RawNextBestQuestion[];
+  completeness_score?: RawCompletenessScore;
+};
+
+type RawSealApplicationProfile = {
+  seal_family?: string;
+  seal_type?: string;
+  seal_type_confidence?: number;
+  confidence_band?: string;
+  matched_alias?: string | null;
+  ambiguous?: boolean;
+  candidate_types?: string[];
+  application_domain?: string | null;
+  motion_type?: string | null;
+  standard_refs?: string[];
+  type_specific_missing_hints?: string[];
+  notes?: string[];
+  source?: string;
+};
+
 type LegacyWorkspaceProjection = {
+  case_type?: string | null;
   request_type?: string | null;
   engineering_path?: string | null;
+  seal_application_profile?: RawSealApplicationProfile | null;
+  decision_understanding?: RawDecisionUnderstanding | null;
+  needs_analysis?: RawNeedsAnalysis | null;
+  current_state_analysis?: RawCurrentStateAnalysis | null;
+  next_best_questions?: RawNextBestQuestion[];
+  completeness_score?: RawCompletenessScore | null;
   cockpit_view?: RawCockpitView | null;
   deep_dive_tabs?: RawDeepDiveTab[];
   parameters?: {
@@ -151,6 +241,7 @@ type LegacyWorkspaceProjection = {
     followup_points?: string[];
     confidence?: string | null;
     source_type?: string | null;
+    validation_status?: string | null;
     not_for_release_decisions?: boolean;
     disclaimer?: string | null;
   };
@@ -508,6 +599,93 @@ function mapDeepDiveTabs(rawTabs: RawDeepDiveTab[] | undefined) {
     }));
 }
 
+function mapNeedsAnalysis(raw: RawNeedsAnalysis | null | undefined): WorkspaceNeedsAnalysis {
+  return {
+    primaryNeed: raw?.primary_need || "unknown",
+    secondaryNeeds: raw?.secondary_needs || [],
+    urgency: raw?.urgency || "unknown",
+    userSide: raw?.user_side || null,
+    contextSide: raw?.context_side || null,
+    confidence: typeof raw?.confidence === "number" ? raw.confidence : 0,
+    notes: raw?.notes || [],
+  };
+}
+
+function mapCurrentStateAnalysis(raw: RawCurrentStateAnalysis | null | undefined): WorkspaceCurrentStateAnalysis {
+  return {
+    knownFields: raw?.known_fields || [],
+    missingFields: raw?.missing_fields || [],
+    uncertainFields: raw?.uncertain_fields || [],
+    conflictingFields: raw?.conflicting_fields || [],
+    evidenceBackedFields: raw?.evidence_backed_fields || [],
+    sealTypeStatus: raw?.seal_type_status || "unknown",
+    readinessHint: raw?.readiness_hint || "precheck",
+    confidence: typeof raw?.confidence === "number" ? raw.confidence : 0,
+  };
+}
+
+function mapNextBestQuestion(raw: RawNextBestQuestion): WorkspaceNextBestQuestion {
+  return {
+    question: raw.question || "",
+    reason: raw.reason || "",
+    focusKey: raw.focus_key || "",
+    priority: typeof raw.priority === "number" ? raw.priority : 1,
+    expectedAnswerType: raw.expected_answer_type || "text",
+    appliesToCaseType: raw.applies_to_case_type || "unknown",
+    appliesToSealType: raw.applies_to_seal_type || "unknown_seal",
+    source: raw.source || "next_best_question_service",
+    maxQuestionsPolicy: raw.max_questions_policy || "ask_1_to_3_targeted_questions",
+  };
+}
+
+function mapCompletenessScore(raw: RawCompletenessScore | null | undefined): WorkspaceCompletenessScore {
+  return {
+    score: typeof raw?.score === "number" ? raw.score : 0,
+    missingCriticalCount: raw?.missing_critical_count ?? 0,
+    knownCriticalCount: raw?.known_critical_count ?? 0,
+    uncertaintyCount: raw?.uncertainty_count ?? 0,
+    conflictCount: raw?.conflict_count ?? 0,
+    notes: raw?.notes || [],
+  };
+}
+
+function mapDecisionUnderstanding(projection: LegacyWorkspaceProjection): WorkspaceDecisionUnderstanding {
+  const raw = projection.decision_understanding || {};
+  return {
+    caseSummary: raw.case_summary || "",
+    understoodNow: raw.understood_now || [],
+    technicalMeaning: raw.technical_meaning || [],
+    plausibleDirections: raw.plausible_directions || [],
+    notYetDecidable: raw.not_yet_decidable || [],
+    keyRisks: raw.key_risks || [],
+    confidenceNotes: raw.confidence_notes || [],
+    nextBestQuestion: raw.next_best_question || null,
+    manufacturerReviewNeeds: raw.manufacturer_review_needs || [],
+    needsAnalysis: mapNeedsAnalysis(raw.needs_analysis || projection.needs_analysis),
+    currentStateAnalysis: mapCurrentStateAnalysis(raw.current_state_analysis || projection.current_state_analysis),
+    nextBestQuestions: (raw.next_best_questions || projection.next_best_questions || []).map(mapNextBestQuestion),
+    completenessScore: mapCompletenessScore(raw.completeness_score || projection.completeness_score),
+  };
+}
+
+function mapSealApplicationProfile(raw: RawSealApplicationProfile | null | undefined): WorkspaceSealApplicationProfile {
+  return {
+    sealFamily: raw?.seal_family || "unknown",
+    sealType: raw?.seal_type || "unknown_seal",
+    sealTypeConfidence: typeof raw?.seal_type_confidence === "number" ? raw.seal_type_confidence : 0,
+    confidenceBand: raw?.confidence_band || "low",
+    matchedAlias: raw?.matched_alias || null,
+    ambiguous: Boolean(raw?.ambiguous),
+    candidateTypes: raw?.candidate_types || [],
+    applicationDomain: raw?.application_domain || null,
+    motionType: raw?.motion_type || null,
+    standardRefs: raw?.standard_refs || [],
+    typeSpecificMissingHints: raw?.type_specific_missing_hints || [],
+    notes: raw?.notes || [],
+    source: raw?.source || "seal_type_normalizer",
+  };
+}
+
 function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockpitView | null {
   const raw = projection.cockpit_view;
   if (!raw) {
@@ -594,8 +772,11 @@ export function mapWorkspaceView(
 
   return {
     caseId,
+    caseType: projection.case_type || null,
     requestType: projection.request_type || projection.case_summary.intent_goal || null,
     engineeringPath: projection.engineering_path || null,
+    sealApplicationProfile: mapSealApplicationProfile(projection.seal_application_profile),
+    decisionUnderstanding: mapDecisionUnderstanding(projection),
     cockpit: mapCockpitView(projection),
     communication: projection.communication_context
       ? {
@@ -694,6 +875,7 @@ export function mapWorkspaceView(
       followupPoints: projection.medium_context?.followup_points || [],
       confidence: projection.medium_context?.confidence || null,
       sourceType: projection.medium_context?.source_type || null,
+      validationStatus: projection.medium_context?.validation_status || null,
       notForReleaseDecisions:
         projection.medium_context?.not_for_release_decisions !== false,
       disclaimer: projection.medium_context?.disclaimer || null,

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { AlertTriangle, Calculator, CheckCircle2, CircleDot, ClipboardList } from "lucide-react";
 
+import { DecisionUnderstandingPanel } from "@/components/dashboard/DecisionUnderstandingPanel";
+import type { WorkspaceView } from "@/lib/contracts/workspace";
 import {
   type CalculationEvidenceMetric,
   type CockpitTabId,
@@ -200,7 +202,7 @@ function PlaceholderTab({ label }: { label: string }) {
   );
 }
 
-export function SealCockpit({ data }: { data: SealCockpitOverview }) {
+export function SealCockpit({ data, workspace }: { data: SealCockpitOverview; workspace: WorkspaceView | null }) {
   const [activeTab, setActiveTab] = useState<CockpitTabId>("overview");
   const activeLabel = data.tabs.find((tab) => tab.id === activeTab)?.label ?? "Übersicht";
 
@@ -211,6 +213,9 @@ export function SealCockpit({ data }: { data: SealCockpitOverview }) {
         {activeTab === "overview" ? (
           <>
             <CockpitStatusStrip items={data.statusStrip} />
+            <div className="px-4 pt-4">
+              <DecisionUnderstandingPanel workspace={workspace} />
+            </div>
             <div className="grid grid-cols-1 gap-4 px-4 pt-4 xl:grid-cols-2">
               <ParameterDataCard rows={data.parameters.rows} warning={data.parameters.warning} />
               <CriticalDriversCard drivers={data.criticalDrivers} />

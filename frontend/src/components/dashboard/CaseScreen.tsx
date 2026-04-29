@@ -57,7 +57,7 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
           onTurnComplete={() => void workspaceResult.refresh()}
         />
       </section>
-      <SealCockpit data={cockpitViewModel} />
+      <SealCockpit data={cockpitViewModel} workspace={workspaceResult.workspace} />
     </div>
   );
 }

@@ -8,7 +8,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const productionCopyFiles = [
   "components/dashboard/CaseScreen.tsx",
   "components/dashboard/ChatPane.tsx",
+  "components/dashboard/DecisionUnderstandingPanel.tsx",
   "components/dashboard/RfqPane.tsx",
+  "components/rag/RagDocumentGrid.tsx",
   "lib/mapping/workspace.ts",
 ].map((path) => resolve(root, path));
 
@@ -31,6 +33,7 @@ const forbiddenCopy = [
 
 const allowedCopy = [
   "noch nicht final freigegeben",
+  "nicht validiert",
 ];
 
 function withoutAllowedCopy(source: string): string {

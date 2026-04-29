@@ -118,9 +118,76 @@ function workspaceFixture(): WorkspaceView {
       challenges: ["Schmierfähigkeit"],
       followupPoints: [],
       confidence: "medium",
-      sourceType: "workspace",
+      sourceType: "rag_verified",
+      validationStatus: "user_stated",
       notForReleaseDecisions: true,
       disclaimer: "Herstellerprüfung erforderlich.",
+    },
+    sealApplicationProfile: {
+      sealFamily: "radial_shaft_seal",
+      sealType: "radial_shaft_seal",
+      sealTypeConfidence: 0.82,
+      confidenceBand: "high",
+      matchedAlias: "RWDR",
+      ambiguous: false,
+      candidateTypes: [],
+      applicationDomain: "shaft_sealing",
+      motionType: "rotary",
+      standardRefs: [],
+      typeSpecificMissingHints: ["counterface_surface"],
+      notes: [],
+      source: "seal_type_normalizer",
+    },
+    decisionUnderstanding: {
+      caseSummary: "RWDR-Arbeitsstand mit Wasser-Glykol, 85 °C und offener Gegenlauffläche.",
+      understoodNow: ["Medium: Wasser-Glykol", "Drehzahl: 1200 rpm"],
+      technicalMeaning: ["Die Gegenlauffläche bleibt prüfungsrelevant."],
+      plausibleDirections: ["RWDR-Anfragebasis für Herstellerprüfung"],
+      notYetDecidable: ["Oberflächenqualität"],
+      keyRisks: ["Gegenlauffläche offen"],
+      confidenceNotes: ["Datenlage ist vorläufig."],
+      nextBestQuestion: "Welche Gegenlauffläche und Oberflächenrauheit sind dokumentiert?",
+      manufacturerReviewNeeds: ["Gegenlauffläche bestätigen"],
+      needsAnalysis: {
+        primaryNeed: "retrofit",
+        secondaryNeeds: ["technical_clarification"],
+        urgency: "normal",
+        userSide: "buyer",
+        contextSide: "maintenance",
+        confidence: 0.72,
+        notes: [],
+      },
+      currentStateAnalysis: {
+        knownFields: ["medium", "temperature_c", "speed_rpm"],
+        missingFields: ["counterface_surface"],
+        uncertainFields: [],
+        conflictingFields: [],
+        evidenceBackedFields: ["calculated_speed"],
+        sealTypeStatus: "candidate",
+        readinessHint: "prequalification",
+        confidence: 0.72,
+      },
+      nextBestQuestions: [
+        {
+          question: "Welche Gegenlauffläche und Oberflächenrauheit sind dokumentiert?",
+          reason: "Die Dichtkante hängt stark an Oberfläche und Gegenlauffläche.",
+          focusKey: "counterface_surface",
+          priority: 1,
+          expectedAnswerType: "text",
+          appliesToCaseType: "retrofit",
+          appliesToSealType: "radial_shaft_seal",
+          source: "next_best_question_service",
+          maxQuestionsPolicy: "ask_1_to_3_targeted_questions",
+        },
+      ],
+      completenessScore: {
+        score: 0.72,
+        missingCriticalCount: 1,
+        knownCriticalCount: 5,
+        uncertaintyCount: 1,
+        conflictCount: 0,
+        notes: [],
+      },
     },
     technicalDerivations: [
       {
@@ -315,6 +382,9 @@ describe("CaseScreen", () => {
     expect(screen.getByText("2.64 m/s")).toBeInTheDocument();
     expect(screen.getByText("0.48 MPa·m/s")).toBeInTheDocument();
     expect(screen.getByText("50400")).toBeInTheDocument();
+    expect(screen.getByText("RWDR-Arbeitsstand mit Wasser-Glykol, 85 °C und offener Gegenlauffläche.")).toBeInTheDocument();
+    expect(screen.getByText("Datenherkunft: Wissensbasis")).toBeInTheDocument();
+    expect(screen.getByText("Validierungsstatus: nicht validiert")).toBeInTheDocument();
     expect(screen.getAllByText("Welche Gegenlauffläche und Oberflächenrauheit sind dokumentiert?").length).toBeGreaterThan(0);
     expect(screen.getByText(/keine finale technische Freigabe/i)).toBeInTheDocument();
 

@@ -109,10 +109,87 @@ export type WorkspaceDeepDiveTab = {
   cards: WorkspaceDeepDiveCard[];
 };
 
+export type WorkspaceNeedsAnalysis = {
+  primaryNeed: string;
+  secondaryNeeds: string[];
+  urgency: string;
+  userSide: string | null;
+  contextSide: string | null;
+  confidence: number;
+  notes: string[];
+};
+
+export type WorkspaceCurrentStateAnalysis = {
+  knownFields: string[];
+  missingFields: string[];
+  uncertainFields: string[];
+  conflictingFields: string[];
+  evidenceBackedFields: string[];
+  sealTypeStatus: string;
+  readinessHint: string;
+  confidence: number;
+};
+
+export type WorkspaceNextBestQuestion = {
+  question: string;
+  reason: string;
+  focusKey: string;
+  priority: number;
+  expectedAnswerType: string;
+  appliesToCaseType: string;
+  appliesToSealType: string;
+  source: string;
+  maxQuestionsPolicy: string;
+};
+
+export type WorkspaceCompletenessScore = {
+  score: number;
+  missingCriticalCount: number;
+  knownCriticalCount: number;
+  uncertaintyCount: number;
+  conflictCount: number;
+  notes: string[];
+};
+
+export type WorkspaceDecisionUnderstanding = {
+  caseSummary: string;
+  understoodNow: string[];
+  technicalMeaning: string[];
+  plausibleDirections: string[];
+  notYetDecidable: string[];
+  keyRisks: string[];
+  confidenceNotes: string[];
+  nextBestQuestion: string | null;
+  manufacturerReviewNeeds: string[];
+  needsAnalysis: WorkspaceNeedsAnalysis;
+  currentStateAnalysis: WorkspaceCurrentStateAnalysis;
+  nextBestQuestions: WorkspaceNextBestQuestion[];
+  completenessScore: WorkspaceCompletenessScore;
+};
+
+export type WorkspaceSealApplicationProfile = {
+  sealFamily: string;
+  sealType: string;
+  sealTypeConfidence: number;
+  confidenceBand: string;
+  matchedAlias: string | null;
+  ambiguous: boolean;
+  candidateTypes: string[];
+  applicationDomain: string | null;
+  motionType: string | null;
+  standardRefs: string[];
+  typeSpecificMissingHints: string[];
+  notes: string[];
+  source: string;
+};
+
 export type WorkspaceView = {
   caseId: string;
+  caseType?: string | null;
   requestType?: string | null;
   engineeringPath?: string | null;
+  sealApplicationProfile?: WorkspaceSealApplicationProfile;
+  decisionUnderstanding?: WorkspaceDecisionUnderstanding;
   cockpit?: EngineeringCockpitView | null;
   communication?: {
     conversationPhase?: string | null;
@@ -204,6 +281,7 @@ export type WorkspaceView = {
     followupPoints: string[];
     confidence: string | null;
     sourceType: string | null;
+    validationStatus?: string | null;
     notForReleaseDecisions: boolean;
     disclaimer: string | null;
   };
