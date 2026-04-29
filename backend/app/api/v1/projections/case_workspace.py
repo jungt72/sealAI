@@ -52,6 +52,7 @@ from app.api.v1.schemas.case_workspace import (
     CockpitProperty,
     CockpitReadinessSummary,
     CockpitRoutingMetadata,
+    CompletenessStatus,
     RiskEvaluationResult,
     CockpitSection,
     CockpitSectionCompletion,
@@ -99,6 +100,58 @@ def _compact_unique_strings(items: list[str], *, limit: int = 3) -> list[str]:
         if len(result) >= limit:
             break
     return result
+
+
+def _bounded_score(value: Any) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if math.isnan(score) or math.isinf(score):
+        return 0.0
+    return max(0.0, min(1.0, score))
+
+
+def _build_completeness_status(
+    *,
+    payload: Dict[str, Any],
+    score: Any,
+    missing_fields: list[str],
+) -> CompletenessStatus:
+    payload_score = _bounded_score(payload.get("coverage_score"))
+    projected_score = _bounded_score(score)
+    coverage_score = payload_score if payload_score > 0 else projected_score
+    missing_critical = _compact_unique_strings(
+        [
+            str(item)
+            for item in (
+                _ls(payload.get("missing_critical_parameters")) or missing_fields
+            )
+            if item
+        ],
+        limit=12,
+    )
+    coverage_gaps = _compact_unique_strings(
+        [
+            str(item)
+            for item in (_ls(payload.get("coverage_gaps")) or missing_critical)
+            if item
+        ],
+        limit=12,
+    )
+    depth = str(
+        payload.get("completeness_depth")
+        or ("prequalification" if coverage_score > 0 else "precheck")
+    )
+    return CompletenessStatus(
+        coverage_score=round(coverage_score, 2),
+        coverage_gaps=coverage_gaps,
+        completeness_depth=depth,
+        missing_critical_parameters=missing_critical,
+        discovery_missing=[str(item) for item in _ls(payload.get("discovery_missing")) if item],
+        analysis_complete=bool(payload.get("analysis_complete", False)),
+        recommendation_ready=bool(payload.get("recommendation_ready", False)),
+    )
 
 
 _FIELD_LABELS: dict[str, str] = {
@@ -2361,6 +2414,11 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
             "completeness_score": nbq_projection.completeness_score,
         }
     )
+    completeness_status = _build_completeness_status(
+        payload=completeness_payload,
+        score=nbq_projection.completeness_score.score,
+        missing_fields=nbq_projection.current_state_analysis.missing_fields,
+    )
 
     return CaseWorkspaceProjection(
         case_type=case_type,
@@ -2375,6 +2433,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         next_best_questions=nbq_projection.next_best_questions,
         completeness_score=nbq_projection.completeness_score,
         case_summary=case_summary,
+        completeness=completeness_status,
         governance_status=governance_status,
         claims_summary=claims_summary,
         evidence_summary=evidence_summary,

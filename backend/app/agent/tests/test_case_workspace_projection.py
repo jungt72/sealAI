@@ -467,6 +467,42 @@ def test_workspace_projection_prioritizes_pump_mechanical_seal_over_generic_shaf
     assert projection.cockpit_view.engineering_path == "ms_pump"
 
 
+def test_workspace_projection_derives_top_level_completeness_when_payload_score_missing() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-derived-completeness"},
+            "working_profile": {
+                "engineering_profile": {
+                    "medium": "Ethanol",
+                    "temperature_c": 150.0,
+                    "movement_type": "rotary",
+                    "installation": "pump",
+                    "sealing_type": "mechanical_seal",
+                },
+                "completeness": {},
+            },
+            "reasoning": {"phase": "clarification", "state_revision": 1},
+            "system": {
+                "governance_metadata": {"release_status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    assert projection.completeness.coverage_score > 0
+    assert projection.completeness.coverage_score == (
+        projection.completeness_score.score
+    )
+    assert "pressure" in projection.completeness.missing_critical_parameters
+    assert projection.completeness.completeness_depth == "prequalification"
+
+
 def test_workspace_projection_exposes_cockpit_property_provenance_when_available() -> (
     None
 ):
