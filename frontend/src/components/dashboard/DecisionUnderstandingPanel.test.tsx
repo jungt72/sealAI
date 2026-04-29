@@ -68,7 +68,10 @@ function workspaceFixture(overrides: Partial<WorkspaceView> = {}): WorkspaceView
       technicalMeaning: ["Ethanol und Temperatur machen Herstellerprüfung wichtig."],
       plausibleDirections: ["Gleitringdichtung prüfen"],
       notYetDecidable: ["Druck an der Dichtstelle", "ATEX-Zone"],
-      keyRisks: ["Druck", "Temperatur"],
+      keyRisks: [
+        "{'risk name': 'temperature risk', 'score': 3, 'label': 'high', 'missing inputs': [], 'explanation short': 'Temperatur wird gegen MVP-Schwellen bewertet.'}",
+        "Druck",
+      ],
       confidenceNotes: ["Dichtstelle noch offen"],
       nextBestQuestion: "Liegen die 10 bar direkt an der Dichtstelle an?",
       manufacturerReviewNeeds: ["Pumpentyp", "Drehzahl"],
@@ -183,6 +186,14 @@ describe("DecisionUnderstandingPanel", () => {
     expect(screen.getByText("Dichtungstyp-Profil")).toBeInTheDocument();
     expect(screen.getAllByText("Gleitringdichtung").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Wellendurchmesser/).length).toBeGreaterThan(0);
+  });
+
+  it("renders runtime risk strings without leaking backend dict syntax", () => {
+    render(<DecisionUnderstandingPanel workspace={workspaceFixture()} />);
+
+    expect(screen.getByText("Temperatur: hoch - Temperatur wird gegen MVP-Schwellen bewertet.")).toBeInTheDocument();
+    expect(screen.queryByText(/risk name/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\{'/i)).not.toBeInTheDocument();
   });
 
   it("does not crash when optional backend fields are missing", () => {

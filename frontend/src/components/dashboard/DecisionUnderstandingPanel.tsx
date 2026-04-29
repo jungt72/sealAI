@@ -40,6 +40,19 @@ function readable(value: string | null | undefined) {
   return humanizeDisplayText(value);
 }
 
+function readableConfidence(value: string | null | undefined) {
+  switch (value) {
+    case "high":
+      return "hoch";
+    case "medium":
+      return "mittel";
+    case "low":
+      return "niedrig";
+    default:
+      return readable(value);
+  }
+}
+
 function badgeToneForValidation(status: string | null | undefined): BadgeTone {
   switch (status) {
     case "validated":
@@ -257,7 +270,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
             <div>{readable(sealProfile?.sealType) || "Dichtungstyp noch offen"}</div>
             <div className="text-[#4B5563]">
               {readable(sealProfile?.sealFamily) || "Dichtungsfamilie noch offen"}
-              {sealProfile?.confidenceBand ? ` · Sicherheit: ${readable(sealProfile.confidenceBand)}` : ""}
+              {sealProfile?.confidenceBand ? ` · Sicherheit: ${readableConfidence(sealProfile.confidenceBand)}` : ""}
             </div>
             {sealProfile?.typeSpecificMissingHints.length ? (
               <div className="text-[#4B5563]">Offen: {sealProfile.typeSpecificMissingHints.slice(0, 3).map(humanizeDisplayText).filter(Boolean).join(" · ")}</div>

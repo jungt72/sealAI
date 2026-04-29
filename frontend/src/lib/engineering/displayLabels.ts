@@ -10,12 +10,14 @@ const FIELD_LABELS: Record<string, string> = {
   installation: "Einbauort / Anlage",
   low: "niedrig",
   manufacturer_validation_required: "Herstellerprüfung erforderlich",
+  mechanical_face: "Gleitringdichtungsprinzip",
   mechanical_seal: "Gleitringdichtung",
   medium: "Medium",
   medium_name: "Medium",
   ms_pump: "Gleitringdichtung / Pumpe",
   new_rfq: "Anfragebasis vorbereiten",
   no_technical_case_detected: "technischer Fall noch nicht erkannt",
+  normal: "normal",
   precheck_only: "Vorprüfung",
   prequalification: "Vorqualifizierung",
   pressure: "Druck",
@@ -37,20 +39,27 @@ const FIELD_LABELS: Record<string, string> = {
   technical_clarification: "technische Klärung",
   technical_direction_plausible: "technische Richtung plausibel",
   temperature_c: "Temperatur",
+  unknown: "unklar",
   unknown_seal: "Dichtungstyp offen",
 };
 
 const RISK_LABELS: Record<string, string> = {
   abrasion_risk: "Abrasion",
+  "abrasion risk": "Abrasion",
   chemical_compatibility_risk: "chemische Verträglichkeit",
   corrosion_risk: "Korrosion",
+  "corrosion risk": "Korrosion",
   dry_run_risk: "Trockenlauf",
   installation_risk: "Einbau",
   pressure_risk: "Druck",
+  "pressure risk": "Druck",
   speed_pv_risk: "Geschwindigkeit / PV",
+  "speed pv risk": "Geschwindigkeit / PV",
   surface_risk: "Gegenlauffläche",
   temperature_risk: "Temperatur",
+  "temperature risk": "Temperatur",
   unknowns_risk: "Unklare Angaben",
+  "unknowns risk": "Unklare Angaben",
 };
 
 function isEmptyToken(raw: string) {
@@ -84,6 +93,9 @@ export function humanizeDisplayText(value: unknown): string {
   if (!raw || isEmptyToken(raw)) {
     return "";
   }
+  if (raw.startsWith("{'risk name'") || raw.startsWith('{"risk_name"')) {
+    return humanizeRiskString(raw);
+  }
 
   let result = raw
     .replace(/\bSealType\./g, "")
@@ -97,6 +109,39 @@ export function humanizeDisplayText(value: unknown): string {
   }
 
   return result.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function firstQuotedField(raw: string, field: string) {
+  const single = new RegExp(`'${field}'\\s*:\\s*'([^']*)'`).exec(raw);
+  if (single?.[1]) {
+    return single[1];
+  }
+  const double = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`).exec(raw);
+  return double?.[1] || "";
+}
+
+function firstListField(raw: string, field: string) {
+  const single = new RegExp(`'${field}'\\s*:\\s*\\[([^\\]]*)\\]`).exec(raw);
+  const double = new RegExp(`"${field}"\\s*:\\s*\\[([^\\]]*)\\]`).exec(raw);
+  const content = single?.[1] || double?.[1] || "";
+  return content
+    .split(",")
+    .map((item) => item.replace(/['"]/g, "").trim())
+    .filter(Boolean);
+}
+
+function humanizeRiskString(raw: string) {
+  const riskName = humanizeDisplayText(firstQuotedField(raw, "risk name") || firstQuotedField(raw, "risk_name"));
+  const label = humanizeDisplayText(firstQuotedField(raw, "label"));
+  const explanation = humanizeDisplayText(firstQuotedField(raw, "explanation short") || firstQuotedField(raw, "explanation_short"));
+  const missing = [
+    ...firstListField(raw, "missing inputs"),
+    ...firstListField(raw, "missing_inputs"),
+  ].map(humanizeDisplayText).filter(Boolean);
+
+  const headline = [riskName, label].filter(Boolean).join(": ");
+  const detail = explanation || (missing.length ? `Offen: ${missing.join(" · ")}` : "");
+  return [headline, detail].filter(Boolean).join(" - ");
 }
 
 export function uniqueDisplayItems(items: Array<unknown>, limit = 6): string[] {
