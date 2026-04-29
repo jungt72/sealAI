@@ -2,10 +2,13 @@ import sys
 import types
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from alembic.config import Config
 from sqlalchemy import create_engine
+
+if TYPE_CHECKING:
+    from alembic.config import Config
 
 ROOT = Path(__file__).resolve().parents[1]
 STUB_PATH = ROOT.parent / "langchain_core_stub"
@@ -117,7 +120,11 @@ def _created_test_database(test_database_name: str):
 
 
 @pytest.fixture
-def alembic_config(_created_test_database, monkeypatch, test_database_url: str) -> Config:
+def alembic_config(
+    _created_test_database, monkeypatch, test_database_url: str
+) -> "Config":
+    from alembic.config import Config
+
     monkeypatch.setenv("POSTGRES_SYNC_URL", test_database_url)
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "alembic"))
@@ -137,7 +144,7 @@ def test_db_engine(_created_test_database, test_database_url: str):
 
 
 @pytest.fixture
-def test_db_engine_at_head(alembic_config: Config, test_db_engine):
+def test_db_engine_at_head(alembic_config: "Config", test_db_engine):
     from alembic import command
 
     command.upgrade(alembic_config, "head")
