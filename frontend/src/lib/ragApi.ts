@@ -1,3 +1,5 @@
+import { sanitizeRagPayload, sanitizeUserVisibleText } from "@/lib/ragRedaction";
+
 export type RagDocumentItem = {
   document_id: string;
   filename?: string | null;
@@ -19,8 +21,8 @@ export type RagHealthCheck = {
   status: string;
   collection: string;
   filesystem: {
-    path: string;
     exists: boolean;
+    path?: string;
   };
   qdrant: {
     points: number;
@@ -34,12 +36,12 @@ async function bffFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`rag_request_failed:${res.status}:${body || ""}`);
+    throw new Error(`rag_request_failed:${res.status}:${sanitizeUserVisibleText(body)}`);
   }
   if (res.status === 204) {
     return {} as T;
   }
-  return (await res.json()) as T;
+  return sanitizeRagPayload((await res.json()) as T);
 }
 
 export async function listRagDocuments(

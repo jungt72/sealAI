@@ -1,15 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { ragPassthroughResponse } from "@/lib/bff/ragResponse";
 import { BffError, fetchBackend } from "@/lib/bff/http";
-
-function passthroughResponse(response: Response, body: BodyInit | null) {
-  return new Response(body, {
-    status: response.status,
-    headers: {
-      "Content-Type": response.headers.get("content-type") || "application/json; charset=utf-8",
-    },
-  });
-}
 
 export async function GET(request: Request) {
   try {
@@ -17,7 +9,7 @@ export async function GET(request: Request) {
     const search = url.searchParams.toString();
     const response = await fetchBackend(`/api/v1/rag/documents${search ? `?${search}` : ""}`, request);
     const body = await response.text();
-    return passthroughResponse(response, body);
+    return ragPassthroughResponse(response, body);
   } catch (error) {
     if (error instanceof BffError) {
       return NextResponse.json(
@@ -41,7 +33,7 @@ export async function POST(request: Request) {
       body: formData,
     });
     const body = await response.text();
-    return passthroughResponse(response, body);
+    return ragPassthroughResponse(response, body);
   } catch (error) {
     if (error instanceof BffError) {
       return NextResponse.json(

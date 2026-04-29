@@ -12,6 +12,7 @@ import {
 } from "@/lib/ragApi";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
+import { sanitizeUserVisibleText } from "@/lib/ragRedaction";
 
 type HealthMap = Record<string, RagHealthCheck | undefined>;
 type BusyMap = Record<string, boolean>;
@@ -29,6 +30,19 @@ function normalizeStatus(raw?: string | null): "processing" | "indexed" | "error
   if (value === "done" || value === "indexed") return "indexed";
   if (value === "failed" || value === "error") return "error";
   return "unknown";
+}
+
+function statusLabel(status: ReturnType<typeof normalizeStatus>): string {
+  switch (status) {
+    case "processing":
+      return "In Verarbeitung";
+    case "indexed":
+      return "In Wissensbasis";
+    case "error":
+      return "Fehler";
+    default:
+      return "Unklar";
+  }
 }
 
 function formatBytes(bytes?: number | null): string {
@@ -203,7 +217,7 @@ export default function RagDocumentGrid() {
 
       setUploading(true);
       setError(null);
-      showToast("Uploading...", "info", 0);
+      showToast("Upload wird als Evidence-Kandidat verarbeitet...", "info", 0);
       try {
         let uploaded = 0;
         for (const file of files) {
@@ -212,17 +226,17 @@ export default function RagDocumentGrid() {
         }
         if (uploaded > 0) {
           await refresh();
-          showToast("Upload successful! Processing started.", "success", 4500);
+          showToast("Upload angenommen. Extrahierte Angaben bleiben Kandidaten bis zur Prüfung.", "success", 4500);
         }
       } catch (err) {
-        const rawMessage = err instanceof Error ? err.message : "Upload fehlgeschlagen.";
+        const rawMessage = sanitizeUserVisibleText(err instanceof Error ? err.message : "Upload fehlgeschlagen.");
         const lowerMessage = rawMessage.toLowerCase();
         const status500 = lowerMessage.includes("rag_request_failed:500:");
         const isStoragePermissionError =
           (status500 && lowerMessage.includes("storage permission denied")) ||
           (lowerMessage.includes("storage") && lowerMessage.includes("permission denied"));
         const uploadErrorMessage = isStoragePermissionError
-          ? "Server Storage Error: Please check VPS permissions."
+          ? "Server-Speicherfehler: Upload konnte nicht abgelegt werden."
           : rawMessage;
         setError(uploadErrorMessage);
         showToast(uploadErrorMessage, "error", 6000, {
@@ -274,8 +288,8 @@ export default function RagDocumentGrid() {
                   Info
                 </summary>
                 <p className="mt-2 leading-relaxed text-white/90">
-                  Der Server kann nicht in `/app/data/uploads` schreiben. Bitte VPS-Verzeichnisrechte
-                  und Ownership prufen (z. B. `chmod/chown`).
+                  Der Server kann den Upload aktuell nicht speichern. Interne Pfade werden in der
+                  Nutzeroberfläche bewusst nicht angezeigt.
                 </p>
               </details>
             ) : null}
@@ -285,8 +299,12 @@ export default function RagDocumentGrid() {
 
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">RAG Management</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Document Grid</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">Evidence Intake</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Upload-Evidence</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+            Dokumente werden als Quellen und Extraktionskandidaten geführt. Uploads bestätigen keine
+            technischen Werte automatisch.
+          </p>
         </div>
         <Button
           type="button"
@@ -296,7 +314,7 @@ export default function RagDocumentGrid() {
           loading={loading}
           className="rounded-full border border-white/20 bg-white/10 px-4 text-white hover:bg-white/20"
         >
-          Refresh
+          Aktualisieren
         </Button>
       </div>
 
@@ -339,11 +357,11 @@ export default function RagDocumentGrid() {
           }`}
         >
           <div>
-            <p className="text-sm font-semibold text-white">Upload Documents</p>
-            <p className="text-xs text-slate-300">Drop files here or click to browse</p>
+            <p className="text-sm font-semibold text-white">Dokumente als Evidence hinzufügen</p>
+            <p className="text-xs text-slate-300">Dateien ablegen oder auswählen. Inhalte bleiben Kandidaten.</p>
           </div>
           <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-100">
-            {uploading ? "Uploading..." : "Choose Files"}
+            {uploading ? "Upload läuft..." : "Dateien wählen"}
           </span>
         </label>
       </div>
@@ -354,6 +372,8 @@ export default function RagDocumentGrid() {
           const normalized = normalizeStatus(doc.status);
           const busy = Boolean(busyById[doc.document_id]);
           const syncIssue = health ? !health.is_consistent : false;
+          const safeIssues = (health?.issues || []).map((issue) => sanitizeUserVisibleText(issue)).filter(Boolean);
+          const safeDocError = sanitizeUserVisibleText(doc.error || "");
 
           return (
             <article
@@ -367,17 +387,27 @@ export default function RagDocumentGrid() {
                 </div>
                 <Badge className={`gap-2 px-2.5 py-1 font-medium normal-case tracking-normal ${statusClass[normalized]}`}>
                   <span className={`h-2.5 w-2.5 rounded-full ${dotClass[normalized]}`} />
-                  {normalized}
+                  {statusLabel(normalized)}
                 </Badge>
+              </div>
+
+              <div className="mb-4 rounded-2xl border border-sky-200/20 bg-sky-400/10 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">
+                  Evidence-Kandidat
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-200">
+                  Quelle fuer RAG und Fallkontext. Technische Werte werden erst nach Governance
+                  und Nutzerpruefung uebernommen.
+                </p>
               </div>
 
               <dl className="space-y-2 text-xs text-slate-200/90">
                 <div className="flex justify-between gap-4">
-                  <dt>Size</dt>
+                  <dt>Groesse</dt>
                   <dd>{formatBytes(doc.size_bytes)}</dd>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <dt>Date</dt>
+                  <dt>Stand</dt>
                   <dd className="text-right">{formatDate(doc.updated_at || doc.created_at)}</dd>
                 </div>
                 <div className="flex justify-between gap-4">
@@ -385,20 +415,24 @@ export default function RagDocumentGrid() {
                   <dd>{extractChunkCount(doc, health)}</dd>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <dt>Qdrant</dt>
+                  <dt>Vektoren</dt>
                   <dd>{typeof health?.qdrant?.points === "number" ? health.qdrant.points : "-"}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt>Validierung</dt>
+                  <dd className="text-right">nicht automatisch bestaetigt</dd>
                 </div>
               </dl>
 
               {syncIssue ? (
                 <div className="mt-4 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-                  Sync-Warnung: {health?.issues.join(", ")}
+                  Sync-Hinweis: {safeIssues.length > 0 ? safeIssues.join(", ") : "Dokument und Index sind nicht synchron."}
                 </div>
               ) : null}
 
-              {doc.error ? (
+              {safeDocError ? (
                 <div className="mt-4 rounded-xl border border-rose-300/35 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-100">
-                  {doc.error}
+                  {safeDocError}
                 </div>
               ) : null}
 
@@ -409,7 +443,7 @@ export default function RagDocumentGrid() {
                   disabled={busy}
                   className="flex-1 rounded-full border border-sky-300/35 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Re-Ingest
+                  Neu einspielen
                 </button>
                 <button
                   type="button"
@@ -417,7 +451,7 @@ export default function RagDocumentGrid() {
                   disabled={busy}
                   className="flex-1 rounded-full border border-rose-300/35 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Delete
+                  Entfernen
                 </button>
               </div>
             </article>
@@ -427,7 +461,7 @@ export default function RagDocumentGrid() {
 
       {!loading && documents.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-white/15 bg-white/5 px-5 py-6 text-sm text-slate-300 backdrop-blur">
-          Keine Dokumente gefunden.
+          Keine Upload-Evidence vorhanden.
         </div>
       ) : null}
     </section>

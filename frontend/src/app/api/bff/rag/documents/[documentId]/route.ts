@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { ragPassthroughResponse } from "@/lib/bff/ragResponse";
 import { BffError, fetchBackend } from "@/lib/bff/http";
 
 export async function DELETE(
@@ -13,12 +14,7 @@ export async function DELETE(
     });
     const body = await response.text();
 
-    return new Response(body, {
-      status: response.status,
-      headers: {
-        "Content-Type": response.headers.get("content-type") || "application/json; charset=utf-8",
-      },
-    });
+    return ragPassthroughResponse(response, body);
   } catch (error) {
     if (error instanceof BffError) {
       return NextResponse.json(
