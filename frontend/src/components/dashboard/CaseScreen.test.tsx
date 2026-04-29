@@ -396,6 +396,12 @@ describe("CaseScreen", () => {
     const user = userEvent.setup();
     render(<CaseScreen caseId="case-42" />);
 
+    await user.click(screen.getByRole("tab", { name: "Parameter" }));
+
+    expect(screen.getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "Parameter im Fall bearbeiten" })).toBeInTheDocument();
+    expect(screen.getByText(/SeaLAI übernimmt sie als Nutzerangaben in den governed Case-State/i)).toBeInTheDocument();
+
     await user.click(screen.getByRole("tab", { name: "Berechnung" }));
 
     expect(screen.getByRole("tab", { name: "Berechnung" })).toHaveAttribute("aria-selected", "true");

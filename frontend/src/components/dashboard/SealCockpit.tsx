@@ -5,6 +5,8 @@ import { AlertTriangle, Calculator, CheckCircle2, CircleDot, ClipboardList } fro
 
 import { DecisionUnderstandingPanel } from "@/components/dashboard/DecisionUnderstandingPanel";
 import { ManufacturerFitPanel } from "@/components/dashboard/ManufacturerFitPanel";
+import { ParameterWorkspaceTab } from "@/components/dashboard/ParameterWorkspaceTab";
+import type { AgentOverrideItemRequest } from "@/lib/bff/parameterOverride";
 import type { WorkspaceView } from "@/lib/contracts/workspace";
 import {
   type CalculationEvidenceMetric,
@@ -203,7 +205,17 @@ function PlaceholderTab({ label }: { label: string }) {
   );
 }
 
-export function SealCockpit({ data, workspace }: { data: SealCockpitOverview; workspace: WorkspaceView | null }) {
+export function SealCockpit({
+  data,
+  workspace,
+  isParameterSubmitting = false,
+  onParameterSubmit,
+}: {
+  data: SealCockpitOverview;
+  workspace: WorkspaceView | null;
+  isParameterSubmitting?: boolean;
+  onParameterSubmit?: (overrides: AgentOverrideItemRequest[], summary: string) => Promise<void> | void;
+}) {
   const [activeTab, setActiveTab] = useState<CockpitTabId>("overview");
   const activeLabel = data.tabs.find((tab) => tab.id === activeTab)?.label ?? "Übersicht";
 
@@ -230,6 +242,13 @@ export function SealCockpit({ data, workspace }: { data: SealCockpitOverview; wo
               {data.footerNote}
             </div>
           </>
+        ) : activeTab === "parameters" ? (
+          <ParameterWorkspaceTab
+            key={workspace?.caseId ?? "new-parameter-case"}
+            workspace={workspace}
+            isSubmitting={isParameterSubmitting}
+            onSubmit={onParameterSubmit ?? (async () => {})}
+          />
         ) : (
           <PlaceholderTab label={activeLabel} />
         )}

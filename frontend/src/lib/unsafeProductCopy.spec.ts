@@ -10,6 +10,7 @@ const productionCopyFiles = [
   "components/dashboard/ChatPane.tsx",
   "components/dashboard/DecisionUnderstandingPanel.tsx",
   "components/dashboard/ManufacturerFitPanel.tsx",
+  "components/dashboard/ParameterWorkspaceTab.tsx",
   "components/dashboard/RfqPane.tsx",
   "components/rag/RagDocumentGrid.tsx",
   "lib/mapping/workspace.ts",

@@ -16,6 +16,7 @@ interface ChatPaneProps {
   caseId?: string;
   onCaseBound?: (caseId: string) => void;
   onTurnComplete?: (caseId: string) => void;
+  parameterConfirmation?: string | null;
 }
 
 function MessageBubble({
@@ -157,7 +158,7 @@ const ROUTING_SUGGESTIONS = [
   "Bestehende Dichtung analysieren",
 ];
 
-export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPaneProps) {
+export default function ChatPane({ caseId, onCaseBound, onTurnComplete, parameterConfirmation }: ChatPaneProps) {
   const {
     activeCaseId,
     messages,
@@ -168,6 +169,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
     sendMessage,
     clearError,
   } = useAgentStream({ initialCaseId: caseId, onCaseBound, onTurnComplete });
+  const registerWorkspaceCallbacks = useWorkspaceStore((s) => s.registerCallbacks);
   const setStreamWorkspace = useWorkspaceStore((s) => s.setStreamWorkspace);
   const setActiveResponseClass = useWorkspaceStore((s) => s.setActiveResponseClass);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
@@ -175,6 +177,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
   const [documentDeltaFields, setDocumentDeltaFields] = useState<ProposedCaseDeltaField[]>([]);
   const [documentUploadStatus, setDocumentUploadStatus] = useState<string | null>(null);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const currentCaseId = activeCaseId || caseId;
 
   useEffect(() => {
     setStreamWorkspace(streamWorkspace);
@@ -182,11 +185,23 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
   }, [setActiveResponseClass, setStreamWorkspace, streamWorkspace]);
 
   useEffect(() => {
+    registerWorkspaceCallbacks({
+      refreshWorkspace: () => {
+        if (currentCaseId) {
+          onTurnComplete?.(currentCaseId);
+        }
+      },
+      actionBridge: (text: string) => {
+        void sendMessage(text);
+      },
+    });
+  }, [currentCaseId, onTurnComplete, registerWorkspaceCallbacks, sendMessage]);
+
+  useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [messages, streamingText, isStreaming, error]);
+  }, [messages, streamingText, isStreaming, error, parameterConfirmation]);
 
   const hasConversation = messages.length > 0 || Boolean(streamingText);
-  const currentCaseId = activeCaseId || caseId;
   const proposedDeltaFields = useMemo(() => {
     const fields = streamWorkspace?.proposedCaseDelta?.fields ?? [];
     return fields.filter((field) => field.status === "proposed" || !field.status);
@@ -274,6 +289,10 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
                     }
                   }}
                 />
+
+                {parameterConfirmation && (
+                  <MessageBubble role="assistant" content={parameterConfirmation} />
+                )}
 
                 {documentUploadStatus && (
                   <div className="ml-12 max-w-[min(720px,84%)] rounded-[10px] border border-[#E7ECF3] bg-white px-3 py-2 text-[12px] font-medium text-slate-600 shadow-sm">
