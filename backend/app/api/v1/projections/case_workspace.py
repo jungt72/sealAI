@@ -31,6 +31,7 @@ from app.agent.domain.delta_conflicts import build_governed_conflict_summary
 from app.agent.domain.dependency_graph import derived_values_for_projection
 from app.agent.domain.medium_registry import classify_medium_value
 from app.agent.domain.risk_readiness import evaluate_readiness, evaluate_risks
+from app.domain.case_type import assign_case_type_from_legacy_routing
 from app.services.decision_understanding_service import (
     build_decision_understanding_projection,
 )
@@ -2117,6 +2118,17 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         system=system,
         reasoning=reasoning,
     )
+    case_type_assignment = assign_case_type_from_legacy_routing(
+        request_type=request_type,
+        engineering_path=engineering_path,
+        routing=_d(system.get("routing")),
+    )
+    case_type = case_type_assignment.case_type
+    routing_metadata = _d(system.get("routing"))
+    routing_metadata.setdefault("case_type", case_type.value)
+    routing_metadata.setdefault("case_type_event", case_type_assignment.event_name)
+    system = dict(system)
+    system["routing"] = routing_metadata
     primary_raw_text = medium_capture.get("primary_raw_text")
     if not medium_classification and primary_raw_text:
         derived_medium = classify_medium_value(str(primary_raw_text))
@@ -2205,6 +2217,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         technical_derivations=technical_derivations,
     )
     decision_understanding_state = {
+        "case_type": case_type.value,
         "profile": routing_profile,
         "parameters": parameters,
         "readiness": cockpit_view.readiness.model_dump(),
@@ -2221,6 +2234,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     )
 
     return CaseWorkspaceProjection(
+        case_type=case_type,
         request_type=request_type,
         engineering_path=engineering_path,
         cockpit_view=cockpit_view,

@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
 
+from app.domain.case_type import CaseType
+
 
 RequestType = Literal[
     "new_design",
@@ -508,6 +510,7 @@ class DecisionUnderstandingProjection(BaseModel):
 class CaseWorkspaceProjection(BaseModel):
     """Top-level UI-facing read model for a single engineering case."""
 
+    case_type: CaseType = CaseType.unknown
     request_type: Optional[RequestType] = None
     engineering_path: Optional[EngineeringPath] = None
     cockpit_view: EngineeringCockpitView = Field(default_factory=EngineeringCockpitView)
