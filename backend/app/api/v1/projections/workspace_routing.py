@@ -182,6 +182,17 @@ def _derive_engineering_path(
         return "static"
 
     if _has_marker(
+        texts, ("hydraul", "pneumat", "zylinder", "cylinder", "rod", "kolbenstange")
+    ):
+        return "hyd_pneu"
+
+    if _has_marker(
+        texts,
+        ("pump", "kreiselpumpe", "mechanical_seal", "mechanical seal", "gleitring"),
+    ):
+        return "ms_pump"
+
+    if _has_marker(
         texts,
         (
             "rwdr",
@@ -196,17 +207,7 @@ def _derive_engineering_path(
     ):
         return "rwdr"
 
-    if _has_marker(
-        texts, ("hydraul", "pneumat", "zylinder", "cylinder", "rod", "kolbenstange")
-    ):
-        return "hyd_pneu"
-
     if motion_type == "rotary":
-        if _has_marker(
-            texts,
-            ("pump", "kreiselpumpe", "mechanical_seal", "mechanical seal", "gleitring"),
-        ):
-            return "ms_pump"
         if _has_marker(
             texts,
             (

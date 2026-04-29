@@ -153,7 +153,7 @@ describe("DecisionUnderstandingPanel", () => {
     expect(screen.getByRole("heading", { name: "Verstanden" })).toBeInTheDocument();
     expect(screen.getByText("Pumpenanwendung mit Ethanol, 150 °C und 10 bar.")).toBeInTheDocument();
     expect(screen.getByText("Anlage: Pumpe")).toBeInTheDocument();
-    expect(screen.getAllByText("shaft_diameter_mm").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Wellendurchmesser").length).toBeGreaterThan(0);
     expect(screen.getByText("Liegt der Druck direkt an der Dichtstelle an?")).toBeInTheDocument();
     expect(screen.getByText("Das trennt Systemdruck von Dichtstellenbelastung.")).toBeInTheDocument();
   });
@@ -181,8 +181,8 @@ describe("DecisionUnderstandingPanel", () => {
     render(<DecisionUnderstandingPanel workspace={workspaceFixture()} />);
 
     expect(screen.getByText("Dichtungstyp-Profil")).toBeInTheDocument();
-    expect(screen.getAllByText("mechanical seal").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/shaft_diameter_mm/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Gleitringdichtung").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Wellendurchmesser/).length).toBeGreaterThan(0);
   });
 
   it("does not crash when optional backend fields are missing", () => {

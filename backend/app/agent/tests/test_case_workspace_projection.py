@@ -430,6 +430,43 @@ def test_workspace_projection_derives_ssot_routing_fields() -> None:
     assert projection.cockpit_view.readiness.status == "preliminary"
 
 
+def test_workspace_projection_prioritizes_pump_mechanical_seal_over_generic_shaft_sealing() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-pump-ms"},
+            "working_profile": {
+                "engineering_profile": {
+                    "medium": "Ethanol",
+                    "pressure_bar": 10.0,
+                    "temperature_c": 150.0,
+                    "movement_type": "rotary",
+                    "application_context": "shaft_sealing",
+                    "installation": "pump",
+                    "sealing_type": "mechanical_seal",
+                },
+                "completeness": {
+                    "coverage_score": 0.4,
+                    "missing_critical_parameters": ["shaft_diameter_mm"],
+                },
+            },
+            "reasoning": {"phase": "clarification", "state_revision": 1},
+            "system": {
+                "governance_metadata": {"release_status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    assert projection.engineering_path == "ms_pump"
+    assert projection.cockpit_view.engineering_path == "ms_pump"
+
+
 def test_workspace_projection_exposes_cockpit_property_provenance_when_available() -> (
     None
 ):

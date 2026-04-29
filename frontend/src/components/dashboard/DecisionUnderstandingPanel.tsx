@@ -32,11 +32,56 @@ const VALIDATION_LABELS: Record<string, string> = {
   unknown: "unklar",
 };
 
+const INLINE_LABELS: Record<string, string> = {
+  mechanical_seal: "Gleitringdichtung",
+  unknown_seal: "Dichtungstyp offen",
+  rwdr: "RWDR",
+  ms_pump: "Gleitringdichtung / Pumpe",
+  pump: "Pumpe",
+  rotary: "rotierend",
+  shaft_sealing: "Wellenabdichtung",
+  application_requirement: "Anwendungsanforderung",
+  medium: "Medium",
+  new_rfq: "Anfragebasis vorbereiten",
+  clarify_sealing_case_need: "Dichtungsfall klären",
+  technical_clarification: "technische Klärung",
+  manufacturer_validation_required: "Herstellerprüfung erforderlich",
+  prequalification: "Vorqualifizierung",
+  precheck_only: "Vorprüfung",
+  no_technical_case_detected: "technischer Fall noch nicht erkannt",
+};
+
+function humanizeText(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  if (["none", "null", "undefined", "nan"].includes(raw.toLowerCase())) {
+    return "";
+  }
+  let result = raw
+    .replace(/\b(\d+(?:[.,]\d+)?)\s*degC\b/g, "$1 °C")
+    .replace(/\bshaft_diameter_mm\b/g, "Wellendurchmesser")
+    .replace(/\bseal_chamber_pressure\b/g, "Dichtkammerdruck")
+    .replace(/\bpressure_location\b/g, "Druck an der Dichtstelle")
+    .replace(/\bseal_type\b/g, "Dichtungstyp")
+    .replace(/\bmedium_name\b/g, "Medium")
+    .replace(/\btemperature_c\b/g, "Temperatur")
+    .replace(/\bpressure_bar\b/g, "Druck")
+    .replace(/\bspeed_rpm\b/g, "Drehzahl")
+    .replace(/\bmotion_type\b/g, "Bewegungsart");
+
+  for (const [code, label] of Object.entries(INLINE_LABELS)) {
+    result = result.replace(new RegExp(`\\b${code}\\b`, "gi"), label);
+  }
+  return result.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function unique(items: Array<string | null | undefined>, limit = 6) {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const item of items) {
-    const value = String(item || "").trim();
+    const value = humanizeText(item);
     if (!value || seen.has(value)) {
       continue;
     }
@@ -53,7 +98,7 @@ function readable(value: string | null | undefined) {
   if (!value) {
     return null;
   }
-  return value.replace(/_/g, " ");
+  return humanizeText(value);
 }
 
 function badgeToneForValidation(status: string | null | undefined): BadgeTone {
@@ -273,10 +318,10 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
             <div>{readable(sealProfile?.sealType) || "Dichtungstyp noch offen"}</div>
             <div className="text-[#4B5563]">
               {readable(sealProfile?.sealFamily) || "Dichtungsfamilie noch offen"}
-              {sealProfile?.confidenceBand ? ` · Confidence: ${readable(sealProfile.confidenceBand)}` : ""}
+              {sealProfile?.confidenceBand ? ` · Sicherheit: ${readable(sealProfile.confidenceBand)}` : ""}
             </div>
             {sealProfile?.typeSpecificMissingHints.length ? (
-              <div className="text-[#4B5563]">Offen: {sealProfile.typeSpecificMissingHints.slice(0, 3).join(" · ")}</div>
+              <div className="text-[#4B5563]">Offen: {sealProfile.typeSpecificMissingHints.slice(0, 3).map(humanizeText).filter(Boolean).join(" · ")}</div>
             ) : null}
           </div>
         </div>
