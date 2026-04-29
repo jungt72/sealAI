@@ -157,6 +157,26 @@ class ManufacturerCapabilityProfile:
     open_profile_gaps: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class PartnerCapabilityProjection:
+    """Read-only SeaLAI partner-network eligibility projection.
+
+    This is intentionally not a matching score and not a sponsored ranking layer.
+    Payment status only gates partner-network eligibility; technical fit remains
+    a separate capability calculation.
+    """
+
+    manufacturer_id: str
+    display_name: str
+    account_status: str
+    active_paid: bool
+    verification_level: str
+    capability_profile: ManufacturerCapabilityProfile
+    capability_count: int
+    source_claim_ids: tuple[str, ...] = ()
+    open_profile_gaps: tuple[str, ...] = ()
+
+
 class CapabilityValidationError(ValueError):
     pass
 
@@ -400,6 +420,62 @@ class CapabilityService:
             build_capability_profile(manufacturer_id, grouped[manufacturer_id])
             for manufacturer_id in sorted(grouped)
         ]
+
+    def list_partner_capability_projections(
+        self,
+        db: Any,
+        *,
+        claim_status: str | None = "active",
+    ) -> list[PartnerCapabilityProjection]:
+        """Project eligible paid partner capabilities without computing ranking.
+
+        Eligibility requires an active manufacturer profile and an explicit paid
+        partner signal. The signal can come from future profile columns
+        (``active_paid`` / ``is_paid_partner``) or from a governed active
+        capability claim payload. Unpaid active profiles remain excluded.
+        """
+
+        profile_rows = self._execute(
+            db,
+            sa.text(
+                """
+                SELECT *
+                FROM manufacturer_profiles
+                ORDER BY manufacturer_id ASC
+                """
+            ),
+            {},
+        ).mappings().all()
+        claims = self.list_claims(db, status=claim_status)
+        grouped: dict[str, list[ManufacturerCapabilityClaim]] = {}
+        for claim in claims:
+            grouped.setdefault(claim.manufacturer_id, []).append(claim)
+
+        projections: list[PartnerCapabilityProjection] = []
+        for row in profile_rows:
+            manufacturer_id = str(row["manufacturer_id"])
+            account_status = str(row["account_status"])
+            manufacturer_claims = grouped.get(manufacturer_id, [])
+            if not _is_active_manufacturer_profile(account_status):
+                continue
+            if not _is_active_paid_partner(row, manufacturer_claims):
+                continue
+
+            capability_profile = build_capability_profile(manufacturer_id, manufacturer_claims)
+            projections.append(
+                PartnerCapabilityProjection(
+                    manufacturer_id=manufacturer_id,
+                    display_name=str(row["display_name"]),
+                    account_status=account_status,
+                    active_paid=True,
+                    verification_level=capability_profile.evidence_level,
+                    capability_profile=capability_profile,
+                    capability_count=len(capability_profile.source_claim_ids),
+                    source_claim_ids=capability_profile.source_claim_ids,
+                    open_profile_gaps=capability_profile.open_profile_gaps,
+                )
+            )
+        return projections
 
     def _validate_create(self, claim: CapabilityClaimCreate) -> None:
         for field_name in (
@@ -813,3 +889,64 @@ def _number(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _is_active_manufacturer_profile(account_status: str) -> bool:
+    return str(account_status or "").strip().lower() in {"active", "active_paid", "paid_active"}
+
+
+def _is_active_paid_partner(
+    profile_row: Mapping[str, Any],
+    claims: list[ManufacturerCapabilityClaim],
+) -> bool:
+    for key in ("active_paid", "is_paid_partner"):
+        value = _optional_mapping_value(profile_row, key)
+        if value is not None:
+            return _truthy(value)
+
+    account_status = str(_optional_mapping_value(profile_row, "account_status") or "").strip().lower()
+    if account_status in {"active_paid", "paid_active"}:
+        return True
+
+    return any(_claim_payload_indicates_paid_partner(claim) for claim in claims)
+
+
+def _claim_payload_indicates_paid_partner(claim: ManufacturerCapabilityClaim) -> bool:
+    payload = claim.capability_payload if isinstance(claim.capability_payload, Mapping) else {}
+    if _truthy(payload.get("active_paid")) or _truthy(payload.get("is_paid_partner")):
+        return True
+
+    network_status = str(
+        payload.get("partner_network_status")
+        or payload.get("partner_status")
+        or ""
+    ).strip().lower()
+    if network_status in {"active_paid", "paid_active", "paid"}:
+        return True
+
+    tier = str(
+        payload.get("partner_tier")
+        or payload.get("subscription_tier")
+        or ""
+    ).strip().lower()
+    return tier in {"paid", "pilot_paid", "founding_partner", "standard", "premium"}
+
+
+def _optional_mapping_value(row: Mapping[str, Any], key: str) -> Any:
+    try:
+        return row[key]
+    except (KeyError, TypeError):
+        getter = getattr(row, "get", None)
+        if callable(getter):
+            return getter(key)
+        return None
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "paid", "active_paid"}
