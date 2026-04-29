@@ -32,6 +32,10 @@ from app.agent.domain.dependency_graph import derived_values_for_projection
 from app.agent.domain.medium_registry import classify_medium_value
 from app.agent.domain.risk_readiness import evaluate_readiness, evaluate_risks
 from app.domain.case_type import assign_case_type_from_legacy_routing
+from app.domain.seal_type import (
+    normalize_seal_type,
+    type_specific_missing_hints_for_type,
+)
 from app.services.decision_understanding_service import (
     build_decision_understanding_projection,
 )
@@ -64,6 +68,7 @@ from app.api.v1.schemas.case_workspace import (
     RequestType as WorkspaceRequestType,
     RFQPackageSummary,
     RFQStatus,
+    SealApplicationProfileView,
     TechnicalDerivationItem,
 )
 
@@ -117,6 +122,17 @@ _CANONICAL_PARAMETER_KEYS: tuple[str, ...] = (
     "industry",
     "compliance",
     "medium_qualifiers",
+)
+
+_SEAL_TYPE_TEXT_KEYS: tuple[str, ...] = (
+    "sealing_type",
+    "seal_type",
+    "seal_family",
+    "application_context",
+    "application_category",
+    "installation",
+    "geometry_context",
+    "asset_type",
 )
 
 _MOVEMENT_LABELS: dict[str, str] = {
@@ -953,6 +969,65 @@ def _build_parameters_snapshot(
     if movement_type not in (None, ""):
         snapshot["motion_type"] = movement_type
     return snapshot
+
+
+def _list_of_strings(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item) for item in value if str(item or "").strip()]
+    return [str(value)]
+
+
+def _build_seal_application_profile(
+    *,
+    profile: Dict[str, Any],
+    system: Dict[str, Any],
+    engineering_path: WorkspaceEngineeringPath | None,
+) -> SealApplicationProfileView:
+    text_parts = []
+    for key in _SEAL_TYPE_TEXT_KEYS:
+        rendered = _stringify_value(profile.get(key))
+        if rendered:
+            text_parts.append(rendered)
+    seal_type_text = " ".join(text_parts) or None
+    result = normalize_seal_type(
+        seal_type_text,
+        context={
+            "profile": profile,
+            "engineering_path": engineering_path,
+            "routing": _d(system.get("routing")),
+        },
+    )
+    return SealApplicationProfileView(
+        seal_family=result.seal_family,
+        seal_type=result.seal_type,
+        seal_type_confidence=result.confidence,
+        confidence_band=result.confidence_band,
+        matched_alias=result.matched_alias,
+        ambiguous=result.ambiguous,
+        candidate_types=list(result.candidate_types),
+        application_domain=_deep_value(
+            profile,
+            "application_domain",
+            "application_context",
+            "application_category",
+            "industry",
+        ),
+        motion_type=_deep_value(profile, "motion_type", "movement_type"),
+        standard_refs=_list_of_strings(
+            profile.get("standard_refs")
+            or profile.get("norm_references")
+            or profile.get("standard")
+        ),
+        type_specific_missing_hints=list(
+            type_specific_missing_hints_for_type(result.seal_type)
+        ),
+        notes=list(result.notes),
+        source=result.source,
+    )
 
 
 def _parameter_confidence_from_meta(parameter_meta: Dict[str, Any]) -> Dict[str, str]:
@@ -2129,6 +2204,11 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     routing_metadata.setdefault("case_type_event", case_type_assignment.event_name)
     system = dict(system)
     system["routing"] = routing_metadata
+    seal_application_profile = _build_seal_application_profile(
+        profile=routing_profile,
+        system=system,
+        engineering_path=engineering_path,
+    )
     primary_raw_text = medium_capture.get("primary_raw_text")
     if not medium_classification and primary_raw_text:
         derived_medium = classify_medium_value(str(primary_raw_text))
@@ -2228,6 +2308,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         "governance_status": governance_status.model_dump(),
         "rfq_status": rfq_status.model_dump(),
         "evidence_summary": evidence_summary.model_dump(),
+        "seal_application_profile": seal_application_profile.model_dump(),
     }
     decision_understanding = build_decision_understanding_projection(
         decision_understanding_state
@@ -2237,6 +2318,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         case_type=case_type,
         request_type=request_type,
         engineering_path=engineering_path,
+        seal_application_profile=seal_application_profile,
         cockpit_view=cockpit_view,
         deep_dive_tabs=deep_dive_tabs,
         decision_understanding=decision_understanding,

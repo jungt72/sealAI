@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
 
 from app.domain.case_type import CaseType
+from app.domain.seal_type import SealFamily, SealType
 
 
 RequestType = Literal[
@@ -507,12 +508,40 @@ class DecisionUnderstandingProjection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SealApplicationProfileView(BaseModel):
+    """Read-only SealType projection for S-SEAL-001.
+
+    This is not authoritative case state and does not mark the seal type as
+    user-confirmed. It only exposes deterministic normalization facts and
+    type-specific metadata hints.
+    """
+
+    seal_family: SealFamily = SealFamily.unknown
+    seal_type: SealType = SealType.unknown_seal
+    seal_type_confidence: float = 0.1
+    confidence_band: str = "low"
+    matched_alias: Optional[str] = None
+    ambiguous: bool = False
+    candidate_types: List[SealType] = Field(default_factory=list)
+    application_domain: Optional[str] = None
+    motion_type: Optional[str] = None
+    standard_refs: List[str] = Field(default_factory=list)
+    type_specific_missing_hints: List[str] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+    source: str = "seal_type_normalizer"
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CaseWorkspaceProjection(BaseModel):
     """Top-level UI-facing read model for a single engineering case."""
 
     case_type: CaseType = CaseType.unknown
     request_type: Optional[RequestType] = None
     engineering_path: Optional[EngineeringPath] = None
+    seal_application_profile: SealApplicationProfileView = Field(
+        default_factory=SealApplicationProfileView
+    )
     cockpit_view: EngineeringCockpitView = Field(default_factory=EngineeringCockpitView)
     deep_dive_tabs: List[DeepDiveTabProjection] = Field(default_factory=list)
     decision_understanding: DecisionUnderstandingProjection = Field(
