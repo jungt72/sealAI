@@ -61,6 +61,7 @@ def test_phase_one_artifact_types_are_implemented() -> None:
     assert is_artifact_type_implemented("failure_analysis_intake") is True
     assert is_artifact_type_implemented("replacement_sheet") is True
     assert is_artifact_type_implemented("legacy_part_intake") is True
+    assert is_artifact_type_implemented("compliance_checklist") is True
 
     implemented = {
         item.artifact_type
@@ -77,6 +78,7 @@ def test_phase_one_artifact_types_are_implemented() -> None:
         ArtifactType.failure_analysis_intake,
         ArtifactType.replacement_sheet,
         ArtifactType.legacy_part_intake,
+        ArtifactType.compliance_checklist,
     }
 
 
@@ -140,7 +142,6 @@ def test_unknown_artifacts_are_not_exportable_by_default() -> None:
         ArtifactType.manufacturer_fit_matrix,
         ArtifactType.drawing_review,
         ArtifactType.quote_comparison,
-        ArtifactType.compliance_checklist,
         ArtifactType.material_substitution_brief,
         ArtifactType.emergency_triage,
     ],

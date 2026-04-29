@@ -188,7 +188,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.compliance_checklist: ArtifactTypeMetadata(
         artifact_type=ArtifactType.compliance_checklist,
         label="Compliance Checklist",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.compliance_certificate_request,),
