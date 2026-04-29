@@ -5,6 +5,7 @@ import type {
   ParameterDataRow,
   SealCockpitOverview,
 } from "@/lib/engineering/sealCockpitViewModel";
+import { humanizeDisplayText } from "@/lib/engineering/displayLabels";
 import { sealCockpitTabs } from "@/lib/engineering/sealCockpitViewModel";
 
 const OPEN_VALUE = "Noch offen";
@@ -97,7 +98,7 @@ function readableMissingInput(input: string) {
     case "sealing_type":
       return "Dichtungsfall";
     default:
-      return input;
+      return humanizeDisplayText(input);
   }
 }
 
@@ -171,7 +172,7 @@ function buildCriticalDrivers(workspace: WorkspaceView | null): CriticalDriver[]
   }
 
   return drivers.map((driver) => ({
-    label: driver,
+    label: humanizeDisplayText(driver),
     risk: "Offen",
     consequence: "Für die Herstellerprüfung klären und mit Datenherkunft belegen",
   }));
@@ -280,7 +281,7 @@ function buildSolution(workspace: WorkspaceView | null): SealCockpitOverview["so
 
   return {
     assessmentTitle: "Vorläufige Einordnung",
-    assessment: direction,
+    assessment: humanizeDisplayText(direction),
     rows: [
       { label: "Lösungsraum", value: workspace.engineeringPath ? pathLabel(workspace.engineeringPath) : OPEN_VALUE },
       { label: "Was noch geprüft werden muss", value: buildOpenPointSummary(workspace) },

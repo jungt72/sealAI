@@ -3,6 +3,7 @@
 import { AlertTriangle, ClipboardCheck, FileQuestion, Gauge, HelpCircle, ShieldCheck } from "lucide-react";
 
 import type { WorkspaceView } from "@/lib/contracts/workspace";
+import { humanizeDisplayText, uniqueDisplayItems } from "@/lib/engineering/displayLabels";
 import { cn } from "@/lib/utils";
 
 type BadgeTone = "neutral" | "info" | "warning" | "danger" | "success";
@@ -32,73 +33,11 @@ const VALIDATION_LABELS: Record<string, string> = {
   unknown: "unklar",
 };
 
-const INLINE_LABELS: Record<string, string> = {
-  mechanical_seal: "Gleitringdichtung",
-  unknown_seal: "Dichtungstyp offen",
-  rwdr: "RWDR",
-  ms_pump: "Gleitringdichtung / Pumpe",
-  pump: "Pumpe",
-  rotary: "rotierend",
-  shaft_sealing: "Wellenabdichtung",
-  application_requirement: "Anwendungsanforderung",
-  medium: "Medium",
-  new_rfq: "Anfragebasis vorbereiten",
-  clarify_sealing_case_need: "Dichtungsfall klären",
-  technical_clarification: "technische Klärung",
-  manufacturer_validation_required: "Herstellerprüfung erforderlich",
-  prequalification: "Vorqualifizierung",
-  precheck_only: "Vorprüfung",
-  no_technical_case_detected: "technischer Fall noch nicht erkannt",
-};
-
-function humanizeText(value: string | null | undefined) {
-  const raw = String(value || "").trim();
-  if (!raw) {
-    return "";
-  }
-  if (["none", "null", "undefined", "nan"].includes(raw.toLowerCase())) {
-    return "";
-  }
-  let result = raw
-    .replace(/\b(\d+(?:[.,]\d+)?)\s*degC\b/g, "$1 °C")
-    .replace(/\bshaft_diameter_mm\b/g, "Wellendurchmesser")
-    .replace(/\bseal_chamber_pressure\b/g, "Dichtkammerdruck")
-    .replace(/\bpressure_location\b/g, "Druck an der Dichtstelle")
-    .replace(/\bseal_type\b/g, "Dichtungstyp")
-    .replace(/\bmedium_name\b/g, "Medium")
-    .replace(/\btemperature_c\b/g, "Temperatur")
-    .replace(/\bpressure_bar\b/g, "Druck")
-    .replace(/\bspeed_rpm\b/g, "Drehzahl")
-    .replace(/\bmotion_type\b/g, "Bewegungsart");
-
-  for (const [code, label] of Object.entries(INLINE_LABELS)) {
-    result = result.replace(new RegExp(`\\b${code}\\b`, "gi"), label);
-  }
-  return result.replace(/_/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function unique(items: Array<string | null | undefined>, limit = 6) {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const item of items) {
-    const value = humanizeText(item);
-    if (!value || seen.has(value)) {
-      continue;
-    }
-    seen.add(value);
-    result.push(value);
-    if (result.length >= limit) {
-      break;
-    }
-  }
-  return result;
-}
-
 function readable(value: string | null | undefined) {
   if (!value) {
     return null;
   }
-  return humanizeText(value);
+  return humanizeDisplayText(value);
 }
 
 function badgeToneForValidation(status: string | null | undefined): BadgeTone {
@@ -217,14 +156,14 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
 
   const decision = workspace!.decisionUnderstanding;
   const current = decision?.currentStateAnalysis ?? {
-    knownFields: unique([
+    knownFields: uniqueDisplayItems([
       workspace!.parameters?.medium ? `Medium: ${workspace!.parameters.medium}` : null,
       workspace!.parameters?.temperature_c ? `Temperatur: ${workspace!.parameters.temperature_c} °C` : null,
       workspace!.parameters?.pressure_bar ? `Druck: ${workspace!.parameters.pressure_bar} bar` : null,
       workspace!.parameters?.installation ? `Anlage: ${workspace!.parameters.installation}` : null,
       workspace!.parameters?.motion_type ? `Bewegung: ${workspace!.parameters.motion_type}` : null,
     ]),
-    missingFields: unique([...workspace!.completeness.missingCriticalParameters, ...workspace!.completeness.coverageGaps]),
+    missingFields: uniqueDisplayItems([...workspace!.completeness.missingCriticalParameters, ...workspace!.completeness.coverageGaps]),
     uncertainFields: workspace!.governance.assumptions,
     conflictingFields: workspace!.conflicts.items.map((item) => item.summary),
     evidenceBackedFields: workspace!.evidence?.sourceBackedFindings ?? [],
@@ -248,10 +187,10 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
     : workspace!.mediumContext.validationStatus || "unknown";
   const sourceIsFallback = sourceType === "llm_research_fallback";
   const displayValidationStatus = sourceIsFallback ? "unvalidated" : validationStatus;
-  const knownItems = unique([...(decision?.understoodNow ?? []), ...current.knownFields], 7);
-  const missingItems = unique([...current.missingFields, ...workspace!.completeness.missingCriticalParameters, ...workspace!.rfq.openPoints], 7);
-  const riskItems = unique([...(decision?.keyRisks ?? []), ...(decision?.manufacturerReviewNeeds ?? []), ...workspace!.governance.unknownsManufacturerValidation], 7);
-  const notDecidable = unique([...(decision?.notYetDecidable ?? []), ...current.uncertainFields, ...current.conflictingFields], 7);
+  const knownItems = uniqueDisplayItems([...(decision?.understoodNow ?? []), ...current.knownFields], 7);
+  const missingItems = uniqueDisplayItems([...current.missingFields, ...workspace!.completeness.missingCriticalParameters, ...workspace!.rfq.openPoints], 7);
+  const riskItems = uniqueDisplayItems([...(decision?.keyRisks ?? []), ...(decision?.manufacturerReviewNeeds ?? []), ...workspace!.governance.unknownsManufacturerValidation], 7);
+  const notDecidable = uniqueDisplayItems([...(decision?.notYetDecidable ?? []), ...current.uncertainFields, ...current.conflictingFields], 7);
   const sealProfile = workspace!.sealApplicationProfile;
   const caseSummary =
     decision?.caseSummary ||
@@ -268,7 +207,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
             Arbeitsstand
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
-            {caseSummary}
+            {humanizeDisplayText(caseSummary)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -281,14 +220,14 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
         <Section title="Verstanden" items={knownItems} />
         <Section
           title="Bedarf"
-          items={unique([
+          items={uniqueDisplayItems([
             readable(needs.primaryNeed),
             ...needs.secondaryNeeds,
             needs.urgency !== "unknown" ? `Dringlichkeit: ${readable(needs.urgency)}` : null,
             needs.contextSide ? `Kontext: ${needs.contextSide}` : null,
           ])}
         />
-        <Section title="Ist-Zustand" items={unique([...current.evidenceBackedFields, `Readiness: ${readable(current.readinessHint) || "precheck"}`])} />
+        <Section title="Ist-Zustand" items={uniqueDisplayItems([...current.evidenceBackedFields, `Readiness: ${readable(current.readinessHint) || "precheck"}`])} />
         <Section title="Offen" items={missingItems} />
         <Section title="Nicht entscheidbar" items={notDecidable} />
         <Section title="Risiken / Herstellerprüfung" items={riskItems} empty="Keine zusätzlichen Herstellerprüfpunkte aus der Projektion gemeldet" />
@@ -301,11 +240,11 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
             Nächste sinnvolle Frage
           </div>
           <p className="mt-2 text-sm font-semibold leading-relaxed text-[#111827]">
-            {primaryQuestion?.question || decision?.nextBestQuestion || workspace!.communication?.primaryQuestion || "Noch keine nächste Frage aus der Projektion verfügbar"}
+            {humanizeDisplayText(primaryQuestion?.question || decision?.nextBestQuestion || workspace!.communication?.primaryQuestion || "Noch keine nächste Frage aus der Projektion verfügbar")}
           </p>
           {(primaryQuestion?.reason || workspace!.communication?.supportingReason) && (
             <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">
-              {primaryQuestion?.reason || workspace!.communication?.supportingReason}
+              {humanizeDisplayText(primaryQuestion?.reason || workspace!.communication?.supportingReason)}
             </p>
           )}
         </div>
@@ -321,7 +260,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
               {sealProfile?.confidenceBand ? ` · Sicherheit: ${readable(sealProfile.confidenceBand)}` : ""}
             </div>
             {sealProfile?.typeSpecificMissingHints.length ? (
-              <div className="text-[#4B5563]">Offen: {sealProfile.typeSpecificMissingHints.slice(0, 3).map(humanizeText).filter(Boolean).join(" · ")}</div>
+              <div className="text-[#4B5563]">Offen: {sealProfile.typeSpecificMissingHints.slice(0, 3).map(humanizeDisplayText).filter(Boolean).join(" · ")}</div>
             ) : null}
           </div>
         </div>
