@@ -93,7 +93,7 @@ export function humanizeDisplayText(value: unknown): string {
   if (!raw || isEmptyToken(raw)) {
     return "";
   }
-  if (raw.startsWith("{'risk name'") || raw.startsWith('{"risk_name"')) {
+  if (raw.includes("'risk name'") || raw.includes('"risk_name"')) {
     return humanizeRiskString(raw);
   }
 
