@@ -5,6 +5,13 @@ import {
   buildRfqPreviewBackendPath,
 } from "@/lib/bff/workspace";
 
+function friendlyPreviewMessage(status: number, message: string) {
+  if (status === 404 || message.includes("rfq_preview_case_not_found") || message.includes("case not found")) {
+    return "RFQ-Preview kann erst vorbereitet werden, wenn der Fall als Case-Revision im Backend gespeichert ist.";
+  }
+  return message;
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ caseId: string }> },
@@ -20,7 +27,7 @@ export async function GET(
         body?.detail?.code ||
         `rfq_preview_fetch_failed:${response.status}`;
       return NextResponse.json(
-        { error: { code: "rfq_preview_fetch_failed", message } },
+        { error: { code: "rfq_preview_fetch_failed", message: friendlyPreviewMessage(response.status, message) } },
         { status: response.status || 500 },
       );
     }
@@ -58,7 +65,7 @@ export async function POST(
         body?.detail?.code ||
         `rfq_preview_create_failed:${response.status}`;
       return NextResponse.json(
-        { error: { code: "rfq_preview_create_failed", message } },
+        { error: { code: "rfq_preview_create_failed", message: friendlyPreviewMessage(response.status, message) } },
         { status: response.status || 500 },
       );
     }

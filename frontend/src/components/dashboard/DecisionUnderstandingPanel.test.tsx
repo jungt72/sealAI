@@ -191,11 +191,72 @@ describe("DecisionUnderstandingPanel", () => {
         workspace={workspaceFixture({
           decisionUnderstanding: undefined,
           sealApplicationProfile: undefined,
+          communication: undefined,
+          completeness: {
+            coverageScore: 0,
+            coveragePercent: 0,
+            coverageGaps: [],
+            completenessDepth: "empty",
+            missingCriticalParameters: [],
+            analysisComplete: false,
+            recommendationReady: false,
+          },
+          governance: {
+            releaseStatus: "pending",
+            releaseClass: null,
+            scopeOfValidity: [],
+            assumptions: [],
+            unknownsBlocking: [],
+            unknownsManufacturerValidation: [],
+            gateFailures: [],
+            notes: [],
+            requiredDisclaimers: [],
+            verificationPassed: false,
+          },
+          mediumContext: {
+            ...workspaceFixture().mediumContext,
+            mediumLabel: null,
+            summary: null,
+          },
+          rfq: {
+            ...workspaceFixture().rfq,
+            openPoints: [],
+          },
         })}
       />,
     );
 
     expect(screen.getByText("SeaLAI bildet hier den technischen Arbeitsstand ab, sobald ein konkreter Dichtungsfall beschrieben wurde.")).toBeInTheDocument();
+  });
+
+  it("renders safe workspace facts when the dedicated decision-understanding projection is absent", () => {
+    render(
+      <DecisionUnderstandingPanel
+        workspace={workspaceFixture({
+          decisionUnderstanding: undefined,
+          parameters: {
+            medium: "Ethanol",
+            temperature_c: 150,
+            pressure_bar: 10,
+            installation: "pump",
+            motion_type: "rotary",
+          },
+          communication: {
+            primaryQuestion: "Liegt der Druck direkt an der Dichtstelle an?",
+            supportingReason: "Der Systemdruck ist nicht automatisch der Dichtstellendruck.",
+            confirmedFactsSummary: ["Medium: Ethanol", "Temperatur: 150 °C"],
+            openPointsSummary: ["Wellendurchmesser"],
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Verstanden" })).toBeInTheDocument();
+    expect(screen.getAllByText("Medium: Ethanol").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Temperatur: 150 °C").length).toBeGreaterThan(0);
+    expect(screen.getByText("Druck: 10 bar")).toBeInTheDocument();
+    expect(screen.getByText("Liegt der Druck direkt an der Dichtstelle an?")).toBeInTheDocument();
+    expect(screen.getByText("Frontend rendert die Backend-Projektion read-only; Herstellerprüfung bleibt erforderlich.")).toBeInTheDocument();
   });
 
   it("does not render unsafe product copy", () => {

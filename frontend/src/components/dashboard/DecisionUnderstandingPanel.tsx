@@ -136,8 +136,8 @@ function hasDecisionData(workspace: WorkspaceView | null) {
   const du = workspace?.decisionUnderstanding;
   return Boolean(
     workspace &&
-      du &&
-      (du.caseSummary ||
+      ((du &&
+        (du.caseSummary ||
         du.understoodNow.length ||
         du.technicalMeaning.length ||
         du.notYetDecidable.length ||
@@ -145,7 +145,15 @@ function hasDecisionData(workspace: WorkspaceView | null) {
         du.nextBestQuestion ||
         du.nextBestQuestions.length ||
         du.currentStateAnalysis.knownFields.length ||
-        du.currentStateAnalysis.missingFields.length),
+          du.currentStateAnalysis.missingFields.length)) ||
+        workspace.communication?.primaryQuestion ||
+        workspace.completeness.missingCriticalParameters.length ||
+        workspace.completeness.coverageGaps.length ||
+        workspace.rfq.openPoints.length ||
+        workspace.mediumContext.mediumLabel ||
+        workspace.parameters?.medium ||
+        workspace.parameters?.temperature_c ||
+        workspace.parameters?.pressure_bar),
   );
 }
 
@@ -162,21 +170,49 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
     );
   }
 
-  const decision = workspace!.decisionUnderstanding!;
-  const current = decision.currentStateAnalysis;
-  const needs = decision.needsAnalysis;
-  const primaryQuestion = decision.nextBestQuestions[0] ?? null;
+  const decision = workspace!.decisionUnderstanding;
+  const current = decision?.currentStateAnalysis ?? {
+    knownFields: unique([
+      workspace!.parameters?.medium ? `Medium: ${workspace!.parameters.medium}` : null,
+      workspace!.parameters?.temperature_c ? `Temperatur: ${workspace!.parameters.temperature_c} °C` : null,
+      workspace!.parameters?.pressure_bar ? `Druck: ${workspace!.parameters.pressure_bar} bar` : null,
+      workspace!.parameters?.installation ? `Anlage: ${workspace!.parameters.installation}` : null,
+      workspace!.parameters?.motion_type ? `Bewegung: ${workspace!.parameters.motion_type}` : null,
+    ]),
+    missingFields: unique([...workspace!.completeness.missingCriticalParameters, ...workspace!.completeness.coverageGaps]),
+    uncertainFields: workspace!.governance.assumptions,
+    conflictingFields: workspace!.conflicts.items.map((item) => item.summary),
+    evidenceBackedFields: workspace!.evidence?.sourceBackedFindings ?? [],
+    sealTypeStatus: workspace!.sealApplicationProfile?.confidenceBand ?? "unknown",
+    readinessHint: workspace!.governance.releaseStatus || workspace!.rfq.status || "precheck",
+    confidence: workspace!.completeness.coverageScore,
+  };
+  const needs = decision?.needsAnalysis ?? {
+    primaryNeed: workspace!.requestType || workspace!.caseType || "technical_clarification",
+    secondaryNeeds: workspace!.communication?.openPointsSummary ?? [],
+    urgency: "unknown",
+    userSide: null,
+    contextSide: workspace!.parameters?.installation ?? null,
+    confidence: workspace!.completeness.coverageScore,
+    notes: [],
+  };
+  const primaryQuestion = decision?.nextBestQuestions?.[0] ?? null;
   const sourceType = workspace!.mediumContext.sourceType || "unknown";
   const validationStatus = workspace!.mediumContext.notForReleaseDecisions
     ? "unvalidated"
     : workspace!.mediumContext.validationStatus || "unknown";
   const sourceIsFallback = sourceType === "llm_research_fallback";
   const displayValidationStatus = sourceIsFallback ? "unvalidated" : validationStatus;
-  const knownItems = unique([...decision.understoodNow, ...current.knownFields], 7);
+  const knownItems = unique([...(decision?.understoodNow ?? []), ...current.knownFields], 7);
   const missingItems = unique([...current.missingFields, ...workspace!.completeness.missingCriticalParameters, ...workspace!.rfq.openPoints], 7);
-  const riskItems = unique([...decision.keyRisks, ...decision.manufacturerReviewNeeds, ...workspace!.governance.unknownsManufacturerValidation], 7);
-  const notDecidable = unique([...decision.notYetDecidable, ...current.uncertainFields, ...current.conflictingFields], 7);
+  const riskItems = unique([...(decision?.keyRisks ?? []), ...(decision?.manufacturerReviewNeeds ?? []), ...workspace!.governance.unknownsManufacturerValidation], 7);
+  const notDecidable = unique([...(decision?.notYetDecidable ?? []), ...current.uncertainFields, ...current.conflictingFields], 7);
   const sealProfile = workspace!.sealApplicationProfile;
+  const caseSummary =
+    decision?.caseSummary ||
+    workspace!.communication?.confirmedFactsSummary?.join(" · ") ||
+    workspace!.mediumContext.summary ||
+    "SeaLAI fasst hier den aktuellen technischen Arbeitsstand aus der Backend-Projektion zusammen.";
 
   return (
     <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
@@ -187,7 +223,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
             Arbeitsstand
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
-            {decision.caseSummary || "SeaLAI fasst hier den aktuellen technischen Arbeitsstand zusammen."}
+            {caseSummary}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -220,7 +256,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
             Nächste sinnvolle Frage
           </div>
           <p className="mt-2 text-sm font-semibold leading-relaxed text-[#111827]">
-            {primaryQuestion?.question || decision.nextBestQuestion || workspace!.communication?.primaryQuestion || "Noch keine nächste Frage aus der Projektion verfügbar"}
+            {primaryQuestion?.question || decision?.nextBestQuestion || workspace!.communication?.primaryQuestion || "Noch keine nächste Frage aus der Projektion verfügbar"}
           </p>
           {(primaryQuestion?.reason || workspace!.communication?.supportingReason) && (
             <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">

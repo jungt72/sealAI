@@ -136,6 +136,18 @@ function getErrorMessage(body: unknown, fallback: string) {
   return fallback;
 }
 
+function friendlyRfqError(message: string) {
+  if (
+    message.includes("rfq_preview_case_not_found") ||
+    message.includes("rfq_preview_create_failed:404") ||
+    message.includes("case not found") ||
+    message.includes("404")
+  ) {
+    return "RFQ-Preview kann erst vorbereitet werden, wenn der Fall als Case-Revision im Backend gespeichert ist. Bitte vorgeschlagene Case-Daten prüfen und übernehmen.";
+  }
+  return message;
+}
+
 export default function RfqPane({ data, caseId }: RfqPaneProps) {
   const [preview, setPreview] = useState<RfqPreviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -224,7 +236,8 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
       }
       setPreview(body as RfqPreviewResponse);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "RFQ-Preview konnte nicht vorbereitet werden.");
+      const message = err instanceof Error ? err.message : "RFQ-Preview konnte nicht vorbereitet werden.";
+      setError(friendlyRfqError(message));
     } finally {
       setIsCreating(false);
     }

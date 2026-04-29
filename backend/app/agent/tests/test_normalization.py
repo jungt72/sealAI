@@ -405,6 +405,19 @@ class TestMediumNormalization:
         e = normalize_parameter("medium", "panolin")
         assert e.confidence == MappingConfidence.REQUIRES_CONFIRMATION
 
+    def test_ethanol_stays_specific_medium_not_generic_fuel(self):
+        e = normalize_parameter("medium", "Ethanol")
+        assert e.confidence == MappingConfidence.CONFIRMED
+        assert e.normalized_value == "Ethanol"
+
+        capture, classification = classify_medium_text(
+            "Pumpe mit Ethanol bei 150 Grad Celsius und 10 bar"
+        )
+
+        assert capture.primary_raw_text == "ethanol"
+        assert classification.canonical_label == "Ethanol"
+        assert classification.registry_key == "ethanol"
+
     def test_unknown_medium_returns_inferred(self):
         e = normalize_parameter("medium", "Flüssigkristall")
         assert e.confidence == MappingConfidence.INFERRED

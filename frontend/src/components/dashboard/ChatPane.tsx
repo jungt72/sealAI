@@ -246,7 +246,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete }: ChatPa
               </div>
               <h1 className="mt-5 text-[26px] font-semibold tracking-tight text-[#111827]">Hallo Thorsten,</h1>
               <p className="mt-3 max-w-[520px] text-[15px] leading-7 text-[#4B5563]">
-                Beschreibe deine Dichtungssituation und erhalte fokussierte Empfehlungen, Vergleiche und technische Analysen.
+                Beschreibe deine Dichtungssituation und erhalte fokussierte Einordnungen, Vergleiche und technische Analysen.
               </p>
             </div>
           ) : (

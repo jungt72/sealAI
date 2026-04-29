@@ -208,7 +208,7 @@ export function SealCockpit({ data, workspace }: { data: SealCockpitOverview; wo
   const activeLabel = data.tabs.find((tab) => tab.id === activeTab)?.label ?? "Übersicht";
 
   return (
-    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+    <aside className="flex h-full min-h-[720px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)] lg:min-h-0">
       <CockpitTabs tabs={data.tabs} activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pb-4">
         {activeTab === "overview" ? (

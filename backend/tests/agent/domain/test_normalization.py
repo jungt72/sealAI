@@ -11,12 +11,12 @@ from app.agent.domain.normalization import (
 )
 
 
-@pytest.mark.parametrize("input_name,expected", [("Viton", "FKM"), ("Kalrez", "FFKM"), ("Teflon", "PTFE"), ("nitril", "NBR"), ("Unknown", "Unknown"), (None, None)])
+@pytest.mark.parametrize("input_name,expected", [("Viton", "STS-MAT-FKM-A1"), ("Kalrez", "STS-MAT-FFKM-A1"), ("Teflon", "STS-MAT-PTFE-A1"), ("nitril", "STS-MAT-NBR-A1"), ("Unknown", "Unknown"), (None, None)])
 def test_normalize_material(input_name, expected):
     assert normalize_material(input_name) == expected
 
 
-@pytest.mark.parametrize("input_name,expected", [("Wasser", "Wasser"), ("oil", "Öl"), ("Panolin", "Bio-Öl"), ("Unknown", "Unknown"), (None, None)])
+@pytest.mark.parametrize("input_name,expected", [("Wasser", "Wasser"), ("oil", "Öl"), ("Ethanol", "Ethanol"), ("Panolin", "Bio-Öl"), ("Unknown", "Unknown"), (None, None)])
 def test_normalize_medium(input_name, expected):
     assert normalize_medium(input_name) == expected
 

@@ -270,4 +270,31 @@ describe("RfqPane", () => {
       '"user_acknowledged_export_intent":true',
     );
   });
+
+  it("shows a product-safe message when preview creation has no persisted case revision", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { code: "rfq_preview_not_found" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { message: "rfq_preview_create_failed:404" } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<RfqPane data={cockpitData()} caseId="case-1" />);
+
+    await user.click(await screen.findByRole("button", { name: /RFQ-Preview vorbereiten/i }));
+
+    expect(
+      await screen.findByText(
+        "RFQ-Preview kann erst vorbereitet werden, wenn der Fall als Case-Revision im Backend gespeichert ist. Bitte vorgeschlagene Case-Daten prüfen und übernehmen.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("rfq_preview_create_failed:404")).not.toBeInTheDocument();
+  });
 });

@@ -382,7 +382,13 @@ def run_medium_specialist(
             followup_question_if_needed="Welches Medium liegt genau an?",
         )
 
-    selected = max(results, key=lambda item: _mapping_confidence_rank(item.medium_confidence))
+    selected = max(
+        results,
+        key=lambda item: (
+            1 if str(item.canonical_medium or "").strip() else 0,
+            _mapping_confidence_rank(item.medium_confidence),
+        ),
+    )
     return selected
 
 
