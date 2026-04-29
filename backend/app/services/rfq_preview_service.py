@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.case_record import CaseRecord
 from app.models.case_state_snapshot import CaseStateSnapshot
 from app.models.inquiry_extract import InquiryExtractModel
+from app.domain.artifact_type import ArtifactType
 from app.services.inquiry_extract_service import (
     ALLOWED_TECHNICAL_FIELD_PATHS,
     InquiryExtractService,
@@ -19,7 +20,7 @@ from app.services.decision_understanding_service import (
     build_decision_understanding_payload,
 )
 
-RFQ_PREVIEW_ARTIFACT_TYPE = "rfq_preview"
+RFQ_PREVIEW_ARTIFACT_TYPE = ArtifactType.rfq_preview.value
 RFQ_PREVIEW_SCHEMA_VERSION = "rfq_preview_v0.7.0"
 RFQ_PREVIEW_SECTIONS: tuple[str, ...] = (
     "Kurzbeschreibung der Anwendung",
