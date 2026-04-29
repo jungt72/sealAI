@@ -499,6 +499,9 @@ def test_workspace_projection_derives_top_level_completeness_when_payload_score_
     assert projection.completeness.coverage_score == (
         projection.completeness_score.score
     )
+    assert projection.cockpit_view.readiness.coverage_score == (
+        projection.completeness.coverage_score
+    )
     assert "pressure" in projection.completeness.missing_critical_parameters
     assert projection.completeness.completeness_depth == "prequalification"
 

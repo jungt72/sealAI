@@ -682,7 +682,7 @@ def _build_cockpit_view(
         engineering_path=engineering_path,
         reasoning=reasoning,
     )
-    coverage_score = float(completeness_payload.get("coverage_score") or 0.0)
+    coverage_score = _bounded_score(completeness_payload.get("coverage_score"))
     is_rfq_ready = bool(rfq_status.rfq_ready or readiness_eval.rfq_possible)
     status = (
         "rfq_ready"
@@ -2418,6 +2418,13 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         payload=completeness_payload,
         score=nbq_projection.completeness_score.score,
         missing_fields=nbq_projection.current_state_analysis.missing_fields,
+    )
+    cockpit_view = cockpit_view.model_copy(
+        update={
+            "readiness": cockpit_view.readiness.model_copy(
+                update={"coverage_score": completeness_status.coverage_score}
+            )
+        }
     )
 
     return CaseWorkspaceProjection(
