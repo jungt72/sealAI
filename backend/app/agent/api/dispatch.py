@@ -3,6 +3,7 @@ import os
 import dataclasses
 from typing import Any, Literal
 
+from app.domain.conversation_intent import ConversationRoutingDecision
 from app.agent.state.models import GovernedSessionState
 from app.services.auth.dependencies import RequestUser
 from app.agent.api.deps import (
@@ -38,6 +39,7 @@ class RuntimeDispatchResolution:
     fast_response: Any | None = None
     knowledge_response: Any | None = None
     governed_state: GovernedSessionState | None = None
+    conversation_route: ConversationRoutingDecision | None = None
 
 async def _resolve_runtime_dispatch(
     request: Any, # ChatRequest
@@ -62,10 +64,15 @@ async def _resolve_runtime_dispatch(
 
     try:
         from app.domain.pre_gate_classification import PreGateClassification  # noqa: PLC0415
+        from app.domain.conversation_intent import classify_conversation_route  # noqa: PLC0415
         from app.services.fast_responder_service import FastResponderService  # noqa: PLC0415
         from app.services.pre_gate_classifier import PreGateClassifier  # noqa: PLC0415
 
         pre_gate = PreGateClassifier().classify(request.message)
+        conversation_route = classify_conversation_route(
+            request.message,
+            pre_gate_classification=pre_gate.classification,
+        )
         if pre_gate.classification in FastResponderService.allowed_classifications:
             fast_response = FastResponderService().respond(
                 request.message,
@@ -79,6 +86,7 @@ async def _resolve_runtime_dispatch(
                 pre_gate_classification=pre_gate.classification.value,
                 pre_gate_reason=pre_gate.reasoning,
                 fast_response=fast_response,
+                conversation_route=conversation_route,
             )
 
         if pre_gate.classification in {
@@ -142,6 +150,7 @@ async def _resolve_runtime_dispatch(
                 pre_gate_classification=pre_gate.classification.value,
                 pre_gate_reason=pre_gate.reasoning,
                 knowledge_response=knowledge_response,
+                conversation_route=conversation_route,
             )
 
         if pre_gate.classification is not PreGateClassification.DOMAIN_INQUIRY:
@@ -157,6 +166,7 @@ async def _resolve_runtime_dispatch(
                 gate_applied=False,
                 pre_gate_classification=pre_gate.classification.value,
                 pre_gate_reason=pre_gate.reasoning,
+                conversation_route=conversation_route,
             )
 
         governed_state = None
@@ -204,6 +214,7 @@ async def _resolve_runtime_dispatch(
             pre_gate_classification=pre_gate.classification.value,
             pre_gate_reason=pre_gate.reasoning,
             governed_state=governed_state,
+            conversation_route=conversation_route,
         )
 
     except Exception as exc:  # noqa: BLE001
