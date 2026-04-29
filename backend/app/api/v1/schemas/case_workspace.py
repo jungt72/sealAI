@@ -494,6 +494,56 @@ class DeepDiveTabProjection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class NeedsAnalysisProjection(BaseModel):
+    primary_need: str = "unknown"
+    secondary_needs: List[str] = Field(default_factory=list)
+    urgency: str = "unknown"
+    user_side: Optional[str] = None
+    context_side: Optional[str] = None
+    confidence: float = 0.0
+    notes: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CurrentStateAnalysisProjection(BaseModel):
+    known_fields: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+    uncertain_fields: List[str] = Field(default_factory=list)
+    conflicting_fields: List[str] = Field(default_factory=list)
+    evidence_backed_fields: List[str] = Field(default_factory=list)
+    seal_type_status: str = "unknown"
+    readiness_hint: str = "precheck"
+    confidence: float = 0.0
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class NextBestQuestionProjection(BaseModel):
+    question: str
+    reason: str
+    focus_key: str
+    priority: int = 1
+    expected_answer_type: str = "text"
+    applies_to_case_type: CaseType = CaseType.unknown
+    applies_to_seal_type: SealType = SealType.unknown_seal
+    source: str = "next_best_question_service"
+    max_questions_policy: str = "ask_1_to_3_targeted_questions"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CompletenessScoreProjection(BaseModel):
+    score: float = 0.0
+    missing_critical_count: int = 0
+    known_critical_count: int = 0
+    uncertainty_count: int = 0
+    conflict_count: int = 0
+    notes: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class DecisionUnderstandingProjection(BaseModel):
     case_summary: str = ""
     understood_now: List[str] = Field(default_factory=list)
@@ -504,6 +554,18 @@ class DecisionUnderstandingProjection(BaseModel):
     confidence_notes: List[str] = Field(default_factory=list)
     next_best_question: Optional[str] = None
     manufacturer_review_needs: List[str] = Field(default_factory=list)
+    needs_analysis: NeedsAnalysisProjection = Field(
+        default_factory=NeedsAnalysisProjection
+    )
+    current_state_analysis: CurrentStateAnalysisProjection = Field(
+        default_factory=CurrentStateAnalysisProjection
+    )
+    next_best_questions: List[NextBestQuestionProjection] = Field(
+        default_factory=list
+    )
+    completeness_score: CompletenessScoreProjection = Field(
+        default_factory=CompletenessScoreProjection
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -546,6 +608,18 @@ class CaseWorkspaceProjection(BaseModel):
     deep_dive_tabs: List[DeepDiveTabProjection] = Field(default_factory=list)
     decision_understanding: DecisionUnderstandingProjection = Field(
         default_factory=DecisionUnderstandingProjection
+    )
+    needs_analysis: NeedsAnalysisProjection = Field(
+        default_factory=NeedsAnalysisProjection
+    )
+    current_state_analysis: CurrentStateAnalysisProjection = Field(
+        default_factory=CurrentStateAnalysisProjection
+    )
+    next_best_questions: List[NextBestQuestionProjection] = Field(
+        default_factory=list
+    )
+    completeness_score: CompletenessScoreProjection = Field(
+        default_factory=CompletenessScoreProjection
     )
     case_summary: CaseSummary = Field(default_factory=CaseSummary)
     completeness: CompletenessStatus = Field(default_factory=CompletenessStatus)

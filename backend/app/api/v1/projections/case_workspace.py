@@ -39,6 +39,9 @@ from app.domain.seal_type import (
 from app.services.decision_understanding_service import (
     build_decision_understanding_projection,
 )
+from app.services.next_best_question_service import (
+    derive_needs_current_state_and_questions,
+)
 from app.api.v1.schemas.case_workspace import (
     ArtifactStatus,
     CaseSummary,
@@ -2309,9 +2312,20 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         "rfq_status": rfq_status.model_dump(),
         "evidence_summary": evidence_summary.model_dump(),
         "seal_application_profile": seal_application_profile.model_dump(),
+        "conflicts": conflicts.model_dump(),
     }
+    nbq_projection = derive_needs_current_state_and_questions(
+        decision_understanding_state
+    )
     decision_understanding = build_decision_understanding_projection(
         decision_understanding_state
+    ).model_copy(
+        update={
+            "needs_analysis": nbq_projection.needs_analysis,
+            "current_state_analysis": nbq_projection.current_state_analysis,
+            "next_best_questions": nbq_projection.next_best_questions,
+            "completeness_score": nbq_projection.completeness_score,
+        }
     )
 
     return CaseWorkspaceProjection(
@@ -2322,6 +2336,10 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         cockpit_view=cockpit_view,
         deep_dive_tabs=deep_dive_tabs,
         decision_understanding=decision_understanding,
+        needs_analysis=nbq_projection.needs_analysis,
+        current_state_analysis=nbq_projection.current_state_analysis,
+        next_best_questions=nbq_projection.next_best_questions,
+        completeness_score=nbq_projection.completeness_score,
         case_summary=case_summary,
         governance_status=governance_status,
         claims_summary=claims_summary,
