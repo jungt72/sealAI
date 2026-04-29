@@ -215,7 +215,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.customer_reply_draft: ArtifactTypeMetadata(
         artifact_type=ArtifactType.customer_reply_draft,
         label="Customer Reply Draft",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(
@@ -229,7 +229,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.internal_engineering_note: ArtifactTypeMetadata(
         artifact_type=ArtifactType.internal_engineering_note,
         label="Internal Engineering Note",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=False,
         exportable_default=False,
         supported_case_types=(

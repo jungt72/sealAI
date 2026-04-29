@@ -55,6 +55,8 @@ def test_phase_one_artifact_types_are_implemented() -> None:
     assert is_artifact_type_implemented("rfq_preview") is True
     assert is_artifact_type_implemented("technical_inquiry_summary") is True
     assert is_artifact_type_implemented("compatibility_matrix") is True
+    assert is_artifact_type_implemented("customer_reply_draft") is True
+    assert is_artifact_type_implemented("internal_engineering_note") is True
 
     implemented = {
         item.artifact_type
@@ -65,6 +67,8 @@ def test_phase_one_artifact_types_are_implemented() -> None:
         ArtifactType.rfq_preview,
         ArtifactType.technical_inquiry_summary,
         ArtifactType.compatibility_matrix,
+        ArtifactType.customer_reply_draft,
+        ArtifactType.internal_engineering_note,
     }
 
 
@@ -74,8 +78,6 @@ def test_phase_one_artifact_types_are_implemented() -> None:
         ArtifactType.manufacturer_fit_matrix,
         ArtifactType.complaint_intake,
         ArtifactType.failure_analysis_intake,
-        ArtifactType.customer_reply_draft,
-        ArtifactType.internal_engineering_note,
     ],
 )
 def test_required_future_artifacts_are_recognized_not_implemented(
@@ -139,8 +141,6 @@ def test_unknown_artifacts_are_not_exportable_by_default() -> None:
         ArtifactType.compliance_checklist,
         ArtifactType.material_substitution_brief,
         ArtifactType.emergency_triage,
-        ArtifactType.customer_reply_draft,
-        ArtifactType.internal_engineering_note,
     ],
 )
 def test_recognized_not_implemented_artifacts_are_not_generated_or_available(
