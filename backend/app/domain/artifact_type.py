@@ -170,7 +170,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.drawing_review: ArtifactTypeMetadata(
         artifact_type=ArtifactType.drawing_review,
         label="Drawing Review",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.drawing_review,),
@@ -179,7 +179,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.quote_comparison: ArtifactTypeMetadata(
         artifact_type=ArtifactType.quote_comparison,
         label="Quote Comparison",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.quote_comparison,),
@@ -197,7 +197,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.material_substitution_brief: ArtifactTypeMetadata(
         artifact_type=ArtifactType.material_substitution_brief,
         label="Material Substitution Brief",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.material_substitution,),
@@ -206,7 +206,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.emergency_triage: ArtifactTypeMetadata(
         artifact_type=ArtifactType.emergency_triage,
         label="Emergency Triage",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.emergency_mro,),
