@@ -36,6 +36,7 @@ from app.domain.seal_type import (
     normalize_seal_type,
     type_specific_missing_hints_for_type,
 )
+from app.domain.source_validation import source_validation_metadata
 from app.services.decision_understanding_service import (
     build_decision_understanding_projection,
 )
@@ -425,6 +426,20 @@ def _provenance_confidence(value: Any) -> str | None:
     return None
 
 
+def _provenance_validation_status(value: Any) -> str | None:
+    if isinstance(value, dict):
+        text = str(value.get("validation_status") or "").strip()
+        return text or None
+    return None
+
+
+def _provenance_source_type(value: Any) -> str | None:
+    if isinstance(value, dict):
+        text = str(value.get("source_type") or "").strip()
+        return text or None
+    return None
+
+
 def _first_mapping_value(
     mapping: Dict[str, Any], key: str, aliases: tuple[str, ...]
 ) -> Any:
@@ -507,6 +522,22 @@ def _build_cockpit_sections(
                 if required_key is not None:
                     missing_mandatory_keys.append(required_key)
                 origin = origin or "missing"
+            status_for_source_validation = (
+                "missing"
+                if value is None
+                else (
+                    confidence
+                    or _provenance_validation_status(provenance_value)
+                    or "unknown"
+                )
+            )
+            source_validation = source_validation_metadata(
+                status=status_for_source_validation,
+                provenance=provenance_value,
+                origin=origin,
+                source_type=_provenance_source_type(provenance_value),
+                validation_status=_provenance_validation_status(provenance_value),
+            )
             if is_mandatory:
                 mandatory_total += 1
                 if value is not None:
@@ -519,6 +550,8 @@ def _build_cockpit_sections(
                     unit=field.get("unit"),
                     origin=origin,
                     confidence=confidence,
+                    source_type=source_validation.source_type,
+                    validation_status=source_validation.validation_status,
                     is_confirmed=is_confirmed,
                     is_mandatory=is_mandatory,
                 )
@@ -2261,6 +2294,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         ],
         confidence=medium_context.get("confidence"),
         source_type=medium_context.get("source_type"),
+        validation_status=medium_context.get("validation_status"),
         not_for_release_decisions=bool(
             medium_context.get("not_for_release_decisions", True)
         ),

@@ -22,6 +22,7 @@ from typing_extensions import Literal
 
 from app.domain.case_type import CaseType
 from app.domain.seal_type import SealFamily, SealType
+from app.domain.source_validation import SourceType, ValidationStatus
 
 
 RequestType = Literal[
@@ -296,6 +297,7 @@ class MediumContextSummary(BaseModel):
     followup_points: List[str] = Field(default_factory=list)
     confidence: Optional[str] = None
     source_type: Optional[str] = None
+    validation_status: Optional[str] = None
     not_for_release_decisions: bool = True
     disclaimer: Optional[str] = None
 
@@ -339,6 +341,8 @@ class TechnicalDerivationItem(BaseModel):
     ruleset_version: Optional[str] = None
     stale_reason: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
+    source_type: SourceType = SourceType.deterministic_calculation
+    validation_status: ValidationStatus = ValidationStatus.calculated
 
     model_config = ConfigDict(extra="forbid")
 
@@ -370,8 +374,22 @@ class CockpitProperty(BaseModel):
     unit: Optional[str] = None
     origin: Optional[str] = None
     confidence: Optional[str] = None
+    source_type: Optional[SourceType] = None
+    validation_status: Optional[ValidationStatus] = None
     is_confirmed: bool = False
     is_mandatory: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SourceValidationBadgeView(BaseModel):
+    """Backend-only source/validation badge contract for future renderers."""
+
+    source_type: SourceType = SourceType.unknown
+    validation_status: ValidationStatus = ValidationStatus.unknown
+    authoritative: bool = False
+    not_for_release_decisions: bool = True
+    event_names: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
