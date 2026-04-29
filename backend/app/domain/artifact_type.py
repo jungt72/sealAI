@@ -134,7 +134,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.complaint_intake: ArtifactTypeMetadata(
         artifact_type=ArtifactType.complaint_intake,
         label="Complaint Intake",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.complaint_case,),
@@ -143,7 +143,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.failure_analysis_intake: ArtifactTypeMetadata(
         artifact_type=ArtifactType.failure_analysis_intake,
         label="Failure Analysis Intake",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.failure_analysis,),
