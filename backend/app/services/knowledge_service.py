@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from app.agent.runtime.output_guard import (
+    FAST_PATH_GUARD_FALLBACK,
+    check_fast_path_output,
+)
 from app.domain.source_validation import SourceType, ValidationStatus
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.knowledge import FactCardStore
 
 
+log = logging.getLogger(__name__)
+
 KNOWLEDGE_GENERAL_ORIENTATION_SCOPE = "general_technical_orientation_only"
+KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE = "general_orientation_only"
 KNOWLEDGE_RAG_HIT_LABEL = "Kuratiertes/RAG-Wissen - dokumentiert"
 KNOWLEDGE_RAG_MISS_LABEL = "Kein kuratierter/RAG-Treffer - keine technische Antwort"
+KNOWLEDGE_LLM_FALLBACK_LABEL = "LLM-Recherche - nicht validiert"
 KNOWLEDGE_MISS_ANSWER = (
     "Dazu habe ich in der kuratierten SeaLAI-Wissensbasis oder im angebundenen "
     "RAG-Kontext keinen ausreichend belastbaren Eintrag gefunden. Ich gebe deshalb "
@@ -91,6 +100,7 @@ class KnowledgeAnswerResult:
     not_final_release: bool = True
     fallback_allowed: bool = False
     fallback_used: bool = False
+    fallback_error: str | None = None
     user_visible_label: str = KNOWLEDGE_RAG_MISS_LABEL
     missing_reason: str | None = None
     next_step: str | None = None
@@ -133,6 +143,7 @@ class KnowledgeAnswerResult:
             "not_final_release": self.not_final_release,
             "fallback_allowed": self.fallback_allowed,
             "fallback_used": self.fallback_used,
+            "fallback_error": self.fallback_error,
             "user_visible_label": self.user_visible_label,
             "missing_reason": self.missing_reason,
             "next_step": self.next_step,
@@ -168,10 +179,16 @@ class KnowledgeService:
         factcard_store: FactCardStore | None = None,
         rag_retriever: KnowledgeRetriever | None = None,
         llm_fallback_runner: Callable[..., Any] | None = None,
+        llm_research_fallback_enabled: bool | None = None,
     ) -> None:
         self._store = factcard_store or FactCardStore.get_instance()
         self._rag_retriever = rag_retriever
         self._llm_fallback_runner = llm_fallback_runner
+        self._llm_research_fallback_enabled = (
+            _settings_fallback_enabled()
+            if llm_research_fallback_enabled is None
+            else bool(llm_research_fallback_enabled)
+        )
 
     def answer(
         self,
@@ -197,7 +214,11 @@ class KnowledgeService:
                 )
 
         if not cards:
-            result = _miss_result(KNOWLEDGE_MISS_ANSWER)
+            result = self._fallback_or_miss(
+                user_input,
+                tenant_id=tenant_id,
+                user_id=user_id,
+            )
             return KnowledgeResponse(
                 source_classification=source_classification,
                 content=result.answer,
@@ -314,6 +335,53 @@ class KnowledgeService:
             rank=source.get("rank"),
         )
 
+    def _fallback_or_miss(
+        self,
+        user_input: str,
+        *,
+        tenant_id: str | None,
+        user_id: str | None,
+    ) -> KnowledgeAnswerResult:
+        if not self._llm_research_fallback_enabled:
+            return _miss_result(KNOWLEDGE_MISS_ANSWER)
+        if self._llm_fallback_runner is None:
+            return _miss_result(
+                KNOWLEDGE_MISS_ANSWER,
+                fallback_allowed=True,
+                missing_reason="llm_research_fallback_provider_unavailable",
+            )
+        try:
+            raw_result = self._llm_fallback_runner(
+                query=user_input,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+            )
+        except Exception:
+            log.warning(
+                "Knowledge LLM research fallback failed; returning safe RAG miss."
+            )
+            return _miss_result(
+                KNOWLEDGE_MISS_ANSWER,
+                fallback_allowed=True,
+                missing_reason="llm_research_fallback_error",
+                fallback_error="fallback_provider_error",
+            )
+
+        fallback_text = _fallback_text_from_provider_result(raw_result)
+        if not fallback_text:
+            return _miss_result(
+                KNOWLEDGE_MISS_ANSWER,
+                fallback_allowed=True,
+                missing_reason="llm_research_fallback_empty",
+            )
+
+        safe, _category = check_fast_path_output(fallback_text)
+        if not safe:
+            fallback_text = FAST_PATH_GUARD_FALLBACK
+
+        return _fallback_result(fallback_text)
+
 
 def _hit_result(answer: str, sources: tuple[KnowledgeSource, ...]) -> KnowledgeAnswerResult:
     return KnowledgeAnswerResult(
@@ -340,7 +408,13 @@ def _hit_result(answer: str, sources: tuple[KnowledgeSource, ...]) -> KnowledgeA
     )
 
 
-def _miss_result(answer: str) -> KnowledgeAnswerResult:
+def _miss_result(
+    answer: str,
+    *,
+    fallback_allowed: bool = False,
+    missing_reason: str = "no_curated_or_rag_answer_available",
+    fallback_error: str | None = None,
+) -> KnowledgeAnswerResult:
     return KnowledgeAnswerResult(
         answer=answer,
         answer_available=False,
@@ -349,8 +423,10 @@ def _miss_result(answer: str) -> KnowledgeAnswerResult:
         rag_miss=True,
         source_type=SourceType.unknown,
         validation_status=ValidationStatus.unknown,
+        fallback_allowed=fallback_allowed,
+        fallback_error=fallback_error,
         user_visible_label=KNOWLEDGE_RAG_MISS_LABEL,
-        missing_reason="no_curated_or_rag_answer_available",
+        missing_reason=missing_reason,
         next_step=(
             "Keine technische Antwort erfinden; konkrete Anwendungsdaten aufnehmen "
             "oder spaeter nicht validierte LLM-Recherche explizit aktivieren."
@@ -363,6 +439,75 @@ def _miss_result(answer: str) -> KnowledgeAnswerResult:
             "KnowledgeAnswerGenerated",
         ),
     )
+
+
+def _fallback_result(provider_answer: str) -> KnowledgeAnswerResult:
+    answer = "\n".join(
+        [
+            f"Information source: {KNOWLEDGE_LLM_FALLBACK_LABEL}.",
+            "Validation status: Not validated. Use: general orientation only.",
+            str(provider_answer).strip(),
+            (
+                "Fuer konkrete Betriebsdaten, Kompatibilitaet, Compliance, RFQ "
+                "oder Herstellerfreigabe ist eine verifizierte Quelle oder "
+                "Herstellerpruefung erforderlich."
+            ),
+        ]
+    )
+    return KnowledgeAnswerResult(
+        answer=answer,
+        answer_available=True,
+        rag_lookup_attempted=True,
+        rag_answer_found=False,
+        rag_miss=True,
+        source_type=SourceType.llm_research_fallback,
+        validation_status=ValidationStatus.unvalidated,
+        use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+        not_final_release=True,
+        fallback_allowed=True,
+        fallback_used=True,
+        user_visible_label=KNOWLEDGE_LLM_FALLBACK_LABEL,
+        missing_reason="curated_or_rag_miss_fallback_used",
+        next_step=(
+            "Fuer einen konkreten Fall RAG/kuratierten Nachweis, Upload-Evidence "
+            "oder Herstellerpruefung heranziehen; diese LLM-Recherche nicht als "
+            "Case Truth, RFQ Truth, Compliance-Nachweis oder Freigabe verwenden."
+        ),
+        event_names=(
+            "KnowledgeQuestionReceived",
+            "KnowledgeRAGLookupRequested",
+            "KnowledgeRAGAnswerMissing",
+            "LLMResearchFallbackUsed",
+            "SourceValidationStatusAssigned",
+            "KnowledgeAnswerGenerated",
+        ),
+    )
+
+
+def _fallback_text_from_provider_result(raw_result: Any) -> str:
+    if isinstance(raw_result, str):
+        return raw_result.strip()
+    if isinstance(raw_result, dict):
+        for key in ("answer", "content", "text"):
+            value = raw_result.get(key)
+            if value:
+                return str(value).strip()
+    value = getattr(raw_result, "answer", None)
+    if value:
+        return str(value).strip()
+    value = getattr(raw_result, "content", None)
+    if value:
+        return str(value).strip()
+    return ""
+
+
+def _settings_fallback_enabled() -> bool:
+    try:
+        from app.core.config import settings  # noqa: PLC0415
+
+        return bool(getattr(settings, "knowledge_llm_research_fallback_enabled", False))
+    except Exception:
+        return False
 
 
 def _clean_excerpt(value: Any, *, limit: int = 420) -> str:

@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     rag_k: int = 4
     rag_document_llm_processing_enabled: bool = False
     rag_dynamic_metadata_llm_enabled: bool = False
+    knowledge_llm_research_fallback_enabled: bool = False
     rag_dynamic_metadata_llm_model: str = "gpt-4.1-mini"
     rag_dynamic_metadata_max_chars: int = 12000
     rag_max_pages: int = 80
