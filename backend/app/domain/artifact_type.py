@@ -152,7 +152,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.replacement_sheet: ArtifactTypeMetadata(
         artifact_type=ArtifactType.replacement_sheet,
         label="Replacement Sheet",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.replacement_reorder,),
@@ -161,7 +161,7 @@ _REGISTRY: dict[ArtifactType, ArtifactTypeMetadata] = {
     ArtifactType.legacy_part_intake: ArtifactTypeMetadata(
         artifact_type=ArtifactType.legacy_part_intake,
         label="Legacy Part Intake",
-        implemented_status=ArtifactImplementedStatus.recognized_not_implemented,
+        implemented_status=ArtifactImplementedStatus.implemented,
         consent_required_default=True,
         exportable_default=False,
         supported_case_types=(CaseType.unknown_legacy_part,),
