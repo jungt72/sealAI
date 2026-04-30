@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import {
   Bell,
   Database,
@@ -9,6 +11,8 @@ import {
   Clock3,
   Bookmark,
   FileText,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Settings,
 } from "lucide-react";
@@ -30,20 +34,63 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [isNavExpanded, setIsNavExpanded] = useState(false);
 
   const userName = "Thorsten";
   const greeting = "Guten Tag";
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
-      <aside className="hidden h-full w-[72px] shrink-0 flex-col border-r border-[#E7ECF3] bg-white lg:flex">
-        <div className="flex h-[72px] items-center justify-center border-b border-[#E7ECF3]">
-          <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0B5BD3] text-base font-semibold text-white shadow-[0_10px_30px_rgba(11,91,211,0.22)]">
-            S
+      <aside
+        className={cn(
+          "hidden h-full shrink-0 flex-col border-r border-[#E7ECF3] bg-white transition-[width] duration-200 ease-out md:flex",
+          isNavExpanded ? "w-[244px]" : "w-[72px]",
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-[72px] items-center border-b border-[#E7ECF3] px-3",
+            isNavExpanded ? "justify-between" : "justify-center",
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-[14px] border border-[#E7ECF3] bg-white shadow-[0_10px_26px_rgba(4,30,73,0.12)]">
+              <Image
+                src="/images/logo/sealai-symbol.png"
+                alt="SeaLAI"
+                width={36}
+                height={36}
+                className="object-contain"
+                priority
+              />
+            </div>
+            {isNavExpanded ? (
+              <div className="min-w-0 animate-in fade-in duration-200">
+                <div className="truncate text-[15px] font-semibold text-[#0F172A]">SeaLAI</div>
+                <div className="truncate text-[11px] text-[#6B7280]">Technische Klaerung</div>
+              </div>
+            ) : null}
           </div>
+          {isNavExpanded ? (
+            <button
+              type="button"
+              aria-label="Navigation einklappen"
+              aria-expanded={isNavExpanded}
+              title="Navigation einklappen"
+              onClick={() => setIsNavExpanded(false)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]"
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          ) : null}
         </div>
 
-        <nav className="flex flex-1 flex-col items-center gap-3 px-3 py-6">
+        <nav
+          className={cn(
+            "flex flex-1 flex-col gap-3 px-3 py-6",
+            isNavExpanded ? "items-stretch" : "items-center",
+          )}
+        >
           {NAV_ITEMS.map((item) => {
             const isActive =
               item.href === "/dashboard/new"
@@ -55,39 +102,64 @@ export default function DashboardShell({
                 href={item.href}
                 title={item.label}
                 className={cn(
-                  "flex h-11 w-11 items-center justify-center rounded-[14px] border transition-colors",
+                  "flex h-11 items-center rounded-[14px] border transition-colors",
+                  isNavExpanded ? "w-full justify-start gap-3 px-3" : "w-11 justify-center",
                   isActive
                     ? "border-[#CFE0FF] bg-[#EEF4FF] text-[#0B5BD3]"
                     : "border-transparent text-[#6B7280] hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
                 )}
               >
-                <item.icon size={19} />
+                <item.icon size={19} className="shrink-0" />
+                {isNavExpanded ? (
+                  <span className="min-w-0 truncate text-[13px] font-medium">{item.label}</span>
+                ) : null}
               </Link>
             );
           })}
         </nav>
 
-        <div className="flex flex-col items-center gap-3 border-t border-[#E7ECF3] px-3 py-4">
+        <div
+          className={cn(
+            "flex flex-col gap-3 border-t border-[#E7ECF3] px-3 py-4",
+            isNavExpanded ? "items-stretch" : "items-center",
+          )}
+        >
+          {!isNavExpanded ? (
+            <button
+              type="button"
+              aria-label="Navigation erweitern"
+              aria-expanded={isNavExpanded}
+              title="Navigation erweitern"
+              onClick={() => setIsNavExpanded(true)}
+              className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]"
+            >
+              <PanelLeftOpen size={18} />
+            </button>
+          ) : null}
           <button
             type="button"
             title="Einstellungen"
-            className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]"
+            className={cn(
+              "flex h-11 items-center rounded-[14px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
+              isNavExpanded ? "w-full justify-start gap-3 px-3" : "w-11 justify-center",
+            )}
           >
-            <Settings size={18} />
+            <Settings size={18} className="shrink-0" />
+            {isNavExpanded ? <span className="text-[13px] font-medium">Einstellungen</span> : null}
           </button>
-          <div className="w-full px-1">
-            <LogoutButton />
+          <div className={cn("w-full", isNavExpanded ? "" : "px-1")}>
+            <LogoutButton showLabel={isNavExpanded} />
           </div>
         </div>
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-[#E7ECF3] bg-white px-5 sm:px-7">
+        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-transparent bg-transparent px-5 sm:px-7">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <div className="text-[18px] font-semibold tracking-tight text-[#0B5BD3]">SeaLAI</div>
+              <div className="text-[18px] font-semibold tracking-tight text-[#0B5BD3]">SEALING</div>
               <div className="h-5 w-px bg-[#D7DDE8]" />
-              <div className="text-[16px] font-medium text-[#374151]">Knowledge Modus</div>
+              <div className="text-[16px] font-medium text-[#374151]">INTELLIGENCE</div>
             </div>
             <div className="mt-1 truncate text-[12px] text-[#6B7280]">
               {greeting} {userName}, schoen, dass du da bist.

@@ -38,7 +38,11 @@ export function CockpitTabs({
   onTabChange: (tab: CockpitTabId) => void;
 }) {
   return (
-    <div role="tablist" aria-label="SealAI Cockpit" className="custom-scrollbar flex gap-1 overflow-x-auto border-b border-[#E5E7EB] px-4 pt-4">
+    <div
+      role="tablist"
+      aria-label="SealAI Cockpit"
+      className="custom-scrollbar flex gap-2 overflow-x-auto bg-transparent px-4 pb-2 pt-4"
+    >
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab;
         return (
@@ -49,10 +53,10 @@ export function CockpitTabs({
             aria-selected={isActive}
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              "h-10 shrink-0 rounded-t-[12px] border border-b-0 px-3 text-sm font-semibold transition-colors",
+              "h-10 shrink-0 rounded-full border px-4 text-sm font-semibold shadow-sm transition-colors",
               isActive
-                ? "border-[#0B57D0] bg-[#0B57D0] text-white"
-                : "border-transparent bg-[#FAFAFB] text-[#4B5563] hover:bg-[#F0F2F5] hover:text-[#111827]",
+                ? "border-[#0B57D0] bg-[#0B57D0] text-white shadow-[0_8px_20px_rgba(11,87,208,0.18)]"
+                : "border-[#E5EAF2] bg-white/70 text-[#4B5563] hover:border-[#D7E5FF] hover:bg-white hover:text-[#111827]",
             )}
           >
             {tab.label}
