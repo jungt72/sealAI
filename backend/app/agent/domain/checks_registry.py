@@ -4,6 +4,7 @@ This module registers calculation/check metadata separately from risk scoring
 and norm activation.  It currently exposes only deterministic RWDR results that
 already exist in the codebase.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -58,12 +59,33 @@ REGISTERED_CHECKS: tuple[EngineeringCheckDefinition, ...] = (
         unit="mm*min^-1",
         guardrails=("diameter and speed must be present and non-negative",),
     ),
+    EngineeringCheckDefinition(
+        calc_id="rwdr_temperature_headroom",
+        label="Temperaturfenster",
+        formula_version="rwdr_calc_v1",
+        required_inputs=("temperature_c", "sealing_material_family"),
+        valid_paths=("rwdr",),
+        output_key="temperature_headroom_c",
+        unit="°C",
+        guardrails=(
+            "uses deterministic material-family temperature precheck",
+            "material family must be manufacturer-checked before release",
+        ),
+    ),
 )
 
 _INPUT_ALIASES: dict[str, tuple[str, ...]] = {
     "shaft_diameter_mm": ("shaft_diameter_mm", "shaft_diameter", "diameter"),
     "speed_rpm": ("speed_rpm", "rpm", "speed"),
     "pressure_bar": ("pressure_bar", "pressure_max_bar", "pressure"),
+    "temperature_c": ("temperature_c", "temperature_max_c", "temperature"),
+    "sealing_material_family": (
+        "sealing_material_family",
+        "material_family",
+        "compound_family",
+        "ptfe_compound_family",
+        "material",
+    ),
 }
 
 
@@ -84,7 +106,9 @@ def _has_profile_value(profile: dict[str, Any], key: str) -> bool:
     return False
 
 
-def _derivations_by_type(technical_derivations: Iterable[Any]) -> dict[str, dict[str, Any]]:
+def _derivations_by_type(
+    technical_derivations: Iterable[Any],
+) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for item in technical_derivations:
         payload = _as_dict(item)
@@ -117,7 +141,9 @@ def build_registered_check_results(
             for input_key in definition.required_inputs
             if not _has_profile_value(profile, input_key)
         ]
-        value = derivation.get(definition.output_key) if derivation is not None else None
+        value = (
+            derivation.get(definition.output_key) if derivation is not None else None
+        )
         status = str((derivation or {}).get("status") or "insufficient_data")
         if value is None or missing_inputs:
             status = "insufficient_data"
@@ -136,7 +162,11 @@ def build_registered_check_results(
                 "value": value if value is not None and not missing_inputs else None,
                 "fallback_behavior": definition.fallback_behavior,
                 "guardrails": list(definition.guardrails),
-                "notes": [str(item) for item in list((derivation or {}).get("notes") or []) if item],
+                "notes": [
+                    str(item)
+                    for item in list((derivation or {}).get("notes") or [])
+                    if item
+                ],
             }
         )
 

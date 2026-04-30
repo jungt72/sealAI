@@ -35,6 +35,7 @@ Result shape:
         ... (all RwdrCalcResult fields serialised to plain types)
         notes           — list[str] of engineering notes
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +44,10 @@ from typing import Any
 from langgraph.config import get_stream_writer
 
 from app.agent.graph import GraphState
-from app.services.calculation_engine import CascadingCalculationEngine, CalcExecutionRecord
+from app.services.calculation_engine import (
+    CascadingCalculationEngine,
+    CalcExecutionRecord,
+)
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +62,7 @@ def _emit_progress_event(payload: dict) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _float_or_none(assertions: dict, field: str) -> float | None:
     """Extract a float asserted value or return None."""
@@ -80,10 +85,20 @@ def _str_or_none(assertions: dict, field: str) -> str | None:
 
 
 def _material_family(assertions: dict) -> str:
-    material = (_str_or_none(assertions, "material") or "").strip().lower()
+    material = (
+        (
+            _str_or_none(assertions, "sealing_material_family")
+            or _str_or_none(assertions, "material_family")
+            or _str_or_none(assertions, "compound_family")
+            or _str_or_none(assertions, "material")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     if material.startswith("ptfe"):
-        return "ptfe_mixed_filled"
-    return "unknown"
+        return material if material != "ptfe" else "ptfe_mixed_filled"
+    return material or "unknown"
 
 
 def _build_canonical_case(assertions: dict) -> dict[str, Any]:
@@ -160,6 +175,7 @@ def _canonical_result_to_compute_result(
         "v_surface_m_s": derived.get("surface_speed_ms"),
         "pv_value_mpa_m_s": derived.get("pv_value_mpa_m_s"),
         "dn_value": derived.get("dn_value"),
+        "temperature_headroom_c": derived.get("temperature_headroom_c"),
         "notes": _notes_from_derived(assertions, derived),
         "calculation_records": _records_payload(records),
         "provenance": "calculated",
@@ -170,6 +186,7 @@ def _canonical_result_to_compute_result(
 # ---------------------------------------------------------------------------
 # Node
 # ---------------------------------------------------------------------------
+
 
 async def compute_node(state: GraphState) -> GraphState:
     """Zone 5 — Deterministic domain calculations.
@@ -185,7 +202,9 @@ async def compute_node(state: GraphState) -> GraphState:
     if "shaft_diameter_mm" in assertions and "speed_rpm" in assertions:
         try:
             case = _build_canonical_case(assertions)
-            calculated_state, records = CascadingCalculationEngine().execute_cascade(case)
+            calculated_state, records = CascadingCalculationEngine().execute_cascade(
+                case
+            )
             result_dict = _canonical_result_to_compute_result(
                 assertions=assertions,
                 state_after_cascade=calculated_state,

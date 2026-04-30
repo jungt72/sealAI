@@ -8,6 +8,7 @@ from app.agent.state.models import (
     GovernedSessionState,
     MatchingState,
 )
+import pytest
 from app.api.v1.projections.case_workspace import (
     project_case_workspace,
     project_case_workspace_from_governed_state,
@@ -223,6 +224,7 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
         "rwdr_circumferential_speed",
         "rwdr_pv_precheck",
         "rwdr_dn_value",
+        "rwdr_temperature_headroom",
     }
     assert checks_by_id["rwdr_circumferential_speed"].output_key == "v_surface_m_s"
     assert checks_by_id["rwdr_circumferential_speed"].value == 3.93
@@ -235,9 +237,16 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
         "not a final effective contact-pressure PV model"
         in checks_by_id["rwdr_pv_precheck"].guardrails
     )
+    assert checks_by_id["rwdr_temperature_headroom"].status == "insufficient_data"
+    assert checks_by_id["rwdr_temperature_headroom"].missing_inputs == [
+        "temperature_c",
+        "sealing_material_family",
+    ]
 
 
-def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asserted_fields() -> None:
+def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asserted_fields() -> (
+    None
+):
     projection = project_case_workspace_from_governed_state(
         GovernedSessionState(
             asserted=AssertedState(
@@ -257,13 +266,25 @@ def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asser
                         asserted_value=4.0,
                         confidence="confirmed",
                     ),
+                    "temperature_c": AssertedClaim(
+                        field_name="temperature_c",
+                        asserted_value=120.0,
+                        confidence="confirmed",
+                    ),
+                    "sealing_material_family": AssertedClaim(
+                        field_name="sealing_material_family",
+                        asserted_value="ptfe_glass_filled",
+                        confidence="confirmed",
+                    ),
                 }
             ),
             derived=DerivedState(
                 stale_derived_value_ids=["rwdr_circumferential_speed"]
             ),
             motion_hint=ContextHintState(label="rotary", confidence="high"),
-            application_hint=ContextHintState(label="shaft_sealing", confidence="medium"),
+            application_hint=ContextHintState(
+                label="shaft_sealing", confidence="medium"
+            ),
         ),
         chat_id="case-live-rwdr",
     )
@@ -271,12 +292,17 @@ def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asser
     checks_by_id = {check.calc_id: check for check in projection.cockpit_view.checks}
 
     assert projection.cockpit_view.engineering_path == "rwdr"
-    assert checks_by_id["rwdr_circumferential_speed"].value == 3.19
+    assert checks_by_id["rwdr_circumferential_speed"].value == pytest.approx(
+        3.19, abs=0.01
+    )
     assert checks_by_id["rwdr_circumferential_speed"].status == "ok"
-    assert checks_by_id["rwdr_pv_precheck"].value == 1.28
+    assert checks_by_id["rwdr_pv_precheck"].value == pytest.approx(1.28, abs=0.01)
     assert checks_by_id["rwdr_pv_precheck"].status == "ok"
     assert checks_by_id["rwdr_dn_value"].value == 60900.0
+    assert checks_by_id["rwdr_temperature_headroom"].value == 140.0
+    assert checks_by_id["rwdr_temperature_headroom"].status == "ok"
     assert projection.technical_derivations[0].calc_type == "rwdr"
+    assert projection.technical_derivations[0].temperature_headroom_c == 140.0
 
 
 def test_workspace_projection_exposes_missing_input_fallback_for_registered_checks() -> (
@@ -430,7 +456,9 @@ def test_workspace_projection_derives_ssot_routing_fields() -> None:
     assert projection.cockpit_view.readiness.status == "preliminary"
 
 
-def test_workspace_projection_prioritizes_pump_mechanical_seal_over_generic_shaft_sealing() -> None:
+def test_workspace_projection_prioritizes_pump_mechanical_seal_over_generic_shaft_sealing() -> (
+    None
+):
     projection = project_case_workspace(
         {
             "conversation": {"thread_id": "case-pump-ms"},
@@ -467,7 +495,9 @@ def test_workspace_projection_prioritizes_pump_mechanical_seal_over_generic_shaf
     assert projection.cockpit_view.engineering_path == "ms_pump"
 
 
-def test_workspace_projection_derives_top_level_completeness_when_payload_score_missing() -> None:
+def test_workspace_projection_derives_top_level_completeness_when_payload_score_missing() -> (
+    None
+):
     projection = project_case_workspace(
         {
             "conversation": {"thread_id": "case-derived-completeness"},

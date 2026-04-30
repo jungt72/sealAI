@@ -73,6 +73,7 @@ export type WorkspaceTechnicalDerivation = {
   vSurfaceMPerS: number | null;
   pvValueMpaMPerS: number | null;
   dnValue: number | null;
+  temperatureHeadroomC: number | null;
   notes: string[];
 };
 

@@ -333,6 +333,7 @@ class TechnicalDerivationItem(BaseModel):
     v_surface_m_s: Optional[float] = None
     pv_value_mpa_m_s: Optional[float] = None
     dn_value: Optional[float] = None
+    temperature_headroom_c: Optional[float] = None
     value: Any = None
     derived_value_id: Optional[str] = None
     derived_from_fields: List[str] = Field(default_factory=list)
@@ -578,9 +579,7 @@ class DecisionUnderstandingProjection(BaseModel):
     current_state_analysis: CurrentStateAnalysisProjection = Field(
         default_factory=CurrentStateAnalysisProjection
     )
-    next_best_questions: List[NextBestQuestionProjection] = Field(
-        default_factory=list
-    )
+    next_best_questions: List[NextBestQuestionProjection] = Field(default_factory=list)
     completeness_score: CompletenessScoreProjection = Field(
         default_factory=CompletenessScoreProjection
     )
@@ -633,9 +632,7 @@ class CaseWorkspaceProjection(BaseModel):
     current_state_analysis: CurrentStateAnalysisProjection = Field(
         default_factory=CurrentStateAnalysisProjection
     )
-    next_best_questions: List[NextBestQuestionProjection] = Field(
-        default_factory=list
-    )
+    next_best_questions: List[NextBestQuestionProjection] = Field(default_factory=list)
     completeness_score: CompletenessScoreProjection = Field(
         default_factory=CompletenessScoreProjection
     )

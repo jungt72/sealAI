@@ -41,8 +41,8 @@ const CALCULATION_DEFINITIONS = [
   },
   {
     label: "Temperaturfenster",
-    outputKeys: ["temperature_window"],
-    requiredInputs: ["temperature_c", "medium"],
+    outputKeys: ["temperature_headroom_c"],
+    requiredInputs: ["temperature_c", "sealing_material_family"],
     reason: "Wichtig, weil Medium und Temperatur die Werkstoffprüfung bestimmen.",
   },
   {
@@ -89,6 +89,8 @@ function readableMissingInput(input: string) {
       return "Medium";
     case "temperature_c":
       return "Temperatur";
+    case "sealing_material_family":
+      return "Werkstofffamilie";
     case "pressure_bar":
       return "Druck";
     case "speed_rpm":
@@ -197,6 +199,10 @@ function findConcreteDerivation(workspace: WorkspaceView, outputKey: string) {
       return hasDisplayValue(derivation.pvValueMpaMPerS) ? `${derivation.pvValueMpaMPerS} MPa·m/s` : null;
     case "dn_value":
       return hasDisplayValue(derivation.dnValue) ? `${derivation.dnValue}` : null;
+    case "temperature_headroom_c":
+      return hasDisplayValue(derivation.temperatureHeadroomC)
+        ? `${derivation.temperatureHeadroomC} °C`
+        : null;
     default:
       return null;
   }

@@ -62,6 +62,7 @@ def test_ptfe_rwdr_workspace_enrichment_runs_cascade_and_advisories() -> None:
     assert derivation.v_surface_m_s and derivation.v_surface_m_s > 0
     assert derivation.pv_value_mpa_m_s and derivation.pv_value_mpa_m_s > 0
     assert derivation.dn_value == 75000
+    assert derivation.temperature_headroom_c == 140
     assert any("ptfe_rwdr.circumferential_speed" in note for note in derivation.notes)
     assert any(
         "Application pattern candidate: hydraulic_gearbox_standard" in note
@@ -70,6 +71,12 @@ def test_ptfe_rwdr_workspace_enrichment_runs_cascade_and_advisories() -> None:
     assert any("shaft_requirements_concern" in note for note in derivation.notes)
     assert any(
         check.calc_id == "rwdr_circumferential_speed" and check.status == "ok"
+        for check in projection.cockpit_view.checks
+    )
+    assert any(
+        check.calc_id == "rwdr_temperature_headroom"
+        and check.status == "ok"
+        and check.value == 140
         for check in projection.cockpit_view.checks
     )
     assert projection.medium_context.status == "recognized"
@@ -101,7 +108,11 @@ def test_non_ptfe_rwdr_keeps_existing_rwdr_calculation_source() -> None:
     )
 
     assert projection.engineering_path == "rwdr"
-    assert projection.technical_derivations == []
+    assert projection.technical_derivations
+    assert all(
+        "ptfe_rwdr" not in " ".join(item.notes)
+        for item in projection.technical_derivations
+    )
     assert projection.partner_matching.data_source == "candidate_derived"
 
 

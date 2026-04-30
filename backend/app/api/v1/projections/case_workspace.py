@@ -148,7 +148,9 @@ def _build_completeness_status(
         coverage_gaps=coverage_gaps,
         completeness_depth=depth,
         missing_critical_parameters=missing_critical,
-        discovery_missing=[str(item) for item in _ls(payload.get("discovery_missing")) if item],
+        discovery_missing=[
+            str(item) for item in _ls(payload.get("discovery_missing")) if item
+        ],
         analysis_complete=bool(payload.get("analysis_complete", False)),
         recommendation_ready=bool(payload.get("recommendation_ready", False)),
     )
@@ -1137,7 +1139,12 @@ def _technical_derivation_from_live_calc_tile(
         return None
     if not any(
         tile.get(key) is not None
-        for key in ("v_surface_m_s", "pv_value_mpa_m_s", "dn_value")
+        for key in (
+            "v_surface_m_s",
+            "pv_value_mpa_m_s",
+            "dn_value",
+            "temperature_headroom_c",
+        )
     ):
         return None
     return TechnicalDerivationItem(
@@ -1146,6 +1153,7 @@ def _technical_derivation_from_live_calc_tile(
         v_surface_m_s=tile.get("v_surface_m_s"),
         pv_value_mpa_m_s=tile.get("pv_value_mpa_m_s"),
         dn_value=tile.get("dn_value"),
+        temperature_headroom_c=tile.get("temperature_headroom_c"),
         notes=[str(item) for item in _ls(tile.get("notes")) if item],
     )
 
@@ -1173,26 +1181,60 @@ def _technical_derivation_from_current_profile(
         profile, "shaft_diameter_mm", "shaft_diameter", "diameter"
     )
     speed_rpm = _float_from_profile(profile, "speed_rpm", "rpm", "speed")
-    if shaft_diameter_mm is None or speed_rpm is None:
+    temperature_c = _float_from_profile(
+        profile, "temperature_c", "temperature_max_c", "temperature"
+    )
+    material_family = (
+        str(
+            profile.get("sealing_material_family")
+            or profile.get("material_family")
+            or profile.get("compound_family")
+            or profile.get("ptfe_compound_family")
+            or profile.get("material")
+            or ""
+        )
+        .strip()
+        .casefold()
+    )
+    temperature_headroom_c: float | None = None
+    if temperature_c is not None and material_family:
+        limit = 260.0 if material_family.startswith("ptfe") else 180.0
+        temperature_headroom_c = round(limit - temperature_c, 2)
+
+    has_dynamic_inputs = shaft_diameter_mm is not None and speed_rpm is not None
+    if not has_dynamic_inputs and temperature_headroom_c is None:
         return None
 
-    v_surface_m_s = math.pi * shaft_diameter_mm / 1000.0 * speed_rpm / 60.0
+    v_surface_m_s = (
+        math.pi * shaft_diameter_mm / 1000.0 * speed_rpm / 60.0
+        if has_dynamic_inputs
+        and shaft_diameter_mm is not None
+        and speed_rpm is not None
+        else None
+    )
     pressure_bar = _float_from_profile(
         profile, "pressure_bar", "pressure_nominal", "pressure_max_bar", "pressure"
     )
     pv_value_mpa_m_s = (
-        pressure_bar * 0.1 * v_surface_m_s if pressure_bar is not None else None
+        pressure_bar * 0.1 * v_surface_m_s
+        if pressure_bar is not None and v_surface_m_s is not None
+        else None
     )
-    dn_value = shaft_diameter_mm * speed_rpm
+    dn_value = (
+        shaft_diameter_mm * speed_rpm
+        if shaft_diameter_mm is not None and speed_rpm is not None
+        else None
+    )
 
     return TechnicalDerivationItem(
         calc_type="rwdr",
         status="ok",
-        v_surface_m_s=round(v_surface_m_s, 2),
+        v_surface_m_s=round(v_surface_m_s, 2) if v_surface_m_s is not None else None,
         pv_value_mpa_m_s=(
             round(pv_value_mpa_m_s, 2) if pv_value_mpa_m_s is not None else None
         ),
-        dn_value=round(dn_value, 2),
+        dn_value=round(dn_value, 2) if dn_value is not None else None,
+        temperature_headroom_c=temperature_headroom_c,
         notes=[
             "Deterministisch aus aktuellen Workspace-Parametern berechnet; keine Herstellerfreigabe."
         ],
@@ -1620,6 +1662,7 @@ def synthesize_workspace_state_from_governed(
                 "v_surface_m_s": result.get("v_surface_m_s"),
                 "pv_value_mpa_m_s": result.get("pv_value_mpa_m_s"),
                 "dn_value": result.get("dn_value"),
+                "temperature_headroom_c": result.get("temperature_headroom_c"),
                 "notes": [
                     str(item) for item in list(result.get("notes") or []) if item
                 ],
@@ -1631,6 +1674,9 @@ def synthesize_workspace_state_from_governed(
             "v_surface_m_s": technical_derivations[0].get("v_surface_m_s"),
             "pv_value_mpa_m_s": technical_derivations[0].get("pv_value_mpa_m_s"),
             "dn_value": technical_derivations[0].get("dn_value"),
+            "temperature_headroom_c": technical_derivations[0].get(
+                "temperature_headroom_c"
+            ),
             "notes": technical_derivations[0].get("notes") or [],
         }
     release_status = _governed_release_status(state)

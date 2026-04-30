@@ -206,6 +206,7 @@ function workspaceFixture(): WorkspaceView {
         vSurfaceMPerS: 2.64,
         pvValueMpaMPerS: 0.48,
         dnValue: 50400,
+        temperatureHeadroomC: null,
         notes: ["Backend-Ableitung aus Durchmesser und Drehzahl."],
       },
     ],

@@ -253,6 +253,7 @@ type LegacyWorkspaceProjection = {
     v_surface_m_s?: number | null;
     pv_value_mpa_m_s?: number | null;
     dn_value?: number | null;
+    temperature_headroom_c?: number | null;
     notes?: string[];
   }>;
   medium_capture?: {
@@ -952,6 +953,8 @@ export function mapWorkspaceView(
       pvValueMpaMPerS:
         typeof item.pv_value_mpa_m_s === "number" ? item.pv_value_mpa_m_s : null,
       dnValue: typeof item.dn_value === "number" ? item.dn_value : null,
+      temperatureHeadroomC:
+        typeof item.temperature_headroom_c === "number" ? item.temperature_headroom_c : null,
       notes: item.notes || [],
     })),
     specificity: {

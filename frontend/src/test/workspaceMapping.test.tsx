@@ -105,6 +105,7 @@ describe("mapWorkspaceView", () => {
           v_surface_m_s: 3.93,
           pv_value_mpa_m_s: 0.39,
           dn_value: 75000,
+          temperature_headroom_c: 140,
           notes: ["Dn-Wert liegt im ueblichen Richtbereich."],
         },
       ],
@@ -222,5 +223,6 @@ describe("mapWorkspaceView", () => {
     expect(workspace.mediumContext.notForReleaseDecisions).toBe(true);
     expect(workspace.technicalDerivations?.[0]?.calcType).toBe("rwdr");
     expect(workspace.technicalDerivations?.[0]?.dnValue).toBe(75000);
+    expect(workspace.technicalDerivations?.[0]?.temperatureHeadroomC).toBe(140);
   });
 });

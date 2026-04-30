@@ -325,6 +325,7 @@ function legacyProjection() {
         v_surface_m_s: 3.93,
         pv_value_mpa_m_s: 0.39,
         dn_value: 75000,
+        temperature_headroom_c: 140,
         notes: ["Dn-Wert liegt im ueblichen Richtbereich."],
       },
     ],
@@ -375,6 +376,7 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.parameters?.speed_rpm, 6000);
   assert.equal(workspace.technicalDerivations?.[0]?.calcType, "rwdr");
   assert.equal(workspace.technicalDerivations?.[0]?.vSurfaceMPerS, 3.93);
+  assert.equal(workspace.technicalDerivations?.[0]?.temperatureHeadroomC, 140);
   assert.equal(workspace.deepDiveTabs[0]?.tabId, "material");
   assert.equal(workspace.deepDiveTabs[0]?.cards[0]?.title, "Werkstoffbasis");
   assert.equal(workspace.deepDiveTabs[0]?.nextAction, "Oberflaeche klaeren");
