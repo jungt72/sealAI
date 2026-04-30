@@ -132,6 +132,15 @@ Forbidden language unless backed by explicit evidence:
 - final compatibility confirmation
 - final root cause
 
+## SeaLAI LLM Safety Rules
+
+- Backend state, deterministic services, calculations, rules, and evidence are the source of truth.
+- LLMs may explain, summarize, ask targeted questions, and make the experience more human, but must not create engineering truth.
+- Case-bound engineering statements must be grounded in explicit `allowed_claims`.
+- LLMs must never directly confirm fields, compute readiness, approve materials, select final sealing solutions, assert manufacturer acceptance, or override deterministic services.
+- Field extraction from chat creates proposals only; existing governor/reducer logic decides what becomes state.
+- Tests for LLM-facing features must use deterministic mocks and cover prompt injection, unsupported claims, fabricated IDs/evidence, and final-release language.
+
 ---
 
 ## Current scope

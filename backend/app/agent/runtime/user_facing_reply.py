@@ -6,6 +6,8 @@ from typing import Any, Optional, TypedDict
 
 import openai
 
+from app.agent.communication.llm_service import OpenAIHumanCommunicationLLMService
+from app.agent.communication.orchestrator import ConversationOrchestrator
 from app.agent.runtime.reply_composition import (
     GovernedAllowedSurfaceClaims,
     build_governed_render_prompt,
@@ -79,6 +81,43 @@ async def collect_governed_visible_reply(
     ).strip()
     if isinstance(claims_spec, dict):
         claims_spec["fallback_text"] = effective_fallback_text
+
+    if os.environ.get("HUMAN_COMMUNICATION_LAYER_ENABLED", "true").lower() != "false":
+        try:
+            orchestrator = ConversationOrchestrator(
+                llm_service=OpenAIHumanCommunicationLLMService(
+                    model_name=_GOVERNED_REFORMULATE_MODEL,
+                    client_factory=openai.AsyncOpenAI,
+                )
+            )
+            result = await orchestrator.handle_governed_reply(
+                response_class=response_class,
+                turn_context=turn_context,
+                fallback_text=effective_fallback_text,
+            )
+            _log.info(
+                "[human_communication] turn_id=%s case_id=%s mode=%s guard=%s claims=%s model=%s",
+                result.trace.turn_id,
+                result.trace.case_id,
+                result.trace.mode,
+                result.trace.guard_result,
+                ",".join(result.trace.allowed_claim_ids_used[:12]),
+                result.trace.model_name,
+            )
+            if result.used_fallback:
+                return effective_fallback_text
+            guarded_text = guard_governed_rendered_text(
+                result.assistant_message,
+                fallback_text=effective_fallback_text,
+                allowed_surface_claims=claims_spec,
+            )
+            rendered = render_response(guarded_text, path="GOVERNED")
+            return str(rendered.text or effective_fallback_text).strip()
+        except Exception as exc:  # noqa: BLE001
+            _log.warning(
+                "[user_facing_reply] human communication layer failed (%s) — using legacy governed renderer",
+                exc,
+            )
 
     system_prompt = _prompt_builder.conversation()
     render_prompt = build_governed_render_prompt(
