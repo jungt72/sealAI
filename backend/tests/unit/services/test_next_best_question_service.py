@@ -75,6 +75,16 @@ def test_flat_gasket_asks_flange_pressure_material_style_question() -> None:
     assert _focuses(result)[:3] == ["flange_standard", "pressure", "gasket_material"]
 
 
+def test_flat_gasket_question_set_includes_geometry_surface_and_certification() -> None:
+    result = derive_needs_current_state_and_questions(
+        _state(seal_type=SealType.flange_gasket)
+    )
+
+    focuses = _focuses(result)
+    assert focuses[:3] == ["flange_standard", "pressure", "gasket_material"]
+    assert "Wellendichtring" not in " ".join(question.question for question in result.next_best_questions)
+
+
 def test_hydraulic_rod_seal_asks_pressure_fluid_groove_style_question() -> None:
     result = derive_needs_current_state_and_questions(
         _state(
@@ -84,6 +94,21 @@ def test_hydraulic_rod_seal_asks_pressure_fluid_groove_style_question() -> None:
     )
 
     assert _focuses(result)[:3] == ["pressure", "hydraulic_fluid", "groove_dimensions"]
+
+
+def test_hydraulic_rod_seal_keeps_cylinder_specific_followups() -> None:
+    result = derive_needs_current_state_and_questions(
+        _state(
+            seal_type=SealType.hydraulic_rod_seal,
+            profile={"pressure_bar": 160, "medium": "HLP 46", "groove_dimensions": "unknown"},
+        )
+    )
+
+    focuses = _focuses(result)
+    assert focuses[:3] == ["rod_or_piston_diameter", "pressure_peaks", "speed_or_stroke"]
+    text = " ".join(question.question for question in result.next_best_questions)
+    assert "Stangen- oder Kolbendurchmesser" in text
+    assert "Druckspitzen" in text
 
 
 def test_mechanical_seal_asks_medium_pressure_flush_or_solids_question() -> None:
@@ -97,9 +122,24 @@ def test_mechanical_seal_asks_medium_pressure_flush_or_solids_question() -> None
 
     assert _focuses(result)[:3] == [
         "pressure",
+        "pump_or_aggregate_type",
         "flush_or_barrier_fluid",
-        "solids_or_gas_content",
     ]
+
+
+def test_pneumatic_rod_seal_asks_air_quality_and_lubrication_not_hydraulic_fluid() -> None:
+    result = derive_needs_current_state_and_questions(
+        _state(
+            seal_type=SealType.pneumatic_rod_seal,
+            profile={"pressure_bar": 6},
+        )
+    )
+
+    focuses = _focuses(result)
+    assert focuses[:3] == ["air_quality", "lubrication", "groove_dimensions"]
+    assert "hydraulic_fluid" not in focuses
+    text = " ".join(question.question for question in result.next_best_questions)
+    assert "Druckluft" in text
 
 
 def test_o_ring_asks_dimensions_groove_material_style_question() -> None:

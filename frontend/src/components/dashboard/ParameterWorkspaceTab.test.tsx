@@ -11,6 +11,78 @@ function workspaceFixture(): WorkspaceView {
     caseId: "case-parameter",
     requestType: "new_design",
     engineeringPath: "ms_pump",
+    sealApplicationProfile: {
+      sealFamily: "mechanical_face",
+      sealType: "mechanical_seal",
+      sealTypeConfidence: 0.9,
+      confidenceBand: "high",
+      matchedAlias: "Gleitringdichtung",
+      ambiguous: false,
+      candidateTypes: ["mechanical_seal"],
+      applicationDomain: "pump",
+      motionType: "rotary",
+      standardRefs: [],
+      typeSpecificMissingHints: [
+        "pump_or_aggregate_type",
+        "shaft_diameter",
+        "flush_or_barrier_fluid",
+        "solids_or_gas_content",
+        "atex_or_leakage_requirement",
+      ],
+      notes: [],
+      source: "seal_type_normalizer",
+    },
+    decisionUnderstanding: {
+      caseSummary: "Pumpenfall mit Ethanol, 150 °C und 10 bar.",
+      understoodNow: ["Medium Ethanol", "Temperatur 150 °C"],
+      technicalMeaning: [],
+      plausibleDirections: [],
+      notYetDecidable: ["Dichtstellendruck unklar"],
+      keyRisks: [],
+      confidenceNotes: [],
+      nextBestQuestion: "Ist eine Spülung, Sperrflüssigkeit oder Barriere vorgesehen?",
+      manufacturerReviewNeeds: [],
+      needsAnalysis: {
+        primaryNeed: "prepare_manufacturer_review_ready_rfq_basis",
+        secondaryNeeds: ["rfq_readiness"],
+        urgency: "normal",
+        userSide: null,
+        contextSide: null,
+        confidence: 0.6,
+        notes: [],
+      },
+      currentStateAnalysis: {
+        knownFields: ["medium", "temperature", "pressure"],
+        missingFields: ["flush_or_barrier_fluid", "solids_or_gas_content"],
+        uncertainFields: [],
+        conflictingFields: [],
+        evidenceBackedFields: [],
+        sealTypeStatus: "known_not_confirmed",
+        readinessHint: "precheck",
+        confidence: 0.5,
+      },
+      nextBestQuestions: [
+        {
+          question: "Ist eine Spülung, Sperrflüssigkeit oder Barriere vorgesehen?",
+          reason: "Bei Gleitringdichtungen beeinflusst die Versorgung das Dichtprinzip und die Prüfbarkeit.",
+          focusKey: "flush_or_barrier_fluid",
+          priority: 1,
+          expectedAnswerType: "text",
+          appliesToCaseType: "new_rfq",
+          appliesToSealType: "mechanical_seal",
+          source: "next_best_question_service",
+          maxQuestionsPolicy: "ask_1_to_3_targeted_questions",
+        },
+      ],
+      completenessScore: {
+        score: 0.5,
+        missingCriticalCount: 2,
+        knownCriticalCount: 3,
+        uncertaintyCount: 0,
+        conflictCount: 0,
+        notes: [],
+      },
+    },
     parameters: {
       medium: "Ethanol",
       temperature_c: 150,
@@ -269,6 +341,10 @@ describe("ParameterWorkspaceTab", () => {
     expect(screen.getByText("Woher: KI-Hinweis")).toBeInTheDocument();
     expect(screen.getByText("Status: noch nicht geprüft")).toBeInTheDocument();
     expect(screen.getAllByText("bestätigt").length).toBeGreaterThan(0);
+    expect(screen.getByText("Passende Zusatzangaben")).toBeInTheDocument();
+    expect(screen.getByText("Pumpe / Aggregat")).toBeInTheDocument();
+    expect(screen.getByText("Spülung / Sperrmedium")).toBeInTheDocument();
+    expect(screen.getByText(/Ist eine Spülung, Sperrflüssigkeit oder Barriere vorgesehen/i)).toBeInTheDocument();
   });
 
   it("submits canonical user override fields for governed state processing", async () => {

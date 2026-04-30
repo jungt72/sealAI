@@ -7,6 +7,7 @@ from app.domain.seal_type import (
     SealType,
     normalize_seal_type,
     seal_family_for_type,
+    type_specific_missing_hints_for_type,
 )
 
 
@@ -230,3 +231,31 @@ def test_explicit_text_beats_weak_engineering_path_hint_with_ambiguity_note() ->
     assert result.ambiguous is True
     assert SealType.radial_shaft_seal in result.candidate_types
     assert any("explicit alias preferred" in note for note in result.notes)
+
+
+def test_type_specific_hints_are_distinct_for_hydraulic_flat_and_mechanical_cases() -> None:
+    hydraulic = type_specific_missing_hints_for_type(SealType.hydraulic_rod_seal)
+    flat = type_specific_missing_hints_for_type(SealType.flange_gasket)
+    mechanical = type_specific_missing_hints_for_type(SealType.mechanical_seal)
+
+    assert "rod_or_piston_diameter" in hydraulic
+    assert "single_or_double_acting" in hydraulic
+    assert "flange_standard" in flat
+    assert "hole_pattern" in flat
+    assert "pump_or_aggregate_type" in mechanical
+    assert "flush_or_barrier_fluid" in mechanical
+    assert "flange_standard" not in hydraulic
+    assert "hydraulic_fluid" not in flat
+
+
+@pytest.mark.parametrize(
+    "seal_type, expected",
+    [
+        (SealType.o_ring, "hardness"),
+        (SealType.x_ring, "squeeze_or_stretch"),
+        (SealType.pneumatic_rod_seal, "air_quality"),
+        (SealType.hydraulic_wiper, "water_content"),
+    ],
+)
+def test_additional_families_have_specific_hints(seal_type: SealType, expected: str) -> None:
+    assert expected in type_specific_missing_hints_for_type(seal_type)

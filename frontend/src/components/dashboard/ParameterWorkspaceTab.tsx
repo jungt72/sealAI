@@ -142,6 +142,45 @@ const COCKPIT_FIELD_ALIASES: Record<string, string[]> = {
   counterface_surface: ["surface_finish"],
 };
 
+const TYPE_SPECIFIC_FIELD_LABELS: Record<string, string> = {
+  flange_standard: "Flansch / Norm",
+  flange_size_or_dimensions: "Flanschgröße / Zeichnungsmaß",
+  inner_outer_diameter: "Innen- und Außendurchmesser",
+  hole_pattern: "Lochbild",
+  gasket_material: "Dichtungsmaterial",
+  thickness: "Dicke",
+  bolt_load_or_torque: "Schraubenkraft / Drehmoment",
+  surface_roughness: "Dichtflächen",
+  certification_requirement: "Nachweise",
+  rod_or_piston_diameter: "Stangen- oder Kolbendurchmesser",
+  groove_dimensions: "Nut / Einbauraum",
+  pressure_peaks: "Druckspitzen",
+  hydraulic_fluid: "Hydraulikmedium",
+  speed_or_stroke: "Hub / Geschwindigkeit",
+  single_or_double_acting: "einfach- oder doppeltwirkend",
+  contamination: "Verschmutzung",
+  wiper_or_guide_required: "Abstreifer / Führung / Stützring",
+  water_content: "Wasser / Kondensat",
+  air_quality: "Druckluftqualität",
+  lubrication: "Schmierung",
+  friction_requirement: "Reibungsanforderung",
+  pump_or_aggregate_type: "Pumpe / Aggregat",
+  flush_or_barrier_fluid: "Spülung / Sperrmedium",
+  solids_or_gas_content: "Feststoffe / Gas / Kristallisation",
+  viscosity: "Viskosität / Aggregatzustand",
+  atex_or_leakage_requirement: "ATEX / Leckageanforderung",
+  inner_diameter: "Innendurchmesser",
+  cross_section: "Schnurstärke",
+  material: "Werkstoff",
+  hardness: "Härte",
+  static_or_dynamic: "statisch oder dynamisch",
+  squeeze_or_stretch: "Verpressung / Dehnung",
+  backup_ring_required: "Stützring",
+  shaft_or_stem_diameter: "Wellen- oder Spindeldurchmesser",
+  stuffing_box_dimensions: "Stopfbuchsraum",
+  lubrication_or_flush: "Schmierung / Spülung",
+};
+
 type ParameterFormState = Record<string, string>;
 
 function valueFor(workspace: WorkspaceView | null, fieldName: string): string {
@@ -162,6 +201,11 @@ function readableCode(value: string | null | undefined): string {
   return String(value || "")
     .replace(/[_-]+/g, " ")
     .trim();
+}
+
+function technicalFieldLabel(value: string | null | undefined): string {
+  const code = normalizeCode(value);
+  return TYPE_SPECIFIC_FIELD_LABELS[code] || humanizeDisplayText(value || "");
 }
 
 function sourceLabel(value: string | null | undefined): string {
@@ -370,6 +414,68 @@ function ParameterFieldCard({
   );
 }
 
+function TypeSpecificParameterGuidance({ workspace }: { workspace: WorkspaceView | null }) {
+  const sealProfile = workspace?.sealApplicationProfile;
+  const questions = workspace?.decisionUnderstanding?.nextBestQuestions ?? [];
+  const missingHints = sealProfile?.typeSpecificMissingHints ?? [];
+  const visibleQuestions = questions
+    .filter((question) => question.question)
+    .sort((left, right) => left.priority - right.priority)
+    .slice(0, 3);
+
+  if (!workspace || (missingHints.length === 0 && visibleQuestions.length === 0)) {
+    return (
+      <section className="rounded-[18px] border border-[#E5E7EB] bg-[#FAFAFB] p-4">
+        <h3 className="text-sm font-semibold text-[#111827]">Passende Zusatzangaben</h3>
+        <p className="mt-1 text-sm leading-relaxed text-[#4B5563]">
+          Sobald der Dichtungstyp klarer ist, zeigt SeaLAI hier die Angaben, die für genau diesen Fall wichtig sind.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-[#111827]">Passende Zusatzangaben</h3>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
+            Der Parameter-Tab passt sich an den Dichtungstyp an. Hydraulik, Flachdichtung, O-Ring, RWDR und Gleitringdichtung brauchen unterschiedliche Angaben.
+          </p>
+        </div>
+        {sealProfile?.sealType && (
+          <MetadataBadge label={technicalFieldLabel(sealProfile.sealType)} tone={sealProfile.ambiguous ? "warning" : "info"} />
+        )}
+      </div>
+
+      {missingHints.length > 0 && (
+        <div className="mt-3">
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Noch offen</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {missingHints.slice(0, 12).map((hint) => (
+              <span key={hint} className="rounded-full border border-[#D1D5DB] bg-white px-2.5 py-1 text-[12px] font-semibold text-[#374151]">
+                {technicalFieldLabel(hint)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {visibleQuestions.length > 0 && (
+        <div className="mt-4 grid gap-2">
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Nächste sinnvolle Fragen</div>
+          {visibleQuestions.map((question) => (
+            <div key={`${question.priority}-${question.focusKey}`} className="rounded-[14px] border border-[#E5E7EB] bg-white p-3">
+              <div className="text-sm font-semibold leading-relaxed text-[#111827]">{question.question}</div>
+              {question.reason && <div className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">{question.reason}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function ParameterWorkspaceTab({
   workspace,
   isSubmitting = false,
@@ -474,6 +580,10 @@ export function ParameterWorkspaceTab({
               }
             />
           ))}
+        </div>
+
+        <div className="mt-4">
+          <TypeSpecificParameterGuidance workspace={workspace} />
         </div>
 
         {error && (
