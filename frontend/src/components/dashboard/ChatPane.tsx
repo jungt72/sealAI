@@ -41,11 +41,11 @@ function MessageBubble({
       )}
       <div
         className={cn(
-          "max-w-[min(720px,84%)] rounded-[18px] border px-4 py-3 text-[14px] leading-relaxed shadow-sm",
+          "max-w-[min(720px,84%)] text-[14px] leading-relaxed",
           isUser
-            ? "border-[#CFE0FF] bg-[#EEF5FF] text-[#1F3B63]"
-            : "border-[#E7ECF3] bg-white text-slate-900",
-          isStreaming && "border-[#BFD4FF] shadow-[#0B5BD3]/10",
+            ? "rounded-[18px] border border-[#CFE0FF] bg-[#EEF5FF] px-4 py-3 text-[#1F3B63] shadow-sm"
+            : "px-1 py-1 text-slate-900",
+          isUser && isStreaming && "border-[#BFD4FF] shadow-[#0B5BD3]/10",
         )}
       >
         {isUser ? (

@@ -106,6 +106,20 @@ describe("ChatPane", () => {
     expect(screen.getByTestId("chat-composer")).toBeInTheDocument();
   });
 
+  it("renders assistant replies without a bordered bubble surface", () => {
+    agentStreamMockState.messages = [
+      { role: "assistant", content: "**Arbeitsstand:** Medium offen." },
+    ];
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    const assistantText = screen.getByText("Arbeitsstand:");
+    const assistantSurface = assistantText.closest(".max-w-\\[min\\(720px\\,84\\%\\)\\]");
+    expect(assistantSurface).not.toHaveClass("border");
+    expect(assistantSurface).not.toHaveClass("bg-white");
+    expect(assistantSurface).not.toHaveClass("shadow-sm");
+  });
+
   it("renders assistant markdown with compact professional structure", () => {
     agentStreamMockState.messages = [
       { role: "user", content: "Flachdichtung, Wasser, 80 Grad und 6 bar." },
