@@ -494,6 +494,23 @@ class TestStreamConversation:
         assert state_update["reply"] == "Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"
 
     @pytest.mark.asyncio
+    async def test_CONVERSATION_smalltalk_removes_technical_capture_sentences(self):
+        with _patch_openai(
+            [
+                "Mir geht es gut, danke. "
+                "Wenn du eine konkrete Anwendung hast, nenne Medium, Druck und Temperatur."
+            ]
+        ):
+            events = await _collect(stream_conversation("Hallo, wie geht es dir?", mode="CONVERSATION"))
+
+        parsed = _parse_events(events)
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert state_update["reply"] == "Mir geht es gut, danke."
+        assert "Medium" not in state_update["reply"]
+        assert "Druck" not in state_update["reply"]
+        assert "Temperatur" not in state_update["reply"]
+
+    @pytest.mark.asyncio
     async def test_gpt5_conversation_model_uses_responses_api_stream(self):
         mock_client = MagicMock()
         mock_client.responses.create = AsyncMock(

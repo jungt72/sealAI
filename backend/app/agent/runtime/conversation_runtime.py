@@ -59,6 +59,16 @@ _CONVERSATION_MODEL = os.environ.get("SEALAI_CONVERSATION_MODEL", get_model_for_
 _prompt_builder = PromptBuilder()
 
 _GREETING_RE = re.compile(r"^\s*(hallo|hi|hey|guten tag|guten morgen|moin)\b[\s!,.?]*$", re.IGNORECASE)
+_SMALLTALK_RE = re.compile(
+    r"^\s*((hallo|hi|hey|moin|servus|guten\s+(tag|morgen|abend))[\s,!.?]+)?"
+    r"(wie\s+geht('?s|\s+es\s+dir)(?:\s+heute)?|hallo|hi|hey|moin|servus|guten\s+(tag|morgen|abend))"
+    r"[\s?!.]*$",
+    re.IGNORECASE | re.UNICODE,
+)
+_SMALLTALK_TECH_CAPTURE_RE = re.compile(
+    r"\b(medium|druck|temperatur|parameter|werkstoffwahl|werkstoff|anwendung|dichtungsfall|fall\s+anlegen)\b",
+    re.IGNORECASE | re.UNICODE,
+)
 _OPEN_ENTRY_RE = re.compile(
     r"\b(moechte|möchte|will|wir suchen|suche|brauche|erarbeiten|entwickeln|auslegen|hilfe|unterstuetzung|unterstützung)\b",
     re.IGNORECASE,
@@ -172,6 +182,21 @@ def _build_messages(
     msgs: list[dict[str, str]] = []
     if system_prompt:
         msgs.append({"role": "system", "content": system_prompt})
+    if mode == "CONVERSATION" and _is_smalltalk_turn(message):
+        msgs.append(
+            {
+                "role": "system",
+                "content": (
+                    "STRICT SMALL-TALK TURN:\n"
+                    "- Antworte nur auf die Begruessung oder die Frage, wie es dir geht.\n"
+                    "- Maximal zwei kurze Saetze, warm und menschlich.\n"
+                    "- Keine technischen Rueckfragen.\n"
+                    "- Keine Erwaehnung von Medium, Druck, Temperatur, Parametern oder Werkstoffwahl.\n"
+                    "- Keine Fallanlage und keine Checkliste.\n"
+                    "- Optional: Biete danach locker Hilfe bei einer Dichtungsfrage an."
+                ),
+            }
+        )
     strategy_instruction = (
         build_turn_context_instruction(turn_context)
         if phase_prompt is None
@@ -290,6 +315,25 @@ def _build_light_open_points_summary(
     if strategy is None or not strategy.primary_question:
         return []
     return [str(strategy.primary_question).rstrip("?").strip()]
+
+
+def _is_smalltalk_turn(message: str) -> bool:
+    return bool(_SMALLTALK_RE.search(str(message or "").strip()))
+
+
+def _trim_smalltalk_technical_capture(reply: str, *, message: str, mode: ConversationLightMode | None) -> str:
+    text = str(reply or "").strip()
+    if not text or mode != "CONVERSATION" or not _is_smalltalk_turn(message):
+        return text
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    kept = [
+        sentence.strip()
+        for sentence in sentences
+        if sentence.strip() and not _SMALLTALK_TECH_CAPTURE_RE.search(sentence)
+    ]
+    if kept:
+        return " ".join(kept[:2]).strip()
+    return "Mir geht es gut, danke. Ich bin da, wenn du mit einer Dichtungsfrage starten willst."
 
 
 def _known_fields_from_case_summary(case_summary: str | None) -> set[str]:
@@ -642,6 +686,7 @@ async def iter_conversation_events(
     full_text = "".join(accumulated)
     rendered = render_response(full_text, path="CONVERSATION")
     final_reply = str(rendered.text or "").strip()
+    final_reply = _trim_smalltalk_technical_capture(final_reply, message=message, mode=mode)
     final_reply = compose_user_facing_mouth_reply(
         final_reply,
         turn_context,
