@@ -419,6 +419,7 @@ async def _stream_governed_graph(
         response_class=context.response_class,
         turn_context=context.turn_context,
         fallback_text=context.deterministic_reply,
+        latest_user_message=request.message,
     )
     if visible_reply:
         updated_state = _with_governed_conversation_turn(

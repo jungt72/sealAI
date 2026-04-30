@@ -77,6 +77,22 @@ def test_curated_hit_does_not_call_enabled_fallback() -> None:
     assert view.fallback_used is False
 
 
+def test_rwdr_glossary_question_uses_safe_domain_answer_before_ptfe_factcards() -> None:
+    response = KnowledgeService(
+        factcard_store=_FactcardStore([_curated_card()]),
+        llm_research_fallback_enabled=False,
+    ).answer("Was ist ein Radialwellendichtring?")
+
+    view = response.knowledge_answer_view
+
+    assert view.answer_available is True
+    assert "Radialwellendichtring" in view.answer
+    assert "rotierende Welle" in view.answer
+    assert "PTFE-F-001" not in view.answer
+    assert "Herstellerfreigabe" in view.answer
+    assert view.not_final_release is True
+
+
 def test_rag_hit_does_not_call_enabled_fallback_after_curated_miss() -> None:
     fallback_calls: list[str] = []
 

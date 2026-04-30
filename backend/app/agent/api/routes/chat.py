@@ -123,6 +123,7 @@ async def _run_governed_chat_response(
         response_class=context.response_class,
         turn_context=context.turn_context,
         fallback_text=context.deterministic_reply,
+        latest_user_message=request.message,
     )
 
     if visible_reply:

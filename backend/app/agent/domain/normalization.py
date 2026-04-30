@@ -1112,6 +1112,18 @@ def _all_pattern_values(text: str, patterns: list[tuple[str, str]]) -> list[str]
 
 def extract_parameters(text: str) -> dict[str, Any]:
     extracted: dict[str, Any] = {}
+    unsafe_instruction_text = bool(
+        re.search(
+            r"\b(ignore|ignoriere|vergiss)\b.*\b(rule|regeln|system|developer|sicherheits)\b",
+            text,
+            re.I,
+        )
+        or re.search(
+            r"\b(sag(?:e)?|behaupte|bestaetige|bestätige)\b.*\b(geeignet|freigegeben|garantiert|passend)\b",
+            text,
+            re.I,
+        )
+    )
     # Match "80°C", "80C", "80 Grad", "80 grad" — group(2) is None for bare "grad" → default Celsius
     temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°?\s*([CF])\b|\bgrad\b)", text, re.I)
     if temp_match:
@@ -1213,17 +1225,18 @@ def extract_parameters(text: str) -> dict[str, Any]:
             if llm_result["properties"]:
                 extracted["medium_properties"] = llm_result["properties"]
 
-    for raw in ("Viton", "Kalrez", "Teflon", "Nitril", "NBR", "PTFE", "FKM"):
-        if re.search(rf"\b{re.escape(raw)}\b", text, re.I):
-            decision = normalize_material_decision(raw)
-            if decision and decision.status == "confirmation_required":
-                extracted["material_confirmation_required"] = decision.canonical_value
-            elif decision and decision.status != "unknown":
-                extracted["material_normalized"] = decision.canonical_value
-            if decision:
-                extracted["material_normalization_status"] = decision.status
-                extracted["material_mapping_reason"] = decision.mapping_reason
-                extracted["material_raw"] = raw
-            break
+    if not unsafe_instruction_text:
+        for raw in ("Viton", "Kalrez", "Teflon", "Nitril", "NBR", "PTFE", "FKM"):
+            if re.search(rf"\b{re.escape(raw)}\b", text, re.I):
+                decision = normalize_material_decision(raw)
+                if decision and decision.status == "confirmation_required":
+                    extracted["material_confirmation_required"] = decision.canonical_value
+                elif decision and decision.status != "unknown":
+                    extracted["material_normalized"] = decision.canonical_value
+                if decision:
+                    extracted["material_normalization_status"] = decision.status
+                    extracted["material_mapping_reason"] = decision.mapping_reason
+                    extracted["material_raw"] = raw
+                break
 
     return extracted

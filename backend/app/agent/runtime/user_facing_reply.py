@@ -37,6 +37,7 @@ async def collect_governed_visible_reply(
     response_class: str,
     turn_context: TurnContextContract | None,
     fallback_text: str,
+    latest_user_message: str | None = None,
     allowed_surface_claims: GovernedAllowedSurfaceClaims | list[str] | None = None,
     applicable_norms: list[str] | None = None,
     requirement_class_id: str | None = None,
@@ -94,6 +95,7 @@ async def collect_governed_visible_reply(
                 response_class=response_class,
                 turn_context=turn_context,
                 fallback_text=effective_fallback_text,
+                latest_user_message=latest_user_message,
             )
             _log.info(
                 "[human_communication] turn_id=%s case_id=%s mode=%s guard=%s claims=%s model=%s",

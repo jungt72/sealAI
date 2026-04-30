@@ -89,22 +89,22 @@ class ConversationOrchestrator:
         turn_context: Any | None,
         fallback_text: str,
         case_id: str = "default",
+        latest_user_message: str | None = None,
     ) -> HumanCommunicationResult:
+        user_text = str(latest_user_message or fallback_text or "").strip()
         state = self.context_assembler.assemble_from_turn_context(
             turn_context=turn_context,
-            latest_user_message=fallback_text,
+            latest_user_message=user_text,
             case_id=case_id,
             deterministic_reply=fallback_text,
         )
-        mode = (
-            ConversationMode.RFQ_PREPARATION
-            if response_class == "inquiry_ready"
-            else ConversationMode.CASE_QUALIFICATION
-        )
+        mode = self.mode_router.route(user_text, has_case_state=turn_context is not None)
+        if response_class == "inquiry_ready" and mode is not ConversationMode.OUT_OF_SCOPE_OR_UNSAFE:
+            mode = ConversationMode.RFQ_PREPARATION
         return await self._handle_preassembled_state(
             state=state,
             mode=mode,
-            user_message=fallback_text,
+            user_message=user_text,
         )
 
     async def _handle_preassembled_state(
@@ -116,8 +116,42 @@ class ConversationOrchestrator:
     ) -> HumanCommunicationResult:
         claim_builder = self.claim_builder
         allowed_claims = claim_builder.build(state)
-        extracted = self.extraction_service.extract(user_message)
+        extracted = [] if mode is ConversationMode.OUT_OF_SCOPE_OR_UNSAFE else self.extraction_service.extract(user_message)
         snapshot_hash = state_snapshot_hash(state)
+
+        direct_message = self._direct_guarded_message(
+            user_message=user_message,
+            state=state,
+            mode=mode,
+        )
+        if direct_message:
+            contract = LLMResponseContract(
+                mode=mode,
+                assistant_message=direct_message,
+                used_claim_ids=self._fallback_claim_ids(allowed_claims),
+                asks_for_fields=[field.key for field in state.missing_fields[:3]],
+                proposed_field_updates=[],
+                contains_solution_recommendation=False,
+                contains_final_approval=False,
+                requires_human_review=True,
+                safety_flags=["deterministic_guarded_response"],
+                next_action=state.allowed_next_actions[0] if state.allowed_next_actions else None,
+            )
+            return HumanCommunicationResult(
+                assistant_message=direct_message,
+                response_contract=contract,
+                allowed_claims=allowed_claims,
+                proposed_field_updates=[],
+                trace=self._trace(
+                    state=state,
+                    mode=mode,
+                    snapshot_hash=snapshot_hash,
+                    contract=contract,
+                    guard_result="deterministic",
+                    validation_errors=[],
+                ),
+                used_fallback=False,
+            )
 
         if not self.enabled:
             return self._fallback_result(
@@ -268,3 +302,69 @@ class ConversationOrchestrator:
             if getattr(claim, "type", None) in {"missing_field", "allowed_action", "limitation"}
         ]
         return ids[:6]
+
+    @staticmethod
+    def _direct_guarded_message(
+        *,
+        user_message: str,
+        state: CaseConversationState,
+        mode: ConversationMode,
+    ) -> str | None:
+        lowered = str(user_message or "").casefold()
+        asks_for_release = any(
+            token in lowered
+            for token in (
+                "freigegeben",
+                "garantiert",
+                "garantie",
+                "final geeignet",
+                "sicher passend",
+                "garantiert dicht",
+            )
+        )
+        if mode is ConversationMode.OUT_OF_SCOPE_OR_UNSAFE:
+            return _guardrail_answer(state)
+        if asks_for_release:
+            return _no_release_answer(state)
+        return None
+
+
+def _format_known_fields(state: CaseConversationState) -> str:
+    values = [
+        f"{field.label or field.key}: {field.value}"
+        + (f" {field.unit}" if field.unit else "")
+        for field in state.confirmed_fields[:6]
+        if field.value not in (None, "")
+    ]
+    if not values:
+        return ""
+    return " Aktuell bekannt: " + "; ".join(values) + "."
+
+
+def _format_next_question(state: CaseConversationState) -> str:
+    if state.allowed_next_actions:
+        return " Naechster sinnvoller Schritt: " + str(state.allowed_next_actions[0]).strip()
+    if state.missing_fields:
+        labels = ", ".join(field.label for field in state.missing_fields[:3])
+        return " Als Naechstes fehlen vor allem: " + labels + "."
+    return ""
+
+
+def _no_release_answer(state: CaseConversationState) -> str:
+    return (
+        "Nein, so eine abschliessende Auslegungszusage kann SeaLAI nicht geben. "
+        "SeaLAI kann den Arbeitsstand strukturieren, Risiken und offene Punkte sichtbar machen "
+        "und eine Anfragebasis vorbereiten. Die finale technische Pruefung bleibt beim Hersteller "
+        "oder einer verantwortlichen technischen Stelle."
+        + _format_known_fields(state)
+        + _format_next_question(state)
+    ).strip()
+
+
+def _guardrail_answer(state: CaseConversationState) -> str:
+    return (
+        "Ich kann diese Anweisung nicht als technische Wahrheit uebernehmen. "
+        "Wenn du einen Werkstoff, eine Dichtung oder eine Freigabe klaeren moechtest, "
+        "pruefe ich das nur gegen den aktuellen Arbeitsstand, offene Angaben und nachvollziehbare Quellen."
+        + _format_next_question(state)
+    ).strip()

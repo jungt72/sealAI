@@ -199,6 +199,14 @@ class KnowledgeService:
         tenant_id: str | None = None,
         user_id: str | None = None,
     ) -> KnowledgeResponse:
+        deterministic_answer = _deterministic_domain_answer(user_input)
+        if deterministic_answer is not None:
+            return KnowledgeResponse(
+                source_classification=source_classification,
+                content=deterministic_answer.answer,
+                answer_result=deterministic_answer,
+            )
+
         cards = self._store.match_query_to_cards((user_input or "").lower())[:max_cards]
         if not cards and self._rag_retriever is not None:
             rag_hits = self._rag_retriever(
@@ -406,6 +414,73 @@ def _hit_result(answer: str, sources: tuple[KnowledgeSource, ...]) -> KnowledgeA
             "KnowledgeAnswerGenerated",
         ),
     )
+
+
+def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | None:
+    """Return safe built-in orientation for high-frequency glossary questions.
+
+    The PTFE fact-card store is intentionally narrow. For basic sealing terms,
+    forcing a weak fact-card match can produce irrelevant answers. These
+    glossary answers are general orientation only: they do not create case
+    truth, compatibility claims, or manufacturer approval.
+    """
+    text = str(user_input or "").casefold()
+    asks_explanation = any(
+        token in text
+        for token in (
+            "was ist",
+            "was sind",
+            "erklär",
+            "erklaer",
+            "bedeutet",
+            "wie funktioniert",
+        )
+    )
+    rwdr_terms = (
+        "radialwellendichtring",
+        "wellendichtring",
+        "rwdr",
+        "simmerring",
+    )
+    if asks_explanation and any(term in text for term in rwdr_terms):
+        answer = "\n".join(
+            [
+                "Ein Radialwellendichtring, kurz RWDR, dichtet typischerweise eine rotierende Welle gegen ein Gehaeuse ab.",
+                "",
+                "Typisch ist eine flexible Dichtlippe, die auf der Welle oder einer Huelse laeuft. Entscheidend fuer die Praxis sind Medium, Temperatur, Druck, Drehzahl, Wellendurchmesser, Oberflaeche, Schmierung und Einbauraum.",
+                "",
+                "Als allgemeine Orientierung: RWDR sind oft kompakte Loesungen fuer rotierende Wellen. Bei hoeherem Druck, trockener Laufstelle, abrasiven Medien, anspruchsvoller Chemie oder Pumpenanwendungen muss der konkrete Aufbau genauer geprueft werden.",
+                "",
+                "Das ist eine allgemeine Wissensantwort, keine konkrete Auslegung und keine Herstellerfreigabe. Wenn du moechtest, koennen wir daraus direkt einen konkreten Dichtungsfall aufbauen.",
+            ]
+        )
+        return KnowledgeAnswerResult(
+            answer=answer,
+            answer_available=True,
+            rag_lookup_attempted=True,
+            rag_answer_found=False,
+            rag_miss=True,
+            source_type=SourceType.system_derived,
+            validation_status=ValidationStatus.unvalidated,
+            use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+            not_final_release=True,
+            fallback_allowed=False,
+            fallback_used=False,
+            user_visible_label="SeaLAI-Grundwissen - allgemeine Orientierung",
+            missing_reason="domain_glossary_answer_without_rag_hit",
+            next_step=(
+                "Bei konkreter Anwendung Medium, Temperatur, Druck, Drehzahl "
+                "und Wellendurchmesser als governed Case aufnehmen."
+            ),
+            event_names=(
+                "KnowledgeQuestionReceived",
+                "KnowledgeRAGLookupRequested",
+                "KnowledgeRAGAnswerMissing",
+                "SourceValidationStatusAssigned",
+                "KnowledgeAnswerGenerated",
+            ),
+        )
+    return None
 
 
 def _miss_result(
