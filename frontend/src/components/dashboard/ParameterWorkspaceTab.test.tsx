@@ -193,8 +193,10 @@ describe("ParameterWorkspaceTab", () => {
         { field_name: "shaft_diameter_mm", value: 42, unit: "mm" },
       ]),
     );
+    expect(overrides).not.toEqual(expect.arrayContaining([{ field_name: "medium", value: "Ethanol", unit: null }]));
     expect(summary).toContain("Drehzahl: 1450 rpm");
     expect(summary).toContain("Wellendurchmesser: 42 mm");
+    expect(screen.getAllByText("Status: wird als Nutzerangabe übernommen")).toHaveLength(2);
   });
 
   it("guards numeric fields before sending overrides", async () => {
@@ -209,5 +211,17 @@ describe("ParameterWorkspaceTab", () => {
 
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.getByText("Druck braucht einen numerischen Wert.")).toBeInTheDocument();
+  });
+
+  it("does not submit unchanged projected values as overrides", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<ParameterWorkspaceTab workspace={workspaceFixture()} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("Keine neuen oder geänderten Parameter erkannt.")).toBeInTheDocument();
   });
 });

@@ -11,17 +11,27 @@ const workspaceHookState = vi.hoisted((): { workspace: WorkspaceView | null } =>
   workspace: null,
 }));
 
+const patchAgentOverridesMock = vi.hoisted(() => vi.fn());
+const workspaceRefreshMock = vi.hoisted(() => vi.fn());
+
 vi.mock("@/components/dashboard/ChatPane", () => ({
-  default: ({ caseId }: { caseId?: string }) => (
-    <div data-testid="chat-pane">ChatPane {caseId ?? "new"}</div>
+  default: ({ caseId, parameterConfirmation }: { caseId?: string; parameterConfirmation?: string | null }) => (
+    <div data-testid="chat-pane">
+      ChatPane {caseId ?? "new"}
+      {parameterConfirmation ? <div>{parameterConfirmation}</div> : null}
+    </div>
   ),
+}));
+
+vi.mock("@/lib/bff/parameterOverride", () => ({
+  patchAgentOverrides: patchAgentOverridesMock,
 }));
 
 vi.mock("@/hooks/useWorkspace", () => ({
   useWorkspace: () => ({
     workspace: workspaceHookState.workspace,
     isLoading: false,
-    refresh: vi.fn(),
+    refresh: workspaceRefreshMock,
   }),
 }));
 
@@ -296,6 +306,21 @@ function workspaceFixture(): WorkspaceView {
 describe("CaseScreen", () => {
   beforeEach(() => {
     workspaceHookState.workspace = null;
+    workspaceRefreshMock.mockReset();
+    workspaceRefreshMock.mockResolvedValue(undefined);
+    patchAgentOverridesMock.mockReset();
+    patchAgentOverridesMock.mockResolvedValue({
+      session_id: "case-42",
+      applied_fields: ["speed_rpm"],
+      governance: {
+        gov_class: "B",
+        rfq_admissible: false,
+        blocking_unknowns: [],
+        conflict_flags: [],
+        validity_limits: [],
+        open_validation_points: [],
+      },
+    });
   });
 
   it("renders the open chat surface beside the tabbed SealAI cockpit", () => {
@@ -401,7 +426,7 @@ describe("CaseScreen", () => {
 
     expect(screen.getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { name: "Parameter im Fall bearbeiten" })).toBeInTheDocument();
-    expect(screen.getByText(/SeaLAI übernimmt sie als Nutzerangaben in den governed Case-State/i)).toBeInTheDocument();
+    expect(screen.getByText(/SeaLAI übernimmt nur neue oder geänderte Angaben in den governed Case-State/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Berechnung" }));
 
@@ -425,5 +450,25 @@ describe("CaseScreen", () => {
 
     expect(screen.getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { name: "Berechnungen & Nachweise" })).toBeInTheDocument();
+  });
+
+  it("sends only changed parameter values and mirrors the governed confirmation in chat", async () => {
+    const user = userEvent.setup();
+    workspaceHookState.workspace = workspaceFixture();
+    render(<CaseScreen caseId="case-42" />);
+
+    await user.click(screen.getByRole("tab", { name: "Parameter" }));
+    await user.clear(screen.getByLabelText("Drehzahl"));
+    await user.type(screen.getByLabelText("Drehzahl"), "1450");
+    await user.click(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" }));
+
+    expect(patchAgentOverridesMock).toHaveBeenCalledWith("case-42", {
+      overrides: [{ field_name: "speed_rpm", value: 1450, unit: "rpm" }],
+    });
+    expect(workspaceRefreshMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("chat-pane")).toHaveTextContent(
+      "Parameter als Nutzerangaben übernommen: Drehzahl: 1450 rpm.",
+    );
+    expect(screen.getByTestId("chat-pane")).toHaveTextContent("offene Herstellerprüfpunkte weiter sichtbar");
   });
 });

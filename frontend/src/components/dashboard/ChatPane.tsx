@@ -198,10 +198,10 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
   }, [currentCaseId, onTurnComplete, registerWorkspaceCallbacks, sendMessage]);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    scrollAnchorRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" });
   }, [messages, streamingText, isStreaming, error, parameterConfirmation]);
 
-  const hasConversation = messages.length > 0 || Boolean(streamingText);
+  const hasConversation = messages.length > 0 || Boolean(streamingText) || Boolean(parameterConfirmation);
   const proposedDeltaFields = useMemo(() => {
     const fields = streamWorkspace?.proposedCaseDelta?.fields ?? [];
     return fields.filter((field) => field.status === "proposed" || !field.status);

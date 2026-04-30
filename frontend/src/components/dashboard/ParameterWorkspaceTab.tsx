@@ -120,6 +120,17 @@ function parseValue(field: ParameterField, rawValue: string): string | number | 
   return trimmed;
 }
 
+function valuesMatch(field: ParameterField, currentValue: string, nextValue: string | number): boolean {
+  const current = parseValue(field, currentValue);
+  if (current === null) {
+    return false;
+  }
+  if (field.kind === "number") {
+    return typeof current === "number" && typeof nextValue === "number" && Math.abs(current - nextValue) < 0.000001;
+  }
+  return String(current).trim() === String(nextValue).trim();
+}
+
 function formatSummary(overrides: AgentOverrideItemRequest[]) {
   return overrides
     .map((override) => {
@@ -130,8 +141,13 @@ function formatSummary(overrides: AgentOverrideItemRequest[]) {
     .join("; ");
 }
 
-function fieldStatus(workspace: WorkspaceView | null, fieldName: string) {
-  return valueFor(workspace, fieldName) ? "Status: bekannt" : "Status: offen";
+function fieldStatus(workspace: WorkspaceView | null, field: ParameterField, rawValue: string) {
+  const parsed = parseValue(field, rawValue);
+  const currentValue = valueFor(workspace, field.fieldName);
+  if (parsed !== null && !valuesMatch(field, currentValue, parsed)) {
+    return "Status: wird als Nutzerangabe übernommen";
+  }
+  return currentValue ? "Status: bekannt" : "Status: offen";
 }
 
 export function ParameterWorkspaceTab({
@@ -146,7 +162,7 @@ export function ParameterWorkspaceTab({
   const [formState, setFormState] = useState<ParameterFormState>(() => initialState(workspace));
   const [error, setError] = useState<string | null>(null);
 
-  const overrides = useMemo(
+  const candidateOverrides = useMemo(
     () =>
       PARAMETER_FIELDS.flatMap((field) => {
         const value = parseValue(field, formState[field.fieldName] ?? "");
@@ -163,8 +179,20 @@ export function ParameterWorkspaceTab({
       }),
     [formState],
   );
+  const overrides = useMemo(
+    () =>
+      candidateOverrides.filter((override) => {
+        const field = PARAMETER_FIELDS.find((item) => item.fieldName === override.field_name);
+        if (!field) {
+          return false;
+        }
+        return !valuesMatch(field, valueFor(workspace, field.fieldName), override.value as string | number);
+      }),
+    [candidateOverrides, workspace],
+  );
+  const hasAnyEnteredValue = PARAMETER_FIELDS.some((field) => Boolean(formState[field.fieldName]?.trim()));
 
-  const canSubmit = Boolean(workspace?.caseId) && overrides.length > 0 && !isSubmitting;
+  const canSubmit = Boolean(workspace?.caseId) && hasAnyEnteredValue && !isSubmitting;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -173,7 +201,7 @@ export function ParameterWorkspaceTab({
       setError("Bitte zuerst im Chat einen Dichtungsfall starten.");
       return;
     }
-    if (overrides.length === 0) {
+    if (!hasAnyEnteredValue) {
       setError("Bitte mindestens einen Parameter eintragen.");
       return;
     }
@@ -184,6 +212,10 @@ export function ParameterWorkspaceTab({
     });
     if (invalidNumber) {
       setError(`${invalidNumber.label} braucht einen numerischen Wert.`);
+      return;
+    }
+    if (overrides.length === 0) {
+      setError("Keine neuen oder geänderten Parameter erkannt.");
       return;
     }
 
@@ -197,7 +229,7 @@ export function ParameterWorkspaceTab({
           <div>
             <h2 className="text-base font-semibold tracking-tight text-[#111827]">Parameter im Fall bearbeiten</h2>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
-              Trage bekannte Werte direkt ein. SeaLAI übernimmt sie als Nutzerangaben in den governed Case-State, berechnet abhängige Hinweise neu und markiert weiter offene Punkte.
+              Trage bekannte Werte direkt ein. SeaLAI übernimmt nur neue oder geänderte Angaben in den governed Case-State, berechnet abhängige Hinweise neu und markiert weiter offene Punkte.
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#0B57D0]">
@@ -241,7 +273,7 @@ export function ParameterWorkspaceTab({
               </div>
               <div className="mt-2 grid gap-1 text-[12px] leading-relaxed text-[#6B7280]">
                 <span>{field.why}</span>
-                <span className="font-medium text-[#4B5563]">{fieldStatus(workspace, field.fieldName)}</span>
+                <span className="font-medium text-[#4B5563]">{fieldStatus(workspace, field, formState[field.fieldName] ?? "")}</span>
               </div>
             </label>
           ))}
