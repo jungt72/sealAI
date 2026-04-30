@@ -87,7 +87,7 @@ describe("ChatPane", () => {
             field_name: "medium",
             proposed_value: "Wasser",
             confidence: "estimated",
-            confirmation_required: false,
+            confirmation_required: true,
             status: "proposed",
           },
           {

@@ -71,14 +71,36 @@ function formatDeltaValue(field: ProposedCaseDeltaField): string {
   return [value, field.unit].filter(Boolean).join(" ");
 }
 
+const CHAT_WORKING_STATE_AUTO_ACCEPT_FIELDS = new Set([
+  "medium",
+  "medium_name",
+  "temperature_c",
+  "temperature_min",
+  "temperature_max",
+  "pressure_bar",
+  "pressure_nominal",
+  "pressure_peak",
+  "speed_rpm",
+  "shaft_diameter_mm",
+  "shaft_diameter",
+  "housing_bore",
+  "installation_width",
+  "geometry",
+  "geometry_context",
+  "sealing_type",
+  "motion_type",
+  "seal_location",
+  "asset_type",
+  "pressure_direction",
+]);
+
 function isAutoAcceptableWorkingStateField(field: ProposedCaseDeltaField): boolean {
   const status = field.status || "proposed";
   return (
     status === "proposed" &&
+    CHAT_WORKING_STATE_AUTO_ACCEPT_FIELDS.has(field.field_name) &&
     field.provenance !== "documented" &&
-    field.provenance !== "web_hint" &&
-    field.confirmation_required !== true &&
-    field.confidence !== "requires_confirmation"
+    field.provenance !== "web_hint"
   );
 }
 
