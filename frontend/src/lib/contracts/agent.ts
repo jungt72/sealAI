@@ -183,6 +183,7 @@ export type ProposedCaseDeltaField = {
   unit?: string | null;
   provenance?: string;
   confidence?: string;
+  confirmation_required?: boolean;
   source_turn_index?: number;
   status?: "proposed" | "accepted" | "rejected" | string;
 };

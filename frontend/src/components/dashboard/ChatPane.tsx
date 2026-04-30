@@ -71,6 +71,16 @@ function formatDeltaValue(field: ProposedCaseDeltaField): string {
   return [value, field.unit].filter(Boolean).join(" ");
 }
 
+function isAutoAcceptableWorkingStateField(field: ProposedCaseDeltaField): boolean {
+  const status = field.status || "proposed";
+  return (
+    status === "proposed" &&
+    field.provenance === "user_stated" &&
+    field.confirmation_required !== true &&
+    field.confidence !== "requires_confirmation"
+  );
+}
+
 function ProposedDeltaPanel({
   caseId,
   fields,
@@ -174,6 +184,8 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
   const setActiveResponseClass = useWorkspaceStore((s) => s.setActiveResponseClass);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
   const [settledDeltaKey, setSettledDeltaKey] = useState<string | null>(null);
+  const [autoAcceptFailedKey, setAutoAcceptFailedKey] = useState<string | null>(null);
+  const autoAcceptAttemptKeyRef = useRef<string | null>(null);
   const [documentDeltaFields, setDocumentDeltaFields] = useState<ProposedCaseDeltaField[]>([]);
   const [documentUploadStatus, setDocumentUploadStatus] = useState<string | null>(null);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
@@ -210,7 +222,53 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
   const proposedDeltaKey = combinedDeltaFields
     .map((field) => `${field.field_name}:${String(field.proposed_value)}:${field.unit ?? ""}`)
     .join("|");
-  const visibleDeltaFields = proposedDeltaKey && settledDeltaKey !== proposedDeltaKey ? combinedDeltaFields : [];
+  const proposedDeltaDecisionKey = currentCaseId && proposedDeltaKey ? `${currentCaseId}:${proposedDeltaKey}` : "";
+  const shouldAutoAcceptWorkingState =
+    Boolean(proposedDeltaKey) &&
+    documentDeltaFields.length === 0 &&
+    streamWorkspace?.proposedCaseDelta?.source === "llm" &&
+    combinedDeltaFields.length > 0 &&
+    combinedDeltaFields.every(isAutoAcceptableWorkingStateField) &&
+    settledDeltaKey !== proposedDeltaKey &&
+    autoAcceptFailedKey !== proposedDeltaKey;
+  const visibleDeltaFields =
+    proposedDeltaKey && settledDeltaKey !== proposedDeltaKey && !shouldAutoAcceptWorkingState
+      ? combinedDeltaFields
+      : [];
+
+  useEffect(() => {
+    if (
+      !currentCaseId ||
+      !proposedDeltaKey ||
+      !proposedDeltaDecisionKey ||
+      !shouldAutoAcceptWorkingState ||
+      autoAcceptAttemptKeyRef.current === proposedDeltaDecisionKey
+    ) {
+      return;
+    }
+
+    autoAcceptAttemptKeyRef.current = proposedDeltaDecisionKey;
+    void decideCaseDelta(
+      currentCaseId,
+      "accept",
+      combinedDeltaFields.map((field) => field.field_name),
+    )
+      .then(() => {
+        setSettledDeltaKey(proposedDeltaKey);
+        setAutoAcceptFailedKey(null);
+        onTurnComplete?.(currentCaseId);
+      })
+      .catch(() => {
+        setAutoAcceptFailedKey(proposedDeltaKey);
+      });
+  }, [
+    combinedDeltaFields,
+    currentCaseId,
+    onTurnComplete,
+    proposedDeltaKey,
+    proposedDeltaDecisionKey,
+    shouldAutoAcceptWorkingState,
+  ]);
 
   const handleDocumentUpload = async (file: File) => {
     if (!currentCaseId) {
