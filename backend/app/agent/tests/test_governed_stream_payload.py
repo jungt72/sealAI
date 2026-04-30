@@ -412,6 +412,16 @@ def test_structured_clarification_blocks_recommendation_manufacturer_and_rfq_lan
     ) == claims["fallback_text"]
 
 
+def test_structured_clarification_salvages_safe_question_from_guarded_text() -> None:
+    claims = _build_governed_allowed_surface_claims("structured_clarification")
+
+    assert guard_governed_rendered_text(
+        "Die Anfragebasis waere klarer. Welche Flansch- oder Normgeometrie liegt vor?",
+        fallback_text="Bitte Medium angeben.",
+        allowed_surface_claims=claims,
+    ) == "Welche Flansch- oder Normgeometrie liegt vor?"
+
+
 def test_structured_clarification_blocks_implicit_fit_and_design_language() -> None:
     claims = _build_governed_allowed_surface_claims("structured_clarification")
 

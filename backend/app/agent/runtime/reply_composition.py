@@ -336,25 +336,55 @@ def guard_governed_rendered_text(
         fallback = text
 
     lowered = text.lower()
+    response_class = allowed_surface_claims["response_class"]
     for fragment in allowed_surface_claims["forbidden_fragments"]:
         if fragment.lower() in lowered:
+            if _is_rfq_surface_fragment(fragment):
+                salvage = _extract_first_safe_structured_question(
+                    text,
+                    response_class=response_class,
+                    forbidden_fragments=allowed_surface_claims["forbidden_fragments"],
+                )
+                if salvage:
+                    return salvage
             return fallback
-    if _violates_one_question_rule(text, allowed_surface_claims["response_class"]):
+    if _violates_one_question_rule(text, response_class):
         single_question_text = _trim_to_first_question(text)
         single_question_lowered = single_question_text.lower()
         if (
             single_question_text
             and not _violates_no_final_certainty_rule(single_question_lowered)
-            and not _violates_no_unauthorized_rfq_rule(single_question_lowered, allowed_surface_claims["response_class"])
-            and not _violates_class_guard(single_question_lowered, allowed_surface_claims["response_class"])
+            and not _violates_no_unauthorized_rfq_rule(single_question_lowered, response_class)
+            and not _violates_class_guard(single_question_lowered, response_class)
         ):
             return single_question_text
         return fallback
     if _violates_no_final_certainty_rule(lowered):
+        salvage = _extract_first_safe_structured_question(
+            text,
+            response_class=response_class,
+            forbidden_fragments=allowed_surface_claims["forbidden_fragments"],
+        )
+        if salvage:
+            return salvage
         return fallback
-    if _violates_no_unauthorized_rfq_rule(lowered, allowed_surface_claims["response_class"]):
+    if _violates_no_unauthorized_rfq_rule(lowered, response_class):
+        salvage = _extract_first_safe_structured_question(
+            text,
+            response_class=response_class,
+            forbidden_fragments=allowed_surface_claims["forbidden_fragments"],
+        )
+        if salvage:
+            return salvage
         return fallback
-    if _violates_class_guard(lowered, allowed_surface_claims["response_class"]):
+    if _violates_class_guard(lowered, response_class):
+        salvage = _extract_first_safe_structured_question(
+            text,
+            response_class=response_class,
+            forbidden_fragments=allowed_surface_claims["forbidden_fragments"],
+        )
+        if salvage:
+            return salvage
         return fallback
     return text
 
@@ -434,6 +464,40 @@ def _trim_to_first_question(text: str) -> str:
     if first_question_end < 0:
         return str(text or "").strip()
     return str(text or "")[: first_question_end + 1].strip()
+
+
+def _extract_first_safe_structured_question(
+    text: str,
+    *,
+    response_class: str,
+    forbidden_fragments: list[str],
+) -> str | None:
+    if normalize_outward_response_class(response_class) != "structured_clarification":
+        return None
+
+    for match in re.finditer(r"[^?\n]*\?", str(text or "")):
+        candidate = match.group(0).strip()
+        candidate = re.sub(r"^[\s\-*•:;,.]+", "", candidate).strip()
+        lowered = candidate.lower()
+        if not candidate:
+            continue
+        if any(fragment.lower() in lowered for fragment in forbidden_fragments):
+            continue
+        if _violates_no_final_certainty_rule(lowered):
+            continue
+        if _violates_no_unauthorized_rfq_rule(lowered, response_class):
+            continue
+        if _violates_class_guard(lowered, response_class):
+            continue
+        if _violates_one_question_rule(candidate, response_class):
+            continue
+        return candidate
+    return None
+
+
+def _is_rfq_surface_fragment(fragment: str) -> bool:
+    lowered = str(fragment or "").lower()
+    return any(marker in lowered for marker in ("rfq", "anfragebasis", "versand", "bestellbereit"))
 
 
 def _violates_no_final_certainty_rule(lowered_text: str) -> bool:
