@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -26,13 +25,6 @@ const NAV_ITEMS = [
   { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
 ];
 
-function greetingForNow(date = new Date()) {
-  const hour = date.getHours();
-  if (hour < 11) return "Guten Morgen";
-  if (hour < 17) return "Guten Tag";
-  return "Guten Abend";
-}
-
 function firstNameFromSession(name?: string | null, email?: string | null) {
   const source = (name || email || "Thorsten").trim();
   const first = source.split(/[\s@]/)[0];
@@ -48,7 +40,7 @@ export default function DashboardShell({
   const { data: session } = useSession();
 
   const userName = firstNameFromSession(session?.user?.name, session?.user?.email);
-  const greeting = useMemo(() => greetingForNow(), []);
+  const greeting = "Guten Tag";
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
