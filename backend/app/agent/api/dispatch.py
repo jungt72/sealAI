@@ -73,6 +73,17 @@ async def _resolve_runtime_dispatch(
             request.message,
             pre_gate_classification=pre_gate.classification,
         )
+        if pre_gate.classification is PreGateClassification.GREETING:
+            return RuntimeDispatchResolution(
+                gate_route="CONVERSATION",
+                gate_reason=f"pre_gate:{pre_gate.reasoning}",
+                runtime_mode="CONVERSATION",
+                gate_applied=False,
+                pre_gate_classification=pre_gate.classification.value,
+                pre_gate_reason=pre_gate.reasoning,
+                conversation_route=conversation_route,
+            )
+
         if pre_gate.classification in FastResponderService.allowed_classifications:
             fast_response = FastResponderService().respond(
                 request.message,

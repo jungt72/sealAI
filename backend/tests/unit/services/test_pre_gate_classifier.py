@@ -15,6 +15,7 @@ def classifier() -> PreGateClassifier:
     "text",
     [
         "Hallo",
+        "Hallo, wie geht es dir?",
         "Moin!",
         "Vielen Dank.",
         "bye",

@@ -44,6 +44,8 @@ from app.agent.runtime.reply_composition import (
 from app.agent.runtime.response_renderer import render_chunk, render_response
 from app.agent.runtime.turn_context import build_turn_context_contract
 from app.agent.state.models import ConversationStrategyContract
+from app.llm.registry import get_model_for_role
+from app.services.openai_payload import use_responses_api
 from prompts.builder import PromptBuilder
 
 log = logging.getLogger(__name__)
@@ -52,7 +54,7 @@ log = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-_CONVERSATION_MODEL = os.environ.get("SEALAI_CONVERSATION_MODEL", "gpt-4o-mini")
+_CONVERSATION_MODEL = os.environ.get("SEALAI_CONVERSATION_MODEL", get_model_for_role("conversation"))
 
 _prompt_builder = PromptBuilder()
 
@@ -176,10 +178,15 @@ def _build_messages(
         else _build_turn_context_instruction(
             turn_context,
             include_phase_guidance=False,
-            include_focus=True,
+            include_focus=False,
             include_reason=False,
         )
     )
+    if phase_prompt is not None and strategy_instruction and turn_context.primary_question:
+        strategy_instruction = (
+            f"{strategy_instruction}\n"
+            "- Relevanter offener Fokus: siehe Phase-Prompt."
+        )
     if strategy_instruction:
         msgs.append({"role": "system", "content": strategy_instruction})
     if mode != "EXPLORATION":
@@ -485,18 +492,61 @@ def _build_conversation_strategy_contract(
         response_mode="single_question",
     )
 
+def _responses_input_from_messages(messages: list[dict[str, str]]) -> tuple[str, list[dict[str, Any]]]:
+    instructions: list[str] = []
+    response_input: list[dict[str, Any]] = []
+    for message in messages:
+        role = str(message.get("role") or "user").strip()
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            instructions.append(content)
+            continue
+        response_input.append(
+            {
+                "role": "assistant" if role == "assistant" else "user",
+                "content": [{"type": "input_text", "text": content}],
+            }
+        )
+    return "\n\n".join(instructions), response_input
+
+
 async def _create_completion_stream(client: openai.AsyncOpenAI, *, messages: list[dict[str, str]]):
     """Support both awaitable SDK responses and direct test doubles."""
-    stream_or_awaitable = client.chat.completions.create(
-        model=_CONVERSATION_MODEL,
-        messages=messages,
-        stream=True,
-        temperature=0.3,
-        max_tokens=800,
-    )
+    if use_responses_api(_CONVERSATION_MODEL):
+        instructions, response_input = _responses_input_from_messages(messages)
+        stream_or_awaitable = client.responses.create(
+            model=_CONVERSATION_MODEL,
+            instructions=instructions or None,
+            input=response_input,
+            stream=True,
+            max_output_tokens=800,
+        )
+    else:
+        stream_or_awaitable = client.chat.completions.create(
+            model=_CONVERSATION_MODEL,
+            messages=messages,
+            stream=True,
+            temperature=0.3,
+            max_tokens=800,
+        )
     if inspect.isawaitable(stream_or_awaitable):
         return await stream_or_awaitable
     return stream_or_awaitable
+
+
+def _text_from_stream_chunk(chunk: Any) -> str | None:
+    event_type = str(getattr(chunk, "type", "") or getattr(chunk, "event", "") or "")
+    if event_type in {"response.output_text.delta", "response.refusal.delta"}:
+        return str(getattr(chunk, "delta", "") or "") or None
+    if isinstance(chunk, dict):
+        dict_type = str(chunk.get("type") or chunk.get("event") or "")
+        if dict_type in {"response.output_text.delta", "response.refusal.delta"}:
+            return str(chunk.get("delta") or "") or None
+    delta = chunk.choices[0].delta if getattr(chunk, "choices", None) else None
+    text = getattr(delta, "content", None) if delta else None
+    return str(text) if text else None
 
 
 # ---------------------------------------------------------------------------
@@ -575,8 +625,7 @@ async def iter_conversation_events(
     try:
         stream = await _create_completion_stream(client, messages=messages)
         async for chunk in stream:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            text = getattr(delta, "content", None) if delta else None
+            text = _text_from_stream_chunk(chunk)
             if not text:
                 continue
             clean = render_chunk(text, path="CONVERSATION")

@@ -130,6 +130,7 @@ def _compile(*patterns: str) -> tuple[Pattern[str], ...]:
 
 _GREETING_PATTERNS = _compile(
     r"^(hallo|hi|hey|moin|servus|grüß\s*(gott|dich)|guten\s*(morgen|tag|abend))[\s!.?,]*$",
+    r"^(hallo|hi|hey|moin|servus|guten\s*(morgen|tag|abend))[\s,!.?]+(wie\s+geht('?s|\s+es\s+dir)(?:\s+heute)?)[\s?!.]*$",
     r"^(danke|vielen\s+dank|dankeschön|merci|thanks|thank\s+you)[\s!.?,]*$",
     r"^(tschüss|auf\s+wiedersehen|bis\s+dann|ciao|bye)[\s!.?,]*$",
     r"^wie\s+geht('?s|\s+es\s+dir)[\s?!.]*$",

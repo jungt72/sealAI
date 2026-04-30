@@ -64,7 +64,7 @@ class TestBuildMessages:
     def test_system_prompt_first(self):
         msgs = _build_messages("Hallo", history=None)
         assert msgs[0]["role"] == "system"
-        assert "Kontext dieses Turns" in msgs[0]["content"]
+        assert "primary_question" in msgs[0]["content"]
 
     def test_user_message_last(self):
         msgs = _build_messages("Was ist FKM?", history=None)
@@ -346,9 +346,18 @@ class _FakeChunk(NamedTuple):
     choices: list[_FakeChoice]
 
 
+class _FakeResponsesChunk(NamedTuple):
+    type: str
+    delta: str
+
+
 def _make_stream_chunks(texts: list[str]):
     """Build fake OpenAI stream chunks from a list of text deltas."""
     return [_FakeChunk(choices=[_FakeChoice(delta=_FakeDelta(content=t))]) for t in texts]
+
+
+def _make_responses_stream_chunks(texts: list[str]):
+    return [_FakeResponsesChunk(type="response.output_text.delta", delta=t) for t in texts]
 
 
 class _FakeStream:
@@ -374,9 +383,11 @@ class _FakeStream:
 def _patch_openai(chunks: list[str]):
     """Return a context manager that patches OpenAI with the given text chunks."""
     fake_stream = _FakeStream(_make_stream_chunks(chunks))
+    fake_responses_stream = _FakeStream(_make_responses_stream_chunks(chunks))
     mock_client = MagicMock()
     # create() is now called with `await` — AsyncMock makes the return value awaitable.
     mock_client.chat.completions.create = AsyncMock(return_value=fake_stream)
+    mock_client.responses.create = AsyncMock(return_value=fake_responses_stream)
     mock_openai = MagicMock()
     mock_openai.AsyncOpenAI.return_value = mock_client
     return patch("app.agent.runtime.conversation_runtime.openai", mock_openai)
@@ -483,6 +494,29 @@ class TestStreamConversation:
         assert state_update["reply"] == "Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"
 
     @pytest.mark.asyncio
+    async def test_gpt5_conversation_model_uses_responses_api_stream(self):
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(
+            return_value=_FakeStream(_make_responses_stream_chunks(["Hallo, gern."]))
+        )
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=AssertionError("gpt-5 conversation must not use chat completions")
+        )
+        mock_openai = MagicMock()
+        mock_openai.AsyncOpenAI.return_value = mock_client
+
+        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai), patch(
+            "app.agent.runtime.conversation_runtime._CONVERSATION_MODEL",
+            "gpt-5-nano",
+        ):
+            events = await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
+
+        parsed = _parse_events(events)
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert state_update["reply"] == "Hallo, gern."
+        mock_client.responses.create.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_EXPLORATION_phase_prompt_keeps_domain_entry_natural(self):
         with _patch_openai(["Dann ordnen wir das Problem zuerst nach der konkreten Betriebssituation. Wann zeigt sich die Leckage am deutlichsten?"]):
             events = await _collect(
@@ -551,7 +585,7 @@ class TestStreamConversation:
         joined = "\n".join(m["content"] for m in captured_messages if m["role"] == "system")
         assert "Relevanter offener Fokus" in joined
         assert joined.count("In welcher Situation zeigt sich die Leckage oder das Problem am deutlichsten?") == 1
-        assert "Der sichtbarste Auftretensmoment macht die naechste Eingrenzung am belastbarsten." not in joined
+        assert joined.count("Der sichtbarste Auftretensmoment macht die naechste Eingrenzung am belastbarsten.") == 1
         assert "Beginne die sichtbare Antwort IMMER mit diesem ersten Satz" not in joined
 
     @pytest.mark.asyncio
