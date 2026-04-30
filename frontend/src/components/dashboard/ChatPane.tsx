@@ -11,6 +11,8 @@ import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { decideCaseDelta } from "@/lib/bff/caseDelta";
 import { uploadRagDocument } from "@/lib/ragApi";
 import type { ProposedCaseDeltaField } from "@/lib/contracts/agent";
+import type { WorkspaceView } from "@/lib/contracts/workspace";
+import { humanizeDisplayText, uniqueDisplayItems } from "@/lib/engineering/displayLabels";
 
 interface ChatPaneProps {
   caseId?: string;
@@ -112,6 +114,51 @@ function isAutoAcceptableWorkingStateField(field: ProposedCaseDeltaField): boole
   );
 }
 
+function isGenericClarificationFallback(content: string): boolean {
+  const normalized = content.toLowerCase();
+  return (
+    normalized.includes("wo sitzt die dichtung genau?") &&
+    (normalized.includes("guter erster stand") || normalized.includes("guter arbeitsstand"))
+  );
+}
+
+function buildWorkspaceGroundedChatReply(content: string, workspace: WorkspaceView | null): string {
+  if (!workspace || !isGenericClarificationFallback(content)) {
+    return content;
+  }
+
+  const primaryQuestion =
+    workspace.decisionUnderstanding?.nextBestQuestions?.[0]?.question ||
+    workspace.decisionUnderstanding?.nextBestQuestion ||
+    workspace.communication?.primaryQuestion ||
+    "";
+  const readableQuestion = humanizeDisplayText(primaryQuestion);
+  if (!readableQuestion || readableQuestion.toLowerCase().includes("wo sitzt die dichtung genau")) {
+    return content;
+  }
+
+  const facts = uniqueDisplayItems(
+    [
+      ...(workspace.decisionUnderstanding?.understoodNow ?? []),
+      ...(workspace.communication?.confirmedFactsSummary ?? []),
+    ],
+    4,
+  );
+  const reason = humanizeDisplayText(
+    workspace.decisionUnderstanding?.nextBestQuestions?.[0]?.reason ||
+      workspace.communication?.supportingReason ||
+      workspace.decisionUnderstanding?.technicalMeaning?.[0] ||
+      "",
+  );
+
+  return [
+    "**Arbeitsstand:** Ich habe deine Angaben als aktuellen Arbeitsstand übernommen.",
+    facts.length ? facts.map((item) => `- ${item}`).join("\n") : "",
+    reason ? `**Warum das wichtig ist:** ${reason}` : "",
+    `**Naechste sinnvolle Frage:** ${readableQuestion}`,
+  ].filter(Boolean).join("\n\n");
+}
+
 function ProposedDeltaPanel({
   caseId,
   fields,
@@ -211,6 +258,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
     clearError,
   } = useAgentStream({ initialCaseId: caseId, onCaseBound, onTurnComplete });
   const registerWorkspaceCallbacks = useWorkspaceStore((s) => s.registerCallbacks);
+  const workspace = useWorkspaceStore((s) => s.workspace);
   const setStreamWorkspace = useWorkspaceStore((s) => s.setStreamWorkspace);
   const setActiveResponseClass = useWorkspaceStore((s) => s.setActiveResponseClass);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
@@ -360,7 +408,11 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
                   <MessageBubble
                     key={`${message.role}-${index}-${message.timestamp ?? ""}`}
                     role={message.role}
-                    content={message.content}
+                    content={
+                      message.role === "assistant"
+                        ? buildWorkspaceGroundedChatReply(message.content, workspace)
+                        : message.content
+                    }
                   />
                 ))}
 

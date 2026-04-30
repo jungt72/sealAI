@@ -15,6 +15,9 @@ const agentStreamMockState = vi.hoisted(() => ({
 }));
 
 const decideCaseDeltaMock = vi.hoisted(() => vi.fn());
+const workspaceMockState = vi.hoisted(() => ({
+  workspace: null as null | Record<string, unknown>,
+}));
 
 vi.mock("@/components/dashboard/ChatComposer", () => ({
   default: () => <div data-testid="chat-composer" />,
@@ -27,6 +30,7 @@ vi.mock("@/hooks/useAgentStream", () => ({
 vi.mock("@/lib/store/workspaceStore", () => ({
   useWorkspaceStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
+      workspace: workspaceMockState.workspace,
       registerCallbacks: vi.fn(),
       setStreamWorkspace: vi.fn(),
       setActiveResponseClass: vi.fn(),
@@ -49,6 +53,7 @@ describe("ChatPane", () => {
     agentStreamMockState.streamWorkspace = null;
     agentStreamMockState.isStreaming = false;
     agentStreamMockState.error = null;
+    workspaceMockState.workspace = null;
     agentStreamMockState.sendMessage.mockReset();
     agentStreamMockState.clearError.mockReset();
     decideCaseDeltaMock.mockReset();
@@ -93,6 +98,39 @@ describe("ChatPane", () => {
     expect(screen.getByText("Wasser, 80 °C und 6 bar.")).toBeInTheDocument();
     expect(screen.getByText("Dichtungsart: Flachdichtung")).toBeInTheDocument();
     expect(screen.getByText("Naechste sinnvolle Frage:")).toBeInTheDocument();
+  });
+
+  it("replaces the generic clarification fallback with the backend next-best-question projection", () => {
+    agentStreamMockState.messages = [
+      { role: "user", content: "Flachdichtung fuer DN50 PN16 Flansch, Wasser bei 80 Grad und 6 bar" },
+      {
+        role: "assistant",
+        content:
+          "**Arbeitsstand:** Das ist ein guter erster Stand.\n\n" +
+          "**Naechste sinnvolle Frage:** Wo sitzt die Dichtung genau?",
+      },
+    ];
+    workspaceMockState.workspace = {
+      decisionUnderstanding: {
+        understoodNow: ["Medium: Wasser", "Temperatur max.: 80 °C", "Druck: 6 bar"],
+        technicalMeaning: ["Bei Flachdichtungen bestimmt der Flanschstandard die Geometrie."],
+        nextBestQuestion: "Welche Flansch- oder Normgeometrie liegt vor?",
+        nextBestQuestions: [
+          {
+            question: "Welche Flansch- oder Normgeometrie liegt vor?",
+            reason: "Bei Flachdichtungen bestimmt der Flanschstandard die Geometrie.",
+          },
+        ],
+      },
+      communication: {},
+    };
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.getByText("Ich habe deine Angaben als aktuellen Arbeitsstand übernommen.")).toBeInTheDocument();
+    expect(screen.getByText("Medium: Wasser")).toBeInTheDocument();
+    expect(screen.getByText("Welche Flansch- oder Normgeometrie liegt vor?")).toBeInTheDocument();
+    expect(screen.queryByText("Wo sitzt die Dichtung genau?")).not.toBeInTheDocument();
   });
 
   it("auto-accepts safe user-stated chat deltas as working state", async () => {
