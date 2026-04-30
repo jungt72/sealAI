@@ -66,8 +66,8 @@ export default function DashboardShell({
             </div>
             {isNavExpanded ? (
               <div className="min-w-0 animate-in fade-in duration-200">
-                <div className="truncate text-[15px] font-semibold text-[#0F172A]">SeaLAI</div>
-                <div className="truncate text-[11px] text-[#6B7280]">Technische Klaerung</div>
+                <div className="truncate text-[15px] font-semibold text-[#0F172A]">SEALING</div>
+                <div className="truncate text-[11px] font-medium tracking-[0.08em] text-[#6B7280]">INTELLIGENCE</div>
               </div>
             ) : null}
           </div>
@@ -156,12 +156,12 @@ export default function DashboardShell({
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-transparent bg-transparent px-5 sm:px-7">
           <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <div className="text-[18px] font-semibold tracking-tight text-[#0B5BD3]">SEALING</div>
+            <div className={cn("items-center gap-3", isNavExpanded ? "hidden" : "flex")}>
+              <div className="text-[16px] font-medium text-[#374151]">SEALING</div>
               <div className="h-5 w-px bg-[#D7DDE8]" />
               <div className="text-[16px] font-medium text-[#374151]">INTELLIGENCE</div>
             </div>
-            <div className="mt-1 truncate text-[12px] text-[#6B7280]">
+            <div className={cn("truncate text-[12px] text-[#6B7280]", isNavExpanded ? "mt-0" : "mt-1")}>
               {greeting} {userName}, schoen, dass du da bist.
             </div>
           </div>

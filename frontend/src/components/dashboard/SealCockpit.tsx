@@ -69,7 +69,7 @@ export function CockpitTabs({
 
 export function CockpitStatusStrip({ items }: { items: SealCockpitOverview["statusStrip"] }) {
   return (
-    <div className="grid grid-cols-1 gap-2 px-4 pt-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid grid-cols-1 gap-2 rounded-tl-[20px] px-4 pt-4 sm:grid-cols-2 xl:grid-cols-5">
       {items.map((item) => (
         <div key={item.label} className="min-h-[78px] rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-3">
           <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">{item.label}</div>
@@ -445,7 +445,7 @@ export function SealCockpit({
   const [activeTab, setActiveTab] = useState<CockpitTabId>("overview");
 
   return (
-    <aside className="flex h-full min-h-[720px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)] lg:min-h-0">
+    <aside className="flex h-full min-h-[720px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-transparent bg-transparent lg:min-h-0">
       <CockpitTabs tabs={data.tabs} activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pb-4">
         {activeTab === "overview" ? (
