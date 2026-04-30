@@ -4,13 +4,20 @@ import pytest
 
 from app.agent.api.models import CaseDeltaDecisionRequest
 from app.agent.api.routes.review import session_case_delta_decision_endpoint
-from app.agent.domain.case_delta import build_assistant_delta_event, proposed_case_delta_from_extractions
-from app.agent.state.models import GovernedPersistenceMarker, GovernedSessionState, ObservedExtraction
+from app.agent.domain.case_delta import (
+    build_assistant_delta_event,
+    proposed_case_delta_from_extractions,
+)
+from app.agent.state.models import (
+    GovernedPersistenceMarker,
+    GovernedSessionState,
+    ObservedExtraction,
+)
 from app.services.auth.dependencies import RequestUser
 
 
 @pytest.mark.asyncio
-async def test_case_delta_accept_partially_applies_safe_fields_and_skips_blocked_pressure(
+async def test_case_delta_accept_applies_pressure_value_and_keeps_interpretation_visible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     delta = proposed_case_delta_from_extractions(
@@ -79,10 +86,19 @@ async def test_case_delta_accept_partially_applies_safe_fields_and_skips_blocked
     )
 
     assert response.action == "accept"
-    assert response.applied_fields == ["medium", "shaft_diameter_mm"]
-    assert response.rejected_fields == ["pressure_bar"]
+    assert response.applied_fields == ["pressure_bar", "medium", "shaft_diameter_mm"]
+    assert response.rejected_fields == []
     assert len(persisted) == 1
     decision_event = persisted[0].case_events[-1]
     assert decision_event.event_type == "case_delta_accepted"
-    assert set(decision_event.accepted_delta) == {"medium", "shaft_diameter_mm"}
-    assert "pressure_bar" not in decision_event.accepted_delta
+    assert set(decision_event.accepted_delta) == {
+        "pressure_bar",
+        "medium",
+        "shaft_diameter_mm",
+    }
+    assert (
+        decision_event.accepted_delta["pressure_bar"]["engineering_value"][
+            "interpretation"
+        ]
+        == "unknown"
+    )

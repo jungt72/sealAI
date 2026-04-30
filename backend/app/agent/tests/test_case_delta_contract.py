@@ -1,6 +1,7 @@
-import pytest
-
-from app.agent.api.assembly import _assemble_governed_stream_payload, _build_governed_reply_context
+from app.agent.api.assembly import (
+    _assemble_governed_stream_payload,
+    _build_governed_reply_context,
+)
 from app.agent.domain.case_delta import (
     build_assistant_delta_event,
     build_case_delta_decision_event,
@@ -15,9 +16,22 @@ from app.agent.state.models import GovernedSessionState, ObservedExtraction
 def test_proposed_case_delta_uses_current_turn_extractions_only() -> None:
     delta = proposed_case_delta_from_extractions(
         [
-            ObservedExtraction(field_name="medium", raw_value="Wasser", confidence=0.92, turn_index=1),
-            ObservedExtraction(field_name="pressure_bar", raw_value=4, raw_unit="bar", confidence=0.75, turn_index=2),
-            ObservedExtraction(field_name="unknown_internal", raw_value="x", confidence=1.0, turn_index=2),
+            ObservedExtraction(
+                field_name="medium", raw_value="Wasser", confidence=0.92, turn_index=1
+            ),
+            ObservedExtraction(
+                field_name="pressure_bar",
+                raw_value=4,
+                raw_unit="bar",
+                confidence=0.75,
+                turn_index=2,
+            ),
+            ObservedExtraction(
+                field_name="unknown_internal",
+                raw_value="x",
+                confidence=1.0,
+                turn_index=2,
+            ),
         ],
         turn_index=2,
     )
@@ -96,7 +110,14 @@ def test_governed_stream_payload_exposes_structured_double_output() -> None:
 
 def test_assistant_delta_case_event_is_append_only_non_authoritative() -> None:
     delta = proposed_case_delta_from_extractions(
-        [ObservedExtraction(field_name="medium", raw_value="Salzwasser", confidence=0.92, turn_index=1)],
+        [
+            ObservedExtraction(
+                field_name="medium",
+                raw_value="Salzwasser",
+                confidence=0.92,
+                turn_index=1,
+            )
+        ],
         turn_index=1,
     )
     event = build_assistant_delta_event(
@@ -121,7 +142,11 @@ def test_case_event_appends_to_governed_state_without_accepting_delta() -> None:
 
     state = GovernedSessionState()
     delta = proposed_case_delta_from_extractions(
-        [ObservedExtraction(field_name="medium", raw_value="Wasser", confidence=0.92, turn_index=1)],
+        [
+            ObservedExtraction(
+                field_name="medium", raw_value="Wasser", confidence=0.92, turn_index=1
+            )
+        ],
         turn_index=1,
     )
     event = build_assistant_delta_event(
@@ -139,11 +164,21 @@ def test_case_event_appends_to_governed_state_without_accepting_delta() -> None:
     assert updated.asserted.assertions == {}
 
 
-def test_case_delta_decision_event_records_accepted_fields_without_source_mutation() -> None:
+def test_case_delta_decision_event_records_accepted_fields_without_source_mutation() -> (
+    None
+):
     delta = proposed_case_delta_from_extractions(
         [
-            ObservedExtraction(field_name="pressure_bar", raw_value=4, raw_unit="barg", confidence=0.92, turn_index=1),
-            ObservedExtraction(field_name="medium", raw_value="Wasser", confidence=0.91, turn_index=1),
+            ObservedExtraction(
+                field_name="pressure_bar",
+                raw_value=4,
+                raw_unit="barg",
+                confidence=0.92,
+                turn_index=1,
+            ),
+            ObservedExtraction(
+                field_name="medium", raw_value="Wasser", confidence=0.91, turn_index=1
+            ),
         ],
         turn_index=1,
     )
@@ -157,7 +192,9 @@ def test_case_delta_decision_event_records_accepted_fields_without_source_mutati
 
     latest = latest_proposed_delta_event(state)
     assert latest is proposal
-    selected = select_delta_fields(latest.proposed_case_delta, field_names=["pressure_bar"])
+    selected = select_delta_fields(
+        latest.proposed_case_delta, field_names=["pressure_bar"]
+    )
     event = build_case_delta_decision_event(
         case_id="case-1",
         action="accept",
@@ -173,11 +210,16 @@ def test_case_delta_decision_event_records_accepted_fields_without_source_mutati
     assert event.accepted_delta["pressure_bar"]["status"] == "accepted"
     assert event.accepted_delta["pressure_bar"]["source_event_id"] == proposal.event_id
     assert event.accepted_delta["pressure_bar"]["engineering_value"]["unit"] == "bar"
-    assert event.accepted_delta["pressure_bar"]["engineering_value"]["interpretation"] == "gauge"
+    assert (
+        event.accepted_delta["pressure_bar"]["engineering_value"]["interpretation"]
+        == "gauge"
+    )
     assert event.rejected_delta == {}
 
 
-def test_case_delta_decision_event_rejects_unknown_pressure_acceptance() -> None:
+def test_case_delta_accepts_unknown_pressure_value_without_final_interpretation() -> (
+    None
+):
     delta = proposed_case_delta_from_extractions(
         [
             ObservedExtraction(
@@ -192,13 +234,16 @@ def test_case_delta_decision_event_rejects_unknown_pressure_acceptance() -> None
     )
     selected = select_delta_fields(delta)
 
-    with pytest.raises(ValueError, match="pressure_bar cannot be accepted"):
-        build_case_delta_decision_event(
-            case_id="case-1",
-            action="accept",
-            fields=selected,
-            source_event_id="source-1",
-        )
+    event = build_case_delta_decision_event(
+        case_id="case-1",
+        action="accept",
+        fields=selected,
+        source_event_id="source-1",
+    )
+
+    pressure_payload = event.accepted_delta["pressure_bar"]
+    assert pressure_payload["status"] == "accepted"
+    assert pressure_payload["engineering_value"]["interpretation"] == "unknown"
 
 
 def test_case_delta_accepts_interpreted_gauge_pressure() -> None:
@@ -230,7 +275,11 @@ def test_case_delta_accepts_interpreted_gauge_pressure() -> None:
 
 def test_case_delta_decision_event_records_rejected_fields() -> None:
     delta = proposed_case_delta_from_extractions(
-        [ObservedExtraction(field_name="medium", raw_value="Wasser", confidence=0.92, turn_index=1)],
+        [
+            ObservedExtraction(
+                field_name="medium", raw_value="Wasser", confidence=0.92, turn_index=1
+            )
+        ],
         turn_index=1,
     )
     selected = select_delta_fields(delta)

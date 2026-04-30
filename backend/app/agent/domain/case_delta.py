@@ -3,6 +3,7 @@
 The LLM-facing extraction layer may propose deltas. This module deliberately
 keeps them non-authoritative until a backend acceptance path applies them.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ from app.agent.domain.normalization import (
     MappingConfidence,
     normalize_critical_field_value,
 )
-from app.domain.critical_field_contract import CRITICAL_CASE_FIELDS, PRESSURE_FIELDS
+from app.domain.critical_field_contract import CRITICAL_CASE_FIELDS
 
 _ALLOWED_DELTA_FIELDS: frozenset[str] = CRITICAL_CASE_FIELDS | frozenset(
     {
@@ -47,7 +48,12 @@ _ALLOWED_DELTA_FIELDS: frozenset[str] = CRITICAL_CASE_FIELDS | frozenset(
 def confidence_from_extraction(value: float | str | None) -> ConfidenceLevel:
     if isinstance(value, str):
         normalized = value.strip()
-        if normalized in {"confirmed", "estimated", "inferred", "requires_confirmation"}:
+        if normalized in {
+            "confirmed",
+            "estimated",
+            "inferred",
+            "requires_confirmation",
+        }:
             return normalized  # type: ignore[return-value]
     try:
         numeric = float(value if value is not None else 0.0)
@@ -84,7 +90,9 @@ def proposed_case_delta_from_extractions(
             unit=extraction.raw_unit,
         )
         if normalized is not None:
-            engineering_value = EngineeringValue(**normalized.as_engineering_value_dict())
+            engineering_value = EngineeringValue(
+                **normalized.as_engineering_value_dict()
+            )
             if normalized.confidence == MappingConfidence.REQUIRES_CONFIRMATION:
                 confidence = "requires_confirmation"
                 confirmation_required = True
@@ -96,7 +104,11 @@ def proposed_case_delta_from_extractions(
                 field_name=field_name,
                 proposed_value=extraction.raw_value,
                 unit=extraction.raw_unit,
-                provenance="user_stated" if extraction.source in {"llm", "user"} else "inferred",
+                provenance=(
+                    "user_stated"
+                    if extraction.source in {"llm", "user"}
+                    else "inferred"
+                ),
                 confidence=confidence,
                 engineering_value=engineering_value,
                 confirmation_required=confirmation_required,
@@ -172,7 +184,10 @@ def build_document_delta_event(
 def latest_proposed_delta_event(state: GovernedSessionState) -> CaseEvent | None:
     """Return the newest proposal with at least one proposed field."""
     for event in reversed(state.case_events):
-        if event.event_type not in {"assistant_delta_proposed", "document_delta_proposed"}:
+        if event.event_type not in {
+            "assistant_delta_proposed",
+            "document_delta_proposed",
+        }:
             continue
         if event.proposed_case_delta.fields:
             return event
@@ -200,16 +215,11 @@ def select_delta_fields(
 
 
 def acceptance_block_reason(field: ProposedCaseDeltaField) -> str | None:
-    if field.field_name not in PRESSURE_FIELDS:
-        return None
-    engineering_value = field.engineering_value
-    interpretation = (
-        str(engineering_value.interpretation or "").strip()
-        if engineering_value is not None
-        else ""
-    )
-    if interpretation in {"", "unknown"}:
-        return "pressure interpretation requires confirmation before acceptance"
+    # A numeric pressure may be accepted as a user-stated value even when the
+    # pressure interpretation (gauge / absolute / differential / direct seal
+    # pressure) is still unknown. The missing interpretation remains visible as
+    # a separate clarification and release boundary; blocking the value itself
+    # prevents downstream deterministic prechecks from using available data.
     return None
 
 
