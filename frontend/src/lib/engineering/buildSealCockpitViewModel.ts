@@ -249,7 +249,10 @@ function buildCalculations(workspace: WorkspaceView | null): CalculationEvidence
     return {
       label: definition.label,
       value: MISSING_CALCULATION_VALUE,
-      limit: `Fehlende Eingaben: ${missingInputs.join(" · ")}`,
+      limit:
+        missingInputs.length > 0
+          ? `Fehlende Eingaben: ${missingInputs.join(" · ")}`
+          : "Backend-Nachweis noch nicht registriert",
       reserve: definition.reason,
       status: "offen",
     };

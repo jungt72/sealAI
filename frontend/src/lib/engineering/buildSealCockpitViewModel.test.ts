@@ -187,4 +187,41 @@ describe("buildSealCockpitViewModel", () => {
       }),
     );
   });
+
+  it("does not render an empty missing-input label when a backend check is not registered", () => {
+    const viewModel = buildSealCockpitViewModel(
+      workspaceFixture({
+        parameters: {
+          medium: "Oel",
+          temperature_c: 120,
+          pressure_bar: 5,
+          sealing_type: "PTFE-RWDR",
+          shaft_diameter_mm: 50,
+          speed_rpm: 1500,
+        },
+        technicalDerivations: [
+          {
+            calcType: "rwdr",
+            status: "ok",
+            vSurfaceMPerS: 3.93,
+            pvValueMpaMPerS: 1.96,
+            dnValue: 75000,
+            temperatureHeadroomC: 140,
+            notes: ["Backend-Ableitung aus Workspace-Parametern."],
+          },
+        ],
+      }),
+    );
+
+    expect(viewModel.calculations).toContainEqual(
+      expect.objectContaining({
+        label: "Druckfenster",
+        value: "Nicht berechenbar",
+        limit: "Backend-Nachweis noch nicht registriert",
+      }),
+    );
+    expect(viewModel.calculations).not.toContainEqual(
+      expect.objectContaining({ limit: "Fehlende Eingaben: " }),
+    );
+  });
 });
