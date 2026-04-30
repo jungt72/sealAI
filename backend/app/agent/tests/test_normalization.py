@@ -676,6 +676,19 @@ class TestBackwardCompatLayer:
         assert result["medium_normalization_status"] == "requires_confirmation"
         assert result["medium_followup_question"]
 
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("Hydraulik-Stangendichtung an einem Zylinder, 160 bar, HLP 46", "hydraulic_rod_seal"),
+            ("Stangendichtung im Hydraulikzylinder", "hydraulic_rod_seal"),
+            ("Pneumatik-Kolbendichtung bei 6 bar", "pneumatic_piston_seal"),
+        ],
+    )
+    def test_extract_parameters_detects_type_specific_linear_seals(self, text, expected):
+        result = extract_parameters(text)
+
+        assert result["sealing_type"] == expected
+
 
 # ---------------------------------------------------------------------------
 # 10. Key domain scenarios (regression guard)

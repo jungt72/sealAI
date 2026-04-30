@@ -978,6 +978,12 @@ _MOTION_TYPE_PATTERNS: list[tuple[str, str]] = [
 ]
 
 _SEALING_TYPE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:hydraulik[- ]?stangendichtung|hydraulik\w*(?:\s+\w+){0,4}\s+stangendichtung|stangendichtung(?:\s+\w+){0,4}\s+hydraulik\w*|hydraulic\s+rod\s+seal)\b", "hydraulic_rod_seal"),
+    (r"\b(?:hydraulik[- ]?kolbendichtung|hydraulik\w*(?:\s+\w+){0,4}\s+kolbendichtung|kolbendichtung(?:\s+\w+){0,4}\s+hydraulik\w*|hydraulic\s+piston\s+seal)\b", "hydraulic_piston_seal"),
+    (r"\b(?:pneumatik[- ]?stangendichtung|pneumatik\w*(?:\s+\w+){0,4}\s+stangendichtung|stangendichtung(?:\s+\w+){0,4}\s+pneumatik\w*|pneumatic\s+rod\s+seal)\b", "pneumatic_rod_seal"),
+    (r"\b(?:pneumatik[- ]?kolbendichtung|pneumatik\w*(?:\s+\w+){0,4}\s+kolbendichtung|kolbendichtung(?:\s+\w+){0,4}\s+pneumatik\w*|pneumatic\s+piston\s+seal)\b", "pneumatic_piston_seal"),
+    (r"\b(?:abstreifer|wiper\s+seal)\b", "hydraulic_wiper"),
+    (r"\b(?:f[uü]hrungsring|guide\s+ring)\b", "hydraulic_guide_ring"),
     (r"\b(?:gleitringdichtung|gleitring|mechanical\s+seal)\b", "mechanical_seal"),
     (r"\b(?:rwdr|radialwellendichtring|simmerring|wellendichtring)\b", "rwdr"),
     (r"\b(?:o[- ]?ring|oring)\b", "o_ring"),
