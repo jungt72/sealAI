@@ -41,10 +41,14 @@ MAX_CASCADE_ITERATIONS = 20
 
 
 class CascadingCalculationEngine:
-    def __init__(self, calculations: tuple[CalculationDefinition, ...] | None = None) -> None:
+    def __init__(
+        self, calculations: tuple[CalculationDefinition, ...] | None = None
+    ) -> None:
         self._calculations = calculations or PTFE_RWDR_CALCULATIONS
 
-    def execute_cascade(self, case: Mapping[str, Any]) -> tuple[dict[str, Any], list[CalcExecutionRecord]]:
+    def execute_cascade(
+        self, case: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], list[CalcExecutionRecord]]:
         state = dict(case)
         executed: list[CalcExecutionRecord] = []
         signatures: set[tuple[str, tuple[tuple[str, Any], ...]]] = set()
@@ -58,19 +62,30 @@ class CascadingCalculationEngine:
                     continue
                 if not _has_inputs(state, calc.required_inputs):
                     continue
-                signature = (calc.calc_id, tuple((path, _get(state, path)) for path in calc.required_inputs))
+                signature = (
+                    calc.calc_id,
+                    tuple((path, _get(state, path)) for path in calc.required_inputs),
+                )
                 if signature in signatures:
                     continue
                 result = calc.formula(state)
                 signatures.add(signature)
                 if result.status != "ok":
                     continue
-                produced = {path: value for path, value in result.outputs.items() if _get(state, path) != value}
+                produced = {
+                    path: value
+                    for path, value in result.outputs.items()
+                    if _get(state, path) != value
+                }
                 if not produced:
                     continue
                 for path, value in produced.items():
                     _set(state, path, value)
-                executed.append(CalcExecutionRecord(calc.calc_id, calc.version, dict(signature[1]), produced))
+                executed.append(
+                    CalcExecutionRecord(
+                        calc.calc_id, calc.version, dict(signature[1]), produced
+                    )
+                )
                 changed = True
         if guard >= MAX_CASCADE_ITERATIONS:
             raise CascadeLoopError("calculation cascade did not converge")
@@ -109,7 +124,9 @@ def _has_inputs(data: Mapping[str, Any], paths: tuple[str, ...]) -> bool:
 def _circumferential_speed(case: Mapping[str, Any]) -> CalcResult:
     diameter = _num(case, "shaft.diameter_mm")
     rpm = _num(case, "operating.shaft_speed.rpm_nom")
-    return CalcResult({"derived.surface_speed_ms": math.pi * diameter / 1000.0 * rpm / 60.0})
+    return CalcResult(
+        {"derived.surface_speed_ms": math.pi * diameter / 1000.0 * rpm / 60.0}
+    )
 
 
 def _dn_value(case: Mapping[str, Any]) -> CalcResult:
@@ -140,7 +157,9 @@ def _thermal_load_indicator(case: Mapping[str, Any]) -> CalcResult:
     pv = _num(case, "derived.pv_loading")
     friction = float(_get(case, "compound.friction_coefficient") or 0.12)
     diameter = _num(case, "shaft.diameter_mm")
-    return CalcResult({"derived.heat_flux_w_per_mm": pv * friction * math.pi * diameter})
+    return CalcResult(
+        {"derived.heat_flux_w_per_mm": pv * friction * math.pi * diameter}
+    )
 
 
 def _extrusion_gap_check(case: Mapping[str, Any]) -> CalcResult:
@@ -154,7 +173,13 @@ def _creep_gap_estimate(case: Mapping[str, Any]) -> CalcResult:
     force = _num(case, "rwdr.lip.radial_force_n_per_mm")
     temp = _num(case, "operating.temperature.nom_c")
     years = _num(case, "expected_service_duration_years")
-    return CalcResult({"derived.estimated_creep_gap_um": max(0.0, (temp / 100.0) * years * 10.0 / force)})
+    return CalcResult(
+        {
+            "derived.estimated_creep_gap_um": max(
+                0.0, (temp / 100.0) * years * 10.0 / force
+            )
+        }
+    )
 
 
 def _temperature_headroom(case: Mapping[str, Any]) -> CalcResult:
@@ -164,14 +189,91 @@ def _temperature_headroom(case: Mapping[str, Any]) -> CalcResult:
     return CalcResult({"derived.temperature_headroom_c": limit - max_temp})
 
 
+def _pressure_window(case: Mapping[str, Any]) -> CalcResult:
+    pressure_bar = _num(case, "operating.pressure.max_bar")
+    sealing_type = str(_get(case, "sealing_type") or "").strip()
+    if pressure_bar <= 0:
+        label = f"{pressure_bar:g} bar · Druckangabe prüfen"
+    elif "rwdr" in sealing_type.casefold() or "radial" in sealing_type.casefold():
+        label = f"{pressure_bar:g} bar · RWDR-Druckfenster herstellerseitig prüfen"
+    else:
+        label = f"{pressure_bar:g} bar · Dichtungsbauart herstellerseitig prüfen"
+    return CalcResult({"derived.pressure_window": label})
+
+
 PTFE_RWDR_CALCULATIONS: tuple[CalculationDefinition, ...] = (
-    CalculationDefinition("ptfe_rwdr.circumferential_speed", "1.0", ("shaft.diameter_mm", "operating.shaft_speed.rpm_nom"), ("derived.surface_speed_ms",), _circumferential_speed),
-    CalculationDefinition("ptfe_rwdr.dn_value", "1.0", ("shaft.diameter_mm", "operating.shaft_speed.rpm_nom"), ("derived.dn_value",), _dn_value),
-    CalculationDefinition("ptfe_rwdr.pressure_pv_loading", "1.0", ("operating.pressure.max_bar", "derived.surface_speed_ms"), ("derived.pv_value_mpa_m_s",), _pressure_pv_loading),
-    CalculationDefinition("ptfe_rwdr.contact_pressure", "1.0", ("rwdr.lip.radial_force_n_per_mm", "rwdr.lip.contact_width_mm"), ("derived.contact_pressure_n_per_mm2",), _contact_pressure),
-    CalculationDefinition("ptfe_rwdr.pv_loading", "1.0", ("derived.contact_pressure_n_per_mm2", "derived.surface_speed_ms"), ("derived.pv_loading",), _pv_loading),
-    CalculationDefinition("ptfe_rwdr.thermal_load_indicator", "1.0", ("derived.pv_loading", "shaft.diameter_mm"), ("derived.heat_flux_w_per_mm",), _thermal_load_indicator),
-    CalculationDefinition("ptfe_rwdr.extrusion_gap_check", "1.0", ("operating.pressure.max_bar", "rwdr.extrusion_gap_mm"), ("derived.extrusion_safety_margin",), _extrusion_gap_check),
-    CalculationDefinition("ptfe_rwdr.creep_gap_estimate_simplified", "1.0", ("rwdr.lip.radial_force_n_per_mm", "operating.temperature.nom_c", "expected_service_duration_years"), ("derived.estimated_creep_gap_um",), _creep_gap_estimate),
-    CalculationDefinition("ptfe_rwdr.compound_temperature_headroom", "1.0", ("operating.temperature.max_c", "sealing_material_family"), ("derived.temperature_headroom_c",), _temperature_headroom),
+    CalculationDefinition(
+        "ptfe_rwdr.circumferential_speed",
+        "1.0",
+        ("shaft.diameter_mm", "operating.shaft_speed.rpm_nom"),
+        ("derived.surface_speed_ms",),
+        _circumferential_speed,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.dn_value",
+        "1.0",
+        ("shaft.diameter_mm", "operating.shaft_speed.rpm_nom"),
+        ("derived.dn_value",),
+        _dn_value,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.pressure_pv_loading",
+        "1.0",
+        ("operating.pressure.max_bar", "derived.surface_speed_ms"),
+        ("derived.pv_value_mpa_m_s",),
+        _pressure_pv_loading,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.pressure_window",
+        "1.0",
+        ("operating.pressure.max_bar", "sealing_type"),
+        ("derived.pressure_window",),
+        _pressure_window,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.contact_pressure",
+        "1.0",
+        ("rwdr.lip.radial_force_n_per_mm", "rwdr.lip.contact_width_mm"),
+        ("derived.contact_pressure_n_per_mm2",),
+        _contact_pressure,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.pv_loading",
+        "1.0",
+        ("derived.contact_pressure_n_per_mm2", "derived.surface_speed_ms"),
+        ("derived.pv_loading",),
+        _pv_loading,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.thermal_load_indicator",
+        "1.0",
+        ("derived.pv_loading", "shaft.diameter_mm"),
+        ("derived.heat_flux_w_per_mm",),
+        _thermal_load_indicator,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.extrusion_gap_check",
+        "1.0",
+        ("operating.pressure.max_bar", "rwdr.extrusion_gap_mm"),
+        ("derived.extrusion_safety_margin",),
+        _extrusion_gap_check,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.creep_gap_estimate_simplified",
+        "1.0",
+        (
+            "rwdr.lip.radial_force_n_per_mm",
+            "operating.temperature.nom_c",
+            "expected_service_duration_years",
+        ),
+        ("derived.estimated_creep_gap_um",),
+        _creep_gap_estimate,
+    ),
+    CalculationDefinition(
+        "ptfe_rwdr.compound_temperature_headroom",
+        "1.0",
+        ("operating.temperature.max_c", "sealing_material_family"),
+        ("derived.temperature_headroom_c",),
+        _temperature_headroom,
+    ),
 )

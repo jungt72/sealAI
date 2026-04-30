@@ -72,6 +72,18 @@ REGISTERED_CHECKS: tuple[EngineeringCheckDefinition, ...] = (
             "material family must be manufacturer-checked before release",
         ),
     ),
+    EngineeringCheckDefinition(
+        calc_id="rwdr_pressure_window",
+        label="Druckfenster",
+        formula_version="rwdr_calc_v1",
+        required_inputs=("pressure_bar", "sealing_type"),
+        valid_paths=("rwdr",),
+        output_key="pressure_window",
+        guardrails=(
+            "precheck only; pressure interpretation and direct seal pressure remain manufacturer validation points",
+            "does not constitute pressure rating or release",
+        ),
+    ),
 )
 
 _INPUT_ALIASES: dict[str, tuple[str, ...]] = {

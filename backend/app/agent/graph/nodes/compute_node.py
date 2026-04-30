@@ -120,6 +120,10 @@ def _build_canonical_case(assertions: dict) -> dict[str, Any]:
     if pressure is not None:
         case["operating"]["pressure"] = {"max_bar": pressure}
 
+    sealing_type = _str_or_none(assertions, "sealing_type")
+    if sealing_type:
+        case["sealing_type"] = sealing_type
+
     temperature = _float_or_none(assertions, "temperature_c")
     if temperature is not None:
         case["operating"]["temperature"] = {
@@ -176,6 +180,7 @@ def _canonical_result_to_compute_result(
         "pv_value_mpa_m_s": derived.get("pv_value_mpa_m_s"),
         "dn_value": derived.get("dn_value"),
         "temperature_headroom_c": derived.get("temperature_headroom_c"),
+        "pressure_window": derived.get("pressure_window"),
         "notes": _notes_from_derived(assertions, derived),
         "calculation_records": _records_payload(records),
         "provenance": "calculated",

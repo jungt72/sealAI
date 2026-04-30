@@ -224,4 +224,31 @@ describe("buildSealCockpitViewModel", () => {
       expect.objectContaining({ limit: "Fehlende Eingaben: " }),
     );
   });
+
+  it("renders pressure-window evidence when the backend projection provides it", () => {
+    const viewModel = buildSealCockpitViewModel(
+      workspaceFixture({
+        technicalDerivations: [
+          {
+            calcType: "rwdr",
+            status: "ok",
+            vSurfaceMPerS: 3.93,
+            pvValueMpaMPerS: 1.96,
+            dnValue: 75000,
+            temperatureHeadroomC: 140,
+            pressureWindow: "5 bar · RWDR-Druckfenster herstellerseitig prüfen",
+            notes: ["Backend-Ableitung aus Workspace-Parametern."],
+          },
+        ],
+      }),
+    );
+
+    expect(viewModel.calculations).toContainEqual(
+      expect.objectContaining({
+        label: "Druckfenster",
+        value: "5 bar · RWDR-Druckfenster herstellerseitig prüfen",
+        status: "backend-berechnet",
+      }),
+    );
+  });
 });

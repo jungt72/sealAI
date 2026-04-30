@@ -30,6 +30,7 @@ Coverage:
     19. RWDR notes list is a list (may be empty)
     20. state returned unchanged when no assertions
 """
+
 from __future__ import annotations
 
 import math
@@ -46,6 +47,7 @@ from app.services.calculation_engine import CalcExecutionRecord
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _claim(field: str, value, confidence: str = "confirmed") -> AssertedClaim:
     return AssertedClaim(
@@ -72,6 +74,7 @@ def _rwdr_state(
 # ---------------------------------------------------------------------------
 # 1–3. Guard: missing required fields → no calc
 # ---------------------------------------------------------------------------
+
 
 class TestMissingRequiredFields:
     @pytest.mark.asyncio
@@ -114,6 +117,7 @@ class TestMissingRequiredFields:
 # 4–5. Both required fields → RWDR calc runs
 # ---------------------------------------------------------------------------
 
+
 class TestRwdrCalcTriggered:
     @pytest.mark.asyncio
     async def test_one_result_in_compute_results(self):
@@ -137,7 +141,10 @@ class TestRwdrCalcTriggered:
     async def test_result_has_calculation_engine_metadata(self):
         state = _rwdr_state()
         result = await compute_node(state)
-        assert result.compute_results[0]["calculation_engine"] == "CascadingCalculationEngine"
+        assert (
+            result.compute_results[0]["calculation_engine"]
+            == "CascadingCalculationEngine"
+        )
         assert result.compute_results[0]["provenance"] == "calculated"
         assert result.compute_results[0]["calculation_records"]
 
@@ -160,18 +167,25 @@ class TestRwdrCalcTriggered:
         ]
         with patch(
             "app.agent.graph.nodes.compute_node.CascadingCalculationEngine.execute_cascade",
-            return_value=({"derived": {"surface_speed_ms": 42.0, "dn_value": 200.0}}, records),
+            return_value=(
+                {"derived": {"surface_speed_ms": 42.0, "dn_value": 200.0}},
+                records,
+            ),
         ) as execute_cascade:
             result = await compute_node(state)
 
         execute_cascade.assert_called_once()
         assert result.compute_results[0]["v_surface_m_s"] == 42.0
-        assert result.compute_results[0]["calculation_records"][0]["calc_id"] == "test.calc"
+        assert (
+            result.compute_results[0]["calculation_records"][0]["calc_id"]
+            == "test.calc"
+        )
 
 
 # ---------------------------------------------------------------------------
 # 7. v_surface_m_s computed correctly (DIN 3760)
 # ---------------------------------------------------------------------------
+
 
 class TestDIN3760Calculation:
     @pytest.mark.asyncio
@@ -181,7 +195,9 @@ class TestDIN3760Calculation:
         expected = (math.pi * d_mm * n_rpm) / 60000.0
         state = _rwdr_state(shaft_mm=d_mm, rpm=n_rpm)
         result = await compute_node(state)
-        assert result.compute_results[0]["v_surface_m_s"] == pytest.approx(expected, rel=1e-6)
+        assert result.compute_results[0]["v_surface_m_s"] == pytest.approx(
+            expected, rel=1e-6
+        )
 
     @pytest.mark.asyncio
     async def test_zero_rpm_zero_v_surface(self):
@@ -194,6 +210,7 @@ class TestDIN3760Calculation:
 # 8–10. Optional fields forwarded
 # ---------------------------------------------------------------------------
 
+
 class TestOptionalFieldsForwarded:
     @pytest.mark.asyncio
     async def test_pressure_bar_forwarded(self):
@@ -201,6 +218,20 @@ class TestOptionalFieldsForwarded:
         state = _rwdr_state(shaft_mm=50.0, rpm=1500.0, pressure_bar=10.0)
         result = await compute_node(state)
         assert result.compute_results[0]["pv_value_mpa_m_s"] is not None
+
+    @pytest.mark.asyncio
+    async def test_pressure_window_uses_pressure_and_sealing_type(self):
+        state = _rwdr_state(
+            shaft_mm=50.0,
+            rpm=1500.0,
+            pressure_bar=5.0,
+            sealing_type="PTFE-RWDR",
+        )
+        result = await compute_node(state)
+
+        assert result.compute_results[0]["pressure_window"] == (
+            "5 bar · RWDR-Druckfenster herstellerseitig prüfen"
+        )
 
     @pytest.mark.asyncio
     async def test_no_pressure_no_pv(self):
@@ -226,6 +257,7 @@ class TestOptionalFieldsForwarded:
 # ---------------------------------------------------------------------------
 # 11. Fail-open on calc error
 # ---------------------------------------------------------------------------
+
 
 class TestFailOpen:
     @pytest.mark.asyncio
@@ -253,6 +285,7 @@ class TestFailOpen:
 # ---------------------------------------------------------------------------
 # 12–15. Immutability
 # ---------------------------------------------------------------------------
+
 
 class TestImmutability:
     @pytest.mark.asyncio
@@ -288,6 +321,7 @@ class TestImmutability:
 # 16. No LLM call
 # ---------------------------------------------------------------------------
 
+
 class TestNoLLM:
     @pytest.mark.asyncio
     async def test_openai_never_called(self):
@@ -305,13 +339,19 @@ class TestNoLLM:
 # 17–18. RWDR status semantics
 # ---------------------------------------------------------------------------
 
+
 class TestRwdrStatus:
     @pytest.mark.asyncio
     async def test_status_ok_for_safe_operating_point(self):
         # Low speed (1.5 m/s), low pressure → ok
         state = _rwdr_state(shaft_mm=20.0, rpm=1000.0, pressure_bar=1.0, material="FKM")
         result = await compute_node(state)
-        assert result.compute_results[0]["status"] in ("ok", "warning", "critical", "insufficient_data")
+        assert result.compute_results[0]["status"] in (
+            "ok",
+            "warning",
+            "critical",
+            "insufficient_data",
+        )
 
     @pytest.mark.asyncio
     async def test_notes_is_a_list(self):

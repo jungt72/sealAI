@@ -254,6 +254,7 @@ type LegacyWorkspaceProjection = {
     pv_value_mpa_m_s?: number | null;
     dn_value?: number | null;
     temperature_headroom_c?: number | null;
+    pressure_window?: string | null;
     notes?: string[];
   }>;
   medium_capture?: {
@@ -955,6 +956,8 @@ export function mapWorkspaceView(
       dnValue: typeof item.dn_value === "number" ? item.dn_value : null,
       temperatureHeadroomC:
         typeof item.temperature_headroom_c === "number" ? item.temperature_headroom_c : null,
+      pressureWindow:
+        typeof item.pressure_window === "string" ? item.pressure_window : null,
       notes: item.notes || [],
     })),
     specificity: {

@@ -1144,6 +1144,7 @@ def _technical_derivation_from_live_calc_tile(
             "pv_value_mpa_m_s",
             "dn_value",
             "temperature_headroom_c",
+            "pressure_window",
         )
     ):
         return None
@@ -1154,6 +1155,7 @@ def _technical_derivation_from_live_calc_tile(
         pv_value_mpa_m_s=tile.get("pv_value_mpa_m_s"),
         dn_value=tile.get("dn_value"),
         temperature_headroom_c=tile.get("temperature_headroom_c"),
+        pressure_window=tile.get("pressure_window"),
         notes=[str(item) for item in _ls(tile.get("notes")) if item],
     )
 
@@ -1215,9 +1217,20 @@ def _technical_derivation_from_current_profile(
     pressure_bar = _float_from_profile(
         profile, "pressure_bar", "pressure_nominal", "pressure_max_bar", "pressure"
     )
+    sealing_type = _deep_value(profile, "sealing_type", "seal_type")
     pv_value_mpa_m_s = (
         pressure_bar * 0.1 * v_surface_m_s
         if pressure_bar is not None and v_surface_m_s is not None
+        else None
+    )
+    pressure_window = (
+        (
+            f"{pressure_bar:g} bar · RWDR-Druckfenster herstellerseitig prüfen"
+            if "rwdr" in str(sealing_type).casefold()
+            or "radial" in str(sealing_type).casefold()
+            else f"{pressure_bar:g} bar · Dichtungsbauart herstellerseitig prüfen"
+        )
+        if pressure_bar is not None and sealing_type
         else None
     )
     dn_value = (
@@ -1235,6 +1248,7 @@ def _technical_derivation_from_current_profile(
         ),
         dn_value=round(dn_value, 2) if dn_value is not None else None,
         temperature_headroom_c=temperature_headroom_c,
+        pressure_window=pressure_window,
         notes=[
             "Deterministisch aus aktuellen Workspace-Parametern berechnet; keine Herstellerfreigabe."
         ],
@@ -1663,6 +1677,7 @@ def synthesize_workspace_state_from_governed(
                 "pv_value_mpa_m_s": result.get("pv_value_mpa_m_s"),
                 "dn_value": result.get("dn_value"),
                 "temperature_headroom_c": result.get("temperature_headroom_c"),
+                "pressure_window": result.get("pressure_window"),
                 "notes": [
                     str(item) for item in list(result.get("notes") or []) if item
                 ],
@@ -1677,6 +1692,7 @@ def synthesize_workspace_state_from_governed(
             "temperature_headroom_c": technical_derivations[0].get(
                 "temperature_headroom_c"
             ),
+            "pressure_window": technical_derivations[0].get("pressure_window"),
             "notes": technical_derivations[0].get("notes") or [],
         }
     release_status = _governed_release_status(state)

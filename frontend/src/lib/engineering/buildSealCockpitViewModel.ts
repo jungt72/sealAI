@@ -203,6 +203,8 @@ function findConcreteDerivation(workspace: WorkspaceView, outputKey: string) {
       return hasDisplayValue(derivation.temperatureHeadroomC)
         ? `${derivation.temperatureHeadroomC} °C`
         : null;
+    case "pressure_window":
+      return hasDisplayValue(derivation.pressureWindow) ? derivation.pressureWindow : null;
     default:
       return null;
   }

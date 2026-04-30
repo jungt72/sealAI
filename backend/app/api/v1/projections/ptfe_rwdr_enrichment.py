@@ -132,6 +132,7 @@ def _build_ptfe_rwdr_case_for_services(profile: Dict[str, Any]) -> Dict[str, Any
     pressure_bar = _float_or_none(
         _first_present(profile, "pressure_bar", "pressure_max_bar", "pressure")
     )
+    sealing_type = _first_present(profile, "sealing_type", "seal_type")
     temperature_c = _float_or_none(
         _first_present(profile, "temperature_c", "temperature_max_c", "temperature")
     )
@@ -161,6 +162,8 @@ def _build_ptfe_rwdr_case_for_services(profile: Dict[str, Any]) -> Dict[str, Any
         case.setdefault("operating", {}).setdefault("pressure", {})[
             "max_bar"
         ] = pressure_bar
+    if sealing_type not in (None, ""):
+        case["sealing_type"] = str(sealing_type)
     if temperature_c is not None:
         case.setdefault("operating", {}).setdefault("temperature", {})[
             "max_c"
@@ -337,6 +340,7 @@ def _build_ptfe_rwdr_derivation(
         pv_value_mpa_m_s=derived.get("pv_loading") or derived.get("pv_value_mpa_m_s"),
         dn_value=(diameter * rpm if diameter is not None and rpm is not None else None),
         temperature_headroom_c=derived.get("temperature_headroom_c"),
+        pressure_window=derived.get("pressure_window"),
         notes=notes,
     )
 

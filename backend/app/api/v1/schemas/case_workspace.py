@@ -334,6 +334,7 @@ class TechnicalDerivationItem(BaseModel):
     pv_value_mpa_m_s: Optional[float] = None
     dn_value: Optional[float] = None
     temperature_headroom_c: Optional[float] = None
+    pressure_window: Optional[str] = None
     value: Any = None
     derived_value_id: Optional[str] = None
     derived_from_fields: List[str] = Field(default_factory=list)
