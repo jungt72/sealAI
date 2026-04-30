@@ -479,7 +479,7 @@ def test_one_question_rule_blocks_multiple_questions_in_structured_clarification
         "Welches Medium liegt an? Welcher Druck liegt an?",
         fallback_text="Bitte Medium angeben.",
         allowed_surface_claims=claims,
-    ) == claims["fallback_text"]
+    ) == "Welches Medium liegt an?"
 
 
 def test_no_final_certainty_rule_blocks_simulated_finality() -> None:

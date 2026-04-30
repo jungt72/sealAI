@@ -340,6 +340,15 @@ def guard_governed_rendered_text(
         if fragment.lower() in lowered:
             return fallback
     if _violates_one_question_rule(text, allowed_surface_claims["response_class"]):
+        single_question_text = _trim_to_first_question(text)
+        single_question_lowered = single_question_text.lower()
+        if (
+            single_question_text
+            and not _violates_no_final_certainty_rule(single_question_lowered)
+            and not _violates_no_unauthorized_rfq_rule(single_question_lowered, allowed_surface_claims["response_class"])
+            and not _violates_class_guard(single_question_lowered, allowed_surface_claims["response_class"])
+        ):
+            return single_question_text
         return fallback
     if _violates_no_final_certainty_rule(lowered):
         return fallback
@@ -418,6 +427,13 @@ def _violates_one_question_rule(text: str, response_class: str) -> bool:
         return False
     question_count = len(re.findall(r"\?", text))
     return question_count > 1
+
+
+def _trim_to_first_question(text: str) -> str:
+    first_question_end = str(text or "").find("?")
+    if first_question_end < 0:
+        return str(text or "").strip()
+    return str(text or "")[: first_question_end + 1].strip()
 
 
 def _violates_no_final_certainty_rule(lowered_text: str) -> bool:
