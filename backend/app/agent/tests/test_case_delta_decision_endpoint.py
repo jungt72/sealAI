@@ -89,6 +89,9 @@ async def test_case_delta_accept_applies_pressure_value_and_keeps_interpretation
     assert response.applied_fields == ["pressure_bar", "medium", "shaft_diameter_mm"]
     assert response.rejected_fields == []
     assert len(persisted) == 1
+    assert persisted[0].asserted.assertions["pressure_bar"].asserted_value == 4.0
+    assert "pressure_bar" not in persisted[0].asserted.blocking_unknowns
+    assert "pressure_interpretation" in persisted[0].governance.open_validation_points
     decision_event = persisted[0].case_events[-1]
     assert decision_event.event_type == "case_delta_accepted"
     assert set(decision_event.accepted_delta) == {

@@ -42,6 +42,7 @@ from app.services.conflict_detection_service import (
     ConflictCandidate,
     ConflictDetectionService,
 )
+from app.domain.critical_field_contract import PRESSURE_FIELDS
 
 from app.agent.state.models import (
     AssertedClaim,
@@ -429,6 +430,27 @@ def _asserted_case_field(
     )
 
 
+def _is_user_accepted_pressure_value(param: NormalizedParameter) -> bool:
+    """Treat an accepted numeric pressure as a usable value, not a missing field.
+
+    A bare "5 bar" can still have unknown interpretation (gauge/absolute/
+    differential/direct-at-seal), but once the user accepts the value it should
+    drive deterministic prechecks. The interpretation remains a validation
+    point in governance instead of making pressure_bar disappear from asserted
+    state.
+    """
+    if param.source != "user_override" or param.field_name not in PRESSURE_FIELDS:
+        return False
+    if param.value in (None, "", [], {}):
+        return False
+    engineering_value = param.engineering_value
+    return (
+        engineering_value.quantity_kind == "pressure"
+        and engineering_value.canonical_value not in (None, "", [], {})
+        and engineering_value.interpretation == "unknown"
+    )
+
+
 @dataclass(frozen=True)
 class SimpleClaim:
     """Concrete minimal claim for testing and internal use.
@@ -486,11 +508,13 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
         # User override takes absolute priority
         if field_name in override_by_field:
             ov = override_by_field[field_name]
-            normalized_value, normalized_unit, normalized_confidence = _normalize_case_field_value(
-                field_name=field_name,
-                raw_value=ov.override_value,
-                unit=ov.override_unit,
-                confidence="confirmed",
+            normalized_value, normalized_unit, normalized_confidence = (
+                _normalize_case_field_value(
+                    field_name=field_name,
+                    raw_value=ov.override_value,
+                    unit=ov.override_unit,
+                    confidence="confirmed",
+                )
             )
             case_field = _case_field_from_normalized(
                 field_name=field_name,
@@ -680,16 +704,20 @@ def reduce_normalized_to_asserted(
         confidence = param.confidence
         ev = evidence_index.get(field_name)
 
-        if confidence == "requires_confirmation":
+        pressure_value_accepted = _is_user_accepted_pressure_value(param)
+        if confidence == "requires_confirmation" and not pressure_value_accepted:
             blocking_unknowns.append(field_name)
             continue
 
         if param.source == "user_override":
+            assertion_confidence: ConfidenceLevel = (
+                "confirmed" if pressure_value_accepted else confidence
+            )
             asserted_case_field = _asserted_case_field(
                 field_name=field_name,
                 value=param.value,
                 unit=param.unit,
-                confidence=confidence,
+                confidence=assertion_confidence,
                 evidence_refs=[],
                 provenance="user_stated",
             )
@@ -697,7 +725,7 @@ def reduce_normalized_to_asserted(
                 field_name=field_name,
                 asserted_value=param.value,
                 evidence_refs=[],
-                confidence=confidence,
+                confidence=assertion_confidence,
                 status=asserted_case_field.status,
                 provenance=asserted_case_field.provenance,
                 engineering_value=asserted_case_field.engineering_value,
@@ -856,6 +884,21 @@ def reduce_asserted_to_governance(
         open_validation_points += [
             f"Unresolved conflict: '{f}'" for f in asserted.conflict_flags
         ]
+    for field_name, claim in asserted.assertions.items():
+        engineering_value = claim.engineering_value
+        if (
+            field_name in PRESSURE_FIELDS
+            and engineering_value.interpretation == "unknown"
+        ):
+            if "pressure_interpretation" not in open_validation_points:
+                open_validation_points.append("pressure_interpretation")
+            limit = (
+                "'pressure_bar' value is user-stated, but pressure interpretation "
+                "(gauge/absolute/differential/direct-at-seal) still requires "
+                "manufacturer validation."
+            )
+            if limit not in validity_limits:
+                validity_limits.append(limit)
     for item in readiness.missing_but_assumable:
         if item not in open_validation_points:
             open_validation_points.append(item)

@@ -264,7 +264,10 @@ class TestReducerObservedToNormalized:
         assert field.status == "candidate"
         assert field.confirmation_required is True
         assert field.engineering_value.interpretation == "unknown"
-        assert "pressure_interpretation_unknown" in field.engineering_value.normalization_warnings
+        assert (
+            "pressure_interpretation_unknown"
+            in field.engineering_value.normalization_warnings
+        )
 
     def test_v07_temperature_and_mm_values_get_engineering_units(self):
         obs = _observed(
@@ -306,6 +309,30 @@ class TestReducerObservedToNormalized:
         assert field.provenance == "user_stated"
         assert field.confirmation_required is False
         assert field.source_revision == 4
+
+    def test_v07_user_accepted_pressure_value_keeps_interpretation_visible(self):
+        obs = _observed(
+            overrides=[
+                UserOverride(
+                    field_name="pressure_bar",
+                    override_value=5.0,
+                    override_unit="bar",
+                    turn_index=4,
+                )
+            ],
+        )
+        normalized = reduce_observed_to_normalized(obs)
+
+        field = normalized.case_fields["pressure_bar"]
+        assert (
+            normalized.parameters["pressure_bar"].confidence == "requires_confirmation"
+        )
+        assert field.engineering_value.canonical_value == 5.0
+        assert field.engineering_value.interpretation == "unknown"
+        assert (
+            "pressure_interpretation_unknown"
+            in field.engineering_value.normalization_warnings
+        )
 
     def test_multiple_fields_independent(self):
         obs = _observed(
@@ -489,6 +516,28 @@ class TestReducerNormalizedToAsserted:
         assert "medium" in result.assertions
         assert result.assertions["medium"].evidence_refs == []
 
+    def test_user_accepted_pressure_value_is_asserted_for_prechecks(self):
+        obs = _observed(
+            overrides=[
+                UserOverride(
+                    field_name="pressure_bar",
+                    override_value=5.0,
+                    override_unit="bar",
+                    turn_index=4,
+                )
+            ],
+        )
+        norm = reduce_observed_to_normalized(obs)
+        result = reduce_normalized_to_asserted(norm)
+
+        assert result.assertions["pressure_bar"].asserted_value == 5.0
+        assert result.assertions["pressure_bar"].confidence == "confirmed"
+        assert (
+            result.assertions["pressure_bar"].engineering_value.interpretation
+            == "unknown"
+        )
+        assert "pressure_bar" not in result.blocking_unknowns
+
     def test_blocking_conflict_goes_to_conflict_flags(self):
         from app.agent.state.models import ConflictRef
 
@@ -576,6 +625,28 @@ class TestReducerAssertedToGovernanceClassA:
         asserted = _full_asserted(confidence="estimated")
         result = reduce_asserted_to_governance(asserted)
         assert any("estimated" in s for s in result.validity_limits)
+
+    def test_user_stated_pressure_without_interpretation_is_validation_point_not_missing_pressure(
+        self,
+    ):
+        asserted = _full_asserted()
+        pressure_claim = asserted.assertions["pressure_bar"]
+        asserted.assertions["pressure_bar"] = pressure_claim.model_copy(
+            update={
+                "engineering_value": pressure_claim.engineering_value.model_copy(
+                    update={
+                        "interpretation": "unknown",
+                        "normalization_warnings": ["pressure_interpretation_unknown"],
+                    }
+                )
+            }
+        )
+        result = reduce_asserted_to_governance(asserted)
+
+        assert result.gov_class == "A"
+        assert "pressure_bar" not in result.open_validation_points
+        assert "pressure_interpretation" in result.open_validation_points
+        assert any("pressure interpretation" in item for item in result.validity_limits)
 
 
 class TestReducerAssertedToGovernanceClassB:

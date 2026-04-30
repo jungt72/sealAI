@@ -24,6 +24,7 @@ Coverage:
     13. All three core fields present → parameters has all three
     14. analysis_cycle, max_cycles unchanged
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -44,6 +45,7 @@ from app.agent.state.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _state_with_extractions(*extractions: ObservedExtraction, **kwargs) -> GraphState:
     observed = ObservedState()
     for e in extractions:
@@ -51,7 +53,9 @@ def _state_with_extractions(*extractions: ObservedExtraction, **kwargs) -> Graph
     return GraphState(observed=observed, **kwargs)
 
 
-def _state_with_override(override: UserOverride, *extras: ObservedExtraction) -> GraphState:
+def _state_with_override(
+    override: UserOverride, *extras: ObservedExtraction
+) -> GraphState:
     observed = ObservedState()
     for e in extras:
         observed = observed.with_extraction(e)
@@ -59,16 +63,22 @@ def _state_with_override(override: UserOverride, *extras: ObservedExtraction) ->
     return GraphState(observed=observed)
 
 
-def _ext(field: str, value, confidence: float = 0.92, turn: int = 0) -> ObservedExtraction:
+def _ext(
+    field: str, value, confidence: float = 0.92, turn: int = 0
+) -> ObservedExtraction:
     return ObservedExtraction(
-        field_name=field, raw_value=value, source="llm",
-        confidence=confidence, turn_index=turn,
+        field_name=field,
+        raw_value=value,
+        source="llm",
+        confidence=confidence,
+        turn_index=turn,
     )
 
 
 # ---------------------------------------------------------------------------
 # 1. Empty ObservedState
 # ---------------------------------------------------------------------------
+
 
 class TestEmptyObserved:
     @pytest.mark.asyncio
@@ -97,6 +107,7 @@ class TestEmptyObserved:
 # 2. Single extraction → correct NormalizedParameter
 # ---------------------------------------------------------------------------
 
+
 class TestSingleExtraction:
     @pytest.mark.asyncio
     async def test_pressure_bar_in_parameters(self):
@@ -111,10 +122,12 @@ class TestSingleExtraction:
         assert result.normalized.parameters["pressure_bar"].value == 12.0
 
     @pytest.mark.asyncio
-    async def test_high_confidence_extraction_is_confirmed(self):
+    async def test_bare_pressure_keeps_interpretation_confirmation_gate(self):
         state = _state_with_extractions(_ext("pressure_bar", 12.0, confidence=0.95))
         result = await normalize_node(state)
-        assert result.normalized.parameters["pressure_bar"].confidence == "confirmed"
+        param = result.normalized.parameters["pressure_bar"]
+        assert param.confidence == "requires_confirmation"
+        assert param.engineering_value.interpretation == "unknown"
 
     @pytest.mark.asyncio
     async def test_medium_confidence_extraction_is_estimated(self):
@@ -181,7 +194,9 @@ class TestSingleExtraction:
         assert result.application_hint.label == "linear_sealing"
 
     @pytest.mark.asyncio
-    async def test_existing_hint_is_preserved_when_followup_turn_contains_no_new_hint(self):
+    async def test_existing_hint_is_preserved_when_followup_turn_contains_no_new_hint(
+        self,
+    ):
         state = GraphState(
             pending_message="welchen druck brauchen sie noch?",
             application_hint=ContextHintState(
@@ -209,13 +224,16 @@ class TestSingleExtraction:
         # AND in assumptions (both — reducer invariant)
         state = _state_with_extractions(_ext("medium", "Unbekannt", confidence=0.40))
         result = await normalize_node(state)
-        assert result.normalized.parameters["medium"].confidence == "requires_confirmation"
+        assert (
+            result.normalized.parameters["medium"].confidence == "requires_confirmation"
+        )
         assert any(a.field_name == "medium" for a in result.normalized.assumptions)
 
 
 # ---------------------------------------------------------------------------
 # 3. Multiple extractions same field → highest confidence wins
 # ---------------------------------------------------------------------------
+
 
 class TestMultipleExtractionsConflict:
     @pytest.mark.asyncio
@@ -240,8 +258,8 @@ class TestMultipleExtractionsConflict:
     @pytest.mark.asyncio
     async def test_same_field_different_values_produces_conflict(self):
         state = _state_with_extractions(
-            _ext("medium", "Wasser",  confidence=0.92),
-            _ext("medium", "Dampf",   confidence=0.85),
+            _ext("medium", "Wasser", confidence=0.92),
+            _ext("medium", "Dampf", confidence=0.85),
         )
         result = await normalize_node(state)
         assert any(c.field_name == "medium" for c in result.normalized.conflicts)
@@ -260,10 +278,13 @@ class TestMultipleExtractionsConflict:
 # 4 & 5. User override
 # ---------------------------------------------------------------------------
 
+
 class TestUserOverride:
     @pytest.mark.asyncio
     async def test_user_override_wins_over_llm(self):
-        override = UserOverride(field_name="medium", override_value="Dampf", turn_index=2)
+        override = UserOverride(
+            field_name="medium", override_value="Dampf", turn_index=2
+        )
         state = _state_with_override(
             override,
             _ext("medium", "Wasser", confidence=0.99),  # high-confidence LLM extraction
@@ -273,27 +294,37 @@ class TestUserOverride:
 
     @pytest.mark.asyncio
     async def test_user_override_source_is_user_override(self):
-        override = UserOverride(field_name="medium", override_value="Dampf", turn_index=1)
+        override = UserOverride(
+            field_name="medium", override_value="Dampf", turn_index=1
+        )
         state = _state_with_override(override)
         result = await normalize_node(state)
         assert result.normalized.parameters["medium"].source == "user_override"
 
     @pytest.mark.asyncio
-    async def test_user_override_confidence_is_confirmed(self):
-        override = UserOverride(field_name="pressure_bar", override_value=8.0, turn_index=0)
+    async def test_user_override_pressure_value_keeps_interpretation_gate(self):
+        override = UserOverride(
+            field_name="pressure_bar", override_value=8.0, turn_index=0
+        )
         state = _state_with_override(override)
         result = await normalize_node(state)
-        assert result.normalized.parameters["pressure_bar"].confidence == "confirmed"
+        param = result.normalized.parameters["pressure_bar"]
+        assert param.confidence == "requires_confirmation"
+        assert param.source == "user_override"
+        assert param.engineering_value.interpretation == "unknown"
 
 
 # ---------------------------------------------------------------------------
 # 6. requires_confirmation → AssumptionRef
 # ---------------------------------------------------------------------------
 
+
 class TestRequiresConfirmation:
     @pytest.mark.asyncio
     async def test_assumption_ref_created(self):
-        state = _state_with_extractions(_ext("medium", "Viton-ähnlich", confidence=0.35))
+        state = _state_with_extractions(
+            _ext("medium", "Viton-ähnlich", confidence=0.35)
+        )
         result = await normalize_node(state)
         assert len(result.normalized.assumptions) >= 1
 
@@ -309,6 +340,7 @@ class TestRequiresConfirmation:
 # 7. turn_index propagated
 # ---------------------------------------------------------------------------
 
+
 class TestTurnIndex:
     @pytest.mark.asyncio
     async def test_source_turn_preserved(self):
@@ -320,6 +352,7 @@ class TestTurnIndex:
 # ---------------------------------------------------------------------------
 # 8. Immutability — ObservedState not mutated
 # ---------------------------------------------------------------------------
+
 
 class TestImmutability:
     @pytest.mark.asyncio
@@ -361,6 +394,7 @@ class TestImmutability:
 # 9. No LLM call
 # ---------------------------------------------------------------------------
 
+
 class TestNoLLM:
     @pytest.mark.asyncio
     async def test_openai_never_called(self):
@@ -385,13 +419,14 @@ class TestNoLLM:
 # 10. All three core fields → parameters complete
 # ---------------------------------------------------------------------------
 
+
 class TestCoreFields:
     @pytest.mark.asyncio
     async def test_all_three_core_fields_normalized(self):
         state = _state_with_extractions(
-            _ext("medium",        "Dampf",  confidence=0.92),
-            _ext("pressure_bar",  12.0,     confidence=0.92),
-            _ext("temperature_c", 180.0,    confidence=0.92),
+            _ext("medium", "Dampf", confidence=0.92),
+            _ext("pressure_bar", 12.0, confidence=0.92),
+            _ext("temperature_c", 180.0, confidence=0.92),
         )
         result = await normalize_node(state)
         params = result.normalized.parameters
@@ -403,7 +438,7 @@ class TestCoreFields:
     async def test_missing_core_field_absent_from_parameters(self):
         """Missing medium → 'medium' not in parameters (will become blocking_unknown downstream)."""
         state = _state_with_extractions(
-            _ext("pressure_bar",  12.0,  confidence=0.92),
+            _ext("pressure_bar", 12.0, confidence=0.92),
             _ext("temperature_c", 180.0, confidence=0.92),
         )
         result = await normalize_node(state)
