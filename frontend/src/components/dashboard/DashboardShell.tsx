@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
 import {
   Bell,
   Database,
@@ -25,21 +24,14 @@ const NAV_ITEMS = [
   { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
 ];
 
-function firstNameFromSession(name?: string | null, email?: string | null) {
-  const source = (name || email || "Thorsten").trim();
-  const first = source.split(/[\s@]/)[0];
-  return first || "Thorsten";
-}
-
 export default function DashboardShell({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { data: session } = useSession();
 
-  const userName = firstNameFromSession(session?.user?.name, session?.user?.email);
+  const userName = "Thorsten";
   const greeting = "Guten Tag";
 
   return (
