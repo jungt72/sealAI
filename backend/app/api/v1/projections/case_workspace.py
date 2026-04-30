@@ -1077,10 +1077,15 @@ def _build_seal_application_profile(
     profile: Dict[str, Any],
     system: Dict[str, Any],
     engineering_path: WorkspaceEngineeringPath | None,
+    raw_text_candidates: list[str] | None = None,
 ) -> SealApplicationProfileView:
     text_parts = []
     for key in _SEAL_TYPE_TEXT_KEYS:
         rendered = _stringify_value(profile.get(key))
+        if rendered:
+            text_parts.append(rendered)
+    for raw_text in raw_text_candidates or []:
+        rendered = _stringify_value(raw_text)
         if rendered:
             text_parts.append(rendered)
     seal_type_text = " ".join(text_parts) or None
@@ -2355,12 +2360,18 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     routing_metadata.setdefault("case_type_event", case_type_assignment.event_name)
     system = dict(system)
     system["routing"] = routing_metadata
+    primary_raw_text = medium_capture.get("primary_raw_text")
+    raw_text_candidates = [
+        str(item) for item in _ls(medium_capture.get("raw_mentions")) if item
+    ]
+    if primary_raw_text:
+        raw_text_candidates.insert(0, str(primary_raw_text))
     seal_application_profile = _build_seal_application_profile(
         profile=routing_profile,
         system=system,
         engineering_path=engineering_path,
+        raw_text_candidates=raw_text_candidates,
     )
-    primary_raw_text = medium_capture.get("primary_raw_text")
     if not medium_classification and primary_raw_text:
         derived_medium = classify_medium_value(str(primary_raw_text))
         medium_classification = {

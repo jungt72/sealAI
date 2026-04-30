@@ -79,6 +79,25 @@ def test_hydraulic_profile_includes_pressure_fluid_groove_hints() -> None:
     assert "groove_dimensions" in profile.type_specific_missing_hints
 
 
+def test_raw_user_text_can_seed_seal_type_profile_when_structured_field_missing() -> None:
+    projection = project_case_workspace(
+        _workspace_state(
+            system={
+                "medium_capture": {
+                    "primary_raw_text": "Hydraulik-Stangendichtung an einem Zylinder, 160 bar, HLP 46"
+                }
+            },
+            profile={"pressure_bar": 160, "medium": "HLP 46"},
+        )
+    )
+
+    profile = projection.seal_application_profile
+    assert profile.seal_type is SealType.hydraulic_rod_seal
+    assert profile.seal_family is SealFamily.hydraulic
+    assert "rod_or_piston_diameter" in profile.type_specific_missing_hints
+    assert "pressure_peaks" in profile.type_specific_missing_hints
+
+
 def test_mechanical_seal_profile_includes_flush_barrier_solids_hints() -> None:
     projection = project_case_workspace(
         _workspace_state(profile={"sealing_type": "Gleitringdichtung"})
@@ -112,7 +131,7 @@ def test_application_profile_is_read_only_additive_to_legacy_projection_fields()
     assert projection.seal_application_profile.standard_refs == ["ISO 3601"]
 
 
-def test_explicit_profile_text_beats_weak_engineering_path_hint() -> None:
+def test_explicit_profile_text_sets_projection_seal_type() -> None:
     projection = project_case_workspace(
         _workspace_state(
             system={"routing": {"engineering_path": "rwdr"}},
@@ -122,6 +141,5 @@ def test_explicit_profile_text_beats_weak_engineering_path_hint() -> None:
 
     profile = projection.seal_application_profile
     assert profile.seal_type is SealType.mechanical_seal
-    assert profile.ambiguous is True
-    assert SealType.radial_shaft_seal in profile.candidate_types
-    assert any("explicit alias preferred" in note for note in profile.notes)
+    assert profile.ambiguous is False
+    assert profile.candidate_types == [SealType.mechanical_seal]
