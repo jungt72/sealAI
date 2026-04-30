@@ -98,6 +98,26 @@ def test_raw_user_text_can_seed_seal_type_profile_when_structured_field_missing(
     assert "pressure_peaks" in profile.type_specific_missing_hints
 
 
+def test_parameters_snapshot_exposes_type_specific_fields_for_ui_entry_roundtrip() -> None:
+    projection = project_case_workspace(
+        _workspace_state(
+            profile={
+                "sealing_type": "Hydraulik-Stangendichtung",
+                "pressure_bar": 160,
+                "pressure_peaks": 250,
+                "hydraulic_fluid": "HLP 46",
+                "rod_or_piston_diameter": 40,
+                "single_or_double_acting": "doppeltwirkend",
+            }
+        )
+    )
+
+    assert projection.parameters["pressure_peaks"] == 250
+    assert projection.parameters["hydraulic_fluid"] == "HLP 46"
+    assert projection.parameters["rod_or_piston_diameter"] == 40
+    assert projection.parameters["single_or_double_acting"] == "doppeltwirkend"
+
+
 def test_mechanical_seal_profile_includes_flush_barrier_solids_hints() -> None:
     projection = project_case_workspace(
         _workspace_state(profile={"sealing_type": "Gleitringdichtung"})

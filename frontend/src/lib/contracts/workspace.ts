@@ -221,6 +221,7 @@ export type WorkspaceView = {
     openPointsSummary?: string[];
   };
   parameters?: {
+    [key: string]: string | number | string[] | null | undefined;
     medium?: string | null;
     temperature_c?: number | string | null;
     pressure_bar?: number | string | null;

@@ -205,6 +205,7 @@ type LegacyWorkspaceProjection = {
   cockpit_view?: RawCockpitView | null;
   deep_dive_tabs?: RawDeepDiveTab[];
   parameters?: {
+    [key: string]: string | number | string[] | null | undefined;
     medium?: string | null;
     temperature_c?: number | null;
     pressure_bar?: number | null;
@@ -856,6 +857,7 @@ export function mapWorkspaceView(
       : undefined,
     parameters: projection.parameters
       ? {
+          ...projection.parameters,
           medium: projection.parameters.medium ?? null,
           temperature_c: projection.parameters.temperature_c ?? null,
           pressure_bar: projection.parameters.pressure_bar ?? null,

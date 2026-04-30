@@ -342,8 +342,11 @@ describe("ParameterWorkspaceTab", () => {
     expect(screen.getByText("Status: noch nicht geprüft")).toBeInTheDocument();
     expect(screen.getAllByText("bestätigt").length).toBeGreaterThan(0);
     expect(screen.getByText("Passende Zusatzangaben")).toBeInTheDocument();
-    expect(screen.getByText("Pumpe / Aggregat")).toBeInTheDocument();
-    expect(screen.getByText("Spülung / Sperrmedium")).toBeInTheDocument();
+    expect(screen.getAllByText("Pumpe / Aggregat").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Spülung / Sperrmedium").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Zusatzangaben für diesen Dichtungstyp" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Pumpe / Aggregat")).toBeInTheDocument();
+    expect(screen.getByLabelText("Spülung / Sperrmedium")).toBeInTheDocument();
     expect(screen.getByText(/Ist eine Spülung, Sperrflüssigkeit oder Barriere vorgesehen/i)).toBeInTheDocument();
   });
 
@@ -372,6 +375,48 @@ describe("ParameterWorkspaceTab", () => {
     expect(summary).toContain("Wellendurchmesser: 42 mm");
     expect(screen.getAllByText("Status: wird als Nutzerangabe übernommen")).toHaveLength(2);
     expect(screen.getAllByText("Woher: Nutzerangabe").length).toBeGreaterThan(0);
+  });
+
+  it("submits type-specific fields as governed user overrides", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<ParameterWorkspaceTab workspace={workspaceFixture()} onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText("Pumpe / Aggregat"), "Kreiselpumpe");
+    await user.type(screen.getByLabelText("Spülung / Sperrmedium"), "keine Spülung");
+    await user.click(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const [overrides, summary] = onSubmit.mock.calls[0];
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        { field_name: "pump_or_aggregate_type", value: "Kreiselpumpe", unit: null },
+        { field_name: "flush_or_barrier_fluid", value: "keine Spülung", unit: null },
+      ]),
+    );
+    expect(summary).toContain("Pumpe / Aggregat: Kreiselpumpe");
+    expect(summary).toContain("Spülung / Sperrmedium: keine Spülung");
+  });
+
+  it("validates numeric type-specific fields before sending overrides", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const workspace = workspaceFixture();
+    workspace.sealApplicationProfile = {
+      ...workspace.sealApplicationProfile!,
+      sealFamily: "hydraulic_pneumatic",
+      sealType: "hydraulic_rod_seal",
+      typeSpecificMissingHints: ["rod_or_piston_diameter", "pressure_peaks", "hydraulic_fluid"],
+    };
+
+    render(<ParameterWorkspaceTab workspace={workspace} onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText("Druckspitzen"), "zweihundert");
+    await user.click(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("Druckspitzen braucht einen numerischen Wert.")).toBeInTheDocument();
   });
 
   it("guards numeric fields before sending overrides", async () => {

@@ -137,6 +137,7 @@ const COCKPIT_FIELD_ALIASES: Record<string, string[]> = {
   pressure_bar: ["pressure_nominal", "pressure_peak"],
   speed_rpm: ["rotational_speed"],
   shaft_diameter_mm: ["shaft_diameter"],
+  rod_or_piston_diameter: ["rod_diameter", "piston_diameter", "shaft_diameter"],
   installation: ["asset_type", "application", "asset_function"],
   sealing_type: ["seal_type", "current_seal_type", "requested_seal_type"],
   counterface_surface: ["surface_finish"],
@@ -181,6 +182,179 @@ const TYPE_SPECIFIC_FIELD_LABELS: Record<string, string> = {
   lubrication_or_flush: "Schmierung / Spülung",
 };
 
+const TYPE_SPECIFIC_FIELD_DETAILS: Record<string, Partial<ParameterField>> = {
+  flange_standard: {
+    placeholder: "z. B. EN 1092-1, ASME B16.5, Zeichnung",
+    detail: "Norm oder Flanschfamilie grenzt die Geometrie der Flachdichtung ein.",
+    why: "Ohne Anschlussnorm bleibt die Dichtung nur grob beschreibbar.",
+  },
+  flange_size_or_dimensions: {
+    placeholder: "z. B. DN50 PN16, NPS 2 Class 150",
+    detail: "Flanschgröße oder Zeichnungsmaß macht die Anfrage eindeutig.",
+    why: "Hersteller brauchen diese Angabe, um Abmessungen und Bauform einzugrenzen.",
+  },
+  inner_outer_diameter: {
+    placeholder: "z. B. 54 x 92 mm",
+    detail: "Innen- und Außendurchmesser beschreiben die reale Dichtungsgeometrie.",
+    why: "Diese Maße verhindern Verwechslungen bei Flach- und Profildichtungen.",
+  },
+  hole_pattern: {
+    placeholder: "z. B. 4 x Ø18 auf TK 125",
+    detail: "Das Lochbild ist bei Flanschdichtungen oft ein entscheidendes Zeichnungsmerkmal.",
+    why: "Material allein reicht bei gelochten Dichtungen nicht aus.",
+  },
+  gasket_material: {
+    placeholder: "z. B. PTFE, Graphit, Faserstoff",
+    detail: "Das aktuelle oder gewünschte Material ist ein Prüfpunkt, kein Ergebnisversprechen.",
+    why: "Material muss gegen Medium, Temperatur, Druck und Nachweise geprüft werden.",
+  },
+  thickness: {
+    unit: "mm",
+    kind: "number",
+    placeholder: "z. B. 2",
+    detail: "Die Dicke beeinflusst Verpressung und Austauschbarkeit.",
+    why: "Gerade bei Ersatzfällen ist die vorhandene Dicke oft wichtig.",
+  },
+  bolt_load_or_torque: {
+    placeholder: "z. B. 80 Nm, unbekannt, Montage nach Betreiberstandard",
+    detail: "Montagekraft oder Drehmoment beeinflusst die Dichtpressung.",
+    why: "Flachdichtungen können ohne Montagekontext nicht sauber eingeordnet werden.",
+  },
+  surface_roughness: {
+    placeholder: "z. B. Ra 3,2, glatte Dichtfläche, unbekannt",
+    detail: "Die Dichtflächen bestimmen mit, ob die Dichtung sinnvoll arbeiten kann.",
+    why: "Oberfläche und Beschädigungen sind häufige Leckageursachen.",
+  },
+  certification_requirement: {
+    placeholder: "z. B. FDA, ATEX, TA-Luft, Trinkwasser",
+    detail: "Nachweise werden als Prüfpunkte erfasst, nicht als SeaLAI-Zusage.",
+    why: "Regulierte Anforderungen gehören sichtbar in die Herstellerklärung.",
+  },
+  rod_or_piston_diameter: {
+    unit: "mm",
+    kind: "number",
+    placeholder: "z. B. 40",
+    detail: "Stangen- oder Kolbendurchmesser ist der Geometrieanker für Zylinderdichtungen.",
+    why: "Hydraulik- und Pneumatikprofile hängen stark vom Durchmesser ab.",
+  },
+  groove_dimensions: {
+    placeholder: "z. B. Nut 40 x 48 x 6 oder Zeichnung vorhanden",
+    detail: "Nut und Einbauraum entscheiden, welche Profile überhaupt prüfbar sind.",
+    why: "Ohne Nutdaten bleibt die Anfrage für Hydraulik, Pneumatik und O-Ring zu offen.",
+  },
+  pressure_peaks: {
+    unit: "bar",
+    kind: "number",
+    placeholder: "z. B. 250",
+    detail: "Druckspitzen können kritischer sein als der normale Betriebsdruck.",
+    why: "Sie beeinflussen Extrusionsrisiko und Stützringbedarf.",
+  },
+  hydraulic_fluid: {
+    placeholder: "z. B. HLP 46, HFC, biologisches Öl",
+    detail: "Das Hydraulikmedium beeinflusst Werkstoff, Quellung und Verschleiß.",
+    why: "Hydraulikdichtungen brauchen die Fluidangabe getrennt vom Druck.",
+  },
+  speed_or_stroke: {
+    placeholder: "z. B. 0,3 m/s, Hub 500 mm, langsam taktend",
+    detail: "Hub und Geschwindigkeit beschreiben die dynamische Beanspruchung.",
+    why: "Lineare Dichtungen werden anders bewertet als rotierende Wellen.",
+  },
+  single_or_double_acting: {
+    placeholder: "z. B. doppeltwirkend, einfachwirkend, unklar",
+    detail: "Die Wirkweise bestimmt Druckrichtung und Dichtungsanordnung.",
+    why: "Sie ist für Zylinderdichtungen oft früher wichtig als Materialdetails.",
+  },
+  wiper_or_guide_required: {
+    placeholder: "z. B. Abstreifer vorhanden, Führung verschlissen",
+    detail: "Abstreifer, Führung und Stützringe gehören bei Zylindern oft zum Problem.",
+    why: "Leckage oder Ausfall entsteht nicht immer an der Hauptdichtung allein.",
+  },
+  water_content: {
+    placeholder: "z. B. Kondensat, Wasser im Öl, stark verschmutzt",
+    detail: "Wasser und Schmutz verschieben das Risiko in Richtung Verschleiß und Korrosion.",
+    why: "Diese Angaben helfen, den Fall nicht zu simpel zu behandeln.",
+  },
+  air_quality: {
+    placeholder: "z. B. trocken, geölt, Kondensat, Partikel",
+    detail: "Druckluftqualität prägt Reibung und Lebensdauer bei Pneumatik.",
+    why: "Pneumatik ist nicht einfach Hydraulik mit niedrigerem Druck.",
+  },
+  lubrication: {
+    placeholder: "z. B. trockenlaufend, geölte Luft, Fett",
+    detail: "Schmierung beeinflusst Reibung, Losbrechkraft und Verschleiß.",
+    why: "Bei Pneumatikdichtungen ist diese Angabe besonders wichtig.",
+  },
+  friction_requirement: {
+    placeholder: "z. B. geringe Losbrechkraft, schnelle Bewegung",
+    detail: "Reibungsanforderungen beeinflussen Profil- und Werkstoffrichtung.",
+    why: "Dichtheit allein beschreibt Pneumatikfälle oft nicht ausreichend.",
+  },
+  pump_or_aggregate_type: {
+    placeholder: "z. B. Kreiselpumpe, Rührwerk, Seitenkanalpumpe",
+    detail: "Das Aggregat bestimmt, welche Gleitringdichtungsdaten relevant werden.",
+    why: "Eine Gleitringdichtung wird nicht ohne Pumpen-/Aggregatkontext bewertet.",
+  },
+  flush_or_barrier_fluid: {
+    placeholder: "z. B. keine Spülung, Plan 11, Sperrflüssigkeit",
+    detail: "Spülung oder Barriere beeinflusst Aufbau und Prüfbarkeit der Gleitringdichtung.",
+    why: "Bei Pumpenfällen ist das oft ein zentraler Herstellerpunkt.",
+  },
+  solids_or_gas_content: {
+    placeholder: "z. B. Feststoffe, Gasanteil, kristallisierend",
+    detail: "Feststoffe, Gas und Kristallisation sind frühe Risikotreiber.",
+    why: "Sie können die Dichtungsrichtung stärker verändern als ein einzelner Druckwert.",
+  },
+  viscosity: {
+    placeholder: "z. B. niedrigviskos, 120 mPa·s, gasförmig",
+    detail: "Viskosität und Medienzustand helfen, den Betriebsfall einzuordnen.",
+    why: "Gleitringdichtungen reagieren stark auf Mediumzustand und Schmierung.",
+  },
+  atex_or_leakage_requirement: {
+    placeholder: "z. B. ATEX Zone 1, minimale Leckage, unklar",
+    detail: "ATEX- und Leckageanforderungen werden als Prüfpunkte dokumentiert.",
+    why: "SeaLAI markiert sie, gibt aber keine Konformität frei.",
+  },
+  inner_diameter: {
+    unit: "mm",
+    kind: "number",
+    placeholder: "z. B. 40",
+    detail: "Der Innendurchmesser ist eine Grundangabe für O-/X-Ringe.",
+    why: "Ohne ID und Schnurstärke ist der Ring nicht eindeutig.",
+  },
+  cross_section: {
+    unit: "mm",
+    kind: "number",
+    placeholder: "z. B. 3,53",
+    detail: "Die Schnurstärke bestimmt Verpressung und Nutraum.",
+    why: "Sie ist für O-Ring-Fälle genauso wichtig wie der Innendurchmesser.",
+  },
+  material: {
+    placeholder: "z. B. FKM 75, EPDM, NBR, PTFE",
+    detail: "Werkstoffangaben bleiben Prüfpunkte und werden nicht automatisch als passend bewertet.",
+    why: "Der Werkstoff muss zum Medium und Temperaturfenster passen.",
+  },
+  hardness: {
+    placeholder: "z. B. 75 Shore A",
+    detail: "Härte beeinflusst Montage, Verpressung und Extrusionsverhalten.",
+    why: "Elastomerdichtungen brauchen oft Härte und Material zusammen.",
+  },
+  static_or_dynamic: {
+    placeholder: "z. B. statisch, dynamisch, oszillierend",
+    detail: "Bewegung verändert Nut, Verpressung und Reibungsbewertung.",
+    why: "Ein statischer O-Ring ist ein anderer Fall als ein dynamischer.",
+  },
+  squeeze_or_stretch: {
+    placeholder: "z. B. 18 % Verpressung, Dehnung unbekannt",
+    detail: "Verpressung und Dehnung zeigen, ob Geometrie und Nut plausibel sind.",
+    why: "Diese Werte sind für O-Ring-Prüfung deutlich aussagekräftiger als nur das Material.",
+  },
+  backup_ring_required: {
+    placeholder: "z. B. vorhanden, wegen 120 bar prüfen",
+    detail: "Stützringe können bei Druck und Spalt ein Extrusionsschutz sein.",
+    why: "SeaLAI soll diesen Punkt sichtbar machen, nicht still übergehen.",
+  },
+};
+
 type ParameterFormState = Record<string, string>;
 
 function valueFor(workspace: WorkspaceView | null, fieldName: string): string {
@@ -206,6 +380,43 @@ function readableCode(value: string | null | undefined): string {
 function technicalFieldLabel(value: string | null | undefined): string {
   const code = normalizeCode(value);
   return TYPE_SPECIFIC_FIELD_LABELS[code] || humanizeDisplayText(value || "");
+}
+
+const BASE_FIELD_NAMES = new Set(PARAMETER_FIELDS.map((field) => field.fieldName));
+
+function parameterFieldForHint(hint: string): ParameterField | null {
+  const code = normalizeCode(hint);
+  if (!code || BASE_FIELD_NAMES.has(code)) {
+    return null;
+  }
+  const details = TYPE_SPECIFIC_FIELD_DETAILS[code];
+  if (!details) {
+    return null;
+  }
+  return {
+    fieldName: code,
+    label: technicalFieldLabel(code),
+    unit: details.unit,
+    kind: details.kind ?? "text",
+    placeholder: details.placeholder ?? "Angabe eintragen",
+    detail: details.detail ?? "Diese Angabe hilft, den Fall genauer einzuordnen.",
+    why: details.why ?? "SeaLAI übernimmt die Angabe als Nutzerangabe und hält Herstellerprüfung sichtbar.",
+  };
+}
+
+function typeSpecificParameterFields(workspace: WorkspaceView | null): ParameterField[] {
+  const hints = workspace?.sealApplicationProfile?.typeSpecificMissingHints ?? [];
+  const seen = new Set<string>();
+  return hints
+    .flatMap((hint) => {
+      const field = parameterFieldForHint(hint);
+      if (!field || seen.has(field.fieldName)) {
+        return [];
+      }
+      seen.add(field.fieldName);
+      return [field];
+    })
+    .slice(0, 8);
 }
 
 function sourceLabel(value: string | null | undefined): string {
@@ -297,9 +508,9 @@ function parameterMeta(workspace: WorkspaceView | null, fieldName: string): Para
   };
 }
 
-function initialState(workspace: WorkspaceView | null): ParameterFormState {
+function initialState(workspace: WorkspaceView | null, fields: ParameterField[] = PARAMETER_FIELDS): ParameterFormState {
   return Object.fromEntries(
-    PARAMETER_FIELDS.map((field) => [field.fieldName, valueFor(workspace, field.fieldName)]),
+    fields.map((field) => [field.fieldName, valueFor(workspace, field.fieldName)]),
   );
 }
 
@@ -327,10 +538,10 @@ function valuesMatch(field: ParameterField, currentValue: string, nextValue: str
   return String(current).trim() === String(nextValue).trim();
 }
 
-function formatSummary(overrides: AgentOverrideItemRequest[]) {
+function formatSummary(overrides: AgentOverrideItemRequest[], fields: ParameterField[]) {
   return overrides
     .map((override) => {
-      const field = PARAMETER_FIELDS.find((item) => item.fieldName === override.field_name);
+      const field = fields.find((item) => item.fieldName === override.field_name);
       const unit = override.unit ? ` ${override.unit}` : "";
       return `${field?.label ?? humanizeDisplayText(override.field_name)}: ${String(override.value)}${unit}`;
     })
@@ -440,7 +651,7 @@ function TypeSpecificParameterGuidance({ workspace }: { workspace: WorkspaceView
         <div>
           <h3 className="text-sm font-semibold text-[#111827]">Passende Zusatzangaben</h3>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
-            Der Parameter-Tab passt sich an den Dichtungstyp an. Hydraulik, Flachdichtung, O-Ring, RWDR und Gleitringdichtung brauchen unterschiedliche Angaben.
+            Der Parameter-Tab passt sich an den Dichtungstyp an. Hydraulik, Flachdichtung, O-Ring, RWDR und Gleitringdichtung brauchen unterschiedliche Angaben. Was SeaLAI direkt verarbeiten kann, erscheint unten als Eingabefeld.
           </p>
         </div>
         {sealProfile?.sealType && (
@@ -485,12 +696,23 @@ export function ParameterWorkspaceTab({
   isSubmitting?: boolean;
   onSubmit: (overrides: AgentOverrideItemRequest[], summary: string) => Promise<void> | void;
 }) {
-  const [formState, setFormState] = useState<ParameterFormState>(() => initialState(workspace));
+  const typeSpecificFields = useMemo(() => typeSpecificParameterFields(workspace), [workspace]);
+  const editableFields = useMemo(() => {
+    const seen = new Set<string>();
+    return [...PARAMETER_FIELDS, ...typeSpecificFields].filter((field) => {
+      if (seen.has(field.fieldName)) {
+        return false;
+      }
+      seen.add(field.fieldName);
+      return true;
+    });
+  }, [typeSpecificFields]);
+  const [formState, setFormState] = useState<ParameterFormState>(() => initialState(workspace, editableFields));
   const [error, setError] = useState<string | null>(null);
 
   const candidateOverrides = useMemo(
     () =>
-      PARAMETER_FIELDS.flatMap((field) => {
+      editableFields.flatMap((field) => {
         const value = parseValue(field, formState[field.fieldName] ?? "");
         if (value === null) {
           return [];
@@ -503,20 +725,20 @@ export function ParameterWorkspaceTab({
           },
         ];
       }),
-    [formState],
+    [editableFields, formState],
   );
   const overrides = useMemo(
     () =>
       candidateOverrides.filter((override) => {
-        const field = PARAMETER_FIELDS.find((item) => item.fieldName === override.field_name);
+        const field = editableFields.find((item) => item.fieldName === override.field_name);
         if (!field) {
           return false;
         }
         return !valuesMatch(field, valueFor(workspace, field.fieldName), override.value as string | number);
       }),
-    [candidateOverrides, workspace],
+    [candidateOverrides, editableFields, workspace],
   );
-  const hasAnyEnteredValue = PARAMETER_FIELDS.some((field) => Boolean(formState[field.fieldName]?.trim()));
+  const hasAnyEnteredValue = editableFields.some((field) => Boolean(formState[field.fieldName]?.trim()));
 
   const canSubmit = Boolean(workspace?.caseId) && hasAnyEnteredValue && !isSubmitting;
 
@@ -532,7 +754,7 @@ export function ParameterWorkspaceTab({
       return;
     }
 
-    const invalidNumber = PARAMETER_FIELDS.find((field) => {
+    const invalidNumber = editableFields.find((field) => {
       const raw = formState[field.fieldName]?.trim();
       return field.kind === "number" && raw && parseValue(field, raw) === null;
     });
@@ -545,7 +767,7 @@ export function ParameterWorkspaceTab({
       return;
     }
 
-    await onSubmit(overrides, formatSummary(overrides));
+    await onSubmit(overrides, formatSummary(overrides, editableFields));
   };
 
   return (
@@ -586,6 +808,37 @@ export function ParameterWorkspaceTab({
           <TypeSpecificParameterGuidance workspace={workspace} />
         </div>
 
+        {typeSpecificFields.length > 0 && (
+          <section className="mt-4 rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-[#111827]">Zusatzangaben für diesen Dichtungstyp</h3>
+                <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
+                  Diese Felder kommen aus dem aktuellen Dichtungstyp-Profil. Trage nur ein, was du wirklich weißt.
+                </p>
+              </div>
+              <MetadataBadge label={`${typeSpecificFields.length} Felder`} tone="info" />
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {typeSpecificFields.map((field) => (
+                <ParameterFieldCard
+                  key={field.fieldName}
+                  field={field}
+                  workspace={workspace}
+                  formState={formState}
+                  isSubmitting={isSubmitting}
+                  onChange={(value) =>
+                    setFormState((current) => ({
+                      ...current,
+                      [field.fieldName]: value,
+                    }))
+                  }
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         {error && (
           <div className="mt-4 rounded-[12px] border border-[#F7C8C8] bg-[#FDECEC] px-3 py-2 text-sm font-semibold text-[#991B1B]">
             {error}
@@ -596,7 +849,7 @@ export function ParameterWorkspaceTab({
           <button
             type="button"
             onClick={() => {
-              setFormState(initialState(workspace));
+              setFormState(initialState(workspace, editableFields));
               setError(null);
             }}
             disabled={isSubmitting}
