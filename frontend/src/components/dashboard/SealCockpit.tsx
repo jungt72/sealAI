@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Calculator, CheckCircle2, CircleDot, ClipboardList } from "lucide-react";
+import {
+  AlertTriangle,
+  Beaker,
+  Calculator,
+  CheckCircle2,
+  ClipboardList,
+  Factory,
+  FileText,
+  Layers,
+  ShieldCheck,
+} from "lucide-react";
 
 import { DecisionUnderstandingPanel } from "@/components/dashboard/DecisionUnderstandingPanel";
 import { ManufacturerFitPanel } from "@/components/dashboard/ManufacturerFitPanel";
@@ -15,6 +25,7 @@ import {
   type ParameterDataRow,
   type SealCockpitOverview,
 } from "@/lib/engineering/sealCockpitViewModel";
+import { humanizeDisplayText, uniqueDisplayItems } from "@/lib/engineering/displayLabels";
 import { cn } from "@/lib/utils";
 
 export function CockpitTabs({
@@ -191,17 +202,228 @@ export function CalculationsEvidenceCard({ metrics }: { metrics: CalculationEvid
   );
 }
 
-function PlaceholderTab({ label }: { label: string }) {
+function normalizeText(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    const joined = value.map(normalizeText).filter(Boolean).join(" · ");
+    return joined || null;
+  }
+  return humanizeDisplayText(String(value));
+}
+
+function compactItems(items: Array<unknown>, limit = 6) {
+  return uniqueDisplayItems(items.map(normalizeText), limit);
+}
+
+function WorkspaceTabShell({
+  title,
+  icon: Icon,
+  intro,
+  children,
+}: {
+  title: string;
+  icon: typeof ClipboardList;
+  intro: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="mx-4 mt-4 rounded-[18px] border border-dashed border-[#D1D5DB] bg-[#FAFAFB] p-6 text-sm text-[#4B5563]">
-      <div className="flex items-center gap-2 text-base font-semibold text-[#111827]">
-        <CircleDot size={16} />
-        {label}
+    <section className="mx-4 mt-4 rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#F0F2F5] pb-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
+            <Icon size={17} />
+            {title}
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">{intro}</p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#0B57D0]">
+          <ShieldCheck size={14} />
+          Read-only Backend-Projektion
+        </div>
       </div>
-      <p className="mt-2 max-w-2xl leading-relaxed">
-        Dieser Cockpit-Tab ist vorbereitet. Die Übersicht bleibt der aktuelle kompakte Arbeitsstand für Herstellerprüfung, offene Punkte und technische Konsequenzen.
-      </p>
+      {children}
+    </section>
+  );
+}
+
+function InfoTile({
+  title,
+  value,
+  note,
+  tone = "neutral",
+}: {
+  title: string;
+  value: string | null;
+  note?: string | null;
+  tone?: "neutral" | "info" | "warning";
+}) {
+  const toneClass =
+    tone === "warning"
+      ? "border-[#FDE2B8] bg-[#FFF4E5]"
+      : tone === "info"
+        ? "border-[#D7E5FF] bg-[#EFF6FF]"
+        : "border-[#E5E7EB] bg-[#FAFAFB]";
+  return (
+    <div className={cn("rounded-[14px] border p-3", toneClass)}>
+      <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">{title}</div>
+      <div className="mt-2 text-sm font-semibold leading-relaxed text-[#111827]">{value || "Noch offen"}</div>
+      {note ? <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">{note}</p> : null}
     </div>
+  );
+}
+
+function ItemList({
+  title,
+  items,
+  empty = "Noch keine Angaben aus der Projektion",
+}: {
+  title: string;
+  items: Array<unknown>;
+  empty?: string;
+}) {
+  const visibleItems = compactItems(items, 7);
+  return (
+    <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+      <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">{title}</div>
+      {visibleItems.length ? (
+        <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-[#111827]">
+          {visibleItems.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">{empty}</p>
+      )}
+    </div>
+  );
+}
+
+function sourceStatusLine(workspace: WorkspaceView | null) {
+  if (!workspace) {
+    return "Quelle noch offen";
+  }
+  const source = normalizeText(workspace.mediumContext.sourceType) || "Quelle unklar";
+  const status = workspace.mediumContext.notForReleaseDecisions
+    ? "nicht validiert"
+    : normalizeText(workspace.mediumContext.validationStatus) || "Status unklar";
+  return `${source} · ${status}`;
+}
+
+function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
+  return (
+    <WorkspaceTabShell
+      title="Medium"
+      icon={Beaker}
+      intro="Medium, Medienfamilie, Risiken und Datenherkunft werden aus der Workspace-Projektion sichtbar gemacht."
+    >
+      <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <InfoTile title="Erkanntes Medium" value={normalizeText(workspace?.mediumContext.mediumLabel ?? workspace?.parameters?.medium)} tone="info" />
+        <InfoTile title="Datenherkunft" value={sourceStatusLine(workspace)} tone={workspace?.mediumContext.notForReleaseDecisions ? "warning" : "neutral"} />
+        <InfoTile title="Medienfamilie" value={normalizeText(workspace?.mediumClassification.family)} />
+        <InfoTile title="Klassifizierung" value={normalizeText(workspace?.mediumClassification.status)} note={normalizeText(workspace?.mediumContext.disclaimer)} />
+        <ItemList title="Eigenschaften" items={workspace?.mediumContext.properties ?? []} />
+        <ItemList title="Risiken / Prüfpunkte" items={workspace?.mediumContext.challenges ?? []} />
+        <ItemList title="Offen" items={[...(workspace?.mediumContext.followupPoints ?? []), ...(workspace?.completeness.coverageGaps ?? [])]} />
+        <ItemList title="Nächste Frage" items={[workspace?.mediumClassification.followupQuestion, workspace?.communication?.primaryQuestion]} />
+      </div>
+    </WorkspaceTabShell>
+  );
+}
+
+function ApplicationTab({ workspace }: { workspace: WorkspaceView | null }) {
+  const profile = workspace?.sealApplicationProfile;
+  return (
+    <WorkspaceTabShell
+      title="Anwendung"
+      icon={Factory}
+      intro="Anlage, Einbauort, Bewegung und Dichtfunktion rahmen den Fall, bevor eine Anfragebasis belastbarer wird."
+    >
+      <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <InfoTile title="Anlage / Einbauort" value={normalizeText(workspace?.parameters?.installation)} tone="info" />
+        <InfoTile title="Dichtstelle / Geometrie" value={normalizeText(workspace?.parameters?.geometry_context)} />
+        <InfoTile title="Bewegung" value={normalizeText(profile?.motionType ?? workspace?.parameters?.motion_type)} />
+        <InfoTile title="Anwendungsdomäne" value={normalizeText(profile?.applicationDomain)} />
+        <ItemList title="Bekannt" items={workspace?.decisionUnderstanding?.currentStateAnalysis.knownFields ?? workspace?.communication?.confirmedFactsSummary ?? []} />
+        <ItemList title="Offen" items={workspace?.decisionUnderstanding?.currentStateAnalysis.missingFields ?? workspace?.completeness.missingCriticalParameters ?? []} />
+        <ItemList title="Technische Bedeutung" items={workspace?.decisionUnderstanding?.technicalMeaning ?? []} />
+        <ItemList title="Herstellerprüfung" items={workspace?.decisionUnderstanding?.manufacturerReviewNeeds ?? workspace?.manufacturerQuestions.mandatory ?? []} />
+      </div>
+    </WorkspaceTabShell>
+  );
+}
+
+function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
+  return (
+    <WorkspaceTabShell
+      title="Werkstoff"
+      icon={Layers}
+      intro="Werkstoffhinweise bleiben als Richtung, offene Anforderung oder Herstellerprüfpunkt sichtbar."
+    >
+      <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <InfoTile title="Spezifität" value={normalizeText(workspace?.specificity.materialSpecificityRequired)} tone="info" />
+        <InfoTile title="Zielniveau" value={normalizeText(workspace?.specificity.elevationTarget)} />
+        <InfoTile title="Dichtungstyp-Profil" value={normalizeText(workspace?.sealApplicationProfile?.sealType)} />
+        <InfoTile title="Confidence Band" value={normalizeText(workspace?.sealApplicationProfile?.confidenceBand)} />
+        <ItemList title="Werkstoffrelevante Hinweise" items={workspace?.specificity.elevationHints.map((hint) => `${hint.label}: ${hint.reason}`) ?? []} />
+        <ItemList title="Plausible Richtungen" items={workspace?.decisionUnderstanding?.plausibleDirections ?? []} />
+        <ItemList title="Noch nicht entscheidbar" items={workspace?.decisionUnderstanding?.notYetDecidable ?? []} />
+        <ItemList title="Benötigte Prüfung" items={workspace?.governance.unknownsManufacturerValidation ?? []} />
+      </div>
+    </WorkspaceTabShell>
+  );
+}
+
+function CalculationTab({
+  data,
+  workspace,
+}: {
+  data: SealCockpitOverview;
+  workspace: WorkspaceView | null;
+}) {
+  return (
+    <WorkspaceTabShell
+      title="Berechnung"
+      icon={Calculator}
+      intro="Berechnungen werden nur angezeigt, wenn die Backend-Projektion Werte oder offene Eingaben liefert."
+    >
+      <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        {data.calculations.map((metric) => (
+          <InfoTile key={metric.label} title={metric.label} value={metric.value} note={compactItems([metric.limit, metric.reserve]).join(" · ")} tone={metric.value === "Nicht berechenbar" ? "warning" : "info"} />
+        ))}
+        <ItemList title="Backend-Hinweise" items={workspace?.technicalDerivations?.flatMap((item) => item.notes) ?? []} />
+        <ItemList title="Nachweise" items={workspace?.evidence.deterministicFindings ?? []} />
+      </div>
+    </WorkspaceTabShell>
+  );
+}
+
+function BriefingTab({
+  data,
+  workspace,
+}: {
+  data: SealCockpitOverview;
+  workspace: WorkspaceView | null;
+}) {
+  const decision = workspace?.decisionUnderstanding;
+  return (
+    <WorkspaceTabShell
+      title="Briefing"
+      icon={FileText}
+      intro="Kompakte Anfragebasis für interne Klärung und spätere RFQ-Preview, ohne Versandaktion."
+    >
+      <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <InfoTile title="Fallzusammenfassung" value={normalizeText(decision?.caseSummary) || data.solution.assessment} tone="info" />
+        <InfoTile title="RFQ-Status" value={normalizeText(workspace?.rfq.status)} note={normalizeText(workspace?.rfq.releaseStatus)} />
+        <ItemList title="Bekannt" items={decision?.understoodNow ?? workspace?.communication?.confirmedFactsSummary ?? []} />
+        <ItemList title="Offen" items={[...(workspace?.rfq.openPoints ?? []), ...(workspace?.completeness.missingCriticalParameters ?? [])]} />
+        <ItemList title="Prüfpunkte" items={decision?.manufacturerReviewNeeds ?? workspace?.manufacturerQuestions.mandatory ?? []} />
+        <ItemList title="Nächste sinnvolle Frage" items={[decision?.nextBestQuestion, workspace?.communication?.primaryQuestion]} />
+        <ItemList title="Grenzen" items={[...(workspace?.governance.requiredDisclaimers ?? []), "Herstellerprüfung bleibt erforderlich."]} />
+        <ItemList title="Blocker" items={[...(workspace?.rfq.blockers ?? []), ...(workspace?.matching.blockingReasons ?? [])]} empty="Keine Blocker aus der Projektion gemeldet" />
+      </div>
+    </WorkspaceTabShell>
   );
 }
 
@@ -217,7 +439,6 @@ export function SealCockpit({
   onParameterSubmit?: (overrides: AgentOverrideItemRequest[], summary: string) => Promise<void> | void;
 }) {
   const [activeTab, setActiveTab] = useState<CockpitTabId>("overview");
-  const activeLabel = data.tabs.find((tab) => tab.id === activeTab)?.label ?? "Übersicht";
 
   return (
     <aside className="flex h-full min-h-[720px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)] lg:min-h-0">
@@ -249,8 +470,16 @@ export function SealCockpit({
             isSubmitting={isParameterSubmitting}
             onSubmit={onParameterSubmit ?? (async () => {})}
           />
+        ) : activeTab === "medium" ? (
+          <MediumTab workspace={workspace} />
+        ) : activeTab === "application" ? (
+          <ApplicationTab workspace={workspace} />
+        ) : activeTab === "material" ? (
+          <MaterialTab workspace={workspace} />
+        ) : activeTab === "calculation" ? (
+          <CalculationTab data={data} workspace={workspace} />
         ) : (
-          <PlaceholderTab label={activeLabel} />
+          <BriefingTab data={data} workspace={workspace} />
         )}
       </div>
     </aside>

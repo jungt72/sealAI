@@ -12,6 +12,7 @@ const productionCopyFiles = [
   "components/dashboard/ManufacturerFitPanel.tsx",
   "components/dashboard/ParameterWorkspaceTab.tsx",
   "components/dashboard/RfqPane.tsx",
+  "components/dashboard/SealCockpit.tsx",
   "components/rag/RagDocumentGrid.tsx",
   "lib/mapping/workspace.ts",
 ].map((path) => resolve(root, path));

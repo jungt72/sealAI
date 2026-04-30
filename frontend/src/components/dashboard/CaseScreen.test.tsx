@@ -394,6 +394,7 @@ describe("CaseScreen", () => {
 
   it("switches cockpit tabs in place without leaving the dashboard shell", async () => {
     const user = userEvent.setup();
+    workspaceHookState.workspace = workspaceFixture();
     render(<CaseScreen caseId="case-42" />);
 
     await user.click(screen.getByRole("tab", { name: "Parameter" }));
@@ -405,8 +406,20 @@ describe("CaseScreen", () => {
     await user.click(screen.getByRole("tab", { name: "Berechnung" }));
 
     expect(screen.getByRole("tab", { name: "Berechnung" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText(/Dieser Cockpit-Tab ist vorbereitet/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Berechnung" })).toBeInTheDocument();
+    expect(screen.getByText("2.64 m/s")).toBeInTheDocument();
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
+
+    await user.click(screen.getByRole("tab", { name: "Medium" }));
+
+    expect(screen.getByRole("heading", { name: "Medium" })).toBeInTheDocument();
+    expect(screen.getByText("Wasser-Glykol")).toBeInTheDocument();
+    expect(screen.queryByText(/Dieser Cockpit-Tab ist vorbereitet/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Briefing" }));
+
+    expect(screen.getByRole("heading", { name: "Briefing" })).toBeInTheDocument();
+    expect(screen.getByText(/Kompakte Anfragebasis/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Übersicht" }));
 
