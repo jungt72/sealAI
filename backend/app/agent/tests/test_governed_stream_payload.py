@@ -328,6 +328,8 @@ def test_governed_render_prompt_uses_engineering_explainer_mode_for_well_scoped_
     assert "- Render-Modus: engineering_explainer_clarification" in prompt
     assert "ohne KI-Klang" in prompt
     assert "Damit niemand am Druck vorbeiredet" in prompt
+    assert "Akzeptiere Nutzerangaben im Chat als Arbeitsstand" in prompt
+    assert "nicht wie ein Bestaetigungsformular" in prompt
     assert "Dichtungsanforderungen" in prompt
     assert "genau 1 natuerlichen Rueckfrage" in prompt
 
@@ -349,6 +351,7 @@ def test_governed_render_prompt_stays_single_question_for_thin_context() -> None
     )
 
     assert "- Render-Modus: single_question" in prompt
+    assert "Nicht 'bitte bestaetigen' oder 'bitte nennen' schreiben" in prompt
     assert "engineering_explainer_clarification" not in prompt
 
 

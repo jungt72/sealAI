@@ -232,7 +232,11 @@ def build_governed_render_prompt(
         "- Behalte den fachlichen Gehalt des Fallback-Texts bei.",
         "- Erfinde keine neuen Fakten, Freigaben, Produkte, Normen oder Zusagen.",
         "- Veraendere weder Freigabegrad noch technischen Status.",
-        "- Beschreibe erkannte, aber unbestaetigte Werte nur als Klaer- oder Bestaetigungspunkt.",
+        "- Beschreibe erkannte, aber unbestaetigte Werte als Arbeitsstand oder offenen Pruefpunkt, nicht als Wahrheit.",
+        "- Akzeptiere Nutzerangaben im Chat als Arbeitsstand; frage sie nicht routinemaessig erneut ab.",
+        "- Klaere nur nach, wenn ein Wert widerspruechlich, riskant, offensichtlich unplausibel oder fuer den naechsten Schritt blockierend ist.",
+        "- Validierung und Herstellerpruefung bleiben sichtbar, aber der Chat soll nicht wie ein Bestaetigungsformular wirken.",
+        "- Fuehre den Nutzer wie im Erstgespraech: kurz spiegeln, Bedeutung nennen, genau die naechste sinnvolle Frage stellen.",
         "- Keine Formulierungen, die Fit, Eignung, Auslegung oder Abstimmung der Dichtung andeuten.",
     ]
     strategy = _build_turn_context_instruction(
@@ -269,6 +273,7 @@ def build_governed_render_prompt(
         lines.append("- Vermeide Woerter wie 'Dichtungsanforderungen', 'Betriebsdruck ist entscheidend', 'beeinflusst', 'technische Interpretation', 'Parameter' und 'release-blocking'.")
         lines.append("- Vermeide abstrakte Muster wie 'entscheidend, um ... zu bestimmen' oder 'Anforderungen an die Dichtungstechnik'.")
         lines.append("- Keine Fachartikel-Saetze, keine verschachtelten Saetze und keine unnoetigen Fuellwoerter.")
+        lines.append("- Bereits genannte Werte nicht erneut bestaetigen lassen, ausser sie widersprechen sich oder sind klar riskant.")
         lines.append("- Schliesse mit genau 1 natuerlichen Rueckfrage ab.")
         lines.append("- Keine Materialwahl, keine Freigabe, keine konkrete Loesung vorwegnehmen.")
     elif render_mode == "single_question":
@@ -276,6 +281,7 @@ def build_governed_render_prompt(
         lines.append("RENDER-ANWEISUNG FUER DIESEN MODUS:")
         lines.append("- Halte die Antwort knapp und ruhig.")
         lines.append("- Stelle genau 1 natuerliche Rueckfrage ohne Formularstil.")
+        lines.append("- Nicht 'bitte bestaetigen' oder 'bitte nennen' schreiben, wenn der Nutzer den Wert gerade genannt hat.")
     if allowed_surface_claims:
         lines.append("")
         lines.append("ERLAUBTE SICHTBARE CLAIMS:")

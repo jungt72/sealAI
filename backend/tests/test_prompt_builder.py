@@ -63,6 +63,14 @@ def test_conversation_with_case_summary(builder: PromptBuilder) -> None:
     assert "PTFE-Dichtung" in prompt
 
 
+def test_conversation_prompt_treats_user_values_as_working_state(builder: PromptBuilder) -> None:
+    prompt = builder.conversation(case_summary="Medium Wasser, 80 °C.")
+
+    assert "Akzeptiere Angaben des Nutzers als Arbeitsstand" in prompt
+    assert "Keine Formularsprache" in prompt
+    assert 'Sprich den Nutzer mit "du" an' in prompt
+
+
 def test_rfq_admissible_branch(builder: PromptBuilder) -> None:
     admissible = builder.final_answer(
         parameters={}, assumptions=[], req_class="A",

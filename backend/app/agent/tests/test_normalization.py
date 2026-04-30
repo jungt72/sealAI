@@ -689,6 +689,12 @@ class TestBackwardCompatLayer:
 
         assert result["sealing_type"] == expected
 
+    @pytest.mark.parametrize("text", ["Flachdichtung", "flat gasket", "gasket"])
+    def test_extract_parameters_normalizes_gasket_to_flat_gasket(self, text):
+        result = extract_parameters(f"{text} fuer DN50 PN16 Flansch")
+
+        assert result["sealing_type"] == "flat_gasket"
+
 
 # ---------------------------------------------------------------------------
 # 10. Key domain scenarios (regression guard)

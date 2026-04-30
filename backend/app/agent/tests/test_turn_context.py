@@ -475,6 +475,8 @@ def test_governed_render_prompt_pushes_human_chat_language() -> None:
 
     assert "ohne KI-Klang" in prompt
     assert "Damit niemand am Druck vorbeiredet" in prompt
+    assert "Akzeptiere Nutzerangaben im Chat als Arbeitsstand" in prompt
+    assert "nicht wie ein Bestaetigungsformular" in prompt
     assert "Dichtungsanforderungen" in prompt
     assert "genau 1 natuerlichen Rueckfrage" in prompt
 

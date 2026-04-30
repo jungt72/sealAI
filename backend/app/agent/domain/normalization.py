@@ -987,7 +987,7 @@ _SEALING_TYPE_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:gleitringdichtung|gleitring|mechanical\s+seal)\b", "mechanical_seal"),
     (r"\b(?:rwdr|radialwellendichtring|simmerring|wellendichtring)\b", "rwdr"),
     (r"\b(?:o[- ]?ring|oring)\b", "o_ring"),
-    (r"\b(?:flachdichtung|gasket)\b", "gasket"),
+    (r"\b(?:flachdichtung|flat\s+gasket|cut\s+gasket|gasket)\b", "flat_gasket"),
     (r"\b(?:packung|stopfbuchse)\b", "packing"),
 ]
 
