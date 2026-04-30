@@ -190,6 +190,7 @@ def _build_messages(
                     "STRICT SMALL-TALK TURN:\n"
                     "- Antworte nur auf die Begruessung oder die Frage, wie es dir geht.\n"
                     "- Maximal zwei kurze Saetze, warm und menschlich.\n"
+                    "- Sprich den Nutzer mit du an, nicht mit Sie.\n"
                     "- Keine technischen Rueckfragen.\n"
                     "- Keine Erwaehnung von Medium, Druck, Temperatur, Parametern oder Werkstoffwahl.\n"
                     "- Keine Fallanlage und keine Checkliste.\n"
@@ -332,8 +333,25 @@ def _trim_smalltalk_technical_capture(reply: str, *, message: str, mode: Convers
         if sentence.strip() and not _SMALLTALK_TECH_CAPTURE_RE.search(sentence)
     ]
     if kept:
-        return " ".join(kept[:2]).strip()
+        return _normalize_smalltalk_address(" ".join(kept[:2]).strip())
     return "Mir geht es gut, danke. Ich bin da, wenn du mit einer Dichtungsfrage starten willst."
+
+
+def _normalize_smalltalk_address(reply: str) -> str:
+    """Keep harmless smalltalk in SeaLAI's informal product voice."""
+    text = str(reply or "").strip()
+    replacements = (
+        (r"\bSchön,\s+dass\s+Sie\s+da\s+sind\b", "Schön, dass du da bist"),
+        (r"\bwomit\s+kann\s+ich\s+Ihnen\s+helfen\b", "womit kann ich dir helfen"),
+        (r"\bwie\s+kann\s+ich\s+Ihnen\s+helfen\b", "wie kann ich dir helfen"),
+        (r"\bkann\s+ich\s+Ihnen\s+helfen\b", "kann ich dir helfen"),
+        (r"\bWenn\s+Sie\s+möchten\b", "Wenn du möchtest"),
+        (r"\bWenn\s+Sie\s+magst\b", "Wenn du magst"),
+        (r"\bWenn\s+Sie\b", "Wenn du"),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
 
 
 def _known_fields_from_case_summary(case_summary: str | None) -> set[str]:

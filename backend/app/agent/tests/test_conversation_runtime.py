@@ -483,7 +483,17 @@ class TestStreamConversation:
             events = await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
-        assert state_update["reply"] == "Hallo, womit kann ich Ihnen helfen?"
+        assert state_update["reply"] == "Hallo, womit kann ich dir helfen?"
+
+    @pytest.mark.asyncio
+    async def test_CONVERSATION_hallo_normalizes_formal_address(self):
+        with _patch_openai(["Hallo! Schön, dass Sie da sind."]):
+            events = await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
+
+        parsed = _parse_events(events)
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert state_update["reply"] == "Hallo! Schön, dass du da bist."
+        assert "Sie" not in state_update["reply"]
 
     @pytest.mark.asyncio
     async def test_CONVERSATION_smalltalk_keeps_human_llm_answer_without_template_prefix(self):
