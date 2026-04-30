@@ -75,7 +75,8 @@ function isAutoAcceptableWorkingStateField(field: ProposedCaseDeltaField): boole
   const status = field.status || "proposed";
   return (
     status === "proposed" &&
-    (field.provenance === undefined || field.provenance === "user_stated") &&
+    field.provenance !== "documented" &&
+    field.provenance !== "web_hint" &&
     field.confirmation_required !== true &&
     field.confidence !== "requires_confirmation"
   );
