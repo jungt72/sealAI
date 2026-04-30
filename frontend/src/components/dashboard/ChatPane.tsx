@@ -392,14 +392,40 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
           )}
         >
           {!hasConversation ? (
-            <div className="mx-auto flex w-full max-w-[620px] flex-col items-center text-center">
-              <div className="grid h-16 w-16 place-items-center rounded-full border border-[#D7E5FF] bg-[#EAF2FF] text-[#0B57D0] shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                <Bot size={28} />
+            <div className="mx-auto flex w-full max-w-[720px] flex-col items-center text-center">
+              <div className="mx-auto flex w-full max-w-[620px] flex-col items-center">
+                <div className="grid h-16 w-16 place-items-center rounded-full border border-[#D7E5FF] bg-[#EAF2FF] text-[#0B57D0] shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+                  <Bot size={28} />
+                </div>
+                <h1 className="mt-5 text-[26px] font-semibold tracking-tight text-[#111827]">Hallo Thorsten,</h1>
+                <p className="mt-3 max-w-[520px] text-[15px] leading-7 text-[#4B5563]">
+                  Beschreibe kurz deine Dichtungssituation. SeaLAI hilft dir, die wichtigen Punkte sauber zu klären.
+                </p>
               </div>
-              <h1 className="mt-5 text-[26px] font-semibold tracking-tight text-[#111827]">Hallo Thorsten,</h1>
-              <p className="mt-3 max-w-[520px] text-[15px] leading-7 text-[#4B5563]">
-                Beschreibe kurz deine Dichtungssituation. SeaLAI hilft dir, die wichtigen Punkte sauber zu klären.
-              </p>
+
+              <div className="mt-8 w-full">
+                <ChatComposer
+                  onSend={(message) => void sendMessage(message)}
+                  onUpload={(file) => void handleDocumentUpload(file)}
+                  isLoading={isStreaming}
+                  isUploading={isUploadingDocument}
+                  autoFocus
+                />
+                <div className="mt-4 flex w-full flex-wrap justify-center gap-2">
+                  {ROUTING_SUGGESTIONS.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => void sendMessage(suggestion)}
+                      disabled={isStreaming}
+                      className="inline-flex items-center gap-2 rounded-full border border-[#D9E5F7] bg-white px-3 py-2 text-[12px] font-medium leading-5 text-[#315B8D] shadow-sm transition-colors hover:border-[#AFC7EC] hover:bg-[#F8FBFF] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <SendHorizontal size={13} />
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -508,33 +534,6 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
                 Details anzeigen
                 <ChevronRight size={12} />
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-      {!hasConversation && (
-        <div className="p-1 pt-3">
-          <div className="mx-auto max-w-[760px]">
-            <ChatComposer
-              onSend={(message) => void sendMessage(message)}
-              onUpload={(file) => void handleDocumentUpload(file)}
-              isLoading={isStreaming}
-              isUploading={isUploadingDocument}
-              autoFocus
-            />
-            <div className="mt-3 flex w-full flex-wrap justify-center gap-2">
-              {ROUTING_SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => void sendMessage(suggestion)}
-                  disabled={isStreaming}
-                  className="inline-flex items-center gap-2 rounded-full border border-[#D9E5F7] bg-white px-3 py-2 text-[12px] font-medium leading-5 text-[#315B8D] shadow-sm transition-colors hover:border-[#AFC7EC] hover:bg-[#F8FBFF] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <SendHorizontal size={13} />
-                  {suggestion}
-                </button>
-              ))}
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ChatPane from "./ChatPane";
@@ -77,6 +78,32 @@ describe("ChatPane", () => {
 
     expect(screen.getByText("Parameter als Nutzerangaben übernommen: Drehzahl: 1450 rpm.")).toBeInTheDocument();
     expect(screen.queryByText("Hallo Thorsten,")).not.toBeInTheDocument();
+  });
+
+  it("places the first-run suggestions in the centered greeting state", async () => {
+    const user = userEvent.setup();
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.getByText("Hallo Thorsten,")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-composer")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "PTFE-RWDR für rotierende Welle" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Gleitringdichtung für Pumpe" }));
+
+    expect(agentStreamMockState.sendMessage).toHaveBeenCalledWith("Gleitringdichtung für Pumpe");
+  });
+
+  it("hides the first-run suggestion bubbles after the conversation starts", () => {
+    agentStreamMockState.messages = [
+      { role: "user", content: "PTFE-RWDR für rotierende Welle" },
+      { role: "assistant", content: "Gut, dann klären wir zuerst Medium und Betriebsdaten." },
+    ];
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.queryByRole("button", { name: "PTFE-RWDR für rotierende Welle" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("chat-composer")).toBeInTheDocument();
   });
 
   it("renders assistant markdown with compact professional structure", () => {
