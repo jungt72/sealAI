@@ -178,11 +178,14 @@ def _observed_confirmation_priority(
         return ClarificationPriority(
             focus_key=field_name,
             question=(
-                f"Der Betriebsdruck {display} bar ist erkannt; ist das als Ueberdruck (barg), "
-                "Absolutdruck (bara) oder Differenzdruck zu verstehen?"
+                f"Ich habe {display} bar erkannt; meinst du damit den Druck direkt an der Dichtung, "
+                "den Systemdruck oder den Druckunterschied ueber der Dichtung?"
             ),
-            reason="Der Druckwert ist erkannt, aber seine technische Interpretation fehlt; ohne barg/bara/Differenzdruck bleibt er release-blocking.",
-            open_point_label=f"Druckinterpretation klaeren ({display} bar erkannt)",
+            reason=(
+                "Der Druckwert ist da, aber der Bezug fehlt, damit fuer die Anfrage klar ist, "
+                "welcher Druck wirklich an der Dichtung ankommt."
+            ),
+            open_point_label=f"Druckbezug klaeren ({display} bar erkannt)",
         )
     if field_name == "temperature_c":
         return ClarificationPriority(

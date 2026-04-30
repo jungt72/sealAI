@@ -611,8 +611,9 @@ class TestResponseClassConsistency:
 
         assert strategy.primary_question is not None
         assert "2 bar" in strategy.primary_question
-        assert "Ueberdruck" in strategy.primary_question
-        assert "Differenzdruck" in strategy.primary_question
+        assert "Druck direkt an der Dichtung" in strategy.primary_question
+        assert "Systemdruck" in strategy.primary_question
+        assert "Druckunterschied" in strategy.primary_question
         assert "Wie hoch ist der Betriebsdruck" not in strategy.primary_question
 
     def test_barg_pressure_interpretation_is_not_asked_again(self):

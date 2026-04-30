@@ -5,6 +5,7 @@ import pytest
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.output_contract_node import build_governed_conversation_strategy_contract
 from app.agent.runtime.reply_composition import (
+    build_governed_render_prompt,
     build_turn_context_instruction,
     compose_clarification_reply,
 )
@@ -23,6 +24,7 @@ from app.agent.state.models import (
     MediumClassificationState,
     NormalizedParameter,
     NormalizedState,
+    TurnContextContract,
 )
 
 
@@ -450,6 +452,31 @@ def test_reply_composition_uses_turn_context_fields() -> None:
     assert "Welches Medium soll abgedichtet werden?" in reply
     assert "Das Medium entscheidet ueber Werkstoffwahl." not in reply
     assert reply.count("?") == 1
+
+
+def test_governed_render_prompt_pushes_human_chat_language() -> None:
+    prompt = build_governed_render_prompt(
+        response_class="structured_clarification",
+        turn_context=TurnContextContract(
+            conversation_phase="narrowing",
+            turn_goal="clarify_primary_open_point",
+            primary_question="Ich habe 5 bar erkannt; meinst du damit den Druck direkt an der Dichtung?",
+            primary_question_reason="Der Druckwert ist da, aber der Bezug fehlt, damit fuer die Anfrage klar ist.",
+            response_mode="single_question",
+            confirmed_facts_summary=[
+                "Medium: Oel",
+                "Temperatur: 120 °C",
+                "Drehzahl: 1500 rpm",
+            ],
+            open_points_summary=["Druckbezug"],
+        ),
+        fallback_text="Ich habe 5 bar erkannt; meinst du damit den Druck direkt an der Dichtung?",
+    )
+
+    assert "ohne KI-Klang" in prompt
+    assert "Damit niemand am Druck vorbeiredet" in prompt
+    assert "Dichtungsanforderungen" in prompt
+    assert "genau 1 natuerlichen Rueckfrage" in prompt
 
 
 def test_correction_mouth_reframes_linear_context_and_sets_new_focus() -> None:
