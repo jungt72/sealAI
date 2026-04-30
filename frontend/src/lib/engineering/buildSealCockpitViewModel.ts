@@ -127,7 +127,7 @@ function buildParameterRows(workspace: WorkspaceView | null): ParameterDataRow[]
 
 function buildOpenPointSummary(workspace: WorkspaceView | null) {
   if (!workspace) {
-    return "Medium · Temperatur · Anwendung · Druck · Drehzahl";
+    return "Noch kein Dichtungsfall gestartet";
   }
 
   const gaps = [
@@ -142,6 +142,9 @@ function buildOpenPointSummary(workspace: WorkspaceView | null) {
 }
 
 function buildWarning(workspace: WorkspaceView | null) {
+  if (!workspace) {
+    return "Beschreibe kurz deine Anwendung, dann zeigt SeaLAI hier die nächsten offenen Punkte.";
+  }
   const openPoints = buildOpenPointSummary(workspace);
   return openPoints === "Keine wichtigen offenen Punkte gemeldet" ? "Aktuell sind keine wichtigen offenen Punkte gemeldet" : `Noch wichtig: ${openPoints}`;
 }
@@ -149,11 +152,11 @@ function buildWarning(workspace: WorkspaceView | null) {
 function buildCriticalDrivers(workspace: WorkspaceView | null): CriticalDriver[] {
   if (!workspace) {
     return [
-      { label: "Medium", risk: "Offen", consequence: "Medienverträglichkeit kann noch nicht geprüft werden" },
-      { label: "Temperatur", risk: "Offen", consequence: "Der passende Werkstoffbereich ist noch unklar" },
-      { label: "Anwendung", risk: "Offen", consequence: "Anlage und Dichtstelle sind noch nicht sauber eingeordnet" },
-      { label: "Druck", risk: "Offen", consequence: "Der Druck an der Dichtstelle ist noch nicht klar" },
-      { label: "Drehzahl", risk: "Offen", consequence: "Die Bewegung kann noch nicht gerechnet werden" },
+      {
+        label: "Start",
+        risk: "Offen",
+        consequence: "Noch kein konkreter Dichtungsfall beschrieben",
+      },
     ];
   }
 
@@ -247,6 +250,16 @@ function buildCalculations(workspace: WorkspaceView | null): CalculationEvidence
       }
     }
 
+    if (!workspace) {
+      return {
+        label: definition.label,
+        value: MISSING_CALCULATION_VALUE,
+        limit: "Startet, sobald ein Dichtungsfall beschrieben ist",
+        reserve: "Noch keine technischen Daten vorhanden",
+        status: "offen",
+      };
+    }
+
     const missingInputs = missingInputsFor(workspace, definition.requiredInputs);
     return {
       label: definition.label,
@@ -275,12 +288,12 @@ function coveragePercent(workspace: WorkspaceView | null) {
 function buildSolution(workspace: WorkspaceView | null): SealCockpitOverview["solution"] {
   if (!workspace) {
     return {
-      assessmentTitle: "Anfragebasis noch offen",
-      assessment: "Der Fall ist noch nicht genug beschrieben. Sobald die wichtigsten Angaben da sind, kann SeaLAI eine saubere Anfragevorschau vorbereiten.",
+      assessmentTitle: "Noch kein technischer Fall",
+      assessment: "Small Talk oder allgemeine Fragen starten noch keinen Dichtungsfall. Sobald du eine konkrete Anwendung beschreibst, baut SeaLAI daraus eine Anfragebasis auf.",
       rows: [
         { label: "Lösungsraum", value: OPEN_VALUE },
-        { label: "Was noch geprüft werden muss", value: "Medium, Temperatur, Anwendung, Druck und Drehzahl" },
-        { label: "Nächster Schritt", value: "Erste Betriebsdaten erfassen und als Case-Felder qualifizieren" },
+        { label: "Was noch geprüft werden muss", value: "Noch nichts, weil noch kein Fall gestartet wurde" },
+        { label: "Nächster Schritt", value: "Eine Anwendung oder ein Dichtungsproblem beschreiben" },
       ],
     };
   }

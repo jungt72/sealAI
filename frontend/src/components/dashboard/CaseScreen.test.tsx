@@ -348,7 +348,7 @@ describe("CaseScreen", () => {
     expect(screen.getByText("0 % geklärt")).toBeInTheDocument();
     expect(screen.getAllByText("Lösungsraum").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Noch offen").length).toBeGreaterThan(0);
-    expect(screen.getByText("Medium · Temperatur · Anwendung · Druck · Drehzahl")).toBeInTheDocument();
+    expect(screen.getByText("Noch kein Dichtungsfall gestartet")).toBeInTheDocument();
     expect(screen.getByText("Gerechnet")).toBeInTheDocument();
     expect(screen.getByText("0 von 5 Checks vorhanden")).toBeInTheDocument();
 
@@ -361,12 +361,12 @@ describe("CaseScreen", () => {
   it("renders an honest empty and missing state without productive mock values", () => {
     render(<CaseScreen caseId="case-42" />);
 
-    expect(screen.getByText("Noch wichtig: Medium · Temperatur · Anwendung · Druck · Drehzahl")).toBeInTheDocument();
-    expect(screen.getByText("Anfragebasis noch offen")).toBeInTheDocument();
+    expect(screen.getByText("Beschreibe kurz deine Anwendung, dann zeigt SeaLAI hier die nächsten offenen Punkte.")).toBeInTheDocument();
+    expect(screen.getByText("Noch kein technischer Fall")).toBeInTheDocument();
     expect(screen.getByText("Umfangsgeschwindigkeit")).toBeInTheDocument();
     expect(screen.getAllByText("Noch nicht möglich")).toHaveLength(5);
-    expect(screen.getAllByText("Dafür fehlt noch: Wellendurchmesser · Drehzahl").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Wichtig für Wärmeentwicklung und dynamische Beanspruchung/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Startet, sobald ein Dichtungsfall beschrieben ist").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Noch keine technischen Daten vorhanden").length).toBeGreaterThan(0);
 
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
     expect(screen.queryByText("PTFE-RWDR vorqualifiziert")).not.toBeInTheDocument();
