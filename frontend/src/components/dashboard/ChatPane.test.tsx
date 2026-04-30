@@ -99,6 +99,22 @@ describe("ChatPane", () => {
             confirmation_required: false,
             status: "proposed",
           },
+          {
+            field_name: "installation",
+            proposed_value: "flange",
+            provenance: "inferred",
+            confidence: "inferred",
+            confirmation_required: true,
+            status: "proposed",
+          },
+          {
+            field_name: "material",
+            proposed_value: "Flachdichtung",
+            provenance: "inferred",
+            confidence: "estimated",
+            confirmation_required: true,
+            status: "proposed",
+          },
         ],
       },
     };
@@ -109,7 +125,7 @@ describe("ChatPane", () => {
       expect(decideCaseDeltaMock).toHaveBeenCalledWith(
         "case-parameter",
         "accept",
-        ["medium", "temperature_c"],
+        ["medium", "temperature_c", "installation"],
       );
     });
     await waitFor(() => expect(onTurnComplete).toHaveBeenCalledWith("case-parameter"));

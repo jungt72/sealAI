@@ -92,7 +92,17 @@ const CHAT_WORKING_STATE_AUTO_ACCEPT_FIELDS = new Set([
   "seal_location",
   "asset_type",
   "pressure_direction",
+  "installation",
+  "industry",
 ]);
+
+function isSuppressedBogusDeltaField(field: ProposedCaseDeltaField): boolean {
+  if (field.field_name !== "material") {
+    return false;
+  }
+  const value = String(field.proposed_value ?? "").trim().toLowerCase();
+  return /^(flachdichtung|flat[_\s-]?gasket|gasket|rwdr|wellendichtring|gleitringdichtung|mechanical[_\s-]?seal|o[_\s-]?ring|hydraulikdichtung)$/.test(value);
+}
 
 function isAutoAcceptableWorkingStateField(field: ProposedCaseDeltaField): boolean {
   const status = field.status || "proposed";
@@ -239,7 +249,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
   const hasConversation = messages.length > 0 || Boolean(streamingText) || Boolean(parameterConfirmation);
   const proposedDeltaFields = useMemo(() => {
     const fields = streamWorkspace?.proposedCaseDelta?.fields ?? [];
-    return fields.filter((field) => field.status === "proposed" || !field.status);
+    return fields.filter((field) => (field.status === "proposed" || !field.status) && !isSuppressedBogusDeltaField(field));
   }, [streamWorkspace?.proposedCaseDelta]);
   const combinedDeltaFields = documentDeltaFields.length > 0 ? documentDeltaFields : proposedDeltaFields;
   const proposedDeltaKey = combinedDeltaFields
