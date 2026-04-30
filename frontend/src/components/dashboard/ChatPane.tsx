@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import { Bot, Check, ChevronRight, Loader2, Paperclip, SendHorizontal, UserRound, X } from "lucide-react";
 
 import ChatComposer from "@/components/dashboard/ChatComposer";
+import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
 import { useAgentStream } from "@/hooks/useAgentStream";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
@@ -49,9 +49,7 @@ function MessageBubble({
         {isUser ? (
           <p className="whitespace-pre-wrap">{content}</p>
         ) : (
-          <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0 prose-strong:text-slate-950">
-            <ReactMarkdown>{content}</ReactMarkdown>
-          </div>
+          <MarkdownRenderer variant="chat">{content}</MarkdownRenderer>
         )}
       </div>
       {isUser && (

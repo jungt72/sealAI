@@ -11,6 +11,7 @@ import { Check, Copy } from "lucide-react";
 
 import "katex/dist/katex.min.css";
 import { normalizeAssistantMarkdown } from "@/lib/assistantText";
+import { cn } from "@/lib/utils";
 
 interface CodeBlockProps {
   language: string;
@@ -64,16 +65,27 @@ const CodeBlock = ({ language, value }: CodeBlockProps) => {
   );
 };
 
-export default function MarkdownRenderer({ children }: { children: string }) {
+interface MarkdownRendererProps {
+  children: string;
+  className?: string;
+  variant?: "default" | "chat";
+}
+
+export default function MarkdownRenderer({ children, className, variant = "default" }: MarkdownRendererProps) {
   const content = normalizeAssistantMarkdown(children);
+  const isChat = variant === "chat";
 
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
       rehypePlugins={[rehypeKatex]}
-      className="seal-markdown break-words text-[15px] leading-relaxed text-foreground"
+      className={cn(
+        "seal-markdown break-words text-foreground",
+        isChat ? "text-[14px] leading-[1.65]" : "text-[15px] leading-relaxed",
+        className,
+      )}
       components={{
-        p: ({ node, ...props }) => <p className="mb-4 last:mb-0" {...props} />,
+        p: ({ node, ...props }) => <p className={cn(isChat ? "mb-2 last:mb-0" : "mb-4 last:mb-0")} {...props} />,
         a: ({ node, ...props }) => (
           <a
             className="text-seal-blue no-underline hover:underline font-medium"
@@ -82,16 +94,50 @@ export default function MarkdownRenderer({ children }: { children: string }) {
             {...props}
           />
         ),
-        ul: ({ node, ...props }) => <ul className="mb-4 ml-6 list-disc space-y-2" {...props} />,
-        ol: ({ node, ...props }) => <ol className="mb-4 ml-6 list-decimal space-y-2" {...props} />,
-        li: ({ node, ...props }) => <li className="pl-1" {...props} />,
-        h1: ({ node, ...props }) => <h1 className="mb-6 mt-8 text-2xl font-bold tracking-tight" {...props} />,
-        h2: ({ node, ...props }) => <h2 className="mb-4 mt-6 text-xl font-bold tracking-tight" {...props} />,
-        h3: ({ node, ...props }) => <h3 className="mb-3 mt-5 text-lg font-bold tracking-tight" {...props} />,
-        strong: ({ node, ...props }) => <strong className="font-bold" {...props} />,
+        ul: ({ node, ...props }) => (
+          <ul className={cn("list-disc", isChat ? "mb-2 ml-4 space-y-1" : "mb-4 ml-6 space-y-2")} {...props} />
+        ),
+        ol: ({ node, ...props }) => (
+          <ol className={cn("list-decimal", isChat ? "mb-2 ml-4 space-y-1" : "mb-4 ml-6 space-y-2")} {...props} />
+        ),
+        li: ({ node, ...props }) => <li className={cn(isChat ? "pl-0.5" : "pl-1")} {...props} />,
+        h1: ({ node, ...props }) => (
+          <h1
+            className={cn(
+              "font-bold tracking-tight",
+              isChat ? "mb-2 mt-1 text-[15px]" : "mb-6 mt-8 text-2xl",
+            )}
+            {...props}
+          />
+        ),
+        h2: ({ node, ...props }) => (
+          <h2
+            className={cn(
+              "font-bold tracking-tight",
+              isChat ? "mb-2 mt-1 text-[15px]" : "mb-4 mt-6 text-xl",
+            )}
+            {...props}
+          />
+        ),
+        h3: ({ node, ...props }) => (
+          <h3
+            className={cn(
+              "font-bold tracking-tight",
+              isChat ? "mb-1.5 mt-1 text-[14px]" : "mb-3 mt-5 text-lg",
+            )}
+            {...props}
+          />
+        ),
+        strong: ({ node, ...props }) => <strong className="font-semibold text-slate-950" {...props} />,
         hr: ({ node, ...props }) => <hr className="my-8 border-border" {...props} />,
         blockquote: ({ node, ...props }) => (
-          <blockquote className="my-6 border-l-4 border-muted-foreground/20 px-4 py-1 italic text-muted-foreground" {...props} />
+          <blockquote
+            className={cn(
+              "border-l-4 border-muted-foreground/20 italic text-muted-foreground",
+              isChat ? "my-3 px-3 py-1" : "my-6 px-4 py-1",
+            )}
+            {...props}
+          />
         ),
         table: ({ node, ...props }) => (
           <div className="my-6 overflow-x-auto rounded-xl border border-border">

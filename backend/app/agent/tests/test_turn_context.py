@@ -477,6 +477,9 @@ def test_governed_render_prompt_pushes_human_chat_language() -> None:
     assert "Damit niemand am Druck vorbeiredet" in prompt
     assert "Akzeptiere Nutzerangaben im Chat als Arbeitsstand" in prompt
     assert "nicht wie ein Bestaetigungsformular" in prompt
+    assert "Nutze Markdown bewusst und sparsam" in prompt
+    assert "**Naechste sinnvolle Frage:**" in prompt
+    assert "Markdown darf nur strukturieren" in prompt
     assert "Dichtungsanforderungen" in prompt
     assert "genau 1 natuerlichen Rueckfrage" in prompt
 

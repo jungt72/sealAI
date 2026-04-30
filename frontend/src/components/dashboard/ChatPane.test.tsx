@@ -74,6 +74,27 @@ describe("ChatPane", () => {
     expect(screen.queryByText("Hallo Thorsten,")).not.toBeInTheDocument();
   });
 
+  it("renders assistant markdown with compact professional structure", () => {
+    agentStreamMockState.messages = [
+      { role: "user", content: "Flachdichtung, Wasser, 80 Grad und 6 bar." },
+      {
+        role: "assistant",
+        content:
+          "**Arbeitsstand:** Wasser, 80 °C und 6 bar.\n\n" +
+          "- Dichtungsart: Flachdichtung\n" +
+          "- Einbausituation: noch offen\n\n" +
+          "**Naechste sinnvolle Frage:** Sitzt die Dichtung zwischen zwei genormten Flanschen?",
+      },
+    ];
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.getByText("Arbeitsstand:")).toBeInTheDocument();
+    expect(screen.getByText("Wasser, 80 °C und 6 bar.")).toBeInTheDocument();
+    expect(screen.getByText("Dichtungsart: Flachdichtung")).toBeInTheDocument();
+    expect(screen.getByText("Naechste sinnvolle Frage:")).toBeInTheDocument();
+  });
+
   it("auto-accepts safe user-stated chat deltas as working state", async () => {
     const onTurnComplete = vi.fn();
     agentStreamMockState.messages = [

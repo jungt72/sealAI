@@ -161,8 +161,8 @@ def test_build_public_response_core_guards_legacy_structured_clarification_reply
 
     assert core["response_class"] == "structured_clarification"
     assert core["reply"] == (
-        "Das ist ein guter Arbeitsstand. Als Naechstes klaeren wir die Einbausituation: "
-        "Wo sitzt die Dichtung genau?"
+        "**Arbeitsstand:** Das ist ein guter erster Stand.\n\n"
+        "**Naechste sinnvolle Frage:** Wo sitzt die Dichtung genau?"
     )
 
 
