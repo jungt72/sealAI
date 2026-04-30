@@ -109,6 +109,7 @@ const SOURCE_LABELS: Record<string, string> = {
   deterministic_calculation: "Berechnung",
   calculated: "Berechnung",
   llm_research_fallback: "KI-Hinweis",
+  llm_synthesis: "KI-Hinweis",
   inferred: "abgeleitet",
   pattern_derived: "abgeleitet",
   system_derived: "aus den Angaben abgeleitet",
@@ -175,7 +176,7 @@ function validationLabel(value: string | null | undefined): string {
 
 function sourceTone(value: string | null | undefined): BadgeTone {
   const code = normalizeCode(value);
-  if (code === "llm_research_fallback" || code === "unknown" || code === "missing") {
+  if (code === "llm_research_fallback" || code === "llm_synthesis" || code === "unknown" || code === "missing") {
     return "warning";
   }
   if (code === "deterministic_calculation" || code === "calculated" || code === "rag_verified") {

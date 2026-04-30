@@ -17,6 +17,7 @@ const SOURCE_LABELS: Record<string, string> = {
   rag_verified: "Wissensbasis",
   deterministic_calculation: "Berechnung",
   llm_research_fallback: "KI-Hinweis",
+  llm_synthesis: "KI-Hinweis",
   inferred: "abgeleitet",
   system_derived: "aus den Angaben abgeleitet",
   unknown: "Herkunft unklar",
@@ -198,7 +199,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
   const validationStatus = workspace!.mediumContext.notForReleaseDecisions
     ? "unvalidated"
     : workspace!.mediumContext.validationStatus || "unknown";
-  const sourceIsFallback = sourceType === "llm_research_fallback";
+  const sourceIsFallback = sourceType === "llm_research_fallback" || sourceType === "llm_synthesis";
   const displayValidationStatus = sourceIsFallback ? "unvalidated" : validationStatus;
   const knownItems = uniqueDisplayItems([...(decision?.understoodNow ?? []), ...current.knownFields], 7);
   const missingItems = uniqueDisplayItems([...current.missingFields, ...workspace!.completeness.missingCriticalParameters, ...workspace!.rfq.openPoints], 7);

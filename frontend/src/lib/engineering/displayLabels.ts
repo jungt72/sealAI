@@ -1,12 +1,15 @@
 const FIELD_LABELS: Record<string, string> = {
   application_requirement: "Anwendungsanforderung",
   atex: "ATEX-Relevanz",
+  atex_relevance: "ATEX-Relevanz",
   clarify_sealing_case_need: "Dichtungsfall klären",
   contamination: "Verunreinigung / Partikel",
   counterface_surface: "Gegenlauffläche",
   duty_profile: "Betriebsprofil",
   food_contact: "Lebensmittelkontakt",
   high: "hoch",
+  housing_bore: "Gehäusebohrung",
+  housing_bore_mm: "Gehäusebohrung",
   installation: "Einbauort / Anlage",
   low: "niedrig",
   manufacturer_validation_required: "Hersteller muss prüfen",
@@ -41,6 +44,8 @@ const FIELD_LABELS: Record<string, string> = {
   temperature_c: "Temperatur",
   unknown: "unklar",
   unknown_seal: "Dichtungstyp offen",
+  width: "Einbaubreite",
+  width_mm: "Einbaubreite",
 };
 
 const RISK_LABELS: Record<string, string> = {

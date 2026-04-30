@@ -180,6 +180,24 @@ describe("DecisionUnderstandingPanel", () => {
     expect(screen.getByText("Dieser KI-Hinweis ist noch nicht geprüft und bleibt nur Orientierung.")).toBeInTheDocument();
   });
 
+  it("uses a human label for generic LLM synthesis sources", () => {
+    render(
+      <DecisionUnderstandingPanel
+        workspace={workspaceFixture({
+          mediumContext: {
+            ...workspaceFixture().mediumContext,
+            sourceType: "llm_synthesis",
+            validationStatus: "unvalidated",
+            notForReleaseDecisions: true,
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Woher: KI-Hinweis")).toBeInTheDocument();
+    expect(screen.queryByText(/LLM Synthesis/i)).not.toBeInTheDocument();
+  });
+
   it("renders the seal application profile as read-only context", () => {
     render(<DecisionUnderstandingPanel workspace={workspaceFixture()} />);
 
