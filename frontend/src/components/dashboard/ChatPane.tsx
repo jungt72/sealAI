@@ -75,7 +75,7 @@ function isAutoAcceptableWorkingStateField(field: ProposedCaseDeltaField): boole
   const status = field.status || "proposed";
   return (
     status === "proposed" &&
-    field.provenance === "user_stated" &&
+    (field.provenance === undefined || field.provenance === "user_stated") &&
     field.confirmation_required !== true &&
     field.confidence !== "requires_confirmation"
   );
@@ -226,7 +226,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
   const shouldAutoAcceptWorkingState =
     Boolean(proposedDeltaKey) &&
     documentDeltaFields.length === 0 &&
-    streamWorkspace?.proposedCaseDelta?.source === "llm" &&
+    streamWorkspace?.proposedCaseDelta?.source !== "document" &&
     combinedDeltaFields.length > 0 &&
     combinedDeltaFields.every(isAutoAcceptableWorkingStateField) &&
     settledDeltaKey !== proposedDeltaKey &&

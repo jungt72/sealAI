@@ -82,12 +82,10 @@ describe("ChatPane", () => {
     ];
     agentStreamMockState.streamWorkspace = {
       proposedCaseDelta: {
-        source: "llm",
         fields: [
           {
             field_name: "medium",
             proposed_value: "Wasser",
-            provenance: "user_stated",
             confidence: "estimated",
             confirmation_required: false,
             status: "proposed",
@@ -144,5 +142,32 @@ describe("ChatPane", () => {
     expect(decideCaseDeltaMock).not.toHaveBeenCalled();
     expect(screen.getByText("Vorgeschlagene Case-Aenderung")).toBeInTheDocument();
     expect(screen.getByText("material")).toBeInTheDocument();
+  });
+
+  it("keeps document deltas in the manual review path", () => {
+    agentStreamMockState.messages = [
+      { role: "user", content: "Ich habe ein Datenblatt hochgeladen." },
+      { role: "assistant", content: "Dokument analysiert." },
+    ];
+    agentStreamMockState.streamWorkspace = {
+      proposedCaseDelta: {
+        source: "document",
+        fields: [
+          {
+            field_name: "medium",
+            proposed_value: "Wasser",
+            provenance: "documented",
+            confidence: "estimated",
+            confirmation_required: false,
+            status: "proposed",
+          },
+        ],
+      },
+    };
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(decideCaseDeltaMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Vorgeschlagene Case-Aenderung")).toBeInTheDocument();
   });
 });
