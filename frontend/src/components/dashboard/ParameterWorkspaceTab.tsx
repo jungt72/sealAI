@@ -9,6 +9,7 @@ import { humanizeDisplayText } from "@/lib/engineering/displayLabels";
 import { cn } from "@/lib/utils";
 
 type ParameterKind = "text" | "number";
+type BadgeTone = "default" | "info" | "warning" | "danger" | "success";
 
 type ParameterField = {
   fieldName: string;
@@ -18,6 +19,15 @@ type ParameterField = {
   placeholder: string;
   detail: string;
   why: string;
+};
+
+type ParameterMeta = {
+  sourceType: string | null;
+  validationStatus: string | null;
+  origin: string | null;
+  confidence: string | null;
+  isConfirmed: boolean;
+  isMandatory: boolean;
 };
 
 const PARAMETER_FIELDS: ParameterField[] = [
@@ -91,6 +101,46 @@ const PARAMETER_FIELDS: ParameterField[] = [
   },
 ];
 
+const SOURCE_LABELS: Record<string, string> = {
+  user_stated: "Nutzerangabe",
+  uploaded_evidence: "Dokument / Upload",
+  documented: "Dokument / Upload",
+  rag_verified: "Wissensbasis",
+  deterministic_calculation: "Berechnung",
+  calculated: "Berechnung",
+  llm_research_fallback: "LLM-Recherche",
+  inferred: "abgeleitet",
+  pattern_derived: "abgeleitet",
+  system_derived: "systemseitig abgeleitet",
+  missing: "Quelle fehlt",
+  unknown: "Quelle unklar",
+};
+
+const VALIDATION_LABELS: Record<string, string> = {
+  validated: "geprüft",
+  documented: "dokumentiert",
+  user_stated: "Nutzerangabe",
+  candidate: "Kandidat",
+  unvalidated: "nicht validiert",
+  conflicting: "widersprüchlich",
+  conflict: "widersprüchlich",
+  calculated: "berechnet",
+  confirmed: "bestätigt",
+  missing: "offen",
+  unknown: "unklar",
+};
+
+const COCKPIT_FIELD_ALIASES: Record<string, string[]> = {
+  medium: ["medium_name"],
+  temperature_c: ["temperature_max", "temperature_min"],
+  pressure_bar: ["pressure_nominal", "pressure_peak"],
+  speed_rpm: ["rotational_speed"],
+  shaft_diameter_mm: ["shaft_diameter"],
+  installation: ["asset_type", "application", "asset_function"],
+  sealing_type: ["seal_type", "current_seal_type", "requested_seal_type"],
+  counterface_surface: ["surface_finish"],
+};
+
 type ParameterFormState = Record<string, string>;
 
 function valueFor(workspace: WorkspaceView | null, fieldName: string): string {
@@ -99,6 +149,107 @@ function valueFor(workspace: WorkspaceView | null, fieldName: string): string {
     return "";
   }
   return String(value);
+}
+
+function normalizeCode(value: string | null | undefined): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function readableCode(value: string | null | undefined): string {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+}
+
+function sourceLabel(value: string | null | undefined): string {
+  const code = normalizeCode(value);
+  return SOURCE_LABELS[code] || readableCode(value) || SOURCE_LABELS.unknown;
+}
+
+function validationLabel(value: string | null | undefined): string {
+  const code = normalizeCode(value);
+  return VALIDATION_LABELS[code] || readableCode(value) || VALIDATION_LABELS.unknown;
+}
+
+function sourceTone(value: string | null | undefined): BadgeTone {
+  const code = normalizeCode(value);
+  if (code === "llm_research_fallback" || code === "unknown" || code === "missing") {
+    return "warning";
+  }
+  if (code === "deterministic_calculation" || code === "calculated" || code === "rag_verified") {
+    return "info";
+  }
+  if (code === "uploaded_evidence" || code === "documented" || code === "user_stated") {
+    return "success";
+  }
+  return "default";
+}
+
+function validationTone(value: string | null | undefined): BadgeTone {
+  const code = normalizeCode(value);
+  if (code === "validated" || code === "confirmed" || code === "documented" || code === "calculated") {
+    return "success";
+  }
+  if (code === "conflicting" || code === "conflict") {
+    return "danger";
+  }
+  if (code === "candidate" || code === "unvalidated" || code === "unknown" || code === "missing") {
+    return "warning";
+  }
+  return "default";
+}
+
+function badgeClass(tone: BadgeTone) {
+  switch (tone) {
+    case "success":
+      return "border-[#B7E4C7] bg-[#EAF7EE] text-[#166534]";
+    case "info":
+      return "border-[#CFE0FF] bg-[#EFF6FF] text-[#0B57D0]";
+    case "warning":
+      return "border-[#F6D8A8] bg-[#FFF4E5] text-[#92400E]";
+    case "danger":
+      return "border-[#F7C8C8] bg-[#FDECEC] text-[#991B1B]";
+    default:
+      return "border-[#E5E7EB] bg-white text-[#4B5563]";
+  }
+}
+
+function parameterMeta(workspace: WorkspaceView | null, fieldName: string): ParameterMeta {
+  const aliases = new Set([fieldName, ...(COCKPIT_FIELD_ALIASES[fieldName] ?? [])]);
+  const sections = Object.values(workspace?.cockpit?.sections ?? {});
+  for (const section of sections) {
+    const property = section.properties.find((item) => aliases.has(item.key));
+    if (property) {
+      return {
+        sourceType: property.sourceType ?? property.origin ?? null,
+        validationStatus: property.validationStatus ?? property.confidence ?? null,
+        origin: property.origin ?? null,
+        confidence: property.confidence ?? null,
+        isConfirmed: property.isConfirmed,
+        isMandatory: property.isMandatory,
+      };
+    }
+  }
+  if (fieldName === "medium" && workspace?.mediumContext) {
+    return {
+      sourceType: workspace.mediumContext.sourceType ?? null,
+      validationStatus: workspace.mediumContext.validationStatus ?? null,
+      origin: workspace.mediumCapture.primaryRawText ? "user_stated" : null,
+      confidence: workspace.mediumContext.confidence ?? null,
+      isConfirmed: workspace.mediumClassification.confidence === "high",
+      isMandatory: workspace.completeness.missingCriticalParameters.includes("medium"),
+    };
+  }
+  return {
+    sourceType: valueFor(workspace, fieldName) ? "unknown" : "missing",
+    validationStatus: valueFor(workspace, fieldName) ? "unknown" : "missing",
+    origin: null,
+    confidence: null,
+    isConfirmed: false,
+    isMandatory: workspace?.completeness.missingCriticalParameters.includes(fieldName) ?? false,
+  };
 }
 
 function initialState(workspace: WorkspaceView | null): ParameterFormState {
@@ -148,6 +299,74 @@ function fieldStatus(workspace: WorkspaceView | null, field: ParameterField, raw
     return "Status: wird als Nutzerangabe übernommen";
   }
   return currentValue ? "Status: bekannt" : "Status: offen";
+}
+
+function MetadataBadge({ label, tone = "default" }: { label: string; tone?: BadgeTone }) {
+  return (
+    <span className={cn("inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold", badgeClass(tone))}>
+      {label}
+    </span>
+  );
+}
+
+function ParameterFieldCard({
+  field,
+  workspace,
+  formState,
+  isSubmitting,
+  onChange,
+}: {
+  field: ParameterField;
+  workspace: WorkspaceView | null;
+  formState: ParameterFormState;
+  isSubmitting: boolean;
+  onChange: (value: string) => void;
+}) {
+  const meta = parameterMeta(workspace, field.fieldName);
+  const rawValue = formState[field.fieldName] ?? "";
+  const isChanged = (() => {
+    const parsed = parseValue(field, rawValue);
+    return parsed !== null && !valuesMatch(field, valueFor(workspace, field.fieldName), parsed);
+  })();
+  const effectiveSource = isChanged ? "user_stated" : meta.sourceType;
+  const effectiveValidation = isChanged ? "user_stated" : meta.validationStatus;
+
+  return (
+    <label className="block rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#111827]">{field.label}</div>
+          <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">{field.detail}</p>
+        </div>
+        {field.unit && (
+          <span className="rounded-full border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
+            {field.unit}
+          </span>
+        )}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <input
+          aria-label={field.label}
+          inputMode={field.kind === "number" ? "decimal" : "text"}
+          value={rawValue}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={field.placeholder}
+          disabled={isSubmitting}
+          className="min-h-10 w-full rounded-[12px] border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-[#111827] outline-none transition-colors placeholder:text-[#9CA3AF] focus:border-[#0B57D0]"
+        />
+      </div>
+      <div className="mt-2 grid gap-2 text-[12px] leading-relaxed text-[#6B7280]">
+        <span>{field.why}</span>
+        <span className="font-medium text-[#4B5563]">{fieldStatus(workspace, field, rawValue)}</span>
+        <div className="flex flex-wrap gap-1.5">
+          <MetadataBadge label={`Herkunft: ${sourceLabel(effectiveSource)}`} tone={sourceTone(effectiveSource)} />
+          <MetadataBadge label={`Status: ${validationLabel(effectiveValidation)}`} tone={validationTone(effectiveValidation)} />
+          {meta.isMandatory && <MetadataBadge label="Pflichtfeld" tone="warning" />}
+          {meta.isConfirmed && !isChanged && <MetadataBadge label="bestätigt" tone="success" />}
+        </div>
+      </div>
+    </label>
+  );
 }
 
 export function ParameterWorkspaceTab({
@@ -240,42 +459,19 @@ export function ParameterWorkspaceTab({
 
         <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
           {PARAMETER_FIELDS.map((field) => (
-            <label
+            <ParameterFieldCard
               key={field.fieldName}
-              className="block rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[#111827]">{field.label}</div>
-                  <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">{field.detail}</p>
-                </div>
-                {field.unit && (
-                  <span className="rounded-full border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#6B7280]">
-                    {field.unit}
-                  </span>
-                )}
-              </div>
-              <div className="mt-3 flex gap-2">
-                <input
-                  aria-label={field.label}
-                  inputMode={field.kind === "number" ? "decimal" : "text"}
-                  value={formState[field.fieldName] ?? ""}
-                  onChange={(event) =>
-                    setFormState((current) => ({
-                      ...current,
-                      [field.fieldName]: event.target.value,
-                    }))
-                  }
-                  placeholder={field.placeholder}
-                  disabled={isSubmitting}
-                  className="min-h-10 w-full rounded-[12px] border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-[#111827] outline-none transition-colors placeholder:text-[#9CA3AF] focus:border-[#0B57D0]"
-                />
-              </div>
-              <div className="mt-2 grid gap-1 text-[12px] leading-relaxed text-[#6B7280]">
-                <span>{field.why}</span>
-                <span className="font-medium text-[#4B5563]">{fieldStatus(workspace, field, formState[field.fieldName] ?? "")}</span>
-              </div>
-            </label>
+              field={field}
+              workspace={workspace}
+              formState={formState}
+              isSubmitting={isSubmitting}
+              onChange={(value) =>
+                setFormState((current) => ({
+                  ...current,
+                  [field.fieldName]: value,
+                }))
+              }
+            />
           ))}
         </div>
 

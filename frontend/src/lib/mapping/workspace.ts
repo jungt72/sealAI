@@ -24,6 +24,8 @@ type RawCockpitProperty = {
   unit?: string | null;
   origin?: string | null;
   confidence?: string | null;
+  source_type?: string | null;
+  validation_status?: string | null;
   is_confirmed?: boolean;
   is_mandatory?: boolean;
 };
@@ -772,6 +774,8 @@ function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockp
         unit: property.unit || undefined,
         origin: property.origin ?? null,
         confidence: property.confidence ?? null,
+        sourceType: property.source_type ?? null,
+        validationStatus: property.validation_status ?? null,
         isConfirmed: Boolean(property.is_confirmed),
         isMandatory: Boolean(property.is_mandatory),
       })),

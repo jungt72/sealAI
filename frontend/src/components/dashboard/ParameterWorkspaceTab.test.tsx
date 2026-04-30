@@ -21,6 +21,99 @@ function workspaceFixture(): WorkspaceView {
       sealing_type: "mechanical_seal",
       counterface_surface: null,
     },
+    cockpit: {
+      path: "rwdr",
+      requestType: "new_design",
+      routingMetadata: { phase: "clarification", lastNode: "workspace", routing: {} },
+      sections: {
+        application_function: {
+          id: "application_function",
+          title: "1. Anlage & Funktion",
+          completion: { mandatoryPresent: 1, mandatoryTotal: 1, percent: 100 },
+          properties: [
+            {
+              key: "installation",
+              label: "Anlage",
+              value: "Pumpe",
+              origin: "user_stated",
+              confidence: "confirmed",
+              sourceType: "user_stated",
+              validationStatus: "user_stated",
+              isConfirmed: true,
+              isMandatory: true,
+            },
+          ],
+        },
+        medium_environment: {
+          id: "medium_environment",
+          title: "2. Medium & Umgebung",
+          completion: { mandatoryPresent: 1, mandatoryTotal: 1, percent: 100 },
+          properties: [
+            {
+              key: "medium",
+              label: "Medium",
+              value: "Ethanol",
+              origin: "user_stated",
+              confidence: "confirmed",
+              sourceType: "user_stated",
+              validationStatus: "user_stated",
+              isConfirmed: true,
+              isMandatory: true,
+            },
+            {
+              key: "temperature_c",
+              label: "Temperatur",
+              value: 150,
+              unit: "°C",
+              origin: "user_stated",
+              confidence: "confirmed",
+              sourceType: "user_stated",
+              validationStatus: "user_stated",
+              isConfirmed: true,
+              isMandatory: true,
+            },
+            {
+              key: "pressure_bar",
+              label: "Druck",
+              value: 10,
+              unit: "bar",
+              origin: "llm_research_fallback",
+              confidence: "candidate",
+              sourceType: "llm_research_fallback",
+              validationStatus: "unvalidated",
+              isConfirmed: false,
+              isMandatory: true,
+            },
+          ],
+        },
+        operating_geometry: {
+          id: "operating_geometry",
+          title: "3. Betriebsdaten & Geometrie",
+          completion: { mandatoryPresent: 0, mandatoryTotal: 2, percent: 0 },
+          properties: [],
+        },
+        risk_readiness: {
+          id: "risk_readiness",
+          title: "4. Risiken & Anfrage-Reife",
+          completion: { mandatoryPresent: 0, mandatoryTotal: 0, percent: 100 },
+          properties: [],
+        },
+      },
+      checks: [],
+      riskEvaluations: [],
+      readiness: {
+        isRfqReady: false,
+        missingMandatoryKeys: ["speed_rpm"],
+        blockers: [],
+        status: "preliminary",
+      },
+      mediumContext: {
+        canonicalName: "Ethanol",
+        isConfirmed: false,
+        properties: [],
+        riskFlags: [],
+      },
+    },
     lifecycle: { currentStep: null, completedSteps: [], steps: [] },
     summary: {
       turnCount: 1,
@@ -171,6 +264,11 @@ describe("ParameterWorkspaceTab", () => {
     expect(screen.getByLabelText("Temperatur")).toHaveValue("150");
     expect(screen.getByText(/Das Medium bestimmt Werkstofffenster/i)).toBeInTheDocument();
     expect(screen.getByText(/Herstellerprüfung bleibt erforderlich/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Herkunft: Nutzerangabe").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Status: Nutzerangabe").length).toBeGreaterThan(0);
+    expect(screen.getByText("Herkunft: LLM-Recherche")).toBeInTheDocument();
+    expect(screen.getByText("Status: nicht validiert")).toBeInTheDocument();
+    expect(screen.getAllByText("bestätigt").length).toBeGreaterThan(0);
   });
 
   it("submits canonical user override fields for governed state processing", async () => {
@@ -197,6 +295,7 @@ describe("ParameterWorkspaceTab", () => {
     expect(summary).toContain("Drehzahl: 1450 rpm");
     expect(summary).toContain("Wellendurchmesser: 42 mm");
     expect(screen.getAllByText("Status: wird als Nutzerangabe übernommen")).toHaveLength(2);
+    expect(screen.getAllByText("Herkunft: Nutzerangabe").length).toBeGreaterThan(0);
   });
 
   it("guards numeric fields before sending overrides", async () => {

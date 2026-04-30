@@ -27,6 +27,8 @@ function legacyProjection() {
               value: "Steam",
               origin: "user_override",
               confidence: "confirmed",
+              source_type: "user_stated",
+              validation_status: "user_stated",
               is_confirmed: true,
               is_mandatory: true,
             },
@@ -350,6 +352,8 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.cockpit?.requestType, "retrofit");
   assert.equal(workspace.cockpit?.path, "rwdr");
   assert.equal(workspace.cockpit?.sections.application_function.properties[0]?.origin, "user_override");
+  assert.equal(workspace.cockpit?.sections.application_function.properties[0]?.sourceType, "user_stated");
+  assert.equal(workspace.cockpit?.sections.application_function.properties[0]?.validationStatus, "user_stated");
   assert.equal(workspace.cockpit?.checks[0]?.calcId, "rwdr_circumferential_speed");
   assert.equal(workspace.cockpit?.checks[0]?.outputKey, "v_surface_m_s");
   assert.deepEqual(workspace.cockpit?.readiness.missingMandatoryKeys, ["speed_rpm"]);

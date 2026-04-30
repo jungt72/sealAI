@@ -21,6 +21,8 @@ export interface EngineeringProperty {
   unit?: string;
   origin: DataOrigin;
   confidence?: string | null;
+  sourceType?: string | null;
+  validationStatus?: string | null;
   isConfirmed: boolean;
   isMandatory: boolean;
 }
