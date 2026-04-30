@@ -108,7 +108,10 @@ SURFACE_CLAIMS_SPECS: dict[OutwardResponseClass, SurfaceClaimsSpec] = {
             * _MANUFACTURER_FRAGMENTS,
         ],
         "class_guard": "Frage nur den naechsten Klaerungspunkt ab und gib keine Empfehlung, keinen Hersteller und keine RFQ-Aussage.",
-        "fallback_text": "Bitte nennen Sie den naechsten entscheidenden Betriebsparameter.",
+        "fallback_text": (
+            "Das hilft schon. Welche Angabe ist jetzt sicher bekannt, "
+            "zum Beispiel Druck, Temperatur, Bewegung oder Geometrie?"
+        ),
     },
     "governed_state_update": {
         "response_class": "governed_state_update",

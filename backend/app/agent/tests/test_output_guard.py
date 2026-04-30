@@ -10,6 +10,7 @@ from app.agent.runtime.output_guard import (
     FAST_PATH_GUARD_FALLBACK,
     check_fast_path_output,
 )
+from app.agent.runtime.surface_claims import get_surface_claims_spec
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +207,13 @@ class TestFallbackConstant:
         """The fallback text must not trigger its own guard."""
         safe, cat = check_fast_path_output(FAST_PATH_GUARD_FALLBACK)
         assert safe is True, f"Fallback text triggered its own guard: category={cat}"
+
+    def test_structured_clarification_fallback_is_not_form_style(self):
+        fallback = get_surface_claims_spec("structured_clarification")["fallback_text"]
+
+        assert "Bitte nennen Sie" not in fallback
+        assert "entscheidenden Betriebsparameter" not in fallback
+        assert fallback.endswith("?")
 
 
 class TestFormDumpViolations:

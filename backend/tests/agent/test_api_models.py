@@ -57,7 +57,7 @@ def test_chat_response_accepts_structured_contract_fields():
     assert res.version_provenance["policy_version"] == "interaction_policy_v1"
     assert res.policy_path == "structured"
     assert res.run_meta["policy_version"] == "interaction_policy_v1"
-    assert res.response_class == "governed_recommendation"
+    assert res.response_class == "technical_preselection"
     assert res.structured_state.primary_allowed_action == "await_review"
 
 
@@ -99,7 +99,7 @@ def test_build_public_response_core_returns_only_shared_fields():
         "structured_state": {"case_status": "withheld_review", "output_status": "withheld_review"},
         "policy_path": "structured",
         "run_meta": {"path": "structured"},
-        "response_class": "governed_recommendation",
+        "response_class": "technical_preselection",
     }
 
 
@@ -160,7 +160,10 @@ def test_build_public_response_core_guards_legacy_structured_clarification_reply
     )
 
     assert core["response_class"] == "structured_clarification"
-    assert core["reply"] == "Das hilft schon deutlich. Bitte nennen Sie den naechsten entscheidenden Betriebsparameter."
+    assert core["reply"] == (
+        "Das hilft schon. Welche Angabe ist jetzt sicher bekannt, "
+        "zum Beispiel Druck, Temperatur, Bewegung oder Geometrie?"
+    )
 
 
 def test_build_public_response_core_guards_legacy_governed_recommendation_reply():
@@ -174,7 +177,7 @@ def test_build_public_response_core_guards_legacy_governed_recommendation_reply(
         run_meta=None,
     )
 
-    assert core["response_class"] == "governed_recommendation"
+    assert core["response_class"] == "technical_preselection"
     assert core["reply"] == "Ich kann die technische Richtung belastbar einordnen und die offenen Pruefpunkte klar benennen."
 
 
