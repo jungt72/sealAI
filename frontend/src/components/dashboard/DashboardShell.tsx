@@ -156,10 +156,10 @@ export default function DashboardShell({
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-transparent bg-transparent px-5 sm:px-7">
           <div className="min-w-0">
-            <div className={cn("items-center gap-3", isNavExpanded ? "hidden" : "flex")}>
-              <div className="text-[20px] font-semibold tracking-[0.14em] text-[#1F2937]">SEALING</div>
+            <div className={cn("items-center gap-3 leading-none", isNavExpanded ? "hidden" : "flex translate-y-[3px]")}>
+              <div className="text-[21px] font-semibold tracking-[0.16em] text-[#1F2937]">SEALING</div>
               <div className="h-5 w-px bg-[#D7DDE8]" />
-              <div className="text-[15px] font-medium tracking-[0.11em] text-[#374151]">INTELLIGENCE</div>
+              <div className="text-[14px] font-medium tracking-[0.12em] text-[#374151]">INTELLIGENCE</div>
             </div>
             <div className={cn("truncate text-[12px] text-[#6B7280]", isNavExpanded ? "mt-0" : "mt-1")}>
               {greeting} {userName}, schoen, dass du da bist.
