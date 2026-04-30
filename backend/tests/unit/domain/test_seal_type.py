@@ -116,6 +116,24 @@ def test_rod_seal_normalizes_to_hydraulic_with_hydraulic_context(alias: str) -> 
     assert result.ambiguous is False
 
 
+@pytest.mark.parametrize(
+    "alias, expected",
+    [
+        ("Hydraulik-Stangendichtung", SealType.hydraulic_rod_seal),
+        ("Pneumatik-Stangendichtung", SealType.pneumatic_rod_seal),
+        ("Hydraulik-Kolbendichtung", SealType.hydraulic_piston_seal),
+        ("Pneumatik-Kolbendichtung", SealType.pneumatic_piston_seal),
+    ],
+)
+def test_inline_family_context_disambiguates_rod_and_piston_seals(
+    alias: str, expected: SealType
+) -> None:
+    result = normalize_seal_type(alias)
+
+    assert result.seal_type is expected
+    assert result.ambiguous is False
+
+
 def test_stangendichtung_without_context_is_ambiguous_not_final() -> None:
     result = normalize_seal_type("Stangendichtung")
 

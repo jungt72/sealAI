@@ -181,6 +181,7 @@ def _match_context_sensitive_text(
 ) -> SealTypeNormalizationResult | None:
     if not text:
         return None
+    combined_context = " ".join(item for item in (text, context_text) if item)
 
     if _matches(text, r"\b(hydraulikdichtung|hydraulic\s+seal)\b"):
         return _family_ambiguous(
@@ -200,18 +201,18 @@ def _match_context_sensitive_text(
             (SealType.pneumatic_rod_seal, SealType.pneumatic_piston_seal),
         )
     if _matches(text, r"\b(stangendichtung|rod\s+seal)\b"):
-        if _has_pneumatic_context(context_text):
+        if _has_pneumatic_context(combined_context):
             return _confident(SealType.pneumatic_rod_seal, "rod seal")
-        if _has_hydraulic_context(context_text):
+        if _has_hydraulic_context(combined_context):
             return _confident(SealType.hydraulic_rod_seal, "rod seal")
         return _unknown_ambiguous(
             "rod seal",
             (SealType.hydraulic_rod_seal, SealType.pneumatic_rod_seal),
         )
     if _matches(text, r"\b(kolbendichtung|piston\s+seal)\b"):
-        if _has_pneumatic_context(context_text):
+        if _has_pneumatic_context(combined_context):
             return _confident(SealType.pneumatic_piston_seal, "piston seal")
-        if _has_hydraulic_context(context_text):
+        if _has_hydraulic_context(combined_context):
             return _confident(SealType.hydraulic_piston_seal, "piston seal")
         return _unknown_ambiguous(
             "piston seal",
