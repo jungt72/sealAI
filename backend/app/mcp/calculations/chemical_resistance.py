@@ -319,7 +319,7 @@ def get_compatible_materials(medium: str) -> list[ResistanceResult]:
 
 def _build_public_note(rating: Rating, temp_limit_c: Optional[int]) -> str:
     base = {
-        "A": "Tabellenhinweis positiv. Konkreter Werkstoff-Grade, Betriebsbedingungen und Herstellerprüfung bleiben maßgeblich.",
+        "A": "Tabellenhinweis positiv. Konkreter Werkstoff-Grade, Betriebsbedingungen und Herstellerprüfung erforderlich.",
         "B": "Tabellenhinweis prüfungsrelevant. Anwendungsdetails und Herstellerprüfung erforderlich.",
         "C": "Tabellenhinweis kritisch. Alternative Materialrichtung und Herstellerprüfung erforderlich.",
         "X": "Kombination nicht bewertet. Expert Review und Herstellerprüfung erforderlich.",
