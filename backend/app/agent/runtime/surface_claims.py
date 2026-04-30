@@ -109,8 +109,8 @@ SURFACE_CLAIMS_SPECS: dict[OutwardResponseClass, SurfaceClaimsSpec] = {
         ],
         "class_guard": "Frage nur den naechsten Klaerungspunkt ab und gib keine Empfehlung, keinen Hersteller und keine RFQ-Aussage.",
         "fallback_text": (
-            "Das hilft schon. Welche Angabe ist jetzt sicher bekannt, "
-            "zum Beispiel Druck, Temperatur, Bewegung oder Geometrie?"
+            "Das ist ein guter Arbeitsstand. Als Naechstes klaeren wir die Einbausituation: "
+            "Wo sitzt die Dichtung genau?"
         ),
     },
     "governed_state_update": {

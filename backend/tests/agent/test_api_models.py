@@ -161,8 +161,8 @@ def test_build_public_response_core_guards_legacy_structured_clarification_reply
 
     assert core["response_class"] == "structured_clarification"
     assert core["reply"] == (
-        "Das hilft schon. Welche Angabe ist jetzt sicher bekannt, "
-        "zum Beispiel Druck, Temperatur, Bewegung oder Geometrie?"
+        "Das ist ein guter Arbeitsstand. Als Naechstes klaeren wir die Einbausituation: "
+        "Wo sitzt die Dichtung genau?"
     )
 
 
