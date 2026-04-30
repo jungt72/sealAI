@@ -9,7 +9,7 @@ import { humanizeDisplayText } from "@/lib/engineering/displayLabels";
 import { sealCockpitTabs } from "@/lib/engineering/sealCockpitViewModel";
 
 const OPEN_VALUE = "Noch offen";
-const MISSING_CALCULATION_VALUE = "Nicht berechenbar";
+const MISSING_CALCULATION_VALUE = "Noch nicht möglich";
 
 const EMPTY_PARAMETERS: ParameterDataRow[] = [
   { label: "Medium", value: OPEN_VALUE },
@@ -28,28 +28,28 @@ const CALCULATION_DEFINITIONS = [
     reason: "Wichtig für Wärmeentwicklung und dynamische Beanspruchung der Dichtkante.",
   },
   {
-    label: "PV-Wert",
+    label: "Druck x Geschwindigkeit",
     outputKeys: ["pv_value_mpa_m_s"],
     requiredInputs: ["pressure_bar", "shaft_diameter_mm", "speed_rpm"],
-    reason: "Wichtig, weil Druck und Gleitgeschwindigkeit gemeinsam die Belastung bestimmen.",
+    reason: "Zeigt, wie stark Druck und Bewegung zusammen die Dichtstelle belasten.",
   },
   {
-    label: "DN-Wert",
+    label: "Drehzahl x Durchmesser",
     outputKeys: ["dn_value"],
     requiredInputs: ["shaft_diameter_mm", "speed_rpm"],
-    reason: "Wichtig zur Einordnung rotierender Dichtstellen gegen Herstellergrenzen.",
+    reason: "Hilft, die rotierende Welle grob gegen typische Herstellergrenzen einzuordnen.",
   },
   {
-    label: "Temperaturfenster",
+    label: "Temperatur-Reserve",
     outputKeys: ["temperature_headroom_c"],
     requiredInputs: ["temperature_c", "sealing_material_family"],
-    reason: "Wichtig, weil Medium und Temperatur die Werkstoffprüfung bestimmen.",
+    reason: "Zeigt, wie viel Abstand zur hinterlegten Werkstoffgrenze bleibt.",
   },
   {
-    label: "Druckfenster",
+    label: "Druck-Einordnung",
     outputKeys: ["pressure_window"],
     requiredInputs: ["pressure_bar", "sealing_type"],
-    reason: "Wichtig, weil Druckrichtung und Bauart die Anfragebasis begrenzen.",
+    reason: "Hilft zu klären, ob der Druck zur Dichtungsart passt oder genauer geprüft werden muss.",
   },
 ] as const;
 
@@ -138,22 +138,22 @@ function buildOpenPointSummary(workspace: WorkspaceView | null) {
     .map(readableMissingInput)
     .filter((value, index, values) => value && values.indexOf(value) === index);
 
-  return gaps.length > 0 ? gaps.slice(0, 5).join(" · ") : "Keine kritischen Lücken gemeldet";
+  return gaps.length > 0 ? gaps.slice(0, 5).join(" · ") : "Keine wichtigen offenen Punkte gemeldet";
 }
 
 function buildWarning(workspace: WorkspaceView | null) {
   const openPoints = buildOpenPointSummary(workspace);
-  return openPoints === "Keine kritischen Lücken gemeldet" ? "Keine kritischen Lücken aus der Workspace-Projektion gemeldet" : `Kritisch offen: ${openPoints}`;
+  return openPoints === "Keine wichtigen offenen Punkte gemeldet" ? "Aktuell sind keine wichtigen offenen Punkte gemeldet" : `Noch wichtig: ${openPoints}`;
 }
 
 function buildCriticalDrivers(workspace: WorkspaceView | null): CriticalDriver[] {
   if (!workspace) {
     return [
       { label: "Medium", risk: "Offen", consequence: "Medienverträglichkeit kann noch nicht geprüft werden" },
-      { label: "Temperatur", risk: "Offen", consequence: "Werkstofffenster ist noch nicht belastbar" },
-      { label: "Anwendung", risk: "Offen", consequence: "Dichtungsfall und Herstellerprüfbedarf sind noch offen" },
-      { label: "Druck", risk: "Offen", consequence: "Druckfenster kann noch nicht eingeordnet werden" },
-      { label: "Drehzahl", risk: "Offen", consequence: "Dynamische Belastung ist noch nicht berechenbar" },
+      { label: "Temperatur", risk: "Offen", consequence: "Der passende Werkstoffbereich ist noch unklar" },
+      { label: "Anwendung", risk: "Offen", consequence: "Anlage und Dichtstelle sind noch nicht sauber eingeordnet" },
+      { label: "Druck", risk: "Offen", consequence: "Der Druck an der Dichtstelle ist noch nicht klar" },
+      { label: "Drehzahl", risk: "Offen", consequence: "Die Bewegung kann noch nicht gerechnet werden" },
     ];
   }
 
@@ -170,13 +170,13 @@ function buildCriticalDrivers(workspace: WorkspaceView | null): CriticalDriver[]
     .slice(0, 5);
 
   if (drivers.length === 0) {
-    return [{ label: "Herstellerprüfung", risk: "Offen", consequence: "Keine finalen Freigaben ableiten; Anfragebasis weiter qualifizieren" }];
+    return [{ label: "Hersteller", risk: "Offen", consequence: "Der Hersteller muss die Auslegung später prüfen" }];
   }
 
   return drivers.map((driver) => ({
     label: humanizeDisplayText(driver),
     risk: "Offen",
-    consequence: "Für die Herstellerprüfung klären und mit Datenherkunft belegen",
+    consequence: "Klären und festhalten, woher die Angabe kommt",
   }));
 }
 
@@ -253,8 +253,8 @@ function buildCalculations(workspace: WorkspaceView | null): CalculationEvidence
       value: MISSING_CALCULATION_VALUE,
       limit:
         missingInputs.length > 0
-          ? `Fehlende Eingaben: ${missingInputs.join(" · ")}`
-          : "Backend-Nachweis noch nicht registriert",
+          ? `Dafür fehlt noch: ${missingInputs.join(" · ")}`
+          : "Dafür gibt es noch keinen festen Check",
       reserve: definition.reason,
       status: "offen",
     };
@@ -276,7 +276,7 @@ function buildSolution(workspace: WorkspaceView | null): SealCockpitOverview["so
   if (!workspace) {
     return {
       assessmentTitle: "Anfragebasis noch offen",
-      assessment: "Der Dichtungsfall ist noch nicht eingeordnet. SeaLAI kann erst mit belastbaren Eingaben eine Herstellerprüfungsbasis vorbereiten.",
+      assessment: "Der Fall ist noch nicht genug beschrieben. Sobald die wichtigsten Angaben da sind, kann SeaLAI eine saubere Anfragevorschau vorbereiten.",
       rows: [
         { label: "Lösungsraum", value: OPEN_VALUE },
         { label: "Was noch geprüft werden muss", value: "Medium, Temperatur, Anwendung, Druck und Drehzahl" },
@@ -288,7 +288,7 @@ function buildSolution(workspace: WorkspaceView | null): SealCockpitOverview["so
   const direction =
     workspace.deepDiveTabs.find((tab) => tab.derivedDirection)?.derivedDirection ||
     workspace.communication?.supportingReason ||
-    "Noch keine belastbare technische Richtung aus der Workspace-Projektion";
+    "Noch keine klare Richtung aus den bisherigen Angaben";
 
   return {
     assessmentTitle: "Vorläufige Einordnung",
@@ -314,10 +314,10 @@ export function buildSealCockpitViewModel(workspace: WorkspaceView | null): Seal
     tabs: sealCockpitTabs,
     statusStrip: [
       { label: "Dichtungsfall", value: workspace ? pathLabel(workspace.engineeringPath) : "Noch nicht eingeordnet" },
-      { label: "Datenreife", value: `${coveragePercent(workspace)} % belastbar` },
+      { label: "Stand", value: `${coveragePercent(workspace)} % geklärt` },
       { label: "Lösungsraum", value: workspace ? solution.rows[0]?.value ?? OPEN_VALUE : OPEN_VALUE },
-      { label: "Kritische Lücken", value: openPointSummary },
-      { label: "Berechnungsstatus", value: `${calculationCount} von ${CALCULATION_DEFINITIONS.length} Nachweisen belastbar` },
+      { label: "Noch offen", value: openPointSummary },
+      { label: "Gerechnet", value: `${calculationCount} von ${CALCULATION_DEFINITIONS.length} Checks vorhanden` },
     ],
     parameters: {
       rows: buildParameterRows(workspace),
@@ -327,6 +327,6 @@ export function buildSealCockpitViewModel(workspace: WorkspaceView | null): Seal
     solution,
     calculations,
     footerNote:
-      "SeaLAI erklärt den aktuellen Arbeitsstand, macht offene Punkte sichtbar und bereitet eine Anfragebasis für Herstellerprüfung vor.",
+      "SeaLAI zeigt, was schon klar ist, was noch fehlt und was ein Hersteller später prüfen muss.",
   };
 }

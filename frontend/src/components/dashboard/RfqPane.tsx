@@ -143,7 +143,7 @@ function friendlyRfqError(message: string) {
     message.includes("case not found") ||
     message.includes("404")
   ) {
-    return "RFQ-Preview kann erst vorbereitet werden, wenn der Fall als Case-Revision im Backend gespeichert ist. Bitte vorgeschlagene Case-Daten prüfen und übernehmen.";
+    return "Die Anfragevorschau kann erst erstellt werden, wenn der Fall gespeichert ist. Bitte übernimm zuerst die vorgeschlagenen Angaben.";
   }
   return message;
 }
@@ -174,11 +174,11 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
           setPreview(null);
           return;
         }
-        throw new Error(getErrorMessage(body, "RFQ-Preview konnte nicht geladen werden."));
+        throw new Error(getErrorMessage(body, "Anfragevorschau konnte nicht geladen werden."));
       }
       setPreview(body as RfqPreviewResponse);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "RFQ-Preview konnte nicht geladen werden.");
+      setError(err instanceof Error ? err.message : "Anfragevorschau konnte nicht geladen werden.");
     } finally {
       setIsLoading(false);
     }
@@ -232,11 +232,11 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
       const response = await fetch(buildRfqPreviewReadPath(caseId), { method: "POST" });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(getErrorMessage(body, "RFQ-Preview konnte nicht vorbereitet werden."));
+        throw new Error(getErrorMessage(body, "Anfragevorschau konnte nicht vorbereitet werden."));
       }
       setPreview(body as RfqPreviewResponse);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "RFQ-Preview konnte nicht vorbereitet werden.";
+      const message = err instanceof Error ? err.message : "Anfragevorschau konnte nicht vorbereitet werden.";
       setError(friendlyRfqError(message));
     } finally {
       setIsCreating(false);
@@ -257,7 +257,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          shared_sections: sharedSections.length > 0 ? sharedSections : ["RFQ-Preview"],
+          shared_sections: sharedSections.length > 0 ? sharedSections : ["Anfragevorschau"],
           shared_documents: [],
           intended_recipients: ["manual-export-by-user"],
           user_acknowledged_no_final_release: consent.noFinalRelease,
@@ -280,7 +280,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
   if (!data || !caseId) {
     return (
       <div className="rounded-[18px] border border-dashed border-[#D1D5DB] bg-white p-4 text-sm text-[#6B7280]">
-        RFQ-Preview wird sichtbar, sobald der Fall im Backend gebunden ist.
+        Die Anfragevorschau erscheint, sobald ein konkreter Fall gespeichert ist.
       </div>
     );
   }
@@ -291,16 +291,16 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[#F0F2F5] pb-3">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6B7280]">
-              Anfragebasis fuer Herstellerpruefung
+              Anfragevorschau
             </div>
-            <h2 className="mt-1 text-base font-semibold tracking-tight text-[#111827]">RFQ-Preview</h2>
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-[#111827]">Anfragevorschau</h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {preview && (
               <>
-                <StatusBadge label={preview.stale ? "stale preview" : "current preview"} variant={preview.stale ? "warning" : "success"} />
-                <StatusBadge label={`frozen revision ${preview.case_revision}`} variant="info" />
-                <StatusBadge label={`current revision ${preview.current_case_revision}`} variant="default" />
+                <StatusBadge label={preview.stale ? "veraltet" : "aktuell"} variant={preview.stale ? "warning" : "success"} />
+                <StatusBadge label={`Stand ${preview.case_revision}`} variant="info" />
+                <StatusBadge label={`jetzt ${preview.current_case_revision}`} variant="default" />
               </>
             )}
             <button
@@ -308,7 +308,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
               onClick={() => void loadPreview()}
               disabled={isLoading}
               className="flex h-9 w-9 items-center justify-center rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] text-[#4B5563] transition-colors hover:bg-[#F0F2F5]"
-              aria-label="RFQ-Preview neu laden"
+              aria-label="Anfragevorschau neu laden"
             >
               <RefreshCw size={15} className={cn(isLoading && "animate-spin")} />
             </button>
@@ -327,9 +327,9 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
             <div className="flex items-start gap-3">
               <FileText className="mt-0.5 shrink-0 text-[#0B57D0]" size={18} />
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-[#111827]">Noch keine Backend-RFQ-Preview fuer diesen Fall geladen.</div>
+                <div className="text-sm font-semibold text-[#111827]">Für diesen Fall gibt es noch keine Anfragevorschau.</div>
                 <p className="mt-1 text-sm text-[#4B5563]">
-                  Die Anfragebasis wird aus dem Backend auf eine Case Revision eingefroren. Lokale Demo-Zusammenfassungen werden hier nicht als Produktwahrheit genutzt.
+                  SeaLAI erstellt die Vorschau aus dem gespeicherten Fallstand. Demo- oder lokale Platzhalter werden hier nicht als Wahrheit verwendet.
                 </p>
                 <button
                   type="button"
@@ -337,7 +337,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
                   disabled={isCreating}
                   className="mt-3 rounded-[14px] bg-[#0B57D0] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0847AD] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
                 >
-                  {isCreating ? "RFQ-Preview wird vorbereitet..." : "RFQ-Preview vorbereiten"}
+                  {isCreating ? "Anfragevorschau wird vorbereitet..." : "Anfragevorschau vorbereiten"}
                 </button>
               </div>
             </div>
@@ -347,24 +347,24 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
             {preview.stale && (
               <div className="flex items-start gap-2 rounded-[12px] border border-[#FFF4E5] bg-[#FFF4E5] px-3 py-2 text-sm text-[#9A3412]">
                 <ShieldAlert size={16} className="mt-0.5 shrink-0" />
-                Diese RFQ-Preview ist stale: frozen Revision {preview.case_revision}, aktuelle Revision {preview.current_case_revision}. Bitte neu vorbereiten, bevor Nutzerbestätigung oder Export genutzt wird.
+                Diese Anfragevorschau ist veraltet: Sie basiert auf Stand {preview.case_revision}, der Fall ist inzwischen bei Stand {preview.current_case_revision}. Bitte erst neu vorbereiten.
               </div>
             )}
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <MetaTile label="Preview ID" value={preview.preview_id} />
-              <MetaTile label="Consent" value={preview.consent_status} />
+              <MetaTile label="Vorschau-ID" value={preview.preview_id} />
+              <MetaTile label="Bestätigung" value={preview.consent_status} />
               <MetaTile label="Weitergabe" value={preview.dispatch_enabled ? "aktiv" : "nicht vorgesehen"} />
             </div>
 
-            <ListPanel title="Offene Punkte" items={openPoints} empty="Keine offenen Punkte in der Preview projiziert." tone="warning" />
-            <ListPanel title="Risiken" items={risks} empty="Keine separaten Risiken in der Preview projiziert." tone="warning" />
-            <ListPanel title="Herstellerpruefung" items={manufacturerReviewNeeds} empty="Keine separaten Prueffragen in der Preview projiziert." tone="neutral" />
+            <ListPanel title="Offene Punkte" items={openPoints} empty="Keine offenen Punkte in der Vorschau gemeldet." tone="warning" />
+            <ListPanel title="Risiken" items={risks} empty="Keine separaten Risiken in der Vorschau gemeldet." tone="warning" />
+            <ListPanel title="Was der Hersteller prüfen muss" items={manufacturerReviewNeeds} empty="Keine separaten Prüffragen gemeldet." tone="neutral" />
 
             <section className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
               <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
                 <Info size={14} />
-                Field Status / Provenance / Evidence
+                Feldstatus und Belege
               </div>
               {fieldGroups.length > 0 ? (
                 <div className="grid gap-3">
@@ -387,7 +387,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
                 </div>
               ) : (
                 <div className="rounded-[12px] border border-dashed border-[#D1D5DB] bg-white px-3 py-3 text-sm text-[#6B7280]">
-                  Backend hat fuer diese Preview noch keine Field-Status-Projektion geliefert.
+                  Für diese Vorschau wurden noch keine Feldstatus-Details geliefert.
                 </div>
               )}
             </section>
@@ -398,17 +398,17 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
                   <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
                     Nutzerbestätigung erforderlich
                   </div>
-                  <div className="mt-1 text-sm font-semibold text-[#111827]">Consent / Export vorbereiten</div>
+                  <div className="mt-1 text-sm font-semibold text-[#111827]">Bestätigung für manuellen Export</div>
                 </div>
                 {preview.consent_status === "granted" && (
-                  <StatusBadge label="RFQ-Preview exportbereit" variant="success" />
+                  <StatusBadge label="Anfragevorschau exportbereit" variant="success" />
                 )}
               </div>
               <div className="space-y-2">
                 <ConsentCheckbox
                   checked={consent.noFinalRelease}
                   onChange={(checked) => setConsent((current) => ({ ...current, noFinalRelease: checked }))}
-                  label="Ich verstehe, dass diese RFQ-Preview keine finale technische Freigabe ist."
+                  label="Ich verstehe, dass diese Anfragevorschau keine Auslegungsfreigabe ist."
                 />
                 <ConsentCheckbox
                   checked={consent.openPoints}
@@ -458,18 +458,18 @@ function FieldEnvelope({ field }: { field: RfqFieldStatus }) {
       </div>
       {field.value !== undefined ? (
         <div className="mt-1 text-sm text-[#111827]">
-          Value: {value}
+          Wert: {value}
           {unit ? ` ${valueToText(unit)}` : ""}
         </div>
       ) : null}
       <div className="mt-1 text-xs text-[#4B5563]">
-        Provenance: {field.provenance || "nicht geliefert"} · Confidence: {field.confidence || "nicht geliefert"}
+        Herkunft: {field.provenance || "nicht geliefert"} · Sicherheit: {field.confidence || "nicht geliefert"}
       </div>
       {field.evidence_refs?.length ? (
-        <div className="mt-1 text-xs text-[#4B5563]">Evidence: {field.evidence_refs.join(", ")}</div>
+        <div className="mt-1 text-xs text-[#4B5563]">Beleg: {field.evidence_refs.join(", ")}</div>
       ) : null}
       {field.confirmation_required ? (
-        <div className="mt-1 text-xs font-medium text-[#B45309]">Confirmation erforderlich</div>
+        <div className="mt-1 text-xs font-medium text-[#B45309]">Bestätigung erforderlich</div>
       ) : null}
     </div>
   );

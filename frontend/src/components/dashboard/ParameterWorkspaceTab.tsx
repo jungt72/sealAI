@@ -36,8 +36,8 @@ const PARAMETER_FIELDS: ParameterField[] = [
     label: "Medium",
     kind: "text",
     placeholder: "z. B. Ethanol, Salzwasser, Hydrauliköl",
-    detail: "Das Medium bestimmt Werkstofffenster, Quellung, Korrosion, Schmierung und offene Herstellerprüfpunkte.",
-    why: "Ohne Medium bleibt jede Werkstoff- oder Dichtungstyp-Richtung nur eine Vorqualifikation.",
+    detail: "Das Medium beeinflusst Werkstoff, Korrosion, Schmierung und spätere Prüfpunkte.",
+    why: "Ohne Medium kann SeaLAI nur grob einordnen, welche Richtung passen könnte.",
   },
   {
     fieldName: "temperature_c",
@@ -45,7 +45,7 @@ const PARAMETER_FIELDS: ParameterField[] = [
     unit: "°C",
     kind: "number",
     placeholder: "z. B. 150",
-    detail: "Die Temperatur grenzt Werkstoffe, Medienzustand und thermische Belastung ein.",
+    detail: "Die Temperatur entscheidet mit, welche Werkstoffe überhaupt in Frage kommen.",
     why: "Temperaturspitzen können wichtiger sein als die normale Betriebstemperatur.",
   },
   {
@@ -54,7 +54,7 @@ const PARAMETER_FIELDS: ParameterField[] = [
     unit: "bar",
     kind: "number",
     placeholder: "z. B. 10",
-    detail: "Der Druck ist nur belastbar, wenn klar ist, ob er direkt an der Dichtstelle anliegt.",
+    detail: "Beim Druck ist wichtig, ob er wirklich direkt an der Dichtstelle anliegt.",
     why: "Bei Pumpen und rotierenden Wellen kann der Dichtstellendruck deutlich vom Systemdruck abweichen.",
   },
   {
@@ -63,8 +63,8 @@ const PARAMETER_FIELDS: ParameterField[] = [
     unit: "rpm",
     kind: "number",
     placeholder: "z. B. 1450",
-    detail: "Die Drehzahl wird für Umfangsgeschwindigkeit, dynamische Belastung und Berechnungsfähigkeit benötigt.",
-    why: "Zusammen mit dem Wellendurchmesser wird daraus eine erste rechnerische Belastungsbasis.",
+    detail: "Die Drehzahl hilft einzuschätzen, wie stark die Dichtkante beansprucht wird.",
+    why: "Zusammen mit dem Wellendurchmesser entstehen daraus erste Rechenchecks.",
   },
   {
     fieldName: "shaft_diameter_mm",
@@ -72,15 +72,15 @@ const PARAMETER_FIELDS: ParameterField[] = [
     unit: "mm",
     kind: "number",
     placeholder: "z. B. 42",
-    detail: "Der Wellendurchmesser ist ein Kernwert für Einbauraum, Dichtungsauswahl und Berechnungen.",
-    why: "Ohne Geometrie bleibt eine Anfrage oft nicht herstellerprüfbar genug.",
+    detail: "Der Wellendurchmesser ist wichtig für Einbauraum, Baugröße und Rechenchecks.",
+    why: "Ohne Geometrie fehlen Herstellern oft entscheidende Angaben.",
   },
   {
     fieldName: "installation",
     label: "Anlage / Einbauort",
     kind: "text",
     placeholder: "z. B. Chemiepumpe, Getriebeausgang, Rührwerk",
-    detail: "Der Anlagenkontext verhindert vorschnelle Produktlogik und führt die richtige Dichtungsfamilie.",
+    detail: "Die Anlage zeigt, in welchem Umfeld die Dichtung arbeiten muss.",
     why: "Eine Pumpe, ein Getriebe und ein Rührwerk benötigen unterschiedliche Prüfpunkte.",
   },
   {
@@ -88,7 +88,7 @@ const PARAMETER_FIELDS: ParameterField[] = [
     label: "Dichtungstyp-Richtung",
     kind: "text",
     placeholder: "z. B. RWDR, PTFE-RWDR, Gleitringdichtung",
-    detail: "Diese Angabe ist eine Richtung oder vorhandene Vermutung, keine finale technische Freigabe.",
+    detail: "Diese Angabe ist nur eine Richtung oder vorhandene Vermutung.",
     why: "SeaLAI nutzt sie zur Einordnung, prüft aber weiter gegen Medium, Druck, Geometrie und Anwendung.",
   },
   {
@@ -96,7 +96,7 @@ const PARAMETER_FIELDS: ParameterField[] = [
     label: "Gegenlauffläche",
     kind: "text",
     placeholder: "z. B. gehärtete Welle, Ra 0,2 µm, unbekannt",
-    detail: "Oberfläche, Härte und Rundlauf beeinflussen Verschleiß, Leckage und Reibung stark.",
+    detail: "Oberfläche, Härte und Rundlauf beeinflussen Verschleiß, Leckage und Reibung.",
     why: "Gerade bei RWDR/PTFE-RWDR ist die Gegenlauffläche häufig ein Herstellerprüfpunkt.",
   },
 ];
@@ -108,12 +108,12 @@ const SOURCE_LABELS: Record<string, string> = {
   rag_verified: "Wissensbasis",
   deterministic_calculation: "Berechnung",
   calculated: "Berechnung",
-  llm_research_fallback: "LLM-Recherche",
+  llm_research_fallback: "KI-Hinweis",
   inferred: "abgeleitet",
   pattern_derived: "abgeleitet",
-  system_derived: "systemseitig abgeleitet",
-  missing: "Quelle fehlt",
-  unknown: "Quelle unklar",
+  system_derived: "aus den Angaben abgeleitet",
+  missing: "Herkunft fehlt",
+  unknown: "Herkunft unklar",
 };
 
 const VALIDATION_LABELS: Record<string, string> = {
@@ -121,7 +121,7 @@ const VALIDATION_LABELS: Record<string, string> = {
   documented: "dokumentiert",
   user_stated: "Nutzerangabe",
   candidate: "Kandidat",
-  unvalidated: "nicht validiert",
+  unvalidated: "noch nicht geprüft",
   conflicting: "widersprüchlich",
   conflict: "widersprüchlich",
   calculated: "berechnet",
@@ -359,7 +359,7 @@ function ParameterFieldCard({
         <span>{field.why}</span>
         <span className="font-medium text-[#4B5563]">{fieldStatus(workspace, field, rawValue)}</span>
         <div className="flex flex-wrap gap-1.5">
-          <MetadataBadge label={`Herkunft: ${sourceLabel(effectiveSource)}`} tone={sourceTone(effectiveSource)} />
+          <MetadataBadge label={`Woher: ${sourceLabel(effectiveSource)}`} tone={sourceTone(effectiveSource)} />
           <MetadataBadge label={`Status: ${validationLabel(effectiveValidation)}`} tone={validationTone(effectiveValidation)} />
           {meta.isMandatory && <MetadataBadge label="Pflichtfeld" tone="warning" />}
           {meta.isConfirmed && !isChanged && <MetadataBadge label="bestätigt" tone="success" />}
@@ -446,14 +446,14 @@ export function ParameterWorkspaceTab({
       <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#F0F2F5] pb-3">
           <div>
-            <h2 className="text-base font-semibold tracking-tight text-[#111827]">Parameter im Fall bearbeiten</h2>
+            <h2 className="text-base font-semibold tracking-tight text-[#111827]">Angaben direkt eintragen</h2>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
-              Trage bekannte Werte direkt ein. SeaLAI übernimmt nur neue oder geänderte Angaben in den governed Case-State, berechnet abhängige Hinweise neu und markiert weiter offene Punkte.
+              Trage Werte ein, die du sicher kennst. SeaLAI übernimmt nur neue oder geänderte Angaben, rechnet abhängige Hinweise neu und hält offene Punkte sichtbar.
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#0B57D0]">
             <Info size={14} />
-            Herstellerprüfung bleibt erforderlich
+            Hersteller muss später prüfen
           </div>
         </div>
 

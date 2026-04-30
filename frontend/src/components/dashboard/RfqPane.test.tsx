@@ -165,22 +165,22 @@ describe("RfqPane", () => {
 
     render(<RfqPane data={cockpitData()} caseId="case-1" />);
 
-    expect(await screen.findByText("RFQ-Preview")).toBeInTheDocument();
-    expect(screen.getByText("frozen revision 7")).toBeInTheDocument();
-    expect(screen.getByText("current revision 8")).toBeInTheDocument();
-    expect(screen.getByText(/Diese RFQ-Preview ist stale/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Anfragevorschau" })).toBeInTheDocument();
+    expect(screen.getByText("Stand 7")).toBeInTheDocument();
+    expect(screen.getByText("jetzt 8")).toBeInTheDocument();
+    expect(screen.getByText(/Diese Anfragevorschau ist veraltet/i)).toBeInTheDocument();
     expect(screen.getByText("Wellendurchmesser bestaetigen")).toBeInTheDocument();
     expect(screen.getByText("Temperaturspitzen offen")).toBeInTheDocument();
     expect(screen.getByText("Bitte Werkstofffenster pruefen")).toBeInTheDocument();
     expect(screen.getByText("Documented values")).toBeInTheDocument();
     expect(screen.getByText("Needs confirmation")).toBeInTheDocument();
     expect(screen.getByText("medium_name")).toBeInTheDocument();
-    expect(screen.getByText(/Value: Salzwasser/i)).toBeInTheDocument();
+    expect(screen.getByText(/Wert: Salzwasser/i)).toBeInTheDocument();
     expect(screen.getByText("shaft_diameter_mm")).toBeInTheDocument();
-    expect(screen.getByText(/Value: 42 mm/i)).toBeInTheDocument();
-    expect(screen.getByText(/Evidence: doc-1#p2/i)).toBeInTheDocument();
+    expect(screen.getByText(/Wert: 42 mm/i)).toBeInTheDocument();
+    expect(screen.getByText(/Beleg: doc-1#p2/i)).toBeInTheDocument();
     expect(screen.getByText("Nutzerbestätigung erforderlich")).toBeInTheDocument();
-    expect(screen.getByLabelText(/keine finale technische Freigabe/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/keine Auslegungsfreigabe/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/offenen Punkte/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/manuelle, von mir kontrollierte Weitergabe/i)).toBeInTheDocument();
     expect(screen.queryByText("EagleBurgmann")).not.toBeInTheDocument();
@@ -246,18 +246,18 @@ describe("RfqPane", () => {
 
     render(<RfqPane data={cockpitData()} caseId="case-1" />);
 
-    await user.click(await screen.findByRole("button", { name: /RFQ-Preview vorbereiten/i }));
-    expect(await screen.findByText("frozen revision 4")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Anfragevorschau vorbereiten/i }));
+    expect(await screen.findByText("Stand 4")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Nutzerbestätigung speichern/i })).toBeDisabled();
 
-    await user.click(screen.getByLabelText(/keine finale technische Freigabe/i));
+    await user.click(screen.getByLabelText(/keine Auslegungsfreigabe/i));
     await user.click(screen.getByLabelText(/offenen Punkte/i));
     expect(screen.getByRole("button", { name: /Nutzerbestätigung speichern/i })).toBeDisabled();
 
     await user.click(screen.getByLabelText(/manuelle, von mir kontrollierte Weitergabe/i));
     await user.click(screen.getByRole("button", { name: /Nutzerbestätigung speichern/i }));
 
-    expect(await screen.findByText("RFQ-Preview exportbereit")).toBeInTheDocument();
+    expect(await screen.findByText("Anfragevorschau exportbereit")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/bff/rfq/case-1/preview/preview-2/consent",
       expect.objectContaining({
@@ -288,11 +288,11 @@ describe("RfqPane", () => {
 
     render(<RfqPane data={cockpitData()} caseId="case-1" />);
 
-    await user.click(await screen.findByRole("button", { name: /RFQ-Preview vorbereiten/i }));
+    await user.click(await screen.findByRole("button", { name: /Anfragevorschau vorbereiten/i }));
 
     expect(
       await screen.findByText(
-        "RFQ-Preview kann erst vorbereitet werden, wenn der Fall als Case-Revision im Backend gespeichert ist. Bitte vorgeschlagene Case-Daten prüfen und übernehmen.",
+        "Die Anfragevorschau kann erst erstellt werden, wenn der Fall gespeichert ist. Bitte übernimm zuerst die vorgeschlagenen Angaben.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("rfq_preview_create_failed:404")).not.toBeInTheDocument();

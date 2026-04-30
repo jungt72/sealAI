@@ -12,10 +12,10 @@ export const sealCockpitOverview: SealCockpitOverview = {
   ],
   statusStrip: [
     { label: "Dichtungsfall", value: "Rotierende Welle · Rührwerk" },
-    { label: "Datenreife", value: "61 % belastbar" },
-    { label: "Lösungsraum", value: "PTFE-RWDR vorqualifiziert" },
-    { label: "Kritische Lücken", value: "Medium · Temperatur · Rundlauf" },
-    { label: "Berechnungsstatus", value: "3 von 5 Nachweisen belastbar" },
+    { label: "Stand", value: "61 % geklärt" },
+    { label: "Lösungsraum", value: "PTFE-RWDR als Richtung" },
+    { label: "Noch offen", value: "Medium · Temperatur · Rundlauf" },
+    { label: "Gerechnet", value: "3 von 5 Checks vorhanden" },
   ],
   parameters: {
     rows: [
@@ -26,23 +26,23 @@ export const sealCockpitOverview: SealCockpitOverview = {
       { label: "Wellendurchmesser", value: "40 mm" },
       { label: "Geometrie / Rundlauf", value: "offen" },
     ],
-    warning: "Kritisch offen: Rundlauf, Einbauraum, Leckageklasse",
+    warning: "Noch wichtig: Rundlauf, Einbauraum, Leckageklasse",
   },
   criticalDrivers: [
     { label: "Schmierfähigkeit", risk: "Mittel", consequence: "Wärmeentwicklung prüfen" },
-    { label: "Abrasive Partikel", risk: "Gering", consequence: "Verschleiß derzeit unkritisch" },
+    { label: "Abrasive Partikel", risk: "Gering", consequence: "Verschleiß derzeit eher unauffällig" },
     { label: "Korrosionsrisiko", risk: "Mittel", consequence: "Werkstofffreigabe relevant" },
     { label: "Temperaturdynamik", risk: "Hoch", consequence: "Werkstoffreserve beachten" },
-    { label: "Wellenbewegung / Rundlauf", risk: "Offen", consequence: "Dichtungsbauart noch nicht final" },
+    { label: "Wellenbewegung / Rundlauf", risk: "Offen", consequence: "Dichtungsbauart noch nicht geklärt" },
   ],
   solution: {
     assessmentTitle: "Vorläufige Einschätzung",
     assessment:
-      "PTFE-RWDR ist plausibel, da rotierende Welle, moderater Druck und kompakter Einbauraum zusammenpassen.",
+      "PTFE-RWDR ist eine mögliche Richtung, weil rotierende Welle, moderater Druck und kompakter Einbauraum zusammen betrachtet werden.",
     rows: [
       {
         label: "Warum passend",
-        value: "chemisch robuste Option, gute Eignung für dynamische Abdichtung",
+        value: "chemisch robuste Richtung für eine dynamische Abdichtung",
       },
       {
         label: "Was noch geprüft werden muss",
@@ -50,7 +50,7 @@ export const sealCockpitOverview: SealCockpitOverview = {
       },
       {
         label: "Herstellerfrage",
-        value: "Ist PTFE/FKM bei Medium X, 90 °C und 2,5 bar dauerhaft freigegeben?",
+        value: "Kann PTFE/FKM bei Medium X, 90 °C und 2,5 bar geprüft werden?",
       },
     ],
   },
@@ -63,7 +63,7 @@ export const sealCockpitOverview: SealCockpitOverview = {
       status: "plausibel",
     },
     {
-      label: "PV-Wert",
+      label: "Druck x Geschwindigkeit",
       value: "0,75 MPa·m/s",
       limit: "Grenze 1,60",
       reserve: "Reserve 53 %",
@@ -83,5 +83,5 @@ export const sealCockpitOverview: SealCockpitOverview = {
     },
   ],
   footerNote:
-    "SealAI strukturiert den Dichtungsfall, erklärt technische Konsequenzen und bereitet das Herstellerbriefing vor.",
+    "SeaLAI ordnet den Fall, zeigt offene Punkte und bereitet eine klare Anfragevorschau vor.",
 };

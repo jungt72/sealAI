@@ -167,7 +167,7 @@ describe("buildSealCockpitViewModel", () => {
 
     expect(viewModel.calculations).toContainEqual(
       expect.objectContaining({
-        label: "Temperaturfenster",
+        label: "Temperatur-Reserve",
         value: "140 °C",
         status: "backend-berechnet",
       }),
@@ -181,9 +181,9 @@ describe("buildSealCockpitViewModel", () => {
 
     expect(viewModel.calculations).toContainEqual(
       expect.objectContaining({
-        label: "Temperaturfenster",
-        value: "Nicht berechenbar",
-        limit: "Fehlende Eingaben: Werkstofffamilie",
+        label: "Temperatur-Reserve",
+        value: "Noch nicht möglich",
+        limit: "Dafür fehlt noch: Werkstofffamilie",
       }),
     );
   });
@@ -215,13 +215,13 @@ describe("buildSealCockpitViewModel", () => {
 
     expect(viewModel.calculations).toContainEqual(
       expect.objectContaining({
-        label: "Druckfenster",
-        value: "Nicht berechenbar",
-        limit: "Backend-Nachweis noch nicht registriert",
+        label: "Druck-Einordnung",
+        value: "Noch nicht möglich",
+        limit: "Dafür gibt es noch keinen festen Check",
       }),
     );
     expect(viewModel.calculations).not.toContainEqual(
-      expect.objectContaining({ limit: "Fehlende Eingaben: " }),
+      expect.objectContaining({ limit: "Dafür fehlt noch: " }),
     );
   });
 
@@ -236,7 +236,7 @@ describe("buildSealCockpitViewModel", () => {
             pvValueMpaMPerS: 1.96,
             dnValue: 75000,
             temperatureHeadroomC: 140,
-            pressureWindow: "5 bar · RWDR-Druckfenster herstellerseitig prüfen",
+            pressureWindow: "5 bar · Druck für RWDR vom Hersteller prüfen lassen",
             notes: ["Backend-Ableitung aus Workspace-Parametern."],
           },
         ],
@@ -245,8 +245,8 @@ describe("buildSealCockpitViewModel", () => {
 
     expect(viewModel.calculations).toContainEqual(
       expect.objectContaining({
-        label: "Druckfenster",
-        value: "5 bar · RWDR-Druckfenster herstellerseitig prüfen",
+        label: "Druck-Einordnung",
+        value: "5 bar · Druck für RWDR vom Hersteller prüfen lassen",
         status: "backend-berechnet",
       }),
     );

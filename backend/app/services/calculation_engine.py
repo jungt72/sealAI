@@ -195,9 +195,9 @@ def _pressure_window(case: Mapping[str, Any]) -> CalcResult:
     if pressure_bar <= 0:
         label = f"{pressure_bar:g} bar · Druckangabe prüfen"
     elif "rwdr" in sealing_type.casefold() or "radial" in sealing_type.casefold():
-        label = f"{pressure_bar:g} bar · RWDR-Druckfenster herstellerseitig prüfen"
+        label = f"{pressure_bar:g} bar · Druck für RWDR vom Hersteller prüfen lassen"
     else:
-        label = f"{pressure_bar:g} bar · Dichtungsbauart herstellerseitig prüfen"
+        label = f"{pressure_bar:g} bar · Druck für diese Bauart prüfen lassen"
     return CalcResult({"derived.pressure_window": label})
 
 

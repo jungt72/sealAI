@@ -9,7 +9,7 @@ const FIELD_LABELS: Record<string, string> = {
   high: "hoch",
   installation: "Einbauort / Anlage",
   low: "niedrig",
-  manufacturer_validation_required: "Herstellerprüfung erforderlich",
+  manufacturer_validation_required: "Hersteller muss prüfen",
   mechanical_face: "Gleitringdichtungsprinzip",
   mechanical_seal: "Gleitringdichtung",
   medium: "Medium",
@@ -36,8 +36,8 @@ const FIELD_LABELS: Record<string, string> = {
   shaft_sealing: "Wellenabdichtung",
   speed: "Drehzahl",
   speed_rpm: "Drehzahl",
-  technical_clarification: "technische Klärung",
-  technical_direction_plausible: "technische Richtung plausibel",
+  technical_clarification: "Fall klären",
+  technical_direction_plausible: "Richtung ist plausibel",
   temperature_c: "Temperatur",
   unknown: "unklar",
   unknown_seal: "Dichtungstyp offen",
@@ -102,7 +102,9 @@ export function humanizeDisplayText(value: unknown): string {
     .replace(/\bCaseType\./g, "")
     .replace(/\b(\d+(?:[.,]\d+)?)\s*degC\b/g, "$1 °C")
     .replace(/\bmechanical face\b/gi, "Gleitringdichtungsprinzip")
-    .replace(/\btechnical direction plausible\b/gi, "technische Richtung plausibel");
+    .replace(/\btechnical direction plausible\b/gi, "Richtung ist plausibel")
+    .replace(/\bkeine finale technische freigabe\b/gi, "keine Auslegungsfreigabe")
+    .replace(/\bfinale technische freigabe\b/gi, "Auslegungsfreigabe");
 
   for (const [code, label] of Object.entries({ ...RISK_LABELS, ...FIELD_LABELS })) {
     result = result.replace(new RegExp(`\\b${code}\\b`, "gi"), label);

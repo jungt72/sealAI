@@ -14,10 +14,9 @@ from app.services.problem_first_matching_service import (
 
 
 PARTNER_NETWORK_DISCLOSURE = (
-    "SeaLAI bewertet hier nur aktive bezahlte Partnerprofile im Partnernetzwerk. "
-    "Die technische Fit-Bewertung wird aus Capability-Daten abgeleitet; "
-    "Zahlungsstatus oder Listing-Tier verbessern den technischen Score nicht. "
-    "Herstellerprüfung bleibt erforderlich."
+    "SeaLAI zeigt hier nur Partnerprofile, die im Netzwerk hinterlegt sind. "
+    "Bezahlung darf die fachliche Einordnung nicht verbessern. "
+    "Der Hersteller muss die Auslegung prüfen."
 )
 
 

@@ -261,7 +261,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
               </div>
               <h1 className="mt-5 text-[26px] font-semibold tracking-tight text-[#111827]">Hallo Thorsten,</h1>
               <p className="mt-3 max-w-[520px] text-[15px] leading-7 text-[#4B5563]">
-                Beschreibe deine Dichtungssituation und erhalte fokussierte Einordnungen, Vergleiche und technische Analysen.
+                Beschreibe kurz deine Dichtungssituation. SeaLAI hilft dir, die wichtigen Punkte sauber zu klären.
               </p>
             </div>
           ) : (
@@ -306,7 +306,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
                       <Bot size={16} />
                     </div>
                     <div className="rounded-[18px] border border-[#E7ECF3] bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
-                      SeaLAI verbindet den LLM-Stream...
+                      SeaLAI bereitet die Antwort vor...
                     </div>
                   </div>
                 )}
@@ -332,7 +332,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
               <div className="mt-2 flex flex-wrap gap-2 pb-3">
                 {[
                   "Medienliste pruefen",
-                  "RFQ-Preview vorbereiten",
+                  "Anfragevorschau vorbereiten",
                   "Offene Punkte klaeren",
                 ].map((item) => (
                   <button
@@ -361,7 +361,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
             <div className="mt-3 flex items-center justify-between gap-3 px-1 text-[11px] text-slate-400">
               <div className="flex items-center gap-2">
                 <Paperclip size={12} />
-                Anfragebasis fuer Herstellerpruefung. Keine finale technische Freigabe.
+                Anfragebasis für die spätere Herstellerprüfung. Keine Auslegungsfreigabe.
               </div>
               <div className="hidden items-center gap-1 md:flex">
                 Details anzeigen

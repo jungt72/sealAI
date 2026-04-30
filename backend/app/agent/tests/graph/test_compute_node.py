@@ -230,7 +230,7 @@ class TestOptionalFieldsForwarded:
         result = await compute_node(state)
 
         assert result.compute_results[0]["pressure_window"] == (
-            "5 bar · RWDR-Druckfenster herstellerseitig prüfen"
+            "5 bar · Druck für RWDR vom Hersteller prüfen lassen"
         )
 
     @pytest.mark.asyncio

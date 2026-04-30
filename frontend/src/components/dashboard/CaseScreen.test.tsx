@@ -344,29 +344,28 @@ describe("CaseScreen", () => {
 
     expect(screen.getByText("Dichtungsfall")).toBeInTheDocument();
     expect(screen.getByText("Noch nicht eingeordnet")).toBeInTheDocument();
-    expect(screen.getByText("Datenreife")).toBeInTheDocument();
-    expect(screen.getByText("0 % belastbar")).toBeInTheDocument();
+    expect(screen.getByText("Stand")).toBeInTheDocument();
+    expect(screen.getByText("0 % geklärt")).toBeInTheDocument();
     expect(screen.getAllByText("Lösungsraum").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Noch offen").length).toBeGreaterThan(0);
-    expect(screen.getByText("Kritische Lücken")).toBeInTheDocument();
     expect(screen.getByText("Medium · Temperatur · Anwendung · Druck · Drehzahl")).toBeInTheDocument();
-    expect(screen.getByText("Berechnungsstatus")).toBeInTheDocument();
-    expect(screen.getByText("0 von 5 Nachweisen belastbar")).toBeInTheDocument();
+    expect(screen.getByText("Gerechnet")).toBeInTheDocument();
+    expect(screen.getByText("0 von 5 Checks vorhanden")).toBeInTheDocument();
 
-    expect(screen.getByRole("heading", { name: "Parameter & Datenlage" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Kritische Treiber" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Lösung & Konsequenz" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Berechnungen & Nachweise" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Angaben zum Fall" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Was noch wichtig ist" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Einordnung" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Rechencheck" })).toBeInTheDocument();
   });
 
   it("renders an honest empty and missing state without productive mock values", () => {
     render(<CaseScreen caseId="case-42" />);
 
-    expect(screen.getByText("Kritisch offen: Medium · Temperatur · Anwendung · Druck · Drehzahl")).toBeInTheDocument();
+    expect(screen.getByText("Noch wichtig: Medium · Temperatur · Anwendung · Druck · Drehzahl")).toBeInTheDocument();
     expect(screen.getByText("Anfragebasis noch offen")).toBeInTheDocument();
     expect(screen.getByText("Umfangsgeschwindigkeit")).toBeInTheDocument();
-    expect(screen.getAllByText("Nicht berechenbar")).toHaveLength(5);
-    expect(screen.getAllByText("Fehlende Eingaben: Wellendurchmesser · Drehzahl").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Noch nicht möglich")).toHaveLength(5);
+    expect(screen.getAllByText("Dafür fehlt noch: Wellendurchmesser · Drehzahl").length).toBeGreaterThan(0);
     expect(screen.getByText(/Wichtig für Wärmeentwicklung und dynamische Beanspruchung/i)).toBeInTheDocument();
 
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
@@ -383,8 +382,8 @@ describe("CaseScreen", () => {
     render(<CaseScreen />);
 
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane new");
-    expect(screen.getByText("0 % belastbar")).toBeInTheDocument();
-    expect(screen.getByText("0 von 5 Nachweisen belastbar")).toBeInTheDocument();
+    expect(screen.getByText("0 % geklärt")).toBeInTheDocument();
+    expect(screen.getByText("0 von 5 Checks vorhanden")).toBeInTheDocument();
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
     expect(screen.queryByText("35-90 °C")).not.toBeInTheDocument();
     expect(screen.queryByText("2,5 bar")).not.toBeInTheDocument();
@@ -399,7 +398,7 @@ describe("CaseScreen", () => {
     render(<CaseScreen caseId="case-42" />);
 
     expect(screen.getAllByText("Rotierende Welle / RWDR").length).toBeGreaterThan(0);
-    expect(screen.getByText("72 % belastbar")).toBeInTheDocument();
+    expect(screen.getByText("72 % geklärt")).toBeInTheDocument();
     expect(screen.getByText("Wasser-Glykol")).toBeInTheDocument();
     expect(screen.getByText("85 °C")).toBeInTheDocument();
     expect(screen.getByText("1.8 bar")).toBeInTheDocument();
@@ -409,10 +408,10 @@ describe("CaseScreen", () => {
     expect(screen.getByText("0.48 MPa·m/s")).toBeInTheDocument();
     expect(screen.getByText("50400")).toBeInTheDocument();
     expect(screen.getByText("RWDR-Arbeitsstand mit Wasser-Glykol, 85 °C und offener Gegenlauffläche.")).toBeInTheDocument();
-    expect(screen.getByText("Datenherkunft: Wissensbasis")).toBeInTheDocument();
-    expect(screen.getByText("Validierungsstatus: nicht validiert")).toBeInTheDocument();
+    expect(screen.getByText("Woher: Wissensbasis")).toBeInTheDocument();
+    expect(screen.getByText("Stand: noch nicht geprüft")).toBeInTheDocument();
     expect(screen.getAllByText("Welche Gegenlauffläche und Oberflächenrauheit sind dokumentiert?").length).toBeGreaterThan(0);
-    expect(screen.getByText(/keine finale technische Freigabe/i)).toBeInTheDocument();
+    expect(screen.getByText(/keine Auslegungsfreigabe/i)).toBeInTheDocument();
 
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
     expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
@@ -426,8 +425,8 @@ describe("CaseScreen", () => {
     await user.click(screen.getByRole("tab", { name: "Parameter" }));
 
     expect(screen.getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("heading", { name: "Parameter im Fall bearbeiten" })).toBeInTheDocument();
-    expect(screen.getByText(/SeaLAI übernimmt nur neue oder geänderte Angaben in den governed Case-State/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Angaben direkt eintragen" })).toBeInTheDocument();
+    expect(screen.getByText(/SeaLAI übernimmt nur neue oder geänderte Angaben/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Berechnung" }));
 
@@ -445,15 +444,15 @@ describe("CaseScreen", () => {
     await user.click(screen.getByRole("tab", { name: "Briefing" }));
 
     expect(screen.getByRole("heading", { name: "Briefing" })).toBeInTheDocument();
-    expect(screen.getByText(/Kompakte Anfragebasis/i)).toBeInTheDocument();
+    expect(screen.getByText(/Kurze Zusammenfassung für interne Klärung/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Übersicht" }));
 
     expect(screen.getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("heading", { name: "Berechnungen & Nachweise" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Rechencheck" })).toBeInTheDocument();
   });
 
-  it("sends only changed parameter values and mirrors the governed confirmation in chat", async () => {
+  it("sends only changed parameter values and mirrors the confirmation in chat", async () => {
     const user = userEvent.setup();
     workspaceHookState.workspace = workspaceFixture();
     render(<CaseScreen caseId="case-42" />);
@@ -468,8 +467,8 @@ describe("CaseScreen", () => {
     });
     expect(workspaceRefreshMock).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("chat-pane")).toHaveTextContent(
-      "Parameter als Nutzerangaben übernommen: Drehzahl: 1450 rpm.",
+      "Angaben übernommen: Drehzahl: 1450 rpm.",
     );
-    expect(screen.getByTestId("chat-pane")).toHaveTextContent("offene Herstellerprüfpunkte weiter sichtbar");
+    expect(screen.getByTestId("chat-pane")).toHaveTextContent("was noch offen ist");
   });
 });

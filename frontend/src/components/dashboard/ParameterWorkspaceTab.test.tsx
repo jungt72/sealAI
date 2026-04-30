@@ -259,15 +259,15 @@ describe("ParameterWorkspaceTab", () => {
   it("renders parameter explanations and current case values", () => {
     render(<ParameterWorkspaceTab workspace={workspaceFixture()} onSubmit={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: "Parameter im Fall bearbeiten" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Angaben direkt eintragen" })).toBeInTheDocument();
     expect(screen.getByLabelText("Medium")).toHaveValue("Ethanol");
     expect(screen.getByLabelText("Temperatur")).toHaveValue("150");
-    expect(screen.getByText(/Das Medium bestimmt Werkstofffenster/i)).toBeInTheDocument();
-    expect(screen.getByText(/Herstellerprüfung bleibt erforderlich/i)).toBeInTheDocument();
-    expect(screen.getAllByText("Herkunft: Nutzerangabe").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Das Medium beeinflusst Werkstoff/i)).toBeInTheDocument();
+    expect(screen.getByText(/Hersteller muss später prüfen/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Woher: Nutzerangabe").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Status: Nutzerangabe").length).toBeGreaterThan(0);
-    expect(screen.getByText("Herkunft: LLM-Recherche")).toBeInTheDocument();
-    expect(screen.getByText("Status: nicht validiert")).toBeInTheDocument();
+    expect(screen.getByText("Woher: KI-Hinweis")).toBeInTheDocument();
+    expect(screen.getByText("Status: noch nicht geprüft")).toBeInTheDocument();
     expect(screen.getAllByText("bestätigt").length).toBeGreaterThan(0);
   });
 
@@ -295,7 +295,7 @@ describe("ParameterWorkspaceTab", () => {
     expect(summary).toContain("Drehzahl: 1450 rpm");
     expect(summary).toContain("Wellendurchmesser: 42 mm");
     expect(screen.getAllByText("Status: wird als Nutzerangabe übernommen")).toHaveLength(2);
-    expect(screen.getAllByText("Herkunft: Nutzerangabe").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Woher: Nutzerangabe").length).toBeGreaterThan(0);
   });
 
   it("guards numeric fields before sending overrides", async () => {

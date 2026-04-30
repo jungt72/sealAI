@@ -201,7 +201,7 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
                     "v_surface_m_s": 3.93,
                     "pv_value_mpa_m_s": 0.39,
                     "dn_value": 75000,
-                    "pressure_window": "1 bar · RWDR-Druckfenster herstellerseitig prüfen",
+                    "pressure_window": "1 bar · Druck für RWDR vom Hersteller prüfen lassen",
                     "notes": ["Dn-Wert im Richtbereich."],
                 },
             },
@@ -248,7 +248,7 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
         "sealing_material_family",
     ]
     assert checks_by_id["rwdr_pressure_window"].value == (
-        "1 bar · RWDR-Druckfenster herstellerseitig prüfen"
+        "1 bar · Druck für RWDR vom Hersteller prüfen lassen"
     )
     assert checks_by_id["rwdr_pressure_window"].status == "ok"
 
@@ -316,12 +316,12 @@ def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asser
     assert checks_by_id["rwdr_temperature_headroom"].value == 140.0
     assert checks_by_id["rwdr_temperature_headroom"].status == "ok"
     assert checks_by_id["rwdr_pressure_window"].value == (
-        "4 bar · RWDR-Druckfenster herstellerseitig prüfen"
+        "4 bar · Druck für RWDR vom Hersteller prüfen lassen"
     )
     assert projection.technical_derivations[0].calc_type == "rwdr"
     assert projection.technical_derivations[0].temperature_headroom_c == 140.0
     assert projection.technical_derivations[0].pressure_window == (
-        "4 bar · RWDR-Druckfenster herstellerseitig prüfen"
+        "4 bar · Druck für RWDR vom Hersteller prüfen lassen"
     )
 
 

@@ -106,7 +106,7 @@ export function ParameterDataCard({
   warning: string;
 }) {
   return (
-    <OverviewCard title="Parameter & Datenlage" icon={ClipboardList}>
+    <OverviewCard title="Angaben zum Fall" icon={ClipboardList}>
       <div className="space-y-2">
         {rows.map((row) => (
           <div key={row.label} className="flex items-start justify-between gap-3 border-b border-[#F0F2F5] pb-2 last:border-b-0">
@@ -137,7 +137,7 @@ function riskTone(risk: CriticalDriver["risk"]) {
 
 export function CriticalDriversCard({ drivers }: { drivers: CriticalDriver[] }) {
   return (
-    <OverviewCard title="Kritische Treiber" icon={AlertTriangle}>
+    <OverviewCard title="Was noch wichtig ist" icon={AlertTriangle}>
       <div className="space-y-2">
         {drivers.map((driver) => (
           <div key={driver.label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5">
@@ -157,7 +157,7 @@ export function CriticalDriversCard({ drivers }: { drivers: CriticalDriver[] }) 
 
 export function SolutionConsequenceCard({ solution }: { solution: SealCockpitOverview["solution"] }) {
   return (
-    <OverviewCard title="Lösung & Konsequenz" icon={CheckCircle2}>
+    <OverviewCard title="Einordnung" icon={CheckCircle2}>
       <div className="rounded-[14px] border border-[#CFE0FF] bg-[#EAF2FF] px-4 py-3">
         <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">{solution.assessmentTitle}</div>
         <p className="mt-2 text-sm font-medium leading-relaxed text-[#1F3B63]">{solution.assessment}</p>
@@ -192,7 +192,7 @@ function CalculationMetric({ metric }: { metric: CalculationEvidenceMetric }) {
 
 export function CalculationsEvidenceCard({ metrics }: { metrics: CalculationEvidenceMetric[] }) {
   return (
-    <OverviewCard title="Berechnungen & Nachweise" icon={Calculator}>
+    <OverviewCard title="Rechencheck" icon={Calculator}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {metrics.map((metric) => (
           <CalculationMetric key={metric.label} metric={metric} />
@@ -240,7 +240,7 @@ function WorkspaceTabShell({
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#0B57D0]">
           <ShieldCheck size={14} />
-          Read-only Backend-Projektion
+          Nur zur Ansicht
         </div>
       </div>
       {children}
@@ -277,7 +277,7 @@ function InfoTile({
 function ItemList({
   title,
   items,
-  empty = "Noch keine Angaben aus der Projektion",
+  empty = "Noch keine Angaben vorhanden",
 }: {
   title: string;
   items: Array<unknown>;
@@ -302,11 +302,11 @@ function ItemList({
 
 function sourceStatusLine(workspace: WorkspaceView | null) {
   if (!workspace) {
-    return "Quelle noch offen";
+    return "Herkunft noch offen";
   }
-  const source = normalizeText(workspace.mediumContext.sourceType) || "Quelle unklar";
+  const source = normalizeText(workspace.mediumContext.sourceType) || "Herkunft unklar";
   const status = workspace.mediumContext.notForReleaseDecisions
-    ? "nicht validiert"
+    ? "noch nicht geprüft"
     : normalizeText(workspace.mediumContext.validationStatus) || "Status unklar";
   return `${source} · ${status}`;
 }
@@ -316,11 +316,11 @@ function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
     <WorkspaceTabShell
       title="Medium"
       icon={Beaker}
-      intro="Medium, Medienfamilie, Risiken und Datenherkunft werden aus der Workspace-Projektion sichtbar gemacht."
+      intro="Hier siehst du, welches Medium erkannt wurde, welche Risiken daran hängen und woher die Info kommt."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
         <InfoTile title="Erkanntes Medium" value={normalizeText(workspace?.mediumContext.mediumLabel ?? workspace?.parameters?.medium)} tone="info" />
-        <InfoTile title="Datenherkunft" value={sourceStatusLine(workspace)} tone={workspace?.mediumContext.notForReleaseDecisions ? "warning" : "neutral"} />
+        <InfoTile title="Woher kommt die Info?" value={sourceStatusLine(workspace)} tone={workspace?.mediumContext.notForReleaseDecisions ? "warning" : "neutral"} />
         <InfoTile title="Medienfamilie" value={normalizeText(workspace?.mediumClassification.family)} />
         <InfoTile title="Klassifizierung" value={normalizeText(workspace?.mediumClassification.status)} note={normalizeText(workspace?.mediumContext.disclaimer)} />
         <ItemList title="Eigenschaften" items={workspace?.mediumContext.properties ?? []} />
@@ -338,7 +338,7 @@ function ApplicationTab({ workspace }: { workspace: WorkspaceView | null }) {
     <WorkspaceTabShell
       title="Anwendung"
       icon={Factory}
-      intro="Anlage, Einbauort, Bewegung und Dichtfunktion rahmen den Fall, bevor eine Anfragebasis belastbarer wird."
+      intro="Anlage, Einbauort und Bewegung helfen, den Fall richtig einzuordnen, bevor eine Anfrage vorbereitet wird."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
         <InfoTile title="Anlage / Einbauort" value={normalizeText(workspace?.parameters?.installation)} tone="info" />
@@ -347,8 +347,8 @@ function ApplicationTab({ workspace }: { workspace: WorkspaceView | null }) {
         <InfoTile title="Anwendungsdomäne" value={normalizeText(profile?.applicationDomain)} />
         <ItemList title="Bekannt" items={workspace?.decisionUnderstanding?.currentStateAnalysis.knownFields ?? workspace?.communication?.confirmedFactsSummary ?? []} />
         <ItemList title="Offen" items={workspace?.decisionUnderstanding?.currentStateAnalysis.missingFields ?? workspace?.completeness.missingCriticalParameters ?? []} />
-        <ItemList title="Technische Bedeutung" items={workspace?.decisionUnderstanding?.technicalMeaning ?? []} />
-        <ItemList title="Herstellerprüfung" items={workspace?.decisionUnderstanding?.manufacturerReviewNeeds ?? workspace?.manufacturerQuestions.mandatory ?? []} />
+        <ItemList title="Warum das wichtig ist" items={workspace?.decisionUnderstanding?.technicalMeaning ?? []} />
+        <ItemList title="Was der Hersteller prüfen muss" items={workspace?.decisionUnderstanding?.manufacturerReviewNeeds ?? workspace?.manufacturerQuestions.mandatory ?? []} />
       </div>
     </WorkspaceTabShell>
   );
@@ -359,17 +359,17 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
     <WorkspaceTabShell
       title="Werkstoff"
       icon={Layers}
-      intro="Werkstoffhinweise bleiben als Richtung, offene Anforderung oder Herstellerprüfpunkt sichtbar."
+      intro="Werkstoffhinweise bleiben bewusst als Richtung sichtbar, bis Medium, Temperatur und Anwendung genug geklärt sind."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
         <InfoTile title="Spezifität" value={normalizeText(workspace?.specificity.materialSpecificityRequired)} tone="info" />
         <InfoTile title="Zielniveau" value={normalizeText(workspace?.specificity.elevationTarget)} />
         <InfoTile title="Dichtungstyp-Profil" value={normalizeText(workspace?.sealApplicationProfile?.sealType)} />
-        <InfoTile title="Confidence Band" value={normalizeText(workspace?.sealApplicationProfile?.confidenceBand)} />
+        <InfoTile title="Sicherheit der Einordnung" value={normalizeText(workspace?.sealApplicationProfile?.confidenceBand)} />
         <ItemList title="Werkstoffrelevante Hinweise" items={workspace?.specificity.elevationHints.map((hint) => `${hint.label}: ${hint.reason}`) ?? []} />
         <ItemList title="Plausible Richtungen" items={workspace?.decisionUnderstanding?.plausibleDirections ?? []} />
         <ItemList title="Noch nicht entscheidbar" items={workspace?.decisionUnderstanding?.notYetDecidable ?? []} />
-        <ItemList title="Benötigte Prüfung" items={workspace?.governance.unknownsManufacturerValidation ?? []} />
+        <ItemList title="Muss noch geprüft werden" items={workspace?.governance.unknownsManufacturerValidation ?? []} />
       </div>
     </WorkspaceTabShell>
   );
@@ -386,14 +386,14 @@ function CalculationTab({
     <WorkspaceTabShell
       title="Berechnung"
       icon={Calculator}
-      intro="Berechnungen werden nur angezeigt, wenn die Backend-Projektion Werte oder offene Eingaben liefert."
+      intro="SeaLAI zeigt einfache Rechenchecks nur dann, wenn genug Angaben vorhanden sind. Fehlende Eingaben bleiben sichtbar."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
         {data.calculations.map((metric) => (
-          <InfoTile key={metric.label} title={metric.label} value={metric.value} note={compactItems([metric.limit, metric.reserve]).join(" · ")} tone={metric.value === "Nicht berechenbar" ? "warning" : "info"} />
+          <InfoTile key={metric.label} title={metric.label} value={metric.value} note={compactItems([metric.limit, metric.reserve]).join(" · ")} tone={metric.value === "Noch nicht möglich" ? "warning" : "info"} />
         ))}
-        <ItemList title="Backend-Hinweise" items={workspace?.technicalDerivations?.flatMap((item) => item.notes) ?? []} />
-        <ItemList title="Nachweise" items={workspace?.evidence.deterministicFindings ?? []} />
+        <ItemList title="Hinweise aus dem System" items={workspace?.technicalDerivations?.flatMap((item) => item.notes) ?? []} />
+        <ItemList title="Berechnete Hinweise" items={workspace?.evidence.deterministicFindings ?? []} />
       </div>
     </WorkspaceTabShell>
   );
@@ -411,17 +411,17 @@ function BriefingTab({
     <WorkspaceTabShell
       title="Briefing"
       icon={FileText}
-      intro="Kompakte Anfragebasis für interne Klärung und spätere RFQ-Preview, ohne Versandaktion."
+      intro="Kurze Zusammenfassung für interne Klärung und eine spätere Anfragevorschau. Hier wird nichts versendet."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
         <InfoTile title="Fallzusammenfassung" value={normalizeText(decision?.caseSummary) || data.solution.assessment} tone="info" />
-        <InfoTile title="RFQ-Status" value={normalizeText(workspace?.rfq.status)} note={normalizeText(workspace?.rfq.releaseStatus)} />
+        <InfoTile title="Anfrage-Status" value={normalizeText(workspace?.rfq.status)} note={normalizeText(workspace?.rfq.releaseStatus)} />
         <ItemList title="Bekannt" items={decision?.understoodNow ?? workspace?.communication?.confirmedFactsSummary ?? []} />
         <ItemList title="Offen" items={[...(workspace?.rfq.openPoints ?? []), ...(workspace?.completeness.missingCriticalParameters ?? [])]} />
-        <ItemList title="Prüfpunkte" items={decision?.manufacturerReviewNeeds ?? workspace?.manufacturerQuestions.mandatory ?? []} />
+        <ItemList title="Was zu prüfen ist" items={decision?.manufacturerReviewNeeds ?? workspace?.manufacturerQuestions.mandatory ?? []} />
         <ItemList title="Nächste sinnvolle Frage" items={[decision?.nextBestQuestion, workspace?.communication?.primaryQuestion]} />
-        <ItemList title="Grenzen" items={[...(workspace?.governance.requiredDisclaimers ?? []), "Herstellerprüfung bleibt erforderlich."]} />
-        <ItemList title="Blocker" items={[...(workspace?.rfq.blockers ?? []), ...(workspace?.matching.blockingReasons ?? [])]} empty="Keine Blocker aus der Projektion gemeldet" />
+        <ItemList title="Grenzen" items={[...(workspace?.governance.requiredDisclaimers ?? []), "Der Hersteller muss die Auslegung später prüfen."]} />
+        <ItemList title="Blocker" items={[...(workspace?.rfq.blockers ?? []), ...(workspace?.matching.blockingReasons ?? [])]} empty="Keine Blocker gemeldet" />
       </div>
     </WorkspaceTabShell>
   );

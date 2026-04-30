@@ -9,17 +9,17 @@ import { cn } from "@/lib/utils";
 type BadgeTone = "neutral" | "info" | "warning" | "danger" | "success";
 
 const EMPTY_TEXT =
-  "SeaLAI bildet hier den technischen Arbeitsstand ab, sobald ein konkreter Dichtungsfall beschrieben wurde.";
+  "Sobald du einen konkreten Dichtungsfall beschreibst, zeigt SeaLAI hier den aktuellen Stand.";
 
 const SOURCE_LABELS: Record<string, string> = {
   user_stated: "Nutzerangabe",
   uploaded_evidence: "Dokument / Upload",
   rag_verified: "Wissensbasis",
   deterministic_calculation: "Berechnung",
-  llm_research_fallback: "LLM-Recherche",
+  llm_research_fallback: "KI-Hinweis",
   inferred: "abgeleitet",
-  system_derived: "systemseitig abgeleitet",
-  unknown: "Quelle unklar",
+  system_derived: "aus den Angaben abgeleitet",
+  unknown: "Herkunft unklar",
 };
 
 const VALIDATION_LABELS: Record<string, string> = {
@@ -27,7 +27,7 @@ const VALIDATION_LABELS: Record<string, string> = {
   documented: "dokumentiert",
   user_stated: "Nutzerangabe",
   candidate: "Kandidat",
-  unvalidated: "nicht validiert",
+  unvalidated: "noch nicht geprüft",
   conflicting: "widersprüchlich",
   calculated: "berechnet",
   unknown: "unklar",
@@ -209,7 +209,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
     decision?.caseSummary ||
     workspace!.communication?.confirmedFactsSummary?.join(" · ") ||
     workspace!.mediumContext.summary ||
-    "SeaLAI fasst hier den aktuellen technischen Arbeitsstand aus der Backend-Projektion zusammen.";
+    "SeaLAI fasst hier zusammen, was im Fall bisher bekannt ist.";
 
   return (
     <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
@@ -224,8 +224,8 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge label={`Datenherkunft: ${sourceLabel(sourceType)}`} tone={sourceIsFallback ? "warning" : "info"} />
-          <Badge label={`Validierungsstatus: ${validationLabel(displayValidationStatus)}`} tone={badgeToneForValidation(displayValidationStatus)} />
+          <Badge label={`Woher: ${sourceLabel(sourceType)}`} tone={sourceIsFallback ? "warning" : "info"} />
+          <Badge label={`Stand: ${validationLabel(displayValidationStatus)}`} tone={badgeToneForValidation(displayValidationStatus)} />
         </div>
       </div>
 
@@ -243,7 +243,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
         <Section title="Ist-Zustand" items={uniqueDisplayItems([...current.evidenceBackedFields, `Readiness: ${readable(current.readinessHint) || "precheck"}`])} />
         <Section title="Offen" items={missingItems} />
         <Section title="Nicht entscheidbar" items={notDecidable} />
-        <Section title="Risiken / Herstellerprüfung" items={riskItems} empty="Keine zusätzlichen Herstellerprüfpunkte aus der Projektion gemeldet" />
+        <Section title="Risiken / Prüfung" items={riskItems} empty="Keine zusätzlichen Prüfpunkte gemeldet" />
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
@@ -253,7 +253,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
             Nächste sinnvolle Frage
           </div>
           <p className="mt-2 text-sm font-semibold leading-relaxed text-[#111827]">
-            {humanizeDisplayText(primaryQuestion?.question || decision?.nextBestQuestion || workspace!.communication?.primaryQuestion || "Noch keine nächste Frage aus der Projektion verfügbar")}
+            {humanizeDisplayText(primaryQuestion?.question || decision?.nextBestQuestion || workspace!.communication?.primaryQuestion || "Noch keine nächste Frage verfügbar")}
           </p>
           {(primaryQuestion?.reason || workspace!.communication?.supportingReason) && (
             <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">
@@ -284,7 +284,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
           <AlertTriangle className="mt-0.5 shrink-0" size={15} />
           <span>
             {sourceIsFallback
-              ? "LLM-Recherche ist nicht validiert und bleibt Orientierung."
+              ? "Dieser KI-Hinweis ist noch nicht geprüft und bleibt nur Orientierung."
               : "Konflikte oder widersprüchliche Angaben bleiben sichtbar und müssen geklärt werden."}
           </span>
         </div>
@@ -292,7 +292,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
 
       <div className="mt-3 flex items-center gap-2 text-[12px] font-medium text-[#6B7280]">
         <ShieldCheck size={14} />
-        Frontend rendert die Backend-Projektion read-only; Herstellerprüfung bleibt erforderlich.
+        Diese Ansicht zeigt nur den aktuellen Stand. Die Auslegung muss später vom Hersteller geprüft werden.
       </div>
     </section>
   );

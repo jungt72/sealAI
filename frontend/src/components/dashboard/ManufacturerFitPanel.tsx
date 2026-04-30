@@ -8,10 +8,19 @@ import { cn } from "@/lib/utils";
 type BadgeTone = "neutral" | "info" | "warning" | "success";
 
 const FALLBACK_DISCLOSURE =
-  "SeaLAI zeigt nur Partnernetzwerk-Daten aus der Backend-Projektion. Zahlungsstatus darf technische Fit-Werte nicht verbessern. Herstellerprüfung bleibt erforderlich.";
+  "Partner können später sichtbar werden. Bezahlung darf die fachliche Einordnung nicht verbessern. Der Hersteller muss die Auslegung prüfen.";
 
 function readable(value: string | null | undefined) {
-  return value ? value.replace(/_/g, " ") : "";
+  switch (value) {
+    case "verified":
+      return "geprüft";
+    case "documented":
+      return "dokumentiert";
+    case "self_declared":
+      return "Selbstauskunft";
+    default:
+      return value ? value.replace(/_/g, " ") : "";
+  }
 }
 
 function badgeClasses(tone: BadgeTone) {
@@ -53,17 +62,17 @@ function Row({ row }: { row: WorkspaceManufacturerFitRow }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-[#111827]">{row.manufacturerId}</div>
-          <div className="mt-1 text-[12px] text-[#6B7280]">Technischer Capability-Abgleich</div>
+          <div className="mt-1 text-[12px] text-[#6B7280]">Abgleich mit bekannten Fähigkeiten</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Score value={row.fitScore} />
-          <Badge label={`Evidence: ${readable(row.verificationLevel) || "unknown"}`} tone={row.verificationLevel === "verified" ? "success" : "info"} />
+          <Badge label={`Belegstatus: ${readable(row.verificationLevel) || "unklar"}`} tone={row.verificationLevel === "verified" ? "success" : "info"} />
         </div>
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Fit-Gründe</div>
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Warum passend</div>
           {row.fitReasons.length ? (
             <ul className="mt-2 space-y-1 text-sm leading-relaxed text-[#111827]">
               {row.fitReasons.map((reason) => (
@@ -71,11 +80,11 @@ function Row({ row }: { row: WorkspaceManufacturerFitRow }) {
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm text-[#6B7280]">Keine Gründe aus der Projektion gemeldet.</p>
+            <p className="mt-2 text-sm text-[#6B7280]">Noch keine Gründe gemeldet.</p>
           )}
         </div>
         <div>
-          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Gaps / offene Punkte</div>
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Was fehlt</div>
           {row.gaps.length || row.missingRequirements.length ? (
             <ul className="mt-2 space-y-1 text-sm leading-relaxed text-[#111827]">
               {[...row.gaps, ...row.missingRequirements].map((gap) => (
@@ -83,7 +92,7 @@ function Row({ row }: { row: WorkspaceManufacturerFitRow }) {
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm text-[#6B7280]">Keine zusätzlichen Gaps aus der Projektion gemeldet.</p>
+            <p className="mt-2 text-sm text-[#6B7280]">Keine zusätzlichen offenen Punkte gemeldet.</p>
           )}
         </div>
       </div>
@@ -106,7 +115,7 @@ export function ManufacturerFitPanel({ workspace }: { workspace: WorkspaceView |
           Partner-Fit
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">
-          SeaLAI zeigt hier den Partnernetzwerk-Abgleich, sobald die Backend-Projektion eine Fit-Matrix bereitstellt.
+          SeaLAI zeigt hier später passende Partnerprofile, sobald dafür genügend geprüfte Informationen vorliegen.
         </p>
         <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-2 text-sm leading-relaxed text-[#0B57D0]">
           <Info className="mt-0.5 shrink-0" size={15} />
@@ -128,7 +137,7 @@ export function ManufacturerFitPanel({ workspace }: { workspace: WorkspaceView |
             Partner-Fit
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
-            Read-only Capability-Abgleich innerhalb des aktiven Partnernetzwerks.
+            Nur zur Ansicht: Abgleich mit bekannten Partnerfähigkeiten.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -146,7 +155,7 @@ export function ManufacturerFitPanel({ workspace }: { workspace: WorkspaceView |
         <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-[#FDE2B8] bg-[#FFF4E5] px-3 py-2 text-sm leading-relaxed text-[#9A3412]">
           <AlertTriangle className="mt-0.5 shrink-0" size={15} />
           <span>
-            Kein Partner-Fit aus der aktuellen Projektion. Grund: {readable(matrix!.noSuitablePartnerReason) || "nicht angegeben"}.
+            Aktuell wurde kein passendes Partnerprofil gemeldet. Grund: {readable(matrix!.noSuitablePartnerReason) || "nicht angegeben"}.
           </span>
         </div>
       ) : (

@@ -1225,10 +1225,10 @@ def _technical_derivation_from_current_profile(
     )
     pressure_window = (
         (
-            f"{pressure_bar:g} bar · RWDR-Druckfenster herstellerseitig prüfen"
+            f"{pressure_bar:g} bar · Druck für RWDR vom Hersteller prüfen lassen"
             if "rwdr" in str(sealing_type).casefold()
             or "radial" in str(sealing_type).casefold()
-            else f"{pressure_bar:g} bar · Dichtungsbauart herstellerseitig prüfen"
+            else f"{pressure_bar:g} bar · Druck für diese Bauart prüfen lassen"
         )
         if pressure_bar is not None and sealing_type
         else None

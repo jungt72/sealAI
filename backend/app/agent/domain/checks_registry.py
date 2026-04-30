@@ -61,7 +61,7 @@ REGISTERED_CHECKS: tuple[EngineeringCheckDefinition, ...] = (
     ),
     EngineeringCheckDefinition(
         calc_id="rwdr_temperature_headroom",
-        label="Temperaturfenster",
+        label="Temperatur-Reserve",
         formula_version="rwdr_calc_v1",
         required_inputs=("temperature_c", "sealing_material_family"),
         valid_paths=("rwdr",),
@@ -74,7 +74,7 @@ REGISTERED_CHECKS: tuple[EngineeringCheckDefinition, ...] = (
     ),
     EngineeringCheckDefinition(
         calc_id="rwdr_pressure_window",
-        label="Druckfenster",
+        label="Druck-Einordnung",
         formula_version="rwdr_calc_v1",
         required_inputs=("pressure_bar", "sealing_type"),
         valid_paths=("rwdr",),

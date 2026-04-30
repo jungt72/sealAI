@@ -175,9 +175,9 @@ describe("DecisionUnderstandingPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Datenherkunft: LLM-Recherche")).toBeInTheDocument();
-    expect(screen.getByText("Validierungsstatus: nicht validiert")).toBeInTheDocument();
-    expect(screen.getByText("LLM-Recherche ist nicht validiert und bleibt Orientierung.")).toBeInTheDocument();
+    expect(screen.getByText("Woher: KI-Hinweis")).toBeInTheDocument();
+    expect(screen.getByText("Stand: noch nicht geprüft")).toBeInTheDocument();
+    expect(screen.getByText("Dieser KI-Hinweis ist noch nicht geprüft und bleibt nur Orientierung.")).toBeInTheDocument();
   });
 
   it("renders the seal application profile as read-only context", () => {
@@ -237,7 +237,7 @@ describe("DecisionUnderstandingPanel", () => {
       />,
     );
 
-    expect(screen.getByText("SeaLAI bildet hier den technischen Arbeitsstand ab, sobald ein konkreter Dichtungsfall beschrieben wurde.")).toBeInTheDocument();
+    expect(screen.getByText("Sobald du einen konkreten Dichtungsfall beschreibst, zeigt SeaLAI hier den aktuellen Stand.")).toBeInTheDocument();
   });
 
   it("renders safe workspace facts when the dedicated decision-understanding projection is absent", () => {
@@ -267,7 +267,7 @@ describe("DecisionUnderstandingPanel", () => {
     expect(screen.getAllByText("Temperatur: 150 °C").length).toBeGreaterThan(0);
     expect(screen.getByText("Druck: 10 bar")).toBeInTheDocument();
     expect(screen.getByText("Liegt der Druck direkt an der Dichtstelle an?")).toBeInTheDocument();
-    expect(screen.getByText("Frontend rendert die Backend-Projektion read-only; Herstellerprüfung bleibt erforderlich.")).toBeInTheDocument();
+    expect(screen.getByText("Diese Ansicht zeigt nur den aktuellen Stand. Die Auslegung muss später vom Hersteller geprüft werden.")).toBeInTheDocument();
   });
 
   it("does not render unsafe product copy", () => {

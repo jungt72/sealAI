@@ -46,7 +46,7 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
   const handleParameterSubmit = useCallback(
     async (overrides: AgentOverrideItemRequest[], summary: string) => {
       if (!resolvedCaseId) {
-        setParameterConfirmation("Bitte starte zuerst im Chat einen konkreten Dichtungsfall. Danach kann SeaLAI Parameter direkt dem Case-State zuordnen.");
+        setParameterConfirmation("Bitte starte zuerst im Chat einen konkreten Dichtungsfall. Danach kann SeaLAI die Angaben dem Fall zuordnen.");
         return;
       }
 
@@ -56,7 +56,7 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
         await patchAgentOverrides(resolvedCaseId, { overrides });
         await workspaceResult.refresh();
         setParameterConfirmation(
-          `Parameter als Nutzerangaben übernommen: ${summary}. SeaLAI verarbeitet diese Werte im Case-State und hält offene Herstellerprüfpunkte weiter sichtbar.`,
+          `Angaben übernommen: ${summary}. SeaLAI rechnet den Fall neu durch und zeigt weiter, was noch offen ist.`,
         );
       } catch (error) {
         setParameterConfirmation(

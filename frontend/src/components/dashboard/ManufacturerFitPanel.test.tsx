@@ -100,7 +100,7 @@ function workspaceFixture(overrides: Partial<WorkspaceView> = {}): WorkspaceView
       dataSource: "manufacturer_fit_matrix",
       manufacturerFitMatrix: {
         status: "fit_computed",
-        disclosure: "Partnernetzwerk-Disclosure. Herstellerprüfung bleibt erforderlich.",
+        disclosure: "Partnernetzwerk-Disclosure. Der Hersteller muss prüfen.",
         eligiblePartnerCount: 2,
         noSuitablePartnerReason: null,
         rows: [
@@ -147,10 +147,10 @@ describe("ManufacturerFitPanel", () => {
     render(<ManufacturerFitPanel workspace={workspaceFixture()} />);
 
     expect(screen.getByRole("heading", { name: "Partner-Fit" })).toBeInTheDocument();
-    expect(screen.getByText("Partnernetzwerk-Disclosure. Herstellerprüfung bleibt erforderlich.")).toBeInTheDocument();
+    expect(screen.getByText("Partnernetzwerk-Disclosure. Der Hersteller muss prüfen.")).toBeInTheDocument();
     expect(screen.getByText("partner-a")).toBeInTheDocument();
     expect(screen.getByText("96")).toBeInTheDocument();
-    expect(screen.getByText("Evidence: verified")).toBeInTheDocument();
+    expect(screen.getByText("Belegstatus: geprüft")).toBeInTheDocument();
     expect(screen.getByText("seal type:rwdr")).toBeInTheDocument();
   });
 
@@ -162,7 +162,7 @@ describe("ManufacturerFitPanel", () => {
             ...workspaceFixture().matching,
             manufacturerFitMatrix: {
               status: "no_suitable_partner",
-              disclosure: "Partnernetzwerk-Disclosure. Herstellerprüfung bleibt erforderlich.",
+              disclosure: "Partnernetzwerk-Disclosure. Der Hersteller muss prüfen.",
               eligiblePartnerCount: 0,
               noSuitablePartnerReason: "no_active_paid_partner",
               rows: [],
@@ -172,7 +172,7 @@ describe("ManufacturerFitPanel", () => {
       />,
     );
 
-    expect(screen.getByText(/Kein Partner-Fit aus der aktuellen Projektion/)).toBeInTheDocument();
+    expect(screen.getByText(/Aktuell wurde kein passendes Partnerprofil gemeldet/)).toBeInTheDocument();
     expect(screen.getByText(/no active paid partner/)).toBeInTheDocument();
     expect(screen.queryByText("partner-a")).not.toBeInTheDocument();
   });
@@ -189,7 +189,7 @@ describe("ManufacturerFitPanel", () => {
       />,
     );
 
-    expect(screen.getByText(/sobald die Backend-Projektion eine Fit-Matrix bereitstellt/)).toBeInTheDocument();
+    expect(screen.getByText(/sobald dafür genügend geprüfte Informationen vorliegen/)).toBeInTheDocument();
   });
 
   it("does not render unsafe marketplace or dispatch copy", () => {
