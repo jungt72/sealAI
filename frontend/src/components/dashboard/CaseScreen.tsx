@@ -82,7 +82,7 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
   }, [setWorkspaceLoading, workspaceResult.isLoading]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-x-hidden overflow-y-auto bg-[#EEF2F7] p-3 sm:p-4 lg:grid lg:grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] lg:overflow-hidden xl:gap-5 xl:p-5">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-x-hidden overflow-y-auto bg-[#F5F5F7] p-3 sm:p-4 lg:grid lg:grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] lg:overflow-hidden xl:gap-5 xl:p-5">
       <section className="min-h-[calc(100dvh-120px)] min-w-0 overflow-hidden lg:min-h-0">
         <ChatPane
           caseId={resolvedCaseId ?? undefined}
