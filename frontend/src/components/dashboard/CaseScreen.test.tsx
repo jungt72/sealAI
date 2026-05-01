@@ -324,13 +324,20 @@ describe("CaseScreen", () => {
     });
   });
 
-  it("renders the open chat surface beside the tabbed SealAI cockpit", () => {
+  it("starts with chat only and lets users open the cockpit manually", async () => {
+    const user = userEvent.setup();
+
     render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
 
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
+    expect(screen.queryByRole("tablist", { name: "SealAI Cockpit" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Werte eintragen" })).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "Werte eintragen" }));
     const tabs = screen.getByRole("tablist", { name: "SealAI Cockpit" });
-    expect(within(tabs).getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
+    expect(within(tabs).getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Cockpit-Breite anpassen" })).toBeInTheDocument();
+    expect(within(tabs).getByRole("tab", { name: "Übersicht" })).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "Parameter" })).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "Medium" })).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "Anwendung" })).toBeInTheDocument();
@@ -339,8 +346,13 @@ describe("CaseScreen", () => {
     expect(within(tabs).getByRole("tab", { name: "Briefing" })).toBeInTheDocument();
   });
 
-  it("renders the requested overview status strip and four cockpit cards", () => {
+  it("renders the requested overview status strip and four cockpit cards after manual opening", async () => {
+    const user = userEvent.setup();
+
     render(<CaseScreen caseId="case-42" />);
+
+    await user.click(screen.getByRole("button", { name: "Werte eintragen" }));
+    await user.click(screen.getByRole("tab", { name: "Übersicht" }));
 
     expect(screen.getByText("Dichtungsfall")).toBeInTheDocument();
     expect(screen.getByText("Noch nicht eingeordnet")).toBeInTheDocument();
@@ -358,8 +370,13 @@ describe("CaseScreen", () => {
     expect(screen.getByRole("heading", { name: "Rechencheck" })).toBeInTheDocument();
   });
 
-  it("renders an honest empty and missing state without productive mock values", () => {
+  it("renders an honest empty and missing state without productive mock values after manual opening", async () => {
+    const user = userEvent.setup();
+
     render(<CaseScreen caseId="case-42" />);
+
+    await user.click(screen.getByRole("button", { name: "Werte eintragen" }));
+    await user.click(screen.getByRole("tab", { name: "Übersicht" }));
 
     expect(screen.getByText("Beschreibe kurz deine Anwendung, dann zeigt SeaLAI hier die nächsten offenen Punkte.")).toBeInTheDocument();
     expect(screen.getByText("Noch kein technischer Fall")).toBeInTheDocument();
@@ -382,8 +399,9 @@ describe("CaseScreen", () => {
     render(<CaseScreen />);
 
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane new");
-    expect(screen.getByText("0 % geklärt")).toBeInTheDocument();
-    expect(screen.getByText("0 von 5 Checks vorhanden")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Werte eintragen" })).toBeInTheDocument();
+    expect(screen.queryByText("0 % geklärt")).not.toBeInTheDocument();
+    expect(screen.queryByText("0 von 5 Checks vorhanden")).not.toBeInTheDocument();
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
     expect(screen.queryByText("35-90 °C")).not.toBeInTheDocument();
     expect(screen.queryByText("2,5 bar")).not.toBeInTheDocument();
@@ -409,7 +427,7 @@ describe("CaseScreen", () => {
     expect(screen.getByText("50400")).toBeInTheDocument();
     expect(screen.getByText("RWDR-Arbeitsstand mit Wasser-Glykol, 85 °C und offener Gegenlauffläche.")).toBeInTheDocument();
     expect(screen.getByText("Woher: Wissensbasis")).toBeInTheDocument();
-    expect(screen.getByText("Stand: noch nicht geprüft")).toBeInTheDocument();
+    expect(screen.getByText("Stand: nicht validiert")).toBeInTheDocument();
     expect(screen.getAllByText("Welche Gegenlauffläche und Oberflächenrauheit sind dokumentiert?").length).toBeGreaterThan(0);
     expect(screen.getByText(/keine Auslegungsfreigabe/i)).toBeInTheDocument();
 

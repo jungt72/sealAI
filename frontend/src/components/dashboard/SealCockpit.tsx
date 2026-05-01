@@ -557,13 +557,15 @@ export function SealCockpit({
   workspace,
   isParameterSubmitting = false,
   onParameterSubmit,
+  preferredTab,
 }: {
   data: SealCockpitOverview;
   workspace: WorkspaceView | null;
   isParameterSubmitting?: boolean;
   onParameterSubmit?: (overrides: AgentOverrideItemRequest[], summary: string) => Promise<void> | void;
+  preferredTab?: CockpitTabId | null;
 }) {
-  const [activeTab, setActiveTab] = useState<CockpitTabId>("overview");
+  const [activeTab, setActiveTab] = useState<CockpitTabId>(preferredTab ?? "overview");
 
   return (
     <aside className="flex h-full min-h-[720px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-transparent bg-transparent lg:min-h-0">
