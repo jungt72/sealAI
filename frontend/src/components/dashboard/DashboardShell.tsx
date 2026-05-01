@@ -37,7 +37,6 @@ export default function DashboardShell({
   const [isNavExpanded, setIsNavExpanded] = useState(false);
 
   const userName = "Thorsten";
-  const greeting = "Guten Tag";
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
@@ -155,14 +154,11 @@ export default function DashboardShell({
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-transparent bg-transparent px-5 sm:px-7">
-          <div className="min-w-0">
-            <div className={cn("items-center gap-3 leading-none", isNavExpanded ? "hidden" : "flex translate-y-[3px]")}>
-              <div className="text-[21px] font-semibold tracking-[0.16em] text-[#1F2937]">SEALING</div>
+          <div className="flex min-w-0 items-center">
+            <div className={cn("items-center gap-3 leading-none", isNavExpanded ? "hidden" : "flex")}>
+              <div className="text-[21px] font-semibold tracking-[0.18em] text-[#1F2937]">SEALING</div>
               <div className="h-5 w-px bg-[#D7DDE8]" />
               <div className="text-[14px] font-medium tracking-[0.12em] text-[#374151]">INTELLIGENCE</div>
-            </div>
-            <div className={cn("truncate text-[12px] text-[#6B7280]", isNavExpanded ? "mt-0" : "mt-1")}>
-              {greeting} {userName}, schön, dass du da bist.
             </div>
           </div>
           <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">

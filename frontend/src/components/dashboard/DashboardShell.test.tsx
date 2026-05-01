@@ -27,6 +27,7 @@ describe("DashboardShell", () => {
     expect(screen.getByText("SEALING")).toBeInTheDocument();
     expect(screen.getByText("INTELLIGENCE")).toBeInTheDocument();
     expect(screen.queryByText("Knowledge Modus")).not.toBeInTheDocument();
+    expect(screen.queryByText(/schön, dass du da bist/i)).not.toBeInTheDocument();
   });
 
   it("expands the left navigation so labels and content become visible", async () => {
