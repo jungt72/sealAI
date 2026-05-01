@@ -504,6 +504,27 @@ class TestStreamConversation:
         assert state_update["reply"] == "Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"
 
     @pytest.mark.asyncio
+    async def test_CONVERSATION_smalltalk_buffers_preview_to_avoid_visible_replacement(self):
+        with _patch_openai(
+            [
+                "Hallo! Als KI habe ich keine persoenlichen Gefuehle, ",
+                "aber ich bin voll einsatzbereit. ",
+                "Wobei kann ich dir heute helfen?",
+            ]
+        ):
+            events = await _collect(stream_conversation("Hallo, wie geht es dir?", mode="CONVERSATION"))
+
+        parsed = _parse_events(events)
+        text_chunks = [e for e in parsed if e.get("type") == "text_chunk"]
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+
+        assert text_chunks == []
+        assert state_update["reply"] == (
+            "Hallo! Als KI habe ich keine persoenlichen Gefuehle, "
+            "aber ich bin voll einsatzbereit. Wobei kann ich dir heute helfen?"
+        )
+
+    @pytest.mark.asyncio
     async def test_CONVERSATION_smalltalk_removes_technical_capture_sentences(self):
         with _patch_openai(
             [

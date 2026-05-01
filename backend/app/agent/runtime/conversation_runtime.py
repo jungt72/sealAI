@@ -189,12 +189,13 @@ def _build_messages(
                 "content": (
                     "STRICT SMALL-TALK TURN:\n"
                     "- Antworte nur auf die Begruessung oder die Frage, wie es dir geht.\n"
-                    "- Maximal zwei kurze Saetze, warm und menschlich.\n"
+                    "- Antworte warm, menschlich und natuerlich in 2 bis 3 kurzen Saetzen.\n"
+                    "- Wenn der Nutzer fragt, wie es dir geht: Sage sinngemaess, dass du als KI keine persoenlichen Gefuehle hast, aber einsatzbereit bist und gern unterstuetzt.\n"
                     "- Sprich den Nutzer mit du an, nicht mit Sie.\n"
                     "- Keine technischen Rueckfragen.\n"
                     "- Keine Erwaehnung von Medium, Druck, Temperatur, Parametern oder Werkstoffwahl.\n"
                     "- Keine Fallanlage und keine Checkliste.\n"
-                    "- Optional: Biete danach locker Hilfe bei einer Dichtungsfrage an."
+                    "- Optional: Frage locker, wobei du heute helfen kannst."
                 ),
             }
         )
@@ -322,6 +323,17 @@ def _is_smalltalk_turn(message: str) -> bool:
     return bool(_SMALLTALK_RE.search(str(message or "").strip()))
 
 
+def _suppress_preview_stream_for_smalltalk(message: str, mode: ConversationLightMode | None) -> bool:
+    """Avoid showing unguarded draft tokens for social turns.
+
+    The final smalltalk reply may be lightly normalized for voice and safety.
+    Streaming the raw draft first creates a visible "long answer -> short answer"
+    replacement effect in the UI. For pure social turns we therefore buffer
+    the model output and render only the final validated reply.
+    """
+    return mode == "CONVERSATION" and _is_smalltalk_turn(message)
+
+
 def _trim_smalltalk_technical_capture(reply: str, *, message: str, mode: ConversationLightMode | None) -> str:
     text = str(reply or "").strip()
     if not text or mode != "CONVERSATION" or not _is_smalltalk_turn(message):
@@ -333,7 +345,7 @@ def _trim_smalltalk_technical_capture(reply: str, *, message: str, mode: Convers
         if sentence.strip() and not _SMALLTALK_TECH_CAPTURE_RE.search(sentence)
     ]
     if kept:
-        return _normalize_smalltalk_address(" ".join(kept[:2]).strip())
+        return _normalize_smalltalk_address(" ".join(kept[:3]).strip())
     return "Mir geht es gut, danke. Ich bin da, wenn du mit einer Dichtungsfrage starten willst."
 
 
@@ -682,6 +694,7 @@ async def iter_conversation_events(
 
     client = openai.AsyncOpenAI()
     messages = _build_messages(message, history, case_summary=case_summary, mode=mode)
+    suppress_preview_stream = _suppress_preview_stream_for_smalltalk(message, mode)
 
     accumulated: list[str] = []
     try:
@@ -694,7 +707,8 @@ async def iter_conversation_events(
             if not clean:
                 continue
             accumulated.append(clean)
-            yield _conversation_visible_event("text_chunk", clean, preview_only=True)
+            if not suppress_preview_stream:
+                yield _conversation_visible_event("text_chunk", clean, preview_only=True)
 
     except Exception as exc:
         log.error("[conversation_runtime] LLM stream error: %s: %s", type(exc).__name__, exc)
