@@ -208,6 +208,133 @@ async def test_final_solution_question_with_insufficient_state_does_not_recommen
 
 
 @pytest.mark.asyncio
+async def test_social_thanks_does_not_create_false_progress() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Arbeitsstand: Ich habe deine Angaben als aktuellen Arbeitsstand uebernommen.",
+        used_claim_ids=["field.missing.speed_rpm"],
+    )
+
+    result = await _orchestrator(contract).handle(user_message="danke", case_state=_state())
+
+    assert result.used_fallback is False
+    assert "genau dort weiter" in result.assistant_message
+    assert "Arbeitsstand:" not in result.assistant_message
+    assert result.trace.guard_decision == "block_progress"
+    assert result.trace.state_patch_size == 0
+    assert result.proposed_field_updates == []
+
+
+@pytest.mark.asyncio
+async def test_unmatched_yes_does_not_confirm_anything() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Alles klar, das ist geklaert.",
+    )
+
+    result = await _orchestrator(contract).handle(user_message="ja danke", case_state=_state())
+
+    assert result.used_fallback is False
+    assert "Worauf bezieht sich dein Ja" in result.assistant_message
+    assert result.trace.guard_decision == "block_progress"
+    assert "confirmation_without_pending_action" in result.trace.validation_errors or (
+        result.trace.commands and result.trace.commands[0].name == "AskClarification"
+    )
+    assert result.trace.state_patch_size == 0
+
+
+@pytest.mark.asyncio
+async def test_unknown_answer_does_not_mark_field_as_done() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Danke, der Punkt ist geklaert.",
+    )
+
+    result = await _orchestrator(contract).handle(user_message="weiß ich nicht", case_state=_state())
+
+    assert result.used_fallback is False
+    assert "nicht als geklaert" in result.assistant_message
+    assert result.trace.guard_decision == "block_progress"
+    assert result.trace.state_patch_size == 0
+
+
+@pytest.mark.asyncio
+async def test_technical_answer_with_thanks_allows_slot_candidate() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Ich habe O-Ring als Kandidaten erkannt; der Wert bleibt bis zur Pruefung unbestaetigt.",
+        proposed_field_updates=[
+            ProposedFieldUpdate(
+                key="seal_type",
+                value="o_ring",
+                confidence="medium",
+                requires_user_confirmation=True,
+            )
+        ],
+    )
+
+    result = await _orchestrator(contract).handle(user_message="O-Ring, danke", case_state=_state())
+
+    assert result.used_fallback is False
+    assert result.proposed_field_updates[0].key == "seal_type"
+    assert result.trace.guard_decision == "allow_transition"
+    assert result.trace.state_patch_size == 1
+
+
+@pytest.mark.asyncio
+async def test_numeric_knowledge_question_does_not_become_field_update() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.GENERAL_KNOWLEDGE,
+        assistant_message=(
+            "3 bar beschreibt allgemein einen Druck. Fuer einen konkreten Dichtungsfall "
+            "kommt es darauf an, ob der Druck direkt an der Dichtstelle anliegt."
+        ),
+    )
+
+    result = await _orchestrator(contract).handle(
+        user_message="Was bedeutet 3 bar bei Dichtungen?",
+        case_state=_state(),
+    )
+
+    assert result.used_fallback is False
+    assert result.response_contract.mode == ConversationMode.GENERAL_KNOWLEDGE
+    assert result.proposed_field_updates == []
+    assert result.trace.state_patch_size == 0
+
+
+@pytest.mark.asyncio
+async def test_no_progress_guard_blocks_working_state_claim_without_patch() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Arbeitsstand: Ich habe deine Angaben als aktuellen Arbeitsstand uebernommen.",
+        used_claim_ids=["field.missing.speed_rpm"],
+    )
+
+    result = await _orchestrator(contract).handle(user_message="Ich moechte meine Dichtungssituation besprechen.", case_state=_state())
+
+    assert result.used_fallback is True
+    assert any("false_progress_language_without_state_patch" in item for item in result.trace.validation_errors)
+    assert "Arbeitsstand:" not in result.assistant_message
+
+
+@pytest.mark.asyncio
+async def test_trace_contains_state_transition_operational_metadata() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.GENERAL_KNOWLEDGE,
+        assistant_message="Ein RWDR dichtet typischerweise eine rotierende Welle gegen ein Medium ab.",
+    )
+
+    result = await _orchestrator(contract).handle(user_message="Was ist ein RWDR?", case_state=None)
+
+    assert result.trace.route == ConversationMode.GENERAL_KNOWLEDGE.value
+    assert result.trace.session_id == result.trace.case_id
+    assert result.trace.guard_decision == "block_progress"
+    assert result.trace.language == "de"
+    assert result.trace.latency_ms_by_stage
+    assert result.trace.speech_acts
+
+
+@pytest.mark.asyncio
 async def test_confirmed_field_may_be_stated_as_confirmed() -> None:
     contract = LLMResponseContract(
         mode=ConversationMode.CASE_QUALIFICATION,
@@ -322,7 +449,8 @@ async def test_prompt_injection_does_not_override_rules() -> None:
         case_state=_state(),
     )
 
-    assert result.used_fallback is True
+    assert result.used_fallback is False
+    assert "nicht als technische Wahrheit" in result.assistant_message
     assert "geeignet" not in result.assistant_message.lower()
 
 

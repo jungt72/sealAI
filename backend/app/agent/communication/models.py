@@ -17,6 +17,22 @@ class ConversationMode(str, Enum):
     MANUAL_REVIEW = "MANUAL_REVIEW"
 
 
+class SpeechAct(BaseModel):
+    label: str
+    confidence: float = 1.0
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ConversationCommand(BaseModel):
+    type: str
+    name: str | None = None
+    field_key: str | None = None
+    reason: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ConversationField(BaseModel):
     key: str
     label: str | None = None
@@ -99,6 +115,9 @@ class CaseConversationState(BaseModel):
     allowed_next_actions: list[str] = Field(default_factory=list)
     conversation_summary: str | None = None
     latest_user_message: str = ""
+    active_question: str | None = None
+    active_question_field_keys: list[str] = Field(default_factory=list)
+    pending_confirmation: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -167,15 +186,40 @@ class LLMResponseContract(BaseModel):
         return text
 
 
+class StateTransitionDecision(BaseModel):
+    decision: Literal["allow_transition", "block_progress"] = "allow_transition"
+    reasons: list[str] = Field(default_factory=list)
+    commands: list[ConversationCommand] = Field(default_factory=list)
+    state_patch_size: int = 0
+    allowed_proposed_updates: list[ProposedFieldUpdate] = Field(default_factory=list)
+    speech_acts: list[SpeechAct] = Field(default_factory=list)
+    language: str = "de"
+    answers_active_question: bool | None = None
+    fallback_level: int = 0
+    human_handoff: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CommunicationTrace(BaseModel):
     turn_id: str
     case_id: str | None = None
+    session_id: str | None = None
     mode: ConversationMode
+    route: str | None = None
     prompt_version: str
     state_snapshot_hash: str
     allowed_claim_ids_used: list[str] = Field(default_factory=list)
     cited_evidence_ref_ids_used: list[str] = Field(default_factory=list)
     guard_result: str
+    guard_decision: str | None = None
+    state_patch_size: int = 0
+    fallback_level: int = 0
+    language: str | None = None
+    latency_ms_by_stage: dict[str, float] = Field(default_factory=dict)
+    human_handoff: bool = False
+    speech_acts: list[SpeechAct] = Field(default_factory=list)
+    commands: list[ConversationCommand] = Field(default_factory=list)
     validation_errors: list[str] = Field(default_factory=list)
     model_provider: str | None = None
     model_name: str | None = None

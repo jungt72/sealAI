@@ -9,6 +9,7 @@ from app.agent.communication.models import (
     ConversationMode,
     LLMResponseContract,
     ProposedFieldUpdate,
+    StateTransitionDecision,
 )
 from app.agent.runtime.output_guard import check_fast_path_output
 
@@ -32,6 +33,17 @@ class CommunicationGuard:
     )
     _risk_terms = re.compile(r"\b(\w*risiko|korrosion|trockenlauf|abrasion|atex|dampf)\b", re.IGNORECASE)
     _readiness_terms = re.compile(r"\b(readiness|rfq[-\s]?ready|anfragebasis\s+bereit|herstellerreif|rfq\s+bereit)\b", re.IGNORECASE)
+    _false_progress_terms = re.compile(
+        r"\b(?:"
+        r"arbeitsstand\s*:|"
+        r"uebernommen|übernommen|"
+        r"als\s+aktuellen\s+arbeitsstand|"
+        r"ist\s+gekl(ae|ä)rt|"
+        r"das\s+reicht\s+fuer\s+den\s+naechsten\s+schritt|"
+        r"das\s+reicht\s+für\s+den\s+nächsten\s+schritt"
+        r")",
+        re.IGNORECASE | re.UNICODE,
+    )
     _allowed_proposal_units: dict[str, set[str | None]] = {
         "speed_rpm": {"rpm", "1/min", "u/min", None},
         "shaft_diameter_mm": {"mm", None},
@@ -69,6 +81,7 @@ class CommunicationGuard:
         allowed_claims: list[AllowedClaim],
         state: CaseConversationState,
         allowed_proposed_updates: list[ProposedFieldUpdate] | None = None,
+        state_transition: StateTransitionDecision | None = None,
     ) -> GuardResult:
         errors: list[str] = []
         text = contract.assistant_message
@@ -121,6 +134,11 @@ class CommunicationGuard:
             errors.append(f"output_guard:{category}")
 
         if contract.mode != ConversationMode.GENERAL_KNOWLEDGE:
+            if state_transition is not None:
+                if state_transition.decision == "block_progress" and contract.proposed_field_updates:
+                    errors.append("state_patch_blocked_but_contract_proposes_updates")
+                if state_transition.state_patch_size == 0 and self._false_progress_terms.search(text):
+                    errors.append("false_progress_language_without_state_patch")
             if allowed_claims and not contract.used_claim_ids and self._contains_case_bound_statement(text, state):
                 errors.append("case_bound_statement_without_allowed_claim")
             if self._risk_terms.search(text) and "risk" not in used_types:

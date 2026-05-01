@@ -22,7 +22,7 @@ _log = logging.getLogger(__name__)
 _prompt_builder = PromptBuilder()
 _GOVERNED_REFORMULATE_MODEL = os.environ.get("SEALAI_CONVERSATION_MODEL", "gpt-4o-mini")
 _UNSAFE_USER_INSTRUCTION_RE = re.compile(
-    r"\b(ignore|ignoriere|vergiss)\b.*\b(rule|regeln|system|developer|sicherheits)\b",
+    r"\b(ignore|ignoriere|vergiss)\b.*\b(rule|rules|regeln|system|developer|sicherheits)\b",
     re.IGNORECASE | re.UNICODE,
 )
 _FORCED_TECHNICAL_CLAIM_RE = re.compile(
@@ -123,7 +123,8 @@ async def collect_governed_visible_reply(
                 result.trace.model_name,
             )
             if result.used_fallback:
-                return effective_fallback_text
+                rendered_fallback = render_response(result.assistant_message, path="GOVERNED")
+                return str(rendered_fallback.text or result.assistant_message or effective_fallback_text).strip()
             # The Human Communication Layer has already validated claim usage,
             # evidence refs, forbidden phrases and fallback safety. Do not route
             # successful HCL output through the legacy surface corridor again;

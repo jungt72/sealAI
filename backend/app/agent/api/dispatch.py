@@ -201,11 +201,18 @@ async def _resolve_runtime_dispatch(
                         exc,
                     )
             if governed_state is None:
-                governed_state = await _load_live_governed_state(
-                    current_user=current_user,
-                    session_id=request.session_id,
-                    create_if_missing=True,
-                )
+                try:
+                    governed_state = await _load_live_governed_state(
+                        current_user=current_user,
+                        session_id=request.session_id,
+                        create_if_missing=True,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _log.warning(
+                        "[runtime_dispatch] governed state load failed (%s: %s) — continuing governed without mutable state override",
+                        type(exc).__name__,
+                        exc,
+                    )
         return RuntimeDispatchResolution(
             gate_route="GOVERNED",
             gate_reason=f"pre_gate:{pre_gate.reasoning}",
@@ -219,13 +226,17 @@ async def _resolve_runtime_dispatch(
 
     except Exception as exc:  # noqa: BLE001
         _log.warning(
-            "[runtime_dispatch] gate/session resolution failed (%s: %s) — fail-open to governed",
+            "[runtime_dispatch] gate/session resolution failed (%s: %s) — fail-closed to conversation fallback",
             type(exc).__name__,
             exc,
         )
         return RuntimeDispatchResolution(
-            gate_route="GOVERNED",
-            gate_reason=f"gate_session_fail_open:{type(exc).__name__}",
-            runtime_mode="GOVERNED",
+            gate_route="CONVERSATION",
+            gate_reason=f"gate_session_fail_closed:{type(exc).__name__}",
+            runtime_mode="CONVERSATION",
             gate_applied=False,
+            direct_reply=(
+                "Ich kann die Anfrage gerade nicht sicher einordnen. "
+                "Bitte beschreibe kurz, worum es geht; ich uebernehme dabei keine technische Annahme."
+            ),
         )

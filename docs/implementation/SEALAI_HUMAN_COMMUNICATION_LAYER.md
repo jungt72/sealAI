@@ -69,6 +69,40 @@ next_action
 
 The communication LLM must not introduce new field proposals. It may only echo proposals produced by the deterministic extraction path and every proposal must require user confirmation.
 
+## State Transition Guard
+
+Before the LLM response is trusted, the runtime now classifies the user turn as
+multi-label speech acts and evaluates whether the turn is allowed to advance
+governed state.
+
+Examples:
+
+- `danke`, `hallo`, or pure social turns are acknowledged but create no state patch.
+- `ja` / `nein` only confirms something if a backend-visible pending confirmation exists.
+- `weiss ich nicht` is treated as "not resolved", never as a completed field.
+- `O-Ring, danke` can still produce a `seal_type` candidate because it contains real slot evidence.
+- `Was bedeutet 3 bar?` remains a knowledge question and must not become a pressure update.
+
+The guard emits a `StateTransitionDecision` with:
+
+```text
+decision
+reasons
+commands
+state_patch_size
+allowed_proposed_updates
+speech_acts
+language
+answers_active_question
+fallback_level
+human_handoff
+```
+
+If `state_patch_size=0`, visible output must not claim that the "Arbeitsstand"
+was updated or that a technical point is clarified. This prevents the chat from
+feeling like a form engine that invents progress after small talk or ambiguous
+answers.
+
 ## Guard
 
 `CommunicationGuard` checks the structured response before it reaches the user.
@@ -85,6 +119,7 @@ It blocks or falls back on:
 - inactive/stale/revoked allowed claim IDs
 - unsupported field proposal keys or units
 - LLM-introduced proposals that did not come from the extraction path
+- false progress language when the state-transition guard produced no patch
 - prompt-injection outcomes
 
 If validation fails, the user receives a deterministic fallback based only on backend missing fields and allowed next actions.
@@ -199,7 +234,7 @@ Optional append-only trace metadata sink:
 SEALAI_COMMUNICATION_AUDIT_LOG=/path/to/hcl-audit.jsonl
 ```
 
-This writes trace metadata only: turn ID, mode, prompt version, state hash, used claim IDs, evidence IDs, guard result, validation errors, model name and timestamp. It does not write raw prompts, secrets or full user text.
+This writes trace metadata only: turn ID, session/case ID, route, mode, prompt version, state hash, used claim IDs, evidence IDs, guard result, state-patch size, speech acts, generated commands, fallback level, language, stage latencies, validation errors, model name and timestamp. It does not write raw prompts, secrets or full user text.
 
 Model selection reuses:
 

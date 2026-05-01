@@ -9,7 +9,7 @@ class ConversationModeRouter:
     """Deterministic conversation-mode router for the human communication layer."""
 
     _unsafe_re = re.compile(
-        r"\b(ignore|ignoriere|vergiss)\b.*\b(rule|regeln|system|developer|sicherheits)\b",
+        r"\b(ignore|ignoriere|vergiss)\b.*\b(rule|rules|regeln|system|developer|sicherheits)\b",
         re.IGNORECASE | re.UNICODE,
     )
     _rfq_re = re.compile(r"\b(rfq|anfrage|angebot|anfragen|anfragevorschau|export)\b", re.IGNORECASE)
@@ -21,12 +21,18 @@ class ConversationModeRouter:
     )
     _case_re = re.compile(
         r"\b(pumpe|ruehrwerk|rührwerk|getriebe|welle|dichtung|dichtstelle|material|werkstoff|"
+        r"o-?ring|rwdr|wellendichtring|gleitringdichtung|flachdichtung|hydraulikdichtung|"
         r"welche\s+dichtung|was\s+soll\s+ich\s+nehmen|passt|geeignet|freigegeben)\b",
         re.IGNORECASE | re.UNICODE,
     )
     _knowledge_re = re.compile(
         r"^\s*(was\s+ist|was\s+sind|was\s+bedeutet|wie\s+funktioniert|warum|weshalb|"
         r"erklaer|erklär|unterschied|vergleich|wann\s+nimmt\s+man)\b",
+        re.IGNORECASE | re.UNICODE,
+    )
+    _explicit_case_context_re = re.compile(
+        r"\b(mein(?:em|er|en)?\s+fall|dies(?:er|e|es)\s+anwendung|konkret|bei\s+mir|"
+        r"fuer\s+meine|für\s+meine|passt|geeignet|soll\s+ich\s+nehmen|welche\s+dichtung)\b",
         re.IGNORECASE | re.UNICODE,
     )
 
@@ -41,12 +47,10 @@ class ConversationModeRouter:
             return ConversationMode.RFQ_PREPARATION
         if self._failure_re.search(lowered):
             return ConversationMode.FAILURE_ANALYSIS
+        if self._knowledge_re.search(lowered) and not self._explicit_case_context_re.search(lowered):
+            return ConversationMode.GENERAL_KNOWLEDGE
         if self._field_update_re.search(lowered):
             return ConversationMode.FIELD_EXTRACTION
-        if self._knowledge_re.search(lowered) and not has_case_state:
-            return ConversationMode.GENERAL_KNOWLEDGE
-        if self._knowledge_re.search(lowered) and not self._case_re.search(lowered):
-            return ConversationMode.GENERAL_KNOWLEDGE
         if has_case_state or self._case_re.search(lowered):
             return ConversationMode.CASE_QUALIFICATION
         return ConversationMode.GENERAL_KNOWLEDGE

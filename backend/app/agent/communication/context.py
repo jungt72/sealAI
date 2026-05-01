@@ -140,6 +140,7 @@ class CaseContextAssembler:
             )
 
         if state is None:
+            active_question = "Beschreibe kurz Anwendung, Medium oder die wichtigste Frage zur Dichtstelle."
             return CaseConversationState(
                 case_id=case_id,
                 user_id=case_owner_id or current_user_id,
@@ -155,8 +156,12 @@ class CaseContextAssembler:
                     )
                 ],
                 allowed_next_actions=["Dichtungsfall kurz beschreiben"],
+                active_question=active_question,
+                active_question_field_keys=["application"],
             )
 
+        missing_fields = self._missing_fields(state)
+        next_actions = self._allowed_next_actions(state)
         return CaseConversationState(
             case_id=str(getattr(state, "session_id", None) or case_id or "default"),
             user_id=case_owner_id or current_user_id,
@@ -164,15 +169,17 @@ class CaseContextAssembler:
             phase=self._phase_from_state(state),
             confirmed_fields=self._confirmed_fields(state),
             proposed_fields=self._proposed_fields(state),
-            missing_fields=self._missing_fields(state),
+            missing_fields=missing_fields,
             stale_fields=self._stale_fields(state),
             calculations=self._calculations(state),
             risks=self._risks(state),
             readiness=self._readiness(state),
             evidence_refs=self._evidence_refs(state),
-            allowed_next_actions=self._allowed_next_actions(state),
+            allowed_next_actions=next_actions,
             conversation_summary=conversation_summary,
             latest_user_message=latest_user_message,
+            active_question=next_actions[0] if next_actions else None,
+            active_question_field_keys=[field.key for field in missing_fields[:3]],
         )
 
     def assemble_from_turn_context(
@@ -186,6 +193,7 @@ class CaseContextAssembler:
         confirmed: list[ConversationField] = []
         missing: list[MissingField] = []
         actions: list[str] = []
+        primary = ""
 
         if turn_context is not None:
             for idx, item in enumerate(getattr(turn_context, "confirmed_facts_summary", []) or []):
@@ -226,6 +234,8 @@ class CaseContextAssembler:
             missing_fields=missing,
             allowed_next_actions=list(dict.fromkeys(action for action in actions if action)),
             latest_user_message=latest_user_message,
+            active_question=primary or None,
+            active_question_field_keys=[field.key for field in missing[:3]],
         )
 
     def _phase_from_state(self, state: Any) -> str:

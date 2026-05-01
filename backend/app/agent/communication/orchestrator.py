@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import os
+import time
 import uuid
 from typing import Any
 
@@ -21,8 +22,15 @@ from app.agent.communication.models import (
     ConversationMode,
     HumanCommunicationResult,
     LLMResponseContract,
+    StateTransitionDecision,
 )
+from app.agent.communication.speech_act import SpeechActClassifier
+from app.agent.communication.state_transition import StateTransitionGuard
 from app.agent.communication.trace import CommunicationTraceSink, JsonlCommunicationTraceSink
+
+
+def _elapsed_ms(started_at: float) -> float:
+    return round((time.perf_counter() - started_at) * 1000, 3)
 
 
 class ConversationOrchestrator:
@@ -42,6 +50,8 @@ class ConversationOrchestrator:
         extraction_service: FieldExtractionProposalService | None = None,
         llm_service: HumanCommunicationLLM | None = None,
         guard: CommunicationGuard | None = None,
+        speech_act_classifier: SpeechActClassifier | None = None,
+        state_transition_guard: StateTransitionGuard | None = None,
         trace_sink: CommunicationTraceSink | None = None,
         enabled: bool | None = None,
     ) -> None:
@@ -51,6 +61,8 @@ class ConversationOrchestrator:
         self.extraction_service = extraction_service or FieldExtractionProposalService()
         self.llm_service = llm_service or OpenAIHumanCommunicationLLMService()
         self.guard = guard or CommunicationGuard()
+        self.speech_act_classifier = speech_act_classifier or SpeechActClassifier()
+        self.state_transition_guard = state_transition_guard or StateTransitionGuard()
         self.trace_sink = trace_sink or JsonlCommunicationTraceSink.from_env()
         self.enabled = (
             enabled
@@ -117,15 +129,35 @@ class ConversationOrchestrator:
         mode: ConversationMode,
         user_message: str,
     ) -> HumanCommunicationResult:
+        stage_started = time.perf_counter()
+        latency_ms_by_stage: dict[str, float] = {}
         claim_builder = self.claim_builder
         allowed_claims = claim_builder.build(state)
-        extracted = [] if mode is ConversationMode.OUT_OF_SCOPE_OR_UNSAFE else self.extraction_service.extract(user_message)
+        latency_ms_by_stage["claims"] = _elapsed_ms(stage_started)
+
+        stage_started = time.perf_counter()
+        raw_extracted = [] if mode is ConversationMode.OUT_OF_SCOPE_OR_UNSAFE else self.extraction_service.extract(user_message)
+        latency_ms_by_stage["field_extraction"] = _elapsed_ms(stage_started)
+
+        stage_started = time.perf_counter()
+        speech_acts, language = self.speech_act_classifier.classify(user_message)
+        transition = self.state_transition_guard.evaluate(
+            state=state,
+            mode=mode,
+            speech_acts=speech_acts,
+            proposed_updates=raw_extracted,
+            language=language,
+        )
+        extracted = transition.allowed_proposed_updates
+        latency_ms_by_stage["state_transition"] = _elapsed_ms(stage_started)
+
         snapshot_hash = state_snapshot_hash(state)
 
         direct_message = self._direct_guarded_message(
             user_message=user_message,
             state=state,
             mode=mode,
+            transition=transition,
         )
         if direct_message:
             contract = LLMResponseContract(
@@ -152,6 +184,8 @@ class ConversationOrchestrator:
                     contract=contract,
                     guard_result="deterministic",
                     validation_errors=[],
+                    transition=transition,
+                    latency_ms_by_stage=latency_ms_by_stage,
                 ),
                 used_fallback=False,
             )
@@ -166,15 +200,19 @@ class ConversationOrchestrator:
                 extracted=extracted,
                 snapshot_hash=snapshot_hash,
                 validation_errors=["human_communication_layer_disabled"],
+                transition=transition,
+                latency_ms_by_stage=latency_ms_by_stage,
             )
 
         try:
+            llm_started = time.perf_counter()
             contract = await self.llm_service.create_response(
                 mode=mode,
                 state=state,
                 allowed_claims=allowed_claims,
                 proposed_field_updates=[item.model_dump(mode="json") for item in extracted],
             )
+            latency_ms_by_stage["llm"] = _elapsed_ms(llm_started)
         except Exception as exc:  # noqa: BLE001
             return self._fallback_result(
                 state=state,
@@ -183,14 +221,19 @@ class ConversationOrchestrator:
                 extracted=extracted,
                 snapshot_hash=snapshot_hash,
                 validation_errors=[f"llm_error:{type(exc).__name__}"],
+                transition=transition,
+                latency_ms_by_stage=latency_ms_by_stage,
             )
 
+        guard_started = time.perf_counter()
         guard_result = self.guard.validate(
             contract,
             allowed_claims=allowed_claims,
             state=state,
             allowed_proposed_updates=extracted,
+            state_transition=transition,
         )
+        latency_ms_by_stage["guard"] = _elapsed_ms(guard_started)
         if not guard_result.ok:
             fallback = guard_result.fallback_message or self.guard.fallback(state)
             fallback_contract = LLMResponseContract(
@@ -217,6 +260,8 @@ class ConversationOrchestrator:
                     contract=fallback_contract,
                     guard_result="fallback",
                     validation_errors=guard_result.errors,
+                    transition=transition,
+                    latency_ms_by_stage=latency_ms_by_stage,
                 ),
                 used_fallback=True,
             )
@@ -235,6 +280,8 @@ class ConversationOrchestrator:
                 contract=contract,
                 guard_result="pass",
                 validation_errors=[],
+                transition=transition,
+                latency_ms_by_stage=latency_ms_by_stage,
             ),
             used_fallback=False,
         )
@@ -250,6 +297,8 @@ class ConversationOrchestrator:
         extracted: list,
         snapshot_hash: str,
         validation_errors: list[str],
+        transition: StateTransitionDecision | None = None,
+        latency_ms_by_stage: dict[str, float] | None = None,
     ) -> HumanCommunicationResult:
         message = self.guard.fallback(state)
         contract = LLMResponseContract(
@@ -276,6 +325,8 @@ class ConversationOrchestrator:
                 contract=contract,
                 guard_result="fallback",
                 validation_errors=validation_errors,
+                transition=transition,
+                latency_ms_by_stage=latency_ms_by_stage or {},
             ),
             used_fallback=True,
         )
@@ -291,16 +342,28 @@ class ConversationOrchestrator:
         contract: LLMResponseContract,
         guard_result: str,
         validation_errors: list[str],
+        transition: StateTransitionDecision | None = None,
+        latency_ms_by_stage: dict[str, float] | None = None,
     ) -> CommunicationTrace:
         return CommunicationTrace(
             turn_id=str(uuid.uuid4()),
             case_id=state.case_id,
+            session_id=state.case_id,
             mode=mode,
+            route=mode.value if hasattr(mode, "value") else str(mode),
             prompt_version=HUMAN_COMMUNICATION_PROMPT_VERSION,
             state_snapshot_hash=snapshot_hash,
             allowed_claim_ids_used=list(contract.used_claim_ids),
             cited_evidence_ref_ids_used=list(contract.cited_evidence_ref_ids),
             guard_result=guard_result,
+            guard_decision=transition.decision if transition else None,
+            state_patch_size=transition.state_patch_size if transition else len(contract.proposed_field_updates),
+            fallback_level=transition.fallback_level if transition else 0,
+            language=transition.language if transition else None,
+            latency_ms_by_stage=latency_ms_by_stage or {},
+            human_handoff=transition.human_handoff if transition else False,
+            speech_acts=transition.speech_acts if transition else [],
+            commands=transition.commands if transition else [],
             validation_errors=list(validation_errors),
             model_provider=getattr(self.llm_service, "provider_name", None),
             model_name=getattr(self.llm_service, "model_name", None),
@@ -329,6 +392,7 @@ class ConversationOrchestrator:
         user_message: str,
         state: CaseConversationState,
         mode: ConversationMode,
+        transition: StateTransitionDecision,
     ) -> str | None:
         lowered = str(user_message or "").casefold()
         asks_for_release = any(
@@ -346,6 +410,16 @@ class ConversationOrchestrator:
             return _guardrail_answer(state)
         if asks_for_release:
             return _no_release_answer(state)
+        if transition.decision == "block_progress":
+            reasons = set(transition.reasons)
+            if "cancel_requested" in reasons:
+                return _cancel_answer(state)
+            if "unknown_is_not_progress" in reasons:
+                return _unknown_answer(state)
+            if "confirmation_without_pending_action" in reasons:
+                return _unmatched_confirmation_answer(state)
+            if "social_only_utterance" in reasons:
+                return _social_no_progress_answer(state)
         return None
 
 
@@ -387,3 +461,34 @@ def _guardrail_answer(state: CaseConversationState) -> str:
         "pruefe ich das nur gegen den aktuellen Arbeitsstand, offene Angaben und nachvollziehbare Quellen."
         + _format_next_question(state)
     ).strip()
+
+
+def _social_no_progress_answer(state: CaseConversationState) -> str:
+    next_step = _format_next_question(state)
+    if next_step:
+        return ("Gern. Dann machen wir genau dort weiter." + next_step).strip()
+    return (
+        "Gern. Beschreibe kurz die Anwendung oder das Problem an der Dichtstelle, "
+        "dann gehen wir es Schritt fuer Schritt durch."
+    )
+
+
+def _unmatched_confirmation_answer(state: CaseConversationState) -> str:
+    next_step = _format_next_question(state)
+    if next_step:
+        return ("Damit ich nichts falsch uebernehme: Worauf bezieht sich dein Ja genau?" + next_step).strip()
+    return "Damit ich nichts falsch uebernehme: Worauf bezieht sich dein Ja genau?"
+
+
+def _unknown_answer(state: CaseConversationState) -> str:
+    next_step = _format_next_question(state)
+    if next_step:
+        return ("Alles gut, dann markieren wir das nicht als geklaert." + next_step).strip()
+    return "Alles gut, dann markieren wir das nicht als geklaert. Was ist der naechste Punkt, den du sicher weisst?"
+
+
+def _cancel_answer(state: CaseConversationState) -> str:
+    next_step = _format_next_question(state)
+    if next_step:
+        return ("Alles klar, ich halte den aktuellen Schritt an." + next_step).strip()
+    return "Alles klar, ich halte den aktuellen Schritt an. Sag mir einfach, womit wir weitermachen sollen."
