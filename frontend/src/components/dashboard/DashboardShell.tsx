@@ -39,7 +39,7 @@ export default function DashboardShell({
   const userName = "Thorsten";
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#F5F5F7] font-sans text-foreground">
+    <div className="flex h-screen w-full overflow-hidden bg-white font-sans text-foreground">
       <aside
         className={cn(
           "hidden h-full shrink-0 flex-col border-r border-[#D6E4F6] bg-[#EAF2FF] transition-[width] duration-200 ease-out md:flex",
@@ -188,7 +188,7 @@ export default function DashboardShell({
             </Link>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F5F7]">{children}</div>
+        <div className="min-h-0 flex-1 overflow-hidden bg-white">{children}</div>
       </main>
     </div>
   );
