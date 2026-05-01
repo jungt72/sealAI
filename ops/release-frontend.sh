@@ -4,12 +4,18 @@ set -euo pipefail
 cd /home/thorsten/sealai/frontend
 
 REPO_ROOT="/home/thorsten/sealai"
+NODE_BIN="${NODE_BIN:-/usr/bin/node}"
+NPM_BIN="${NPM_BIN:-/usr/bin/npm}"
+
+echo ">> Using Node runtime"
+"${NODE_BIN}" -v
+"${NPM_BIN}" -v
 
 echo ">> Installing dependencies"
-npm ci --prefer-offline
+"${NPM_BIN}" ci --prefer-offline
 
 echo ">> Building Next.js standalone"
-npm run build
+"${NPM_BIN}" run build
 
 echo ">> Switching PM2 process (zero-downtime swap)"
 if pm2 describe sealai-frontend >/dev/null 2>&1; then
@@ -19,7 +25,7 @@ else
 fi
 
 pm2 delete sealai-frontend 2>/dev/null || true
-PORT=3000 pm2 start .next/standalone/server.js --name sealai-frontend
+PORT=3000 pm2 start .next/standalone/server.js --name sealai-frontend --interpreter "${NODE_BIN}"
 pm2 save
 
 echo ">> Flushing old logs"
