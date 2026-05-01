@@ -26,6 +26,10 @@ describe("DashboardShell", () => {
     expect(logos[0].getAttribute("src")).toContain("sealai-symbol.png");
     expect(screen.getByText("SEALING")).toBeInTheDocument();
     expect(screen.getByText("INTELLIGENCE")).toBeInTheDocument();
+    expect(screen.getByText(/Vorgang:/)).toBeInTheDocument();
+    expect(screen.queryByText(/governed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Ingenieur")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Suche-ID:/)).not.toBeInTheDocument();
     expect(screen.queryByText("Knowledge Modus")).not.toBeInTheDocument();
     expect(screen.queryByText(/schön, dass du da bist/i)).not.toBeInTheDocument();
   });

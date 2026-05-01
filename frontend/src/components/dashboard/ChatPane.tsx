@@ -501,10 +501,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
           {!hasConversation ? (
             <div className="mx-auto flex w-full max-w-[720px] flex-col items-center text-center">
               <div className="mx-auto flex w-full max-w-[620px] flex-col items-center">
-                <div className="grid h-16 w-16 place-items-center rounded-full border border-[#D7E5FF] bg-[#EAF2FF] text-[#0B57D0] shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                  <Bot size={28} />
-                </div>
-                <h1 className="mt-5 text-[26px] font-semibold tracking-tight text-[#111827]">Hallo Thorsten,</h1>
+                <h1 className="text-[26px] font-semibold tracking-tight text-[#111827]">Hallo Thorsten,</h1>
                 <p className="mt-3 max-w-[520px] text-[15px] leading-7 text-[#4B5563]">
                   Beschreibe kurz deine Dichtungssituation. SeaLAI hilft dir, die wichtigen Punkte sauber zu klären.
                 </p>

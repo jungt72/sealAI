@@ -39,17 +39,17 @@ export default function DashboardShell({
   const userName = "Thorsten";
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
+    <div className="flex h-screen w-full overflow-hidden bg-[#EEF2F7] font-sans text-foreground">
       <aside
         className={cn(
-          "hidden h-full shrink-0 flex-col border-r border-[#E7ECF3] bg-white transition-[width] duration-200 ease-out md:flex",
+          "hidden h-full shrink-0 flex-col border-r border-[#D6E4F6] bg-[#EAF2FF] transition-[width] duration-200 ease-out md:flex",
           isNavExpanded ? "w-[244px]" : "w-[72px]",
         )}
       >
         <div
           className={cn(
-            "flex h-[72px] items-center border-b border-[#E7ECF3] px-3",
-            isNavExpanded ? "justify-between" : "justify-center",
+            "flex items-center border-b border-[#D6E4F6] px-3",
+            isNavExpanded ? "h-[72px] justify-between" : "h-[126px] flex-col justify-start gap-3 py-3",
           )}
         >
           <div className="flex min-w-0 items-center gap-3">
@@ -81,7 +81,18 @@ export default function DashboardShell({
             >
               <PanelLeftClose size={18} />
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              aria-label="Navigation erweitern"
+              aria-expanded={isNavExpanded}
+              title="Navigation erweitern"
+              onClick={() => setIsNavExpanded(true)}
+              className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#BFD6F6] bg-[#F7FBFF] text-[#5F7FA8] transition-colors hover:border-[#9DBDED] hover:bg-white hover:text-[#0B5BD3]"
+            >
+              <PanelLeftOpen size={18} />
+            </button>
+          )}
         </div>
 
         <nav
@@ -119,22 +130,10 @@ export default function DashboardShell({
 
         <div
           className={cn(
-            "flex flex-col gap-3 border-t border-[#E7ECF3] px-3 py-4",
+            "flex flex-col gap-3 border-t border-[#D6E4F6] px-3 py-4",
             isNavExpanded ? "items-stretch" : "items-center",
           )}
         >
-          {!isNavExpanded ? (
-            <button
-              type="button"
-              aria-label="Navigation erweitern"
-              aria-expanded={isNavExpanded}
-              title="Navigation erweitern"
-              onClick={() => setIsNavExpanded(true)}
-              className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]"
-            >
-              <PanelLeftOpen size={18} />
-            </button>
-          ) : null}
           <button
             type="button"
             title="Einstellungen"
@@ -163,11 +162,8 @@ export default function DashboardShell({
           </div>
           <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">
             <div className="hidden text-sm text-[#6B7280] md:block">
-              Suche-ID: <span className="font-semibold text-[#0B5BD3]">COMP-2025-000245</span>
+              Vorgang: <span className="font-semibold text-[#0B5BD3]">COMP-2025-000245</span>
             </div>
-            <span className="inline-flex items-center rounded-full border border-[#D8EEDB] bg-[#EEF9F0] px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#2F8F46]">
-              Governed
-            </span>
             <button
               type="button"
               title="Benachrichtigungen"
@@ -181,7 +177,6 @@ export default function DashboardShell({
               </div>
               <div className="hidden text-left md:block">
                 <div className="text-sm font-medium text-[#111827]">{userName} Mustermann</div>
-                <div className="text-[12px] text-[#6B7280]">Ingenieur</div>
               </div>
             </div>
             <Link
@@ -193,7 +188,7 @@ export default function DashboardShell({
             </Link>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F7FB]">{children}</div>
+        <div className="min-h-0 flex-1 overflow-hidden bg-[#EEF2F7]">{children}</div>
       </main>
     </div>
   );
