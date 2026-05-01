@@ -1,6 +1,6 @@
 "use client";
 
-import { SlidersHorizontal } from "lucide-react";
+import { PanelRightClose, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import ChatPane from "@/components/dashboard/ChatPane";
@@ -57,6 +57,7 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
   const [parameterConfirmation, setParameterConfirmation] = useState<string | null>(null);
   const [isParameterSubmitting, setIsParameterSubmitting] = useState(false);
   const [isCockpitManuallyOpen, setIsCockpitManuallyOpen] = useState(false);
+  const [isCockpitDismissed, setIsCockpitDismissed] = useState(false);
   const [cockpitWidthPercent, setCockpitWidthPercent] = useState(52);
   const [preferredCockpitTab, setPreferredCockpitTab] = useState<CockpitTabId | null>(null);
   const layoutRef = useRef<HTMLDivElement | null>(null);
@@ -72,13 +73,19 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
   const workspaceResult = useWorkspace(resolvedCaseId);
   const cockpitViewModel = useMemo(() => buildSealCockpitViewModel(workspaceResult.workspace), [workspaceResult.workspace]);
   const hasCockpitData = useMemo(() => hasEnteredCaseData(workspaceResult.workspace), [workspaceResult.workspace]);
-  const isCockpitVisible = hasCockpitData || isCockpitManuallyOpen;
+  const isCockpitVisible = (hasCockpitData || isCockpitManuallyOpen) && !isCockpitDismissed;
   const setWorkspace = useWorkspaceStore((state) => state.setWorkspace);
   const setWorkspaceLoading = useWorkspaceStore((state) => state.setWorkspaceLoading);
 
   const openCockpit = useCallback((tab: CockpitTabId = "overview") => {
     setPreferredCockpitTab(tab);
+    setIsCockpitDismissed(false);
     setIsCockpitManuallyOpen(true);
+  }, []);
+
+  const closeCockpit = useCallback(() => {
+    setIsCockpitDismissed(true);
+    setIsCockpitManuallyOpen(false);
   }, []);
 
   const handleResizeStart = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
@@ -195,9 +202,18 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
             <span className="block h-full w-px rounded-full bg-[#D6DEE9] shadow-[7px_0_22px_rgba(15,23,42,0.18)] transition-colors group-hover:bg-[#9DBDED]" />
           </button>
           <div
-            className="min-h-[720px] min-w-0 lg:min-h-0"
+            className="relative min-h-[720px] min-w-0 lg:min-h-0"
             style={{ flexBasis: `${cockpitWidthPercent}%` }}
           >
+            <button
+              type="button"
+              aria-label="Cockpit schließen"
+              title="Cockpit schließen"
+              onClick={closeCockpit}
+              className="absolute right-3 top-2 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#DDE6F2] bg-white text-[#526273] shadow-[0_10px_24px_rgba(15,23,42,0.10)] transition-colors hover:border-[#B8C9E0] hover:bg-[#F8FBFF] hover:text-[#0F172A]"
+            >
+              <PanelRightClose size={16} />
+            </button>
             <SealCockpit
               data={cockpitViewModel}
               workspace={workspaceResult.workspace}

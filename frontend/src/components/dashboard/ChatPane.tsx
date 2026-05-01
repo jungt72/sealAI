@@ -487,10 +487,6 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
 
   return (
     <div className="flex h-full w-full flex-col bg-transparent">
-      <div className="flex h-[44px] shrink-0 items-center px-1">
-        <div className="text-[15px] font-semibold text-[#111827]">Chat</div>
-      </div>
-
       <div className="custom-scrollbar flex-1 overflow-y-auto">
         <div
           className={cn(

@@ -337,6 +337,7 @@ describe("CaseScreen", () => {
     const tabs = screen.getByRole("tablist", { name: "SealAI Cockpit" });
     expect(within(tabs).getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "Cockpit-Breite anpassen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cockpit schließen" })).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "Übersicht" })).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "Parameter" })).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "Medium" })).toBeInTheDocument();
@@ -344,6 +345,11 @@ describe("CaseScreen", () => {
     expect(within(tabs).getByRole("tab", { name: "Werkstoff" })).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "Berechnung" })).toBeInTheDocument();
     expect(within(tabs).getByRole("tab", { name: "Briefing" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cockpit schließen" }));
+    expect(screen.queryByRole("tablist", { name: "SealAI Cockpit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cockpit-Breite anpassen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Werte eintragen" })).toBeInTheDocument();
   });
 
   it("renders the requested overview status strip and four cockpit cards after manual opening", async () => {
