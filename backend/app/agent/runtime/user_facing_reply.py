@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Optional, TypedDict
 
 import openai
@@ -22,6 +23,14 @@ from prompts.builder import PromptBuilder
 _log = logging.getLogger(__name__)
 _prompt_builder = PromptBuilder()
 _GOVERNED_REFORMULATE_MODEL = os.environ.get("SEALAI_CONVERSATION_MODEL", "gpt-4o-mini")
+_UNSAFE_USER_INSTRUCTION_RE = re.compile(
+    r"\b(ignore|ignoriere|vergiss)\b.*\b(rule|regeln|system|developer|sicherheits)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_FORCED_TECHNICAL_CLAIM_RE = re.compile(
+    r"\b(sag(?:e)?|behaupte|bestaetige|bestätige)\b.*\b(geeignet|freigegeben|garantiert|passend|sicher)\b",
+    re.IGNORECASE | re.UNICODE,
+)
 
 
 class UserFacingReplyPayload(TypedDict):
@@ -55,6 +64,13 @@ async def collect_governed_visible_reply(
     - On any LLM error: returns fallback_text directly.
     Adding or removing content is not permitted — only style.
     """
+    guarded_user_instruction = _guard_unsafe_user_instruction(
+        latest_user_message=latest_user_message,
+        turn_context=turn_context,
+    )
+    if guarded_user_instruction is not None:
+        return guarded_user_instruction
+
     claims_spec: GovernedAllowedSurfaceClaims | list[str]
     claims_spec = get_surface_claims_spec(
         response_class,
@@ -171,6 +187,30 @@ async def collect_governed_visible_reply(
             exc,
         )
         return effective_fallback_text
+
+
+def _guard_unsafe_user_instruction(
+    *,
+    latest_user_message: str | None,
+    turn_context: TurnContextContract | None,
+) -> str | None:
+    user_text = str(latest_user_message or "").strip()
+    lowered = user_text.casefold()
+    if not user_text:
+        return None
+    if not (_UNSAFE_USER_INSTRUCTION_RE.search(lowered) or _FORCED_TECHNICAL_CLAIM_RE.search(lowered)):
+        return None
+
+    next_question = str(getattr(turn_context, "primary_question", "") or "").strip()
+    parts = [
+        "Das kann ich nicht als technische Aussage übernehmen.",
+        "Werkstoff, Dichtungstyp oder Freigabe prüfe ich nur gegen den aktuellen Fallstand, offene Punkte und nachvollziehbare Quellen.",
+    ]
+    if next_question:
+        parts.append(next_question)
+    else:
+        parts.append("Wenn du möchtest, klären wir als Nächstes den fehlenden technischen Punkt im Fall.")
+    return "\n\n".join(parts)
 
 
 def derive_public_response_class(
