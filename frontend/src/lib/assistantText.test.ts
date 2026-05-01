@@ -31,6 +31,13 @@ test("normalizeAssistantMarkdown keeps content intact while normalizing CRLF lin
   );
 });
 
+test("normalizeAssistantMarkdown normalizes visible German ASCII spellings", () => {
+  assert.equal(
+    normalizeAssistantMarkdown("Welche Gegenlaufflaeche ist bekannt, Haerte oder Huelse?"),
+    "Welche Gegenlauffläche ist bekannt, Härte oder Hülse?",
+  );
+});
+
 test("normalizeAssistantMarkdown preserves markdown structure instead of collapsing it", () => {
   const normalized = normalizeAssistantMarkdown(
     "Absatz eins\r\n\r\n- Punkt 1\r\n- **Punkt 2**\r\n\r\nRFQ-ready",

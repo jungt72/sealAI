@@ -10,4 +10,14 @@ describe("humanizeDisplayText", () => {
     expect(humanizeDisplayText("rfq preparable with open points")).toBe("RFQ mit offenen Punkten vorbereitbar");
     expect(humanizeDisplayText("radial shaft seal · rotary shaft")).toBe("Radialwellendichtring · rotierende Welle");
   });
+
+  it("normalizes common German ASCII spellings in visible engineering text", () => {
+    expect(
+      humanizeDisplayText(
+        "Welche Gegenlaufflaeche ist bekannt, zum Beispiel Rauheit, Haerte oder Huelse?",
+      ),
+    ).toBe("Welche Gegenlauffläche ist bekannt, zum Beispiel Rauheit, Härte oder Hülse?");
+    expect(humanizeDisplayText("fuer Herstellerpruefung klaeren")).toBe("für Herstellerprüfung klären");
+    expect(humanizeDisplayText("Waermeeintrag und Verschleiss pruefen")).toBe("Wärmeeintrag und Verschleiß prüfen");
+  });
 });

@@ -1,3 +1,5 @@
+import { normalizeGermanVisibleText } from "@/lib/engineering/displayLabels";
+
 export function appendAssistantText(current: string, nextChunk: string): string {
   if (!nextChunk) {
     return current;
@@ -7,5 +9,5 @@ export function appendAssistantText(current: string, nextChunk: string): string 
 }
 
 export function normalizeAssistantMarkdown(text: string): string {
-  return text.replace(/\r\n?/g, "\n");
+  return normalizeGermanVisibleText(text.replace(/\r\n?/g, "\n"));
 }

@@ -79,6 +79,79 @@ const RISK_LABELS: Record<string, string> = {
   "unknowns risk": "Unklare Angaben",
 };
 
+const GERMAN_ASCII_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bGegenlaufflaechen\b/g, "Gegenlaufflächen"],
+  [/\bGegenlaufflaeche\b/g, "Gegenlauffläche"],
+  [/\bgegenlaufflaechen\b/g, "Gegenlaufflächen"],
+  [/\bgegenlaufflaeche\b/g, "Gegenlauffläche"],
+  [/\bOberflaechen\b/g, "Oberflächen"],
+  [/\bOberflaeche\b/g, "Oberfläche"],
+  [/\boberflaechen\b/g, "Oberflächen"],
+  [/\boberflaeche\b/g, "Oberfläche"],
+  [/\bDichtflaechen\b/g, "Dichtflächen"],
+  [/\bDichtflaeche\b/g, "Dichtfläche"],
+  [/\bHaerte\b/g, "Härte"],
+  [/\bhaerte\b/g, "Härte"],
+  [/\bHuelse\b/g, "Hülse"],
+  [/\bhuelse\b/g, "Hülse"],
+  [/\bVerschleiss\b/g, "Verschleiß"],
+  [/\bverschleiss\b/g, "Verschleiß"],
+  [/\bWaermeeintrag\b/g, "Wärmeeintrag"],
+  [/\bWaerme\b/g, "Wärme"],
+  [/\bwaerme\b/g, "Wärme"],
+  [/\bRuehrwerk(e|en)?\b/g, "Rührwerk$1"],
+  [/\bruehrwerk(e|en)?\b/g, "Rührwerk$1"],
+  [/\bBehaelter\b/g, "Behälter"],
+  [/\bbehaelter\b/g, "Behälter"],
+  [/\bExzentrizitaet\b/g, "Exzentrizität"],
+  [/\bexzentrizitaet\b/g, "Exzentrizität"],
+  [/\bEntzuendung\b/g, "Entzündung"],
+  [/\bIdentitaet\b/g, "Identität"],
+  [/\bOel\b/g, "Öl"],
+  [/\boel\b/g, "Öl"],
+  [/\bFuer\b/g, "Für"],
+  [/\bfuer\b/g, "für"],
+  [/\bUeber\b/g, "Über"],
+  [/\bueber\b/g, "über"],
+  [/\bDafuer\b/g, "Dafür"],
+  [/\bdafuer\b/g, "dafür"],
+  [/Pruef/g, "Prüf"],
+  [/pruef/g, "prüf"],
+  [/Klaer/g, "Klär"],
+  [/klaer/g, "klär"],
+  [/Bestaet/g, "Bestät"],
+  [/bestaet/g, "bestät"],
+  [/Unbestaet/g, "Unbestät"],
+  [/unbestaet/g, "unbestät"],
+  [/\bNaechst/g, "Nächst"],
+  [/\bnaechst/g, "nächst"],
+  [/\blaesst\b/g, "lässt"],
+  [/\bLaesst\b/g, "Lässt"],
+  [/\bhaengt\b/g, "hängt"],
+  [/\bHaengt\b/g, "Hängt"],
+  [/\bwaere\b/g, "wäre"],
+  [/\bWaere\b/g, "Wäre"],
+  [/\bfrueh\b/g, "früh"],
+  [/\bFrueh\b/g, "Früh"],
+  [/\bgehoert\b/g, "gehört"],
+  [/\bGehoert\b/g, "Gehört"],
+  [/\bmuessen\b/g, "müssen"],
+  [/\bMuessen\b/g, "Müssen"],
+  [/\bzulaessig/g, "zulässig"],
+  [/\bZulaessig/g, "Zulässig"],
+  [/\bqualitaet\b/g, "qualität"],
+  [/\bQualitaet\b/g, "Qualität"],
+  [/\bLoesung/g, "Lösung"],
+  [/\bloesung/g, "lösung"],
+];
+
+export function normalizeGermanVisibleText(value: string): string {
+  return GERMAN_ASCII_REPLACEMENTS.reduce(
+    (current, [pattern, replacement]) => current.replace(pattern, replacement),
+    value,
+  );
+}
+
 function isEmptyToken(raw: string) {
   return ["none", "null", "undefined", "nan"].includes(raw.toLowerCase());
 }
@@ -114,7 +187,7 @@ export function humanizeDisplayText(value: unknown): string {
     return humanizeRiskString(raw);
   }
 
-  let result = raw
+  let result = normalizeGermanVisibleText(raw)
     .replace(/\bSealType\./g, "")
     .replace(/\bCaseType\./g, "")
     .replace(/\b(\d+(?:[.,]\d+)?)\s*degC\b/g, "$1 °C")
