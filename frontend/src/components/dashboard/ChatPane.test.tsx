@@ -197,6 +197,25 @@ describe("ChatPane", () => {
     expect(screen.queryByText("Der Dichtungstyp grenzt Pflichtangaben, Risiken und den Herstellerpruefpfad zuerst ein.")).not.toBeInTheDocument();
   });
 
+  it("does not repeat generic working-state phrases as if they were user facts", () => {
+    agentStreamMockState.messages = [
+      { role: "user", content: "danke, ich möchte meine dichtungssituation besprechen" },
+      {
+        role: "assistant",
+        content:
+          "**Arbeitsstand:** Das ist ein guter erster Stand.\n\n" +
+          "**Naechste sinnvolle Frage:** Wo sitzt die Dichtung genau?",
+      },
+    ];
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.getByText("Gern. Dann lass uns die Dichtungssituation Schritt für Schritt eingrenzen.")).toBeInTheDocument();
+    expect(screen.getByText(/Worum geht es ungefähr/)).toBeInTheDocument();
+    expect(screen.queryByText(/Okay, ich habe Das ist ein guter erster Stand/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Wo sitzt die Dichtung genau?")).not.toBeInTheDocument();
+  });
+
   it("does not flash structured working-state drafts while streaming", () => {
     agentStreamMockState.isStreaming = true;
     agentStreamMockState.streamingText =

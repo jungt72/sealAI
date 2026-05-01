@@ -150,6 +150,18 @@ function shouldUseReasonInChat(reason: string): boolean {
   return !/pflichtangaben|herstellerpruefpfad|herstellerprüfpfad|grenzt|validierungspfad|prüfpfad/.test(normalized);
 }
 
+function isGenericWorkingStatePhrase(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return normalized.includes("guter erster stand") || normalized.includes("guter arbeitsstand");
+}
+
+function humanizeQuestionForChat(question: string): string {
+  if (question.toLowerCase().includes("wo sitzt die dichtung genau")) {
+    return "Worum geht es ungefähr: eine rotierende Welle, eine statische Verbindung wie Flansch oder O-Ring, eine lineare Bewegung, Hydraulik/Pneumatik oder eine Gleitringdichtung an einer Pumpe?";
+  }
+  return question;
+}
+
 function humanizeStructuredAssistantReply(content: string): string {
   const normalized = content.toLowerCase();
   const hasStructuredStatus =
@@ -180,6 +192,7 @@ function humanizeStructuredAssistantReply(content: string): string {
       return (
         Boolean(line) &&
         !lower.startsWith("ich habe deine angaben") &&
+        !isGenericWorkingStatePhrase(line) &&
         !lower.startsWith("warum das wichtig ist:") &&
         !lower.startsWith("naechste sinnvolle frage:") &&
         !lower.startsWith("nächste sinnvolle frage:") &&
@@ -195,7 +208,9 @@ function humanizeStructuredAssistantReply(content: string): string {
     lines.find((line) => line.toLowerCase().startsWith("naechste sinnvolle frage:")) ||
     lines.find((line) => line.toLowerCase().startsWith("nächste sinnvolle frage:")) ||
     "";
-  const question = humanizeDisplayText(questionLine.replace(/^n(?:ae|ä)chste sinnvolle frage:\s*/i, "").trim());
+  const question = humanizeQuestionForChat(
+    humanizeDisplayText(questionLine.replace(/^n(?:ae|ä)chste sinnvolle frage:\s*/i, "").trim()),
+  );
 
   const intro = facts.length
     ? `Okay, ich habe ${joinHumanList(facts)} als aktuellen Stand mitgenommen.`
@@ -232,7 +247,7 @@ function buildWorkspaceGroundedChatReply(content: string, workspace: WorkspaceVi
     "";
   const readableQuestion = humanizeDisplayText(primaryQuestion);
   if (!readableQuestion || readableQuestion.toLowerCase().includes("wo sitzt die dichtung genau")) {
-    return content;
+    return humanizedContent;
   }
 
   const facts = uniqueDisplayItems(
