@@ -239,7 +239,7 @@ def build_governed_render_prompt(
         "- Fuehre den Nutzer wie im Erstgespraech: kurz spiegeln, Bedeutung nennen, genau die naechste sinnvolle Frage stellen.",
         "- Keine Formulierungen, die Fit, Eignung, Auslegung oder Abstimmung der Dichtung andeuten.",
         "- Nutze Markdown bewusst und sparsam: kurze Absaetze, bei Bedarf 2-3 Bulletpoints, keine Tabellen.",
-        "- Erlaubte sichtbare Labels sind zum Beispiel **Arbeitsstand:**, **Warum das wichtig ist:**, **Offen:** und **Naechste sinnvolle Frage:**.",
+        "- Vermeide interne Denkschritt-Labels wie **Arbeitsstand:**, **Warum das wichtig ist:**, **Offen:** oder **Naechste sinnvolle Frage:**; schreibe stattdessen wie in einem normalen technischen Gespraech.",
         "- Markdown darf nur strukturieren, niemals neue Fakten, Sicherheit oder Freigabe andeuten.",
     ]
     strategy = _build_turn_context_instruction(

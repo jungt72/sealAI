@@ -108,18 +108,20 @@ async def collect_governed_visible_reply(
             )
             if result.used_fallback:
                 return effective_fallback_text
-            guarded_text = guard_governed_rendered_text(
-                result.assistant_message,
-                fallback_text=effective_fallback_text,
-                allowed_surface_claims=claims_spec,
-            )
-            rendered = render_response(guarded_text, path="GOVERNED")
+            # The Human Communication Layer has already validated claim usage,
+            # evidence refs, forbidden phrases and fallback safety. Do not route
+            # successful HCL output through the legacy surface corridor again;
+            # that corridor can collapse natural answers back into formular-like
+            # deterministic labels.
+            rendered = render_response(result.assistant_message, path="GOVERNED")
             return str(rendered.text or effective_fallback_text).strip()
         except Exception as exc:  # noqa: BLE001
             _log.warning(
-                "[user_facing_reply] human communication layer failed (%s) — using legacy governed renderer",
+                "[user_facing_reply] human communication layer failed (%s) — using deterministic fallback unless legacy renderer is explicitly enabled",
                 exc,
             )
+            if os.environ.get("SEALAI_ENABLE_LEGACY_VISIBLE_RENDERER", "false").lower() != "true":
+                return effective_fallback_text
 
     system_prompt = _prompt_builder.conversation()
     render_prompt = build_governed_render_prompt(

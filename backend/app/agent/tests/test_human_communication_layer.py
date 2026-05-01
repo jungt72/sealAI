@@ -6,6 +6,7 @@ from app.agent.communication.models import (
     CaseConversationState,
     ConversationField,
     ConversationMode,
+    EvidenceRef,
     LLMResponseContract,
     MissingField,
     ProposedFieldUpdate,
@@ -31,6 +32,14 @@ class FakeLLM:
 
 def _orchestrator(contract: LLMResponseContract | Exception) -> ConversationOrchestrator:
     return ConversationOrchestrator(llm_service=FakeLLM(contract), enabled=True)
+
+
+class MemoryTraceSink:
+    def __init__(self) -> None:
+        self.traces = []
+
+    def emit(self, trace) -> None:
+        self.traces.append(trace)
 
 
 def _state(**updates) -> CaseConversationState:
@@ -315,6 +324,54 @@ async def test_fabricated_claim_id_is_rejected() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fabricated_evidence_ref_is_rejected_without_claim_error() -> None:
+    state = _state(
+        evidence_refs=[
+            EvidenceRef(
+                id="doc_real",
+                title="Curated medium note",
+                source_type="internal_doc",
+            )
+        ]
+    )
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Ich beziehe mich auf die vorhandene Wissensbasis.",
+        used_claim_ids=["evidence.doc_real"],
+        cited_evidence_ref_ids=["doc_fake"],
+    )
+
+    result = await _orchestrator(contract).handle(user_message="Hast du eine Quelle?", case_state=state)
+
+    assert result.used_fallback is True
+    assert any("fabricated_evidence_ref:doc_fake" in item for item in result.trace.validation_errors)
+
+
+@pytest.mark.asyncio
+async def test_valid_evidence_ref_is_accepted_when_claim_is_used() -> None:
+    state = _state(
+        evidence_refs=[
+            EvidenceRef(
+                id="doc_real",
+                title="Curated medium note",
+                source_type="internal_doc",
+            )
+        ]
+    )
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Dazu liegt eine interne Wissensbasis als Quelle vor.",
+        used_claim_ids=["evidence.doc_real"],
+        cited_evidence_ref_ids=["doc_real"],
+    )
+
+    result = await _orchestrator(contract).handle(user_message="Hast du eine Quelle?", case_state=state)
+
+    assert result.used_fallback is False
+    assert result.trace.cited_evidence_ref_ids_used == ["doc_real"]
+
+
+@pytest.mark.asyncio
 async def test_forbidden_phrase_is_blocked() -> None:
     contract = LLMResponseContract(
         mode=ConversationMode.CASE_QUALIFICATION,
@@ -387,3 +444,58 @@ def test_field_extraction_produces_proposals_only() -> None:
     )
 
     assert contract.proposed_field_updates[0].requires_user_confirmation is True
+
+
+@pytest.mark.asyncio
+async def test_llm_cannot_introduce_unextracted_field_proposal() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Ich habe FKM als Kandidat erkannt.",
+        used_claim_ids=["field.confirmed.medium"],
+        proposed_field_updates=[
+            ProposedFieldUpdate(
+                key="material",
+                value="FKM",
+                confidence="high",
+                requires_user_confirmation=True,
+            )
+        ],
+    )
+
+    result = await _orchestrator(contract).handle(
+        user_message="Welche Dichtung passt?",
+        case_state=_state(),
+    )
+
+    assert result.used_fallback is True
+    assert any("unsupported_proposed_field:material" in item for item in result.trace.validation_errors)
+    assert result.proposed_field_updates == []
+
+
+@pytest.mark.asyncio
+async def test_trace_sink_receives_append_only_metadata() -> None:
+    sink = MemoryTraceSink()
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Drehzahl und Wellendurchmesser fehlen noch.",
+        used_claim_ids=["field.missing.speed_rpm", "field.missing.shaft_diameter_mm"],
+        asks_for_fields=["speed_rpm", "shaft_diameter_mm"],
+    )
+    orchestrator = ConversationOrchestrator(
+        llm_service=FakeLLM(contract),
+        enabled=True,
+        trace_sink=sink,
+    )
+
+    result = await orchestrator.handle(
+        user_message="Ich brauche eine Dichtung fuer Salzwasser.",
+        case_state=_state(),
+    )
+
+    assert result.used_fallback is False
+    assert len(sink.traces) == 1
+    assert sink.traces[0].turn_id == result.trace.turn_id
+    assert sink.traces[0].allowed_claim_ids_used == [
+        "field.missing.speed_rpm",
+        "field.missing.shaft_diameter_mm",
+    ]

@@ -22,6 +22,8 @@ The layer separates broad explanation from case-bound engineering:
 - `FAILURE_ANALYSIS`: leakage, damage, or failure intake.
 - `FIELD_EXTRACTION`: values from chat become proposals only.
 - `OUT_OF_SCOPE_OR_UNSAFE`: injection or unsafe requests.
+- `SMALLTALK`: light non-technical conversation before a case starts.
+- `MANUAL_REVIEW`: reserved for cases that need human engineering review.
 
 ## Allowed Claims
 
@@ -40,7 +42,9 @@ Allowed claims are built from backend state:
 - allowed next actions
 - system limitation that final approval remains external
 
-The LLM may only use claim IDs it received. Fabricated claim IDs or evidence references are blocked.
+The LLM may only use claim IDs it received. Claims carry the state snapshot hash and a lifecycle marker so stale or revoked claims can be blocked before user-visible output.
+
+Fabricated claim IDs or evidence references are blocked. Evidence must be cited through explicit `cited_evidence_ref_ids`; text-only citation claims are not enough.
 
 ## Response Contract
 
@@ -50,8 +54,10 @@ The LLM returns structured JSON:
 mode
 assistant_message
 used_claim_ids
+cited_evidence_ref_ids
 asks_for_fields
 proposed_field_updates
+recommendation_level
 contains_solution_recommendation
 contains_final_approval
 requires_human_review
@@ -60,6 +66,8 @@ next_action
 ```
 
 `proposed_field_updates` never confirms state. They remain candidates for the existing governed validation/reducer path.
+
+The communication LLM must not introduce new field proposals. It may only echo proposals produced by the deterministic extraction path and every proposal must require user confirmation.
 
 ## Guard
 
@@ -74,6 +82,9 @@ It blocks or falls back on:
 - readiness claims without readiness grounding
 - fabricated allowed claim IDs
 - fabricated evidence references
+- inactive/stale/revoked allowed claim IDs
+- unsupported field proposal keys or units
+- LLM-introduced proposals that did not come from the extraction path
 - prompt-injection outcomes
 
 If validation fails, the user receives a deterministic fallback based only on backend missing fields and allowed next actions.
@@ -93,7 +104,9 @@ deterministic backend result
 → visible reply or deterministic fallback
 ```
 
-The legacy governed renderer remains as a fail-open-to-safe fallback if the new layer itself errors.
+The successful HCL output is not routed back through the legacy renderer. This prevents natural answers from being collapsed into internal labels such as "Arbeitsstand" or "Naechste sinnvolle Frage".
+
+If the new layer itself errors, SeaLAI returns the deterministic backend fallback unless `SEALAI_ENABLE_LEGACY_VISIBLE_RENDERER=true` is explicitly configured.
 
 ## Configuration
 
@@ -102,6 +115,14 @@ Feature flag:
 ```text
 HUMAN_COMMUNICATION_LAYER_ENABLED=true|false
 ```
+
+Optional append-only trace metadata sink:
+
+```text
+SEALAI_COMMUNICATION_AUDIT_LOG=/path/to/hcl-audit.jsonl
+```
+
+This writes trace metadata only: turn ID, mode, prompt version, state hash, used claim IDs, evidence IDs, guard result, validation errors, model name and timestamp. It does not write raw prompts, secrets or full user text.
 
 Model selection reuses:
 
@@ -135,3 +156,4 @@ Useful regression set:
 - It does not build RAG, matching, RFQ export, or manufacturer dispatch.
 - It does not make final sealing recommendations.
 - It only exposes proposal objects; state mutation remains the job of existing governed services.
+- It writes durable HCL trace metadata only when `SEALAI_COMMUNICATION_AUDIT_LOG` is configured.

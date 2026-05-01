@@ -22,6 +22,7 @@ from app.agent.communication.models import (
     HumanCommunicationResult,
     LLMResponseContract,
 )
+from app.agent.communication.trace import CommunicationTraceSink, JsonlCommunicationTraceSink
 
 
 class ConversationOrchestrator:
@@ -41,6 +42,7 @@ class ConversationOrchestrator:
         extraction_service: FieldExtractionProposalService | None = None,
         llm_service: HumanCommunicationLLM | None = None,
         guard: CommunicationGuard | None = None,
+        trace_sink: CommunicationTraceSink | None = None,
         enabled: bool | None = None,
     ) -> None:
         self.mode_router = mode_router or ConversationModeRouter()
@@ -49,6 +51,7 @@ class ConversationOrchestrator:
         self.extraction_service = extraction_service or FieldExtractionProposalService()
         self.llm_service = llm_service or OpenAIHumanCommunicationLLMService()
         self.guard = guard or CommunicationGuard()
+        self.trace_sink = trace_sink or JsonlCommunicationTraceSink.from_env()
         self.enabled = (
             enabled
             if enabled is not None
@@ -137,7 +140,7 @@ class ConversationOrchestrator:
                 safety_flags=["deterministic_guarded_response"],
                 next_action=state.allowed_next_actions[0] if state.allowed_next_actions else None,
             )
-            return HumanCommunicationResult(
+            result = HumanCommunicationResult(
                 assistant_message=direct_message,
                 response_contract=contract,
                 allowed_claims=allowed_claims,
@@ -152,6 +155,8 @@ class ConversationOrchestrator:
                 ),
                 used_fallback=False,
             )
+            self._emit_trace(result.trace)
+            return result
 
         if not self.enabled:
             return self._fallback_result(
@@ -180,7 +185,12 @@ class ConversationOrchestrator:
                 validation_errors=[f"llm_error:{type(exc).__name__}"],
             )
 
-        guard_result = self.guard.validate(contract, allowed_claims=allowed_claims, state=state)
+        guard_result = self.guard.validate(
+            contract,
+            allowed_claims=allowed_claims,
+            state=state,
+            allowed_proposed_updates=extracted,
+        )
         if not guard_result.ok:
             fallback = guard_result.fallback_message or self.guard.fallback(state)
             fallback_contract = LLMResponseContract(
@@ -195,7 +205,7 @@ class ConversationOrchestrator:
                 safety_flags=guard_result.errors,
                 next_action=state.allowed_next_actions[0] if state.allowed_next_actions else None,
             )
-            return HumanCommunicationResult(
+            result = HumanCommunicationResult(
                 assistant_message=fallback,
                 response_contract=fallback_contract,
                 allowed_claims=allowed_claims,
@@ -210,16 +220,14 @@ class ConversationOrchestrator:
                 ),
                 used_fallback=True,
             )
+            self._emit_trace(result.trace)
+            return result
 
-        merged_proposals = list(extracted)
-        for proposal in contract.proposed_field_updates:
-            if not any(item.key == proposal.key and item.value == proposal.value for item in merged_proposals):
-                merged_proposals.append(proposal)
-        return HumanCommunicationResult(
+        result = HumanCommunicationResult(
             assistant_message=contract.assistant_message,
             response_contract=contract,
             allowed_claims=allowed_claims,
-            proposed_field_updates=merged_proposals,
+            proposed_field_updates=list(extracted),
             trace=self._trace(
                 state=state,
                 mode=mode,
@@ -230,6 +238,8 @@ class ConversationOrchestrator:
             ),
             used_fallback=False,
         )
+        self._emit_trace(result.trace)
+        return result
 
     def _fallback_result(
         self,
@@ -254,7 +264,7 @@ class ConversationOrchestrator:
             safety_flags=validation_errors,
             next_action=state.allowed_next_actions[0] if state.allowed_next_actions else None,
         )
-        return HumanCommunicationResult(
+        result = HumanCommunicationResult(
             assistant_message=message,
             response_contract=contract,
             allowed_claims=allowed_claims,
@@ -269,6 +279,8 @@ class ConversationOrchestrator:
             ),
             used_fallback=True,
         )
+        self._emit_trace(result.trace)
+        return result
 
     def _trace(
         self,
@@ -287,12 +299,20 @@ class ConversationOrchestrator:
             prompt_version=HUMAN_COMMUNICATION_PROMPT_VERSION,
             state_snapshot_hash=snapshot_hash,
             allowed_claim_ids_used=list(contract.used_claim_ids),
+            cited_evidence_ref_ids_used=list(contract.cited_evidence_ref_ids),
             guard_result=guard_result,
             validation_errors=list(validation_errors),
             model_provider=getattr(self.llm_service, "provider_name", None),
             model_name=getattr(self.llm_service, "model_name", None),
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
+
+    def _emit_trace(self, trace: CommunicationTrace) -> None:
+        try:
+            self.trace_sink.emit(trace)
+        except Exception:
+            # Trace emission must never break user communication.
+            return None
 
     @staticmethod
     def _fallback_claim_ids(allowed_claims: list) -> list[str]:

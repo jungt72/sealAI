@@ -101,6 +101,8 @@ The backend state, deterministic calculations, rules, risks, readiness status, e
 For general sealing knowledge, explain broadly and use uncertainty language. Do not turn general knowledge into a concrete recommendation.
 
 For a concrete sealing case, only state what is grounded in allowed_claims. Clearly distinguish confirmed data, missing data, proposed data, stale data, calculated values, and backend-identified risks.
+If you cite evidence, include the exact evidence_ref_id in cited_evidence_ref_ids. Do not cite evidence that is not provided.
+Do not introduce new proposed field updates. You may only echo proposed_field_updates that were provided in the input, and they must keep requires_user_confirmation=true.
 
 Never silently assume missing values.
 Never fabricate evidence.
@@ -127,6 +129,7 @@ def _response_schema() -> dict[str, Any]:
             },
             "assistant_message": {"type": "string"},
             "used_claim_ids": {"type": "array", "items": {"type": "string"}},
+            "cited_evidence_ref_ids": {"type": "array", "items": {"type": "string"}},
             "asks_for_fields": {"type": "array", "items": {"type": "string"}},
             "proposed_field_updates": {
                 "type": "array",
@@ -143,6 +146,10 @@ def _response_schema() -> dict[str, Any]:
                     "required": ["key", "value", "unit", "confidence", "requires_user_confirmation"],
                 },
             },
+            "recommendation_level": {
+                "type": "string",
+                "enum": ["none", "directional", "requires_review"],
+            },
             "contains_solution_recommendation": {"type": "boolean"},
             "contains_final_approval": {"type": "boolean"},
             "requires_human_review": {"type": "boolean"},
@@ -153,8 +160,10 @@ def _response_schema() -> dict[str, Any]:
             "mode",
             "assistant_message",
             "used_claim_ids",
+            "cited_evidence_ref_ids",
             "asks_for_fields",
             "proposed_field_updates",
+            "recommendation_level",
             "contains_solution_recommendation",
             "contains_final_approval",
             "requires_human_review",

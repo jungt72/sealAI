@@ -7,12 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ConversationMode(str, Enum):
+    SMALLTALK = "SMALLTALK"
     GENERAL_KNOWLEDGE = "GENERAL_KNOWLEDGE"
     CASE_QUALIFICATION = "CASE_QUALIFICATION"
     RFQ_PREPARATION = "RFQ_PREPARATION"
     FAILURE_ANALYSIS = "FAILURE_ANALYSIS"
     FIELD_EXTRACTION = "FIELD_EXTRACTION"
     OUT_OF_SCOPE_OR_UNSAFE = "OUT_OF_SCOPE_OR_UNSAFE"
+    MANUAL_REVIEW = "MANUAL_REVIEW"
 
 
 class ConversationField(BaseModel):
@@ -124,6 +126,8 @@ class AllowedClaim(BaseModel):
     severity: Literal["none", "low", "medium", "high", "critical"] = "none"
     field_keys: list[str] = Field(default_factory=list)
     evidence_ref_ids: list[str] = Field(default_factory=list)
+    lifecycle: Literal["active", "stale", "superseded", "revoked"] = "active"
+    state_snapshot_hash: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -142,8 +146,10 @@ class LLMResponseContract(BaseModel):
     mode: ConversationMode
     assistant_message: str
     used_claim_ids: list[str] = Field(default_factory=list)
+    cited_evidence_ref_ids: list[str] = Field(default_factory=list)
     asks_for_fields: list[str] = Field(default_factory=list)
     proposed_field_updates: list[ProposedFieldUpdate] = Field(default_factory=list)
+    recommendation_level: Literal["none", "directional", "requires_review"] = "none"
     contains_solution_recommendation: bool = False
     contains_final_approval: bool = False
     requires_human_review: bool = False
@@ -168,6 +174,7 @@ class CommunicationTrace(BaseModel):
     prompt_version: str
     state_snapshot_hash: str
     allowed_claim_ids_used: list[str] = Field(default_factory=list)
+    cited_evidence_ref_ids_used: list[str] = Field(default_factory=list)
     guard_result: str
     validation_errors: list[str] = Field(default_factory=list)
     model_provider: str | None = None

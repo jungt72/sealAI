@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.agent.communication.context import state_snapshot_hash
 from app.agent.communication.models import AllowedClaim, CaseConversationState
 
 
@@ -8,6 +9,7 @@ class AllowedClaimBuilder:
 
     def build(self, state: CaseConversationState) -> list[AllowedClaim]:
         claims: list[AllowedClaim] = []
+        snapshot_hash = state_snapshot_hash(state)
 
         for field in state.confirmed_fields:
             statement = f"{field.label or field.key}: {field.value}"
@@ -21,6 +23,7 @@ class AllowedClaimBuilder:
                     source="user_confirmed" if field.source in {"user_stated", "confirmed"} else "backend_rule",
                     confidence="confirmed",
                     field_keys=[field.key],
+                    state_snapshot_hash=snapshot_hash,
                 )
             )
 
@@ -36,6 +39,7 @@ class AllowedClaimBuilder:
                     source="backend_rule",
                     confidence="proposed",
                     field_keys=[field.key],
+                    state_snapshot_hash=snapshot_hash,
                 )
             )
 
@@ -49,6 +53,7 @@ class AllowedClaimBuilder:
                     confidence="uncertain",
                     severity="high" if field.criticality == "critical" else "medium",
                     field_keys=[field.key],
+                    state_snapshot_hash=snapshot_hash,
                 )
             )
 
@@ -62,6 +67,7 @@ class AllowedClaimBuilder:
                     confidence="uncertain",
                     severity="medium",
                     field_keys=[field.key],
+                    state_snapshot_hash=snapshot_hash,
                 )
             )
 
@@ -76,6 +82,7 @@ class AllowedClaimBuilder:
                     confidence="calculated" if calc.status == "available" else "uncertain",
                     severity="none" if calc.status == "available" else "medium",
                     field_keys=list(calc.inputs),
+                    state_snapshot_hash=snapshot_hash,
                 )
             )
 
@@ -88,6 +95,7 @@ class AllowedClaimBuilder:
                     source="backend_rule" if risk.source == "rule" else risk.source,
                     confidence="confirmed",
                     severity=risk.severity,
+                    state_snapshot_hash=snapshot_hash,
                 )
             )
 
@@ -103,6 +111,7 @@ class AllowedClaimBuilder:
                 confidence="confirmed" if state.readiness.status != "unknown" else "uncertain",
                 severity="medium" if state.readiness.blocking_reasons else "none",
                 field_keys=list(state.readiness.blocking_reasons),
+                state_snapshot_hash=snapshot_hash,
             )
         )
 
@@ -115,6 +124,7 @@ class AllowedClaimBuilder:
                     source="evidence",
                     confidence="confirmed",
                     evidence_ref_ids=[evidence.id],
+                    state_snapshot_hash=snapshot_hash,
                 )
             )
 
@@ -126,6 +136,7 @@ class AllowedClaimBuilder:
                     statement=str(action),
                     source="backend_rule",
                     confidence="confirmed",
+                    state_snapshot_hash=snapshot_hash,
                 )
             )
 
@@ -140,6 +151,7 @@ class AllowedClaimBuilder:
                 source="system_limitation",
                 confidence="confirmed",
                 severity="high",
+                state_snapshot_hash=snapshot_hash,
             )
         )
         return claims
