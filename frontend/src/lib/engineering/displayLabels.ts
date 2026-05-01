@@ -5,12 +5,15 @@ const FIELD_LABELS: Record<string, string> = {
   clarify_sealing_case_need: "Dichtungsfall klären",
   contamination: "Verunreinigung / Partikel",
   counterface_surface: "Gegenlauffläche",
+  dynamic: "dynamisch",
   duty_profile: "Betriebsprofil",
   food_contact: "Lebensmittelkontakt",
+  geometry: "Geometrie",
   high: "hoch",
   housing_bore: "Gehäusebohrung",
   housing_bore_mm: "Gehäusebohrung",
   installation: "Einbauort / Anlage",
+  installation_direction: "Einbaurichtung",
   low: "niedrig",
   manufacturer_validation_required: "Hersteller muss prüfen",
   mechanical_face: "Gleitringdichtungsprinzip",
@@ -26,10 +29,15 @@ const FIELD_LABELS: Record<string, string> = {
   pressure: "Druck",
   pressure_bar: "Druck",
   pressure_direction: "Druckrichtung",
+  pressure_interpretation: "Druckangabe",
   pressure_location: "Druck an der Dichtstelle",
   pressure_nominal: "Betriebsdruck",
   pump: "Pumpe",
+  radial_shaft_seal: "Radialwellendichtring",
+  readiness: "Anfrage-Reife",
+  rfq_preparable_with_open_points: "RFQ mit offenen Punkten vorbereitbar",
   rotary: "rotierend",
+  rotary_shaft: "rotierende Welle",
   rwdr: "RWDR",
   seal_chamber_pressure: "Dichtkammerdruck",
   seal_location: "Dichtstelle",
@@ -37,10 +45,14 @@ const FIELD_LABELS: Record<string, string> = {
   shaft_diameter: "Wellendurchmesser",
   shaft_diameter_mm: "Wellendurchmesser",
   shaft_sealing: "Wellenabdichtung",
+  shaft_surface: "Gegenlauffläche",
   speed: "Drehzahl",
   speed_rpm: "Drehzahl",
+  static: "statisch",
+  static_or_dynamic: "statisch oder dynamisch",
   technical_clarification: "Fall klären",
   technical_direction_plausible: "Richtung ist plausibel",
+  temperature: "Temperatur",
   temperature_c: "Temperatur",
   unknown: "unklar",
   unknown_seal: "Dichtungstyp offen",
@@ -107,6 +119,13 @@ export function humanizeDisplayText(value: unknown): string {
     .replace(/\bCaseType\./g, "")
     .replace(/\b(\d+(?:[.,]\d+)?)\s*degC\b/g, "$1 °C")
     .replace(/\bmechanical face\b/gi, "Gleitringdichtungsprinzip")
+    .replace(/\bradial shaft seal\b/gi, "Radialwellendichtring")
+    .replace(/\brotary shaft\b/gi, "rotierende Welle")
+    .replace(/\bstatic or dynamic\b/gi, "statisch oder dynamisch")
+    .replace(/\bshaft surface\b/gi, "Gegenlauffläche")
+    .replace(/\binstallation direction\b/gi, "Einbaurichtung")
+    .replace(/\bpressure interpretation\b/gi, "Druckangabe")
+    .replace(/\brfq preparable with open points\b/gi, "RFQ mit offenen Punkten vorbereitbar")
     .replace(/\btechnical direction plausible\b/gi, "Richtung ist plausibel")
     .replace(/\bkeine finale technische freigabe\b/gi, "keine Auslegungsfreigabe")
     .replace(/\bfinale technische freigabe\b/gi, "Auslegungsfreigabe");

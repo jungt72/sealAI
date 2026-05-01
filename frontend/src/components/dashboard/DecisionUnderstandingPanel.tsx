@@ -241,7 +241,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
             needs.contextSide ? `Kontext: ${needs.contextSide}` : null,
           ])}
         />
-        <Section title="Ist-Zustand" items={uniqueDisplayItems([...current.evidenceBackedFields, `Readiness: ${readable(current.readinessHint) || "precheck"}`])} />
+        <Section title="Ist-Zustand" items={uniqueDisplayItems([...current.evidenceBackedFields, `Anfrage-Reife: ${readable(current.readinessHint) || "Vorprüfung"}`])} />
         <Section title="Offen" items={missingItems} />
         <Section title="Nicht entscheidbar" items={notDecidable} />
         <Section title="Risiken / Prüfung" items={riskItems} empty="Keine zusätzlichen Prüfpunkte gemeldet" />
