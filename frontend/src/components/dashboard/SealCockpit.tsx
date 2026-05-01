@@ -304,6 +304,127 @@ function ItemList({
   );
 }
 
+function designStatusLabel(status: string) {
+  switch (status) {
+    case "minimal_dataset_missing":
+      return "Mindestdaten fehlen";
+    case "preselection_ready_with_open_points":
+      return "Vorprüfung mit offenen Punkten";
+    case "design_review_ready_not_released":
+      return "Prüfdatensatz vollständig";
+    default:
+      return "Noch kein Design-Datensatz";
+  }
+}
+
+function screeningStatusLabel(status: string) {
+  switch (status) {
+    case "screening_ok":
+      return "im Vorcheck unauffällig";
+    case "warning":
+      return "prüfen";
+    case "low_review":
+      return "zu niedrig prüfen";
+    default:
+      return humanizeDisplayText(status);
+  }
+}
+
+export function DesignIntakePanel({ workspace }: { workspace: WorkspaceView | null }) {
+  const intake = workspace?.designIntake;
+  const hasContent = Boolean(
+    intake &&
+      intake.status !== "no_design_dataset" &&
+      (intake.knownFields.length ||
+        intake.missingFields.length ||
+        intake.screeningChecks.length ||
+        intake.escalationTriggers.length),
+  );
+  if (!hasContent || !intake) {
+    return null;
+  }
+
+  const missingByKey = new Map(intake.missingFields.map((field) => [field.key, field]));
+  const nextFields = intake.nextRequiredFields
+    .map((key) => missingByKey.get(key)?.label || humanizeDisplayText(key))
+    .filter(Boolean);
+  const criticalMissing = intake.missingFields.filter((field) => field.criticality === "critical");
+  const visibleKnown = intake.knownFields.slice(0, 4);
+  const visibleMissing = criticalMissing.length ? criticalMissing.slice(0, 5) : intake.missingFields.slice(0, 5);
+
+  return (
+    <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#F0F2F5] pb-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
+            <ClipboardList size={17} />
+            Neuauslegung
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
+            Mindestdaten, Vorchecks und Eskalationspunkte aus dem Backend. Nur als Anfragebasis für spätere Prüfung.
+          </p>
+        </div>
+        <span className="inline-flex rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+          {designStatusLabel(intake.status)}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Schon vorhanden</div>
+          {visibleKnown.length ? (
+            <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-[#111827]">
+              {visibleKnown.map((field) => (
+                <li key={field.key}>
+                  {field.label}: {normalizeText(field.value) || "angegeben"}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-[#6B7280]">Noch keine belastbare Angabe im Design-Datensatz.</p>
+          )}
+        </div>
+
+        <div className="rounded-[14px] border border-[#FFF4E5] bg-[#FFF8ED] p-3">
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#9A3412]">Als Nächstes klären</div>
+          {nextFields.length || visibleMissing.length ? (
+            <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-[#111827]">
+              {(nextFields.length ? nextFields : visibleMissing.map((field) => field.label)).map((label) => (
+                <li key={label}>{label}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-[#6B7280]">Keine Pflichtlücke gemeldet.</p>
+          )}
+        </div>
+      </div>
+
+      {intake.screeningChecks.length || intake.escalationTriggers.length ? (
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <ItemList
+            title="Vorchecks"
+            empty="Noch keine Vorchecks möglich"
+            items={intake.screeningChecks.map((check) => {
+              const value = check.value !== null ? `${check.value}${check.unit ? ` ${check.unit}` : ""}` : null;
+              return `${check.label}: ${value ? `${value} · ` : ""}${screeningStatusLabel(check.status)}`;
+            })}
+          />
+          <ItemList
+            title="Eskalationspunkte"
+            empty="Keine Eskalationspunkte gemeldet"
+            items={intake.escalationTriggers.map((trigger) => `${trigger.label}: ${trigger.reason}`)}
+          />
+        </div>
+      ) : null}
+
+      <p className="mt-3 rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2 text-[12px] leading-relaxed text-[#4B5563]">
+        {normalizeText(intake.boundaryNotice) ||
+          "Read-only Vorqualifikation; die technische Auslegung bleibt später zu prüfen."}
+      </p>
+    </section>
+  );
+}
+
 function sourceStatusLine(workspace: WorkspaceView | null) {
   if (!workspace) {
     return "Herkunft noch offen";
@@ -453,6 +574,9 @@ export function SealCockpit({
             <CockpitStatusStrip items={data.statusStrip} />
             <div className="px-4 pt-4">
               <DecisionUnderstandingPanel workspace={workspace} />
+            </div>
+            <div className="px-4 pt-4">
+              <DesignIntakePanel workspace={workspace} />
             </div>
             <div className="px-4 pt-4">
               <ManufacturerFitPanel workspace={workspace} />

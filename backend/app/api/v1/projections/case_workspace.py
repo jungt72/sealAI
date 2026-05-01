@@ -43,6 +43,7 @@ from app.services.decision_understanding_service import (
 from app.services.next_best_question_service import (
     derive_needs_current_state_and_questions,
 )
+from app.services.seal_design_intake_service import build_seal_design_intake
 from app.api.v1.schemas.case_workspace import (
     ArtifactStatus,
     CaseSummary,
@@ -74,6 +75,7 @@ from app.api.v1.schemas.case_workspace import (
     RFQPackageSummary,
     RFQStatus,
     SealApplicationProfileView,
+    SealDesignIntakeProjection,
     TechnicalDerivationItem,
 )
 
@@ -2465,6 +2467,18 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         working_profile_pillar=working_profile_pillar,
         system=system,
     )
+    design_intake_payload = {
+        "case_type": case_type.value,
+        "request_type": request_type,
+        "engineering_path": engineering_path,
+        "profile": routing_profile,
+        "parameters": parameters,
+        "seal_application_profile": seal_application_profile.model_dump(),
+        "text": "\n".join(raw_text_candidates),
+    }
+    design_intake = SealDesignIntakeProjection.model_validate(
+        build_seal_design_intake(design_intake_payload).as_dict()
+    )
     checks = _build_engineering_checks(
         profile=routing_profile,
         engineering_path=engineering_path,
@@ -2540,6 +2554,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         request_type=request_type,
         engineering_path=engineering_path,
         seal_application_profile=seal_application_profile,
+        design_intake=design_intake,
         cockpit_view=cockpit_view,
         deep_dive_tabs=deep_dive_tabs,
         decision_understanding=decision_understanding,

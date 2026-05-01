@@ -891,3 +891,72 @@ def test_governed_workspace_projection_exposes_stale_derived_values() -> None:
         projection.technical_derivations[0].stale_reason
         == "accepted_case_delta_changed_inputs"
     )
+
+
+def test_workspace_projection_exposes_read_only_design_intake() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-design-intake"},
+            "working_profile": {
+                "engineering_profile": {
+                    "request_type": "new_design",
+                    "asset_type": "hydraulic_cylinder",
+                    "sealing_function": "Kolbenstange nach aussen abdichten",
+                    "medium_name": "HLP 46",
+                    "motion_type": "linear",
+                    "pressure_peak": 120.0,
+                    "temperature_max": 80.0,
+                    "shaft_diameter": 42.0,
+                    "radial_gap_mm": 0.4,
+                    "cross_section_mm": 5.33,
+                    "groove_depth_mm": 4.5,
+                    "groove_width_mm": 6.2,
+                    "seal_inner_diameter_mm": 40.0,
+                },
+                "completeness": {"missing_critical_parameters": []},
+            },
+            "reasoning": {"phase": "clarification", "state_revision": 2},
+            "system": {
+                "routing": {"request_type": "new_design"},
+                "governance_metadata": {
+                    "release_status": "manufacturer_validation_required"
+                },
+                "rfq_admissibility": {
+                    "release_status": "manufacturer_validation_required",
+                    "status": "manufacturer_validation_required",
+                },
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    design_intake = projection.design_intake
+    assert design_intake.schema_version == "seal_design_intake_v0.8.3"
+    assert design_intake.status == "minimal_dataset_missing"
+    assert "SealDesignIntakeGenerated" in design_intake.event_names
+    assert "DesignScreeningComputed" in design_intake.event_names
+    assert "DesignEscalationTriggerIdentified" in design_intake.event_names
+    assert {field.key for field in design_intake.known_fields} >= {
+        "sealing_function",
+        "medium",
+        "motion_type",
+        "pressure_profile",
+        "temperature_profile",
+        "geometry_space",
+        "tolerance_gap",
+    }
+    assert "leakage_target" in {field.key for field in design_intake.missing_fields}
+    assert design_intake.next_required_fields[:2] == [
+        "leakage_target",
+        "safety_context",
+    ]
+    assert {check.check_id for check in design_intake.screening_checks} >= {
+        "oring.squeeze_pct",
+        "oring.groove_fill_pct",
+        "oring.stretch_pct",
+    }
+    assert "high_pressure_large_gap" in {
+        trigger.trigger_id for trigger in design_intake.escalation_triggers
+    }

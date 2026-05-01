@@ -203,12 +203,51 @@ export type WorkspaceSealApplicationProfile = {
   source: string;
 };
 
+export type WorkspaceDesignFieldStatus = {
+  key: string;
+  label: string;
+  status: string;
+  criticality: string;
+  value: unknown;
+  reason: string;
+};
+
+export type WorkspaceDesignScreeningCheck = {
+  checkId: string;
+  label: string;
+  status: string;
+  value: number | null;
+  unit: string | null;
+  inputs: string[];
+  message: string;
+};
+
+export type WorkspaceDesignEscalationTrigger = {
+  triggerId: string;
+  label: string;
+  severity: string;
+  reason: string;
+};
+
+export type WorkspaceSealDesignIntake = {
+  schemaVersion: string;
+  status: string;
+  knownFields: WorkspaceDesignFieldStatus[];
+  missingFields: WorkspaceDesignFieldStatus[];
+  screeningChecks: WorkspaceDesignScreeningCheck[];
+  escalationTriggers: WorkspaceDesignEscalationTrigger[];
+  nextRequiredFields: string[];
+  boundaryNotice: string;
+  eventNames: string[];
+};
+
 export type WorkspaceView = {
   caseId: string;
   caseType?: string | null;
   requestType?: string | null;
   engineeringPath?: string | null;
   sealApplicationProfile?: WorkspaceSealApplicationProfile;
+  designIntake?: WorkspaceSealDesignIntake;
   decisionUnderstanding?: WorkspaceDecisionUnderstanding;
   cockpit?: EngineeringCockpitView | null;
   communication?: {

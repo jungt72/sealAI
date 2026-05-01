@@ -179,6 +179,12 @@ That prevents SeaLAI from starting a new design with a catalog-style "which seal
 type?" question before function, leakage target, medium, motion and load profile
 are understood.
 
+The same facts are exposed as read-only `design_intake` data on the
+`CaseWorkspaceProjection` and rendered in the cockpit as a compact Neuauslegung
+panel. The UI may show known fields, the next required fields, screening checks
+and escalation triggers, but it must not compute those values itself or present
+them as a final design decision.
+
 ## Configuration
 
 Feature flag:

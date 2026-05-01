@@ -5,6 +5,7 @@ import type {
   WorkspaceLifecycleStep,
   WorkspaceNeedsAnalysis,
   WorkspaceNextBestQuestion,
+  WorkspaceSealDesignIntake,
   WorkspaceSealApplicationProfile,
   WorkspaceView,
 } from "@/lib/contracts/workspace";
@@ -192,11 +193,50 @@ type RawSealApplicationProfile = {
   source?: string;
 };
 
+type RawDesignFieldStatus = {
+  key?: string;
+  label?: string;
+  status?: string;
+  criticality?: string;
+  value?: unknown;
+  reason?: string;
+};
+
+type RawDesignScreeningCheck = {
+  check_id?: string;
+  label?: string;
+  status?: string;
+  value?: number | string | null;
+  unit?: string | null;
+  inputs?: string[];
+  message?: string;
+};
+
+type RawDesignEscalationTrigger = {
+  trigger_id?: string;
+  label?: string;
+  severity?: string;
+  reason?: string;
+};
+
+type RawSealDesignIntake = {
+  schema_version?: string;
+  status?: string;
+  known_fields?: RawDesignFieldStatus[];
+  missing_fields?: RawDesignFieldStatus[];
+  screening_checks?: RawDesignScreeningCheck[];
+  escalation_triggers?: RawDesignEscalationTrigger[];
+  next_required_fields?: string[];
+  boundary_notice?: string;
+  event_names?: string[];
+};
+
 type LegacyWorkspaceProjection = {
   case_type?: string | null;
   request_type?: string | null;
   engineering_path?: string | null;
   seal_application_profile?: RawSealApplicationProfile | null;
+  design_intake?: RawSealDesignIntake | null;
   decision_understanding?: RawDecisionUnderstanding | null;
   needs_analysis?: RawNeedsAnalysis | null;
   current_state_analysis?: RawCurrentStateAnalysis | null;
@@ -750,6 +790,55 @@ function mapSealApplicationProfile(raw: RawSealApplicationProfile | null | undef
   };
 }
 
+function mapDesignIntake(raw: RawSealDesignIntake | null | undefined): WorkspaceSealDesignIntake {
+  return {
+    schemaVersion: raw?.schema_version || "seal_design_intake_v0.8.3",
+    status: raw?.status || "no_design_dataset",
+    knownFields: (raw?.known_fields || [])
+      .map((field) => ({
+        key: String(field.key || "").trim(),
+        label: String(field.label || field.key || "").trim(),
+        status: String(field.status || "unknown"),
+        criticality: String(field.criticality || "optional"),
+        value: field.value ?? null,
+        reason: String(field.reason || ""),
+      }))
+      .filter((field) => field.key || field.label),
+    missingFields: (raw?.missing_fields || [])
+      .map((field) => ({
+        key: String(field.key || "").trim(),
+        label: String(field.label || field.key || "").trim(),
+        status: String(field.status || "not_specified"),
+        criticality: String(field.criticality || "optional"),
+        value: field.value ?? null,
+        reason: String(field.reason || ""),
+      }))
+      .filter((field) => field.key || field.label),
+    screeningChecks: (raw?.screening_checks || [])
+      .map((check) => ({
+        checkId: String(check.check_id || "").trim(),
+        label: String(check.label || check.check_id || "").trim(),
+        status: String(check.status || "unknown"),
+        value: asNumber(check.value),
+        unit: check.unit || null,
+        inputs: asStrings(check.inputs),
+        message: String(check.message || ""),
+      }))
+      .filter((check) => check.checkId || check.label),
+    escalationTriggers: (raw?.escalation_triggers || [])
+      .map((trigger) => ({
+        triggerId: String(trigger.trigger_id || "").trim(),
+        label: String(trigger.label || trigger.trigger_id || "").trim(),
+        severity: String(trigger.severity || "medium"),
+        reason: String(trigger.reason || ""),
+      }))
+      .filter((trigger) => trigger.triggerId || trigger.label),
+    nextRequiredFields: asStrings(raw?.next_required_fields),
+    boundaryNotice: String(raw?.boundary_notice || ""),
+    eventNames: asStrings(raw?.event_names),
+  };
+}
+
 function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockpitView | null {
   const raw = projection.cockpit_view;
   if (!raw) {
@@ -842,6 +931,7 @@ export function mapWorkspaceView(
     requestType: projection.request_type || projection.case_summary.intent_goal || null,
     engineeringPath: projection.engineering_path || null,
     sealApplicationProfile: mapSealApplicationProfile(projection.seal_application_profile),
+    designIntake: mapDesignIntake(projection.design_intake),
     decisionUnderstanding: mapDecisionUnderstanding(projection),
     cockpit: mapCockpitView(projection),
     communication: projection.communication_context

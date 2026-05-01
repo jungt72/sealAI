@@ -613,6 +613,61 @@ class SealApplicationProfileView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class DesignFieldStatusProjection(BaseModel):
+    key: str
+    label: str
+    status: str
+    criticality: str
+    value: Optional[Any] = None
+    reason: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DesignScreeningCheckProjection(BaseModel):
+    check_id: str
+    label: str
+    status: str
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    inputs: List[str] = Field(default_factory=list)
+    message: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DesignEscalationTriggerProjection(BaseModel):
+    trigger_id: str
+    label: str
+    severity: str
+    reason: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SealDesignIntakeProjection(BaseModel):
+    """Read-only minimum-dataset and screening view for new seal designs.
+
+    This projection exposes backend-derived intake gaps and conservative
+    screening hints. It does not confirm a design, select materials, or mark a
+    solution as released.
+    """
+
+    schema_version: str = "seal_design_intake_v0.8.3"
+    status: str = "no_design_dataset"
+    known_fields: List[DesignFieldStatusProjection] = Field(default_factory=list)
+    missing_fields: List[DesignFieldStatusProjection] = Field(default_factory=list)
+    screening_checks: List[DesignScreeningCheckProjection] = Field(default_factory=list)
+    escalation_triggers: List[DesignEscalationTriggerProjection] = Field(
+        default_factory=list
+    )
+    next_required_fields: List[str] = Field(default_factory=list)
+    boundary_notice: str = ""
+    event_names: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CaseWorkspaceProjection(BaseModel):
     """Top-level UI-facing read model for a single engineering case."""
 
@@ -621,6 +676,9 @@ class CaseWorkspaceProjection(BaseModel):
     engineering_path: Optional[EngineeringPath] = None
     seal_application_profile: SealApplicationProfileView = Field(
         default_factory=SealApplicationProfileView
+    )
+    design_intake: SealDesignIntakeProjection = Field(
+        default_factory=SealDesignIntakeProjection
     )
     cockpit_view: EngineeringCockpitView = Field(default_factory=EngineeringCockpitView)
     deep_dive_tabs: List[DeepDiveTabProjection] = Field(default_factory=list)

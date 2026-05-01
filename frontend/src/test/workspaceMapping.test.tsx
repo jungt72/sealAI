@@ -109,6 +109,52 @@ describe("mapWorkspaceView", () => {
           notes: ["Dn-Wert liegt im ueblichen Richtbereich."],
         },
       ],
+      design_intake: {
+        schema_version: "seal_design_intake_v0.8.3",
+        status: "minimal_dataset_missing",
+        known_fields: [
+          {
+            key: "medium",
+            label: "Medium",
+            status: "provided_not_released",
+            criticality: "critical",
+            value: "Salzwasser",
+            reason: "Medium bestimmt den Nachweisbedarf.",
+          },
+        ],
+        missing_fields: [
+          {
+            key: "leakage_target",
+            label: "Leckageziel",
+            status: "not_specified",
+            criticality: "critical",
+            value: null,
+            reason: "Ohne Leckageziel bleibt die Anfrage offen.",
+          },
+        ],
+        screening_checks: [
+          {
+            check_id: "oring.squeeze_pct",
+            label: "Verpressung",
+            status: "screening_ok",
+            value: 15.5,
+            unit: "%",
+            inputs: ["cross_section_mm", "groove_depth_mm"],
+            message: "Vorprüfung.",
+          },
+        ],
+        escalation_triggers: [
+          {
+            trigger_id: "high_pressure_large_gap",
+            label: "Hochdruck und grosser Spalt",
+            severity: "critical",
+            reason: "Stützringbedarf prüfen.",
+          },
+        ],
+        next_required_fields: ["leakage_target"],
+        boundary_notice: "Read-only Vorqualifikation fuer Herstellerpruefung.",
+        event_names: ["SealDesignIntakeGenerated"],
+      },
       case_summary: {
         thread_id: "case-123",
         turn_count: 4,
@@ -224,5 +270,10 @@ describe("mapWorkspaceView", () => {
     expect(workspace.technicalDerivations?.[0]?.calcType).toBe("rwdr");
     expect(workspace.technicalDerivations?.[0]?.dnValue).toBe(75000);
     expect(workspace.technicalDerivations?.[0]?.temperatureHeadroomC).toBe(140);
+    expect(workspace.designIntake?.status).toBe("minimal_dataset_missing");
+    expect(workspace.designIntake?.knownFields[0]?.label).toBe("Medium");
+    expect(workspace.designIntake?.missingFields[0]?.key).toBe("leakage_target");
+    expect(workspace.designIntake?.screeningChecks[0]?.value).toBe(15.5);
+    expect(workspace.designIntake?.escalationTriggers[0]?.severity).toBe("critical");
   });
 });
