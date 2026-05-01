@@ -5,8 +5,6 @@ import os
 import re
 from typing import Any, Optional, TypedDict
 
-import openai
-
 from app.agent.communication.llm_service import OpenAIHumanCommunicationLLMService
 from app.agent.communication.orchestrator import ConversationOrchestrator
 from app.agent.runtime.reply_composition import (
@@ -101,6 +99,8 @@ async def collect_governed_visible_reply(
 
     if os.environ.get("HUMAN_COMMUNICATION_LAYER_ENABLED", "true").lower() != "false":
         try:
+            import openai  # noqa: PLC0415
+
             orchestrator = ConversationOrchestrator(
                 llm_service=OpenAIHumanCommunicationLLMService(
                     model_name=_GOVERNED_REFORMULATE_MODEL,
@@ -152,6 +152,8 @@ async def collect_governed_visible_reply(
     )
 
     try:
+        import openai  # noqa: PLC0415
+
         client = openai.AsyncOpenAI()
         accumulated_chunks: list[str] = []
         stream = await client.chat.completions.create(
@@ -203,8 +205,8 @@ def _guard_unsafe_user_instruction(
 
     next_question = str(getattr(turn_context, "primary_question", "") or "").strip()
     parts = [
-        "Das kann ich nicht als technische Aussage übernehmen.",
-        "Werkstoff, Dichtungstyp oder Freigabe prüfe ich nur gegen den aktuellen Fallstand, offene Punkte und nachvollziehbare Quellen.",
+        "Das kann ich so nicht seriös bestätigen.",
+        "Ob ein Werkstoff, Dichtungstyp oder eine Lösung passt, prüfe ich nur gegen den aktuellen Fallstand, offene Punkte und nachvollziehbare Quellen.",
     ]
     if next_question:
         parts.append(next_question)

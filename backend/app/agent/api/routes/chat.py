@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from app.agent.api.models import ChatRequest, ChatResponse, build_public_response_core
 from app.agent.state.models import GovernedSessionState
 from app.agent.graph import GraphState
-from app.agent.runtime.user_facing_reply import collect_governed_visible_reply
+from app.agent.runtime.user_facing_reply import collect_governed_visible_reply, _guard_unsafe_user_instruction
 from app.agent.graph.output_contract_assembly import (
     classify_message_as_knowledge_override,
 )
@@ -190,6 +190,21 @@ async def _chat_response_from_knowledge_response(
 
 
 async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
+    early_guard_reply = _guard_unsafe_user_instruction(
+        latest_user_message=request.message,
+        turn_context=None,
+    )
+    if early_guard_reply is not None:
+        return ChatResponse(
+            session_id=request.session_id,
+            **build_public_response_core(
+                reply=early_guard_reply,
+                structured_state=None,
+                policy_path="governed_guard",
+                run_meta={"guard": "unsafe_forced_case_claim"},
+            ),
+        )
+
     dispatch = await _resolve_runtime_dispatch(request, current_user=current_user)
     if dispatch.fast_response is not None:
         return await _chat_response_from_fast_response(

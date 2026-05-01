@@ -8,7 +8,7 @@ from typing import Any, AsyncGenerator, Dict, Literal, Optional
 from fastapi import HTTPException
 from langchain_core.messages import BaseMessage
 from app.agent.state.models import GovernedSessionState, TurnContextContract
-from app.agent.runtime.user_facing_reply import collect_governed_visible_reply
+from app.agent.runtime.user_facing_reply import collect_governed_visible_reply, _guard_unsafe_user_instruction
 from app.agent.graph.output_contract_assembly import (
     build_governed_conversation_strategy_contract,
     classify_message_as_knowledge_override,
@@ -459,6 +459,15 @@ async def event_generator(
     *,
     current_user: RequestUser,
 ) -> AsyncGenerator[str, None]:
+    early_guard_reply = _guard_unsafe_user_instruction(
+        latest_user_message=request.message,
+        turn_context=None,
+    )
+    if early_guard_reply is not None:
+        yield f"data: {json.dumps({'type': 'state_update', 'reply': early_guard_reply, 'response_class': 'structured_clarification', 'policy_path': 'governed_guard'}, default=str)}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
     from app.agent.api.routes.chat import _resolve_runtime_dispatch # noqa: PLC0415
     dispatch = await _resolve_runtime_dispatch(
         request,
