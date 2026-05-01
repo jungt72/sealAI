@@ -189,8 +189,9 @@ def _build_messages(
                 "content": (
                     "STRICT SMALL-TALK TURN:\n"
                     "- Antworte nur auf die Begruessung oder die Frage, wie es dir geht.\n"
-                    "- Antworte warm, menschlich und natuerlich in 2 bis 3 kurzen Saetzen.\n"
-                    "- Wenn der Nutzer fragt, wie es dir geht: Sage sinngemaess, dass du als KI keine persoenlichen Gefuehle hast, aber einsatzbereit bist und gern unterstuetzt.\n"
+                    "- Antworte frei, warm, menschlich und natuerlich in 1 bis 3 kurzen Saetzen.\n"
+                    "- Du darfst locker und umgangssprachlich antworten, zum Beispiel sinngemaess, dass es dir gut geht und du gern hilfst.\n"
+                    "- Keine erzwungene KI-Disclaimer-Formulierung."
                     "- Sprich den Nutzer mit du an, nicht mit Sie.\n"
                     "- Keine technischen Rueckfragen.\n"
                     "- Keine Erwaehnung von Medium, Druck, Temperatur, Parametern oder Werkstoffwahl.\n"
@@ -360,8 +361,6 @@ def _normalize_smalltalk_address(reply: str) -> str:
         (r"\bWenn\s+Sie\s+möchten\b", "Wenn du möchtest"),
         (r"\bWenn\s+Sie\s+magst\b", "Wenn du magst"),
         (r"\bWenn\s+Sie\b", "Wenn du"),
-        (r"\bIch\s+hab\s+keine\s+persönlichen\s+Gefühle\b", "Als KI habe ich keine persönlichen Gefühle"),
-        (r"\bIch\s+habe\s+keine\s+persönlichen\s+Gefühle\b", "Als KI habe ich keine persönlichen Gefühle"),
         (r"\bbereit\s+und\s+einsatzbereit\b", "voll einsatzbereit"),
     )
     for pattern, replacement in replacements:
