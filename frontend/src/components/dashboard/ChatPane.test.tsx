@@ -108,19 +108,19 @@ describe("ChatPane", () => {
 
   it("renders assistant replies without a bordered bubble surface", () => {
     agentStreamMockState.messages = [
-      { role: "assistant", content: "**Arbeitsstand:** Medium offen." },
+      { role: "assistant", content: "Gern, dann grenzen wir den Fall sauber ein." },
     ];
 
     render(<ChatPane caseId="case-parameter" />);
 
-    const assistantText = screen.getByText("Arbeitsstand:");
+    const assistantText = screen.getByText("Gern, dann grenzen wir den Fall sauber ein.");
     const assistantSurface = assistantText.closest(".max-w-\\[min\\(720px\\,84\\%\\)\\]");
     expect(assistantSurface).not.toHaveClass("border");
     expect(assistantSurface).not.toHaveClass("bg-white");
     expect(assistantSurface).not.toHaveClass("shadow-sm");
   });
 
-  it("renders assistant markdown with compact professional structure", () => {
+  it("turns internal working-state markdown into human chat language", () => {
     agentStreamMockState.messages = [
       { role: "user", content: "Flachdichtung, Wasser, 80 Grad und 6 bar." },
       {
@@ -135,10 +135,12 @@ describe("ChatPane", () => {
 
     render(<ChatPane caseId="case-parameter" />);
 
-    expect(screen.getByText("Arbeitsstand:")).toBeInTheDocument();
-    expect(screen.getByText("Wasser, 80 °C und 6 bar.")).toBeInTheDocument();
-    expect(screen.getByText("Dichtungsart: Flachdichtung")).toBeInTheDocument();
-    expect(screen.getByText("Naechste sinnvolle Frage:")).toBeInTheDocument();
+    expect(screen.getByText(/Okay, ich habe/)).toBeInTheDocument();
+    expect(screen.getByText(/Wasser, 80 °C und 6 bar/)).toBeInTheDocument();
+    expect(screen.getByText(/Dichtungsart: Flachdichtung/)).toBeInTheDocument();
+    expect(screen.getByText("Sitzt die Dichtung zwischen zwei genormten Flanschen?")).toBeInTheDocument();
+    expect(screen.queryByText("Arbeitsstand:")).not.toBeInTheDocument();
+    expect(screen.queryByText("Naechste sinnvolle Frage:")).not.toBeInTheDocument();
   });
 
   it("replaces the generic clarification fallback with the backend next-best-question projection", () => {
@@ -168,10 +170,44 @@ describe("ChatPane", () => {
 
     render(<ChatPane caseId="case-parameter" />);
 
-    expect(screen.getByText("Ich habe deine Angaben als aktuellen Arbeitsstand übernommen.")).toBeInTheDocument();
-    expect(screen.getByText("Medium: Wasser")).toBeInTheDocument();
+    expect(screen.getByText(/Okay, ich habe Medium: Wasser/)).toBeInTheDocument();
     expect(screen.getByText("Welche Flansch- oder Normgeometrie liegt vor?")).toBeInTheDocument();
     expect(screen.queryByText("Wo sitzt die Dichtung genau?")).not.toBeInTheDocument();
+    expect(screen.queryByText("Arbeitsstand:")).not.toBeInTheDocument();
+  });
+
+  it("does not expose internal open-field reasoning as chat copy", () => {
+    agentStreamMockState.messages = [
+      { role: "user", content: "danke, ich möchte meine dichtungssituation besprechen" },
+      {
+        role: "assistant",
+        content:
+          "**Arbeitsstand:** Ich habe deine Angaben als aktuellen Arbeitsstand übernommen.\n\n" +
+          "Dichtungstyp-Richtung: Dichtungstyp offen\n\n" +
+          "**Warum das wichtig ist:** Der Dichtungstyp grenzt Pflichtangaben, Risiken und den Herstellerpruefpfad zuerst ein.\n\n" +
+          "**Naechste sinnvolle Frage:** Um welchen Dichtungstyp geht es, zum Beispiel O-Ring, Wellendichtring, Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?",
+      },
+    ];
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.getByText("Gern. Dann lass uns die Dichtungssituation Schritt für Schritt eingrenzen.")).toBeInTheDocument();
+    expect(screen.getByText(/Um welchen Dichtungstyp geht es/)).toBeInTheDocument();
+    expect(screen.queryByText("Dichtungstyp-Richtung: Dichtungstyp offen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Der Dichtungstyp grenzt Pflichtangaben, Risiken und den Herstellerpruefpfad zuerst ein.")).not.toBeInTheDocument();
+  });
+
+  it("does not flash structured working-state drafts while streaming", () => {
+    agentStreamMockState.isStreaming = true;
+    agentStreamMockState.streamingText =
+      "**Arbeitsstand:** Ich habe deine Angaben als aktuellen Arbeitsstand übernommen.\n\n" +
+      "**Naechste sinnvolle Frage:** Um welchen Dichtungstyp geht es?";
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.getByText("SeaLAI bereitet die Antwort vor...")).toBeInTheDocument();
+    expect(screen.queryByText("Arbeitsstand:")).not.toBeInTheDocument();
+    expect(screen.queryByText("Naechste sinnvolle Frage:")).not.toBeInTheDocument();
   });
 
   it("auto-accepts safe user-stated chat deltas as working state", async () => {

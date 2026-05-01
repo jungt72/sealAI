@@ -122,9 +122,107 @@ function isGenericClarificationFallback(content: string): boolean {
   );
 }
 
-function buildWorkspaceGroundedChatReply(content: string, workspace: WorkspaceView | null): string {
-  if (!workspace || !isGenericClarificationFallback(content)) {
+function joinHumanList(items: string[]): string {
+  if (items.length <= 1) {
+    return items[0] || "";
+  }
+  if (items.length === 2) {
+    return `${items[0]} und ${items[1]}`;
+  }
+  return `${items.slice(0, -1).join(", ")} und ${items[items.length - 1]}`;
+}
+
+function isOpenPlaceholder(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return (
+    normalized.includes("offen") ||
+    normalized.includes("unklar") ||
+    normalized.includes("fehlt") ||
+    normalized.includes("noch nicht")
+  );
+}
+
+function shouldUseReasonInChat(reason: string): boolean {
+  const normalized = reason.toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return !/pflichtangaben|herstellerpruefpfad|herstellerprüfpfad|grenzt|validierungspfad|prüfpfad/.test(normalized);
+}
+
+function humanizeStructuredAssistantReply(content: string): string {
+  const normalized = content.toLowerCase();
+  const hasStructuredStatus =
+    normalized.includes("arbeitsstand:") &&
+    (normalized.includes("naechste sinnvolle frage:") || normalized.includes("nächste sinnvolle frage:"));
+
+  if (!hasStructuredStatus) {
     return content;
+  }
+
+  const lines = content
+    .replace(/\*\*/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const facts = lines
+    .filter((line) => /^[-*]\s+/.test(line) || /^[^:]{2,48}:\s+.+/.test(line))
+    .map((line) => {
+      const cleaned = line.replace(/^[-*]\s+/, "").trim();
+      if (cleaned.toLowerCase().startsWith("arbeitsstand:")) {
+        return cleaned.replace(/^arbeitsstand:\s*/i, "").trim();
+      }
+      return cleaned;
+    })
+    .filter((line) => {
+      const lower = line.toLowerCase();
+      return (
+        Boolean(line) &&
+        !lower.startsWith("ich habe deine angaben") &&
+        !lower.startsWith("warum das wichtig ist:") &&
+        !lower.startsWith("naechste sinnvolle frage:") &&
+        !lower.startsWith("nächste sinnvolle frage:") &&
+        !isOpenPlaceholder(line)
+      );
+    })
+    .slice(0, 4);
+
+  const reasonLine = lines.find((line) => line.toLowerCase().startsWith("warum das wichtig ist:")) || "";
+  const reason = humanizeDisplayText(reasonLine.replace(/^warum das wichtig ist:\s*/i, "").trim());
+
+  const questionLine =
+    lines.find((line) => line.toLowerCase().startsWith("naechste sinnvolle frage:")) ||
+    lines.find((line) => line.toLowerCase().startsWith("nächste sinnvolle frage:")) ||
+    "";
+  const question = humanizeDisplayText(questionLine.replace(/^n(?:ae|ä)chste sinnvolle frage:\s*/i, "").trim());
+
+  const intro = facts.length
+    ? `Okay, ich habe ${joinHumanList(facts)} als aktuellen Stand mitgenommen.`
+    : "Gern. Dann lass uns die Dichtungssituation Schritt für Schritt eingrenzen.";
+  const bridge =
+    reason && shouldUseReasonInChat(reason)
+      ? `Für den nächsten Schritt ist vor allem wichtig: ${reason}`
+      : "";
+
+  return [intro, bridge, question].filter(Boolean).join("\n\n");
+}
+
+function isStructuredAssistantDraft(content: string): boolean {
+  const normalized = content.toLowerCase();
+  return (
+    normalized.includes("arbeitsstand:") ||
+    normalized.includes("warum das wichtig ist:") ||
+    normalized.includes("naechste sinnvolle frage:") ||
+    normalized.includes("nächste sinnvolle frage:")
+  );
+}
+
+function buildWorkspaceGroundedChatReply(content: string, workspace: WorkspaceView | null): string {
+  const humanizedContent = humanizeStructuredAssistantReply(content);
+
+  if (!workspace || !isGenericClarificationFallback(content)) {
+    return humanizedContent;
   }
 
   const primaryQuestion =
@@ -151,12 +249,15 @@ function buildWorkspaceGroundedChatReply(content: string, workspace: WorkspaceVi
       "",
   );
 
-  return [
-    "**Arbeitsstand:** Ich habe deine Angaben als aktuellen Arbeitsstand übernommen.",
-    facts.length ? facts.map((item) => `- ${item}`).join("\n") : "",
-    reason ? `**Warum das wichtig ist:** ${reason}` : "",
-    `**Naechste sinnvolle Frage:** ${readableQuestion}`,
-  ].filter(Boolean).join("\n\n");
+  const intro = facts.length
+    ? `Okay, ich habe ${joinHumanList(facts)} als aktuellen Stand mitgenommen.`
+    : "Gern. Dann lass uns die Dichtungssituation Schritt für Schritt eingrenzen.";
+  const bridge =
+    reason && shouldUseReasonInChat(reason)
+      ? `Für den nächsten Schritt ist vor allem wichtig: ${reason}`
+      : "";
+
+  return [intro, bridge, readableQuestion].filter(Boolean).join("\n\n");
 }
 
 function ProposedDeltaPanel({
@@ -314,6 +415,10 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
     proposedDeltaKey && settledDeltaKey !== proposedDeltaKey && !shouldAutoAcceptWorkingState
       ? combinedDeltaFields
       : [];
+  const visibleStreamingText = streamingText && !isStructuredAssistantDraft(streamingText)
+    ? buildWorkspaceGroundedChatReply(streamingText, workspace)
+    : "";
+  const showStreamingPlaceholder = isStreaming && (!streamingText || isStructuredAssistantDraft(streamingText));
 
   useEffect(() => {
     if (
@@ -442,7 +547,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
                   />
                 ))}
 
-                {streamingText && <MessageBubble role="assistant" content={streamingText} isStreaming />}
+                {visibleStreamingText && <MessageBubble role="assistant" content={visibleStreamingText} isStreaming />}
 
                 <ProposedDeltaPanel
                   caseId={currentCaseId}
@@ -467,7 +572,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
                   </div>
                 )}
 
-                {isStreaming && !streamingText && (
+                {showStreamingPlaceholder && (
                   <div className="flex justify-start gap-3">
                     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#0B5BD3] text-white shadow-sm">
                       <Bot size={16} />
