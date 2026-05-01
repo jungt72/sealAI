@@ -51,7 +51,8 @@ def test_curated_factcards_are_used_before_injected_rag_retriever() -> None:
     response = service.answer("Was ist PTFE?")
 
     assert response.knowledge_answer_view.answer_available is True
-    assert "PTFE-F-001" in response.content
+    assert "PTFE-F-001" not in response.content
+    assert "Temperaturverhalten" in response.content
     assert calls == []
 
 
@@ -157,3 +158,16 @@ def test_existing_knowledge_response_fields_remain_compatible() -> None:
     assert response.no_case_created is True
     assert response.citations
     assert response.source_classification is PreGateClassification.KNOWLEDGE_QUERY
+
+
+def test_ptfe_fkm_comparison_is_human_general_orientation() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "Was ist der Unterschied zwischen PTFE und FKM?"
+    )
+
+    assert response.no_case_created is True
+    assert "Kurz gesagt" in response.content
+    assert "PTFE" in response.content
+    assert "FKM" in response.content
+    assert "keine Auswahl" in response.content
+    assert "freigegeben" not in response.content.lower()

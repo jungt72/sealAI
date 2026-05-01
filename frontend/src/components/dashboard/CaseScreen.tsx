@@ -56,7 +56,9 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
         await patchAgentOverrides(resolvedCaseId, { overrides });
         await workspaceResult.refresh();
         setParameterConfirmation(
-          `Angaben übernommen: ${summary}. SeaLAI rechnet den Fall neu durch und zeigt weiter, was noch offen ist.`,
+          summary
+            ? `Alles klar, ich habe ${summary} übernommen.`
+            : "Alles klar, ich habe die Angaben übernommen.",
         );
       } catch (error) {
         setParameterConfirmation(

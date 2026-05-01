@@ -135,10 +135,10 @@ describe("ChatPane", () => {
 
     render(<ChatPane caseId="case-parameter" />);
 
-    expect(screen.getByText(/Okay, ich habe/)).toBeInTheDocument();
-    expect(screen.getByText(/Wasser, 80 °C und 6 bar/)).toBeInTheDocument();
-    expect(screen.getByText(/Dichtungsart: Flachdichtung/)).toBeInTheDocument();
+    expect(screen.getByText("Alles klar, das reicht für den nächsten Schritt.")).toBeInTheDocument();
     expect(screen.getByText("Sitzt die Dichtung zwischen zwei genormten Flanschen?")).toBeInTheDocument();
+    expect(screen.queryByText(/Wasser, 80 °C und 6 bar/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Dichtungsart: Flachdichtung/)).not.toBeInTheDocument();
     expect(screen.queryByText("Arbeitsstand:")).not.toBeInTheDocument();
     expect(screen.queryByText("Naechste sinnvolle Frage:")).not.toBeInTheDocument();
   });
@@ -170,8 +170,9 @@ describe("ChatPane", () => {
 
     render(<ChatPane caseId="case-parameter" />);
 
-    expect(screen.getByText(/Okay, ich habe Medium: Wasser/)).toBeInTheDocument();
+    expect(screen.getByText("Alles klar, das reicht für den nächsten Schritt.")).toBeInTheDocument();
     expect(screen.getByText("Welche Flansch- oder Normgeometrie liegt vor?")).toBeInTheDocument();
+    expect(screen.queryByText(/Medium: Wasser/)).not.toBeInTheDocument();
     expect(screen.queryByText("Wo sitzt die Dichtung genau?")).not.toBeInTheDocument();
     expect(screen.queryByText("Arbeitsstand:")).not.toBeInTheDocument();
   });

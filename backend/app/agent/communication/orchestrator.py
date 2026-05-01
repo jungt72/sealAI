@@ -373,10 +373,9 @@ def _format_next_question(state: CaseConversationState) -> str:
 def _no_release_answer(state: CaseConversationState) -> str:
     return (
         "Nein, so eine abschliessende Auslegungszusage kann SeaLAI nicht geben. "
-        "SeaLAI kann den Arbeitsstand strukturieren, Risiken und offene Punkte sichtbar machen "
+        "SeaLAI kann den Fall strukturieren, Risiken und offene Punkte sichtbar machen "
         "und eine Anfragebasis vorbereiten. Die finale technische Pruefung bleibt beim Hersteller "
         "oder einer verantwortlichen technischen Stelle."
-        + _format_known_fields(state)
         + _format_next_question(state)
     ).strip()
 

@@ -125,9 +125,9 @@ class CommunicationGuard:
         if missing:
             return (
                 "Ich kann die Antwort gerade nicht sauber genug absichern. "
-                "Aus dem aktuellen Arbeitsstand fehlen noch: "
+                "Für den nächsten belastbaren Schritt fehlen noch: "
                 + ", ".join(missing)
-                + ". Bitte ergänze diese Angaben, dann kann SeaLAI den nächsten Schritt prüfen."
+                + ". Bitte ergänze diese Angaben, dann prüfen wir weiter."
             )
         if state.allowed_next_actions:
             return str(state.allowed_next_actions[0])

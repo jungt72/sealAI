@@ -122,16 +122,6 @@ function isGenericClarificationFallback(content: string): boolean {
   );
 }
 
-function joinHumanList(items: string[]): string {
-  if (items.length <= 1) {
-    return items[0] || "";
-  }
-  if (items.length === 2) {
-    return `${items[0]} und ${items[1]}`;
-  }
-  return `${items.slice(0, -1).join(", ")} und ${items[items.length - 1]}`;
-}
-
 function isOpenPlaceholder(value: string): boolean {
   const normalized = value.toLowerCase();
   return (
@@ -160,6 +150,18 @@ function humanizeQuestionForChat(question: string): string {
     return "Worum geht es ungefähr: eine rotierende Welle, eine statische Verbindung wie Flansch oder O-Ring, eine lineare Bewegung, Hydraulik/Pneumatik oder eine Gleitringdichtung an einer Pumpe?";
   }
   return question;
+}
+
+function buildNaturalCaseProgressReply(reason: string, question: string, hasFacts: boolean): string {
+  const intro = hasFacts
+    ? "Alles klar, das reicht für den nächsten Schritt."
+    : "Gern. Dann lass uns die Dichtungssituation Schritt für Schritt eingrenzen.";
+  const bridge =
+    reason && shouldUseReasonInChat(reason)
+      ? `Wichtig ist jetzt vor allem: ${reason}`
+      : "";
+
+  return [intro, bridge, question].filter(Boolean).join("\n\n");
 }
 
 function humanizeStructuredAssistantReply(content: string): string {
@@ -212,15 +214,7 @@ function humanizeStructuredAssistantReply(content: string): string {
     humanizeDisplayText(questionLine.replace(/^n(?:ae|ä)chste sinnvolle frage:\s*/i, "").trim()),
   );
 
-  const intro = facts.length
-    ? `Okay, ich habe ${joinHumanList(facts)} als aktuellen Stand mitgenommen.`
-    : "Gern. Dann lass uns die Dichtungssituation Schritt für Schritt eingrenzen.";
-  const bridge =
-    reason && shouldUseReasonInChat(reason)
-      ? `Für den nächsten Schritt ist vor allem wichtig: ${reason}`
-      : "";
-
-  return [intro, bridge, question].filter(Boolean).join("\n\n");
+  return buildNaturalCaseProgressReply(reason, question, facts.length > 0);
 }
 
 function isStructuredAssistantDraft(content: string): boolean {
@@ -264,15 +258,7 @@ function buildWorkspaceGroundedChatReply(content: string, workspace: WorkspaceVi
       "",
   );
 
-  const intro = facts.length
-    ? `Okay, ich habe ${joinHumanList(facts)} als aktuellen Stand mitgenommen.`
-    : "Gern. Dann lass uns die Dichtungssituation Schritt für Schritt eingrenzen.";
-  const bridge =
-    reason && shouldUseReasonInChat(reason)
-      ? `Für den nächsten Schritt ist vor allem wichtig: ${reason}`
-      : "";
-
-  return [intro, bridge, readableQuestion].filter(Boolean).join("\n\n");
+  return buildNaturalCaseProgressReply(reason, readableQuestion, facts.length > 0);
 }
 
 function ProposedDeltaPanel({

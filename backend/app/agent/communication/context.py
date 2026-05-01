@@ -152,9 +152,6 @@ class CaseContextAssembler:
             if primary:
                 actions.append(primary)
 
-        if deterministic_reply:
-            actions.append(str(deterministic_reply).strip())
-
         return CaseConversationState(
             case_id=case_id,
             phase=str(getattr(turn_context, "conversation_phase", "") or "unknown"),

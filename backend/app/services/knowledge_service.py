@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -233,7 +234,9 @@ class KnowledgeService:
                 answer_result=result,
             )
 
-        lines = ["Aus der kuratierten SeaLAI-Wissensbasis:"]
+        lines = [
+            "Ich habe dazu kuratierte SeaLAI-Hinweise gefunden. Kurz eingeordnet:",
+        ]
         sources: list[KnowledgeSource] = []
         seen_sources: set[str] = set()
         for card in cards:
@@ -243,10 +246,10 @@ class KnowledgeService:
             value = str(card.get("value") or "").strip()
             units = str(card.get("units") or "").strip()
             source_id = str(card.get("source") or "").strip()
-            source_marker = f" [{source_id}]" if source_id else ""
-            label = f"{topic}/{prop}" if prop else topic
+            label = _human_fact_label(topic, prop)
             rendered_value = f"{value} {units}".strip()
-            lines.append(f"- {label}: {rendered_value} ({card_id}){source_marker}")
+            if rendered_value:
+                lines.append(f"- {label}: {rendered_value}.")
             if source_id and source_id not in seen_sources:
                 source = self._source_for(source_id)
                 if source is not None:
@@ -255,13 +258,13 @@ class KnowledgeService:
 
         if sources:
             lines.append(
-                "Quellen: "
+                "Quelle: "
                 + "; ".join(f"{source.source_id}: {source.title}" for source in sources)
             )
         lines.append(
-            "Das ist eine Wissensantwort, kein angelegter technischer Fall "
-            "und keine Herstellerfreigabe. Fuer eine konkrete Anwendung ist "
-            "Herstellerpruefung erforderlich."
+            "Das ist allgemeine Orientierung, keine konkrete Auswahl und keine "
+            "Herstellerfreigabe. Fuer deinen konkreten Fall brauchen wir Medium, "
+            "Temperatur, Druck, Bewegung und Einbausituation."
         )
         answer = "\n".join(lines)
         result = _hit_result(answer, tuple(sources))
@@ -425,6 +428,47 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
     truth, compatibility claims, or manufacturer approval.
     """
     text = str(user_input or "").casefold()
+    asks_material_comparison = any(
+        token in text for token in ("unterschied", "vergleich", " vs ", "besser", "ptfe oder fkm")
+    )
+    if asks_material_comparison and "ptfe" in text and "fkm" in text:
+        answer = "\n".join(
+            [
+                "Kurz gesagt: PTFE und FKM sind zwei sehr unterschiedliche Werkstoffrichtungen.",
+                "",
+                "PTFE ist typischerweise stark bei chemischer Beständigkeit, niedriger Reibung und höheren Temperaturen. Es ist aber weniger elastisch und stärker von Konstruktion, Vorspannung, Gegenlauffläche und Montage abhängig.",
+                "",
+                "FKM ist ein Fluorelastomer. Es ist elastischer und in vielen klassischen Elastomer-Dichtungen gut handhabbar, hängt aber stark von Medium, Temperatur, Druck und Einsatzdauer ab.",
+                "",
+                "Für einen konkreten Fall ist daraus noch keine Auswahl ableitbar. Dafür brauche ich mindestens Medium, Temperatur, Druck, Bewegung und die Dichtstelle.",
+            ]
+        )
+        return KnowledgeAnswerResult(
+            answer=answer,
+            answer_available=True,
+            rag_lookup_attempted=True,
+            rag_answer_found=False,
+            rag_miss=True,
+            source_type=SourceType.system_derived,
+            validation_status=ValidationStatus.unvalidated,
+            use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+            not_final_release=True,
+            fallback_allowed=False,
+            fallback_used=False,
+            user_visible_label="SeaLAI-Grundwissen - allgemeine Orientierung",
+            missing_reason="domain_material_comparison_without_rag_hit",
+            next_step=(
+                "Bei konkreter Anwendung Medium, Temperatur, Druck, Bewegung "
+                "und Dichtstelle als governed Case aufnehmen."
+            ),
+            event_names=(
+                "KnowledgeQuestionReceived",
+                "KnowledgeRAGLookupRequested",
+                "KnowledgeRAGAnswerMissing",
+                "SourceValidationStatusAssigned",
+                "KnowledgeAnswerGenerated",
+            ),
+        )
     asks_explanation = any(
         token in text
         for token in (
@@ -576,6 +620,24 @@ def _fallback_text_from_provider_result(raw_result: Any) -> str:
     return ""
 
 
+def _human_fact_label(topic: str, prop: str) -> str:
+    topic_text = str(topic or "").replace("_", " ").strip() or "Wissenseintrag"
+    prop_text = str(prop or "").replace("_", " ").strip()
+    prop_map = {
+        "chemical resistance": "chemische Beständigkeit",
+        "temperature window": "Temperaturbereich",
+        "thermal": "Temperaturverhalten",
+        "chemical": "chemisches Verhalten",
+        "pressure": "Druckbezug",
+        "friction": "Reibung",
+        "wear": "Verschleiß",
+    }
+    readable_prop = prop_map.get(prop_text.casefold(), prop_text)
+    if readable_prop:
+        return f"{topic_text}: {readable_prop}"
+    return topic_text
+
+
 def _settings_fallback_enabled() -> bool:
     try:
         from app.core.config import settings  # noqa: PLC0415
@@ -587,6 +649,8 @@ def _settings_fallback_enabled() -> bool:
 
 def _clean_excerpt(value: Any, *, limit: int = 420) -> str:
     text = " ".join(str(value or "").split())
+    text = re.sub(r"\b[A-Z]{2,8}-[A-Z]-\d{2,4}\b", "", text).strip()
+    text = re.sub(r"\b(?:chemical_resistance|weather_ozone_uv|temperature_window)/", "", text)
     if len(text) <= limit:
         return text
     return text[:limit].rstrip() + "..."

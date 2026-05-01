@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.agent.communication.models import (
@@ -28,6 +30,16 @@ class FakeLLM:
         if isinstance(self.contract, Exception):
             raise self.contract
         return self.contract
+
+
+class CapturingLLM(FakeLLM):
+    def __init__(self, contract: LLMResponseContract) -> None:
+        super().__init__(contract)
+        self.state = None
+
+    async def create_response(self, **kwargs):
+        self.state = kwargs.get("state")
+        return await super().create_response(**kwargs)
 
 
 def _orchestrator(contract: LLMResponseContract | Exception) -> ConversationOrchestrator:
@@ -498,4 +510,38 @@ async def test_trace_sink_receives_append_only_metadata() -> None:
     assert sink.traces[0].allowed_claim_ids_used == [
         "field.missing.speed_rpm",
         "field.missing.shaft_diameter_mm",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_governed_reply_context_does_not_feed_legacy_working_state_text_to_llm() -> None:
+    llm = CapturingLLM(
+        LLMResponseContract(
+            mode=ConversationMode.CASE_QUALIFICATION,
+            assistant_message="Welches Medium liegt direkt an der Dichtstelle an?",
+            used_claim_ids=["action.next.1"],
+        )
+    )
+    turn_context = SimpleNamespace(
+        confirmed_facts_summary=["Anlage/Baugruppe: Pumpe"],
+        open_points_summary=["Medium"],
+        primary_question="Welches Medium liegt direkt an der Dichtstelle an?",
+        conversation_phase="qualification",
+    )
+    orchestrator = ConversationOrchestrator(llm_service=llm, enabled=True)
+
+    await orchestrator.handle_governed_reply(
+        response_class="structured_clarification",
+        turn_context=turn_context,
+        fallback_text=(
+            "Arbeitsstand: Ich habe deine Angaben als aktuellen Arbeitsstand übernommen.\n"
+            "Naechste sinnvolle Frage: Welches Medium liegt direkt an der Dichtstelle an?"
+        ),
+        latest_user_message="Ich möchte meine Dichtungssituation besprechen.",
+        case_id="case-1",
+    )
+
+    assert llm.state is not None
+    assert llm.state.allowed_next_actions == [
+        "Welches Medium liegt direkt an der Dichtstelle an?"
     ]

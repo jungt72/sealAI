@@ -467,8 +467,7 @@ describe("CaseScreen", () => {
     });
     expect(workspaceRefreshMock).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("chat-pane")).toHaveTextContent(
-      "Angaben übernommen: Drehzahl: 1450 rpm.",
+      "Alles klar, ich habe Drehzahl: 1450 rpm übernommen.",
     );
-    expect(screen.getByTestId("chat-pane")).toHaveTextContent("was noch offen ist");
   });
 });

@@ -83,9 +83,9 @@ def test_curated_hit_is_general_orientation_not_case_specific_release() -> None:
 
     assert view.use_scope == "general_technical_orientation_only"
     assert view.not_final_release is True
-    assert "kein angelegter technischer Fall" in response.content
+    assert "allgemeine Orientierung" in response.content
+    assert "keine konkrete Auswahl" in response.content
     assert "keine Herstellerfreigabe" in response.content
-    assert "Herstellerpruefung erforderlich" in response.content
 
 
 def test_rag_miss_returns_safe_contract_without_technical_suitability_claim() -> None:
