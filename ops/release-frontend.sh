@@ -6,6 +6,7 @@ cd /home/thorsten/sealai/frontend
 REPO_ROOT="/home/thorsten/sealai"
 NODE_BIN="${NODE_BIN:-/usr/bin/node}"
 NPM_BIN="${NPM_BIN:-/usr/bin/npm}"
+export PATH="$(dirname "${NODE_BIN}"):${PATH}"
 
 echo ">> Using Node runtime"
 "${NODE_BIN}" -v
