@@ -196,9 +196,24 @@ def test_complaint_failure_asks_seal_type_or_damage_evidence_without_root_cause(
     )
 
     text = " ".join(question.question for question in result.next_best_questions)
-    assert _focuses(result)[0] == "seal_type"
+    assert _focuses(result)[:3] == ["safety_context", "leak_location", "photo_or_evidence"]
+    assert "Sicherheits" in result.next_best_questions[0].question
     assert "finale Ursache" not in text
     assert "Root Cause" not in text
+
+
+def test_known_failure_seal_type_uses_research_grade_diagnostic_order() -> None:
+    result = derive_needs_current_state_and_questions(
+        _state(
+            case_type=CaseType.failure_analysis,
+            seal_type=SealType.radial_shaft_seal,
+            profile={"seal_type": "rwdr", "damage_pattern": "leakage"},
+        )
+    )
+
+    focuses = _focuses(result)
+    assert focuses[:3] == ["safety_context", "leak_location", "photo_or_evidence"]
+    assert "Drehzahl" not in result.next_best_questions[0].question
 
 
 def test_replacement_legacy_asks_marking_dimensions_photo_without_identity_claim() -> None:

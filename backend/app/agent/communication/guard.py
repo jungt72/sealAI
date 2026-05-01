@@ -35,9 +35,15 @@ class CommunicationGuard:
     _allowed_proposal_units: dict[str, set[str | None]] = {
         "speed_rpm": {"rpm", "1/min", "u/min", None},
         "shaft_diameter_mm": {"mm", None},
+        "housing_bore_mm": {"mm", None},
+        "installation_width_mm": {"mm", None},
         "pressure_bar": {"bar", None},
         "temperature_c": {"degC", "c", "°c", None},
+        "surface_roughness_ra_um": {"um", "µm", None},
+        "hardness_shore_a": {"Shore A", "shore a", None},
         "medium": {None},
+        "seal_type": {None},
+        "damage_pattern": {None},
     }
 
     def validate(

@@ -27,6 +27,8 @@ def test_failed_after_three_months_creates_failure_intake() -> None:
         for candidate in bundle.failure_analysis_intake.operating_conditions
     )
     assert "damage_evidence" in bundle.failure_analysis_intake.open_points
+    assert bundle.failure_analysis_intake.diagnostic_questions[0].field == "safety_context"
+    assert "Ursache" in bundle.failure_analysis_intake.boundary_notice
 
 
 def test_leaks_again_creates_complaint_triage_with_evidence_request() -> None:
@@ -40,6 +42,12 @@ def test_leaks_again_creates_complaint_triage_with_evidence_request() -> None:
         pattern.pattern == "leakage"
         for pattern in bundle.complaint_intake.damage_patterns
     )
+    assert any(
+        candidate.field == "leak_location"
+        and candidate.raw_value == "shaft_exit"
+        for candidate in bundle.complaint_intake.diagnostic_context
+    )
+    assert "Fotos im ungewaschenen Originalzustand" in bundle.complaint_intake.requested_evidence
     assert "Foto der Dichtlippe / Laufspur" in bundle.complaint_intake.requested_evidence
     assert "operating_conditions" in bundle.complaint_intake.open_points
 
@@ -84,6 +92,46 @@ def test_intake_contains_no_confirmed_cause_or_liability_statement() -> None:
     assert "failureanalysisintakegenerated" in rendered
 
 
+def test_research_grade_failure_intake_extracts_diagnostic_context() -> None:
+    bundle = ComplaintFailureIntakeService().build(
+        "RWDR leckt am Wellenaustritt nach 20 Stunden. "
+        "Medium ist Salzwasser, 6 bar, 80 Grad, 1450 rpm. "
+        "Welle 40 mm, Ra 0,4, FKM, Montage war trocken, Riefen an der Gegenlauffläche."
+    )
+    artifact = bundle.failure_analysis_intake
+    context = {(candidate.field, candidate.raw_value) for candidate in artifact.diagnostic_context}
+    conditions = {condition.field for condition in artifact.operating_conditions}
+    patterns = {pattern.pattern for pattern in artifact.damage_patterns}
+
+    assert ("seal_type", "rwdr") in context
+    assert ("leak_location", "shaft_exit") in context
+    assert ("medium_at_failure", "Salzwasser") in context
+    assert ("shaft_diameter", "40 mm") in context
+    assert ("material_or_compound", "FKM") in context
+    assert "installation_context" in {field for field, _value in context}
+    assert "geometry_surface_context" in {field for field, _value in context}
+    assert {"pressure", "temperature", "speed", "operating_duration"}.issubset(conditions)
+    assert "wear" in patterns
+    assert "safety_context" in artifact.open_points
+    assert artifact.diagnostic_priority[:4] == (
+        "safety_context",
+        "leak_location",
+        "damage_evidence",
+        "seal_type",
+    )
+
+
+def test_failure_intake_prioritizes_evidence_before_root_cause_language() -> None:
+    bundle = ComplaintFailureIntakeService().build("O-Ring ist aufgequollen und plattgedrückt.")
+    artifact = bundle.failure_analysis_intake
+    questions = [question.field for question in artifact.diagnostic_questions]
+    rendered = str(artifact.as_dict()).casefold()
+
+    assert questions[:3] == ["safety_context", "leak_location", "damage_evidence"]
+    assert "ursache bleibt offen" in rendered
+    assert "ursache ist" not in rendered
+
+
 def test_bundle_serializes_intake_projection() -> None:
     payload = ComplaintFailureIntakeService().build(
         "Dichtung ausgefallen."
@@ -98,7 +146,9 @@ def test_bundle_serializes_intake_projection() -> None:
         "ComplaintFailureContextCollected",
         "DamagePatternCandidateIdentified",
         "OperatingConditionCandidateExtracted",
+        "DiagnosticContextCandidateExtracted",
         "EvidenceRequestGenerated",
+        "DiagnosticQuestionGenerated",
         "ComplaintIntakeCreated",
         "FailureAnalysisIntakeGenerated",
     )

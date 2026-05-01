@@ -17,6 +17,7 @@ from app.agent.communication.models import (
     StaleField,
 )
 from app.agent.communication.orchestrator import ConversationOrchestrator
+from app.agent.communication.extraction import FieldExtractionProposalService
 from app.agent.runtime.user_facing_reply import collect_governed_visible_reply
 from app.agent.state.models import TurnContextContract
 
@@ -87,6 +88,22 @@ def _state(**updates) -> CaseConversationState:
         allowed_next_actions=["Drehzahl und Wellendurchmesser klaeren"],
     )
     return base.model_copy(update=updates)
+
+
+def test_field_extraction_proposes_failure_and_geometry_candidates_only() -> None:
+    updates = FieldExtractionProposalService().extract(
+        "RWDR leckt. Welle 40 mm, Bohrung 52 mm, Einbaubreite 7 mm, "
+        "1450 U/min, 3 bar, 80 Grad, Ra 0,4."
+    )
+    by_key = {update.key: update for update in updates}
+
+    assert by_key["seal_type"].value == "rwdr"
+    assert by_key["damage_pattern"].value == "leakage"
+    assert by_key["shaft_diameter_mm"].value == 40
+    assert by_key["housing_bore_mm"].value == 52
+    assert by_key["installation_width_mm"].value == 7
+    assert by_key["surface_roughness_ra_um"].value == 0.4
+    assert all(update.requires_user_confirmation for update in updates)
 
 
 @pytest.mark.asyncio

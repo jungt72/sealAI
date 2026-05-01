@@ -108,6 +108,37 @@ The successful HCL output is not routed back through the legacy renderer. This p
 
 If the new layer itself errors, SeaLAI returns the deterministic backend fallback unless `SEALAI_ENABLE_LEGACY_VISIBLE_RENDERER=true` is explicitly configured.
 
+## Failure Diagnostic Intake
+
+Failure and complaint conversations use a stricter diagnostic order than normal RFQ clarification.
+The assistant must not jump to root-cause language. It should first preserve the field evidence and
+collect the facts that a sealing technician would need before forming hypotheses.
+
+Priority order:
+
+```text
+1. safety_context
+2. leak_location
+3. damage_evidence
+4. seal_type
+5. failure_timing
+6. damage_pattern
+7. operating_conditions
+8. medium_at_failure
+9. pressure_profile
+10. temperature_at_seal
+11. motion_profile
+12. geometry_surface_context
+13. installation_context
+14. material_or_compound
+15. previous_service_life
+```
+
+The complaint/failure intake service may extract candidates such as seal type, leak location,
+damage pattern, pressure, temperature, speed, shaft diameter, material and surface hints. These
+remain candidates until governed validation or user/manufacturer confirmation. Visible answers
+should use "Hypothese", "Hinweis", "offen" or "zu prüfen", never "Ursache bestätigt".
+
 ## Configuration
 
 Feature flag:

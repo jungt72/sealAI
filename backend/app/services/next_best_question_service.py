@@ -133,6 +133,22 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "lubrication_or_flush": ("lubrication_or_flush", "flush", "lubrication"),
     "damage_pattern": ("damage_pattern", "symptom_class", "leakage_pattern"),
     "photo_or_evidence": ("photo_or_evidence", "photos", "evidence_refs"),
+    "safety_context": ("safety_context", "safety_relevance", "atex_relevance", "environmental_risk"),
+    "leak_location": ("leak_location", "leakage_location", "leak_path"),
+    "failure_timing": ("failure_timing", "operating_duration", "time_to_failure"),
+    "pressure_profile": ("pressure_profile", "pressure_peaks", "pulsation", "relief_rate"),
+    "temperature_at_seal": ("temperature_at_seal", "seal_temperature", "temperature"),
+    "motion_profile": ("motion_profile", "speed_rpm", "stroke", "start_stop_frequency"),
+    "geometry_surface_context": (
+        "geometry_surface_context",
+        "surface_finish",
+        "shaft_runout",
+        "eccentricity",
+        "shaft_hardness",
+        "counterface_surface",
+    ),
+    "installation_context": ("installation_context", "assembly", "mounting", "installation_method"),
+    "material_or_compound": ("material_or_compound", "material", "compound", "hardness"),
     "marking": ("marking", "part_number", "old_part_number"),
     "dimensions": ("dimensions", "geometry", "shaft_diameter", "inner_diameter"),
     "oil_analysis_values": (
@@ -584,6 +600,51 @@ _QUESTION_LIBRARY: dict[str, tuple[str, str, str]] = {
         "Evidence hilft, die Ausfall- oder Ersatzteilaufnahme nachvollziehbar zu machen.",
         "evidence",
     ),
+    "safety_context": (
+        "Gibt es Sicherheits-, Umwelt-, Brand-, ATEX- oder Personengefaehrdung im Zusammenhang mit der Leckage?",
+        "Sicherheit und Anlagenzustand muessen vor jeder technischen Ursachenlogik geklaert sein.",
+        "text",
+    ),
+    "leak_location": (
+        "Wo genau tritt die Leckage auf: an der Welle, am Gehaeuse, an der Dichtlippe oder an einer Leckagebohrung?",
+        "Die Leckstelle trennt Dichtungsversagen, Einbauproblem und Nebensysteme.",
+        "text",
+    ),
+    "failure_timing": (
+        "Wann tritt die Leckage auf: sofort nach Montage, beim Anfahren, im Dauerlauf, nach Druckspitzen oder erst nach bestimmter Laufzeit?",
+        "Der Zeitpunkt hilft, Montage-, Betriebs-, Werkstoff- und Verschleissmechanismen zu trennen.",
+        "text",
+    ),
+    "pressure_profile": (
+        "Gab es Druckspitzen, Pulsation, Vakuum, schnelle Entlastung oder wechselnde Druckrichtung?",
+        "Das reale Druckprofil ist fuer Extrusion, Umstuelpen und Gasdekompression oft entscheidend.",
+        "text",
+    ),
+    "temperature_at_seal": (
+        "Welche Temperatur lag direkt an der Dichtstelle an?",
+        "Die Dichtstellentemperatur bestimmt Alterung, Medienzustand und Werkstoffgrenzen.",
+        "engineering_value",
+    ),
+    "motion_profile": (
+        "Welche Bewegung lag an: Drehzahl, Hub, Schwenkbewegung, Start-Stopp-Betrieb oder laengere Stillstaende?",
+        "Bewegung und Stillstand beeinflussen Reibung, Schmierung, Trockenlauf und Verschleiss.",
+        "text",
+    ),
+    "geometry_surface_context": (
+        "Welche Masse und Gegenlaufdaten sind bekannt: Welle, Bohrung, Einbaubreite, Rauheit, Haerte, Rundlauf und Exzentrizitaet?",
+        "Geometrie und Oberflaeche entscheiden, ob ein Schadensbild aus Betrieb oder Einbauraum plausibel wird.",
+        "text",
+    ),
+    "installation_context": (
+        "Wie wurde montiert: Werkzeug, Schmierung, Einbaurichtung, Kanten, Fasen und Schutz der Dichtlippe?",
+        "Montagefehler koennen wie Material- oder Betriebsprobleme aussehen.",
+        "text",
+    ),
+    "material_or_compound": (
+        "Welche Werkstoff-, Compound- oder Haerteangabe ist belegt?",
+        "Werkstoffnamen ohne Beleg bleiben Kandidaten fuer die Herstellerpruefung.",
+        "text",
+    ),
     "operating_conditions": (
         "Welche Betriebsbedingungen galten beim Ausfall, vor allem Medium, Druck, Temperatur und Laufzeit?",
         "Betriebsdaten trennen Beobachtung von Ursache und halten die Analyse herstellerpruefbar.",
@@ -727,6 +788,8 @@ def _next_questions(
         focus_order = tuple(missing_fields)
     if seal_type is SealType.unknown_seal and case_type not in {
         CaseType.compatibility_inquiry,
+        CaseType.complaint_case,
+        CaseType.failure_analysis,
         CaseType.replacement_reorder,
         CaseType.unknown_legacy_part,
     }:
@@ -778,8 +841,30 @@ def _scenario_focus_order(
         return ("medium", "temperature", "material", "evidence_refs", *type_order)
     if case_type in {CaseType.complaint_case, CaseType.failure_analysis}:
         if seal_type is SealType.unknown_seal:
-            return ("seal_type", "damage_pattern", "photo_or_evidence")
-        return ("damage_pattern", "photo_or_evidence", "operating_conditions", *type_order)
+            return (
+                "safety_context",
+                "leak_location",
+                "photo_or_evidence",
+                "seal_type",
+                "failure_timing",
+                "damage_pattern",
+            )
+        return (
+            "safety_context",
+            "leak_location",
+            "photo_or_evidence",
+            "failure_timing",
+            "damage_pattern",
+            "operating_conditions",
+            "medium",
+            "pressure_profile",
+            "temperature_at_seal",
+            "motion_profile",
+            "geometry_surface_context",
+            "installation_context",
+            "material_or_compound",
+            *type_order,
+        )
     if case_type in {CaseType.replacement_reorder, CaseType.unknown_legacy_part}:
         return ("marking", "dimensions", "photo_or_evidence", "application_requirement")
     if case_type is CaseType.emergency_mro:
