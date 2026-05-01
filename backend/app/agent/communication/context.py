@@ -14,6 +14,7 @@ from app.agent.communication.models import (
     RiskFact,
     StaleField,
 )
+from app.domain.critical_field_contract import is_critical_case_field
 
 
 _FIELD_LABELS: dict[str, str] = {
@@ -48,12 +49,60 @@ _FIELD_LABELS: dict[str, str] = {
     "geometry_context": "Geometrie",
     "counterface_surface": "Oberflaeche",
     "compliance": "Compliance-Anforderung",
+    "shaft_runout": "Rundlauf",
+    "eccentricity": "Exzentrizitaet",
+    "tolerance_gap": "Toleranz / Spalt",
+    "material_identity": "Werkstoffidentitaet",
+    "material_or_compound": "Werkstoff / Compound",
+    "lubrication": "Schmierung",
+    "contamination": "Verschmutzung",
+    "verification_criteria": "Pruefkriterium",
+    "mounting_path": "Montageweg",
+}
+
+_CRITICAL_FIELD_ALIASES: dict[str, str] = {
+    "medium": "medium_name",
+    "pressure": "pressure_bar",
+    "temperature": "temperature_c",
+    "speed": "speed_rpm",
+    "rpm": "speed_rpm",
+    "shaft_diameter": "shaft_diameter_mm",
+    "housing_bore": "housing_bore_mm",
+    "installation_width": "installation_width_mm",
+    "runout": "shaft_runout",
+    "dynamic_runout": "shaft_runout",
+    "shaft_runout_um": "shaft_runout",
+    "surface": "surface_finish",
+    "roughness": "surface_roughness",
+    "material": "material_identity",
+    "compound": "material_or_compound",
+    "function": "sealing_function",
+    "lifetime": "lifetime_target",
+    "verification": "verification_criteria",
+    "installation": "installation_context",
 }
 
 
 def human_label(field_key: str) -> str:
     key = str(field_key or "").strip()
     return _FIELD_LABELS.get(key, key.replace("_", " ").strip().title() or "Angabe")
+
+
+def _canonical_missing_key(field_key: str) -> str:
+    key = (
+        str(field_key or "")
+        .replace("open_point:", "")
+        .replace("conflict:", "")
+        .replace(".", "_")
+        .replace("-", "_")
+        .strip()
+        .lower()
+    )
+    return _CRITICAL_FIELD_ALIASES.get(key, key)
+
+
+def _missing_field_criticality(field_key: str) -> str:
+    return "critical" if is_critical_case_field(_canonical_missing_key(field_key)) else "important"
 
 
 def state_snapshot_hash(state: CaseConversationState) -> str:
@@ -162,7 +211,7 @@ class CaseContextAssembler:
                         MissingField(
                             key=key,
                             label=str(item),
-                            criticality="important",
+                            criticality=_missing_field_criticality(key),
                             reason="Dieser Punkt blockiert den naechsten belastbaren Schritt.",
                         )
                     )
@@ -246,7 +295,7 @@ class CaseContextAssembler:
                 MissingField(
                     key=key,
                     label=human_label(key),
-                    criticality="critical" if key in {"medium", "pressure_bar", "temperature_c"} else "important",
+                    criticality=_missing_field_criticality(key),
                     reason="Diese Angabe fehlt fuer die naechste technische Einordnung.",
                 )
             )

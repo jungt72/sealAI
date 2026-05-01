@@ -200,7 +200,16 @@ class TestCriticalFieldNormalizationContract:
     def test_v07_critical_fields_are_explicit(self):
         assert "pressure_nominal" in CRITICAL_CASE_FIELDS
         assert is_critical_case_field("shaft_diameter")
+        assert is_critical_case_field("shaft_runout")
+        assert is_critical_case_field("eccentricity")
+        assert is_critical_case_field("surface_roughness")
+        assert is_critical_case_field("material_identity")
+        assert is_critical_case_field("leakage_target")
+        assert is_critical_case_field("verification_criteria")
         assert is_critical_technical_field("temperature_max")
+        assert is_critical_technical_field("runout_um")
+        assert is_critical_technical_field("surface_roughness_ra_um")
+        assert not is_critical_technical_field("material_or_compound")
         assert not is_critical_technical_field("asset_type")
 
     @pytest.mark.parametrize(
@@ -285,6 +294,25 @@ class TestCriticalFieldNormalizationContract:
         assert diameter.canonical_value == 42.0
         assert diameter.unit == "mm"
         assert diameter.quantity_kind == "length"
+
+    def test_runout_um_is_normalized_to_mm_length_context(self):
+        runout = normalize_critical_field_value("runout_um", "120 µm")
+
+        assert runout is not None
+        assert runout.canonical_value == pytest.approx(0.12)
+        assert runout.unit == "mm"
+        assert runout.quantity_kind == "length"
+        assert runout.interpretation == "runout_or_gap"
+        assert "converted_from_micrometer_to_mm" in runout.normalization_warnings
+
+    def test_surface_roughness_um_keeps_micrometer_unit(self):
+        roughness = normalize_critical_field_value("surface_roughness_ra_um", "0,4 µm")
+
+        assert roughness is not None
+        assert roughness.canonical_value == pytest.approx(0.4)
+        assert roughness.unit == "um"
+        assert roughness.quantity_kind == "surface_roughness"
+        assert roughness.interpretation == "surface_roughness"
 
 
 # ---------------------------------------------------------------------------

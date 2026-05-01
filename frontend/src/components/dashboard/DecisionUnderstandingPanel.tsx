@@ -16,7 +16,7 @@ const SOURCE_LABELS: Record<string, string> = {
   uploaded_evidence: "Dokument / Upload",
   rag_verified: "Wissensbasis",
   deterministic_calculation: "Berechnung",
-  llm_research_fallback: "KI-Hinweis",
+  llm_research_fallback: "LLM-Recherche",
   llm_synthesis: "KI-Hinweis",
   inferred: "abgeleitet",
   system_derived: "aus den Angaben abgeleitet",
@@ -28,7 +28,7 @@ const VALIDATION_LABELS: Record<string, string> = {
   documented: "dokumentiert",
   user_stated: "Nutzerangabe",
   candidate: "Kandidat",
-  unvalidated: "noch nicht geprüft",
+  unvalidated: "nicht validiert",
   conflicting: "widersprüchlich",
   calculated: "berechnet",
   unknown: "unklar",
@@ -285,7 +285,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
           <AlertTriangle className="mt-0.5 shrink-0" size={15} />
           <span>
             {sourceIsFallback
-              ? "Dieser KI-Hinweis ist noch nicht geprüft und bleibt nur Orientierung."
+              ? "LLM-Recherche ist nicht validiert und bleibt nur Orientierung."
               : "Konflikte oder widersprüchliche Angaben bleiben sichtbar und müssen geklärt werden."}
           </span>
         </div>

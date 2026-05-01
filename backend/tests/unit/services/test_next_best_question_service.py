@@ -89,6 +89,25 @@ def test_radial_shaft_known_medium_temperature_asks_pressure_speed_surface_not_m
     assert "medium" not in focuses
 
 
+def test_radial_shaft_after_load_and_surface_asks_runout_or_gap_before_catalog_details() -> None:
+    result = derive_needs_current_state_and_questions(
+        _state(
+            seal_type=SealType.radial_shaft_seal,
+            profile={
+                "medium": "Oel",
+                "temperature_c": 80,
+                "pressure_bar": 1,
+                "speed_rpm": 1450,
+                "shaft_surface": "Ra 0,4",
+            },
+        )
+    )
+
+    focuses = _focuses(result)
+    assert focuses[0] == "tolerance_gap"
+    assert "Runout" in result.next_best_questions[0].reason or "Exzentrizitaet" in result.next_best_questions[0].reason
+
+
 def test_flat_gasket_asks_flange_pressure_material_style_question() -> None:
     result = derive_needs_current_state_and_questions(
         _state(

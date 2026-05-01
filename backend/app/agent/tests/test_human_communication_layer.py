@@ -16,6 +16,7 @@ from app.agent.communication.models import (
     RiskFact,
     StaleField,
 )
+from app.agent.communication.context import CaseContextAssembler
 from app.agent.communication.orchestrator import ConversationOrchestrator
 from app.agent.communication.extraction import FieldExtractionProposalService
 from app.agent.runtime.user_facing_reply import collect_governed_visible_reply
@@ -108,6 +109,34 @@ def test_field_extraction_proposes_failure_and_geometry_candidates_only() -> Non
     assert by_key["leakage_target"].value == "keine sichtbare Leckage"
     assert by_key["target_lifetime_cycles"].value == 2_000_000
     assert all(update.requires_user_confirmation for update in updates)
+
+
+def test_case_context_marks_deep_research_open_points_as_critical() -> None:
+    raw_state = SimpleNamespace(
+        session_id="case-critical-fields",
+        tenant_id="tenant-1",
+        asserted=SimpleNamespace(blocking_unknowns=["shaft_runout", "material_or_compound"]),
+        governance=SimpleNamespace(
+            preselection_blockers=["verification_criteria"],
+            compliance_blockers=[],
+            type_sensitive_required=["surface_roughness"],
+            open_validation_points=["leakage_target"],
+        ),
+        normalized=SimpleNamespace(parameter_status={}),
+    )
+
+    state = CaseContextAssembler().assemble(
+        raw_state,
+        latest_user_message="Ich habe eine rotierende Dichtstelle.",
+        case_id="case-critical-fields",
+    )
+
+    by_key = {field.key: field for field in state.missing_fields}
+    assert by_key["shaft_runout"].criticality == "critical"
+    assert by_key["material_or_compound"].criticality == "critical"
+    assert by_key["verification_criteria"].criticality == "critical"
+    assert by_key["surface_roughness"].criticality == "critical"
+    assert by_key["leakage_target"].criticality == "critical"
 
 
 @pytest.mark.asyncio

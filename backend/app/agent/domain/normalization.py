@@ -28,6 +28,7 @@ from app.domain.critical_field_contract import (
     CRITICAL_CASE_FIELDS,
     MM_FIELDS,
     PRESSURE_FIELDS,
+    ROUGHNESS_FIELDS,
     RPM_FIELDS,
     TEMPERATURE_FIELDS,
     is_critical_case_field,
@@ -224,6 +225,11 @@ _RPM_PATTERN = re.compile(
 
 _MM_PATTERN = re.compile(
     r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:mm|millimeter)\s*$",
+    re.IGNORECASE,
+)
+
+_UM_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:um|µm|μm|micrometer|mikrometer)\s*$",
     re.IGNORECASE,
 )
 
@@ -488,9 +494,19 @@ def _critical_field_quantity(field_name: str) -> tuple[str, str | None]:
         return "pressure", "bar"
     if field_name in RPM_FIELDS:
         return "rotational_speed", "rpm"
+    if field_name in ROUGHNESS_FIELDS:
+        return "surface_roughness", "um"
     if field_name in MM_FIELDS:
         return "length", "mm"
     return field_name, None
+
+
+def _length_interpretation(field_name: str) -> str:
+    if any(token in field_name for token in ("runout", "eccentricity", "misalignment", "gap")):
+        return "runout_or_gap"
+    if "diameter" in field_name or "bore" in field_name:
+        return "diameter"
+    return "width"
 
 
 def normalize_critical_field_value(
@@ -544,16 +560,36 @@ def normalize_critical_field_value(
                 confidence = MappingConfidence.REQUIRES_CONFIRMATION
                 warnings.append("rotational_speed_unit_required")
         interpretation = "rotational_speed"
+    elif field_name in ROUGHNESS_FIELDS:
+        text_value = str(raw_with_unit).strip().replace(",", ".")
+        um_match = _UM_PATTERN.match(text_value)
+        mm_match = _MM_PATTERN.match(text_value)
+        if um_match:
+            canonical_value = float(um_match.group(1))
+        elif mm_match:
+            canonical_value = round(float(mm_match.group(1)) * 1000.0, 6)
+            warnings.append("converted_from_mm_to_micrometer")
+        else:
+            canonical_value = _coerce_number(raw_value) if field_name.endswith("_um") else None
+            if canonical_value is None:
+                confidence = MappingConfidence.REQUIRES_CONFIRMATION
+                warnings.append("roughness_unit_required")
+        interpretation = "surface_roughness"
     elif field_name in MM_FIELDS:
-        match = _MM_PATTERN.match(str(raw_with_unit).strip().replace(",", "."))
-        if match:
-            canonical_value = float(match.group(1))
+        text_value = str(raw_with_unit).strip().replace(",", ".")
+        mm_match = _MM_PATTERN.match(text_value)
+        um_match = _UM_PATTERN.match(text_value)
+        if mm_match:
+            canonical_value = float(mm_match.group(1))
+        elif um_match:
+            canonical_value = round(float(um_match.group(1)) / 1000.0, 6)
+            warnings.append("converted_from_micrometer_to_mm")
         else:
             canonical_value = _coerce_number(raw_value) if field_name.endswith("_mm") else None
             if canonical_value is None:
                 confidence = MappingConfidence.REQUIRES_CONFIRMATION
                 warnings.append("length_unit_required")
-        interpretation = "diameter" if "diameter" in field_name or "bore" in field_name else "width"
+        interpretation = _length_interpretation(field_name)
 
     if canonical_value is None and confidence == MappingConfidence.CONFIRMED:
         confidence = MappingConfidence.REQUIRES_CONFIRMATION

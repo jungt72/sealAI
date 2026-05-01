@@ -259,6 +259,7 @@ _TYPE_FOCUS_ORDER: dict[SealType, tuple[str, ...]] = {
         "pressure_or_pressure_difference",
         "speed_rpm",
         "shaft_surface",
+        "tolerance_gap",
         "shaft_diameter",
         "housing_bore",
         "width",
