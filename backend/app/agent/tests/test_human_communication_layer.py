@@ -93,7 +93,8 @@ def _state(**updates) -> CaseConversationState:
 def test_field_extraction_proposes_failure_and_geometry_candidates_only() -> None:
     updates = FieldExtractionProposalService().extract(
         "RWDR leckt. Welle 40 mm, Bohrung 52 mm, Einbaubreite 7 mm, "
-        "1450 U/min, 3 bar, 80 Grad, Ra 0,4."
+        "1450 U/min, 3 bar, Druckspitze 8 bar, 80 Grad, Ra 0,4, "
+        "Leckageziel keine sichtbare Leckage, 2 Mio. Zyklen."
     )
     by_key = {update.key: update for update in updates}
 
@@ -103,6 +104,9 @@ def test_field_extraction_proposes_failure_and_geometry_candidates_only() -> Non
     assert by_key["housing_bore_mm"].value == 52
     assert by_key["installation_width_mm"].value == 7
     assert by_key["surface_roughness_ra_um"].value == 0.4
+    assert by_key["pressure_spike_bar"].value == 8
+    assert by_key["leakage_target"].value == "keine sichtbare Leckage"
+    assert by_key["target_lifetime_cycles"].value == 2_000_000
     assert all(update.requires_user_confirmation for update in updates)
 
 

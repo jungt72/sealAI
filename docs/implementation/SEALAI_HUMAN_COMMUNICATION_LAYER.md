@@ -139,6 +139,46 @@ damage pattern, pressure, temperature, speed, shaft diameter, material and surfa
 remain candidates until governed validation or user/manufacturer confirmation. Visible answers
 should use "Hypothese", "Hinweis", "offen" or "zu prüfen", never "Ursache bestätigt".
 
+## New Design Intake
+
+Neuauslegung is handled as a stricter design-intake problem, not as a product
+catalog question. The read-only `SealDesignIntakeService` compares the available
+case data against a minimum engineering dataset and may compute screening
+checks only where the required inputs are present.
+
+Minimum design-intake priorities:
+
+```text
+1. sealing_function
+2. leakage_target
+3. safety_context
+4. medium
+5. motion_type
+6. pressure_profile
+7. temperature_profile
+8. lifetime_target
+9. lubrication
+10. contamination
+11. geometry_space
+12. tolerance_gap
+13. surface_roughness
+14. mounting_path
+15. verification_criteria
+16. seal_type
+```
+
+The service may surface O-ring/groove screening values such as squeeze, groove
+fill and stretch when inputs are present. It may also mark escalation triggers
+such as high pressure with unknown or large gap, gas decompression review, high
+temperature with high groove fill, or flange-gasket norm-calculation need. These
+are screening facts only. They are never a final material release, design freeze
+or manufacturer approval.
+
+The next-best-question layer follows this design-intake order for `new_rfq`.
+That prevents SeaLAI from starting a new design with a catalog-style "which seal
+type?" question before function, leakage target, medium, motion and load profile
+are understood.
+
 ## Configuration
 
 Feature flag:

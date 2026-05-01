@@ -168,7 +168,91 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "application_context",
         "application_domain",
     ),
+    "sealing_function": ("sealing_function", "seal_function", "primary_function", "function"),
+    "leakage_target": (
+        "leakage_target",
+        "leak_target",
+        "leakage_requirement",
+        "leakage_rate",
+        "leakage_class",
+        "atex_or_leakage_requirement",
+    ),
+    "motion_type": ("motion_type", "movement", "static_or_dynamic"),
+    "pressure_profile": (
+        "pressure_profile",
+        "pressure",
+        "pressure_bar",
+        "pressure_max_bar",
+        "pressure_peak",
+        "pressure_peaks",
+        "pressure_nominal",
+    ),
+    "temperature_profile": (
+        "temperature_profile",
+        "temperature",
+        "temperature_c",
+        "temperature_min",
+        "temperature_max",
+    ),
+    "lifetime_target": (
+        "lifetime_target",
+        "target_lifetime",
+        "target_lifetime_hours",
+        "target_lifetime_cycles",
+        "service_life",
+    ),
+    "geometry_space": (
+        "geometry_space",
+        "available_space",
+        "geometry",
+        "geometry_context",
+        "groove_dimensions",
+        "shaft_diameter",
+        "housing_bore",
+    ),
+    "tolerance_gap": (
+        "tolerance_gap",
+        "radial_gap_mm",
+        "clearance_gap_mm",
+        "shaft_runout",
+        "runout_um",
+        "eccentricity",
+        "misalignment",
+    ),
+    "mounting_path": (
+        "mounting_path",
+        "installation_context",
+        "installation_method",
+        "assembly",
+        "lead_in_angle_deg",
+    ),
+    "verification_criteria": (
+        "verification_criteria",
+        "acceptance_criteria",
+        "lab_tests",
+        "field_tests",
+        "test_plan",
+    ),
 }
+
+_NEW_DESIGN_FOCUS_ORDER: tuple[str, ...] = (
+    "sealing_function",
+    "leakage_target",
+    "safety_context",
+    "medium",
+    "motion_type",
+    "pressure_profile",
+    "temperature_profile",
+    "lifetime_target",
+    "lubrication",
+    "contamination",
+    "geometry_space",
+    "tolerance_gap",
+    "surface_roughness",
+    "mounting_path",
+    "verification_criteria",
+    "seal_type",
+)
 
 _TYPE_FOCUS_ORDER: dict[SealType, tuple[str, ...]] = {
     SealType.radial_shaft_seal: (
@@ -344,6 +428,56 @@ _QUESTION_LIBRARY: dict[str, tuple[str, str, str]] = {
         "Um welchen Dichtungstyp geht es, zum Beispiel O-Ring, Wellendichtring, Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?",
         "Der Dichtungstyp grenzt Pflichtangaben, Risiken und den Herstellerpruefpfad zuerst ein.",
         "seal_type",
+    ),
+    "sealing_function": (
+        "Welche Aufgabe soll die Dichtung vor allem erfuellen: Medium halten, Medien trennen, Schmutz fernhalten, Vakuum halten oder eine definierte Leckage begrenzen?",
+        "Die Dichtfunktion steht vor der Bauart, weil sie Leckageziel, Pruefweg und Dichtungsfamilie bestimmt.",
+        "text",
+    ),
+    "leakage_target": (
+        "Welche Leckage ist noch akzeptabel, zum Beispiel keine sichtbare Leckage, Tropfgrenze, ml/min, sccm oder eine Emissionsgrenze?",
+        "Ohne Leckageziel bleibt jede Neuauslegung nur eine Vororientierung und keine pruefbare Anfragebasis.",
+        "text",
+    ),
+    "motion_type": (
+        "Ist die Dichtstelle statisch, rotierend, hubend oder oszillierend?",
+        "Die Bewegungsart trennt frueh zwischen Flansch-/O-Ring-, Wellendichtungs-, Hydraulik-/Pneumatik- und Gleitringdichtungspfaden.",
+        "text",
+    ),
+    "pressure_profile": (
+        "Welche Druecke wirken an der Dichtstelle: min, normal, maximal, Druckspitzen, Pulsation oder Vakuum?",
+        "Das Druckprofil entscheidet ueber Extrusionsrisiko, Stuetzringbedarf und Bauartgrenzen.",
+        "engineering_values",
+    ),
+    "temperature_profile": (
+        "Welche Temperaturen treten an der Dichtstelle auf: min, normal, maximal und kurzzeitige Peaks?",
+        "Das Temperaturprofil begrenzt Werkstoffe und beeinflusst Alterung, Quellung und Medienzustand.",
+        "engineering_values",
+    ),
+    "lifetime_target": (
+        "Welche Lebensdauer soll erreicht werden, zum Beispiel Betriebsstunden, Kalenderzeit oder Zyklenzahl?",
+        "Das Lebensdauerziel bestimmt, ob eine grobe Vorauswahl reicht oder ein Pruef- und Validierungsplan noetig wird.",
+        "text",
+    ),
+    "geometry_space": (
+        "Welche reale Geometrie oder welcher Bauraum ist bekannt, zum Beispiel Welle, Bohrung, Nut, Einbaubreite, Flansch oder Zeichnung?",
+        "Erst der reale Einbauraum macht Profil, Nut, Gegenflaeche und Herstelleranfrage pruefbar.",
+        "engineering_values",
+    ),
+    "tolerance_gap": (
+        "Welche Toleranzen, Dichtspalte, Runout- oder Fluchtungswerte sind bekannt?",
+        "Spalt, Runout und Exzentrizitaet koennen wichtiger sein als der reine Werkstoffname.",
+        "engineering_values",
+    ),
+    "mounting_path": (
+        "Wie wird die Dichtung montiert: ueber Kanten, Gewinde, Fasen, Montagehuelse oder mit Montagehilfe?",
+        "Der Montagepfad entscheidet, ob eine theoretisch passende Dichtung beim Einbau beschaedigt werden kann.",
+        "text",
+    ),
+    "verification_criteria": (
+        "Woran soll die Loesung spaeter gemessen werden: Lecktest, Drucktest, Lebensdauerlauf, Feldtest oder Herstellerfreigabe?",
+        "Eine Neuauslegung ist erst belastbar, wenn Pruefweg und Akzeptanzkriterium klar sind.",
+        "text",
     ),
     "pressure_or_pressure_difference": (
         "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?",
@@ -787,6 +921,7 @@ def _next_questions(
     if not focus_order:
         focus_order = tuple(missing_fields)
     if seal_type is SealType.unknown_seal and case_type not in {
+        CaseType.new_rfq,
         CaseType.compatibility_inquiry,
         CaseType.complaint_case,
         CaseType.failure_analysis,
@@ -873,6 +1008,10 @@ def _scenario_focus_order(
         if not _field_known("dimensions", known_fields):
             return ("dimensions",)
         return ("medium",)
+    if case_type is CaseType.new_rfq:
+        if seal_type is SealType.unknown_seal:
+            return _NEW_DESIGN_FOCUS_ORDER
+        return (*type_order, *_NEW_DESIGN_FOCUS_ORDER)
     return type_order
 
 
@@ -939,7 +1078,10 @@ def _missing_fields(
         )
     )
     candidates.extend(_scenario_focus_order(case_type, seal_type, known_fields, state))
-    if seal_type is SealType.unknown_seal and case_type not in _NO_ENGINEERING_QUESTION_CASE_TYPES:
+    if seal_type is SealType.unknown_seal and case_type not in {
+        *_NO_ENGINEERING_QUESTION_CASE_TYPES,
+        CaseType.new_rfq,
+    }:
         candidates.insert(0, "seal_type")
 
     missing: list[str] = []

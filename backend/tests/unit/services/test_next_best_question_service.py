@@ -37,11 +37,36 @@ def _focuses(result) -> list[str]:
     return [question.focus_key for question in result.next_best_questions]
 
 
-def test_unknown_seal_type_in_new_rfq_asks_for_seal_type_first() -> None:
+def test_new_rfq_starts_with_design_function_not_catalog_seal_type() -> None:
     result = derive_needs_current_state_and_questions(_state())
 
-    assert _focuses(result)[0] == "seal_type"
-    assert "Dichtungstyp" in result.next_best_questions[0].question
+    assert _focuses(result)[:3] == [
+        "sealing_function",
+        "leakage_target",
+        "safety_context",
+    ]
+    assert "Aufgabe" in result.next_best_questions[0].question
+    assert "Leckage" in result.next_best_questions[1].question
+
+
+def test_new_rfq_after_core_design_data_moves_to_pressure_temperature_life() -> None:
+    result = derive_needs_current_state_and_questions(
+        _state(
+            profile={
+                "sealing_function": "Medium halten",
+                "leakage_target": "keine sichtbare Leckage",
+                "safety_context": "nicht reguliert",
+                "medium": "HLP 46",
+                "motion_type": "hubend",
+            }
+        )
+    )
+
+    assert _focuses(result)[:3] == [
+        "pressure_profile",
+        "temperature_profile",
+        "lifetime_target",
+    ]
 
 
 def test_radial_shaft_known_medium_temperature_asks_pressure_speed_surface_not_medium() -> None:
