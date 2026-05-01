@@ -322,7 +322,7 @@ function ProposedDeltaPanel({
             type="button"
             onClick={() => void decide("accept")}
             disabled={Boolean(pendingAction)}
-            aria-label="Vorgeschlagene Aenderung uebernehmen"
+            aria-label="Vorgeschlagene Änderung übernehmen"
             className="grid h-8 w-8 place-items-center rounded-md border border-emerald-200 bg-white text-emerald-700 transition-colors hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
           >
             {pendingAction === "accept" ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
@@ -331,7 +331,7 @@ function ProposedDeltaPanel({
             type="button"
             onClick={() => void decide("reject")}
             disabled={Boolean(pendingAction)}
-            aria-label="Vorgeschlagene Aenderung ablehnen"
+            aria-label="Vorgeschlagene Änderung ablehnen"
             className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
           >
             {pendingAction === "reject" ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
@@ -470,7 +470,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
       if (response.document_delta?.status === "proposed" && fields.length > 0) {
         setDocumentDeltaFields(fields as ProposedCaseDeltaField[]);
         setSettledDeltaKey(null);
-        setDocumentUploadStatus("Dokument analysiert. Bitte die vorgeschlagenen Case-Daten pruefen.");
+        setDocumentUploadStatus("Dokument analysiert. Bitte die vorgeschlagenen Case-Daten prüfen.");
       } else if (response.document_delta?.status === "no_fields_detected") {
         setDocumentUploadStatus("Dokument gespeichert, aber keine Case-Felder sicher erkannt.");
       } else if (response.document_delta?.status === "error") {
@@ -605,9 +605,9 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
 
               <div className="mt-2 flex flex-wrap gap-2 pb-3">
                 {[
-                  "Medienliste pruefen",
+                  "Medienliste prüfen",
                   "Anfragevorschau vorbereiten",
-                  "Offene Punkte klaeren",
+                  "Offene Punkte klären",
                 ].map((item) => (
                   <button
                     key={item}

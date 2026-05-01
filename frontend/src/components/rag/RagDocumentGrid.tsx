@@ -396,8 +396,8 @@ export default function RagDocumentGrid() {
                   Evidence-Kandidat
                 </p>
                 <p className="mt-1 text-xs leading-5 text-slate-200">
-                  Quelle fuer RAG und Fallkontext. Technische Werte werden erst nach Governance
-                  und Nutzerpruefung uebernommen.
+                  Quelle für RAG und Fallkontext. Technische Werte werden erst nach Governance
+                  und Nutzerprüfung übernommen.
                 </p>
               </div>
 

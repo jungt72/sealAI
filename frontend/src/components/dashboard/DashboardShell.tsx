@@ -162,7 +162,7 @@ export default function DashboardShell({
               <div className="text-[14px] font-medium tracking-[0.12em] text-[#374151]">INTELLIGENCE</div>
             </div>
             <div className={cn("truncate text-[12px] text-[#6B7280]", isNavExpanded ? "mt-0" : "mt-1")}>
-              {greeting} {userName}, schoen, dass du da bist.
+              {greeting} {userName}, schön, dass du da bist.
             </div>
           </div>
           <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">

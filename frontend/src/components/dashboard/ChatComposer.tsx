@@ -101,7 +101,7 @@ export default function ChatComposer({
         />
         <button
           type="button"
-          title="Anhang hinzufuegen"
+          title="Anhang hinzufügen"
           onClick={() => fileInputRef.current?.click()}
           disabled={!canUpload}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
