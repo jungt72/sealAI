@@ -66,7 +66,9 @@ function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export function buildStreamWorkspaceView(event: AgentStateUpdateEvent): StreamWorkspaceView {
+export function buildStreamWorkspaceView(
+  event: AgentStateUpdateEvent & { caseId: string },
+): StreamWorkspaceView {
   const ui = event.ui || {};
 
   const assertions: Record<string, AssertionEntry> | null =

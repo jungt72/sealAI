@@ -34,6 +34,17 @@ def test_fast_responder_handles_only_non_case_pre_gate_classes(
     assert expected in response.content
 
 
+def test_greeting_fallback_answers_wellbeing_without_case_creation() -> None:
+    response = FastResponderService().respond(
+        "Hallo, wie geht es dir?",
+        PreGateClassification.GREETING,
+    )
+
+    assert response.no_case_created is True
+    assert "Mir geht es gut" in response.content
+    assert "Dichtungsfall" not in response.content
+
+
 @pytest.mark.parametrize(
     "classification",
     [

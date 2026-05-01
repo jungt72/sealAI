@@ -32,6 +32,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const streamRequestIdRef = useRef(0);
   const finalizedRequestIdRef = useRef<number | null>(null);
   const latestCaseIdRef = useRef<string | null>(initialCaseId || null);
+  const noCaseTurnRef = useRef(false);
 
   const fetchHistory = useCallback(async (caseId: string) => {
     const response = await fetch(`/api/bff/agent/chat/history/${encodeURIComponent(caseId)}`);
@@ -97,7 +98,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     setStreamingText("");
 
     if (!finalText) {
-      if (latestCaseIdRef.current) {
+      if (latestCaseIdRef.current && !noCaseTurnRef.current) {
         void syncHistory(latestCaseIdRef.current);
         onTurnComplete?.(latestCaseIdRef.current);
       }
@@ -111,7 +112,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       }
       return [...existing, { role: "assistant", content: finalText, timestamp: new Date().toISOString() }];
     });
-    if (latestCaseIdRef.current) {
+    if (latestCaseIdRef.current && !noCaseTurnRef.current) {
       void syncHistory(latestCaseIdRef.current);
       onTurnComplete?.(latestCaseIdRef.current);
     }
@@ -134,6 +135,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       streamRequestIdRef.current += 1;
       const requestId = streamRequestIdRef.current;
       finalizedRequestIdRef.current = null;
+      noCaseTurnRef.current = false;
 
       const payload: AgentStreamRequest = {
         caseId: activeCaseId || undefined,
@@ -171,7 +173,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
             if (event.data === "[DONE]") {
               setIsStreaming(false);
-              if (latestCaseIdRef.current) {
+              if (latestCaseIdRef.current && !noCaseTurnRef.current) {
                 void syncHistory(latestCaseIdRef.current);
               }
               return;
@@ -198,20 +200,29 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               return;
             }
 
-            if (type === "state_update" && typeof payload.caseId === "string") {
+            if (type === "state_update") {
               const stateUpdate = payload as unknown as AgentStateUpdateEvent;
+              if (typeof stateUpdate.reply === "string" && stateUpdate.reply) {
+                finalAssistantTextRef.current = stateUpdate.reply;
+                setStreamingText(stateUpdate.reply);
+              }
+
+              if (stateUpdate.noCaseCreated || typeof stateUpdate.caseId !== "string") {
+                noCaseTurnRef.current = Boolean(stateUpdate.noCaseCreated);
+                return;
+              }
+
+              noCaseTurnRef.current = false;
               const streamCaseId = stateUpdate.caseId;
               if (latestCaseIdRef.current !== streamCaseId) {
                 onCaseBound?.(streamCaseId);
               }
               latestCaseIdRef.current = streamCaseId;
               setActiveCaseId(streamCaseId);
-              const nextWorkspace = buildStreamWorkspaceView(stateUpdate);
+              const nextWorkspace = buildStreamWorkspaceView(
+                stateUpdate as AgentStateUpdateEvent & { caseId: string },
+              );
               setStreamWorkspace(nextWorkspace);
-              if (typeof stateUpdate.reply === "string" && stateUpdate.reply) {
-                finalAssistantTextRef.current = stateUpdate.reply;
-                setStreamingText(stateUpdate.reply);
-              }
               return;
             }
 
@@ -223,7 +234,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
           onclose() {
             if (streamRequestIdRef.current === requestId) {
               setIsStreaming(false);
-              if (latestCaseIdRef.current) {
+              if (latestCaseIdRef.current && !noCaseTurnRef.current) {
                 void syncHistory(latestCaseIdRef.current);
               }
             }
@@ -249,6 +260,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     streamRequestIdRef.current += 1;
     finalizedRequestIdRef.current = streamRequestIdRef.current;
     finalAssistantTextRef.current = "";
+    noCaseTurnRef.current = false;
     setStreamingText("");
     setIsStreaming(false);
   }, []);

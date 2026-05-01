@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,7 +132,7 @@ class FastResponderService:
             if result:
                 return result
         language = _detect_language(user_input, session_context)
-        return _fallback_response(classification, language=language)
+        return _fallback_response(classification, language=language, user_input=user_input)
 
 
 _DEFAULT_PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts" / "fast_responder"
@@ -168,13 +169,34 @@ def _detect_language(user_input: str, session_context: SessionContext | None) ->
     return "de"
 
 
-def _fallback_response(classification: PreGateClassification, *, language: str) -> str:
+def _asks_how_are_you(user_input: str) -> bool:
+    text = (user_input or "").strip().lower()
+    return bool(
+        re.search(
+            r"\b(wie geht|geht es dir|gehts dir|how are you|how are u)\b",
+            text,
+        )
+    )
+
+
+def _fallback_response(
+    classification: PreGateClassification,
+    *,
+    language: str,
+    user_input: str,
+) -> str:
     english = language == "en"
     if classification is PreGateClassification.GREETING:
+        if _asks_how_are_you(user_input):
+            return (
+                "Hello! I am ready and happy to help. How can I support you today?"
+                if english
+                else "Hallo! Mir geht es gut, danke der Nachfrage. Wobei kann ich dir heute helfen?"
+            )
         return (
-            "Hello. I can help you clarify a sealing technology question."
+            "Hello! Good to have you here. What would you like to start with?"
             if english
-            else "Hallo. Ich kann dir helfen, eine dichtungstechnische Frage zu klaeren."
+            else "Hallo! Schoen, dass du da bist. Womit moechtest du starten?"
         )
     if classification is PreGateClassification.META_QUESTION:
         return (

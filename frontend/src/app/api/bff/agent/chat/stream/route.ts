@@ -45,6 +45,12 @@ function asRawTurnContextPayload(value: unknown): RawTurnContextPayload | null {
   return value && typeof value === "object" ? (value as RawTurnContextPayload) : null;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function mapConversationStrategy(value: unknown): AgentConversationStrategy | null {
   const payload = asRawConversationStrategyPayload(value);
   if (!payload) {
@@ -87,6 +93,18 @@ function mapTurnContext(value: unknown): AgentTurnContext | null {
       ? payload.open_points_summary.filter((entry): entry is string => typeof entry === "string")
       : [],
   };
+}
+
+function backendSaysNoCaseCreated(runMeta: Record<string, unknown> | null): boolean {
+  const fastResponder = asRecord(runMeta?.fast_responder);
+  const knowledgeService = asRecord(runMeta?.knowledge_service);
+  const conversation = asRecord(runMeta?.conversation);
+
+  return Boolean(
+    fastResponder?.no_case_created ||
+      knowledgeService?.no_case_created ||
+      conversation?.no_case_created,
+  );
 }
 
 export async function POST(request: Request) {
@@ -138,8 +156,6 @@ export async function POST(request: Request) {
         };
 
         try {
-          pushCaseBinding();
-
           while (true) {
             const { done, value } = await reader.read();
             if (done) {
@@ -195,27 +211,30 @@ export async function POST(request: Request) {
                 const responseClass = isOutwardResponseClass(payload.response_class)
                   ? payload.response_class
                   : null;
+                const runMeta = asRecord(payload.run_meta);
+                const noCaseCreated = backendSaysNoCaseCreated(runMeta);
+                const structuredState = asRecord(payload.structured_state);
+                const proposedCaseDelta = asRecord(payload.proposed_case_delta);
+                const ui = asRecord(payload.ui);
+                const assertions = asRecord(payload.assertions);
+                const shouldBindCase = !noCaseCreated;
+                if (shouldBindCase) {
+                  pushCaseBinding();
+                }
                 controller.enqueue(
                   encodeSseEvent({
                     type: "state_update",
-                    caseId,
+                    ...(shouldBindCase ? { caseId } : {}),
+                    noCaseCreated,
                     reply,
                     responseClass,
-                    structuredState:
-                      payload.structured_state && typeof payload.structured_state === "object"
-                        ? payload.structured_state
-                        : null,
+                    structuredState,
                     conversationStrategy: mapConversationStrategy(payload.conversation_strategy),
                     turnContext: mapTurnContext(payload.turn_context),
-                    proposedCaseDelta:
-                      payload.proposed_case_delta && typeof payload.proposed_case_delta === "object"
-                        ? payload.proposed_case_delta
-                        : null,
-                    ui: payload.ui && typeof payload.ui === "object" ? payload.ui : null,
-                    assertions:
-                      payload.assertions && typeof payload.assertions === "object"
-                        ? payload.assertions
-                        : null,
+                    proposedCaseDelta,
+                    ui,
+                    assertions,
+                    runMeta,
                   }),
                 );
                 continue;

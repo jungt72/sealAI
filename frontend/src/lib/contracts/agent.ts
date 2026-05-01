@@ -214,7 +214,8 @@ export type AgentTurnContext = {
 
 export type AgentStateUpdateEvent = {
   type: "state_update";
-  caseId: string;
+  caseId?: string;
+  noCaseCreated?: boolean;
   reply?: string;
   responseClass?: OutwardResponseClass | null;
   assertions?: Record<string, AssertionEntry>;
@@ -223,6 +224,7 @@ export type AgentStateUpdateEvent = {
   turnContext?: AgentTurnContext | null;
   proposedCaseDelta?: ProposedCaseDelta | null;
   ui?: AgentWorkspaceUi;
+  runMeta?: Record<string, unknown> | null;
 };
 
 export type AgentStreamEvent =

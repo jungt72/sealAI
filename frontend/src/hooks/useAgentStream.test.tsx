@@ -66,6 +66,41 @@ describe("useAgentStream", () => {
     ]);
   });
 
+  it("renders no-case fast responses without binding a case or cockpit workspace", async () => {
+    const onCaseBound = vi.fn();
+    mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
+      await handlers.onopen?.(new Response(null, { status: 200 }));
+      handlers.onmessage?.({
+        data: JSON.stringify({
+          type: "state_update",
+          noCaseCreated: true,
+          reply: "Hallo! Schoen, dass du da bist.",
+          responseClass: "conversational_answer",
+        }),
+      });
+      handlers.onmessage?.({ data: "[DONE]" });
+      handlers.onclose?.();
+    });
+
+    const { result } = renderHook(() => useAgentStream({ onCaseBound }));
+
+    await act(async () => {
+      await result.current.sendMessage("Hallo");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    expect(result.current.activeCaseId).toBeNull();
+    expect(result.current.streamWorkspace).toBeNull();
+    expect(onCaseBound).not.toHaveBeenCalled();
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "Hallo" }),
+      expect.objectContaining({ role: "assistant", content: "Hallo! Schoen, dass du da bist." }),
+    ]);
+  });
+
   it("binds the active case from state_update even when case_bound is missing", async () => {
     const onCaseBound = vi.fn();
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {

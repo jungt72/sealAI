@@ -64,8 +64,8 @@ describe("BFF agent chat stream route", () => {
     const payloads = parseSsePayloads(await response.text());
 
     expect(payloads).toHaveLength(4);
-    expect(payloads[0]).toMatchObject({ type: "case_bound" });
-    expect(payloads[1]).toMatchObject({ type: "text_chunk", text: "Preview" });
+    expect(payloads[0]).toMatchObject({ type: "text_chunk", text: "Preview" });
+    expect(payloads[1]).toMatchObject({ type: "case_bound" });
     expect(payloads[2]).toMatchObject({
       type: "state_update",
       caseId: expect.any(String),
@@ -73,6 +73,40 @@ describe("BFF agent chat stream route", () => {
       responseClass: "conversational_answer",
     });
     expect(payloads[3]).toBe("[DONE]");
+  });
+
+  it("keeps backend no-case fast responses session-bound without creating a case", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"Hallo! Schoen, dass du da bist.","response_class":"conversational_answer","run_meta":{"fast_responder":{"no_case_created":true,"source_classification":"GREETING"}}}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hallo" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads[0]).toMatchObject({
+      type: "state_update",
+      noCaseCreated: true,
+      reply: "Hallo! Schoen, dass du da bist.",
+      responseClass: "conversational_answer",
+    });
+    expect(payloads[0]).not.toHaveProperty("caseId");
+    expect(payloads[1]).toBe("[DONE]");
   });
 
   it("forwards assertions from backend state_update events", async () => {
