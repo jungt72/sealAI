@@ -507,8 +507,8 @@ class TestStreamConversation:
     async def test_CONVERSATION_smalltalk_buffers_preview_to_avoid_visible_replacement(self):
         with _patch_openai(
             [
-                "Hallo! Als KI habe ich keine persoenlichen Gefuehle, ",
-                "aber ich bin voll einsatzbereit. ",
+                "Hallo! Ich habe keine persönlichen Gefühle, ",
+                "aber ich bin bereit und einsatzbereit. ",
                 "Wobei kann ich dir heute helfen?",
             ]
         ):
@@ -520,7 +520,7 @@ class TestStreamConversation:
 
         assert text_chunks == []
         assert state_update["reply"] == (
-            "Hallo! Als KI habe ich keine persoenlichen Gefuehle, "
+            "Hallo! Als KI habe ich keine persönlichen Gefühle, "
             "aber ich bin voll einsatzbereit. Wobei kann ich dir heute helfen?"
         )
 

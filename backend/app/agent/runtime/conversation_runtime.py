@@ -360,6 +360,9 @@ def _normalize_smalltalk_address(reply: str) -> str:
         (r"\bWenn\s+Sie\s+möchten\b", "Wenn du möchtest"),
         (r"\bWenn\s+Sie\s+magst\b", "Wenn du magst"),
         (r"\bWenn\s+Sie\b", "Wenn du"),
+        (r"\bIch\s+hab\s+keine\s+persönlichen\s+Gefühle\b", "Als KI habe ich keine persönlichen Gefühle"),
+        (r"\bIch\s+habe\s+keine\s+persönlichen\s+Gefühle\b", "Als KI habe ich keine persönlichen Gefühle"),
+        (r"\bbereit\s+und\s+einsatzbereit\b", "voll einsatzbereit"),
     )
     for pattern, replacement in replacements:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
