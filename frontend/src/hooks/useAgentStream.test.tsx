@@ -66,6 +66,31 @@ describe("useAgentStream", () => {
     ]);
   });
 
+  it("binds the active case from state_update even when case_bound is missing", async () => {
+    const onCaseBound = vi.fn();
+    mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
+      await handlers.onopen?.(new Response(null, { status: 200 }));
+      handlers.onmessage?.({
+        data: JSON.stringify({ type: "state_update", caseId: "case-from-state", reply: "Antwort" }),
+      });
+      handlers.onmessage?.({ data: "[DONE]" });
+      handlers.onclose?.();
+    });
+
+    const { result } = renderHook(() => useAgentStream({ onCaseBound }));
+
+    await act(async () => {
+      await result.current.sendMessage("Salzwasser 80 Grad");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    expect(result.current.activeCaseId).toBe("case-from-state");
+    expect(onCaseBound).toHaveBeenCalledWith("case-from-state");
+  });
+
   it("does not let a late history restore overwrite the live turn state", async () => {
     const historyRequest = deferred<{
       ok: boolean;

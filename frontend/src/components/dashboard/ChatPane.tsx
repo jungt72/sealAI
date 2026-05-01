@@ -405,6 +405,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
     .join("|");
   const proposedDeltaDecisionKey = currentCaseId && proposedDeltaKey ? `${currentCaseId}:${proposedDeltaKey}` : "";
   const shouldAutoAcceptWorkingState =
+    Boolean(currentCaseId) &&
     Boolean(proposedDeltaKey) &&
     documentDeltaFields.length === 0 &&
     streamWorkspace?.proposedCaseDelta?.source !== "document" &&

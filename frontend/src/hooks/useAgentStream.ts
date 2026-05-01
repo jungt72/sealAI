@@ -200,7 +200,12 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
             if (type === "state_update" && typeof payload.caseId === "string") {
               const stateUpdate = payload as unknown as AgentStateUpdateEvent;
-              latestCaseIdRef.current = stateUpdate.caseId;
+              const streamCaseId = stateUpdate.caseId;
+              if (latestCaseIdRef.current !== streamCaseId) {
+                onCaseBound?.(streamCaseId);
+              }
+              latestCaseIdRef.current = streamCaseId;
+              setActiveCaseId(streamCaseId);
               const nextWorkspace = buildStreamWorkspaceView(stateUpdate);
               setStreamWorkspace(nextWorkspace);
               if (typeof stateUpdate.reply === "string" && stateUpdate.reply) {
