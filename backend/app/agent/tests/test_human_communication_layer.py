@@ -303,6 +303,27 @@ async def test_numeric_knowledge_question_does_not_become_field_update() -> None
 
 
 @pytest.mark.asyncio
+async def test_intent_to_start_answers_last_message_and_asks_next_question() -> None:
+    contract = LLMResponseContract(
+        mode=ConversationMode.CASE_QUALIFICATION,
+        assistant_message="Arbeitsstand: Ich habe deine Angaben als aktuellen Arbeitsstand uebernommen.",
+        used_claim_ids=["field.missing.speed_rpm"],
+    )
+
+    result = await _orchestrator(contract).handle(
+        user_message="Ich möchte mit dir eine Dichtungslösung erarbeiten.",
+        case_state=_state(),
+    )
+
+    assert result.used_fallback is False
+    assert "Schritt für Schritt" in result.assistant_message
+    assert "Drehzahl" in result.assistant_message
+    assert "Arbeitsstand:" not in result.assistant_message
+    assert result.trace.guard_decision == "block_progress"
+    assert result.trace.state_patch_size == 0
+
+
+@pytest.mark.asyncio
 async def test_no_progress_guard_blocks_working_state_claim_without_patch() -> None:
     contract = LLMResponseContract(
         mode=ConversationMode.CASE_QUALIFICATION,
@@ -310,7 +331,7 @@ async def test_no_progress_guard_blocks_working_state_claim_without_patch() -> N
         used_claim_ids=["field.missing.speed_rpm"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Ich moechte meine Dichtungssituation besprechen.", case_state=_state())
+    result = await _orchestrator(contract).handle(user_message="Ich habe dazu eine Frage.", case_state=_state())
 
     assert result.used_fallback is True
     assert any("false_progress_language_without_state_patch" in item for item in result.trace.validation_errors)
@@ -746,7 +767,7 @@ async def test_governed_reply_context_does_not_feed_legacy_working_state_text_to
     )
     orchestrator = ConversationOrchestrator(llm_service=llm, enabled=True)
 
-    await orchestrator.handle_governed_reply(
+    result = await orchestrator.handle_governed_reply(
         response_class="structured_clarification",
         turn_context=turn_context,
         fallback_text=(
@@ -757,7 +778,7 @@ async def test_governed_reply_context_does_not_feed_legacy_working_state_text_to
         case_id="case-1",
     )
 
-    assert llm.state is not None
-    assert llm.state.allowed_next_actions == [
-        "Welches Medium liegt direkt an der Dichtstelle an?"
-    ]
+    assert llm.state is None
+    assert "Arbeitsstand:" not in result.assistant_message
+    assert "Welches Medium liegt direkt an der Dichtstelle an?" in result.assistant_message
+    assert result.trace.state_patch_size == 0

@@ -45,6 +45,16 @@ class SpeechActClassifier:
         r"\b(warum|wieso|weshalb|was\s+brauchst\s+du|was\s+fehlt|erklaer|erklär|explain|why)\b",
         re.IGNORECASE | re.UNICODE,
     )
+    _intent_to_start_re = re.compile(
+        r"\b("
+        r"(?:ich|wir)\s+(?:moechte|möchte|moechten|möchten|will|wollen)\b.*\b"
+        r"(?:dichtung(?:sloesung|slösung|ssituation|sfall)?|loesung|lösung|fall|problem|anfrage)\b|"
+        r"(?:dichtung(?:sloesung|slösung|ssituation|sfall)?|loesung|lösung|fall|problem)\s+"
+        r"(?:besprechen|klaeren|klären|erarbeiten|ausarbeiten|anschauen)|"
+        r"(?:lass|lassen)\s+(?:uns|sie\s+uns)\b.*\b(?:starten|anfangen|klaeren|klären)"
+        r")\b",
+        re.IGNORECASE | re.UNICODE,
+    )
     _cancel_re = re.compile(r"\b(stopp|stop|abbrechen|cancel|spaeter|später)\b", re.IGNORECASE | re.UNICODE)
     _oos_re = re.compile(r"\b(wetter|weather|witz|joke|fussball|fußball|aktienkurs)\b", re.IGNORECASE | re.UNICODE)
     _technical_answer_re = re.compile(
@@ -81,6 +91,8 @@ class SpeechActClassifier:
             add("task.correction", 0.94)
         if self._ask_explain_re.search(text):
             add("meta.ask_explain", 0.82)
+        if self._intent_to_start_re.search(text):
+            add("task.intent_to_start", 0.9)
         if self._cancel_re.search(text):
             add("meta.cancel", 0.9)
         if self._oos_re.search(text):

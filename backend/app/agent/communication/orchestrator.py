@@ -420,6 +420,8 @@ class ConversationOrchestrator:
                 return _unmatched_confirmation_answer(state)
             if "social_only_utterance" in reasons:
                 return _social_no_progress_answer(state)
+            if "intent_to_start_case" in reasons:
+                return _intent_to_start_answer(state)
         return None
 
 
@@ -436,11 +438,47 @@ def _format_known_fields(state: CaseConversationState) -> str:
 
 
 def _format_next_question(state: CaseConversationState) -> str:
+    question = _best_next_question(state)
+    if question:
+        return " " + question
+    return ""
+
+
+def _best_next_question(state: CaseConversationState) -> str:
+    active_question = str(state.active_question or "").strip()
+    if active_question and active_question.endswith("?"):
+        return active_question
+
+    missing_keys = {str(field.key).strip().lower() for field in state.missing_fields}
+    missing_labels = {str(field.label).strip().lower() for field in state.missing_fields}
+    combined = missing_keys | missing_labels
+
+    if {"asset_type", "pump or aggregate type", "anlage", "anlage/baugruppe"}.intersection(combined):
+        return "In welcher Anlage oder Baugruppe sitzt die Dichtung, zum Beispiel Pumpe, Rührwerk, Getriebe, Flansch oder Hydraulik?"
+    if {"seal_type", "dichtungstyp", "dichtungsprinzip"}.intersection(combined):
+        return "Um welches Dichtprinzip geht es ungefähr: O-Ring, Wellendichtring, Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?"
+    if {"seal_location", "dichtstelle"}.intersection(combined):
+        return "Wo sitzt die Dichtung genau: an einer Welle, an einem Flansch, in einem Zylinder oder an einer anderen Stelle?"
+    if {"motion_type", "statisch oder dynamisch", "static or dynamic"}.intersection(combined):
+        return "Ist die Dichtstelle statisch, rotierend oder linear bewegt?"
+    if {"medium", "medium_name"}.intersection(combined):
+        return "Welches Medium liegt direkt an der Dichtstelle an?"
+    if {"pressure_bar", "pressure_nominal", "druck", "betriebsdruck"}.intersection(combined):
+        return "Welcher Druck liegt an der Dichtstelle an, und ist das Dauer- oder Spitzendruck?"
+    if {"temperature_c", "temperature_max_c", "temperatur", "temperature"}.intersection(combined):
+        return "Welche Temperatur sieht die Dichtung im normalen Betrieb und als Maximum?"
+    if {"speed_rpm", "drehzahl"}.intersection(combined):
+        return "Welche Drehzahl liegt an der Welle an?"
+    if {"shaft_diameter_mm", "wellendurchmesser"}.intersection(combined):
+        return "Welchen Wellendurchmesser hat die Dichtstelle?"
+
     if state.allowed_next_actions:
-        return " Naechster sinnvoller Schritt: " + str(state.allowed_next_actions[0]).strip()
+        next_action = str(state.allowed_next_actions[0]).strip()
+        if next_action.endswith("?"):
+            return next_action
+        return f"Was kannst du mir dazu als Nächstes sagen: {next_action}?"
     if state.missing_fields:
-        labels = ", ".join(field.label for field in state.missing_fields[:3])
-        return " Als Naechstes fehlen vor allem: " + labels + "."
+        return f"Was kannst du mir als Nächstes zu {state.missing_fields[0].label} sagen?"
     return ""
 
 
@@ -470,6 +508,20 @@ def _social_no_progress_answer(state: CaseConversationState) -> str:
     return (
         "Gern. Beschreibe kurz die Anwendung oder das Problem an der Dichtstelle, "
         "dann gehen wir es Schritt fuer Schritt durch."
+    )
+
+
+def _intent_to_start_answer(state: CaseConversationState) -> str:
+    next_question = _best_next_question(state)
+    if next_question:
+        return (
+            "Sehr gut, dann gehen wir das Schritt für Schritt durch. "
+            "Ich stelle dir immer nur die nächste sinnvolle Frage. "
+            f"{next_question}"
+        ).strip()
+    return (
+        "Sehr gut, dann gehen wir das Schritt für Schritt durch. "
+        "Beschreibe mir kurz, wo die Dichtung sitzt und welches Problem oder Ziel du hast."
     )
 
 

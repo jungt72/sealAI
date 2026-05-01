@@ -78,6 +78,9 @@ governed state.
 Examples:
 
 - `danke`, `hallo`, or pure social turns are acknowledged but create no state patch.
+- "Ich moechte meine Dichtungssituation besprechen" or similar start/continue
+  intent is acknowledged as a valid conversation move, but it still creates no
+  state patch until the user provides a concrete technical value.
 - `ja` / `nein` only confirms something if a backend-visible pending confirmation exists.
 - `weiss ich nicht` is treated as "not resolved", never as a completed field.
 - `O-Ring, danke` can still produce a `seal_type` candidate because it contains real slot evidence.
@@ -102,6 +105,11 @@ If `state_patch_size=0`, visible output must not claim that the "Arbeitsstand"
 was updated or that a technical point is clarified. This prevents the chat from
 feeling like a form engine that invents progress after small talk or ambiguous
 answers.
+
+For start/continue intent without slot evidence, the orchestrator now answers the
+last user turn directly and asks exactly one state-aware next question. This
+keeps the conversation human while still preserving the rule that the cockpit,
+not the chat, owns technical truth.
 
 ## Guard
 

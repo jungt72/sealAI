@@ -102,6 +102,14 @@ class StateTransitionGuard:
         if not allowed_updates:
             reasons = ["no_slot_evidence"]
             commands: list[ConversationCommand] = []
+            if "task.intent_to_start" in acts:
+                reasons.insert(0, "intent_to_start_case")
+                commands.append(
+                    self._command(
+                        "AcknowledgeIntentAndAskNextQuestion",
+                        "User wants to start or continue case clarification.",
+                    )
+                )
             if acts and any(label.startswith("social.") for label in acts) and acts.issubset(self._NO_PROGRESS_ACTS):
                 reasons.insert(0, "social_only_utterance")
                 commands.append(self._command("AcknowledgeWithoutProgress", "Turn contains no technical slot evidence."))
