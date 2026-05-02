@@ -35,6 +35,39 @@ def _knowledge_answer_composer_enabled() -> bool:
     }
 
 
+def _knowledge_debug_trace_enabled() -> bool:
+    return os.environ.get("SEALAI_ENABLE_KNOWLEDGE_DEBUG_TRACE", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class KnowledgeDebugTrace:
+    route: str | None
+    knowledge_mode: str | None
+    reply_source: str
+    answer_markdown_source: Literal[
+        "reply_passthrough",
+        "composer",
+        "composer_fallback",
+    ]
+    composer_enabled: bool
+    composer_attempted: bool
+    composer_succeeded: bool
+    composer_fallback_reason: str | None
+    evidence_count: int
+    evidence_source_types: list[str]
+    history_count: int
+    regulatory_currentness_required: bool
+    limitations_count: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
 @dataclasses.dataclass(frozen=True)
 class RuntimeDispatchResolution:
     gate_route: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"]
@@ -269,16 +302,14 @@ async def _compose_knowledge_answer_if_enabled(
     conversation_route: ConversationRoutingDecision | None,
     recent_history: tuple[Any, ...] = (),
 ) -> Any:
-    if not _knowledge_answer_composer_enabled():
+    composer_enabled = _knowledge_answer_composer_enabled()
+    debug_enabled = _knowledge_debug_trace_enabled()
+    if not composer_enabled and not debug_enabled:
         return knowledge_response
     if not bool(getattr(knowledge_response, "no_case_created", True)):
         return knowledge_response
 
     try:
-        from app.agent.communication.answer_composer import (  # noqa: PLC0415
-            KnowledgeAnswerComposer,
-            KnowledgeAnswerComposerInput,
-        )
         from app.agent.communication.knowledge_context_builder import (  # noqa: PLC0415
             KnowledgeContextBuilder,
         )
@@ -311,6 +342,22 @@ async def _compose_knowledge_answer_if_enabled(
             ),
             language_hint="de",
         )
+
+        if not composer_enabled:
+            return _with_knowledge_debug_trace(
+                knowledge_response,
+                context=context,
+                composer_enabled=False,
+                composer_attempted=False,
+                composer_succeeded=False,
+                answer_markdown_source="reply_passthrough",
+            )
+
+        from app.agent.communication.answer_composer import (  # noqa: PLC0415
+            KnowledgeAnswerComposer,
+            KnowledgeAnswerComposerInput,
+        )
+
         request = KnowledgeAnswerComposerInput(
             context=context,
         )
@@ -318,13 +365,114 @@ async def _compose_knowledge_answer_if_enabled(
         answer_markdown = str(getattr(composed, "answer_markdown", "") or "").strip()
         if not answer_markdown:
             raise ValueError("empty_answer_markdown")
-        return dataclasses.replace(
+        response = dataclasses.replace(
             knowledge_response,
             answer_markdown=answer_markdown,
         )
+        if debug_enabled:
+            response = _with_knowledge_debug_trace(
+                response,
+                context=context,
+                composer_enabled=True,
+                composer_attempted=True,
+                composer_succeeded=True,
+                answer_markdown_source="composer",
+            )
+        return response
     except Exception as exc:  # noqa: BLE001
         _log.warning(
             "[runtime_dispatch] knowledge answer composer failed (%s); using deterministic answer",
             type(exc).__name__,
         )
-        return knowledge_response
+        if not debug_enabled:
+            return knowledge_response
+        return _with_knowledge_debug_trace(
+            knowledge_response,
+            context=locals().get("context"),
+            composer_enabled=composer_enabled,
+            composer_attempted=composer_enabled,
+            composer_succeeded=False,
+            answer_markdown_source="composer_fallback",
+            composer_fallback_reason=_safe_composer_fallback_reason(exc),
+        )
+
+
+def _with_knowledge_debug_trace(
+    knowledge_response: Any,
+    *,
+    context: Any | None,
+    composer_enabled: bool,
+    composer_attempted: bool,
+    composer_succeeded: bool,
+    answer_markdown_source: Literal[
+        "reply_passthrough",
+        "composer",
+        "composer_fallback",
+    ],
+    composer_fallback_reason: str | None = None,
+) -> Any:
+    trace = _build_knowledge_debug_trace(
+        knowledge_response=knowledge_response,
+        context=context,
+        composer_enabled=composer_enabled,
+        composer_attempted=composer_attempted,
+        composer_succeeded=composer_succeeded,
+        answer_markdown_source=answer_markdown_source,
+        composer_fallback_reason=composer_fallback_reason,
+    )
+    return dataclasses.replace(knowledge_response, knowledge_debug=trace.as_dict())
+
+
+def _build_knowledge_debug_trace(
+    *,
+    knowledge_response: Any,
+    context: Any | None,
+    composer_enabled: bool,
+    composer_attempted: bool,
+    composer_succeeded: bool,
+    answer_markdown_source: Literal[
+        "reply_passthrough",
+        "composer",
+        "composer_fallback",
+    ],
+    composer_fallback_reason: str | None = None,
+) -> KnowledgeDebugTrace:
+    source_classification = getattr(
+        getattr(knowledge_response, "source_classification", None),
+        "value",
+        getattr(knowledge_response, "source_classification", None),
+    )
+    evidence_items = tuple(getattr(context, "evidence_items", ()) or ())
+    evidence_source_types: list[str] = []
+    for item in evidence_items:
+        source_type = str(getattr(item, "source_type", "unknown") or "unknown")
+        if source_type not in evidence_source_types:
+            evidence_source_types.append(source_type)
+    route = getattr(context, "route_label", None) if context is not None else None
+    knowledge_mode = getattr(context, "knowledge_mode", None) if context is not None else None
+    return KnowledgeDebugTrace(
+        route=str(route or source_classification or "") or None,
+        knowledge_mode=str(knowledge_mode or source_classification or "") or None,
+        reply_source="knowledge_service",
+        answer_markdown_source=answer_markdown_source,
+        composer_enabled=bool(composer_enabled),
+        composer_attempted=bool(composer_attempted),
+        composer_succeeded=bool(composer_succeeded),
+        composer_fallback_reason=composer_fallback_reason,
+        evidence_count=len(evidence_items),
+        evidence_source_types=evidence_source_types,
+        history_count=len(tuple(getattr(context, "recent_history", ()) or ())),
+        regulatory_currentness_required=bool(
+            getattr(context, "regulatory_currentness_required", False)
+        ),
+        limitations_count=len(tuple(getattr(context, "limitations", ()) or ())),
+    )
+
+
+def _safe_composer_fallback_reason(exc: Exception) -> str:
+    reason = str(exc or "").strip()
+    if reason in {"invalid_json", "invalid_payload", "empty_answer_markdown"}:
+        return reason
+    if reason.startswith("unsafe_answer_markdown"):
+        return "unsafe_answer_markdown"
+    return "composer_exception"

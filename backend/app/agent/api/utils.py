@@ -398,7 +398,7 @@ def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
         if hasattr(answer_view, "as_dict")
         else None
     )
-    return {
+    meta = {
         "knowledge_service": {
             "source_classification": getattr(
                 getattr(knowledge_response, "source_classification", None),
@@ -411,6 +411,10 @@ def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
             "knowledge_answer": answer_contract,
         }
     }
+    knowledge_debug = getattr(knowledge_response, "knowledge_debug", None)
+    if isinstance(knowledge_debug, dict):
+        meta["knowledge_debug"] = knowledge_debug
+    return meta
 
 def _materialize_governed_graph_result(raw_result: object) -> GraphState:
     if isinstance(raw_result, dict) and "__interrupt__" in raw_result:
