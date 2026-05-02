@@ -17,6 +17,52 @@ _DEFAULT_KB_PATH = Path(__file__).parent.parent.parent / "data" / "kb" / "SEALAI
 
 _instance: Optional[FactCardStore] = None
 _PTFE_FACTCARD_ID_PATTERN = re.compile(r"^PTFE-F-\d{3}$", re.IGNORECASE)
+_GENERIC_QUERY_TOKENS = {
+    "allgemein",
+    "answer",
+    "bei",
+    "bedeutet",
+    "bitte",
+    "critical",
+    "dazu",
+    "dichtung",
+    "dichtungen",
+    "eine",
+    "einem",
+    "einen",
+    "einer",
+    "erklaer",
+    "erklaert",
+    "erklär",
+    "erklärt",
+    "fuer",
+    "für",
+    "function",
+    "gegen",
+    "general",
+    "grund",
+    "help",
+    "ist",
+    "kritisch",
+    "man",
+    "mit",
+    "oder",
+    "seal",
+    "sealing",
+    "seals",
+    "sind",
+    "statt",
+    "the",
+    "und",
+    "was",
+    "wann",
+    "welche",
+    "welcher",
+    "welches",
+    "wie",
+    "what",
+    "with",
+}
 
 
 class FactCardStore:
@@ -159,7 +205,7 @@ class FactCardStore:
 
         query_tokens = {
             tok for tok in re.split(r"[^a-z0-9]+", q.lower())
-            if len(tok) >= 3 and tok not in {"what", "with", "gegen", "eine", "oder"}
+            if len(tok) >= 3 and tok not in _GENERIC_QUERY_TOKENS
         }
         if medium:
             query_tokens.update(

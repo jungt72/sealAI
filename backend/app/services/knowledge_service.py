@@ -495,6 +495,118 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
     truth, compatibility claims, or manufacturer approval.
     """
     text = str(user_input or "").casefold()
+    asks_pfas = "pfas" in text or (
+        any(token in text for token in ("reach", "echa", "fluor", "fluoriert"))
+        and any(token in text for token in ("dichtung", "dichtungen", "werkstoff"))
+    )
+    if asks_pfas:
+        answer = "\n".join(
+            [
+                "PFAS ist bei Dichtungen vor allem relevant, weil viele fluorierte Dichtungswerkstoffe in diese Diskussion fallen koennen.",
+                "",
+                "Dazu gehoeren je nach genauer Definition und Regulierung zum Beispiel FKM, FFKM, PTFE, Fluorelastomere und Fluorpolymere. Technisch koennen diese Werkstoffe fuer Chemie-, Temperatur- oder Reibungsthemen wichtig sein. Gleichzeitig koennen PFAS-Regulierung, Lieferantenbewertungen und Dokumentationspflichten die Werkstoffauswahl, Verfuegbarkeit und Freigabedokumente beeinflussen.",
+                "",
+                "Wichtig: Das ist eine technische Orientierung, keine verbindliche rechtliche Bewertung. Ohne Live-Quelle nenne ich keine konkreten Fristen oder Rechtsstaende. Fuer verbindliche Entscheidungen sollten aktuelle ECHA-/REACH-Informationen, Lieferantenerklaerungen und projektspezifische Compliance-Anforderungen geprueft werden.",
+                "",
+                "Fuer einen konkreten Dichtungsfall sollten Medium, Temperatur, Druck, Bewegung, Lebensmittel-/Pharma-/ATEX-Bezug und geforderte Nachweise sauber erfasst werden.",
+            ]
+        )
+        return KnowledgeAnswerResult(
+            answer=answer,
+            answer_available=True,
+            rag_lookup_attempted=True,
+            rag_answer_found=False,
+            rag_miss=True,
+            source_type=SourceType.system_derived,
+            validation_status=ValidationStatus.unvalidated,
+            use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+            not_final_release=True,
+            fallback_allowed=False,
+            fallback_used=False,
+            user_visible_label="SeaLAI-Grundwissen - allgemeine Orientierung",
+            missing_reason="domain_pfas_orientation_without_live_regulatory_source",
+            next_step=(
+                "Fuer bindende Entscheidungen aktuelle ECHA-/REACH-Quellen, "
+                "Lieferantenerklaerungen und projektspezifische Anforderungen pruefen."
+            ),
+            knowledge_evidence=(
+                _knowledge_evidence(
+                    source_type="deterministic",
+                    title="PFAS in Dichtungswerkstoffen",
+                    content=answer,
+                    note="system_derived_domain_answer_currentness_limited",
+                ),
+            ),
+            event_names=(
+                "KnowledgeQuestionReceived",
+                "KnowledgeRAGLookupRequested",
+                "KnowledgeRAGAnswerMissing",
+                "SourceValidationStatusAssigned",
+                "KnowledgeAnswerGenerated",
+            ),
+        )
+
+    asks_saltwater = any(
+        token in text
+        for token in (
+            "salzwasser",
+            "meerwasser",
+            "seewasser",
+            "salt water",
+            "saltwater",
+            "seawater",
+            "chlorid",
+            "chloride",
+            "sole",
+        )
+    )
+    if asks_saltwater:
+        answer = "\n".join(
+            [
+                "Bei Salzwasser sind an Dichtstellen vor allem Chlorid-Korrosion, Ablagerungen und wechselnde Benetzung kritisch.",
+                "",
+                "Metallische Bauteile wie Welle, Gehaeuse, Feder, Stuetzringe oder Huelsen koennen durch Chloride und galvanische Effekte belastet werden. Salzrueckstaende, Kristallisation und Partikel koennen Dichtlippen und Gleitflaechen zusaetzlich verschleissen, besonders bei Nass-/Trocken-Wechseln.",
+                "",
+                "Die Elastomer- oder Werkstoffvertraeglichkeit haengt nicht nur vom Wort Salzwasser ab, sondern von Konzentration, Temperatur, Zusatzstoffen, Betriebsdauer, Bewegung, Druck und Oberflaeche. Auch Federwerkstoff, rostfreie Werkstoffe, Spuelung, Entwaesserung, Oberflaechenguete und Wartung koennen entscheidend sein.",
+                "",
+                "Fuer eine konkrete Richtung brauche ich mindestens Dichtstelle, Bewegung, Temperatur, Druck, Drehzahl oder statische Einordnung, Werkstoffe und ob die Dichtstelle dauerhaft benetzt oder zeitweise trocken ist.",
+            ]
+        )
+        return KnowledgeAnswerResult(
+            answer=answer,
+            answer_available=True,
+            rag_lookup_attempted=True,
+            rag_answer_found=False,
+            rag_miss=True,
+            source_type=SourceType.system_derived,
+            validation_status=ValidationStatus.unvalidated,
+            use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+            not_final_release=True,
+            fallback_allowed=False,
+            fallback_used=False,
+            user_visible_label="SeaLAI-Grundwissen - allgemeine Orientierung",
+            missing_reason="domain_saltwater_orientation_without_rag_hit",
+            next_step=(
+                "Dichtstelle, Bewegung, Temperatur, Druck, Werkstoffe und "
+                "Benetzungsprofil als governed Case aufnehmen."
+            ),
+            knowledge_evidence=(
+                _knowledge_evidence(
+                    source_type="deterministic",
+                    title="Salzwasser in Dichtungsanwendungen",
+                    content=answer,
+                    note="system_derived_domain_answer",
+                ),
+            ),
+            event_names=(
+                "KnowledgeQuestionReceived",
+                "KnowledgeRAGLookupRequested",
+                "KnowledgeRAGAnswerMissing",
+                "SourceValidationStatusAssigned",
+                "KnowledgeAnswerGenerated",
+            ),
+        )
+
     asks_material_comparison = any(
         token in text for token in ("unterschied", "vergleich", " vs ", "besser", "ptfe oder fkm")
     )
