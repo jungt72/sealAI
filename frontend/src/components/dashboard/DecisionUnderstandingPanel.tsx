@@ -161,7 +161,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
       <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
         <div className="flex items-center gap-2 text-base font-semibold text-[#111827]">
           <HelpCircle size={17} />
-          Arbeitsstand
+          Notizen
         </div>
         <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">{EMPTY_TEXT}</p>
       </section>
@@ -218,7 +218,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
         <div>
           <div className="flex items-center gap-2 text-base font-semibold text-[#111827]">
             <ClipboardCheck size={17} />
-            Arbeitsstand
+            Notizen
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
             {humanizeDisplayText(caseSummary)}

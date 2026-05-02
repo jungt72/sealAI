@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 
 import { DecisionUnderstandingPanel } from "@/components/dashboard/DecisionUnderstandingPanel";
-import { ManufacturerFitPanel } from "@/components/dashboard/ManufacturerFitPanel";
 import { ParameterWorkspaceTab } from "@/components/dashboard/ParameterWorkspaceTab";
 import type { AgentOverrideItemRequest } from "@/lib/bff/parameterOverride";
 import type { WorkspaceView } from "@/lib/contracts/workspace";
@@ -579,9 +578,6 @@ export function SealCockpit({
             </div>
             <div className="px-4 pt-4">
               <DesignIntakePanel workspace={workspace} />
-            </div>
-            <div className="px-4 pt-4">
-              <ManufacturerFitPanel workspace={workspace} />
             </div>
             <div className="grid grid-cols-1 gap-4 px-4 pt-4 xl:grid-cols-2">
               <ParameterDataCard rows={data.parameters.rows} warning={data.parameters.warning} />

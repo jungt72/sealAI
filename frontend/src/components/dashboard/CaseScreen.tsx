@@ -210,7 +210,7 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
               aria-label="Cockpit schließen"
               title="Cockpit schließen"
               onClick={closeCockpit}
-              className="absolute right-3 top-2 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#DDE6F2] bg-white text-[#526273] shadow-[0_10px_24px_rgba(15,23,42,0.10)] transition-colors hover:border-[#B8C9E0] hover:bg-[#F8FBFF] hover:text-[#0F172A]"
+              className="absolute left-3 top-2 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#DDE6F2] bg-white text-[#526273] shadow-[0_10px_24px_rgba(15,23,42,0.10)] transition-colors hover:border-[#B8C9E0] hover:bg-[#F8FBFF] hover:text-[#0F172A]"
             >
               <PanelRightClose size={16} />
             </button>

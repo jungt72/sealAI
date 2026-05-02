@@ -369,6 +369,8 @@ describe("CaseScreen", () => {
     expect(screen.getByText("Noch kein Dichtungsfall gestartet")).toBeInTheDocument();
     expect(screen.getByText("Gerechnet")).toBeInTheDocument();
     expect(screen.getByText("0 von 5 Checks vorhanden")).toBeInTheDocument();
+    expect(screen.getByText("Notizen")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Partner-Fit" })).not.toBeInTheDocument();
 
     expect(screen.getByRole("heading", { name: "Angaben zum Fall" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Was noch wichtig ist" })).toBeInTheDocument();
