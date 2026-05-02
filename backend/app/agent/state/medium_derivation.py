@@ -19,6 +19,16 @@ def derive_medium_capture(
     previous: MediumCaptureState | None = None,
 ) -> MediumCaptureState:
     capture, _ = classify_medium_text(message)
+    observed_medium = None
+    for extraction in reversed(list(observed.raw_extractions or [])):
+        if getattr(extraction, "field_name", None) == "medium" and getattr(extraction, "raw_value", None) not in (None, ""):
+            observed_medium = str(extraction.raw_value).strip()
+            break
+    if not capture.primary_raw_text and observed_medium:
+        capture = type(capture)(
+            raw_mentions=(observed_medium,),
+            primary_raw_text=observed_medium,
+        )
     existing = previous if isinstance(previous, MediumCaptureState) else MediumCaptureState()
 
     merged_mentions: list[str] = list(existing.raw_mentions)

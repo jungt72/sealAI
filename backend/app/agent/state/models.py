@@ -863,6 +863,7 @@ class ConversationStrategyContract(BaseModel):
 
     conversation_phase: ConversationPhase = "exploration"
     turn_goal: str = "continue_conversation"
+    focus_key: Optional[str] = None
     user_signal_mirror: str = ""
     """Legacy compatibility field.
 
@@ -925,6 +926,41 @@ class TurnContextContract(ConversationStrategyContract):
 
     confirmed_facts_summary: list[str] = Field(default_factory=list)
     open_points_summary: list[str] = Field(default_factory=list)
+
+
+PendingQuestionStatus = Literal["open", "answered", "cleared"]
+PendingQuestionSource = Literal["governed_next_question", "system"]
+SlotAnswerBindingSource = Literal["pending_question"]
+
+
+class PendingQuestion(BaseModel):
+    """Structured governed question state for binding the next short answer.
+
+    This is backend state, not rendered chat text. It records which governed
+    slot the assistant intentionally asked for so the next short user answer can
+    be interpreted without reading previous assistant copy.
+    """
+
+    target_field: str
+    expected_answer_type: str
+    question_text: Optional[str] = None
+    asked_at_turn_id: Optional[int] = Field(default=None, ge=0)
+    source: PendingQuestionSource = "governed_next_question"
+    ambiguity_policy: Optional[str] = None
+    status: PendingQuestionStatus = "open"
+
+
+class SlotAnswerBinding(BaseModel):
+    """Current-turn binding from a short answer to a pending governed slot."""
+
+    target_field: str
+    raw_value: Any
+    normalized_value: Any = None
+    source: SlotAnswerBindingSource = "pending_question"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    ambiguity: bool = False
+    needs_clarification: bool = False
+    turn_index: int = Field(default=0, ge=0)
 
 
 class ConversationMessage(BaseModel):
@@ -1080,6 +1116,8 @@ class GovernedSessionState(BaseModel):
     )
     medium_context: MediumContext = Field(default_factory=MediumContext)
     conversation_messages: list[ConversationMessage] = Field(default_factory=list)
+    pending_question: Optional[PendingQuestion] = None
+    last_slot_answer_binding: Optional[SlotAnswerBinding] = None
     case_events: list[CaseEvent] = Field(default_factory=list)
     exploration_progress: ExplorationProgressState = Field(
         default_factory=ExplorationProgressState

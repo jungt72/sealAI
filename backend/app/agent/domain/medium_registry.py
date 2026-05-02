@@ -361,6 +361,25 @@ def classify_medium_value(value: str | None) -> MediumClassificationDecision:
             mapping_confidence="requires_confirmation",
         )
 
+    normalized = _normalize_lookup_token(text)
+    if normalized in {"chlor", "chlorine"}:
+        return MediumClassificationDecision(
+            raw_text=text,
+            canonical_label="Chlor",
+            family="chemisch_aggressiv",
+            status="recognized",
+            confidence="medium",
+            normalization_source="deterministic_contextual_medium",
+            mapping_confidence="requires_confirmation",
+            mapping_reason="chlorine_form_ambiguous:Chlorgas/Chlorwasser/Hypochlorit klaeren",
+            registry_key="chlor_contextual",
+            matched_alias=normalized,
+            followup_question=(
+                "Geht es um Chlorgas, Chlorwasser, Natriumhypochlorit/Chlorbleichlauge "
+                "oder ein chlorhaltiges Reinigungsmedium?"
+            ),
+        )
+
     entry, matched_alias = resolve_medium_entry(text)
     if entry is not None:
         return MediumClassificationDecision(

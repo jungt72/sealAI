@@ -69,7 +69,7 @@ from app.agent.runtime.clarification_priority import prioritized_open_point_labe
 from app.agent.runtime.outward_names import build_admissibility_payload
 from app.agent.runtime.reply_composition import compose_clarification_reply, compose_result_reply
 from app.agent.runtime.turn_context import build_governed_turn_context
-from app.agent.state.models import ConversationStrategyContract
+from app.agent.state.models import ConversationStrategyContract, PendingQuestion
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.output_classifier import OutputClassificationInput, OutputClassifier
 
@@ -440,6 +440,28 @@ def _clarification_field_meta(field_name: str | None) -> dict[str, str | int]:
     }
 
 
+def _medium_detail_question(state: GraphState) -> dict[str, str | None] | None:
+    classification = getattr(state, "medium_classification", None)
+    followup = str(getattr(classification, "followup_question", "") or "").strip()
+    has_medium = "medium" in state.asserted.assertions or "medium" in state.normalized.parameters
+    has_qualifier = "medium_qualifiers" in state.asserted.assertions or "medium_qualifiers" in state.normalized.parameters
+    if not has_medium or has_qualifier or not followup:
+        return None
+    medium_label = (
+        str(getattr(classification, "canonical_label", "") or "").strip()
+        or str(getattr(getattr(state, "medium_capture", None), "primary_raw_text", "") or "").strip()
+        or "das Medium"
+    )
+    return {
+        "focus_key": "medium_qualifiers",
+        "user_signal_mirror": f"Danke, ich habe {medium_label} als Medium verstanden.",
+        "primary_question": followup,
+        "primary_question_reason": (
+            "Die genaue Medium-Ausprägung entscheidet, wie Druck, Temperatur und Dichtprinzip weiter einzuordnen sind."
+        ),
+    }
+
+
 def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | None]:
     """Return small deterministic communication hints for clarification turns."""
     conflicts = state.asserted.conflict_flags
@@ -475,6 +497,10 @@ def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | No
             "primary_question": str(meta["conflict_question"]),
             "primary_question_reason": str(meta["reason"]),
         }
+
+    medium_detail_question = _medium_detail_question(state)
+    if medium_detail_question is not None:
+        return medium_detail_question
 
     if missing:
         priority = select_clarification_priority(state, missing)
@@ -526,6 +552,7 @@ def build_governed_conversation_strategy_contract(
         return ConversationStrategyContract(
             conversation_phase="narrowing",
             turn_goal="clarify_primary_open_point",
+            focus_key=str(hints["focus_key"]) if hints.get("focus_key") else None,
             user_signal_mirror=str(hints["user_signal_mirror"]) if hints.get("user_signal_mirror") else "",
             primary_question=str(hints["primary_question"]) if hints.get("primary_question") else None,
             primary_question_reason=str(hints["primary_question_reason"]) if hints.get("primary_question_reason") else "",
@@ -837,18 +864,51 @@ _REPLY_BUILDERS: dict[str, Callable[..., str]] = {
 }
 
 
-async def _build_reply(state: GraphState, response_class: str) -> str:
+async def _build_reply(
+    state: GraphState,
+    response_class: str,
+    strategy: ConversationStrategyContract | None = None,
+) -> str:
     """Generate the deterministic governed reply basis.
 
     This node owns the structured output contract. The final user-visible
     wording is assembled later through the canonical user-facing reply layer,
     so this node must not introduce an additional LLM speaking authority.
     """
-    strategy = build_governed_conversation_strategy_contract(state, response_class)
+    strategy = strategy or build_governed_conversation_strategy_contract(state, response_class)
     builder = _REPLY_BUILDERS.get(response_class)
     if builder is not None:
         return builder(state, strategy)
     return "Bitte geben Sie die technischen Parameter Ihrer Anwendung an."
+
+
+def _pending_question_from_strategy(
+    *,
+    state: GraphState,
+    response_class: str,
+    strategy: ConversationStrategyContract,
+) -> PendingQuestion | None:
+    """Persist a structured slot question for the next governed turn.
+
+    The source of truth is the strategy focus key produced from deterministic
+    missing-field selection, not the rendered assistant text.
+    """
+
+    if response_class != _STRUCTURED_CLARIFICATION:
+        return None
+    if strategy.response_mode != "single_question":
+        return None
+    if strategy.focus_key != "medium" or not strategy.primary_question:
+        return None
+    return PendingQuestion(
+        target_field="medium",
+        expected_answer_type="medium_value",
+        question_text=strategy.primary_question,
+        asked_at_turn_id=state.user_turn_index,
+        source="governed_next_question",
+        ambiguity_policy="clarify_if_broad_or_hazardous",
+        status="open",
+    )
 
 
 def _confirmed_core_tech_count(state: GraphState) -> int:
@@ -1317,9 +1377,15 @@ async def output_contract_node(state: GraphState) -> GraphState:
                     log.info("[output_contract_node] inquiry rejected by user — downgrading to governed_state_update")
                     response_class = _GOVERNED_STATE_UPDATE
 
+    strategy = build_governed_conversation_strategy_contract(state, response_class)
     output_public = _build_output_public_base(state, response_class)
-    reply = await _build_reply(state, response_class)
+    reply = await _build_reply(state, response_class, strategy=strategy)
     output_public["message"] = reply
+    next_pending_question = _pending_question_from_strategy(
+        state=state,
+        response_class=response_class,
+        strategy=strategy,
+    )
 
     log.debug(
         "[output_contract_node] response_class=%s gov_class=%s rfq_admissible=%s",
@@ -1332,6 +1398,7 @@ async def output_contract_node(state: GraphState) -> GraphState:
         "output_response_class": response_class,
         "output_public":         output_public,
         "output_reply":          reply,
+        "pending_question":      next_pending_question,
     })
     if response_class == _STRUCTURED_CLARIFICATION:
         try:

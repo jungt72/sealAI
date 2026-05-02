@@ -41,6 +41,7 @@ from app.agent.domain.normalization import (
     extract_shaft_diameter_mm,
 )
 from app.agent.graph import GraphState
+from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding
 from app.agent.prompts import prompts
 from app.agent.state.models import ObservedExtraction, UserOverride
 from app.llm.factory import get_async_llm
@@ -118,6 +119,17 @@ _CORRECTION_OVERRIDE_FIELDS: frozenset[str] = frozenset({
 
 # Union used by tests and callers that need the full set.
 _PRIMARY_OVERRIDE_FIELDS: frozenset[str] = _UNCONDITIONAL_OVERRIDE_FIELDS | _CORRECTION_OVERRIDE_FIELDS
+
+
+def _slot_binding_to_extraction(binding, turn_index: int) -> ObservedExtraction:
+    return ObservedExtraction(
+        field_name=binding.target_field,
+        raw_value=binding.normalized_value if binding.normalized_value is not None else binding.raw_value,
+        raw_unit=None,
+        source="user",
+        confidence=binding.confidence,
+        turn_index=turn_index,
+    )
 
 
 def _canonical_compare_value(value: Any) -> str:
@@ -402,6 +414,10 @@ async def intake_observe_node(state: GraphState) -> GraphState:
     turn_index = getattr(state, "user_turn_index", None) or state.analysis_cycle
     observed = state.observed
 
+    regex_extractions: list[ObservedExtraction] = []
+    deterministic_extractions: list[ObservedExtraction] = []
+    slot_binding = None
+
     # ── Pass 1: deterministic regex extraction ────────────────────────────
     try:
         regex_params = _apply_contextual_regex_fallbacks(
@@ -409,18 +425,33 @@ async def intake_observe_node(state: GraphState) -> GraphState:
             regex_extract(state.pending_message),
         )
         regex_extractions = _regex_params_to_extractions(regex_params, turn_index)
-        for extraction in regex_extractions:
+        slot_binding = resolve_slot_answer_binding(
+            pending_question=state.pending_question,
+            message=state.pending_message,
+            turn_index=turn_index,
+            already_extracted_fields=frozenset(),
+        )
+        slot_extractions: list[ObservedExtraction] = []
+        if slot_binding is not None:
+            regex_extractions = [
+                extraction
+                for extraction in regex_extractions
+                if extraction.field_name != slot_binding.target_field
+            ]
+            slot_extractions = [_slot_binding_to_extraction(slot_binding, turn_index)]
+        deterministic_extractions = regex_extractions + slot_extractions
+        for extraction in deterministic_extractions:
             observed = observed.with_extraction(extraction)
         observed = _promote_primary_correction_overrides(
             state=state,
             observed=observed,
-            new_extractions=regex_extractions,
+            new_extractions=deterministic_extractions,
             turn_index=turn_index,
         )
         log.debug(
-            "[intake_observe_node] regex extracted %d params: %s",
-            len(regex_extractions),
-            [e.field_name for e in regex_extractions],
+            "[intake_observe_node] deterministic extracted %d params: %s",
+            len(deterministic_extractions),
+            [e.field_name for e in deterministic_extractions],
         )
     except Exception as exc:
         log.warning("[intake_observe_node] regex extraction failed (%s: %s) — continuing", type(exc).__name__, exc)
@@ -428,7 +459,7 @@ async def intake_observe_node(state: GraphState) -> GraphState:
     # ── Pass 2: LLM semantic extraction (feature-flag guarded) ───────────
     if _ENABLE_LLM_EXTRACTION:
         llm_extractions = await _llm_extract_params(state.pending_message, turn_index)
-        already_covered: frozenset[str] = frozenset(e.field_name for e in regex_extractions)
+        already_covered: frozenset[str] = frozenset(e.field_name for e in deterministic_extractions)
         appended_llm_extractions: list[ObservedExtraction] = []
         for extraction in llm_extractions:
             if extraction.field_name not in already_covered:
@@ -446,9 +477,14 @@ async def intake_observe_node(state: GraphState) -> GraphState:
             turn_index=turn_index,
         )
 
+    update: dict[str, object] = {"last_slot_answer_binding": slot_binding}
+    if slot_binding is not None and state.pending_question is not None:
+        update["pending_question"] = state.pending_question.model_copy(update={"status": "answered"})
+
     if observed is state.observed:
         # Nothing was extracted
         log.debug("[intake_observe_node] no extractions for message (len=%d)", len(state.pending_message))
-        return state
+        return state.model_copy(update=update)
 
-    return state.model_copy(update={"observed": observed})
+    update["observed"] = observed
+    return state.model_copy(update=update)
