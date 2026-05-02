@@ -75,6 +75,61 @@ async def test_general_knowledge_routes_to_knowledge_without_governed_case_intak
 
 
 @pytest.mark.parametrize(
+    "message",
+    [
+        "Vergleiche FKM und EPDM für Dichtungen.",
+        "Was ist der Unterschied zwischen FKM und EPDM?",
+        "Wann nimmt man EPDM statt FKM?",
+        "FKM oder EPDM?",
+        "PTFE vs FKM",
+        "Welche Vorteile hat EPDM gegenüber FKM?",
+        "Was ist besser für Wasser, EPDM oder FKM?",
+    ],
+)
+def test_generic_material_comparison_routes_to_knowledge(message: str) -> None:
+    pre_gate = PreGateClassifier().classify(message)
+    route = classify_conversation_route(message, pre_gate_classification=pre_gate.classification)
+
+    assert pre_gate.classification is PreGateClassification.KNOWLEDGE_QUERY
+    assert pre_gate.reasoning == "deterministic_material_comparison_knowledge"
+    assert route.intent is ConversationIntent.general_sealing_question
+    assert route.response_mode is ResponseMode.knowledge_answer
+    assert route.no_durable_engineering_case_state is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Öl bei 90 Grad.",
+        "Welche Dichtung brauche ich für eine Welle mit 80 mm, 1500 rpm, Öl, 90 Grad?",
+        "Kann ich bei meiner Anwendung FKM durch EPDM ersetzen? Medium ist Öl, 90 Grad, 10 bar.",
+        "Unsere EPDM-Dichtung fällt nach 3 Wochen in Natronlauge aus.",
+    ],
+)
+def test_concrete_material_or_application_prompts_remain_governed(message: str) -> None:
+    pre_gate = PreGateClassifier().classify(message)
+    route = classify_conversation_route(message, pre_gate_classification=pre_gate.classification)
+
+    assert pre_gate.classification is PreGateClassification.DOMAIN_INQUIRY
+    assert route.selects_governed_case_intake is True
+    assert route.no_durable_engineering_case_state is False
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Was bedeutet PFAS für Dichtungen?",
+        "Wie funktioniert ein Radialwellendichtring?",
+        "Was ist bei Salzwasser und Dichtungen kritisch?",
+    ],
+)
+def test_existing_no_case_knowledge_prompts_stay_knowledge(message: str) -> None:
+    pre_gate = PreGateClassifier().classify(message)
+
+    assert pre_gate.classification is PreGateClassification.KNOWLEDGE_QUERY
+
+
+@pytest.mark.parametrize(
     "message, expected_pre_gate, expected_intent, expected_mode",
     [
         (

@@ -69,6 +69,13 @@ class PreGateClassifier:
                 "deterministic_deep_dive",
             )
 
+        if self._is_generic_material_comparison(text):
+            return self._result(
+                PreGateClassification.KNOWLEDGE_QUERY,
+                0.82,
+                "deterministic_material_comparison_knowledge",
+            )
+
         if self._matches(_KNOWLEDGE_QUERY_PATTERNS, text):
             return self._result(
                 PreGateClassification.KNOWLEDGE_QUERY,
@@ -102,6 +109,19 @@ class PreGateClassifier:
     @staticmethod
     def _matches(patterns: tuple[Pattern[str], ...], text: str) -> bool:
         return any(pattern.search(text) for pattern in patterns)
+
+    @staticmethod
+    def _is_generic_material_comparison(text: str) -> bool:
+        if not PreGateClassifier._matches(_MATERIAL_COMPARISON_KNOWLEDGE_PATTERNS, text):
+            return False
+        if PreGateClassifier._matches(_MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS, text):
+            return False
+        return PreGateClassifier._mentions_multiple_materials(text)
+
+    @staticmethod
+    def _mentions_multiple_materials(text: str) -> bool:
+        materials = {match.group(0).casefold() for match in _MATERIAL_TOKEN_PATTERN.finditer(text)}
+        return len(materials) >= 2
 
     @staticmethod
     def _result(
@@ -176,6 +196,32 @@ _DEEP_DIVE_PATTERNS = _compile(
     r"\b(was\s+bedeutet|welche\s+rolle\s+spielt)\b.*\b(mein(?:em|er|en)?\s+fall|dies(?:em|er|en)\s+fall|dabei|dafür|dafuer|diese\s+anwendung)\b",
     r"\b(warum|weshalb|wieso)\b.*\b(ptfe|fkm|nbr|epdm|rwdr|gleitringdichtung|radialwellendichtring|werkstoff|medium|druck|temperatur)\b",
     r"\b(deep\s*dive|vertief\w*|tiefer\s+erklären|tiefer\s+erklaeren)\b",
+)
+
+_MATERIAL_TOKEN_PATTERN = re.compile(
+    r"\b(?:ptfe|fkm|ffkm|fpm|epdm|nbr|hnbr|pu|tpu|vmq|silikon|silicone|viton)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+_MATERIAL_COMPARISON_KNOWLEDGE_PATTERNS = _compile(
+    r"\b(vergleiche|vergleich(?:e|en)?|materialvergleich|werkstoffvergleich)\b",
+    r"\b(unterschied(?:e)?|difference)\b",
+    r"\b(vs\.?|versus|oder|statt|gegen[üu]ber)\b",
+    r"\b(wann\s+nimmt\s+man|vorteile?|nachteile?|besser|schlechter)\b",
+    r"\b(alternative\s+zu|durch\s+\w+\s+ersetzen)\b",
+)
+
+_MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS = _compile(
+    r"\b(meine[rmn]?\s+anwendung|bei\s+meiner\s+anlage|in\s+unserer\s+anwendung|"
+    r"ich\s+habe|wir\s+haben|bei\s+uns|unsere[rmn]?)\b",
+    r"\b(ich\s+brauche|wir\s+brauchen|brauche\s+eine\s+dichtung|ben[oö]tige|suche)\b",
+    r"\b(auslegen|auslegung|lege\s+.*\baus|pr[üu]fe|prüfen|"
+    r"ersetzen\s+in\s+(meiner|unserer)\s+anwendung|f[aä]llt\s+aus|leckt|leckage|"
+    r"undicht|ausgefallen|verschlei[ßs])\b",
+    r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|psi|°?\s*[cCfF]|grad|rpm|u\.?/?min)\b",
+    r"\bmedium\s+(?:ist|=)\b",
+    r"\b(?:r[üu]hrwerk|pumpe|getriebe|welle|kolben|flansch|hydraulik)\b.*"
+    r"\b(?:dichtung|dichtstelle|seal|medium|[oö]l|bar|grad|rpm|mm)\b",
 )
 
 _KNOWLEDGE_QUERY_PATTERNS = _compile(

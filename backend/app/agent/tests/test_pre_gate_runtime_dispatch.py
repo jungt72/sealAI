@@ -214,6 +214,76 @@ async def test_knowledge_chat_path_uses_knowledge_service_without_case_creation(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Vergleiche FKM und EPDM für Dichtungen.",
+        "Wann nimmt man EPDM statt FKM?",
+        "PTFE vs FKM",
+    ],
+)
+async def test_material_comparison_dispatch_uses_knowledge_without_case_creation(
+    monkeypatch,
+    message: str,
+) -> None:
+    load_state = AsyncMock(side_effect=AssertionError("material comparison must not load governed state"))
+    load_context = AsyncMock(return_value=None)
+    save_context = AsyncMock()
+
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_knowledge_session_context", load_context)
+    monkeypatch.setattr("app.agent.api.dispatch._persist_live_knowledge_session_context", save_context)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message=message, session_id="material-comparison-no-case"),
+        current_user=_user(),
+    )
+
+    assert dispatch.pre_gate_classification == PreGateClassification.KNOWLEDGE_QUERY.value
+    assert dispatch.runtime_mode == "CONVERSATION"
+    assert dispatch.knowledge_response is not None
+    assert dispatch.knowledge_response.no_case_created is True
+    assert dispatch.fast_response is None
+    assert dispatch.governed_state is None
+    load_state.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_material_comparison_chat_path_emits_safe_debug_trace_without_case_mutation(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_DEBUG_TRACE", "true")
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "false")
+
+    async def fail_light_runtime(*args, **kwargs):
+        raise AssertionError("Material comparison must not enter light runtime")
+
+    async def fail_persist(*args, **kwargs):
+        raise AssertionError("Material comparison must not persist governed state")
+
+    async def fail_governed(*args, **kwargs):
+        raise AssertionError("Material comparison must not invoke governed graph")
+
+    monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_light_runtime)
+    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
+    monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_knowledge_session_context", AsyncMock(return_value=None))
+    monkeypatch.setattr("app.agent.api.dispatch._persist_live_knowledge_session_context", AsyncMock(return_value=None))
+
+    response = await chat_endpoint(
+        ChatRequest(message="Vergleiche FKM und EPDM für Dichtungen.", session_id="material-debug"),
+        current_user=_user(),
+    )
+
+    assert response.policy_path == "knowledge"
+    assert response.proposed_case_delta is None
+    assert response.answer_markdown == response.reply
+    assert response.run_meta["knowledge_service"]["source_classification"] == "KNOWLEDGE_QUERY"
+    assert response.run_meta["knowledge_debug"]["answer_markdown_source"] == "reply_passthrough"
+    assert response.run_meta["knowledge_debug"]["composer_attempted"] is False
+
+
+@pytest.mark.asyncio
 async def test_deep_dive_chat_path_uses_knowledge_service_without_case_creation(monkeypatch) -> None:
     async def fail_light_runtime(*args, **kwargs):
         raise AssertionError("Deep dive must not enter light runtime")
