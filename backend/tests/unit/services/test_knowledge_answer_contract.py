@@ -55,6 +55,13 @@ def test_curated_factcard_hit_returns_machine_readable_answer_contract() -> None
     assert view.fallback_used is False
     assert view.sources[0].source_type is SourceType.rag_verified
     assert view.sources[0].validation_status is ValidationStatus.documented
+    assert view.knowledge_evidence
+    assert view.knowledge_evidence[0].source_type == "fact_card"
+    assert view.knowledge_evidence[0].title == "PTFE: Temperaturbereich"
+    assert "-200 bis 260 C" in view.knowledge_evidence[0].content
+    evidence_payload = str(view.knowledge_evidence[0].as_dict())
+    assert "PTFE-F-001" not in evidence_payload
+    assert "src-ptfe" not in evidence_payload
     assert "KnowledgeQuestionReceived" in view.event_names
     assert "KnowledgeRAGAnswerFound" in view.event_names
     assert "SourceValidationStatusAssigned" in view.event_names
@@ -72,6 +79,8 @@ def test_source_validation_badge_view_is_serializable_with_primitives() -> None:
     assert payload["source_validation_badges"][0]["source_type"] == "rag_verified"
     assert payload["source_validation_badges"][0]["validation_status"] == "documented"
     assert payload["source_validation_badges"][0]["not_final_release"] is True
+    assert payload["knowledge_evidence"][0]["source_type"] == "fact_card"
+    assert "PTFE" in payload["knowledge_evidence"][0]["content"]
 
 
 def test_curated_hit_is_general_orientation_not_case_specific_release() -> None:

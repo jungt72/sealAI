@@ -5,7 +5,13 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Literal
 
 
-KnowledgeEvidenceSourceType = Literal["fact_card", "rag", "deterministic", "unknown"]
+KnowledgeEvidenceSourceType = Literal[
+    "fact_card",
+    "rag",
+    "deterministic",
+    "fallback",
+    "unknown",
+]
 
 _DEFAULT_HISTORY_LIMIT = 6
 _DEFAULT_EVIDENCE_LIMIT = 6
@@ -47,6 +53,7 @@ class KnowledgeEvidenceItem:
     content: str
     source_type: KnowledgeEvidenceSourceType = "unknown"
     title: str | None = None
+    source_name: str | None = None
     source_note: str | None = None
     confidence: float | None = None
 
@@ -55,6 +62,7 @@ class KnowledgeEvidenceItem:
             "title": self.title,
             "source_type": self.source_type,
             "content": self.content,
+            "source_name": self.source_name,
             "source_note": self.source_note,
             "confidence": self.confidence,
         }
@@ -177,19 +185,50 @@ class KnowledgeContextBuilder:
         deterministic_answer: str,
     ) -> tuple[KnowledgeEvidenceItem, ...]:
         items: list[KnowledgeEvidenceItem] = []
-        for source in tuple(getattr(answer_view, "sources", ()) or ()):
-            item = _evidence_from_source(source)
-            if item is not None:
-                items.append(item)
-            if len(items) >= self.evidence_limit:
-                break
+        seen: set[str] = set()
+
+        explicit_items = [
+            item
+            for item in (
+                _evidence_from_explicit(raw)
+                for raw in tuple(getattr(answer_view, "knowledge_evidence", ()) or ())
+            )
+            if item is not None
+        ]
+        for source_type in ("rag", "fact_card"):
+            for item in explicit_items:
+                if item.source_type != source_type:
+                    continue
+                _append_evidence_item(items, item, seen=seen, limit=self.evidence_limit)
+                if len(items) >= self.evidence_limit:
+                    return tuple(items)
+
+        has_explicit_retrieval_evidence = any(
+            item.source_type in {"rag", "fact_card"} for item in explicit_items
+        )
+        if not has_explicit_retrieval_evidence:
+            for source in tuple(getattr(answer_view, "sources", ()) or ()):
+                item = _evidence_from_source(source)
+                _append_evidence_item(items, item, seen=seen, limit=self.evidence_limit)
+                if len(items) >= self.evidence_limit:
+                    return tuple(items)
+
+        for source_type in ("deterministic", "fallback", "unknown"):
+            for item in explicit_items:
+                if item.source_type != source_type:
+                    continue
+                _append_evidence_item(items, item, seen=seen, limit=self.evidence_limit)
+                if len(items) >= self.evidence_limit:
+                    return tuple(items)
 
         deterministic_item = _deterministic_evidence_item(answer_view, deterministic_answer)
-        if deterministic_item is not None and len(items) < self.evidence_limit:
-            items.append(deterministic_item)
+        _append_evidence_item(
+            items,
+            deterministic_item,
+            seen=seen,
+            limit=self.evidence_limit,
+        )
 
-        if not items and deterministic_item is not None:
-            items.append(deterministic_item)
         return tuple(items[: self.evidence_limit])
 
     @staticmethod
@@ -229,6 +268,36 @@ def _evidence_from_source(source: Any) -> KnowledgeEvidenceItem | None:
         title=title,
         source_type=source_type,
         content=content,
+        source_name=title,
+        source_note="; ".join(note_parts) or None,
+        confidence=confidence,
+    )
+
+
+def _evidence_from_explicit(raw_evidence: Any) -> KnowledgeEvidenceItem | None:
+    content = _safe_text(
+        _value(raw_evidence, "content"),
+        limit=_MAX_EVIDENCE_CHARS,
+    )
+    if not content:
+        return None
+    source_type = _normalize_evidence_source_type(_value(raw_evidence, "source_type"))
+    title = _optional_text(_value(raw_evidence, "title"))
+    source_name = _optional_text(_value(raw_evidence, "source_name"))
+    note = _optional_text(_value(raw_evidence, "note"))
+    confidence = _float_or_none(_value(raw_evidence, "confidence"))
+    note_parts = []
+    if source_name:
+        note_parts.append(f"source={source_name}")
+    if note:
+        note_parts.append(note)
+    if confidence is not None:
+        note_parts.append(f"confidence={confidence:.3g}")
+    return KnowledgeEvidenceItem(
+        title=title,
+        source_type=source_type,
+        content=content,
+        source_name=source_name,
         source_note="; ".join(note_parts) or None,
         confidence=confidence,
     )
@@ -267,6 +336,8 @@ def _evidence_source_type(
     raw_source_type = _enum_value(getattr(source, "source_type", None))
     if raw_source_type == "rag_verified":
         return "rag" if has_excerpt else "fact_card"
+    if raw_source_type == "llm_research_fallback":
+        return "fallback"
     if raw_source_type in {"system_derived", "deterministic_calculation"}:
         return "deterministic"
     if has_excerpt:
@@ -274,16 +345,51 @@ def _evidence_source_type(
     return "unknown"
 
 
+def _normalize_evidence_source_type(value: Any) -> KnowledgeEvidenceSourceType:
+    normalized = str(getattr(value, "value", value) or "").strip().lower()
+    if normalized in {"fact_card", "factcard", "curated_fact_card"}:
+        return "fact_card"
+    if normalized in {"rag", "rag_verified", "retrieval", "retrieved_chunk"}:
+        return "rag"
+    if normalized in {"deterministic", "system_derived", "deterministic_calculation"}:
+        return "deterministic"
+    if normalized in {"fallback", "llm_research_fallback", "llm_fallback"}:
+        return "fallback"
+    return "unknown"
+
+
+def _append_evidence_item(
+    items: list[KnowledgeEvidenceItem],
+    item: KnowledgeEvidenceItem | None,
+    *,
+    seen: set[str],
+    limit: int,
+) -> None:
+    if item is None or len(items) >= limit:
+        return
+    key = _dedupe_key(item)
+    if key in seen:
+        return
+    seen.add(key)
+    items.append(item)
+
+
+def _dedupe_key(item: KnowledgeEvidenceItem) -> str:
+    return " ".join(str(item.content or "").casefold().split())
+
+
 def _requires_regulatory_currentness(user_message: str) -> bool:
     return bool(_REGULATORY_RE.search(str(user_message or "")))
 
 
 def _turn_value(turn: Any, key: str) -> str:
-    if isinstance(turn, dict):
-        value = turn.get(key)
-    else:
-        value = getattr(turn, key, None)
-    return str(value or "").strip()
+    return str(_value(turn, key) or "").strip()
+
+
+def _value(item: Any, key: str) -> Any:
+    if isinstance(item, dict):
+        return item.get(key)
+    return getattr(item, key, None)
 
 
 def _safe_text(value: Any, *, limit: int | None = None) -> str:

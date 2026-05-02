@@ -90,6 +90,54 @@ def test_context_builder_maps_factcard_and_rag_evidence_safely() -> None:
     assert context.evidence_items[1].content.endswith("...")
 
 
+def test_context_builder_prefers_explicit_evidence_priority_and_dedupes() -> None:
+    deterministic_text = "Deterministische Antwort."
+    answer_view = SimpleNamespace(
+        knowledge_evidence=(
+            SimpleNamespace(
+                source_type="deterministic",
+                title="Deterministic",
+                content=deterministic_text,
+            ),
+            SimpleNamespace(
+                source_type="fact_card",
+                title="PTFE FactCard",
+                content="PTFE: Temperaturbereich -200 bis 260 C.",
+                source_name="Curated source",
+            ),
+            SimpleNamespace(
+                source_type="rag",
+                title="FKM Grundlagen",
+                content="FKM ist eine Fluorelastomer-Werkstofffamilie.",
+                source_name="FKM Grundlagen",
+            ),
+            SimpleNamespace(
+                source_type="deterministic",
+                title="Duplicate deterministic",
+                content=deterministic_text,
+            ),
+        ),
+        sources=(),
+    )
+
+    context = KnowledgeContextBuilder(evidence_limit=6).build(
+        user_message="Vergleich bitte kurz.",
+        deterministic_answer=deterministic_text,
+        answer_view=answer_view,
+    )
+
+    assert [item.source_type for item in context.evidence_items] == [
+        "rag",
+        "fact_card",
+        "deterministic",
+    ]
+    assert context.evidence_items[0].title == "FKM Grundlagen"
+    assert context.evidence_items[1].source_name == "Curated source"
+    assert sum(
+        1 for item in context.evidence_items if item.content == deterministic_text
+    ) == 1
+
+
 def test_context_builder_marks_regulatory_currentness_limitation_for_pfas() -> None:
     context = KnowledgeContextBuilder().build(
         user_message="Was bedeutet PFAS fuer Dichtungen?",

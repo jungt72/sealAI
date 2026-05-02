@@ -204,6 +204,8 @@ def test_enabled_fallback_returns_unvalidated_general_orientation_contract() -> 
     assert payload["source_validation_badges"][0]["source_type"] == "llm_research_fallback"
     assert payload["source_validation_badges"][0]["validation_status"] == "unvalidated"
     assert payload["source_validation_badges"][0]["not_final_release"] is True
+    assert payload["knowledge_evidence"][0]["source_type"] == "fallback"
+    assert "Not validated" in payload["knowledge_evidence"][0]["content"]
     assert "LLMResearchFallbackUsed" in view.event_names
     assert "KnowledgeRAGAnswerMissing" in view.event_names
     assert "KnowledgeAnswerGenerated" in view.event_names

@@ -4,7 +4,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from app.agent.runtime.output_guard import (
     FAST_PATH_GUARD_FALLBACK,
@@ -41,6 +41,35 @@ class KnowledgeRetriever(Protocol):
         max_results: int = 3,
     ) -> list[dict[str, Any]]:
         ...
+
+
+KnowledgeEvidenceSourceType = Literal[
+    "fact_card",
+    "rag",
+    "deterministic",
+    "fallback",
+    "unknown",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeEvidence:
+    source_type: KnowledgeEvidenceSourceType
+    content: str
+    title: str | None = None
+    source_name: str | None = None
+    confidence: float | None = None
+    note: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "source_type": self.source_type,
+            "title": self.title,
+            "content": self.content,
+            "source_name": self.source_name,
+            "confidence": self.confidence,
+            "note": self.note,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +135,7 @@ class KnowledgeAnswerResult:
     missing_reason: str | None = None
     next_step: str | None = None
     event_names: tuple[str, ...] = field(default_factory=tuple)
+    knowledge_evidence: tuple[KnowledgeEvidence, ...] = field(default_factory=tuple)
 
     @property
     def source_validation_badges(self) -> tuple[SourceValidationBadgeView, ...]:
@@ -149,6 +179,9 @@ class KnowledgeAnswerResult:
             "missing_reason": self.missing_reason,
             "next_step": self.next_step,
             "event_names": list(self.event_names),
+            "knowledge_evidence": [
+                evidence.as_dict() for evidence in self.knowledge_evidence
+            ],
             "source_validation_badges": [
                 badge.as_dict() for badge in self.source_validation_badges
             ],
@@ -170,6 +203,10 @@ class KnowledgeResponse:
         if self.answer_result is not None:
             return self.answer_result
         return _miss_result(self.content)
+
+    @property
+    def knowledge_evidence(self) -> tuple[KnowledgeEvidence, ...]:
+        return self.knowledge_answer_view.knowledge_evidence
 
 
 class KnowledgeService:
@@ -239,6 +276,7 @@ class KnowledgeService:
             "Ich habe dazu kuratierte SeaLAI-Hinweise gefunden. Kurz eingeordnet:",
         ]
         sources: list[KnowledgeSource] = []
+        evidence: list[KnowledgeEvidence] = []
         seen_sources: set[str] = set()
         for card in cards:
             card_id = str(card.get("id") or "knowledge-card")
@@ -251,6 +289,15 @@ class KnowledgeService:
             rendered_value = f"{value} {units}".strip()
             if rendered_value:
                 lines.append(f"- {label}: {rendered_value}.")
+                evidence.append(
+                    _knowledge_evidence(
+                        source_type="fact_card",
+                        title=label,
+                        content=f"{label}: {rendered_value}.",
+                        source_name=_source_title(self._store, source_id),
+                        note="curated_fact_card",
+                    )
+                )
             if source_id and source_id not in seen_sources:
                 source = self._source_for(source_id)
                 if source is not None:
@@ -268,7 +315,7 @@ class KnowledgeService:
             "Temperatur, Druck, Bewegung und Einbausituation."
         )
         answer = "\n".join(lines)
-        result = _hit_result(answer, tuple(sources))
+        result = _hit_result(answer, tuple(sources), knowledge_evidence=tuple(evidence))
         return KnowledgeResponse(
             content=answer,
             source_classification=source_classification,
@@ -283,6 +330,7 @@ class KnowledgeService:
         source_classification: PreGateClassification,
     ) -> KnowledgeResponse:
         sources: list[KnowledgeSource] = []
+        evidence: list[KnowledgeEvidence] = []
         lines = ["Aus dem kuratierten/RAG-Wissenskontext:"]
         for index, hit in enumerate(hits, start=1):
             text = _clean_excerpt(hit.get("text") or hit.get("content") or "")
@@ -305,6 +353,17 @@ class KnowledgeService:
             confidence = _float_or_none(
                 hit.get("fused_score") or hit.get("vector_score") or hit.get("score")
             )
+            if text:
+                evidence.append(
+                    _knowledge_evidence(
+                        source_type="rag",
+                        title=title,
+                        content=text,
+                        source_name=title,
+                        confidence=confidence,
+                        note="documented_rag_snippet",
+                    )
+                )
             sources.append(
                 KnowledgeSource(
                     source_id=source_id,
@@ -325,7 +384,7 @@ class KnowledgeService:
             "Herstellerfreigabe."
         )
         answer = "\n".join(lines)
-        result = _hit_result(answer, tuple(sources))
+        result = _hit_result(answer, tuple(sources), knowledge_evidence=tuple(evidence))
         return KnowledgeResponse(
             content=answer,
             source_classification=source_classification,
@@ -395,7 +454,12 @@ class KnowledgeService:
         return _fallback_result(fallback_text)
 
 
-def _hit_result(answer: str, sources: tuple[KnowledgeSource, ...]) -> KnowledgeAnswerResult:
+def _hit_result(
+    answer: str,
+    sources: tuple[KnowledgeSource, ...],
+    *,
+    knowledge_evidence: tuple[KnowledgeEvidence, ...] = (),
+) -> KnowledgeAnswerResult:
     return KnowledgeAnswerResult(
         answer=answer,
         answer_available=True,
@@ -410,6 +474,7 @@ def _hit_result(answer: str, sources: tuple[KnowledgeSource, ...]) -> KnowledgeA
             "Fuer eine konkrete Anwendung Betriebsdaten bereitstellen und als "
             "governed Case fuer Herstellerpruefung qualifizieren."
         ),
+        knowledge_evidence=knowledge_evidence,
         event_names=(
             "KnowledgeQuestionReceived",
             "KnowledgeRAGLookupRequested",
@@ -461,6 +526,14 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
             next_step=(
                 "Bei konkreter Anwendung Medium, Temperatur, Druck, Bewegung "
                 "und Dichtstelle als governed Case aufnehmen."
+            ),
+            knowledge_evidence=(
+                _knowledge_evidence(
+                    source_type="deterministic",
+                    title="SeaLAI-Grundwissen",
+                    content=answer,
+                    note="system_derived_domain_answer",
+                ),
             ),
             event_names=(
                 "KnowledgeQuestionReceived",
@@ -517,6 +590,14 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
                 "Bei konkreter Anwendung Medium, Temperatur, Druck, Drehzahl "
                 "und Wellendurchmesser als governed Case aufnehmen."
             ),
+            knowledge_evidence=(
+                _knowledge_evidence(
+                    source_type="deterministic",
+                    title="SeaLAI-Grundwissen",
+                    content=answer,
+                    note="system_derived_domain_answer",
+                ),
+            ),
             event_names=(
                 "KnowledgeQuestionReceived",
                 "KnowledgeRAGLookupRequested",
@@ -550,6 +631,14 @@ def _miss_result(
         next_step=(
             "Keine technische Antwort erfinden; konkrete Anwendungsdaten aufnehmen "
             "oder spaeter nicht validierte LLM-Recherche explizit aktivieren."
+        ),
+        knowledge_evidence=(
+            _knowledge_evidence(
+                source_type="deterministic",
+                title="Deterministic KnowledgeService answer",
+                content=answer,
+                note="safe_rag_miss_answer",
+            ),
         ),
         event_names=(
             "KnowledgeQuestionReceived",
@@ -593,6 +682,14 @@ def _fallback_result(provider_answer: str) -> KnowledgeAnswerResult:
             "oder Herstellerpruefung heranziehen; diese LLM-Recherche nicht als "
             "Case Truth, RFQ Truth, Compliance-Nachweis oder Freigabe verwenden."
         ),
+        knowledge_evidence=(
+            _knowledge_evidence(
+                source_type="fallback",
+                title=KNOWLEDGE_LLM_FALLBACK_LABEL,
+                content=answer,
+                note="llm_research_fallback_unvalidated",
+            ),
+        ),
         event_names=(
             "KnowledgeQuestionReceived",
             "KnowledgeRAGLookupRequested",
@@ -619,6 +716,35 @@ def _fallback_text_from_provider_result(raw_result: Any) -> str:
     if value:
         return str(value).strip()
     return ""
+
+
+def _knowledge_evidence(
+    *,
+    source_type: KnowledgeEvidenceSourceType,
+    content: Any,
+    title: Any = None,
+    source_name: Any = None,
+    confidence: float | None = None,
+    note: Any = None,
+) -> KnowledgeEvidence:
+    return KnowledgeEvidence(
+        source_type=source_type,
+        title=_clean_optional_text(title, limit=180),
+        content=_clean_excerpt(content, limit=900),
+        source_name=_clean_optional_text(source_name, limit=180),
+        confidence=confidence,
+        note=_clean_optional_text(note, limit=180),
+    )
+
+
+def _source_title(store: Any, source_id: str) -> str | None:
+    if not source_id:
+        return None
+    source_map: dict[str, Any] = getattr(store, "_sources", {})
+    source = source_map.get(source_id)
+    if not isinstance(source, dict):
+        return None
+    return _clean_optional_text(source.get("title") or source_id, limit=180)
 
 
 def _human_fact_label(topic: str, prop: str) -> str:
@@ -655,6 +781,11 @@ def _clean_excerpt(value: Any, *, limit: int = 420) -> str:
     if len(text) <= limit:
         return text
     return text[:limit].rstrip() + "..."
+
+
+def _clean_optional_text(value: Any, *, limit: int) -> str | None:
+    text = _clean_excerpt(value, limit=limit)
+    return text or None
 
 
 def _float_or_none(value: Any) -> float | None:

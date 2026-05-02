@@ -7,6 +7,7 @@ from app.domain.conversation_intent import (
 )
 from app.domain.pre_gate_classification import PreGateClassification
 from app.domain.source_validation import SourceType, ValidationStatus
+from app.agent.communication.knowledge_context_builder import KnowledgeContextBuilder
 from app.services.knowledge_service import KnowledgeService
 from app.services.pre_gate_classifier import PreGateClassifier
 
@@ -68,6 +69,9 @@ def test_injected_rag_retriever_is_used_after_curated_miss() -> None:
                     "source_id": "doc-fkm",
                     "title": "FKM Grundlagen",
                     "chunk_id": "chunk-1",
+                    "vector_id": "internal-vector-123",
+                    "embedding": [0.12, 0.34],
+                    "db_primary_key": "db-row-99",
                 },
                 "fused_score": 0.82,
             }
@@ -96,6 +100,13 @@ def test_injected_rag_retriever_is_used_after_curated_miss() -> None:
     assert view.sources[0].source_id == "doc-fkm"
     assert view.sources[0].evidence_ref == "chunk-1"
     assert view.sources[0].confidence == 0.82
+    assert view.knowledge_evidence[0].source_type == "rag"
+    assert view.knowledge_evidence[0].title == "FKM Grundlagen"
+    assert "FKM ist eine Fluorelastomer" in view.knowledge_evidence[0].content
+    evidence_payload = str(view.knowledge_evidence[0].as_dict())
+    assert "internal-vector-123" not in evidence_payload
+    assert "embedding" not in evidence_payload
+    assert "db-row-99" not in evidence_payload
     assert view.fallback_used is False
 
 
@@ -171,3 +182,25 @@ def test_ptfe_fkm_comparison_is_human_general_orientation() -> None:
     assert "FKM" in response.content
     assert "keine Auswahl" in response.content
     assert "freigegeben" not in response.content.lower()
+
+
+def test_deterministic_domain_answer_exposes_bounded_evidence_for_context() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "Was ist der Unterschied zwischen PTFE und FKM?"
+    )
+    view = response.knowledge_answer_view
+
+    assert response.content == view.answer
+    assert view.knowledge_evidence
+    assert view.knowledge_evidence[0].source_type == "deterministic"
+    assert "PTFE und FKM" in view.knowledge_evidence[0].content
+    assert len(view.knowledge_evidence[0].content) <= 900
+
+    context = KnowledgeContextBuilder().build(
+        user_message="Was ist der Unterschied zwischen PTFE und FKM?",
+        deterministic_answer=response.content,
+        knowledge_response=response,
+    )
+
+    assert context.evidence_items[0].source_type == "deterministic"
+    assert "PTFE und FKM" in context.evidence_items[0].content

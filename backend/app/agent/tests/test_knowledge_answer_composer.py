@@ -5,6 +5,7 @@ import logging
 import pytest
 
 from app.agent.api.models import ChatRequest
+from app.agent.api.dispatch import _compose_knowledge_answer_if_enabled
 from app.agent.api.routes.chat import chat_endpoint
 from app.agent.communication.answer_composer import (
     KnowledgeAnswerComposerOutput,
@@ -13,6 +14,7 @@ from app.agent.communication.answer_composer import (
 )
 from app.agent.communication.knowledge_context_builder import KnowledgeContextBuilder
 from app.services.auth.dependencies import RequestUser
+from app.services.knowledge_service import KnowledgeService
 from app.services.knowledge_case_bridge_service import (
     KnowledgeConversationTurn,
     KnowledgeSessionContext,
@@ -40,6 +42,16 @@ def _block_case_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
     monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_governed)
     monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+
+
+class _FactcardStore:
+    _sources = {"src-1": {"title": "Curated source"}}
+
+    def __init__(self, cards: list[dict[str, object]]) -> None:
+        self._cards = cards
+
+    def match_query_to_cards(self, query_lower: str) -> list[dict[str, object]]:
+        return list(self._cards)
 
 
 @pytest.mark.asyncio
@@ -158,6 +170,52 @@ async def test_knowledge_answer_composer_receives_enriched_history_and_evidence(
     assert response.reply
     assert response.answer_markdown != response.reply
     assert response.proposed_case_delta is None
+
+
+@pytest.mark.asyncio
+async def test_knowledge_answer_composer_receives_factcard_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "true")
+    knowledge_response = KnowledgeService(
+        factcard_store=_FactcardStore(
+            [
+                {
+                    "id": "PTFE-F-001",
+                    "topic": "PTFE",
+                    "property": "temperature_window",
+                    "value": "-200 bis 260",
+                    "units": "C",
+                    "source": "src-1",
+                }
+            ]
+        )
+    ).answer("PTFE Temperatur")
+    captured: dict[str, KnowledgeAnswerComposerInput] = {}
+
+    async def compose(_self, request: KnowledgeAnswerComposerInput):
+        captured["request"] = request
+        return KnowledgeAnswerComposerOutput(
+            answer_markdown="**PTFE:** Temperaturhinweis aus kuratierter Evidenz.",
+            confidence_note=None,
+        )
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.KnowledgeAnswerComposer.compose",
+        compose,
+    )
+
+    response = await _compose_knowledge_answer_if_enabled(
+        user_message="PTFE Temperatur",
+        knowledge_response=knowledge_response,
+        conversation_route=None,
+    )
+
+    request = captured["request"]
+    assert request.context.evidence_items[0].source_type == "fact_card"
+    assert "PTFE: Temperaturbereich" in request.context.evidence_items[0].content
+    assert response.content == knowledge_response.content
+    assert response.answer_markdown == "**PTFE:** Temperaturhinweis aus kuratierter Evidenz."
 
 
 @pytest.mark.asyncio
