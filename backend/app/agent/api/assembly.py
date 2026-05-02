@@ -33,6 +33,9 @@ class GovernedReplyAssemblyContext:
     run_meta: dict[str, Any]
     ui_payload: dict[str, Any]
     deterministic_reply: str
+    answer_markdown: str | None = None
+    answer_markdown_source: str = "deterministic_reply"
+    answer_markdown_error: str | None = None
     proposed_case_delta: ProposedCaseDelta = dataclasses.field(default_factory=ProposedCaseDelta)
     domain_context: dict[str, Any] = dataclasses.field(default_factory=dict)
 
@@ -121,6 +124,9 @@ def _build_governed_reply_context(
 
     structured_state = _governed_structured_state(persisted_state, response_class)
     deterministic_reply = str(result_state.output_reply or "").strip()
+    answer_markdown = str(result_state.output_answer_markdown or "").strip() or None
+    answer_markdown_source = str(result_state.output_answer_markdown_source or "").strip() or "deterministic_reply"
+    answer_markdown_error = str(result_state.governed_answer_composer_error or "").strip() or None
     turn_index = int(getattr(result_state, "user_turn_index", 0) or result_state.analysis_cycle or 0)
     proposed_case_delta = proposed_case_delta_from_extractions(
         result_state.observed.raw_extractions,
@@ -133,11 +139,28 @@ def _build_governed_reply_context(
         assertions_payload=assertions_payload,
         conversation_strategy=conversation_strategy,
         turn_context=turn_context,
-        run_meta={"version_provenance": _build_structured_version_provenance(decision=None)},
+        run_meta={
+            "version_provenance": _build_structured_version_provenance(decision=None),
+            "governed_answer_composer": {
+                "source": answer_markdown_source,
+                "error": answer_markdown_error,
+            },
+        },
         ui_payload=ui_payload,
         deterministic_reply=deterministic_reply,
+        answer_markdown=answer_markdown,
+        answer_markdown_source=answer_markdown_source,
+        answer_markdown_error=answer_markdown_error,
         proposed_case_delta=proposed_case_delta,
     )
+
+def _governed_composer_visible_answer(result_state: GraphState) -> str | None:
+    source = str(result_state.output_answer_markdown_source or "").strip()
+    answer = str(result_state.output_answer_markdown or "").strip()
+    if source == "governed_composer" and answer:
+        return answer
+    return None
+
 
 def _assemble_governed_stream_payload(
     *,
@@ -145,8 +168,13 @@ def _assemble_governed_stream_payload(
     visible_reply: str | None = None,
 ) -> dict[str, Any]:
     fallback_reply = str(context.deterministic_reply or "").strip()
-    final_reply = str(visible_reply or "").strip() or fallback_reply
-    
+    composed_answer = (
+        str(context.answer_markdown or "").strip()
+        if context.answer_markdown_source == "governed_composer"
+        else ""
+    )
+    final_reply = fallback_reply if composed_answer else (str(visible_reply or "").strip() or fallback_reply)
+
     public_reply = assemble_user_facing_reply(
         reply=final_reply,
         structured_state=context.structured_state,
@@ -155,11 +183,15 @@ def _assemble_governed_stream_payload(
         response_class=context.response_class,
         fallback_text=fallback_reply,
     )
+    assistant_message = public_reply.get("reply")
+    if composed_answer:
+        public_reply["answer_markdown"] = composed_answer
+        assistant_message = composed_answer
 
     return {
         "type": "state_update",
         **public_reply,
-        "assistant_message": public_reply.get("reply"),
+        "assistant_message": assistant_message,
         "proposed_case_delta": context.proposed_case_delta.model_dump(mode="json"),
         "assertions": context.assertions_payload,
         "conversation_strategy": context.conversation_strategy.model_dump(),

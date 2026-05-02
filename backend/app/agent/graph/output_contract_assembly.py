@@ -1410,6 +1410,14 @@ async def output_contract_node(state: GraphState) -> GraphState:
         "pending_question":      next_pending_question,
         "governed_answer_context": governed_answer_context.model_dump(mode="python"),
     })
+
+    # structured_clarification interrupts below, so the text-only composer must
+    # run before that terminal boundary. The node remains idempotent for normal
+    # graph edge traversal.
+    from app.agent.graph.nodes.governed_answer_composer_node import governed_answer_composer_node
+
+    result_state = await governed_answer_composer_node(result_state)
+
     if response_class == _STRUCTURED_CLARIFICATION:
         try:
             resumed_message = interrupt(

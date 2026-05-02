@@ -416,9 +416,32 @@ def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
         meta["knowledge_debug"] = knowledge_debug
     return meta
 
+def _state_from_interrupt_payload(interrupts: object) -> GraphState | None:
+    if interrupts is None:
+        return None
+    try:
+        interrupt_items = list(interrupts)  # type: ignore[arg-type]
+    except TypeError:
+        interrupt_items = [interrupts]
+
+    for interrupt_item in interrupt_items:
+        payload = getattr(interrupt_item, "value", interrupt_item)
+        if not isinstance(payload, dict):
+            continue
+        state_payload = payload.get("state")
+        if isinstance(state_payload, GraphState):
+            return state_payload
+        if isinstance(state_payload, dict):
+            return GraphState.model_validate(state_payload)
+    return None
+
+
 def _materialize_governed_graph_result(raw_result: object) -> GraphState:
     if isinstance(raw_result, dict) and "__interrupt__" in raw_result:
-        return GraphState(**raw_result)
+        interrupted_state = _state_from_interrupt_payload(raw_result.get("__interrupt__"))
+        if interrupted_state is not None:
+            return interrupted_state
+        return GraphState()
     if isinstance(raw_result, GraphState):
         return raw_result
     return GraphState.model_validate(raw_result)

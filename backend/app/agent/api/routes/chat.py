@@ -30,6 +30,7 @@ from app.agent.api.governed_runtime import run_governed_graph_turn
 from app.agent.api.assembly import (
     _build_governed_reply_context,
     _assemble_governed_stream_payload,
+    _governed_composer_visible_answer,
 )
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.api.streaming import event_generator, _build_fast_path_version_provenance
@@ -119,12 +120,14 @@ async def _run_governed_chat_response(
         result_state=result_state,
         persisted_state=persisted_state,
     )
-    visible_reply = await collect_governed_visible_reply(
-        response_class=context.response_class,
-        turn_context=context.turn_context,
-        fallback_text=context.deterministic_reply,
-        latest_user_message=request.message,
-    )
+    visible_reply = _governed_composer_visible_answer(result_state)
+    if visible_reply is None:
+        visible_reply = await collect_governed_visible_reply(
+            response_class=context.response_class,
+            turn_context=context.turn_context,
+            fallback_text=context.deterministic_reply,
+            latest_user_message=request.message,
+        )
 
     if visible_reply:
         updated_state = _with_governed_conversation_turn(

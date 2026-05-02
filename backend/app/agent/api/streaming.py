@@ -42,6 +42,7 @@ from app.agent.api.assembly import (
     _assemble_governed_stream_payload,
     _build_fast_path_version_provenance,
     _build_structured_version_provenance,
+    _governed_composer_visible_answer,
 )
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
@@ -419,12 +420,14 @@ async def _stream_governed_graph(
         result_state=turn_result.result_state,
         persisted_state=turn_result.persisted_state,
     )
-    visible_reply = await collect_governed_visible_reply(
-        response_class=context.response_class,
-        turn_context=context.turn_context,
-        fallback_text=context.deterministic_reply,
-        latest_user_message=request.message,
-    )
+    visible_reply = _governed_composer_visible_answer(turn_result.result_state)
+    if visible_reply is None:
+        visible_reply = await collect_governed_visible_reply(
+            response_class=context.response_class,
+            turn_context=context.turn_context,
+            fallback_text=context.deterministic_reply,
+            latest_user_message=request.message,
+        )
     if visible_reply:
         updated_state = _with_governed_conversation_turn(
             turn_result.persisted_state,
@@ -450,10 +453,11 @@ async def _stream_governed_graph(
         context=context,
         visible_reply=visible_reply,
     )
-    # Suffix version provenance from streaming.py locally
-    payload["run_meta"] = {
-        "version_provenance": _build_structured_version_provenance(decision=None)
-    }
+    # Suffix version provenance from streaming.py locally without dropping
+    # composer source/fallback metadata from the graph assembly layer.
+    run_meta = dict(payload.get("run_meta") or {})
+    run_meta["version_provenance"] = _build_structured_version_provenance(decision=None)
+    payload["run_meta"] = run_meta
 
     yield f"data: {json.dumps(payload, default=str)}\n\n"
     yield "data: [DONE]\n\n"

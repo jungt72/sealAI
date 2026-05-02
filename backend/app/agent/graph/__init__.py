@@ -13,14 +13,16 @@ with execution-context fields that are transient (not persisted to Redis):
     output_reply          — assembled reply text (set by output_contract_node)
     output_response_class — outward response class string
     output_public         — public payload dict (only this surfaces in the API)
+    output_answer_markdown — optional composed markdown answer (text-only)
 
 Persistence: the caller strips execution-context fields before Redis save.
 Use GovernedSessionState.model_validate(state.model_dump()) to extract
 the persisted portion from a completed GraphState.
 
 Architecture invariants enforced here:
-  Invariant 4: LLM writes ONLY to ObservedState (intake_observe_node).
-  Invariant 8: Only output_public surfaces in the API response.
+  Invariant 4: LLM writes technical observations ONLY to ObservedState; the
+               governed answer composer may write text-only answer_markdown.
+  Invariant 8: Only output_public and explicit answer text surface in the API response.
 """
 from __future__ import annotations
 
@@ -87,4 +89,16 @@ class GraphState(GovernedSessionState):
             "Final public payload. Only this dict surfaces in the API response. "
             "No internal state/governance artefacts (Invariant 8)."
         ),
+    )
+    output_answer_markdown: str = Field(
+        default="",
+        description="Optional composed answer markdown. Text-only, no governed truth.",
+    )
+    output_answer_markdown_source: str = Field(
+        default="",
+        description="Answer markdown source: deterministic_reply, governed_composer, or composer_fallback.",
+    )
+    governed_answer_composer_error: str = Field(
+        default="",
+        description="Safe composer fallback reason. No stack traces, secrets, prompts, or raw payloads.",
     )

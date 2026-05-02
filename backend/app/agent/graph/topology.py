@@ -26,7 +26,7 @@ Graph topology (Phase F-C.2 — with cycle control):
                                                                   │
                                                             dispatch_contract
                                                                   │
-                                                              output_contract → END
+                                                              output_contract → governed_answer_composer → END
 
 Zone assignments (Blaupause V1.1 §6.4):
     Zone 1  intake_observe_node  — LLM extraction → ObservedState
@@ -46,7 +46,8 @@ Zone assignments (Blaupause V1.1 §6.4):
     Zone 14 output_contract_node      — Outward contract → output_public
 
 Architecture invariants enforced here:
-    - intake_observe_node is the ONLY node that may call an LLM (Invariant 4).
+    - intake_observe_node is the ONLY node that may call an LLM for technical observation.
+    - governed_answer_composer_node may call an LLM for text-only answer_markdown when feature-flagged.
     - All other nodes are deterministic and side-effect free.
     - RAG is only called with a structured query from AssertedState (Invariant 5).
     - Governance classification (Class A–D) is always derived before output.
@@ -78,6 +79,7 @@ from app.agent.graph.nodes.dispatch_contract_node import dispatch_contract_node
 from app.agent.graph.nodes.evidence_node import evidence_node
 from app.agent.graph.nodes.export_profile_node import export_profile_node
 from app.agent.graph.nodes.governance_node import governance_routing_node
+from app.agent.graph.nodes.governed_answer_composer_node import governed_answer_composer_node
 from app.agent.graph.nodes.intake_observe_node import intake_observe_node
 from app.agent.graph.nodes.manufacturer_mapping_node import manufacturer_mapping_node
 from app.agent.graph.nodes.matching_node import matching_node
@@ -108,6 +110,7 @@ NODE_EXPORT_PROFILE  = "export_profile"
 NODE_MANUFACTURER_MAPPING = "manufacturer_mapping"
 NODE_DISPATCH_CONTRACT = "dispatch_contract"
 NODE_OUTPUT_CONTRACT = "output_contract"
+NODE_GOVERNED_ANSWER_COMPOSER = "governed_answer_composer"
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +127,7 @@ def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
         Linear path through 6 analysis zones, then a conditional edge at
         governance_node routed by decide_cycle():
             CONTINUE  → cycle_increment_node → intake_observe_node (next turn)
-            TERMINATE → matching → rfq_handover → dispatch → norm → export_profile → manufacturer_mapping → dispatch_contract → output_contract_node → END
+            TERMINATE → matching → rfq_handover → dispatch → norm → export_profile → manufacturer_mapping → dispatch_contract → output_contract_node → governed_answer_composer_node → END
     """
     graph = StateGraph(GraphState)
 
@@ -144,6 +147,7 @@ def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
     graph.add_node(NODE_MANUFACTURER_MAPPING, manufacturer_mapping_node)
     graph.add_node(NODE_DISPATCH_CONTRACT, dispatch_contract_node)
     graph.add_node(NODE_OUTPUT_CONTRACT, output_contract_node)
+    graph.add_node(NODE_GOVERNED_ANSWER_COMPOSER, governed_answer_composer_node)
 
     # ── Entry point ───────────────────────────────────────────────────────
     graph.set_entry_point(NODE_INTAKE_OBSERVE)
@@ -158,7 +162,7 @@ def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
     # ── Command-routed path: governance decides CONTINUE vs TERMINATE ─────
     graph.add_edge(NODE_CYCLE_INCREMENT, NODE_INTAKE_OBSERVE)
 
-    # ── TERMINATE path: matching → rfq_handover → dispatch → norm → export_profile → manufacturer_mapping → dispatch_contract → output_contract → END ─
+    # ── TERMINATE path: matching → rfq_handover → dispatch → norm → export_profile → manufacturer_mapping → dispatch_contract → output_contract → governed_answer_composer → END ─
     graph.add_edge(NODE_MATCHING, NODE_RFQ_HANDOVER)
     graph.add_edge(NODE_RFQ_HANDOVER, NODE_DISPATCH)
     graph.add_edge(NODE_DISPATCH, NODE_NORM)
@@ -166,11 +170,12 @@ def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
     graph.add_edge(NODE_EXPORT_PROFILE, NODE_MANUFACTURER_MAPPING)
     graph.add_edge(NODE_MANUFACTURER_MAPPING, NODE_DISPATCH_CONTRACT)
     graph.add_edge(NODE_DISPATCH_CONTRACT, NODE_OUTPUT_CONTRACT)
-    graph.add_edge(NODE_OUTPUT_CONTRACT, END)
+    graph.add_edge(NODE_OUTPUT_CONTRACT, NODE_GOVERNED_ANSWER_COMPOSER)
+    graph.add_edge(NODE_GOVERNED_ANSWER_COMPOSER, END)
 
     log.debug(
         "[topology] governed graph compiled with cycle control: "
-        "CONTINUE→%s, TERMINATE→%s→%s→%s→%s→%s→%s→%s",
+        "CONTINUE→%s, TERMINATE→%s→%s→%s→%s→%s→%s→%s→%s",
         NODE_CYCLE_INCREMENT,
         NODE_MATCHING,
         NODE_RFQ_HANDOVER,
@@ -179,6 +184,7 @@ def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
         NODE_MANUFACTURER_MAPPING,
         NODE_DISPATCH_CONTRACT,
         NODE_OUTPUT_CONTRACT,
+        NODE_GOVERNED_ANSWER_COMPOSER,
     )
 
     return graph.compile(checkpointer=checkpointer)
