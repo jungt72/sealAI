@@ -11,7 +11,12 @@ from app.agent.communication.answer_composer import (
     KnowledgeAnswerComposerInput,
     build_knowledge_answer_composer_messages,
 )
+from app.agent.communication.knowledge_context_builder import KnowledgeContextBuilder
 from app.services.auth.dependencies import RequestUser
+from app.services.knowledge_case_bridge_service import (
+    KnowledgeConversationTurn,
+    KnowledgeSessionContext,
+)
 
 
 def _user() -> RequestUser:
@@ -74,6 +79,7 @@ async def test_knowledge_answer_composer_enabled_keeps_reply_and_sets_answer_mar
         assert request.no_case is True
         assert "Vergleich FKM" in request.user_message
         assert request.deterministic_answer
+        assert request.context.evidence_items
         return KnowledgeAnswerComposerOutput(
             answer_markdown="**Kurzvergleich:** FKM und EPDM sind unterschiedliche Elastomerfamilien.",
             confidence_note="mocked",
@@ -93,6 +99,64 @@ async def test_knowledge_answer_composer_enabled_keeps_reply_and_sets_answer_mar
     assert response.reply != response.answer_markdown
     assert response.reply
     assert "FKM und EPDM" in str(response.answer_markdown)
+    assert response.proposed_case_delta is None
+
+
+@pytest.mark.asyncio
+async def test_knowledge_answer_composer_receives_enriched_history_and_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "true")
+    _block_case_mutation(monkeypatch)
+
+    async def load_context(*_args, **_kwargs):
+        return KnowledgeSessionContext(
+            session_id="composer-history",
+            conversation_turns=(
+                KnowledgeConversationTurn(role="user", content="Was ist PTFE?"),
+                KnowledgeConversationTurn(
+                    role="assistant",
+                    content="PTFE ist ein Fluorpolymer.",
+                ),
+            ),
+        )
+
+    async def persist_context(*_args, **_kwargs):
+        return None
+
+    captured: dict[str, KnowledgeAnswerComposerInput] = {}
+
+    async def compose(_self, request: KnowledgeAnswerComposerInput):
+        captured["request"] = request
+        return KnowledgeAnswerComposerOutput(
+            answer_markdown="**Kontinuitaet:** Aufbauend auf PTFE: FKM ist eine andere Werkstofffamilie.",
+            confidence_note=None,
+        )
+
+    monkeypatch.setattr(
+        "app.agent.api.dispatch._load_live_knowledge_session_context",
+        load_context,
+    )
+    monkeypatch.setattr(
+        "app.agent.api.dispatch._persist_live_knowledge_session_context",
+        persist_context,
+    )
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.KnowledgeAnswerComposer.compose",
+        compose,
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message="Was ist FKM?", session_id="composer-history"),
+        current_user=_user(),
+    )
+
+    request = captured["request"]
+    assert [turn.role for turn in request.context.recent_history] == ["user", "assistant"]
+    assert "PTFE ist ein Fluorpolymer" in request.context.recent_history[1].content
+    assert request.context.evidence_items
+    assert response.reply
+    assert response.answer_markdown != response.reply
     assert response.proposed_case_delta is None
 
 
@@ -159,18 +223,16 @@ async def test_material_comparison_answer_markdown_does_not_use_cockpit_placehol
 
 
 def test_pfas_prompt_requires_current_topic_limitation() -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="Was bedeutet PFAS fuer Dichtungen?",
+        deterministic_answer="Kein kuratierter/RAG-Treffer.",
+    )
     messages = build_knowledge_answer_composer_messages(
-        KnowledgeAnswerComposerInput(
-            user_message="Was bedeutet PFAS fuer Dichtungen?",
-            deterministic_answer="Kein kuratierter/RAG-Treffer.",
-            evidence_summary=("answer_available=False; source_type=unknown",),
-            limitations=(
-                "No current legal/source verification was provided; regulatory/current-topic content is technical orientation, not a current legal assessment.",
-            ),
-        )
+        KnowledgeAnswerComposerInput(context=context)
     )
 
     prompt_text = "\n".join(message["content"] for message in messages)
     assert "technical orientation" in prompt_text
-    assert "not a current legal assessment" in prompt_text
-    assert "current source verification" in prompt_text or "current legal/source verification" in prompt_text
+    assert "not current legal advice" in prompt_text
+    assert "No live regulatory source was retrieved" in prompt_text
+    assert "regulatory_currentness_required" in prompt_text

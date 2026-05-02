@@ -110,6 +110,7 @@ async def _resolve_runtime_dispatch(
                 request.message,
                 source_classification=pre_gate.classification,
             )
+            recent_knowledge_history: tuple[Any, ...] = ()
             if request.session_id:
                 try:
                     bridge_service = KnowledgeCaseBridgeService()
@@ -117,6 +118,10 @@ async def _resolve_runtime_dispatch(
                         current_user=current_user,
                         session_id=request.session_id,
                     )
+                    if knowledge_context is not None:
+                        recent_knowledge_history = tuple(
+                            getattr(knowledge_context, "conversation_turns", ()) or ()
+                        )
                     knowledge_context = bridge_service.update_context(
                         request.message,
                         context=knowledge_context,
@@ -155,6 +160,7 @@ async def _resolve_runtime_dispatch(
                 user_message=request.message,
                 knowledge_response=knowledge_response,
                 conversation_route=conversation_route,
+                recent_history=recent_knowledge_history,
             )
             return RuntimeDispatchResolution(
                 gate_route="CONVERSATION",
@@ -261,6 +267,7 @@ async def _compose_knowledge_answer_if_enabled(
     user_message: str,
     knowledge_response: Any,
     conversation_route: ConversationRoutingDecision | None,
+    recent_history: tuple[Any, ...] = (),
 ) -> Any:
     if not _knowledge_answer_composer_enabled():
         return knowledge_response
@@ -272,29 +279,40 @@ async def _compose_knowledge_answer_if_enabled(
             KnowledgeAnswerComposer,
             KnowledgeAnswerComposerInput,
         )
+        from app.agent.communication.knowledge_context_builder import (  # noqa: PLC0415
+            KnowledgeContextBuilder,
+        )
 
         answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
-        request = KnowledgeAnswerComposerInput(
+        knowledge_mode = str(
+            getattr(
+                getattr(knowledge_response, "source_classification", None),
+                "value",
+                getattr(knowledge_response, "source_classification", None),
+            )
+            or ""
+        ) or None
+        context = KnowledgeContextBuilder().build(
             user_message=user_message,
             deterministic_answer=str(getattr(knowledge_response, "content", "") or ""),
-            knowledge_mode=str(
-                getattr(
-                    getattr(knowledge_response, "source_classification", None),
-                    "value",
-                    getattr(knowledge_response, "source_classification", None),
-                )
-                or ""
-            )
-            or None,
-            route_intent=(
+            knowledge_response=knowledge_response,
+            answer_view=answer_view,
+            recent_history=recent_history,
+            route_label=(
+                getattr(getattr(conversation_route, "route_view", None), "value", None)
+                if conversation_route is not None
+                else None
+            ),
+            knowledge_mode=knowledge_mode,
+            intent=(
                 getattr(getattr(conversation_route, "intent", None), "value", None)
                 if conversation_route is not None
                 else None
             ),
-            evidence_summary=_knowledge_evidence_summary(answer_view),
-            limitations=_knowledge_limitations(answer_view, user_message),
-            language="de",
-            no_case=True,
+            language_hint="de",
+        )
+        request = KnowledgeAnswerComposerInput(
+            context=context,
         )
         composed = await KnowledgeAnswerComposer().compose(request)
         answer_markdown = str(getattr(composed, "answer_markdown", "") or "").strip()
@@ -310,53 +328,3 @@ async def _compose_knowledge_answer_if_enabled(
             type(exc).__name__,
         )
         return knowledge_response
-
-
-def _knowledge_evidence_summary(answer_view: Any) -> tuple[str, ...]:
-    if answer_view is None:
-        return ()
-    sources = tuple(getattr(answer_view, "sources", ()) or ())
-    if sources:
-        return tuple(
-            "source_id={source_id}; title={title}; source_type={source_type}; validation_status={validation_status}".format(
-                source_id=getattr(source, "source_id", ""),
-                title=getattr(source, "title", ""),
-                source_type=getattr(getattr(source, "source_type", None), "value", getattr(source, "source_type", "")),
-                validation_status=getattr(
-                    getattr(source, "validation_status", None),
-                    "value",
-                    getattr(source, "validation_status", ""),
-                ),
-            )
-            for source in sources
-        )
-
-    return (
-        "answer_available={}; source_type={}; validation_status={}; label={}; missing_reason={}".format(
-            bool(getattr(answer_view, "answer_available", False)),
-            getattr(getattr(answer_view, "source_type", None), "value", getattr(answer_view, "source_type", "")),
-            getattr(
-                getattr(answer_view, "validation_status", None),
-                "value",
-                getattr(answer_view, "validation_status", ""),
-            ),
-            getattr(answer_view, "user_visible_label", ""),
-            getattr(answer_view, "missing_reason", ""),
-        ),
-    )
-
-
-def _knowledge_limitations(answer_view: Any, user_message: str) -> tuple[str, ...]:
-    limitations = [
-        "General technical orientation only; no final engineering release, no final compatibility proof, no manufacturer approval.",
-    ]
-    if answer_view is not None and bool(getattr(answer_view, "rag_miss", False)):
-        limitations.append(
-            "No sufficient curated/RAG source was available in the deterministic knowledge result; preserve that uncertainty."
-        )
-    lowered = str(user_message or "").lower()
-    if any(term in lowered for term in ("pfas", "reach", "regulation", "verordnung", "compliance", "regulator")):
-        limitations.append(
-            "No current legal/source verification was provided; regulatory/current-topic content is technical orientation, not a current legal assessment."
-        )
-    return tuple(limitations)

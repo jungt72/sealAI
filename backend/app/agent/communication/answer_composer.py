@@ -1,23 +1,29 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
+from app.agent.communication.knowledge_context_builder import KnowledgeAnswerContext
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.llm.factory import get_async_llm
 
 
 @dataclass(frozen=True, slots=True)
 class KnowledgeAnswerComposerInput:
-    user_message: str
-    deterministic_answer: str
-    knowledge_mode: str | None = None
-    route_intent: str | None = None
-    evidence_summary: tuple[str, ...] = field(default_factory=tuple)
-    limitations: tuple[str, ...] = field(default_factory=tuple)
-    language: str = "de"
-    no_case: bool = True
+    context: KnowledgeAnswerContext
+
+    @property
+    def user_message(self) -> str:
+        return self.context.user_message
+
+    @property
+    def deterministic_answer(self) -> str:
+        return self.context.deterministic_answer
+
+    @property
+    def no_case(self) -> bool:
+        return self.context.no_case
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,16 +59,7 @@ class KnowledgeAnswerComposer:
 def build_knowledge_answer_composer_messages(
     request: KnowledgeAnswerComposerInput,
 ) -> list[dict[str, str]]:
-    payload = {
-        "user_message": request.user_message,
-        "deterministic_answer": request.deterministic_answer,
-        "knowledge_mode": request.knowledge_mode,
-        "route_intent": request.route_intent,
-        "no_case": request.no_case,
-        "language": request.language,
-        "evidence_summary": list(request.evidence_summary),
-        "limitations": list(request.limitations),
-    }
+    payload = request.context.as_dict()
     return [
         {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=True, default=str)},
@@ -102,8 +99,11 @@ Scope:
 
 Communication requirements:
 - Answer the user's actual knowledge question directly.
+- Use recent_history only for continuity. Do not treat history as confirmed engineering truth and do not invent missing facts from it.
+- Use evidence_items and deterministic_answer as grounding. If evidence is weak, say what is uncertain.
 - Use natural German, with a careful senior sealing-engineer tone.
 - Prefer structured markdown for comparisons when useful: short summary, compact table, practical implications, limits/assumptions, and one focused next question.
+- Ask at most one focused follow-up question.
 - Do not force the answer into technical case intake.
 - Do not use "Noch kein technischer Fall" as the main answer.
 - Do not expose route names, model names, JSON, or system details.
@@ -112,7 +112,7 @@ Technical safety:
 - Do not claim final engineering approval, final material suitability, final compatibility, compliance, certification, manufacturer approval, or final release.
 - Do not invent material data, norms, regulatory deadlines, product claims, manufacturer-specific approvals, or evidence sources.
 - If no source/current verification is provided, label the answer as technical orientation only.
-- For regulatory or current topics such as PFAS, explicitly state that this is technical orientation, not a current legal assessment; binding regulatory decisions require current source verification.
+- If regulatory_currentness_required is true, explicitly state that this is technical orientation and not a current legal assessment because no live regulatory source was retrieved in this path.
 - If application details are required for a final recommendation, answer generally first, then ask one focused follow-up question.
 
 Return only JSON matching the schema."""
