@@ -64,6 +64,7 @@ from typing import Any, Callable, Literal
 from langgraph.types import Command, interrupt
 
 from app.agent.domain.admissibility import check_inquiry_admissibility
+from app.agent.communication.governed_answer_context import build_governed_answer_context
 from app.agent.graph import GraphState
 from app.agent.runtime.clarification_priority import prioritized_open_point_labels, select_clarification_priority
 from app.agent.runtime.outward_names import build_admissibility_payload
@@ -1386,6 +1387,14 @@ async def output_contract_node(state: GraphState) -> GraphState:
         response_class=response_class,
         strategy=strategy,
     )
+    governed_answer_context = build_governed_answer_context(
+        state,
+        output_public=output_public,
+        output_reply=reply,
+        response_class=response_class,
+        strategy=strategy,
+        pending_question=next_pending_question,
+    )
 
     log.debug(
         "[output_contract_node] response_class=%s gov_class=%s rfq_admissible=%s",
@@ -1399,6 +1408,7 @@ async def output_contract_node(state: GraphState) -> GraphState:
         "output_public":         output_public,
         "output_reply":          reply,
         "pending_question":      next_pending_question,
+        "governed_answer_context": governed_answer_context.model_dump(mode="python"),
     })
     if response_class == _STRUCTURED_CLARIFICATION:
         try:

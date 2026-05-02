@@ -1118,6 +1118,7 @@ class GovernedSessionState(BaseModel):
     conversation_messages: list[ConversationMessage] = Field(default_factory=list)
     pending_question: Optional[PendingQuestion] = None
     last_slot_answer_binding: Optional[SlotAnswerBinding] = None
+    governed_answer_context: dict[str, Any] = Field(default_factory=dict)
     case_events: list[CaseEvent] = Field(default_factory=list)
     exploration_progress: ExplorationProgressState = Field(
         default_factory=ExplorationProgressState
