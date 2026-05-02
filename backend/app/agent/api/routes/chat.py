@@ -178,14 +178,18 @@ async def _chat_response_from_knowledge_response(
     knowledge_response: Any,
 ) -> ChatResponse:
     from app.agent.api.utils import _knowledge_response_run_meta # noqa: PLC0415
+    payload = build_public_response_core(
+        reply=knowledge_response.content,
+        structured_state=None,
+        policy_path="knowledge",
+        run_meta=_knowledge_response_run_meta(knowledge_response),
+    )
+    answer_markdown = str(getattr(knowledge_response, "answer_markdown", "") or "").strip()
+    if answer_markdown:
+        payload["answer_markdown"] = answer_markdown
     return ChatResponse(
         session_id=request.session_id,
-        **build_public_response_core(
-            reply=knowledge_response.content,
-            structured_state=None,
-            policy_path="knowledge",
-            run_meta=_knowledge_response_run_meta(knowledge_response),
-        ),
+        **payload,
     )
 
 

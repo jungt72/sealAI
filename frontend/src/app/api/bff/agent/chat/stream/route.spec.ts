@@ -109,6 +109,36 @@ describe("BFF agent chat stream route", () => {
     expect(payloads[1]).toBe("[DONE]");
   });
 
+  it("forwards answer_markdown from backend state_update events", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"deterministic fallback","answer_markdown":"real assistant answer","response_class":"conversational_answer"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hallo" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+
+    expect(payloads[1]).toMatchObject({
+      type: "state_update",
+      reply: "deterministic fallback",
+      answer_markdown: "real assistant answer",
+    });
+  });
+
   it("forwards assertions from backend state_update events", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

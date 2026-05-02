@@ -26,6 +26,15 @@ _ENABLE_CONVERSATION_RUNTIME: bool = (
     os.environ.get("SEALAI_ENABLE_CONVERSATION_RUNTIME", "true").lower() == "true"
 )
 
+def _knowledge_answer_composer_enabled() -> bool:
+    return os.environ.get("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 @dataclasses.dataclass(frozen=True)
 class RuntimeDispatchResolution:
     gate_route: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"]
@@ -142,6 +151,11 @@ async def _resolve_runtime_dispatch(
                         type(exc).__name__,
                         exc,
                     )
+            knowledge_response = await _compose_knowledge_answer_if_enabled(
+                user_message=request.message,
+                knowledge_response=knowledge_response,
+                conversation_route=conversation_route,
+            )
             return RuntimeDispatchResolution(
                 gate_route="CONVERSATION",
                 gate_reason=f"pre_gate:{pre_gate.reasoning}",
@@ -240,3 +254,109 @@ async def _resolve_runtime_dispatch(
                 "Bitte beschreibe kurz, worum es geht; ich uebernehme dabei keine technische Annahme."
             ),
         )
+
+
+async def _compose_knowledge_answer_if_enabled(
+    *,
+    user_message: str,
+    knowledge_response: Any,
+    conversation_route: ConversationRoutingDecision | None,
+) -> Any:
+    if not _knowledge_answer_composer_enabled():
+        return knowledge_response
+    if not bool(getattr(knowledge_response, "no_case_created", True)):
+        return knowledge_response
+
+    try:
+        from app.agent.communication.answer_composer import (  # noqa: PLC0415
+            KnowledgeAnswerComposer,
+            KnowledgeAnswerComposerInput,
+        )
+
+        answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
+        request = KnowledgeAnswerComposerInput(
+            user_message=user_message,
+            deterministic_answer=str(getattr(knowledge_response, "content", "") or ""),
+            knowledge_mode=str(
+                getattr(
+                    getattr(knowledge_response, "source_classification", None),
+                    "value",
+                    getattr(knowledge_response, "source_classification", None),
+                )
+                or ""
+            )
+            or None,
+            route_intent=(
+                getattr(getattr(conversation_route, "intent", None), "value", None)
+                if conversation_route is not None
+                else None
+            ),
+            evidence_summary=_knowledge_evidence_summary(answer_view),
+            limitations=_knowledge_limitations(answer_view, user_message),
+            language="de",
+            no_case=True,
+        )
+        composed = await KnowledgeAnswerComposer().compose(request)
+        answer_markdown = str(getattr(composed, "answer_markdown", "") or "").strip()
+        if not answer_markdown:
+            raise ValueError("empty_answer_markdown")
+        return dataclasses.replace(
+            knowledge_response,
+            answer_markdown=answer_markdown,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "[runtime_dispatch] knowledge answer composer failed (%s); using deterministic answer",
+            type(exc).__name__,
+        )
+        return knowledge_response
+
+
+def _knowledge_evidence_summary(answer_view: Any) -> tuple[str, ...]:
+    if answer_view is None:
+        return ()
+    sources = tuple(getattr(answer_view, "sources", ()) or ())
+    if sources:
+        return tuple(
+            "source_id={source_id}; title={title}; source_type={source_type}; validation_status={validation_status}".format(
+                source_id=getattr(source, "source_id", ""),
+                title=getattr(source, "title", ""),
+                source_type=getattr(getattr(source, "source_type", None), "value", getattr(source, "source_type", "")),
+                validation_status=getattr(
+                    getattr(source, "validation_status", None),
+                    "value",
+                    getattr(source, "validation_status", ""),
+                ),
+            )
+            for source in sources
+        )
+
+    return (
+        "answer_available={}; source_type={}; validation_status={}; label={}; missing_reason={}".format(
+            bool(getattr(answer_view, "answer_available", False)),
+            getattr(getattr(answer_view, "source_type", None), "value", getattr(answer_view, "source_type", "")),
+            getattr(
+                getattr(answer_view, "validation_status", None),
+                "value",
+                getattr(answer_view, "validation_status", ""),
+            ),
+            getattr(answer_view, "user_visible_label", ""),
+            getattr(answer_view, "missing_reason", ""),
+        ),
+    )
+
+
+def _knowledge_limitations(answer_view: Any, user_message: str) -> tuple[str, ...]:
+    limitations = [
+        "General technical orientation only; no final engineering release, no final compatibility proof, no manufacturer approval.",
+    ]
+    if answer_view is not None and bool(getattr(answer_view, "rag_miss", False)):
+        limitations.append(
+            "No sufficient curated/RAG source was available in the deterministic knowledge result; preserve that uncertainty."
+        )
+    lowered = str(user_message or "").lower()
+    if any(term in lowered for term in ("pfas", "reach", "regulation", "verordnung", "compliance", "regulator")):
+        limitations.append(
+            "No current legal/source verification was provided; regulatory/current-topic content is technical orientation, not a current legal assessment."
+        )
+    return tuple(limitations)

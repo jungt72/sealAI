@@ -103,6 +103,7 @@ async def _stream_fast_response(
     state_update_event = {
         "type": "state_update",
         "reply": fast_response.content,
+        "answer_markdown": fast_response.content,
         "response_class": "conversational_answer",
         "run_meta": _fast_response_run_meta(fast_response),
     }
@@ -116,9 +117,11 @@ async def _stream_knowledge_response(
 ) -> AsyncGenerator[str, None]:
     from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
 
+    answer_markdown = str(getattr(knowledge_response, "answer_markdown", "") or "").strip()
     state_update_event = {
         "type": "state_update",
         "reply": knowledge_response.content,
+        "answer_markdown": answer_markdown or knowledge_response.content,
         "response_class": knowledge_response.output_class,
         "structured_state": None,
         "policy_path": "knowledge",
@@ -237,6 +240,7 @@ async def _stream_exploration_reply(
         state_update_event = {
             "type": "state_update",
             "reply": full_reply,
+            "answer_markdown": full_reply,
             "response_class": "conversational_answer",
         }
         yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
@@ -464,7 +468,14 @@ async def event_generator(
         turn_context=None,
     )
     if early_guard_reply is not None:
-        yield f"data: {json.dumps({'type': 'state_update', 'reply': early_guard_reply, 'response_class': 'structured_clarification', 'policy_path': 'governed_guard'}, default=str)}\n\n"
+        state_update_event = {
+            "type": "state_update",
+            "reply": early_guard_reply,
+            "answer_markdown": early_guard_reply,
+            "response_class": "structured_clarification",
+            "policy_path": "governed_guard",
+        }
+        yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
         yield "data: [DONE]\n\n"
         return
 

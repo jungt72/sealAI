@@ -140,6 +140,7 @@ class ReviewResponse(BaseModel):
     is_handover_ready: bool
     handover: Optional[Dict[str, Any]] = None
     reply: str = ""
+    answer_markdown: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -311,6 +312,7 @@ def _assert_public_response_core_mapping(
 
 class ChatResponse(BaseModel):
     reply: str
+    answer_markdown: Optional[str] = None
     session_id: str
     sealing_state: Optional[Dict[str, Any]] = None
     policy_path: Optional[str] = None

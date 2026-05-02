@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import logging
+
+import pytest
+
+from app.agent.api.models import ChatRequest
+from app.agent.api.routes.chat import chat_endpoint
+from app.agent.communication.answer_composer import (
+    KnowledgeAnswerComposerOutput,
+    KnowledgeAnswerComposerInput,
+    build_knowledge_answer_composer_messages,
+)
+from app.services.auth.dependencies import RequestUser
+
+
+def _user() -> RequestUser:
+    return RequestUser(
+        user_id="user-1",
+        username="tester",
+        sub="user-1",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-1",
+    )
+
+
+def _block_case_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fail_governed(*_args, **_kwargs):
+        raise AssertionError("knowledge composer path must not invoke governed case runtime")
+
+    async def fail_persist(*_args, **_kwargs):
+        raise AssertionError("knowledge composer path must not persist governed case state")
+
+    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
+    monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_governed)
+    monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+
+
+@pytest.mark.asyncio
+async def test_knowledge_answer_composer_disabled_keeps_deterministic_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", raising=False)
+    _block_case_mutation(monkeypatch)
+
+    async def fail_compose(*_args, **_kwargs):
+        raise AssertionError("composer must not run when feature flag is disabled")
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.KnowledgeAnswerComposer.compose",
+        fail_compose,
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message="Vergleich PTFE und FKM", session_id="composer-off"),
+        current_user=_user(),
+    )
+
+    assert response.policy_path == "knowledge"
+    assert response.reply
+    assert response.answer_markdown == response.reply
+    assert response.proposed_case_delta is None
+
+
+@pytest.mark.asyncio
+async def test_knowledge_answer_composer_enabled_keeps_reply_and_sets_answer_markdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "true")
+    _block_case_mutation(monkeypatch)
+
+    async def compose(_self, request: KnowledgeAnswerComposerInput):
+        assert request.no_case is True
+        assert "Vergleich FKM" in request.user_message
+        assert request.deterministic_answer
+        return KnowledgeAnswerComposerOutput(
+            answer_markdown="**Kurzvergleich:** FKM und EPDM sind unterschiedliche Elastomerfamilien.",
+            confidence_note="mocked",
+        )
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.KnowledgeAnswerComposer.compose",
+        compose,
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message="Vergleich FKM und EPDM fuer Dichtungen.", session_id="composer-on"),
+        current_user=_user(),
+    )
+
+    assert response.policy_path == "knowledge"
+    assert response.reply != response.answer_markdown
+    assert response.reply
+    assert "FKM und EPDM" in str(response.answer_markdown)
+    assert response.proposed_case_delta is None
+
+
+@pytest.mark.asyncio
+async def test_knowledge_answer_composer_failure_falls_back_to_deterministic_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "true")
+    _block_case_mutation(monkeypatch)
+
+    async def fail_compose(*_args, **_kwargs):
+        return KnowledgeAnswerComposerOutput(answer_markdown="", confidence_note=None)
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.KnowledgeAnswerComposer.compose",
+        fail_compose,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        response = await chat_endpoint(
+            ChatRequest(message="Vergleich PTFE und FKM", session_id="composer-fallback"),
+            current_user=_user(),
+        )
+
+    assert response.policy_path == "knowledge"
+    assert response.answer_markdown == response.reply
+    assert "knowledge answer composer failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_material_comparison_answer_markdown_does_not_use_cockpit_placeholders(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "true")
+    _block_case_mutation(monkeypatch)
+
+    async def compose(_self, _request: KnowledgeAnswerComposerInput):
+        return KnowledgeAnswerComposerOutput(
+            answer_markdown=(
+                "Kurzvergleich: FKM und EPDM unterscheiden sich vor allem bei Medienprofil, "
+                "Temperaturfenster und typischen Einsatzgrenzen. Das ist technische Orientierung, "
+                "keine finale Materialfreigabe."
+            ),
+            confidence_note=None,
+        )
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.KnowledgeAnswerComposer.compose",
+        compose,
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message="Vergleich FKM und EPDM fuer Dichtungen.", session_id="composer-material"),
+        current_user=_user(),
+    )
+
+    assert "FKM" in str(response.answer_markdown)
+    assert "EPDM" in str(response.answer_markdown)
+    assert "Noch kein technischer Fall" not in str(response.answer_markdown)
+    assert "Noch nicht moeglich" not in str(response.answer_markdown)
+    assert "Starte, sobald" not in str(response.answer_markdown)
+    assert response.proposed_case_delta is None
+
+
+def test_pfas_prompt_requires_current_topic_limitation() -> None:
+    messages = build_knowledge_answer_composer_messages(
+        KnowledgeAnswerComposerInput(
+            user_message="Was bedeutet PFAS fuer Dichtungen?",
+            deterministic_answer="Kein kuratierter/RAG-Treffer.",
+            evidence_summary=("answer_available=False; source_type=unknown",),
+            limitations=(
+                "No current legal/source verification was provided; regulatory/current-topic content is technical orientation, not a current legal assessment.",
+            ),
+        )
+    )
+
+    prompt_text = "\n".join(message["content"] for message in messages)
+    assert "technical orientation" in prompt_text
+    assert "not a current legal assessment" in prompt_text
+    assert "current source verification" in prompt_text or "current legal/source verification" in prompt_text

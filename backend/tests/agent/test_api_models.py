@@ -31,6 +31,7 @@ def test_chat_request_empty_message():
 def test_chat_response_accepts_structured_contract_fields():
     res = ChatResponse(
         reply="Hallo zurück",
+        answer_markdown="Hallo zurück",
         session_id="session-123",
         policy_path="structured",
         run_meta={"policy_version": "interaction_policy_v1"},
@@ -56,6 +57,7 @@ def test_chat_response_accepts_structured_contract_fields():
     assert res.visible_case_narrative is not None
     assert res.version_provenance["policy_version"] == "interaction_policy_v1"
     assert res.policy_path == "structured"
+    assert res.answer_markdown == res.reply
     assert res.run_meta["policy_version"] == "interaction_policy_v1"
     assert res.response_class == "technical_preselection"
     assert res.structured_state.primary_allowed_action == "await_review"
@@ -96,6 +98,7 @@ def test_build_public_response_core_returns_only_shared_fields():
     )
     assert core == {
         "reply": "Antwort",
+        "answer_markdown": "Antwort",
         "structured_state": {"case_status": "withheld_review", "output_status": "withheld_review"},
         "policy_path": "structured",
         "run_meta": {"path": "structured"},
@@ -118,7 +121,9 @@ def test_build_public_response_core_classifies_guidance_and_state_update():
         state_update=True,
     )
     assert guidance["response_class"] == "conversational_answer"
+    assert guidance["answer_markdown"] == guidance["reply"]
     assert structured_update["response_class"] == "governed_state_update"
+    assert structured_update["answer_markdown"] == structured_update["reply"]
 
 
 def test_build_public_response_core_delegates_to_central_user_facing_reply_assembly():
@@ -161,6 +166,7 @@ def test_build_public_response_core_guards_legacy_structured_clarification_reply
 
     assert core["response_class"] == "structured_clarification"
     assert core["reply"] == "Welches Medium liegt an?"
+    assert core["answer_markdown"] == core["reply"]
 
 
 def test_build_public_response_core_guards_legacy_governed_recommendation_reply():
@@ -176,6 +182,7 @@ def test_build_public_response_core_guards_legacy_governed_recommendation_reply(
 
     assert core["response_class"] == "technical_preselection"
     assert core["reply"] == "Ich kann die technische Richtung belastbar einordnen und die offenen Pruefpunkte klar benennen."
+    assert core["answer_markdown"] == core["reply"]
 
 
 def test_build_public_response_core_rejects_impossible_mapping_combinations():

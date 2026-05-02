@@ -208,6 +208,8 @@ export async function POST(request: Request) {
 
               if (eventType === "state_update") {
                 const reply = typeof payload.reply === "string" ? payload.reply : "";
+                const answerMarkdown =
+                  typeof payload.answer_markdown === "string" ? payload.answer_markdown : null;
                 const responseClass = isOutwardResponseClass(payload.response_class)
                   ? payload.response_class
                   : null;
@@ -227,6 +229,7 @@ export async function POST(request: Request) {
                     ...(shouldBindCase ? { caseId } : {}),
                     noCaseCreated,
                     reply,
+                    ...(answerMarkdown !== null ? { answer_markdown: answerMarkdown } : {}),
                     responseClass,
                     structuredState,
                     conversationStrategy: mapConversationStrategy(payload.conversation_strategy),

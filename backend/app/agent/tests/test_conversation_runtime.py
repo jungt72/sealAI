@@ -451,6 +451,7 @@ class TestStreamConversation:
         assert [e.get("text") for e in text_chunks] == ["FKM ist ", "ein Fluorelastomer."]
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"] == "FKM ist ein Fluorelastomer."
+        assert state_update["answer_markdown"] == state_update["reply"]
 
     @pytest.mark.asyncio
     async def test_final_state_update_reflects_case_context_in_light_reply(self):

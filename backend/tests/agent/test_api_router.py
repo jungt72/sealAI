@@ -55,6 +55,7 @@ from app.services.auth.dependencies import RequestUser, get_current_request_user
 _TEST_USER = RequestUser(user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1")
 _PUBLIC_CHAT_RESPONSE_KEYS = {
     "reply",
+    "answer_markdown",
     "session_id",
     "sealing_state",
     "policy_path",

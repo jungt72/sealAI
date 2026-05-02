@@ -33,6 +33,7 @@ _FORCED_TECHNICAL_CLAIM_RE = re.compile(
 
 class UserFacingReplyPayload(TypedDict):
     reply: str | None
+    answer_markdown: str | None
     structured_state: Optional[dict[str, Any]]
     policy_path: Optional[str]
     run_meta: Optional[dict[str, Any]]
@@ -271,6 +272,7 @@ def assemble_user_facing_reply(
 
     return {
         "reply": guarded_reply,
+        "answer_markdown": guarded_reply,
         "structured_state": structured_state,
         "policy_path": policy_path,
         "run_meta": run_meta,

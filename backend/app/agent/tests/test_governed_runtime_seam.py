@@ -138,6 +138,7 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
     }
     assert payloads[1]["type"] == "state_update"
     assert payloads[1]["reply"] == "Welches Medium soll abgedichtet werden?"
+    assert payloads[1]["answer_markdown"] == payloads[1]["reply"]
     assert payloads[1]["response_class"] == "structured_clarification"
     persist.assert_awaited_once()
     persisted_state_arg = persist.await_args.kwargs["state"]

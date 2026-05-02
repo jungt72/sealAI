@@ -7,6 +7,7 @@ import { buildStreamWorkspaceView, type StreamWorkspaceView } from "@/lib/stream
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  answerSource?: "answer_markdown" | "reply" | "text_chunk";
   /** ISO timestamp of when the message was added (optional, for display) */
   timestamp?: string;
 };
@@ -21,6 +22,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const { initialCaseId, onCaseBound, onTurnComplete } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
+  const [streamingAnswerSource, setStreamingAnswerSource] = useState<ChatMessage["answerSource"] | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(initialCaseId || null);
@@ -33,6 +35,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const finalizedRequestIdRef = useRef<number | null>(null);
   const latestCaseIdRef = useRef<string | null>(initialCaseId || null);
   const noCaseTurnRef = useRef(false);
+  const finalAssistantAnswerSourceRef = useRef<ChatMessage["answerSource"] | null>(null);
 
   const fetchHistory = useCallback(async (caseId: string) => {
     const response = await fetch(`/api/bff/agent/chat/history/${encodeURIComponent(caseId)}`);
@@ -54,7 +57,18 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
           if (mode === "restore") {
             return current.length > 0 ? current : restored;
           }
-          return restored.length >= current.length ? restored : current;
+          const restoredWithSources = restored.map((message, index) => {
+            const currentMessage = current[index];
+            if (
+              currentMessage?.answerSource &&
+              currentMessage.role === message.role &&
+              currentMessage.content === message.content
+            ) {
+              return { ...message, answerSource: currentMessage.answerSource };
+            }
+            return message;
+          });
+          return restoredWithSources.length >= current.length ? restoredWithSources : current;
         });
       } catch (err: unknown) {
         console.warn("[useAgentStream] History load failed:", err);
@@ -93,9 +107,12 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     }
 
     const finalText = finalAssistantTextRef.current.trim();
+    const answerSource = finalAssistantAnswerSourceRef.current || undefined;
     finalizedRequestIdRef.current = requestId;
     finalAssistantTextRef.current = "";
+    finalAssistantAnswerSourceRef.current = null;
     setStreamingText("");
+    setStreamingAnswerSource(null);
 
     if (!finalText) {
       if (latestCaseIdRef.current && !noCaseTurnRef.current) {
@@ -110,7 +127,10 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       if (lastMessage?.role === "assistant" && lastMessage.content === finalText) {
         return existing;
       }
-      return [...existing, { role: "assistant", content: finalText, timestamp: new Date().toISOString() }];
+      return [
+        ...existing,
+        { role: "assistant", content: finalText, answerSource, timestamp: new Date().toISOString() },
+      ];
     });
     if (latestCaseIdRef.current && !noCaseTurnRef.current) {
       void syncHistory(latestCaseIdRef.current);
@@ -127,7 +147,9 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
       setMessages((current) => [...current, { role: "user", content: trimmed, timestamp: new Date().toISOString() }]);
       setStreamingText("");
+      setStreamingAnswerSource(null);
       finalAssistantTextRef.current = "";
+      finalAssistantAnswerSourceRef.current = null;
       setError(null);
       setIsStreaming(true);
 
@@ -196,15 +218,23 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
             if (type === "text_chunk" && typeof payload.text === "string") {
               finalAssistantTextRef.current += payload.text;
+              finalAssistantAnswerSourceRef.current = "text_chunk";
               setStreamingText(finalAssistantTextRef.current);
+              setStreamingAnswerSource("text_chunk");
               return;
             }
 
             if (type === "state_update") {
               const stateUpdate = payload as unknown as AgentStateUpdateEvent;
-              if (typeof stateUpdate.reply === "string" && stateUpdate.reply) {
-                finalAssistantTextRef.current = stateUpdate.reply;
-                setStreamingText(stateUpdate.reply);
+              const answerMarkdown =
+                typeof stateUpdate.answer_markdown === "string" ? stateUpdate.answer_markdown.trim() : "";
+              const reply = typeof stateUpdate.reply === "string" ? stateUpdate.reply : "";
+              const assistantText = answerMarkdown || reply;
+              if (assistantText) {
+                finalAssistantTextRef.current = assistantText;
+                finalAssistantAnswerSourceRef.current = answerMarkdown ? "answer_markdown" : "reply";
+                setStreamingText(assistantText);
+                setStreamingAnswerSource(answerMarkdown ? "answer_markdown" : "reply");
               }
 
               if (stateUpdate.noCaseCreated || typeof stateUpdate.caseId !== "string") {
@@ -260,8 +290,10 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     streamRequestIdRef.current += 1;
     finalizedRequestIdRef.current = streamRequestIdRef.current;
     finalAssistantTextRef.current = "";
+    finalAssistantAnswerSourceRef.current = null;
     noCaseTurnRef.current = false;
     setStreamingText("");
+    setStreamingAnswerSource(null);
     setIsStreaming(false);
   }, []);
 
@@ -273,7 +305,9 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     cancelStream();
     setMessages([]);
     setStreamingText("");
+    setStreamingAnswerSource(null);
     finalAssistantTextRef.current = "";
+    finalAssistantAnswerSourceRef.current = null;
     setError(null);
     setActiveCaseId(null);
     setStreamWorkspace(null);
@@ -283,6 +317,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     activeCaseId,
     messages,
     streamingText,
+    streamingAnswerSource,
     streamWorkspace,
     isStreaming,
     error,

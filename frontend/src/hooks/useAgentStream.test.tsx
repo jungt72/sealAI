@@ -101,6 +101,41 @@ describe("useAgentStream", () => {
     ]);
   });
 
+  it("prefers state_update.answer_markdown over reply for the final assistant message", async () => {
+    mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
+      await handlers.onopen?.(new Response(null, { status: 200 }));
+      handlers.onmessage?.({
+        data: JSON.stringify({
+          type: "state_update",
+          caseId: "case-1",
+          reply: "deterministic fallback",
+          answer_markdown: "real assistant answer",
+        }),
+      });
+      handlers.onmessage?.({ data: "[DONE]" });
+      handlers.onclose?.();
+    });
+
+    const { result } = renderHook(() => useAgentStream());
+
+    await act(async () => {
+      await result.current.sendMessage("Vergleiche FKM und EPDM");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "Vergleiche FKM und EPDM" }),
+      expect.objectContaining({
+        role: "assistant",
+        content: "real assistant answer",
+        answerSource: "answer_markdown",
+      }),
+    ]);
+  });
+
   it("binds the active case from state_update even when case_bound is missing", async () => {
     const onCaseBound = vi.fn();
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {

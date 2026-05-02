@@ -6,8 +6,13 @@ import ChatPane from "./ChatPane";
 
 const agentStreamMockState = vi.hoisted(() => ({
   activeCaseId: "case-parameter",
-  messages: [] as Array<{ role: "user" | "assistant"; content: string }>,
+  messages: [] as Array<{
+    role: "user" | "assistant";
+    content: string;
+    answerSource?: "answer_markdown" | "reply" | "text_chunk";
+  }>,
   streamingText: "",
+  streamingAnswerSource: null as null | "answer_markdown" | "reply" | "text_chunk",
   streamWorkspace: null as null | Record<string, unknown>,
   isStreaming: false,
   error: null as string | null,
@@ -51,6 +56,7 @@ describe("ChatPane", () => {
     agentStreamMockState.activeCaseId = "case-parameter";
     agentStreamMockState.messages = [];
     agentStreamMockState.streamingText = "";
+    agentStreamMockState.streamingAnswerSource = null;
     agentStreamMockState.streamWorkspace = null;
     agentStreamMockState.isStreaming = false;
     agentStreamMockState.error = null;
@@ -175,6 +181,41 @@ describe("ChatPane", () => {
     expect(screen.queryByText(/Medium: Wasser/)).not.toBeInTheDocument();
     expect(screen.queryByText("Wo sitzt die Dichtung genau?")).not.toBeInTheDocument();
     expect(screen.queryByText("Arbeitsstand:")).not.toBeInTheDocument();
+  });
+
+  it("renders explicit answer_markdown chat text without cockpit/workspace rewriting", () => {
+    agentStreamMockState.messages = [
+      { role: "user", content: "Hallo" },
+      {
+        role: "assistant",
+        content: "real assistant answer",
+        answerSource: "answer_markdown",
+      },
+    ];
+    workspaceMockState.workspace = {
+      decisionUnderstanding: {
+        understoodNow: ["Noch kein technischer Fall"],
+        technicalMeaning: ["Starte, sobald ein Dichtungsfall beschrieben ist"],
+        nextBestQuestion: "Noch nicht möglich",
+        nextBestQuestions: [
+          {
+            question: "Noch nicht möglich",
+            reason: "Starte, sobald ein Dichtungsfall beschrieben ist",
+          },
+        ],
+      },
+      communication: {
+        primaryQuestion: "Noch kein technischer Fall",
+        supportingReason: "Noch nicht möglich",
+      },
+    };
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.getByText("real assistant answer")).toBeInTheDocument();
+    expect(screen.queryByText(/Noch kein technischer Fall/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Noch nicht möglich/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Starte, sobald/)).not.toBeInTheDocument();
   });
 
   it("does not expose internal open-field reasoning as chat copy", () => {

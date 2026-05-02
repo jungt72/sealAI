@@ -163,6 +163,7 @@ class KnowledgeResponse:
     citations: tuple[KnowledgeSource, ...] = field(default_factory=tuple)
     no_case_created: bool = True
     answer_result: KnowledgeAnswerResult | None = None
+    answer_markdown: str | None = None
 
     @property
     def knowledge_answer_view(self) -> KnowledgeAnswerResult:

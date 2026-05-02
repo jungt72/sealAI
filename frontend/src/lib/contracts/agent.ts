@@ -217,6 +217,7 @@ export type AgentStateUpdateEvent = {
   caseId?: string;
   noCaseCreated?: boolean;
   reply?: string;
+  answer_markdown?: string;
   responseClass?: OutwardResponseClass | null;
   assertions?: Record<string, AssertionEntry>;
   structuredState?: Record<string, unknown> | null;

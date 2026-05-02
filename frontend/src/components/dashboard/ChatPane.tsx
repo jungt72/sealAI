@@ -353,6 +353,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
     activeCaseId,
     messages,
     streamingText,
+    streamingAnswerSource,
     streamWorkspace,
     isStreaming,
     error,
@@ -417,10 +418,15 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
     proposedDeltaKey && settledDeltaKey !== proposedDeltaKey && !shouldAutoAcceptWorkingState
       ? combinedDeltaFields
       : [];
-  const visibleStreamingText = streamingText && !isStructuredAssistantDraft(streamingText)
-    ? buildWorkspaceGroundedChatReply(streamingText, workspace)
-    : "";
-  const showStreamingPlaceholder = isStreaming && (!streamingText || isStructuredAssistantDraft(streamingText));
+  const hasExplicitStreamingAnswer = streamingAnswerSource === "answer_markdown";
+  let visibleStreamingText = "";
+  if (streamingText && hasExplicitStreamingAnswer) {
+    visibleStreamingText = streamingText;
+  } else if (streamingText && !isStructuredAssistantDraft(streamingText)) {
+    visibleStreamingText = buildWorkspaceGroundedChatReply(streamingText, workspace);
+  }
+  const showStreamingPlaceholder =
+    isStreaming && (!streamingText || (!hasExplicitStreamingAnswer && isStructuredAssistantDraft(streamingText)));
 
   useEffect(() => {
     if (
@@ -535,7 +541,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
                     key={`${message.role}-${index}-${message.timestamp ?? ""}`}
                     role={message.role}
                     content={
-                      message.role === "assistant"
+                      message.role === "assistant" && message.answerSource !== "answer_markdown"
                         ? buildWorkspaceGroundedChatReply(message.content, workspace)
                         : message.content
                     }
