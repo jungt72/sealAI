@@ -8,6 +8,11 @@ from app.agent.api.models import ChatRequest, ChatResponse, build_public_respons
 from app.agent.state.models import GovernedSessionState
 from app.agent.graph import GraphState
 from app.agent.runtime.answer_trace import build_answer_trace, with_answer_trace
+from app.agent.runtime.final_answer_layer import (
+    FinalAnswerEnvelope,
+    answer_mode_for_fast_classification,
+    apply_final_answer_layer,
+)
 from app.agent.runtime.user_facing_reply import (
     collect_governed_visible_reply_with_trace,
     _guard_unsafe_user_instruction,
@@ -39,6 +44,7 @@ from app.agent.api.assembly import (
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.api.streaming import event_generator, _build_fast_path_version_provenance
 from app.agent.api.dispatch import _resolve_runtime_dispatch
+from app.agent.api.knowledge_override import build_case_side_knowledge_response
 
 _log = logging.getLogger(__name__)
 
@@ -179,15 +185,28 @@ async def _chat_response_from_fast_response(
     fast_response: Any,
 ) -> ChatResponse:
     from app.agent.api.utils import _fast_response_run_meta # noqa: PLC0415
-    return ChatResponse(
-        session_id=request.session_id,
-        **build_public_response_core(
-            reply=fast_response.content,
-            structured_state=None,
-            policy_path="conversation",
-            run_meta=_fast_response_run_meta(fast_response),
+
+    payload = build_public_response_core(
+        reply=fast_response.content,
+        structured_state=None,
+        policy_path="conversation",
+        run_meta=_fast_response_run_meta(fast_response),
+    )
+    payload = apply_final_answer_layer(
+        payload,
+        FinalAnswerEnvelope(
+            route="fast",
+            answer_mode=answer_mode_for_fast_classification(
+                getattr(fast_response, "source_classification", None)
+            ),
+            deterministic_fallback_reply=fast_response.content,
+            existing_answer_markdown=payload.get("answer_markdown"),
+            existing_answer_markdown_source="fast_responder",
+            existing_reply_source="fast_responder",
+            composer_tier="tier_a",
         ),
     )
+    return ChatResponse(session_id=request.session_id, **payload)
 
 
 async def _chat_response_from_knowledge_response(
@@ -205,6 +224,27 @@ async def _chat_response_from_knowledge_response(
     answer_markdown = str(getattr(knowledge_response, "answer_markdown", "") or "").strip()
     if answer_markdown:
         payload["answer_markdown"] = answer_markdown
+    answer_trace = getattr(knowledge_response, "answer_trace", None)
+    answer_markdown_source = (
+        answer_trace.get("answer_markdown_source")
+        if isinstance(answer_trace, dict)
+        else "knowledge_service"
+    )
+    composer_attempted = bool(
+        answer_trace.get("composer_attempted") if isinstance(answer_trace, dict) else False
+    )
+    payload = apply_final_answer_layer(
+        payload,
+        FinalAnswerEnvelope(
+            route="knowledge",
+            answer_mode="knowledge",
+            deterministic_fallback_reply=knowledge_response.content,
+            existing_answer_markdown=payload.get("answer_markdown"),
+            existing_answer_markdown_source=answer_markdown_source,
+            existing_reply_source="knowledge_service",
+            composer_tier="tier_b" if composer_attempted else "tier_a",
+        ),
+    )
     return ChatResponse(
         session_id=request.session_id,
         **payload,
@@ -260,15 +300,15 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
     if dispatch.runtime_mode == "GOVERNED":
         _knowledge_override_json = classify_message_as_knowledge_override(request.message)
         if _knowledge_override_json is not None:
-            _override_mode_json: Literal["CONVERSATION", "EXPLORATION"] = (
-                "CONVERSATION" if _knowledge_override_json == "conversational_answer" else "EXPLORATION"
-            )
-            return await _run_light_chat_response(
+            knowledge_response = await build_case_side_knowledge_response(
                 message=request.message,
+                override_class=_knowledge_override_json,
+                conversation_route=dispatch.conversation_route,
+                governed_state=dispatch.governed_state,
+            )
+            return await _chat_response_from_knowledge_response(
                 request=request,
-                current_user=current_user,
-                mode=_override_mode_json,
-                governed_state_override=dispatch.governed_state,
+                knowledge_response=knowledge_response,
             )
         _log.debug(
             "[runtime_authority] json session=%s authority=governed_graph reason=%s",

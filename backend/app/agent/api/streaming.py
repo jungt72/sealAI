@@ -3,24 +3,26 @@ import json
 import dataclasses
 import os
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, Literal, Optional
+from typing import Any, AsyncGenerator, Literal
 
 from fastapi import HTTPException
-from langchain_core.messages import BaseMessage
 from app.agent.state.models import GovernedSessionState, TurnContextContract
 from app.agent.runtime.answer_trace import build_answer_trace, with_answer_trace
+from app.agent.runtime.final_answer_layer import (
+    FinalAnswerEnvelope,
+    answer_mode_for_fast_classification,
+    apply_final_answer_layer,
+)
 from app.agent.runtime.user_facing_reply import (
     collect_governed_visible_reply as _collect_governed_visible_reply_text,
     collect_governed_visible_reply_with_trace,
     _guard_unsafe_user_instruction,
 )
 from app.agent.graph.output_contract_assembly import (
-    build_governed_conversation_strategy_contract,
     classify_message_as_knowledge_override,
 )
-from app.agent.runtime.turn_context import build_governed_turn_context
+from app.agent.api.knowledge_override import build_case_side_knowledge_response
 from app.agent.api.deps import (
-    _resolve_payload_binding_level,
     _is_light_runtime_mode,
     _canonical_scope,
     _GRAPH_MODEL_ID,
@@ -42,11 +44,8 @@ from app.agent.api.loaders import (
 )
 from app.agent.api.governed_runtime import run_governed_graph_turn
 from app.agent.api.assembly import (
-    GovernedReplyAssemblyContext,
     _build_governed_reply_context,
     _assemble_governed_stream_payload,
-    _build_fast_path_version_provenance,
-    _build_structured_version_provenance,
     _governed_composer_visible_answer,
 )
 from app.agent.domain.case_delta import build_assistant_delta_event
@@ -117,6 +116,20 @@ async def _stream_fast_response(
         "response_class": "conversational_answer",
         "run_meta": _fast_response_run_meta(fast_response),
     }
+    state_update_event = apply_final_answer_layer(
+        state_update_event,
+        FinalAnswerEnvelope(
+            route="fast",
+            answer_mode=answer_mode_for_fast_classification(
+                getattr(fast_response, "source_classification", None)
+            ),
+            deterministic_fallback_reply=fast_response.content,
+            existing_answer_markdown=state_update_event.get("answer_markdown"),
+            existing_answer_markdown_source="fast_responder",
+            existing_reply_source="fast_responder",
+            composer_tier="tier_a",
+        ),
+    )
     yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
     yield "data: [DONE]\n\n"
 
@@ -137,6 +150,27 @@ async def _stream_knowledge_response(
         "policy_path": "knowledge",
         "run_meta": _knowledge_response_run_meta(knowledge_response),
     }
+    answer_trace = getattr(knowledge_response, "answer_trace", None)
+    answer_markdown_source = (
+        answer_trace.get("answer_markdown_source")
+        if isinstance(answer_trace, dict)
+        else "knowledge_service"
+    )
+    composer_attempted = bool(
+        answer_trace.get("composer_attempted") if isinstance(answer_trace, dict) else False
+    )
+    state_update_event = apply_final_answer_layer(
+        state_update_event,
+        FinalAnswerEnvelope(
+            route="knowledge",
+            answer_mode="knowledge",
+            deterministic_fallback_reply=knowledge_response.content,
+            existing_answer_markdown=state_update_event.get("answer_markdown"),
+            existing_answer_markdown_source=answer_markdown_source,
+            existing_reply_source="knowledge_service",
+            composer_tier="tier_b" if composer_attempted else "tier_a",
+        ),
+    )
     yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
     yield "data: [DONE]\n\n"
 
@@ -569,15 +603,14 @@ async def event_generator(
     if dispatch.runtime_mode == "GOVERNED":
         _knowledge_override = classify_message_as_knowledge_override(request.message)
         if _knowledge_override is not None:
-            _override_mode: Literal["CONVERSATION", "EXPLORATION"] = (
-                "CONVERSATION" if _knowledge_override == "conversational_answer" else "EXPLORATION"
-            )
-            async for frame in _stream_light_runtime(
+            knowledge_response = await build_case_side_knowledge_response(
                 message=request.message,
-                request=request,
-                current_user=current_user,
-                mode=_override_mode,
-                governed_state_override=dispatch.governed_state,
+                override_class=_knowledge_override,
+                conversation_route=dispatch.conversation_route,
+                governed_state=dispatch.governed_state,
+            )
+            async for frame in _stream_knowledge_response(
+                knowledge_response=knowledge_response,
             ):
                 yield frame
             return

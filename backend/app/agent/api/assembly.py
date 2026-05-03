@@ -1,13 +1,13 @@
 import logging
 import dataclasses
 from dataclasses import dataclass
-from typing import Any, Optional, Dict, List
+from typing import Any
 
 from app.agent.state.models import GovernedSessionState, TurnContextContract, ProposedCaseDelta
 from app.agent.graph import GraphState
 from app.agent.state.projections import project_for_ui
-from app.agent.runtime.response_renderer import render_response
 from app.agent.runtime.answer_trace import AnswerTrace, build_answer_trace, with_answer_trace
+from app.agent.runtime.final_answer_layer import FinalAnswerEnvelope, apply_final_answer_layer
 from app.agent.graph.output_contract_assembly import build_governed_conversation_strategy_contract
 from app.agent.domain.case_delta import proposed_case_delta_from_extractions
 from app.agent.runtime.turn_context import build_governed_turn_context
@@ -251,6 +251,23 @@ def _assemble_governed_stream_payload(
     public_reply["run_meta"] = with_answer_trace(
         public_reply.get("run_meta"),
         answer_trace,
+    )
+    public_reply = apply_final_answer_layer(
+        public_reply,
+        FinalAnswerEnvelope(
+            route="governed",
+            answer_mode=str(context.response_class or "governed"),
+            deterministic_fallback_reply=fallback_reply,
+            existing_answer_markdown=public_reply.get("answer_markdown"),
+            existing_answer_markdown_source=answer_trace.get("answer_markdown_source"),
+            existing_reply_source=answer_trace.get("reply_source"),
+            composer_tier=(
+                "tier_b"
+                if answer_trace.get("answer_markdown_source") == "governed_composer"
+                else "tier_a"
+            ),
+            fallback_reason=answer_trace.get("fallback_reason"),
+        ),
     )
 
     return {
