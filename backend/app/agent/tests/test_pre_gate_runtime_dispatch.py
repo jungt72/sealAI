@@ -304,7 +304,7 @@ async def test_material_comparison_dispatch_uses_knowledge_without_case_creation
     monkeypatch,
     message: str,
 ) -> None:
-    load_state = AsyncMock(side_effect=AssertionError("material comparison must not load governed state"))
+    load_state = AsyncMock(return_value=None)
     load_context = AsyncMock(return_value=None)
     save_context = AsyncMock()
 
@@ -323,7 +323,11 @@ async def test_material_comparison_dispatch_uses_knowledge_without_case_creation
     assert dispatch.knowledge_response.no_case_created is True
     assert dispatch.fast_response is None
     assert dispatch.governed_state is None
-    load_state.assert_not_awaited()
+    load_state.assert_awaited_once_with(
+        current_user=_user(),
+        session_id="material-comparison-no-case",
+        create_if_missing=False,
+    )
 
 
 @pytest.mark.asyncio

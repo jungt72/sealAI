@@ -60,6 +60,19 @@ from app.services.auth.dependencies import RequestUser
 
 _log = logging.getLogger(__name__)
 
+
+
+def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
+    decision = getattr(dispatch, "turn_decision", None)
+    if decision is None:
+        return None
+    mode = getattr(decision, "answer_mode", None)
+    return str(getattr(mode, "value", mode) or "") or None
+
+
+def _is_v7_active_case_side_question(dispatch: Any) -> bool:
+    return _v7_dispatch_answer_mode(dispatch) == "active_case_side_question"
+
 # Legacy tests patch this module-level name. Production code takes the traced
 # path unless this alias has been monkeypatched.
 collect_governed_visible_reply = _collect_governed_visible_reply_text
@@ -601,6 +614,18 @@ async def event_generator(
         return
 
     if dispatch.runtime_mode == "GOVERNED":
+        if _is_v7_active_case_side_question(dispatch):
+            knowledge_response = await build_case_side_knowledge_response(
+                message=request.message,
+                override_class="exploration_answer",
+                conversation_route=dispatch.conversation_route,
+                governed_state=dispatch.governed_state,
+            )
+            async for frame in _stream_knowledge_response(
+                knowledge_response=knowledge_response,
+            ):
+                yield frame
+            return
         _knowledge_override = classify_message_as_knowledge_override(request.message)
         if _knowledge_override is not None:
             knowledge_response = await build_case_side_knowledge_response(

@@ -48,6 +48,19 @@ from app.agent.api.knowledge_override import build_case_side_knowledge_response
 
 _log = logging.getLogger(__name__)
 
+
+
+def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
+    decision = getattr(dispatch, "turn_decision", None)
+    if decision is None:
+        return None
+    mode = getattr(decision, "answer_mode", None)
+    return str(getattr(mode, "value", mode) or "") or None
+
+
+def _is_v7_active_case_side_question(dispatch: Any) -> bool:
+    return _v7_dispatch_answer_mode(dispatch) == "active_case_side_question"
+
 router = APIRouter()
 
 async def _run_light_chat_response(
@@ -298,6 +311,17 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         )
 
     if dispatch.runtime_mode == "GOVERNED":
+        if _is_v7_active_case_side_question(dispatch):
+            knowledge_response = await build_case_side_knowledge_response(
+                message=request.message,
+                override_class="exploration_answer",
+                conversation_route=dispatch.conversation_route,
+                governed_state=dispatch.governed_state,
+            )
+            return await _chat_response_from_knowledge_response(
+                request=request,
+                knowledge_response=knowledge_response,
+            )
         _knowledge_override_json = classify_message_as_knowledge_override(request.message)
         if _knowledge_override_json is not None:
             knowledge_response = await build_case_side_knowledge_response(

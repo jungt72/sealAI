@@ -44,11 +44,14 @@ Before any non-trivial task, read from the repository root:
 
 1. `AGENTS.md`
 2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md`
-3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md`
-4. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md`
-5. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md`
-6. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`
-7. relevant source files and tests for the specific task
+3. `docs/communication/conversation_controller_v7.md`
+4. `docs/communication/turn_decision_schema_v7.md`
+5. `docs/communication/golden_conversations_v7.md`
+6. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md`
+7. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md`
+8. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md`
+9. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`
+10. relevant source files and tests for the specific task
 
 For frontend/UI work, also read:
 
@@ -165,6 +168,7 @@ Coding agents must implement V7.1 as an architecture, not as example-specific fi
 - A side question must be answered, then the system must intentionally resume, continue, or pause the primary task according to `ResumeStrategy`.
 - Fallback is safe degradation only; it is not the target UX when a composer is allowed, available, and passes guards.
 - Every V7.1 patch needs deterministic tests for turn decision, task-stack behavior, mutation policy, answer mode, fallback, trace metadata, safety guards, and no unintended case mutation.
+- The implementation contracts in `docs/communication/*.md` and `backend/app/agent/communication/v7_contracts.py` are binding for new communication work. Do not add or preserve a user-visible answer path that bypasses TurnDecision, AnswerPlan/SpeakableFacts, FinalAnswerLayer policy, and answer_trace once its mode is migrated.
 - Follow the V7.1 patch order: Specs + Golden Set, Thin Visible Spike, Resume Re-Evaluation, Knowledge / Material Evidence, SpeakableFacts, Guard Hardening, broader rollout.
 
 ## SeaLAI LLM Safety Rules

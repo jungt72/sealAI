@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from app.domain.conversation_intent import ConversationRoutingDecision
 from app.agent.state.models import GovernedSessionState
+from app.agent.communication.v7_contracts import AnswerMode, TurnDecision
 from app.agent.runtime.answer_trace import build_answer_trace
 from app.services.auth.dependencies import RequestUser
 from app.agent.api.deps import (
@@ -83,6 +84,88 @@ class RuntimeDispatchResolution:
     knowledge_response: Any | None = None
     governed_state: GovernedSessionState | None = None
     conversation_route: ConversationRoutingDecision | None = None
+    turn_decision: TurnDecision | None = None
+
+
+def _governed_state_has_active_case(state: GovernedSessionState | None) -> bool:
+    if state is None:
+        return False
+    if getattr(state, "pending_question", None) is not None:
+        return True
+    if getattr(state, "conversation_messages", None):
+        return True
+    asserted = getattr(state, "asserted", None)
+    if getattr(asserted, "assertions", None):
+        return True
+    observed = getattr(state, "observed", None)
+    if getattr(observed, "raw_extractions", None):
+        return True
+    governance = getattr(state, "governance", None)
+    if getattr(governance, "requirement_class", None) is not None:
+        return True
+    return False
+
+
+async def _load_existing_governed_state_for_v7(
+    *,
+    request: Any,
+    current_user: RequestUser,
+) -> GovernedSessionState | None:
+    if not getattr(request, "session_id", None):
+        return None
+    try:
+        return await _load_live_governed_state(
+            current_user=current_user,
+            session_id=request.session_id,
+            create_if_missing=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "[runtime_dispatch] v7 existing governed state load failed (%s: %s) — continuing without active-case context",
+            type(exc).__name__,
+            exc,
+        )
+        return None
+
+
+def _resolve_v7_turn_decision(
+    *,
+    request: Any,
+    pre_gate: Any,
+    governed_state: GovernedSessionState | None,
+) -> TurnDecision:
+    from app.agent.communication.conversation_controller_v7 import (  # noqa: PLC0415
+        ConversationControllerInput,
+        ConversationControllerV7,
+    )
+    from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding  # noqa: PLC0415
+
+    turn_index = int(getattr(governed_state, "user_turn_index", 0) or 0) + 1
+    pending_question = getattr(governed_state, "pending_question", None) if governed_state is not None else None
+    slot_binding = resolve_slot_answer_binding(
+        pending_question=pending_question,
+        message=request.message,
+        turn_index=turn_index,
+    )
+    return ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=request.message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=float(getattr(pre_gate, "confidence", 0.5) or 0.5),
+            pre_gate_reason=str(getattr(pre_gate, "reasoning", "") or ""),
+            active_case_exists=_governed_state_has_active_case(governed_state),
+            pending_question=pending_question,
+            slot_answer_binding=slot_binding,
+        )
+    )
+
+
+def _v7_answer_mode(decision: TurnDecision | None) -> str | None:
+    if decision is None:
+        return None
+    mode = getattr(decision, "answer_mode", None)
+    return str(getattr(mode, "value", mode) or "") or None
+
 
 async def _resolve_runtime_dispatch(
     request: Any, # ChatRequest
@@ -136,6 +219,28 @@ async def _resolve_runtime_dispatch(
             PreGateClassification.KNOWLEDGE_QUERY,
             PreGateClassification.DEEP_DIVE,
         }:
+            governed_state = await _load_existing_governed_state_for_v7(
+                request=request,
+                current_user=current_user,
+            )
+            turn_decision = _resolve_v7_turn_decision(
+                request=request,
+                pre_gate=pre_gate,
+                governed_state=governed_state,
+            )
+            if _v7_answer_mode(turn_decision) == AnswerMode.ACTIVE_CASE_SIDE_QUESTION.value:
+                return RuntimeDispatchResolution(
+                    gate_route="GOVERNED",
+                    gate_reason=f"v7_active_case_side_question:{pre_gate.reasoning}",
+                    runtime_mode="GOVERNED",
+                    gate_applied=False,
+                    pre_gate_classification=pre_gate.classification.value,
+                    pre_gate_reason=pre_gate.reasoning,
+                    governed_state=governed_state,
+                    conversation_route=conversation_route,
+                    turn_decision=turn_decision,
+                )
+
             from dataclasses import replace  # noqa: PLC0415
             from app.services.knowledge_service import KnowledgeService  # noqa: PLC0415
             from app.services.knowledge_case_bridge_service import KnowledgeCaseBridgeService  # noqa: PLC0415
@@ -205,6 +310,7 @@ async def _resolve_runtime_dispatch(
                 pre_gate_reason=pre_gate.reasoning,
                 knowledge_response=knowledge_response,
                 conversation_route=conversation_route,
+                turn_decision=turn_decision,
             )
 
         if pre_gate.classification is not PreGateClassification.DOMAIN_INQUIRY:
@@ -267,6 +373,11 @@ async def _resolve_runtime_dispatch(
                         type(exc).__name__,
                         exc,
                     )
+        turn_decision = _resolve_v7_turn_decision(
+            request=request,
+            pre_gate=pre_gate,
+            governed_state=governed_state,
+        )
         return RuntimeDispatchResolution(
             gate_route="GOVERNED",
             gate_reason=f"pre_gate:{pre_gate.reasoning}",
@@ -276,6 +387,7 @@ async def _resolve_runtime_dispatch(
             pre_gate_reason=pre_gate.reasoning,
             governed_state=governed_state,
             conversation_route=conversation_route,
+            turn_decision=turn_decision,
         )
 
     except Exception as exc:  # noqa: BLE001
