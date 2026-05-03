@@ -30,6 +30,10 @@ SeaLAI must increasingly feel like:
 
 > one experienced sealing engineer on the surface, backed by a disciplined, auditable engineering system underneath.
 
+The active communication target is now the **SealAI Communication Architecture V7.1 Final Freeze**:
+
+> Natural user communication, explicit conversation control, governed backend truth, and exactly one final visible answer decision.
+
 The current work must move the existing app toward v0.8.3 without big-bang rewrites, without destructive production actions, and without replacing the current stack.
 
 ---
@@ -39,7 +43,7 @@ The current work must move the existing app toward v0.8.3 without big-bang rewri
 Before any non-trivial task, read from the repository root:
 
 1. `AGENTS.md`
-2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md`
+2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md`
 3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md`
 4. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md`
 5. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md`
@@ -61,14 +65,15 @@ Do not work from memory. Current repository content is the evidence.
 Use this order when documents, code, or prior notes disagree:
 
 1. `AGENTS.md` for coding-agent operating rules and safety boundaries.
-2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md` for the active communication architecture, FinalAnswerLayer target, answer-mode policy, composer tiers, traces, eval gates, and rollout sequence.
+2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md` for the active communication architecture, TurnDecision, Conversation Controller, Task Stack, MutationPolicy, SpeakableFacts, FinalAnswerLayer, composer tiers, answer trace, eval gates, and rollout sequence.
 3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md` for active SeaLAI v0.8.3 product and implementation direction.
 4. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md` for current-stack evidence and implementation gaps.
 5. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md` for active PR order and implementation sequencing.
 6. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md` for pilot-readiness guardrails, RFQ governance, consent, IP/upload safety, and earlier implementation constraints.
 7. `frontend/DESIGN.md` for frontend design, layout, motion, spacing, cockpit, chat workspace, rails, tabs, and responsive behavior.
 8. Current code and tests as evidence of existing contracts and productive seams.
-9. Older concept files, archived notes, audit notes, prompts, chat notes, or implementation history as context only.
+9. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md` and older communication notes as historical context only.
+10. Older concept files, archived notes, audit notes, prompts, chat notes, or implementation history as context only.
 
 Rules:
 
@@ -134,34 +139,45 @@ Forbidden language unless backed by explicit evidence:
 - final compatibility confirmation
 - final root cause
 
-## Active Communication Architecture V5
+## Active Communication Architecture V7.1
 
-`docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md` is the active implementation concept for chat, knowledge, governed intake, active-case side questions, and visible answer orchestration.
+`docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md` is the active implementation concept for all chat, knowledge, governed intake, active-case side questions, visible answer orchestration, and communication eval work.
 
-Coding agents must implement V5 as an architecture, not as example-specific fixes:
+Coding agents must implement V7.1 as an architecture, not as example-specific fixes:
 
-- Every user-visible answer must be assembled through one final decision boundary: the `FinalAnswerLayer`.
+- SealAI does not build its own LLM. It uses existing model roles through the model registry.
+- A nano-class Router Model may classify and interpret turns, but it is not the final answer voice and must not create engineering truth.
+- User messages must produce a typed `TurnDecision`, not a loose single intent.
+- The `ConversationController` owns task continuity, side-question handling, resume behavior, mutation policy, and disagreement handling.
+- The `TaskStack` must preserve the primary technical workflow while allowing bounded side questions.
+- `MutationPolicy` decides whether a turn may mutate the case, may propose candidates, or must remain answer-only.
+- Backend domain services remain responsible for case state, evidence, calculations, risks, readiness, RFQ boundaries, and stale/recompute logic.
+- `AnswerPlan` and `SpeakableFacts` define what can be said before the final response is composed.
+- Every user-visible answer must pass through exactly one final decision boundary: the `FinalAnswerLayer`.
 - Upstream components may produce deterministic fallback text, evidence, state deltas, contexts, and answer plans, but they are not independent final voices.
-- The target public contract remains `reply` as deterministic fallback and `answer_markdown` as the final visible answer.
-- `answer_trace` must explain the route, answer mode, composer tier, source, fallback reason, and safety result without exposing secrets, raw prompts, raw evidence chunks, or internal graph state.
-- Tier A / Micro Composer is for smalltalk, meta, short confirmations, and transitions.
-- Tier B / Standard Composer is for knowledge, material comparison, PFAS orientation, needs analysis, governed intake, and active-case side questions.
-- No Tier C exists in V5. Larger deep-dive models require a later concept/eval decision.
-- Material comparison must be generic over supported material pairs, not hardcoded to examples such as NBR/PTFE or FKM/EPDM.
-- Active-case side questions such as material comparisons must not be forced through governed intake or legacy exploration just because a case exists.
+- The public contract remains `reply` as deterministic fallback and `answer_markdown` as the final visible answer.
+- `answer_trace` must explain route, answer mode, task context, composer tier, source, fallback reason, safety result, and provenance without exposing secrets, raw prompts, raw evidence chunks, embeddings, stack traces, or internal graph state.
+- Tier A / Micro Composer is for smalltalk, meta, short confirmations, transitions, and simple resume statements.
+- Tier B / Standard Composer is for knowledge, material comparison, PFAS orientation, needs analysis, governed intake, active-case side questions, and richer explanations.
+- No larger deep-dive composer tier may be introduced without an explicit concept/eval update.
+- Material comparison must be generic over supported material pairs and capable of detailed pairwise comparisons, not hardcoded to examples such as NBR/PTFE or FKM/EPDM.
+- Active-case side questions such as material comparisons, roughness questions, PFAS questions, or "why do you ask that?" must not be forced through governed intake just because a case exists.
+- A side question must be answered, then the system must intentionally resume, continue, or pause the primary task according to `ResumeStrategy`.
 - Fallback is safe degradation only; it is not the target UX when a composer is allowed, available, and passes guards.
-- Roll out V5 in the implementation sequence defined in the concept: inventory voices, add envelope/adapter, introduce FinalAnswerLayer, migrate smalltalk, migrate knowledge/material comparison, migrate governed intake, migrate active-case side questions, then enforce legacy-voice removal.
-- Every V5 patch needs deterministic tests for route, answer mode, fallback, trace metadata, safety guards, and no unintended case mutation.
+- Every V7.1 patch needs deterministic tests for turn decision, task-stack behavior, mutation policy, answer mode, fallback, trace metadata, safety guards, and no unintended case mutation.
+- Follow the V7.1 patch order: Specs + Golden Set, Thin Visible Spike, Resume Re-Evaluation, Knowledge / Material Evidence, SpeakableFacts, Guard Hardening, broader rollout.
 
 ## SeaLAI LLM Safety Rules
 
 - Backend state, deterministic services, calculations, rules, and evidence are the source of truth.
 - LLMs may explain, summarize, ask targeted questions, and make the experience more human, but must not create engineering truth.
+- Router or interpreter LLMs may produce typed `TurnDecision` proposals only; backend policy validation decides whether to route, answer, mutate, resume, or reject.
+- Composer LLMs may produce visible language only from `AnswerPlan`, `SpeakableFacts`, evidence, and allowed claims; they must not mutate state.
 - Case-bound engineering statements must be grounded in explicit `allowed_claims`.
 - Evidence-based statements must cite explicit evidence refs supplied by the backend; never invent sources, standards, datasheets, or manufacturer statements.
 - LLMs must never directly confirm fields, compute readiness, approve materials, select final sealing solutions, assert manufacturer acceptance, or override deterministic services.
 - Field extraction from chat creates proposals only; the communication LLM may only echo extracted proposals and must not introduce new engineering fields.
-- Tests for LLM-facing features must use deterministic mocks and cover prompt injection, unsupported claims, fabricated IDs/evidence, and final-release language.
+- Tests for LLM-facing features must use deterministic mocks and cover prompt injection, unsupported claims, fabricated IDs/evidence, wrong mutation policy, task-stack resume errors, and final-release language.
 
 ---
 
