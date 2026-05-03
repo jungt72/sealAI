@@ -73,6 +73,7 @@ from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.state.models import ConversationStrategyContract, PendingQuestion
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.output_classifier import OutputClassificationInput, OutputClassifier
+from app.services.knowledge.material_comparison import is_material_comparison_question
 
 log = logging.getLogger(__name__)
 
@@ -137,6 +138,11 @@ def classify_message_as_knowledge_override(
     lowered = str(message or "").strip().lower()
     if not lowered:
         return None
+    # Generic material-pair questions, including elliptical follow-ups such as
+    # "und FKM mit NBR?", are educational side questions. They must not become
+    # governed material mutations inside an active case.
+    if is_material_comparison_question(lowered):
+        return "exploration_answer"
     # Parameter update markers suppress the override — keep governed flow
     if any(re.search(p, lowered, re.IGNORECASE) for p in _PARAM_UPDATE_MARKERS):
         return None

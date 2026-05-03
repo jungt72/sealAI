@@ -199,6 +199,35 @@ def test_material_comparison_supported_pairs_have_structured_answer() -> None:
             assert "keine konkrete materialfreigabe" in text
 
 
+
+
+def test_elliptical_material_pair_followup_is_structured_knowledge() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer("und fkm mit nbr?")
+    text = _combined_answer_and_evidence(response)
+
+    assert response.knowledge_answer_view.answer_available is True
+    assert response.knowledge_answer_view.knowledge_evidence[0].source_type == "deterministic"
+    assert "werkstoffvergleich: fkm vs nbr" in text
+    assert "fluorelastomer" in text
+    assert "nitrilkautschuk" in text
+    assert "keine konkrete materialfreigabe" in text
+
+
+def test_short_material_pair_without_full_instruction_is_structured_knowledge() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer("FKM und NBR?")
+    text = _combined_answer_and_evidence(response)
+
+    assert "werkstoffvergleich: fkm vs nbr" in text
+    assert "direkter vergleich" in text
+
+
+def test_concrete_material_replacement_does_not_use_generic_comparison_answer() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "Kann ich bei meiner Anwendung FKM durch EPDM ersetzen? Medium ist Öl, 90 Grad, 10 bar."
+    )
+
+    assert "werkstoffvergleich" not in response.content.casefold()
+
 def test_non_comparison_material_question_can_still_use_existing_knowledge_path() -> None:
     response = KnowledgeService(factcard_store=_FactcardStore([])).answer("Was ist FKM?")
 

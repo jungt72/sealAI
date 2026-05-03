@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Pattern
 
 from app.domain.pre_gate_classification import PreGateClassification
+from app.services.knowledge.material_comparison import is_material_comparison_question
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,11 +136,7 @@ class PreGateClassifier:
 
     @staticmethod
     def _is_generic_material_comparison(text: str) -> bool:
-        if not PreGateClassifier._matches(_MATERIAL_COMPARISON_KNOWLEDGE_PATTERNS, text):
-            return False
-        if PreGateClassifier._matches(_MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS, text):
-            return False
-        return PreGateClassifier._mentions_multiple_materials(text)
+        return is_material_comparison_question(text)
 
     @staticmethod
     def _mentions_multiple_materials(text: str) -> bool:

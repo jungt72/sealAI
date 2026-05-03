@@ -94,6 +94,12 @@ class TestClassifyMessageAsKnowledgeOverride:
     def test_vs_returns_exploration_answer(self):
         assert classify_message_as_knowledge_override("FKM vs. EPDM — was ist besser?") == "exploration_answer"
 
+    def test_elliptical_material_pair_followup_returns_exploration_answer(self):
+        assert classify_message_as_knowledge_override("und fkm mit nbr?") == "exploration_answer"
+
+    def test_material_pair_with_mit_returns_exploration_answer(self):
+        assert classify_message_as_knowledge_override("FKM mit NBR?") == "exploration_answer"
+
     def test_besser_oder_returns_exploration_answer(self):
         assert classify_message_as_knowledge_override("Was ist besser: Gleitring oder RWDR?") == "exploration_answer"
 

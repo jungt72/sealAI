@@ -382,13 +382,51 @@ _COMPARISON_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 
+_PAIR_FOLLOWUP_RE = re.compile(
+    r"\b(?:und|mit|vs\.?|versus|gegenueber|gegenüber)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+_CONCRETE_CASE_RE = re.compile(
+    r"\b(?:meine[rmn]?\s+anwendung|bei\s+meiner\s+anlage|in\s+unserer\s+anwendung|"
+    r"ich\s+habe|wir\s+haben|bei\s+uns|unsere[rmn]?|ich\s+brauche|wir\s+brauchen|"
+    r"brauche\s+eine\s+dichtung|ben[oö]tige|suche|auslegen|auslegung|"
+    r"f[aä]llt\s+aus|leckt|leckage|undicht|ausgefallen|verschlei[ßs])\b"
+    r"|\b\d+(?:[.,]\d+)?\s*(?:mm|bar|psi|°?\s*[cCfF]|grad|rpm|u\.?/?min)\b"
+    r"|\bmedium\s+(?:ist|=)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def is_material_comparison_question(user_input: str) -> bool:
+    """Return True for generic material-pair knowledge turns.
+
+    This intentionally covers elliptical follow-ups such as ``und FKM mit NBR?``.
+    The guard keeps concrete application/replacement cases in governed intake,
+    where operating data and case truth belong.
+    """
+    text = str(user_input or "").strip()
+    if not text:
+        return False
+    materials = _extract_materials(text)
+    if len(materials) < 2:
+        return False
+    if _CONCRETE_CASE_RE.search(text):
+        return False
+    if _COMPARISON_RE.search(text):
+        return True
+    compact = re.sub(r"\s+", " ", text).strip()
+    if len(compact) > 90:
+        return False
+    return bool(_PAIR_FOLLOWUP_RE.search(compact))
+
 
 def build_material_comparison_answer(user_input: str) -> MaterialComparisonAnswer | None:
     text = str(user_input or "")
     materials = _extract_materials(text)
     if len(materials) < 2:
         return None
-    if not _COMPARISON_RE.search(text):
+    if not is_material_comparison_question(text):
         return None
     left = _MATERIAL_PROFILES[materials[0]]
     right = _MATERIAL_PROFILES[materials[1]]

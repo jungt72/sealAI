@@ -296,6 +296,8 @@ async def test_knowledge_chat_path_uses_knowledge_service_without_case_creation(
         "Vergleiche FKM und EPDM für Dichtungen.",
         "Wann nimmt man EPDM statt FKM?",
         "PTFE vs FKM",
+        "und fkm mit nbr?",
+        "FKM mit NBR?",
     ],
 )
 async def test_material_comparison_dispatch_uses_knowledge_without_case_creation(
