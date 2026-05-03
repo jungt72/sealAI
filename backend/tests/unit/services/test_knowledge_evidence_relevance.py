@@ -197,6 +197,20 @@ def test_material_comparison_supported_pairs_have_structured_answer() -> None:
             assert f"werkstoffvergleich: {left.casefold()} vs {right.casefold()}" in text
             assert "direkter vergleich" in text
             assert "keine konkrete materialfreigabe" in text
+            assert not re.search(r"(?:\\b\\w;\\s*){4,}", text)
+
+
+def test_material_comparison_profiles_do_not_render_single_strings_as_char_lists() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "biite vergleiche peek und ptfe"
+    )
+    text = _combined_answer_and_evidence(response)
+
+    assert "werkstoffvergleich: peek vs ptfe" in text
+    assert "breite technische chemieorientierung" in text
+    assert "reibpaarung und verschleiss prüfen" in text
+    assert "b; r; e; i; t" not in text
+    assert "r; e; i; b" not in text
 
 
 

@@ -43,6 +43,7 @@ _GERMAN_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Zusaetzlich", "Zusätzlich"),
     ("verschleissen", "verschleißen"),
     ("Verschleiss", "Verschleiß"),
+    ("verschleiss", "verschleiß"),
     ("Staerken", "Stärken"),
     ("Staerke", "Stärke"),
     ("Herstellerpruefung", "Herstellerprüfung"),
@@ -125,6 +126,9 @@ _GERMAN_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Witterungsbestaendigkeit", "Witterungsbeständigkeit"),
     ("Alterungsbestaendigkeit", "Alterungsbeständigkeit"),
     ("Temperaturbestaendigkeit", "Temperaturbeständigkeit"),
+    ("Chemiefaellen", "Chemiefällen"),
+    ("chemiefaellen", "chemiefällen"),
+    ("klaeren", "klären"),
 )
 
 
@@ -318,7 +322,7 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "Typauswahl ist entscheidend, Polyester/Polyether-Verhalten unterscheiden sich",
         ),
         media_orientation=("Hydraulikoel oft relevant", "Wasser/Heisswasser und aggressive Chemie vorsichtig pruefen"),
-        dynamics_orientation=("stark bei Abrieb und Druck, aber Waerme und Schmierung pruefen"),
+        dynamics_orientation=("stark bei Abrieb und Druck, aber Waerme und Schmierung pruefen",),
         typical_uses=("Hydraulikdichtungen", "Abstreifer", "Stangen- und Kolbendichtungen"),
         critical_checks=("Hydrolyse", "Temperatur", "Druckspalt", "Abrasion", "Oeltyp"),
     ),
@@ -339,7 +343,7 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "Gasdurchlaessigkeit kann hoeher sein",
         ),
         media_orientation=("Food/Pharma/Wassernahe Medien mit Zulassung pruefen", "Oel/Kraftstoff je nach Typ kritisch"),
-        dynamics_orientation=("eher vorsichtig bei abrasiver oder stark dynamischer Beanspruchung"),
+        dynamics_orientation=("eher vorsichtig bei abrasiver oder stark dynamischer Beanspruchung",),
         typical_uses=("statische Dichtungen", "Food/Pharma", "Tieftemperatur", "Medizintechnik"),
         critical_checks=("mechanische Belastung", "Zulassung", "Gasdurchlaessigkeit", "Reinigungsmedium"),
     ),
@@ -359,8 +363,8 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "Konstruktion, Toleranzen, Waermeausdehnung und Kosten sind zentral",
             "nicht als direkter Ersatz fuer einen O-Ring ohne Designaenderung verstehen",
         ),
-        media_orientation=("breite technische Chemieorientierung, konkrete Medien pruefen"),
-        dynamics_orientation=("als Fuehrungs-/Stuetzwerkstoff relevant, Reibpaarung und Verschleiss pruefen"),
+        media_orientation=("breite technische Chemieorientierung, konkrete Medien pruefen",),
+        dynamics_orientation=("als Fuehrungs-/Stuetzwerkstoff relevant, Reibpaarung und Verschleiss pruefen",),
         typical_uses=("Stuetzringe", "Fuehrungselemente", "Sonderteile", "Hochtemperaturbauteile"),
         critical_checks=("Bauteildesign", "Toleranz", "Reibpaarung", "Kosten", "Temperatur"),
     ),
@@ -521,7 +525,9 @@ def _difference_lines(left: MaterialComparisonProfile, right: MaterialComparison
     return lines
 
 
-def _join(values: tuple[str, ...]) -> str:
+def _join(values: tuple[str, ...] | str) -> str:
+    if isinstance(values, str):
+        return values
     return "; ".join(values)
 
 
