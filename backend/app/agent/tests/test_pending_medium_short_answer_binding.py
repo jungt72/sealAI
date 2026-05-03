@@ -157,6 +157,7 @@ async def test_pending_medium_chlor_binds_as_ambiguous_and_asks_specific_clarifi
     [
         ("wasser", "Wasser"),
         ("öl", "Öl"),
+        ("hydrauliköl", "Hydrauliköl"),
         ("salzwasser", "Salzwasser"),
         ("dampf", "Dampf"),
         ("natronlauge", "Natronlauge"),
