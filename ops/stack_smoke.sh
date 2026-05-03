@@ -17,6 +17,10 @@ CATEGORY_CURL=33
 STACK_SERVICES=(backend keycloak redis)
 
 ERROR_PREFIX="[stack-smoke]"
+SERVICE_ATTEMPTS="${STACK_SMOKE_SERVICE_ATTEMPTS:-45}"
+SERVICE_SLEEP_SECONDS="${STACK_SMOKE_SERVICE_SLEEP_SECONDS:-2}"
+HTTP_ATTEMPTS="${STACK_SMOKE_HTTP_ATTEMPTS:-45}"
+HTTP_SLEEP_SECONDS="${STACK_SMOKE_HTTP_SLEEP_SECONDS:-2}"
 
 dump_diagnostics() {
   set +e
@@ -81,7 +85,7 @@ ensure_command() {
 ensure_command docker
 ensure_command curl
 
-check_services() {
+services_ready() {
   local service
   local running
   local healthy
@@ -98,57 +102,78 @@ check_services() {
 
   for service in "${STACK_SERVICES[@]}"; do
     if ! grep -Fxq "$service" <<< "$running"; then
-      fail "services not running (missing $service)" "$CATEGORY_SERVICES"
+      return 1
     fi
 
     if grep -q "^${service} " <<< "$healthy"; then
       if ! grep -Eq "^${service} +(healthy|)$" <<< "$healthy"; then
-        fail "service not healthy ($service)" "$CATEGORY_SERVICES"
+        return 1
       fi
     fi
   done
+
+  return 0
+}
+
+check_services() {
+  local attempt
+
+  for ((attempt = 1; attempt <= SERVICE_ATTEMPTS; attempt++)); do
+    if services_ready; then
+      return 0
+    fi
+
+    if [[ "$attempt" -lt "$SERVICE_ATTEMPTS" ]]; then
+      echo "$ERROR_PREFIX waiting for services (${attempt}/${SERVICE_ATTEMPTS})"
+      sleep "$SERVICE_SLEEP_SECONDS"
+    fi
+  done
+
+  fail "services not running or not healthy after wait" "$CATEGORY_SERVICES"
+}
+
+http_get_with_retries() {
+  local url delim response http_code body
+  local expected_body_fragment=$2
+  local description=$3
+  local attempt
+
+  url=$1
+  delim="__STACK_SMOKE_HTTP_CODE__"
+
+  for ((attempt = 1; attempt <= HTTP_ATTEMPTS; attempt++)); do
+    response="$(curl -k --max-time 10 -sS -w "${delim}%{http_code}" "$url")" || response=""
+
+    if [[ -n "$response" && "$response" == *"$delim"* ]]; then
+      http_code="${response##*$delim}"
+      body="${response%$delim*}"
+
+      if [[ "$http_code" == "200" && "$body" == *"$expected_body_fragment"* ]]; then
+        return 0
+      fi
+    fi
+
+    if [[ "$attempt" -lt "$HTTP_ATTEMPTS" ]]; then
+      echo "$ERROR_PREFIX waiting for $description (${attempt}/${HTTP_ATTEMPTS})"
+      sleep "$HTTP_SLEEP_SECONDS"
+    fi
+  done
+
+  fail "unexpected or unavailable $description ($url)" "$CATEGORY_CURL"
 }
 
 check_public_backend_health() {
-  local url delim response http_code body
-
-  url="https://sealai.net/api/agent/health"
-  delim="__STACK_SMOKE_HTTP_CODE__"
-
-  response="$(curl -k --max-time 10 -sS -w "${delim}%{http_code}" "$url")" || \
-    fail "curl blocked/timeouts ($url)" "$CATEGORY_CURL"
-
-  http_code="${response##*$delim}"
-  body="${response%$delim*}"
-
-  if [[ "$http_code" != "200" ]]; then
-    fail "unexpected http code ($url returned $http_code)" "$CATEGORY_CURL"
-  fi
-
-  if [[ "$body" != "ok" ]] && [[ "$body" != *'"status":"ok"'* ]]; then
-    fail "unexpected backend health body ($url returned: $body)" "$CATEGORY_CURL"
-  fi
+  http_get_with_retries \
+    "https://sealai.net/api/agent/health" \
+    '"status":"ok"' \
+    "public backend health"
 }
 
 check_keycloak_oidc() {
-  local url delim response http_code body
-
-  url="https://auth.sealai.net/realms/sealAI/.well-known/openid-configuration"
-  delim="__STACK_SMOKE_HTTP_CODE__"
-
-  response="$(curl -k --max-time 10 -sS -w "${delim}%{http_code}" "$url")" || \
-    fail "curl blocked/timeouts ($url)" "$CATEGORY_CURL"
-
-  http_code="${response##*$delim}"
-  body="${response%$delim*}"
-
-  if [[ "$http_code" != "200" ]]; then
-    fail "unexpected http code ($url returned $http_code)" "$CATEGORY_CURL"
-  fi
-
-  if [[ "$body" != *'"issuer"'* ]]; then
-    fail "unexpected keycloak metadata body ($url missing issuer)" "$CATEGORY_CURL"
-  fi
+  http_get_with_retries \
+    "https://auth.sealai.net/realms/sealAI/.well-known/openid-configuration" \
+    '"issuer"' \
+    "keycloak oidc metadata"
 }
 
 main() {
