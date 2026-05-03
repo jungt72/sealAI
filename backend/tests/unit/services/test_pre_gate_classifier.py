@@ -34,7 +34,10 @@ def test_greeting_examples(classifier: PreGateClassifier, text: str) -> None:
     [
         "Guten MNorgen, wie geht es dir heute morgen?",
         "Guten Morgen, wie geht es dir heute Morgen?",
+        "moin, wie läufts heute bei dir?",
+        "Moin, wie laeuft es bei dir?",
         "Hallo, alles gut bei dir?",
+        "Na du, alles fit?",
         "How are you today?",
     ],
 )

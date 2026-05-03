@@ -173,7 +173,7 @@ def _asks_how_are_you(user_input: str) -> bool:
     text = (user_input or "").strip().lower()
     return bool(
         re.search(
-            r"\b(wie geht|geht es dir|gehts dir|how are you|how are u)\b",
+            r"\b(wie\s+geht|geht\s+es\s+dir|gehts\s+dir|wie\s+l[äa]uft'?s?|wie\s+laeuft'?s?|was\s+geht|alles\s+(?:gut|fit|klar)|how\s+are\s+you|how\s+are\s+u|how\s+is\s+it\s+going)\b",
             text,
         )
     )

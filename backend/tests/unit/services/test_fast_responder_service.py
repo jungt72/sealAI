@@ -45,6 +45,18 @@ def test_greeting_fallback_answers_wellbeing_without_case_creation() -> None:
     assert "Dichtungsfall" not in response.content
 
 
+
+def test_greeting_fallback_answers_colloquial_wellbeing_without_case_creation() -> None:
+    response = FastResponderService().respond(
+        "moin, wie läufts heute bei dir?",
+        PreGateClassification.GREETING,
+    )
+
+    assert response.no_case_created is True
+    assert "Mir geht es gut" in response.content
+    assert "Dichtungsfall" not in response.content
+
+
 @pytest.mark.parametrize(
     "classification",
     [

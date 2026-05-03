@@ -182,10 +182,12 @@ _GREETING_PATTERNS = _compile(
 _SOCIAL_CONVERSATION_PATTERNS = _compile(
     r"\bwie\s+geht(?:'s|\s+es)?\s+dir\b",
     r"\bwie\s+geht(?:'s|\s+es)?\s+(ihnen|euch)\b",
+    r"\bwie\s+(?:l[äa]uft'?s?|laeuft'?s?|steht'?s?|schaut'?s?|sieht'?s?)\b.*\b(?:dir|bei\s+dir|ihnen|euch)\b",
+    r"\b(?:was\s+geht|alles\s+(?:gut|fit|klar|okay|ok)|na\s+(?:du|ihr))\b",
     r"\bhow\s+are\s+you\b",
     r"\bhow\s+is\s+it\s+going\b",
     r"\b(alles\s+gut|na\s+du|schoen\s+dich\s+zu\s+sehen|schön\s+dich\s+zu\s+sehen)\b",
-    r"\b(guten\s+\w+|gute[nr]?\s+\w+|hallo|hi|hey|moin|servus)\b.*\b(wie\s+geht|alles\s+gut)\b",
+    r"\b(guten\s+\w+|gute[nr]?\s+\w+|hallo|hi|hey|moin|servus)\b.*\b(wie\s+geht|wie\s+l[äa]uft|wie\s+laeuft|alles\s+(?:gut|fit|klar)|was\s+geht)\b",
 )
 
 _TASK_OR_TECHNICAL_INTENT_PATTERNS = _compile(

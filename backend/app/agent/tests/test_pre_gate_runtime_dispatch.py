@@ -235,6 +235,25 @@ async def test_social_conversation_dispatch_with_typo_does_not_enter_governed() 
 
 
 @pytest.mark.asyncio
+async def test_social_conversation_colloquial_wellbeing_does_not_enter_governed() -> None:
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message="moin, wie läufts heute bei dir?",
+            session_id="social-colloquial-dispatch",
+        ),
+        current_user=_user(),
+    )
+
+    assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
+    assert dispatch.gate_reason == "pre_gate:deterministic_social_conversation"
+    assert dispatch.runtime_mode == "CONVERSATION"
+    assert dispatch.fast_response is not None
+    assert dispatch.fast_response.no_case_created is True
+    assert dispatch.governed_state is None
+    assert dispatch.knowledge_response is None
+
+
+@pytest.mark.asyncio
 async def test_knowledge_chat_path_uses_knowledge_service_without_case_creation(monkeypatch) -> None:
     async def fail_light_runtime(*args, **kwargs):
         raise AssertionError("Knowledge query must not enter light runtime")
