@@ -56,7 +56,7 @@ def test_workspace_projection_includes_clarification_communication_context() -> 
     assert projection.communication_context.turn_goal == "clarify_primary_open_point"
     assert (
         projection.communication_context.primary_question
-        == "Koennen Sie Betriebsdruck noch einordnen?"
+        == "Können Sie Betriebsdruck noch einordnen?"
     )
     assert projection.communication_context.supporting_reason is not None
     assert "Medium: Dampf" in projection.communication_context.confirmed_facts_summary

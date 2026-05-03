@@ -80,7 +80,7 @@ function legacyProjection() {
     communication_context: {
       conversation_phase: "clarification",
       turn_goal: "clarify_primary_open_point",
-      primary_question: "Koennen Sie den Betriebsdruck noch einordnen?",
+      primary_question: "Können Sie den Betriebsdruck noch einordnen?",
       supporting_reason: "Dann kann ich die technische Einengung sauber weiterfuehren.",
       response_mode: "single_question",
       confirmed_facts_summary: ["Medium: Steam"],
@@ -371,7 +371,7 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.matching.manufacturerFitMatrix?.rows[0]?.verificationLevel, "documented");
   assert.equal(workspace.rfq.documentUrl, "/api/bff/rfq/case-123/document");
   assert.equal(workspace.communication?.conversationPhase, "clarification");
-  assert.equal(workspace.communication?.primaryQuestion, "Koennen Sie den Betriebsdruck noch einordnen?");
+  assert.equal(workspace.communication?.primaryQuestion, "Können Sie den Betriebsdruck noch einordnen?");
   assert.equal(workspace.parameters?.shaft_diameter_mm, 50);
   assert.equal(workspace.parameters?.speed_rpm, 6000);
   assert.equal(workspace.technicalDerivations?.[0]?.calcType, "rwdr");

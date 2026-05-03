@@ -62,7 +62,7 @@ describe("mapWorkspaceView", () => {
       communication_context: {
         conversation_phase: "clarification",
         turn_goal: "clarify_primary_open_point",
-        primary_question: "Koennen Sie den Betriebsdruck noch einordnen?",
+        primary_question: "Können Sie den Betriebsdruck noch einordnen?",
         supporting_reason: "Dann kann ich die technische Einengung sauber weiterfuehren.",
         response_mode: "single_question",
         confirmed_facts_summary: ["Medium: Dampf"],
@@ -259,7 +259,7 @@ describe("mapWorkspaceView", () => {
     expect(workspace.rfq.documentUrl).toBe("/api/bff/rfq/case-123/document");
     expect(workspace.communication?.conversationPhase).toBe("clarification");
     expect(workspace.communication?.primaryQuestion).toBe(
-      "Koennen Sie den Betriebsdruck noch einordnen?",
+      "Können Sie den Betriebsdruck noch einordnen?",
     );
     expect(workspace.mediumCapture.primaryRawText).toBe("salzwasser");
     expect(workspace.mediumClassification.canonicalLabel).toBe("Salzwasser");

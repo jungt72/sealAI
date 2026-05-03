@@ -1436,7 +1436,15 @@ def _question_from_open_point(open_point: str | None) -> str | None:
     text = str(open_point or "").strip()
     if not text:
         return None
-    return f"Koennen Sie {text} noch einordnen?"
+    label = _human_open_point_question_label(text)
+    return f"Können Sie {label} noch einordnen?"
+
+
+def _human_open_point_question_label(text: str) -> str:
+    normalized = " ".join(str(text or "").replace("_", " ").split())
+    if normalized.casefold() == "medium":
+        return "das Medium"
+    return normalized
 
 
 def _is_stale_medium_open_point(label: str, *, medium_present: bool) -> bool:
