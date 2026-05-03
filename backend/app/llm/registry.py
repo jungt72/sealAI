@@ -72,3 +72,9 @@ def get_model_for_role(role: str) -> str:
 
     # 2. Fallback to static registry or global default
     return LLM_REGISTRY.get(role, DEFAULT_MODEL)
+
+
+def get_registry_default_model_for_role(role: str) -> str:
+    """Return the static registry default for a role, ignoring env overrides."""
+
+    return LLM_REGISTRY.get(role, DEFAULT_MODEL)

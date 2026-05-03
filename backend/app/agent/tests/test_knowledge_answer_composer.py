@@ -8,6 +8,7 @@ from app.agent.api.models import ChatRequest
 from app.agent.api.dispatch import _compose_knowledge_answer_if_enabled
 from app.agent.api.routes.chat import chat_endpoint
 from app.agent.communication.answer_composer import (
+    KnowledgeAnswerComposer,
     KnowledgeAnswerComposerOutput,
     KnowledgeAnswerComposerInput,
     build_knowledge_answer_composer_messages,
@@ -271,6 +272,64 @@ async def test_knowledge_answer_composer_failure_falls_back_to_deterministic_ans
     assert trace["composer_attempted"] is True
     assert trace["composer_succeeded"] is False
     assert trace["fallback_reason"] == "empty_answer_markdown"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_answer_composer_retries_registry_default_when_configured_model_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="Vergleiche NBR und PTFE",
+        deterministic_answer="Deterministische Orientierung zu NBR und PTFE.",
+    )
+
+    class BadRequestError(Exception):
+        pass
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.models: list[str] = []
+
+        async def create(self, **kwargs):
+            self.models.append(str(kwargs["model"]))
+            if len(self.models) == 1:
+                raise BadRequestError("unsupported model")
+
+            class Message:
+                content = (
+                    '{"answer_markdown":"**Kurzvergleich:** NBR und PTFE unterscheiden sich deutlich.",'
+                    '"confidence_note":null}'
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    completions = FakeCompletions()
+
+    class FakeChat:
+        pass
+
+    FakeChat.completions = completions
+
+    class FakeClient:
+        pass
+
+    FakeClient.chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-5.4-nano"),
+    )
+
+    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+    assert result.answer_markdown.startswith("**Kurzvergleich:**")
+    assert completions.models == ["gpt-5.4-nano", "gpt-4o-mini"]
 
 
 @pytest.mark.asyncio

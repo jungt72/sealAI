@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.agent.communication.governed_answer_context import GovernedAnswerContext
+from app.agent.communication.context import human_label
 from app.agent.prompts import prompts
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.llm.factory import get_async_llm
+from app.llm.registry import get_registry_default_model_for_role
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +51,8 @@ _FORBIDDEN_APPROVAL_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     )
 )
 
+_MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
+
 
 @dataclass(frozen=True, slots=True)
 class GovernedAnswerComposerInput:
@@ -79,15 +83,50 @@ class GovernedAnswerComposer:
 
     async def compose(self, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
         client, model = get_async_llm("governed_answer_composer")
-        response = await client.chat.completions.create(
+        messages = build_governed_answer_composer_messages(request)
+        response = await _create_completion_with_registry_fallback(
+            client=client,
             model=model,
-            messages=build_governed_answer_composer_messages(request),
+            role="governed_answer_composer",
+            messages=messages,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            response_format=_response_format(),
         )
         raw_content = response.choices[0].message.content
         return parse_governed_answer_composer_output(raw_content)
+
+
+async def _create_completion_with_registry_fallback(
+    *,
+    client: Any,
+    model: str,
+    role: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+) -> Any:
+    try:
+        return await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=_response_format(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        fallback_model = get_registry_default_model_for_role(role)
+        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+            log.warning(
+                "[governed_answer_composer] configured model rejected; retrying registry default"
+            )
+            return await client.chat.completions.create(
+                model=fallback_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=_response_format(),
+            )
+        raise
 
 
 def build_governed_answer_composer_messages(
@@ -140,6 +179,105 @@ def safe_governed_answer_composer_error_reason(exc: BaseException) -> str:
         raw = exc.__class__.__name__
     safe = re.sub(r"[^a-zA-Z0-9_:\.-]", "_", raw)[:96]
     return safe or "composer_failed"
+
+
+def render_governed_contextual_fallback(
+    context: GovernedAnswerContext,
+    deterministic_reply: str,
+) -> str:
+    """Render a safe V7 fallback from governed context when the LLM is unavailable.
+
+    This is not a second truth source. It only verbalizes already-governed
+    context so provider/model failures do not expose the old bureaucratic
+    fallback as the visible answer.
+    """
+
+    fallback = str(deterministic_reply or "").strip()
+    answer = _contextual_fallback_text(context).strip()
+    if not answer:
+        return fallback
+    try:
+        if len(answer) > MAX_ANSWER_MARKDOWN_CHARS:
+            raise GovernedAnswerComposerError("contextual_fallback_too_long")
+        _validate_answer_markdown(answer)
+        return answer
+    except GovernedAnswerComposerError:
+        return fallback
+
+
+def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
+    if context.ambiguous_values:
+        item = context.ambiguous_values[0]
+        value = _display_value(item.normalized_value or item.raw_value)
+        label = _display_label(item.field_key, item.label)
+        question = _clean_question(item.clarification_question or context.next_best_question)
+        if value and question:
+            return (
+                f"Danke, ich habe {value} als {label} verstanden. "
+                f"Fuer die technische Einordnung muss ich das noch genauer fassen: {question}"
+            )
+        if question:
+            return question
+
+    if context.accepted_updates:
+        update = context.accepted_updates[0]
+        value = _display_value(update.value)
+        label = _display_label(update.field_key, update.label)
+        question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
+        if value and question:
+            return (
+                f"Danke, {value} ist als {label} angekommen. "
+                f"Als Naechstes ist wichtig: {question}"
+            )
+        if value:
+            return (
+                f"Danke, {value} ist als {label} angekommen. "
+                "Ich halte es als aktuellen Arbeitsstand fest und pruefe den naechsten sinnvollen Schritt."
+            )
+
+    question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
+    if question:
+        return f"Gern, wir gehen das Schritt fuer Schritt durch. {question}"
+    return ""
+
+
+def _display_value(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _display_label(field_key: str, label: str | None) -> str:
+    text = str(label or "").strip()
+    if text:
+        return text
+    return human_label(str(field_key or "").strip())
+
+
+def _clean_question(question: str | None) -> str:
+    text = str(question or "").strip()
+    if not text:
+        return ""
+    return text
+
+
+def _question_for_missing_fields(missing_fields: list[str]) -> str:
+    normalized = [str(item or "").strip() for item in missing_fields if str(item or "").strip()]
+    for key in normalized:
+        lowered = key.casefold()
+        if "pressure" in lowered or "druck" in lowered:
+            return "Welcher Druck liegt direkt an der Dichtstelle an?"
+        if "temperature" in lowered or "temperatur" in lowered:
+            return "In welchem Temperaturbereich arbeitet die Dichtstelle?"
+        if "sealing_type" in lowered or "dichtungstyp" in lowered or "dichtprinzip" in lowered:
+            return (
+                "Um welches Dichtprinzip geht es, zum Beispiel O-Ring, Wellendichtring, "
+                "Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?"
+            )
+        if "asset" in lowered or "anlage" in lowered or "pump" in lowered or "aggregate" in lowered:
+            return (
+                "Wo sitzt die Dichtung genau, zum Beispiel an Pumpe, Welle, Flansch, "
+                "Zylinder oder Behaelter?"
+            )
+    return ""
 
 
 def _validate_answer_markdown(answer_markdown: str) -> None:

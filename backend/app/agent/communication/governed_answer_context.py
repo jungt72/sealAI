@@ -228,12 +228,12 @@ def _rejected_updates(state: Any) -> list[GovernedRejectedUpdate]:
 
 
 def _next_best_question(strategy: Any | None, ambiguous_values: list[GovernedAmbiguousValue]) -> str | None:
-    primary = str(getattr(strategy, "primary_question", "") or "").strip() if strategy is not None else ""
-    if primary:
-        return primary
     for item in ambiguous_values:
         if item.clarification_question:
             return item.clarification_question
+    primary = str(getattr(strategy, "primary_question", "") or "").strip() if strategy is not None else ""
+    if primary:
+        return primary
     return None
 
 

@@ -7,6 +7,9 @@ from typing import Any
 from app.agent.communication.knowledge_context_builder import KnowledgeAnswerContext
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.llm.factory import get_async_llm
+from app.llm.registry import get_registry_default_model_for_role
+
+_MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,15 +48,47 @@ class KnowledgeAnswerComposer:
 
     async def compose(self, request: KnowledgeAnswerComposerInput) -> KnowledgeAnswerComposerOutput:
         client, model = get_async_llm("knowledge_answer_composer")
-        response = await client.chat.completions.create(
+        messages = build_knowledge_answer_composer_messages(request)
+        response = await _create_completion_with_registry_fallback(
+            client=client,
             model=model,
-            messages=build_knowledge_answer_composer_messages(request),
+            role="knowledge_answer_composer",
+            messages=messages,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            response_format=_response_format(),
         )
         raw_content = response.choices[0].message.content
         return parse_knowledge_answer_composer_output(raw_content)
+
+
+async def _create_completion_with_registry_fallback(
+    *,
+    client: Any,
+    model: str,
+    role: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+) -> Any:
+    try:
+        return await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=_response_format(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        fallback_model = get_registry_default_model_for_role(role)
+        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+            return await client.chat.completions.create(
+                model=fallback_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=_response_format(),
+            )
+        raise
 
 
 def build_knowledge_answer_composer_messages(

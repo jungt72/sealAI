@@ -168,9 +168,9 @@ def _assemble_governed_stream_payload(
     # are intentionally ignored here.
     _ = (visible_reply, visible_reply_trace)
     fallback_reply = str(context.deterministic_reply or "").strip()
-    composed_answer = (
+    visible_answer = (
         str(context.answer_markdown or "").strip()
-        if context.answer_markdown_source == "governed_composer"
+        if context.answer_markdown_source in {"governed_composer", "composer_fallback"}
         else ""
     )
     composer_attempted = context.answer_markdown_source in {
@@ -194,14 +194,15 @@ def _assemble_governed_stream_payload(
     )
     assembly_reply = str(public_reply.get("reply") or "").strip()
     assembly_guard_overwrote = bool(fallback_reply and assembly_reply != fallback_reply)
-    if composed_answer:
-        public_reply["answer_markdown"] = composed_answer
+    if visible_answer:
+        public_reply["answer_markdown"] = visible_answer
         answer_trace = build_answer_trace(
             reply_source="governed_output_contract",
-            answer_markdown_source="governed_composer",
+            answer_markdown_source=context.answer_markdown_source,
             final_visible_source="answer_markdown",
             composer_attempted=composer_attempted,
             composer_succeeded=composer_succeeded,
+            fallback_reason=composer_fallback_reason,
         )
     elif assembly_guard_overwrote:
         answer_trace = build_answer_trace(

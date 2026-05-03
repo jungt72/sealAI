@@ -13,6 +13,7 @@ from app.agent.api.assembly import (
 from app.agent.api.utils import _materialize_governed_graph_result
 from app.agent.communication import governed_answer_composer as composer_module
 from app.agent.communication.governed_answer_composer import (
+    GovernedAnswerComposer,
     GovernedAnswerComposerError,
     GovernedAnswerComposerInput,
     GovernedAnswerComposerOutput,
@@ -202,11 +203,75 @@ async def test_composer_failure_falls_back_without_secret_leak(monkeypatch: pyte
 
     result = await governed_answer_composer_node(state)
 
-    assert result.output_answer_markdown == result.output_reply
+    assert result.output_answer_markdown != result.output_reply
     assert result.output_answer_markdown_source == "composer_fallback"
+    assert "Chlor" in result.output_answer_markdown
+    assert "Chlorgas" in result.output_answer_markdown
+    assert "Medium angeben" not in result.output_answer_markdown
     assert result.governed_answer_composer_error == "RuntimeError"
     assert "secret" not in result.governed_answer_composer_error.casefold()
     assert "OPENAI_API_KEY" not in result.governed_answer_composer_error
+
+
+@pytest.mark.asyncio
+async def test_composer_retries_registry_default_when_configured_model_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = await _run_turn("chlor", pending_question=_pending_medium_question())
+    context = composer_module.GovernedAnswerContext.model_validate(state.governed_answer_context)
+
+    class BadRequestError(Exception):
+        pass
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.models: list[str] = []
+
+        async def create(self, **kwargs):
+            self.models.append(str(kwargs["model"]))
+            if len(self.models) == 1:
+                raise BadRequestError("unsupported model")
+
+            class Message:
+                content = json.dumps(
+                    {
+                        "answer_markdown": "Danke, ich habe Chlor verstanden. Geht es um Chlorgas oder Chlorwasser?",
+                        "confidence_note": None,
+                    }
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    completions = FakeCompletions()
+
+    class FakeChat:
+        pass
+
+    FakeChat.completions = completions
+
+    class FakeClient:
+        pass
+
+    FakeClient.chat = FakeChat()
+
+    monkeypatch.setattr(
+        composer_module,
+        "get_async_llm",
+        lambda _role: (FakeClient(), "gpt-5.4-nano"),
+    )
+
+    result = await GovernedAnswerComposer().compose(
+        GovernedAnswerComposerInput(context=context, deterministic_reply=state.output_reply)
+    )
+
+    assert result.answer_markdown.startswith("Danke")
+    assert completions.models == ["gpt-5.4-nano", "gpt-4o-mini"]
 
 
 @pytest.mark.parametrize(
@@ -368,8 +433,9 @@ async def test_structured_clarification_composer_failure_falls_back_safely(
 
     _payload, materialized = await _run_structured_output_contract()
 
-    assert materialized.output_answer_markdown == materialized.output_reply
+    assert materialized.output_answer_markdown != materialized.output_reply
     assert materialized.output_answer_markdown_source == "composer_fallback"
+    assert "Welches Medium" in materialized.output_answer_markdown
     assert materialized.governed_answer_composer_error == "RuntimeError"
     assert "secret" not in materialized.governed_answer_composer_error.casefold()
     assert "OPENAI_API_KEY" not in materialized.governed_answer_composer_error
@@ -424,13 +490,15 @@ async def test_assembly_traces_governed_composer_fallback_without_leaking_except
     payload = _assemble_governed_stream_payload(context=context, visible_reply=state.output_reply)
 
     assert payload["reply"] == state.output_reply
-    assert payload["answer_markdown"] == state.output_reply
+    assert payload["answer_markdown"] == state.output_answer_markdown
+    assert payload["answer_markdown"] != state.output_reply
     trace = payload["run_meta"]["answer_trace"]
     assert trace["reply_source"] == "governed_output_contract"
     assert trace["answer_markdown_source"] == "composer_fallback"
     assert trace["composer_attempted"] is True
     assert trace["composer_succeeded"] is False
     assert trace["fallback_reason"] == "RuntimeError"
+    assert trace["final_layer_source"] == "composer_fallback"
     dumped = json.dumps(trace, ensure_ascii=True)
     assert "secret" not in dumped.casefold()
     assert "OPENAI_API_KEY" not in dumped

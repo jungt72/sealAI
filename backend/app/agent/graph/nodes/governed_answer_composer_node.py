@@ -6,6 +6,7 @@ from app.agent.communication.governed_answer_composer import (
     GovernedAnswerComposer,
     GovernedAnswerComposerInput,
     is_governed_answer_composer_enabled,
+    render_governed_contextual_fallback,
     safe_governed_answer_composer_error_reason,
 )
 from app.agent.communication.governed_answer_context import GovernedAnswerContext
@@ -37,6 +38,7 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
             }
         )
 
+    context: GovernedAnswerContext | None = None
     try:
         context = GovernedAnswerContext.model_validate(state.governed_answer_context or {})
         result = await GovernedAnswerComposer().compose(
@@ -55,9 +57,14 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
     except Exception as exc:  # noqa: BLE001
         reason = safe_governed_answer_composer_error_reason(exc)
         log.warning("[governed_answer_composer] fallback reason=%s", reason)
+        fallback_answer = (
+            render_governed_contextual_fallback(context, fallback_reply)
+            if context is not None
+            else fallback_reply
+        )
         return state.model_copy(
             update={
-                "output_answer_markdown": fallback_reply,
+                "output_answer_markdown": fallback_answer,
                 "output_answer_markdown_source": "composer_fallback",
                 "governed_answer_composer_error": reason,
             }
