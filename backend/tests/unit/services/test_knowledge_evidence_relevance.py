@@ -131,3 +131,65 @@ def test_composer_bypass_still_has_useful_deterministic_evidence() -> None:
     assert context.evidence_items
     assert context.evidence_items[0].source_type == "deterministic"
     assert "PFAS" in context.evidence_items[0].content
+
+
+def test_generic_material_comparison_nbr_ptfe_is_structured_and_bounded() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([_irrelevant_alkali_card()])).answer(
+        "bitte vergleiche NBR und PTFE fuer mich"
+    )
+    view = response.knowledge_answer_view
+    text = _combined_answer_and_evidence(response)
+
+    assert view.answer_available is True
+    assert view.knowledge_evidence
+    assert view.knowledge_evidence[0].source_type == "deterministic"
+    assert "werkstoffvergleich: nbr vs ptfe" in text
+    assert "nitrilkautschuk" in text
+    assert "fluorpolymer" in text
+    assert "elastomer" in text
+    assert "kein elastomer" in text
+    assert "mineral" in text or "oel" in text or "öl" in text
+    assert "kriechen" in text or "kaltfluss" in text
+    assert "keine konkrete materialfreigabe" in text
+    assert "hersteller" in text
+    assert "molten alkali" not in text
+
+
+def test_generic_material_comparison_fkm_epdm_is_not_factcard_only() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "Vergleiche FKM und EPDM fuer Dichtungen."
+    )
+    text = _combined_answer_and_evidence(response)
+
+    assert "werkstoffvergleich: fkm vs epdm" in text
+    assert "fluorelastomer" in text
+    assert "ethylen-propylen" in text
+    assert "wasser" in text
+    assert "oel" in text or "öl" in text
+    assert "keine konkrete materialfreigabe" in text
+
+
+def test_material_comparison_supported_pairs_have_structured_answer() -> None:
+    from app.services.knowledge.material_comparison import supported_material_ids
+
+    materials = supported_material_ids()
+    assert len(materials) >= 6
+
+    for left in materials:
+        for right in materials:
+            if left == right:
+                continue
+            response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+                f"Vergleiche {left} und {right} fuer Dichtungen."
+            )
+            text = _combined_answer_and_evidence(response)
+            assert response.knowledge_answer_view.knowledge_evidence[0].source_type == "deterministic"
+            assert f"werkstoffvergleich: {left.casefold()} vs {right.casefold()}" in text
+            assert "direkter vergleich" in text
+            assert "keine konkrete materialfreigabe" in text
+
+
+def test_non_comparison_material_question_can_still_use_existing_knowledge_path() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer("Was ist FKM?")
+
+    assert "werkstoffvergleich" not in response.content.casefold()

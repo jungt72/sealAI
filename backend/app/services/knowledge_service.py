@@ -13,6 +13,7 @@ from app.agent.runtime.output_guard import (
 from app.domain.source_validation import SourceType, ValidationStatus
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.knowledge import FactCardStore
+from app.services.knowledge.material_comparison import build_material_comparison_answer
 
 
 log = logging.getLogger(__name__)
@@ -608,21 +609,10 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
             ),
         )
 
-    asks_material_comparison = any(
-        token in text for token in ("unterschied", "vergleich", " vs ", "besser", "ptfe oder fkm")
-    )
-    if asks_material_comparison and "ptfe" in text and "fkm" in text:
-        answer = "\n".join(
-            [
-                "Kurz gesagt: PTFE und FKM sind zwei sehr unterschiedliche Werkstoffrichtungen.",
-                "",
-                "PTFE ist typischerweise stark bei chemischer Beständigkeit, niedriger Reibung und höheren Temperaturen. Es ist aber weniger elastisch und stärker von Konstruktion, Vorspannung, Gegenlauffläche und Montage abhängig.",
-                "",
-                "FKM ist ein Fluorelastomer. Es ist elastischer und in vielen klassischen Elastomer-Dichtungen gut handhabbar, hängt aber stark von Medium, Temperatur, Druck und Einsatzdauer ab.",
-                "",
-                "Für einen konkreten Fall ist daraus noch keine Auswahl ableitbar. Dafür brauche ich mindestens Medium, Temperatur, Druck, Bewegung und die Dichtstelle.",
-            ]
-        )
+    material_comparison = build_material_comparison_answer(user_input)
+    if material_comparison is not None:
+        answer = material_comparison.answer
+        left, right = material_comparison.material_ids
         return KnowledgeAnswerResult(
             answer=answer,
             answer_available=True,
@@ -635,7 +625,7 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
             not_final_release=True,
             fallback_allowed=False,
             fallback_used=False,
-            user_visible_label="SeaLAI-Grundwissen - allgemeine Orientierung",
+            user_visible_label="SeaLAI-Werkstoffvergleich - allgemeine Orientierung",
             missing_reason="domain_material_comparison_without_rag_hit",
             next_step=(
                 "Bei konkreter Anwendung Medium, Temperatur, Druck, Bewegung "
@@ -644,9 +634,15 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
             knowledge_evidence=(
                 _knowledge_evidence(
                     source_type="deterministic",
-                    title="SeaLAI-Grundwissen",
-                    content=answer,
-                    note="system_derived_domain_answer",
+                    title=material_comparison.title,
+                    content=(
+                        f"{material_comparison.title}: Kurz gesagt: {left} und {right} "
+                        "werden allgemein gegenuebergestellt; keine konkrete Auswahl, "
+                        "keine Materialfreigabe und keine Herstellerfreigabe. "
+                        "Die ausfuehrliche Antwort nennt Werkstofffamilie, Temperatur, "
+                        "Medienorientierung, Dynamik, typische Grenzen und Pruefpunkte."
+                    ),
+                    note=f"system_derived_material_comparison:{left}:{right}",
                 ),
             ),
             event_names=(
