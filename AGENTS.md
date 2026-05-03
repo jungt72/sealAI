@@ -39,15 +39,16 @@ The current work must move the existing app toward v0.8.3 without big-bang rewri
 Before any non-trivial task, read from the repository root:
 
 1. `AGENTS.md`
-2. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md`
-3. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md`
-4. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md`
-5. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`
-6. relevant source files and tests for the specific task
+2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md`
+3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md`
+4. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md`
+5. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md`
+6. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`
+7. relevant source files and tests for the specific task
 
 For frontend/UI work, also read:
 
-7. `frontend/DESIGN.md`
+8. `frontend/DESIGN.md`
 
 If a directory contains another `AGENTS.md`, follow the more specific file for files inside that directory.
 
@@ -60,13 +61,14 @@ Do not work from memory. Current repository content is the evidence.
 Use this order when documents, code, or prior notes disagree:
 
 1. `AGENTS.md` for coding-agent operating rules and safety boundaries.
-2. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md` for active SeaLAI v0.8.3 product and implementation direction.
-3. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md` for current-stack evidence and implementation gaps.
-4. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md` for active PR order and implementation sequencing.
-5. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md` for pilot-readiness guardrails, RFQ governance, consent, IP/upload safety, and earlier implementation constraints.
-6. `frontend/DESIGN.md` for frontend design, layout, motion, spacing, cockpit, chat workspace, rails, tabs, and responsive behavior.
-7. Current code and tests as evidence of existing contracts and productive seams.
-8. Older concept files, archived notes, audit notes, prompts, chat notes, or implementation history as context only.
+2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md` for the active communication architecture, FinalAnswerLayer target, answer-mode policy, composer tiers, traces, eval gates, and rollout sequence.
+3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md` for active SeaLAI v0.8.3 product and implementation direction.
+4. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md` for current-stack evidence and implementation gaps.
+5. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md` for active PR order and implementation sequencing.
+6. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md` for pilot-readiness guardrails, RFQ governance, consent, IP/upload safety, and earlier implementation constraints.
+7. `frontend/DESIGN.md` for frontend design, layout, motion, spacing, cockpit, chat workspace, rails, tabs, and responsive behavior.
+8. Current code and tests as evidence of existing contracts and productive seams.
+9. Older concept files, archived notes, audit notes, prompts, chat notes, or implementation history as context only.
 
 Rules:
 
@@ -131,6 +133,25 @@ Forbidden language unless backed by explicit evidence:
 - final material recommendation
 - final compatibility confirmation
 - final root cause
+
+## Active Communication Architecture V5
+
+`docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md` is the active implementation concept for chat, knowledge, governed intake, active-case side questions, and visible answer orchestration.
+
+Coding agents must implement V5 as an architecture, not as example-specific fixes:
+
+- Every user-visible answer must be assembled through one final decision boundary: the `FinalAnswerLayer`.
+- Upstream components may produce deterministic fallback text, evidence, state deltas, contexts, and answer plans, but they are not independent final voices.
+- The target public contract remains `reply` as deterministic fallback and `answer_markdown` as the final visible answer.
+- `answer_trace` must explain the route, answer mode, composer tier, source, fallback reason, and safety result without exposing secrets, raw prompts, raw evidence chunks, or internal graph state.
+- Tier A / Micro Composer is for smalltalk, meta, short confirmations, and transitions.
+- Tier B / Standard Composer is for knowledge, material comparison, PFAS orientation, needs analysis, governed intake, and active-case side questions.
+- No Tier C exists in V5. Larger deep-dive models require a later concept/eval decision.
+- Material comparison must be generic over supported material pairs, not hardcoded to examples such as NBR/PTFE or FKM/EPDM.
+- Active-case side questions such as material comparisons must not be forced through governed intake or legacy exploration just because a case exists.
+- Fallback is safe degradation only; it is not the target UX when a composer is allowed, available, and passes guards.
+- Roll out V5 in the implementation sequence defined in the concept: inventory voices, add envelope/adapter, introduce FinalAnswerLayer, migrate smalltalk, migrate knowledge/material comparison, migrate governed intake, migrate active-case side questions, then enforce legacy-voice removal.
+- Every V5 patch needs deterministic tests for route, answer mode, fallback, trace metadata, safety guards, and no unintended case mutation.
 
 ## SeaLAI LLM Safety Rules
 
