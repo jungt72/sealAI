@@ -138,8 +138,8 @@ class KnowledgeCaseBridgeService:
         if context and context.mentioned_parameters:
             return (
                 "Wenn das Ihr konkreter Anwendungsfall ist, kann ich die bisher genannten "
-                "Angaben direkt in einen technischen Fall ueberfuehren und die offenen Punkte "
-                "strukturiert weiterklaeren."
+                "Angaben direkt in einen technischen Fall überführen und die offenen Punkte "
+                "strukturiert weiterklären."
             )
         return (
             "Wenn das in Richtung einer konkreten Anwendung geht, kann ich daraus direkt "

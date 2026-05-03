@@ -44,6 +44,10 @@ def test_build_bridge_invitation_only_once_per_context() -> None:
 
     assert invitation is not None
     assert "technischen Fall" in invitation
+    assert "überführen" in invitation
+    assert "weiterklären" in invitation
+    assert "ueberfuehren" not in invitation
+    assert "weiterklaeren" not in invitation
     assert (
         service.build_bridge_invitation(
             "Was ist PTFE fuer meine Pumpe bei 12 bar?",

@@ -211,6 +211,8 @@ def test_material_comparison_profiles_do_not_render_single_strings_as_char_lists
     assert "reibpaarung und verschleiss prüfen" in text
     assert "b; r; e; i; t" not in text
     assert "r; e; i; b" not in text
+    assert "haengen" not in text
+    assert "designaenderung" not in text
 
 
 
