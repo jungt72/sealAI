@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       backend_tag:
-        description: "Optional backend image tag override (e.g. ghcr.io/jungt72/sealai-backend:abcd1234)"
+        description: "Optional backend image tag or pinned ref override (e.g. ghcr.io/jungt72/sealai-backend:abcd1234)"
         required: false
         type: string
 
@@ -32,11 +32,18 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${INPUT_BACKEND_TAG:-}" ]]; then
-            BACKEND_IMAGE="$INPUT_BACKEND_TAG"
+            BACKEND_IMAGE_REF="$INPUT_BACKEND_TAG"
           else
             SHA="${WORKFLOW_SHA:-${GITHUB_SHA}}"
             SHORT_SHA="${SHA:0:8}"
-            BACKEND_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${SHORT_SHA}"
+            BACKEND_IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${SHORT_SHA}"
+          fi
+          if [[ "$BACKEND_IMAGE_REF" == *@sha256:* ]]; then
+            BACKEND_IMAGE="$BACKEND_IMAGE_REF"
+          else
+            DIGEST="$(docker buildx imagetools inspect "$BACKEND_IMAGE_REF" --format '{{.Manifest.Digest}}')"
+            test -n "$DIGEST"
+            BACKEND_IMAGE="${BACKEND_IMAGE_REF}@${DIGEST}"
           fi
           echo "backend_image=${BACKEND_IMAGE}" >> "$GITHUB_OUTPUT"
 
