@@ -32,6 +32,45 @@ def test_greeting_examples(classifier: PreGateClassifier, text: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
+        "Guten MNorgen, wie geht es dir heute morgen?",
+        "Guten Morgen, wie geht es dir heute Morgen?",
+        "Hallo, alles gut bei dir?",
+        "How are you today?",
+    ],
+)
+def test_social_conversation_frontdoor_routes_to_greeting_without_graph(
+    classifier: PreGateClassifier,
+    text: str,
+) -> None:
+    result = classifier.classify(text)
+
+    assert result.classification is PreGateClassification.GREETING
+    assert result.reasoning == "deterministic_social_conversation"
+    assert result.escalate_to_graph is False
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Guten Morgen, ich brauche eine Dichtung für eine Pumpe.", PreGateClassification.DOMAIN_INQUIRY),
+        ("Wie geht es dir? Ich brauche eine Dichtung für eine Pumpe.", PreGateClassification.DOMAIN_INQUIRY),
+        ("Hallo, ich habe 80 mm Welle und 1500 rpm.", PreGateClassification.DOMAIN_INQUIRY),
+    ],
+)
+def test_social_words_do_not_hide_technical_or_task_intent(
+    classifier: PreGateClassifier,
+    text: str,
+    expected: PreGateClassification,
+) -> None:
+    result = classifier.classify(text)
+
+    assert result.classification is expected
+    assert result.escalate_to_graph is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "Was kann SeaLAI?",
         "Wie funktioniert dieses Tool?",
         "Wofür ist SeaLAI gedacht?",

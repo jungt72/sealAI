@@ -186,6 +186,55 @@ async def test_greeting_plus_smalltalk_routes_to_conversation_runtime() -> None:
 
 
 @pytest.mark.asyncio
+async def test_social_conversation_with_typo_uses_fast_responder_without_graph(monkeypatch) -> None:
+    async def fail_light_runtime(*args, **kwargs):
+        raise AssertionError("Social conversation must not enter light runtime")
+
+    async def fail_persist(*args, **kwargs):
+        raise AssertionError("Social conversation must not persist governed state")
+
+    async def fail_governed(*args, **kwargs):
+        raise AssertionError("Social conversation must not invoke governed graph")
+
+    monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_light_runtime)
+    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
+    monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+
+    response = await chat_endpoint(
+        ChatRequest(
+            message="Guten MNorgen, wie geht es dir heute morgen?",
+            session_id="social-typo-no-case",
+        ),
+        current_user=_user(),
+    )
+
+    assert response.response_class == "conversational_answer"
+    assert response.run_meta["fast_responder"]["source_classification"] == "GREETING"
+    assert response.run_meta["fast_responder"]["no_case_created"] is True
+    assert response.structured_state is None
+    assert "welches medium" not in response.reply.lower()
+
+
+@pytest.mark.asyncio
+async def test_social_conversation_dispatch_with_typo_does_not_enter_governed() -> None:
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message="Guten MNorgen, wie geht es dir heute morgen?",
+            session_id="social-typo-dispatch",
+        ),
+        current_user=_user(),
+    )
+
+    assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
+    assert dispatch.gate_reason == "pre_gate:deterministic_social_conversation"
+    assert dispatch.runtime_mode == "CONVERSATION"
+    assert dispatch.fast_response is not None
+    assert dispatch.fast_response.no_case_created is True
+    assert dispatch.governed_state is None
+    assert dispatch.knowledge_response is None
+
+
+@pytest.mark.asyncio
 async def test_knowledge_chat_path_uses_knowledge_service_without_case_creation(monkeypatch) -> None:
     async def fail_light_runtime(*args, **kwargs):
         raise AssertionError("Knowledge query must not enter light runtime")

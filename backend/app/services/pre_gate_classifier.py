@@ -40,6 +40,13 @@ class PreGateClassifier:
                 "deterministic_greeting",
             )
 
+        if self._is_social_conversation_without_task(text):
+            return self._result(
+                PreGateClassification.GREETING,
+                0.93,
+                "deterministic_social_conversation",
+            )
+
         if self._matches(_META_QUESTION_PATTERNS, text):
             return self._result(
                 PreGateClassification.META_QUESTION,
@@ -111,6 +118,22 @@ class PreGateClassifier:
         return any(pattern.search(text) for pattern in patterns)
 
     @staticmethod
+    def _is_social_conversation_without_task(text: str) -> bool:
+        """Detect human social frontdoor turns before technical intake.
+
+        The classifier must not depend on a small list of exact greetings. Users
+        often type greetings with typos, time qualifiers, or wellbeing questions.
+        This branch only wins when the message contains social intent and no
+        explicit technical, knowledge, or case task markers.
+        """
+
+        if not PreGateClassifier._matches(_SOCIAL_CONVERSATION_PATTERNS, text):
+            return False
+        if PreGateClassifier._matches(_TASK_OR_TECHNICAL_INTENT_PATTERNS, text):
+            return False
+        return True
+
+    @staticmethod
     def _is_generic_material_comparison(text: str) -> bool:
         if not PreGateClassifier._matches(_MATERIAL_COMPARISON_KNOWLEDGE_PATTERNS, text):
             return False
@@ -154,6 +177,24 @@ _GREETING_PATTERNS = _compile(
     r"^(danke|vielen\s+dank|dankeschön|merci|thanks|thank\s+you)[\s!.?,]*$",
     r"^(tschüss|auf\s+wiedersehen|bis\s+dann|ciao|bye)[\s!.?,]*$",
     r"^wie\s+geht('?s|\s+es\s+dir)[\s?!.]*$",
+)
+
+_SOCIAL_CONVERSATION_PATTERNS = _compile(
+    r"\bwie\s+geht(?:'s|\s+es)?\s+dir\b",
+    r"\bwie\s+geht(?:'s|\s+es)?\s+(ihnen|euch)\b",
+    r"\bhow\s+are\s+you\b",
+    r"\bhow\s+is\s+it\s+going\b",
+    r"\b(alles\s+gut|na\s+du|schoen\s+dich\s+zu\s+sehen|schön\s+dich\s+zu\s+sehen)\b",
+    r"\b(guten\s+\w+|gute[nr]?\s+\w+|hallo|hi|hey|moin|servus)\b.*\b(wie\s+geht|alles\s+gut)\b",
+)
+
+_TASK_OR_TECHNICAL_INTENT_PATTERNS = _compile(
+    r"\b(dichtung|dichtring|dichtstelle|seal|rwdr|radialwellendichtring|gleitringdichtung|o[- ]?ring)\b",
+    r"\b(medium|druck|temperatur|drehzahl|welle|pumpe|getriebe|r[üu]hrwerk|flansch|hydraulik|leckage|undicht)\b",
+    r"\b(ptfe|fkm|ffkm|fpm|epdm|nbr|hnbr|pu|tpu|vmq|silikon|viton|pfas|reach|echa)\b",
+    r"\b(ich\s+brauche|wir\s+brauchen|ben[oö]tige|suche|auslegen|berechne|pr[üu]fe|validieren)\b",
+    r"\b(was\s+ist|was\s+bedeutet|wie\s+funktioniert|erkl[aä]r\w*|erklaer\w*|vergleiche|vergleich|unterschied)\b",
+    r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|psi|°?\s*[cCfF]|grad|rpm|u\.?/?min)\b",
 )
 
 _META_QUESTION_PATTERNS = _compile(
