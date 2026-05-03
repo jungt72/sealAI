@@ -44,6 +44,13 @@ def _block_case_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
 
 
+def _answer_trace(response) -> dict:
+    assert response.run_meta is not None
+    trace = response.run_meta.get("answer_trace")
+    assert isinstance(trace, dict)
+    return trace
+
+
 class _FactcardStore:
     _sources = {"src-1": {"title": "Curated source"}}
 
@@ -78,6 +85,11 @@ async def test_knowledge_answer_composer_disabled_keeps_deterministic_answer(
     assert response.reply
     assert response.answer_markdown == response.reply
     assert response.proposed_case_delta is None
+    trace = _answer_trace(response)
+    assert trace["reply_source"] == "knowledge_service"
+    assert trace["answer_markdown_source"] == "knowledge_service"
+    assert trace["composer_attempted"] is False
+    assert trace["composer_succeeded"] is False
 
 
 @pytest.mark.asyncio
@@ -112,6 +124,11 @@ async def test_knowledge_answer_composer_enabled_keeps_reply_and_sets_answer_mar
     assert response.reply
     assert "FKM und EPDM" in str(response.answer_markdown)
     assert response.proposed_case_delta is None
+    trace = _answer_trace(response)
+    assert trace["reply_source"] == "knowledge_service"
+    assert trace["answer_markdown_source"] == "knowledge_composer"
+    assert trace["composer_attempted"] is True
+    assert trace["composer_succeeded"] is True
 
 
 @pytest.mark.asyncio
@@ -216,6 +233,11 @@ async def test_knowledge_answer_composer_receives_factcard_evidence(
     assert "PTFE: Temperaturbereich" in request.context.evidence_items[0].content
     assert response.content == knowledge_response.content
     assert response.answer_markdown == "**PTFE:** Temperaturhinweis aus kuratierter Evidenz."
+    assert response.answer_trace is not None
+    assert response.answer_trace["reply_source"] == "knowledge_service"
+    assert response.answer_trace["answer_markdown_source"] == "knowledge_composer"
+    assert response.answer_trace["composer_attempted"] is True
+    assert response.answer_trace["composer_succeeded"] is True
 
 
 @pytest.mark.asyncio
@@ -243,6 +265,12 @@ async def test_knowledge_answer_composer_failure_falls_back_to_deterministic_ans
     assert response.policy_path == "knowledge"
     assert response.answer_markdown == response.reply
     assert "knowledge answer composer failed" in caplog.text
+    trace = _answer_trace(response)
+    assert trace["reply_source"] == "knowledge_service"
+    assert trace["answer_markdown_source"] == "composer_fallback"
+    assert trace["composer_attempted"] is True
+    assert trace["composer_succeeded"] is False
+    assert trace["fallback_reason"] == "empty_answer_markdown"
 
 
 @pytest.mark.asyncio

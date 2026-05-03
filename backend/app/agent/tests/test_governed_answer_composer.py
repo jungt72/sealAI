@@ -277,6 +277,16 @@ async def test_assembly_preserves_deterministic_reply_and_exposes_composer_markd
     assert payload["answer_markdown"] == state.output_answer_markdown
     assert payload["assistant_message"] == state.output_answer_markdown
     assert payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
+    assert payload["run_meta"]["answer_trace"] == {
+        "reply_source": "governed_output_contract",
+        "answer_markdown_source": "governed_composer",
+        "final_visible_source": "answer_markdown",
+        "composer_attempted": True,
+        "composer_succeeded": True,
+        "hcl_attempted": False,
+        "hcl_succeeded": False,
+        "fallback_reason": None,
+    }
 
 
 def test_materialize_governed_graph_result_extracts_state_from_interrupt_payload() -> None:
@@ -389,6 +399,73 @@ async def test_structured_clarification_assembly_preserves_composed_markdown_fro
     assert payload["answer_markdown"] == state.output_answer_markdown
     assert payload["assistant_message"] == state.output_answer_markdown
     assert payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
+    assert payload["run_meta"]["answer_trace"]["reply_source"] == "governed_output_contract"
+    assert payload["run_meta"]["answer_trace"]["answer_markdown_source"] == "governed_composer"
+    assert payload["run_meta"]["answer_trace"]["composer_attempted"] is True
+    assert payload["run_meta"]["answer_trace"]["composer_succeeded"] is True
+
+
+@pytest.mark.asyncio
+async def test_assembly_traces_governed_composer_fallback_without_leaking_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
+
+    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+        raise RuntimeError("OPENAI_API_KEY=secret-value")
+
+    monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
+    state = await governed_answer_composer_node(
+        await _run_turn("chlor", pending_question=_pending_medium_question())
+    )
+    persisted = GovernedSessionState.model_validate(state.model_dump(mode="python"))
+    context = _build_governed_reply_context(result_state=state, persisted_state=persisted)
+
+    payload = _assemble_governed_stream_payload(context=context, visible_reply=state.output_reply)
+
+    assert payload["reply"] == state.output_reply
+    assert payload["answer_markdown"] == state.output_reply
+    trace = payload["run_meta"]["answer_trace"]
+    assert trace["reply_source"] == "governed_output_contract"
+    assert trace["answer_markdown_source"] == "composer_fallback"
+    assert trace["composer_attempted"] is True
+    assert trace["composer_succeeded"] is False
+    assert trace["fallback_reason"] == "RuntimeError"
+    dumped = json.dumps(trace, ensure_ascii=True)
+    assert "secret" not in dumped.casefold()
+    assert "OPENAI_API_KEY" not in dumped
+
+
+def test_assembly_traces_hcl_visible_reply_when_no_governed_composer_runs() -> None:
+    state = GraphState(
+        output_reply="Bitte Medium angeben.",
+        output_response_class="structured_clarification",
+    )
+    persisted = GovernedSessionState()
+    context = _build_governed_reply_context(result_state=state, persisted_state=persisted)
+
+    payload = _assemble_governed_stream_payload(
+        context=context,
+        visible_reply="Welches Medium soll abgedichtet werden?",
+        visible_reply_trace={
+            "reply_source": "hcl",
+            "answer_markdown_source": "hcl",
+            "final_visible_source": "answer_markdown",
+            "composer_attempted": False,
+            "composer_succeeded": False,
+            "hcl_attempted": True,
+            "hcl_succeeded": True,
+            "fallback_reason": None,
+        },
+    )
+
+    trace = payload["run_meta"]["answer_trace"]
+    assert payload["reply"] == "Welches Medium soll abgedichtet werden?"
+    assert payload["answer_markdown"] == payload["reply"]
+    assert trace["reply_source"] == "hcl"
+    assert trace["answer_markdown_source"] == "hcl"
+    assert trace["hcl_attempted"] is True
+    assert trace["hcl_succeeded"] is True
 
 
 def test_existing_non_governed_routes_do_not_require_governed_composer() -> None:

@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from app.domain.conversation_intent import ConversationRoutingDecision
 from app.agent.state.models import GovernedSessionState
+from app.agent.runtime.answer_trace import build_answer_trace
 from app.services.auth.dependencies import RequestUser
 from app.agent.api.deps import (
     _runtime_mode_for_pre_gate,
@@ -305,9 +306,19 @@ async def _compose_knowledge_answer_if_enabled(
     composer_enabled = _knowledge_answer_composer_enabled()
     debug_enabled = _knowledge_debug_trace_enabled()
     if not composer_enabled and not debug_enabled:
-        return knowledge_response
+        return _with_knowledge_answer_trace(
+            knowledge_response,
+            answer_markdown_source="knowledge_service",
+            composer_attempted=False,
+            composer_succeeded=False,
+        )
     if not bool(getattr(knowledge_response, "no_case_created", True)):
-        return knowledge_response
+        return _with_knowledge_answer_trace(
+            knowledge_response,
+            answer_markdown_source="knowledge_service",
+            composer_attempted=False,
+            composer_succeeded=False,
+        )
 
     try:
         from app.agent.communication.knowledge_context_builder import (  # noqa: PLC0415
@@ -344,8 +355,14 @@ async def _compose_knowledge_answer_if_enabled(
         )
 
         if not composer_enabled:
-            return _with_knowledge_debug_trace(
+            response = _with_knowledge_answer_trace(
                 knowledge_response,
+                answer_markdown_source="knowledge_service",
+                composer_attempted=False,
+                composer_succeeded=False,
+            )
+            return _with_knowledge_debug_trace(
+                response,
                 context=context,
                 composer_enabled=False,
                 composer_attempted=False,
@@ -369,6 +386,12 @@ async def _compose_knowledge_answer_if_enabled(
             knowledge_response,
             answer_markdown=answer_markdown,
         )
+        response = _with_knowledge_answer_trace(
+            response,
+            answer_markdown_source="knowledge_composer",
+            composer_attempted=True,
+            composer_succeeded=True,
+        )
         if debug_enabled:
             response = _with_knowledge_debug_trace(
                 response,
@@ -385,9 +408,22 @@ async def _compose_knowledge_answer_if_enabled(
             type(exc).__name__,
         )
         if not debug_enabled:
-            return knowledge_response
-        return _with_knowledge_debug_trace(
+            return _with_knowledge_answer_trace(
+                knowledge_response,
+                answer_markdown_source="composer_fallback",
+                composer_attempted=composer_enabled,
+                composer_succeeded=False,
+                fallback_reason=_safe_composer_fallback_reason(exc),
+            )
+        response = _with_knowledge_answer_trace(
             knowledge_response,
+            answer_markdown_source="composer_fallback",
+            composer_attempted=composer_enabled,
+            composer_succeeded=False,
+            fallback_reason=_safe_composer_fallback_reason(exc),
+        )
+        return _with_knowledge_debug_trace(
+            response,
             context=locals().get("context"),
             composer_enabled=composer_enabled,
             composer_attempted=composer_enabled,
@@ -395,6 +431,27 @@ async def _compose_knowledge_answer_if_enabled(
             answer_markdown_source="composer_fallback",
             composer_fallback_reason=_safe_composer_fallback_reason(exc),
         )
+
+
+def _with_knowledge_answer_trace(
+    knowledge_response: Any,
+    *,
+    answer_markdown_source: str,
+    composer_attempted: bool,
+    composer_succeeded: bool,
+    fallback_reason: str | None = None,
+) -> Any:
+    return dataclasses.replace(
+        knowledge_response,
+        answer_trace=build_answer_trace(
+            reply_source="knowledge_service",
+            answer_markdown_source=answer_markdown_source,  # type: ignore[arg-type]
+            final_visible_source="answer_markdown",
+            composer_attempted=composer_attempted,
+            composer_succeeded=composer_succeeded,
+            fallback_reason=fallback_reason,
+        ),
+    )
 
 
 def _with_knowledge_debug_trace(

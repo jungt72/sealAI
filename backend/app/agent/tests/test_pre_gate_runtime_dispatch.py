@@ -140,6 +140,9 @@ async def test_fast_responder_chat_path_does_not_invoke_graph_or_persist(monkeyp
     assert response.response_class == "conversational_answer"
     assert response.run_meta["fast_responder"]["source_classification"] == "META_QUESTION"
     assert response.run_meta["fast_responder"]["no_case_created"] is True
+    assert response.run_meta["answer_trace"]["reply_source"] == "fast_responder"
+    assert response.run_meta["answer_trace"]["answer_markdown_source"] == "fast_responder"
+    assert response.run_meta["answer_trace"]["composer_attempted"] is False
     assert response.structured_state is None
 
 
@@ -167,6 +170,8 @@ async def test_greeting_chat_path_uses_fast_responder_without_case_persistence(m
     assert "schoen, dass du da bist" in response.reply.lower()
     assert response.run_meta["fast_responder"]["source_classification"] == "GREETING"
     assert response.run_meta["fast_responder"]["no_case_created"] is True
+    assert response.run_meta["answer_trace"]["reply_source"] == "fast_responder"
+    assert response.run_meta["answer_trace"]["composer_attempted"] is False
     assert response.structured_state is None
 
 
@@ -278,6 +283,9 @@ async def test_knowledge_chat_path_uses_knowledge_service_without_case_creation(
     assert response.run_meta["knowledge_service"]["source_classification"] == "KNOWLEDGE_QUERY"
     assert response.run_meta["knowledge_service"]["no_case_created"] is True
     assert response.run_meta["knowledge_service"]["citations"]
+    assert response.run_meta["answer_trace"]["reply_source"] == "knowledge_service"
+    assert response.run_meta["answer_trace"]["answer_markdown_source"] == "knowledge_service"
+    assert response.run_meta["answer_trace"]["composer_attempted"] is False
     assert response.structured_state is None
 
 
@@ -349,6 +357,9 @@ async def test_material_comparison_chat_path_emits_safe_debug_trace_without_case
     assert response.run_meta["knowledge_service"]["source_classification"] == "KNOWLEDGE_QUERY"
     assert response.run_meta["knowledge_debug"]["answer_markdown_source"] == "reply_passthrough"
     assert response.run_meta["knowledge_debug"]["composer_attempted"] is False
+    assert response.run_meta["answer_trace"]["reply_source"] == "knowledge_service"
+    assert response.run_meta["answer_trace"]["answer_markdown_source"] == "knowledge_service"
+    assert response.run_meta["answer_trace"]["composer_attempted"] is False
 
 
 @pytest.mark.asyncio
@@ -557,6 +568,8 @@ async def test_fast_responder_stream_path_does_not_invoke_graph_or_persist(monke
     assert len(frames) == 2
     assert '"source_classification": "BLOCKED"' in frames[0]
     assert '"no_case_created": true' in frames[0]
+    assert '"answer_trace"' in frames[0]
+    assert '"reply_source": "fast_responder"' in frames[0]
     assert frames[1] == "data: [DONE]\n\n"
 
 
@@ -617,4 +630,6 @@ async def test_knowledge_stream_path_uses_knowledge_service_without_case_creatio
     assert '"policy_path": "knowledge"' in frames[0]
     assert '"source_classification": "KNOWLEDGE_QUERY"' in frames[0]
     assert '"no_case_created": true' in frames[0]
+    assert '"answer_trace"' in frames[0]
+    assert '"reply_source": "knowledge_service"' in frames[0]
     assert frames[1] == "data: [DONE]\n\n"

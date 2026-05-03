@@ -8,7 +8,12 @@ from typing import Any, AsyncGenerator, Dict, Literal, Optional
 from fastapi import HTTPException
 from langchain_core.messages import BaseMessage
 from app.agent.state.models import GovernedSessionState, TurnContextContract
-from app.agent.runtime.user_facing_reply import collect_governed_visible_reply, _guard_unsafe_user_instruction
+from app.agent.runtime.answer_trace import build_answer_trace, with_answer_trace
+from app.agent.runtime.user_facing_reply import (
+    collect_governed_visible_reply as _collect_governed_visible_reply_text,
+    collect_governed_visible_reply_with_trace,
+    _guard_unsafe_user_instruction,
+)
 from app.agent.graph.output_contract_assembly import (
     build_governed_conversation_strategy_contract,
     classify_message_as_knowledge_override,
@@ -55,6 +60,10 @@ from app.agent.state.case_state import (
 from app.services.auth.dependencies import RequestUser
 
 _log = logging.getLogger(__name__)
+
+# Legacy tests patch this module-level name. Production code takes the traced
+# path unless this alias has been monkeypatched.
+collect_governed_visible_reply = _collect_governed_visible_reply_text
 
 @dataclass(frozen=True)
 class GovernedReplyAssemblyContext:
@@ -243,6 +252,14 @@ async def _stream_exploration_reply(
             "reply": full_reply,
             "answer_markdown": full_reply,
             "response_class": "conversational_answer",
+            "run_meta": with_answer_trace(
+                None,
+                build_answer_trace(
+                    reply_source="exploration_stream",
+                    answer_markdown_source="exploration_stream",
+                    final_visible_source="answer_markdown",
+                ),
+            ),
         }
         yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
         yield f"data: {json.dumps({'type': 'turn_complete'}, default=str)}\n\n"
@@ -376,6 +393,15 @@ async def _stream_light_runtime(
             payload["response_class"] = "conversational_answer"
             payload["structured_state"] = _light_structured_state(state_for_projection)
             payload["policy_path"] = mode.lower()
+            source = "exploration_stream" if mode == "EXPLORATION" else "light_conversation"
+            payload["run_meta"] = with_answer_trace(
+                payload.get("run_meta") if isinstance(payload.get("run_meta"), dict) else None,
+                build_answer_trace(
+                    reply_source=source,  # type: ignore[arg-type]
+                    answer_markdown_source=source,  # type: ignore[arg-type]
+                    final_visible_source="answer_markdown",
+                ),
+            )
             yield f"data: {json.dumps(payload, default=str)}\n\n"
             continue
 
@@ -421,13 +447,25 @@ async def _stream_governed_graph(
         persisted_state=turn_result.persisted_state,
     )
     visible_reply = _governed_composer_visible_answer(turn_result.result_state)
+    visible_reply_trace = None
     if visible_reply is None:
-        visible_reply = await collect_governed_visible_reply(
-            response_class=context.response_class,
-            turn_context=context.turn_context,
-            fallback_text=context.deterministic_reply,
-            latest_user_message=request.message,
-        )
+        visible_kwargs = {
+            "response_class": context.response_class,
+            "turn_context": context.turn_context,
+            "fallback_text": context.deterministic_reply,
+            "latest_user_message": request.message,
+        }
+        if collect_governed_visible_reply is not _collect_governed_visible_reply_text:
+            visible_reply = await collect_governed_visible_reply(**visible_kwargs)
+            visible_reply_trace = build_answer_trace(
+                reply_source="legacy_renderer",
+                answer_markdown_source="legacy_renderer",
+                final_visible_source="answer_markdown",
+            )
+        else:
+            visible_result = await collect_governed_visible_reply_with_trace(**visible_kwargs)
+            visible_reply = visible_result.text
+            visible_reply_trace = visible_result.answer_trace
     if visible_reply:
         updated_state = _with_governed_conversation_turn(
             turn_result.persisted_state,
@@ -452,6 +490,7 @@ async def _stream_governed_graph(
     payload = _assemble_governed_stream_payload(
         context=context,
         visible_reply=visible_reply,
+        visible_reply_trace=visible_reply_trace,
     )
     # Suffix version provenance from streaming.py locally without dropping
     # composer source/fallback metadata from the graph assembly layer.
@@ -478,6 +517,15 @@ async def event_generator(
             "answer_markdown": early_guard_reply,
             "response_class": "structured_clarification",
             "policy_path": "governed_guard",
+            "run_meta": with_answer_trace(
+                None,
+                build_answer_trace(
+                    reply_source="api_guard",
+                    answer_markdown_source="deterministic_fallback",
+                    final_visible_source="answer_markdown",
+                    fallback_reason="unsafe_user_instruction_guard",
+                ),
+            ),
         }
         yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
         yield "data: [DONE]\n\n"

@@ -7,6 +7,7 @@ from app.agent.state.models import GovernedSessionState, TurnContextContract, Pr
 from app.agent.graph import GraphState
 from app.agent.state.projections import project_for_ui
 from app.agent.runtime.response_renderer import render_response
+from app.agent.runtime.answer_trace import AnswerTrace, build_answer_trace, with_answer_trace
 from app.agent.graph.output_contract_assembly import build_governed_conversation_strategy_contract
 from app.agent.domain.case_delta import proposed_case_delta_from_extractions
 from app.agent.runtime.turn_context import build_governed_turn_context
@@ -166,6 +167,7 @@ def _assemble_governed_stream_payload(
     *,
     context: GovernedReplyAssemblyContext,
     visible_reply: str | None = None,
+    visible_reply_trace: AnswerTrace | None = None,
 ) -> dict[str, Any]:
     fallback_reply = str(context.deterministic_reply or "").strip()
     composed_answer = (
@@ -174,6 +176,16 @@ def _assemble_governed_stream_payload(
         else ""
     )
     final_reply = fallback_reply if composed_answer else (str(visible_reply or "").strip() or fallback_reply)
+    composer_attempted = context.answer_markdown_source in {
+        "governed_composer",
+        "composer_fallback",
+    }
+    composer_succeeded = context.answer_markdown_source == "governed_composer"
+    composer_fallback_reason = (
+        context.answer_markdown_error
+        if context.answer_markdown_source == "composer_fallback"
+        else None
+    )
 
     public_reply = assemble_user_facing_reply(
         reply=final_reply,
@@ -184,9 +196,62 @@ def _assemble_governed_stream_payload(
         fallback_text=fallback_reply,
     )
     assistant_message = public_reply.get("reply")
+    assembly_reply = str(public_reply.get("reply") or "").strip()
+    assembly_guard_overwrote = bool(final_reply and assembly_reply != final_reply)
     if composed_answer:
         public_reply["answer_markdown"] = composed_answer
         assistant_message = composed_answer
+        answer_trace = build_answer_trace(
+            reply_source="governed_output_contract",
+            answer_markdown_source="governed_composer",
+            final_visible_source="answer_markdown",
+            composer_attempted=composer_attempted,
+            composer_succeeded=composer_succeeded,
+        )
+    elif assembly_guard_overwrote:
+        answer_trace = build_answer_trace(
+            reply_source="api_guard",
+            answer_markdown_source="deterministic_fallback",
+            final_visible_source="answer_markdown",
+            composer_attempted=composer_attempted or bool(
+                visible_reply_trace and visible_reply_trace["composer_attempted"]
+            ),
+            composer_succeeded=composer_succeeded or bool(
+                visible_reply_trace and visible_reply_trace["composer_succeeded"]
+            ),
+            hcl_attempted=bool(visible_reply_trace and visible_reply_trace["hcl_attempted"]),
+            hcl_succeeded=bool(visible_reply_trace and visible_reply_trace["hcl_succeeded"]),
+            fallback_reason=composer_fallback_reason or "api_guard",
+        )
+    elif visible_reply_trace is not None:
+        answer_trace = build_answer_trace(
+            reply_source=visible_reply_trace["reply_source"],
+            answer_markdown_source=visible_reply_trace["answer_markdown_source"],
+            final_visible_source=visible_reply_trace["final_visible_source"],
+            composer_attempted=composer_attempted or visible_reply_trace["composer_attempted"],
+            composer_succeeded=composer_succeeded or visible_reply_trace["composer_succeeded"],
+            hcl_attempted=visible_reply_trace["hcl_attempted"],
+            hcl_succeeded=visible_reply_trace["hcl_succeeded"],
+            fallback_reason=composer_fallback_reason or visible_reply_trace["fallback_reason"],
+        )
+    else:
+        answer_trace = build_answer_trace(
+            reply_source="governed_output_contract",
+            answer_markdown_source=(
+                "composer_fallback"
+                if context.answer_markdown_source == "composer_fallback"
+                else "deterministic_fallback"
+            ),
+            final_visible_source="answer_markdown",
+            composer_attempted=composer_attempted,
+            composer_succeeded=composer_succeeded,
+            fallback_reason=composer_fallback_reason,
+        )
+
+    public_reply["run_meta"] = with_answer_trace(
+        public_reply.get("run_meta"),
+        answer_trace,
+    )
 
     return {
         "type": "state_update",

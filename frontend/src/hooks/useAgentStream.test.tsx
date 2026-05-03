@@ -102,6 +102,16 @@ describe("useAgentStream", () => {
   });
 
   it("prefers state_update.answer_markdown over reply for the final assistant message", async () => {
+    const answerTrace = {
+      reply_source: "knowledge_service",
+      answer_markdown_source: "knowledge_composer",
+      final_visible_source: "answer_markdown",
+      composer_attempted: true,
+      composer_succeeded: true,
+      hcl_attempted: false,
+      hcl_succeeded: false,
+      fallback_reason: null,
+    };
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
       await handlers.onopen?.(new Response(null, { status: 200 }));
       handlers.onmessage?.({
@@ -110,6 +120,9 @@ describe("useAgentStream", () => {
           caseId: "case-1",
           reply: "deterministic fallback",
           answer_markdown: "real assistant answer",
+          runMeta: {
+            answer_trace: answerTrace,
+          },
         }),
       });
       handlers.onmessage?.({ data: "[DONE]" });
@@ -132,6 +145,56 @@ describe("useAgentStream", () => {
         role: "assistant",
         content: "real assistant answer",
         answerSource: "answer_markdown",
+        answerTrace,
+      }),
+    ]);
+  });
+
+  it("preserves answer_trace while keeping reply rendering unchanged", async () => {
+    const answerTrace = {
+      reply_source: "fast_responder",
+      answer_markdown_source: "fast_responder",
+      final_visible_source: "answer_markdown",
+      composer_attempted: false,
+      composer_succeeded: false,
+      hcl_attempted: false,
+      hcl_succeeded: false,
+      fallback_reason: null,
+    };
+    mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
+      await handlers.onopen?.(new Response(null, { status: 200 }));
+      handlers.onmessage?.({
+        data: JSON.stringify({
+          type: "state_update",
+          noCaseCreated: true,
+          reply: "Hallo! Schoen, dass du da bist.",
+          runMeta: { answer_trace: answerTrace },
+        }),
+      });
+      handlers.onmessage?.({ data: "[DONE]" });
+      handlers.onclose?.();
+    });
+
+    const { result } = renderHook(() => useAgentStream());
+
+    await act(async () => {
+      await result.current.sendMessage("Hallo");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "Hallo" }),
+      expect.objectContaining({
+        role: "assistant",
+        content: "Hallo! Schoen, dass du da bist.",
+        answerSource: "reply",
+        answerTrace: {
+          ...answerTrace,
+          final_visible_source: "reply",
+        },
       }),
     ]);
   });

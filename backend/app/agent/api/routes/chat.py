@@ -7,7 +7,11 @@ from fastapi.responses import StreamingResponse
 from app.agent.api.models import ChatRequest, ChatResponse, build_public_response_core
 from app.agent.state.models import GovernedSessionState
 from app.agent.graph import GraphState
-from app.agent.runtime.user_facing_reply import collect_governed_visible_reply, _guard_unsafe_user_instruction
+from app.agent.runtime.answer_trace import build_answer_trace, with_answer_trace
+from app.agent.runtime.user_facing_reply import (
+    collect_governed_visible_reply_with_trace,
+    _guard_unsafe_user_instruction,
+)
 from app.agent.graph.output_contract_assembly import (
     classify_message_as_knowledge_override,
 )
@@ -86,9 +90,16 @@ async def _run_light_chat_response(
             reply=result.reply_text,
             structured_state=structured_state,
             policy_path=mode.lower(),
-            run_meta={
-                "version_provenance": _build_fast_path_version_provenance(decision=None)
-            },
+            run_meta=with_answer_trace(
+                {
+                    "version_provenance": _build_fast_path_version_provenance(decision=None)
+                },
+                build_answer_trace(
+                    reply_source="light_conversation",
+                    answer_markdown_source="light_conversation",
+                    final_visible_source="answer_markdown",
+                ),
+            ),
         ),
     )
 
@@ -121,13 +132,16 @@ async def _run_governed_chat_response(
         persisted_state=persisted_state,
     )
     visible_reply = _governed_composer_visible_answer(result_state)
+    visible_reply_trace = None
     if visible_reply is None:
-        visible_reply = await collect_governed_visible_reply(
+        visible_result = await collect_governed_visible_reply_with_trace(
             response_class=context.response_class,
             turn_context=context.turn_context,
             fallback_text=context.deterministic_reply,
             latest_user_message=request.message,
         )
+        visible_reply = visible_result.text
+        visible_reply_trace = visible_result.answer_trace
 
     if visible_reply:
         updated_state = _with_governed_conversation_turn(
@@ -155,6 +169,7 @@ async def _run_governed_chat_response(
         **_assemble_governed_stream_payload(
             context=context,
             visible_reply=visible_reply,
+            visible_reply_trace=visible_reply_trace,
         ),
     )
 
@@ -208,7 +223,15 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
                 reply=early_guard_reply,
                 structured_state=None,
                 policy_path="governed_guard",
-                run_meta={"guard": "unsafe_forced_case_claim"},
+                run_meta=with_answer_trace(
+                    {"guard": "unsafe_forced_case_claim"},
+                    build_answer_trace(
+                        reply_source="api_guard",
+                        answer_markdown_source="deterministic_fallback",
+                        final_visible_source="answer_markdown",
+                        fallback_reason="unsafe_user_instruction_guard",
+                    ),
+                ),
             ),
         )
 

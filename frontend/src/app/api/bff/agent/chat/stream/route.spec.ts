@@ -139,6 +139,51 @@ describe("BFF agent chat stream route", () => {
     });
   });
 
+  it("forwards answer_trace under runMeta without rewriting it", async () => {
+    const answerTrace = {
+      reply_source: "knowledge_service",
+      answer_markdown_source: "knowledge_composer",
+      final_visible_source: "answer_markdown",
+      composer_attempted: true,
+      composer_succeeded: true,
+      hcl_attempted: false,
+      hcl_succeeded: false,
+      fallback_reason: null,
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          `data: ${JSON.stringify({
+            type: "state_update",
+            reply: "deterministic fallback",
+            answer_markdown: "real assistant answer",
+            response_class: "conversational_answer",
+            run_meta: { answer_trace: answerTrace },
+          })}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Was ist PTFE?" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+
+    expect(payloads[1]).toMatchObject({
+      type: "state_update",
+      runMeta: { answer_trace: answerTrace },
+    });
+  });
+
   it("forwards assertions from backend state_update events", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

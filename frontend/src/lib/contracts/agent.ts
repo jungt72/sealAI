@@ -3,6 +3,47 @@ export type AgentStreamRequest = {
   message: string;
 };
 
+export type AgentAnswerTrace = {
+  reply_source:
+    | "fast_responder"
+    | "knowledge_service"
+    | "light_conversation"
+    | "exploration_stream"
+    | "governed_output_contract"
+    | "hcl"
+    | "legacy_renderer"
+    | "api_guard"
+    | "unknown";
+  answer_markdown_source:
+    | "reply_passthrough"
+    | "fast_responder"
+    | "knowledge_service"
+    | "knowledge_composer"
+    | "governed_composer"
+    | "hcl"
+    | "light_conversation"
+    | "exploration_stream"
+    | "legacy_renderer"
+    | "composer_fallback"
+    | "deterministic_fallback"
+    | "unknown";
+  final_visible_source:
+    | "answer_markdown"
+    | "reply"
+    | "text_chunk"
+    | "frontend_legacy_humanizer"
+    | "unknown";
+  composer_attempted: boolean;
+  composer_succeeded: boolean;
+  hcl_attempted: boolean;
+  hcl_succeeded: boolean;
+  fallback_reason: string | null;
+};
+
+export type AgentRunMeta = Record<string, unknown> & {
+  answer_trace?: AgentAnswerTrace;
+};
+
 export const OUTWARD_RESPONSE_CLASSES = [
   "conversational_answer",
   "structured_clarification",
@@ -225,7 +266,7 @@ export type AgentStateUpdateEvent = {
   turnContext?: AgentTurnContext | null;
   proposedCaseDelta?: ProposedCaseDelta | null;
   ui?: AgentWorkspaceUi;
-  runMeta?: Record<string, unknown> | null;
+  runMeta?: AgentRunMeta | null;
 };
 
 export type AgentStreamEvent =

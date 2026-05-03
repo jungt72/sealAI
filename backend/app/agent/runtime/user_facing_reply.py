@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 import os
 import re
+from dataclasses import dataclass
 from typing import Any, Optional, TypedDict
 
 from app.agent.communication.llm_service import OpenAIHumanCommunicationLLMService
 from app.agent.communication.orchestrator import ConversationOrchestrator
+from app.agent.runtime.answer_trace import AnswerTrace, build_answer_trace
 from app.agent.runtime.reply_composition import (
     GovernedAllowedSurfaceClaims,
     build_governed_render_prompt,
@@ -40,6 +42,12 @@ class UserFacingReplyPayload(TypedDict):
     response_class: str
 
 
+@dataclass(frozen=True, slots=True)
+class GovernedVisibleReplyResult:
+    text: str
+    answer_trace: AnswerTrace
+
+
 async def collect_governed_visible_reply(
     *,
     response_class: str,
@@ -52,6 +60,32 @@ async def collect_governed_visible_reply(
     evidence_summary_lines: list[str] | None = None,
     material_candidates: list[str] | None = None,
 ) -> str:
+    result = await collect_governed_visible_reply_with_trace(
+        response_class=response_class,
+        turn_context=turn_context,
+        fallback_text=fallback_text,
+        latest_user_message=latest_user_message,
+        allowed_surface_claims=allowed_surface_claims,
+        applicable_norms=applicable_norms,
+        requirement_class_id=requirement_class_id,
+        evidence_summary_lines=evidence_summary_lines,
+        material_candidates=material_candidates,
+    )
+    return result.text
+
+
+async def collect_governed_visible_reply_with_trace(
+    *,
+    response_class: str,
+    turn_context: TurnContextContract | None,
+    fallback_text: str,
+    latest_user_message: str | None = None,
+    allowed_surface_claims: GovernedAllowedSurfaceClaims | list[str] | None = None,
+    applicable_norms: list[str] | None = None,
+    requirement_class_id: str | None = None,
+    evidence_summary_lines: list[str] | None = None,
+    material_candidates: list[str] | None = None,
+) -> GovernedVisibleReplyResult:
     """Central governed visible-reply anchor for the user-facing layer.
 
     C2 decision (2026-04-12): Style-Pass retained.
@@ -68,7 +102,15 @@ async def collect_governed_visible_reply(
         turn_context=turn_context,
     )
     if guarded_user_instruction is not None:
-        return guarded_user_instruction
+        return GovernedVisibleReplyResult(
+            text=guarded_user_instruction,
+            answer_trace=build_answer_trace(
+                reply_source="api_guard",
+                answer_markdown_source="deterministic_fallback",
+                final_visible_source="answer_markdown",
+                fallback_reason="unsafe_user_instruction_guard",
+            ),
+        )
 
     claims_spec: GovernedAllowedSurfaceClaims | list[str]
     claims_spec = get_surface_claims_spec(
@@ -98,7 +140,10 @@ async def collect_governed_visible_reply(
     if isinstance(claims_spec, dict):
         claims_spec["fallback_text"] = effective_fallback_text
 
+    hcl_attempted = False
+    hcl_succeeded = False
     if os.environ.get("HUMAN_COMMUNICATION_LAYER_ENABLED", "true").lower() != "false":
+        hcl_attempted = True
         try:
             import openai  # noqa: PLC0415
 
@@ -125,21 +170,55 @@ async def collect_governed_visible_reply(
             )
             if result.used_fallback:
                 rendered_fallback = render_response(result.assistant_message, path="GOVERNED")
-                return str(rendered_fallback.text or result.assistant_message or effective_fallback_text).strip()
+                return GovernedVisibleReplyResult(
+                    text=str(
+                        rendered_fallback.text
+                        or result.assistant_message
+                        or effective_fallback_text
+                    ).strip(),
+                    answer_trace=build_answer_trace(
+                        reply_source="governed_output_contract",
+                        answer_markdown_source="deterministic_fallback",
+                        final_visible_source="answer_markdown",
+                        hcl_attempted=True,
+                        hcl_succeeded=False,
+                        fallback_reason="hcl_fallback",
+                    ),
+                )
             # The Human Communication Layer has already validated claim usage,
             # evidence refs, forbidden phrases and fallback safety. Do not route
             # successful HCL output through the legacy surface corridor again;
             # that corridor can collapse natural answers back into formular-like
             # deterministic labels.
             rendered = render_response(result.assistant_message, path="GOVERNED")
-            return str(rendered.text or effective_fallback_text).strip()
+            hcl_succeeded = True
+            return GovernedVisibleReplyResult(
+                text=str(rendered.text or effective_fallback_text).strip(),
+                answer_trace=build_answer_trace(
+                    reply_source="hcl",
+                    answer_markdown_source="hcl",
+                    final_visible_source="answer_markdown",
+                    hcl_attempted=True,
+                    hcl_succeeded=True,
+                ),
+            )
         except Exception as exc:  # noqa: BLE001
             _log.warning(
                 "[user_facing_reply] human communication layer failed (%s) — using deterministic fallback unless legacy renderer is explicitly enabled",
                 exc,
             )
             if os.environ.get("SEALAI_ENABLE_LEGACY_VISIBLE_RENDERER", "false").lower() != "true":
-                return effective_fallback_text
+                return GovernedVisibleReplyResult(
+                    text=effective_fallback_text,
+                    answer_trace=build_answer_trace(
+                        reply_source="governed_output_contract",
+                        answer_markdown_source="deterministic_fallback",
+                        final_visible_source="answer_markdown",
+                        hcl_attempted=True,
+                        hcl_succeeded=False,
+                        fallback_reason="hcl_exception",
+                    ),
+                )
 
     system_prompt = _prompt_builder.conversation()
     render_prompt = build_governed_render_prompt(
@@ -184,13 +263,32 @@ async def collect_governed_visible_reply(
         )
         rendered = render_response(guarded_text, path="GOVERNED")
         visible_reply = rendered.text or effective_fallback_text
-        return str(visible_reply or "").strip()
+        return GovernedVisibleReplyResult(
+            text=str(visible_reply or "").strip(),
+            answer_trace=build_answer_trace(
+                reply_source="legacy_renderer",
+                answer_markdown_source="legacy_renderer",
+                final_visible_source="answer_markdown",
+                hcl_attempted=hcl_attempted,
+                hcl_succeeded=hcl_succeeded,
+            ),
+        )
     except Exception as exc:
         _log.warning(
             "[user_facing_reply] governed LLM render failed (%s) — using deterministic fallback",
             exc,
         )
-        return effective_fallback_text
+        return GovernedVisibleReplyResult(
+            text=effective_fallback_text,
+            answer_trace=build_answer_trace(
+                reply_source="governed_output_contract",
+                answer_markdown_source="deterministic_fallback",
+                final_visible_source="answer_markdown",
+                hcl_attempted=hcl_attempted,
+                hcl_succeeded=hcl_succeeded,
+                fallback_reason="legacy_renderer_exception",
+            ),
+        )
 
 
 def _guard_unsafe_user_instruction(

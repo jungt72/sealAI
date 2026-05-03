@@ -267,6 +267,9 @@ async def test_knowledge_debug_trace_serializes_only_safe_bounded_fields(
     )
     debug = _knowledge_debug(response)
     payload = json.dumps(debug, ensure_ascii=True, sort_keys=True)
+    trace = response.run_meta.get("answer_trace")
+    assert isinstance(trace, dict)
+    trace_payload = json.dumps(trace, ensure_ascii=True, sort_keys=True)
 
     assert user_message not in payload
     assert response.reply not in payload
@@ -278,6 +281,15 @@ async def test_knowledge_debug_trace_serializes_only_safe_bounded_fields(
     assert "embedding" not in payload
     assert "traceback" not in payload.lower()
     assert "stack" not in payload.lower()
+    assert user_message not in trace_payload
+    assert response.reply not in trace_payload
+    assert str(response.answer_markdown) not in trace_payload
+    assert "source_id" not in trace_payload
+    assert "evidence_ref" not in trace_payload
+    assert "embedding" not in trace_payload
+    assert "traceback" not in trace_payload.lower()
+    assert "stack" not in trace_payload.lower()
+    assert "secret" not in trace_payload.lower()
 
 
 @pytest.mark.asyncio

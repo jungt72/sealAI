@@ -7,6 +7,7 @@ from typing import Any, List, Optional, Literal
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from app.agent.state.models import CaseEvent, ConversationMessage, GovernedSessionState, ObservedExtraction
 from app.agent.graph import GraphState
+from app.agent.runtime.answer_trace import build_answer_trace, with_answer_trace
 from app.agent.state.projections import project_for_ui
 from app.agent.runtime.outward_names import normalize_outward_response_class
 from app.agent.state.case_state import build_visible_case_narrative
@@ -367,21 +368,28 @@ def _light_structured_state(
 
 def _fast_response_run_meta(fast_response: Any) -> dict[str, Any]:
     registration_prompt = getattr(fast_response, "registration_prompt", None)
-    return {
-        "fast_responder": {
-            "source_classification": getattr(
-                getattr(fast_response, "source_classification", None),
-                "value",
-                getattr(fast_response, "source_classification", None),
-            ),
-            "no_case_created": bool(getattr(fast_response, "no_case_created", True)),
-            "registration_prompt": (
-                dataclasses.asdict(registration_prompt)
-                if dataclasses.is_dataclass(registration_prompt)
-                else None
-            ),
-        }
-    }
+    return with_answer_trace(
+        {
+            "fast_responder": {
+                "source_classification": getattr(
+                    getattr(fast_response, "source_classification", None),
+                    "value",
+                    getattr(fast_response, "source_classification", None),
+                ),
+                "no_case_created": bool(getattr(fast_response, "no_case_created", True)),
+                "registration_prompt": (
+                    dataclasses.asdict(registration_prompt)
+                    if dataclasses.is_dataclass(registration_prompt)
+                    else None
+                ),
+            }
+        },
+        build_answer_trace(
+            reply_source="fast_responder",
+            answer_markdown_source="fast_responder",
+            final_visible_source="answer_markdown",
+        ),
+    )
 
 
 def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
@@ -414,6 +422,18 @@ def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
     knowledge_debug = getattr(knowledge_response, "knowledge_debug", None)
     if isinstance(knowledge_debug, dict):
         meta["knowledge_debug"] = knowledge_debug
+    answer_trace = getattr(knowledge_response, "answer_trace", None)
+    if isinstance(answer_trace, dict):
+        meta = with_answer_trace(meta, answer_trace)
+    else:
+        meta = with_answer_trace(
+            meta,
+            build_answer_trace(
+                reply_source="knowledge_service",
+                answer_markdown_source="knowledge_service",
+                final_visible_source="answer_markdown",
+            ),
+        )
     return meta
 
 def _state_from_interrupt_payload(interrupts: object) -> GraphState | None:

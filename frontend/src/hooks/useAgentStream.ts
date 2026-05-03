@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 
-import type { AgentStreamRequest, AgentStateUpdateEvent } from "@/lib/contracts/agent";
+import type {
+  AgentAnswerTrace,
+  AgentStreamRequest,
+  AgentStateUpdateEvent,
+} from "@/lib/contracts/agent";
 import { buildStreamWorkspaceView, type StreamWorkspaceView } from "@/lib/streamWorkspace";
 
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   answerSource?: "answer_markdown" | "reply" | "text_chunk";
+  answerTrace?: AgentAnswerTrace | null;
   /** ISO timestamp of when the message was added (optional, for display) */
   timestamp?: string;
 };
@@ -17,6 +22,49 @@ type UseAgentStreamOptions = {
   onCaseBound?: (caseId: string) => void;
   onTurnComplete?: (caseId: string) => void;
 };
+
+function isAgentAnswerTrace(value: unknown): value is AgentAnswerTrace {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const trace = value as Record<string, unknown>;
+  return (
+    typeof trace.reply_source === "string" &&
+    typeof trace.answer_markdown_source === "string" &&
+    typeof trace.final_visible_source === "string" &&
+    typeof trace.composer_attempted === "boolean" &&
+    typeof trace.composer_succeeded === "boolean" &&
+    typeof trace.hcl_attempted === "boolean" &&
+    typeof trace.hcl_succeeded === "boolean" &&
+    (trace.fallback_reason === null || typeof trace.fallback_reason === "string")
+  );
+}
+
+function unknownAnswerTrace(finalVisibleSource: NonNullable<ChatMessage["answerSource"]>): AgentAnswerTrace {
+  return {
+    reply_source: "unknown",
+    answer_markdown_source: "unknown",
+    final_visible_source: finalVisibleSource,
+    composer_attempted: false,
+    composer_succeeded: false,
+    hcl_attempted: false,
+    hcl_succeeded: false,
+    fallback_reason: null,
+  };
+}
+
+function visibleAnswerTrace(
+  runMeta: AgentStateUpdateEvent["runMeta"],
+  finalVisibleSource: NonNullable<ChatMessage["answerSource"]>,
+): AgentAnswerTrace {
+  const trace = isAgentAnswerTrace(runMeta?.answer_trace)
+    ? runMeta.answer_trace
+    : unknownAnswerTrace(finalVisibleSource);
+  return {
+    ...trace,
+    final_visible_source: finalVisibleSource,
+  };
+}
 
 export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const { initialCaseId, onCaseBound, onTurnComplete } = options;
@@ -36,6 +84,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const latestCaseIdRef = useRef<string | null>(initialCaseId || null);
   const noCaseTurnRef = useRef(false);
   const finalAssistantAnswerSourceRef = useRef<ChatMessage["answerSource"] | null>(null);
+  const finalAssistantAnswerTraceRef = useRef<AgentAnswerTrace | null>(null);
 
   const fetchHistory = useCallback(async (caseId: string) => {
     const response = await fetch(`/api/bff/agent/chat/history/${encodeURIComponent(caseId)}`);
@@ -64,7 +113,11 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               currentMessage.role === message.role &&
               currentMessage.content === message.content
             ) {
-              return { ...message, answerSource: currentMessage.answerSource };
+              return {
+                ...message,
+                answerSource: currentMessage.answerSource,
+                answerTrace: currentMessage.answerTrace,
+              };
             }
             return message;
           });
@@ -108,9 +161,11 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
     const finalText = finalAssistantTextRef.current.trim();
     const answerSource = finalAssistantAnswerSourceRef.current || undefined;
+    const answerTrace = finalAssistantAnswerTraceRef.current;
     finalizedRequestIdRef.current = requestId;
     finalAssistantTextRef.current = "";
     finalAssistantAnswerSourceRef.current = null;
+    finalAssistantAnswerTraceRef.current = null;
     setStreamingText("");
     setStreamingAnswerSource(null);
 
@@ -129,7 +184,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       }
       return [
         ...existing,
-        { role: "assistant", content: finalText, answerSource, timestamp: new Date().toISOString() },
+        { role: "assistant", content: finalText, answerSource, answerTrace, timestamp: new Date().toISOString() },
       ];
     });
     if (latestCaseIdRef.current && !noCaseTurnRef.current) {
@@ -150,6 +205,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       setStreamingAnswerSource(null);
       finalAssistantTextRef.current = "";
       finalAssistantAnswerSourceRef.current = null;
+      finalAssistantAnswerTraceRef.current = null;
       setError(null);
       setIsStreaming(true);
 
@@ -219,6 +275,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
             if (type === "text_chunk" && typeof payload.text === "string") {
               finalAssistantTextRef.current += payload.text;
               finalAssistantAnswerSourceRef.current = "text_chunk";
+              finalAssistantAnswerTraceRef.current = unknownAnswerTrace("text_chunk");
               setStreamingText(finalAssistantTextRef.current);
               setStreamingAnswerSource("text_chunk");
               return;
@@ -231,10 +288,12 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               const reply = typeof stateUpdate.reply === "string" ? stateUpdate.reply : "";
               const assistantText = answerMarkdown || reply;
               if (assistantText) {
+                const answerSource = answerMarkdown ? "answer_markdown" : "reply";
                 finalAssistantTextRef.current = assistantText;
-                finalAssistantAnswerSourceRef.current = answerMarkdown ? "answer_markdown" : "reply";
+                finalAssistantAnswerSourceRef.current = answerSource;
+                finalAssistantAnswerTraceRef.current = visibleAnswerTrace(stateUpdate.runMeta, answerSource);
                 setStreamingText(assistantText);
-                setStreamingAnswerSource(answerMarkdown ? "answer_markdown" : "reply");
+                setStreamingAnswerSource(answerSource);
               }
 
               if (stateUpdate.noCaseCreated || typeof stateUpdate.caseId !== "string") {
@@ -291,6 +350,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     finalizedRequestIdRef.current = streamRequestIdRef.current;
     finalAssistantTextRef.current = "";
     finalAssistantAnswerSourceRef.current = null;
+    finalAssistantAnswerTraceRef.current = null;
     noCaseTurnRef.current = false;
     setStreamingText("");
     setStreamingAnswerSource(null);
@@ -308,6 +368,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     setStreamingAnswerSource(null);
     finalAssistantTextRef.current = "";
     finalAssistantAnswerSourceRef.current = null;
+    finalAssistantAnswerTraceRef.current = null;
     setError(null);
     setActiveCaseId(null);
     setStreamWorkspace(null);

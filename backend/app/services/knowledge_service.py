@@ -198,6 +198,7 @@ class KnowledgeResponse:
     answer_result: KnowledgeAnswerResult | None = None
     answer_markdown: str | None = None
     knowledge_debug: dict[str, Any] | None = None
+    answer_trace: dict[str, Any] | None = None
 
     @property
     def knowledge_answer_view(self) -> KnowledgeAnswerResult:
