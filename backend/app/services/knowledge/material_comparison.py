@@ -26,6 +26,116 @@ class MaterialComparisonAnswer:
     material_ids: tuple[str, str]
 
 
+
+_GERMAN_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("Kompatibilitaets", "Kompatibilitäts"),
+    ("Rechtsstaende", "Rechtsstände"),
+    ("Lieferantenerklaerungen", "Lieferantenerklärungen"),
+    ("Salzrueckstaende", "Salzrückstände"),
+    ("Spuelung", "Spülung"),
+    ("Entwaesserung", "Entwässerung"),
+    ("Oberflaechenguete", "Oberflächengüte"),
+    ("Güte", "Güte"),
+    ("Guete", "Güte"),
+    ("Huelsen", "Hülsen"),
+    ("Huelse", "Hülse"),
+    ("zusaetzlich", "zusätzlich"),
+    ("Zusaetzlich", "Zusätzlich"),
+    ("verschleissen", "verschleißen"),
+    ("Verschleiss", "Verschleiß"),
+    ("Staerken", "Stärken"),
+    ("Staerke", "Stärke"),
+    ("Herstellerpruefung", "Herstellerprüfung"),
+    ("Fallpruefung", "Fallprüfung"),
+    ("Pruefpunkte", "Prüfpunkte"),
+    ("Pruefpfad", "Prüfpfad"),
+    ("pruefenswert", "prüfenswert"),
+    ("geprueft", "geprüft"),
+    ("pruefen", "prüfen"),
+    ("Pruefen", "Prüfen"),
+    ("moeglich", "möglich"),
+    ("Moeglich", "Möglich"),
+    ("koennen", "können"),
+    ("Koennen", "Können"),
+    ("koennte", "könnte"),
+    ("koennten", "könnten"),
+    ("muessen", "müssen"),
+    ("Muessen", "Müssen"),
+    ("fuer", "für"),
+    ("Fuer", "Für"),
+    ("ueber", "über"),
+    ("Ueber", "Über"),
+    ("haeufig", "häufig"),
+    ("Haeufig", "Häufig"),
+    ("hoeher", "höher"),
+    ("Hoeher", "Höher"),
+    ("frueh", "früh"),
+    ("frueher", "früher"),
+    ("gehoeren", "gehören"),
+    ("abhaengig", "abhängig"),
+    ("Abhaengig", "Abhängig"),
+    ("haengt", "hängt"),
+    ("massgebend", "maßgebend"),
+    ("Massgebend", "Maßgebend"),
+    ("Bestaendigkeit", "Beständigkeit"),
+    ("bestaendig", "beständig"),
+    ("Waerme", "Wärme"),
+    ("waerme", "wärme"),
+    ("Oberflaeche", "Oberfläche"),
+    ("Gegenlaufflaeche", "Gegenlauffläche"),
+    ("Gleitflaeche", "Gleitfläche"),
+    ("Dichtflaeche", "Dichtfläche"),
+    ("Aussenbereich", "Außenbereich"),
+    ("Fuehrungselemente", "Führungselemente"),
+    ("Fuehrungen", "Führungen"),
+    ("Fuehrung", "Führung"),
+    ("Fuellstoffe", "Füllstoffe"),
+    ("Fuellstoff", "Füllstoff"),
+    ("Stuetzringe", "Stützringe"),
+    ("Stuetzwerkstoff", "Stützwerkstoff"),
+    ("geometriestuetzig", "geometriestützig"),
+    ("Federunterstuetzung", "Federunterstützung"),
+    ("Rueckstellung", "Rückstellung"),
+    ("Elastizitaet", "Elastizität"),
+    ("Verfuegbarkeit", "Verfügbarkeit"),
+    ("verfuegbar", "verfügbar"),
+    ("Vertraeglichkeit", "Verträglichkeit"),
+    ("vertraeglichkeit", "verträglichkeit"),
+    ("Oelanteilen", "Ölanteilen"),
+    ("Oelanwendungen", "Ölanwendungen"),
+    ("Oeltyp", "Öltyp"),
+    ("Mineraloele", "Mineralöle"),
+    ("Mineralole", "Mineralöle"),
+    ("Oelen", "Ölen"),
+    ("Oel", "Öl"),
+    ("Heisswasser", "Heißwasser"),
+    ("Loesemitteln", "Lösemitteln"),
+    ("Loesemittel", "Lösemittel"),
+    ("Saeuren", "Säuren"),
+    ("Trockenlaufnaehe", "Trockenlaufnähe"),
+    ("Gehaeuse", "Gehäuse"),
+    ("Haerte", "Härte"),
+    ("laeuft", "läuft"),
+    ("moechtest", "möchtest"),
+    ("aehnlich", "ähnlich"),
+    ("Aenderung", "Änderung"),
+    ("Gasdurchlaessigkeit", "Gasdurchlässigkeit"),
+    ("Flexibilitaet", "Flexibilität"),
+    ("Abriebbestaendigkeit", "Abriebbeständigkeit"),
+    ("Witterungsbestaendigkeit", "Witterungsbeständigkeit"),
+    ("Alterungsbestaendigkeit", "Alterungsbeständigkeit"),
+    ("Temperaturbestaendigkeit", "Temperaturbeständigkeit"),
+)
+
+
+def humanize_german_technical_text(value: str) -> str:
+    """Polish deterministic German answer text without changing routing keys."""
+    text = str(value or "")
+    for old, new in _GERMAN_TEXT_REPLACEMENTS:
+        text = text.replace(old, new)
+    text = re.sub(r"(?<=\d) C\b", " °C", text)
+    return text
+
 _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
     "NBR": MaterialComparisonProfile(
         canonical="NBR",
@@ -304,7 +414,7 @@ def _extract_materials(text: str) -> list[str]:
 
 
 def _render_comparison(left: MaterialComparisonProfile, right: MaterialComparisonProfile) -> str:
-    return "\n".join(
+    answer = "\n".join(
         [
             f"## Werkstoffvergleich: {left.canonical} vs {right.canonical}",
             "",
@@ -340,6 +450,7 @@ def _render_comparison(left: MaterialComparisonProfile, right: MaterialCompariso
             "Wenn du mir Medium, Temperatur, Druck und die Dichtstelle nennst, kann SeaLAI daraus einen konkreten Fall aufbauen. Die finale Werkstofffreigabe bleibt trotzdem beim Hersteller oder der verantwortlichen technischen Stelle.",
         ]
     )
+    return humanize_german_technical_text(answer)
 
 
 def _difference_lines(left: MaterialComparisonProfile, right: MaterialComparisonProfile) -> list[str]:

@@ -13,7 +13,10 @@ from app.agent.runtime.output_guard import (
 from app.domain.source_validation import SourceType, ValidationStatus
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.knowledge import FactCardStore
-from app.services.knowledge.material_comparison import build_material_comparison_answer
+from app.services.knowledge.material_comparison import (
+    build_material_comparison_answer,
+    humanize_german_technical_text,
+)
 
 
 log = logging.getLogger(__name__)
@@ -513,6 +516,7 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
                 "Fuer einen konkreten Dichtungsfall sollten Medium, Temperatur, Druck, Bewegung, Lebensmittel-/Pharma-/ATEX-Bezug und geforderte Nachweise sauber erfasst werden.",
             ]
         )
+        answer = humanize_german_technical_text(answer)
         return KnowledgeAnswerResult(
             answer=answer,
             answer_available=True,
@@ -574,6 +578,7 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
                 "Fuer eine konkrete Richtung brauche ich mindestens Dichtstelle, Bewegung, Temperatur, Druck, Drehzahl oder statische Einordnung, Werkstoffe und ob die Dichtstelle dauerhaft benetzt oder zeitweise trocken ist.",
             ]
         )
+        answer = humanize_german_technical_text(answer)
         return KnowledgeAnswerResult(
             answer=answer,
             answer_available=True,
@@ -635,12 +640,12 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
                 _knowledge_evidence(
                     source_type="deterministic",
                     title=material_comparison.title,
-                    content=(
+                    content=humanize_german_technical_text(
                         f"{material_comparison.title}: Kurz gesagt: {left} und {right} "
-                        "werden allgemein gegenuebergestellt; keine konkrete Auswahl, "
+                        "werden allgemein gegenübergestellt; keine konkrete Auswahl, "
                         "keine Materialfreigabe und keine Herstellerfreigabe. "
-                        "Die ausfuehrliche Antwort nennt Werkstofffamilie, Temperatur, "
-                        "Medienorientierung, Dynamik, typische Grenzen und Pruefpunkte."
+                        "Die ausführliche Antwort nennt Werkstofffamilie, Temperatur, "
+                        "Medienorientierung, Dynamik, typische Grenzen und Prüfpunkte."
                     ),
                     note=f"system_derived_material_comparison:{left}:{right}",
                 ),
@@ -682,6 +687,7 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
                 "Das ist eine allgemeine Wissensantwort, keine konkrete Auslegung und keine Herstellerfreigabe. Wenn du moechtest, koennen wir daraus direkt einen konkreten Dichtungsfall aufbauen.",
             ]
         )
+        answer = humanize_german_technical_text(answer)
         return KnowledgeAnswerResult(
             answer=answer,
             answer_available=True,

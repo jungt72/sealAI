@@ -87,6 +87,8 @@ def test_saltwater_no_case_knowledge_is_relevant_and_bounded() -> None:
     assert "molten alkali" not in text
     assert "alkali metals" not in text
     assert "alkalimetall" not in text
+    assert "salzrueckstaende" not in text
+    assert "spuelung" not in text
 
 
 def test_saltwater_deterministic_answer_wins_over_irrelevant_factcard() -> None:
@@ -148,7 +150,13 @@ def test_generic_material_comparison_nbr_ptfe_is_structured_and_bounded() -> Non
     assert "fluorpolymer" in text
     assert "elastomer" in text
     assert "kein elastomer" in text
-    assert "mineral" in text or "oel" in text or "öl" in text
+    assert "mineral" in text or "öl" in text
+    assert "können" in text
+    assert "für" in text
+    assert "fuer" not in text
+    assert "koennen" not in text
+    assert "staerken" not in text
+    assert "°c" in text
     assert "kriechen" in text or "kaltfluss" in text
     assert "keine konkrete materialfreigabe" in text
     assert "hersteller" in text
@@ -165,7 +173,9 @@ def test_generic_material_comparison_fkm_epdm_is_not_factcard_only() -> None:
     assert "fluorelastomer" in text
     assert "ethylen-propylen" in text
     assert "wasser" in text
-    assert "oel" in text or "öl" in text
+    assert "öl" in text
+    assert "für" in text
+    assert "fuer" not in text
     assert "keine konkrete materialfreigabe" in text
 
 
