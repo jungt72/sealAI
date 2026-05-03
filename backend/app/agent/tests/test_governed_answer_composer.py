@@ -277,16 +277,16 @@ async def test_assembly_preserves_deterministic_reply_and_exposes_composer_markd
     assert payload["answer_markdown"] == state.output_answer_markdown
     assert payload["assistant_message"] == state.output_answer_markdown
     assert payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
-    assert payload["run_meta"]["answer_trace"] == {
-        "reply_source": "governed_output_contract",
-        "answer_markdown_source": "governed_composer",
-        "final_visible_source": "answer_markdown",
-        "composer_attempted": True,
-        "composer_succeeded": True,
-        "hcl_attempted": False,
-        "hcl_succeeded": False,
-        "fallback_reason": None,
-    }
+    trace = payload["run_meta"]["answer_trace"]
+    assert trace["reply_source"] == "governed_output_contract"
+    assert trace["answer_markdown_source"] == "governed_composer"
+    assert trace["final_visible_source"] == "answer_markdown"
+    assert trace["composer_attempted"] is True
+    assert trace["composer_succeeded"] is True
+    assert trace["hcl_attempted"] is False
+    assert trace["hcl_succeeded"] is False
+    assert trace["fallback_reason"] is None
+    assert trace["final_layer_source"] == "governed_composer"
 
 
 def test_materialize_governed_graph_result_extracts_state_from_interrupt_payload() -> None:
@@ -436,7 +436,7 @@ async def test_assembly_traces_governed_composer_fallback_without_leaking_except
     assert "OPENAI_API_KEY" not in dumped
 
 
-def test_assembly_traces_hcl_visible_reply_when_no_governed_composer_runs() -> None:
+def test_assembly_ignores_legacy_visible_reply_when_no_governed_composer_runs() -> None:
     state = GraphState(
         output_reply="Bitte Medium angeben.",
         output_response_class="structured_clarification",
@@ -460,12 +460,14 @@ def test_assembly_traces_hcl_visible_reply_when_no_governed_composer_runs() -> N
     )
 
     trace = payload["run_meta"]["answer_trace"]
-    assert payload["reply"] == "Welches Medium soll abgedichtet werden?"
+    assert payload["reply"] == "Bitte Medium angeben."
     assert payload["answer_markdown"] == payload["reply"]
-    assert trace["reply_source"] == "hcl"
-    assert trace["answer_markdown_source"] == "hcl"
-    assert trace["hcl_attempted"] is True
-    assert trace["hcl_succeeded"] is True
+    assert payload["assistant_message"] == "Bitte Medium angeben."
+    assert trace["reply_source"] == "governed_output_contract"
+    assert trace["answer_markdown_source"] == "deterministic_fallback"
+    assert trace["hcl_attempted"] is False
+    assert trace["hcl_succeeded"] is False
+    assert trace["final_layer_source"] == "deterministic_fallback"
 
 
 def test_existing_non_governed_routes_do_not_require_governed_composer() -> None:

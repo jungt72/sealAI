@@ -4,7 +4,7 @@ from app.agent.runtime.final_answer_layer import FinalAnswerEnvelope, apply_fina
 
 
 def test_final_answer_layer_disabled_is_passthrough(monkeypatch):
-    monkeypatch.delenv("SEALAI_ENABLE_FINAL_ANSWER_LAYER", raising=False)
+    monkeypatch.setenv("SEALAI_ENABLE_FINAL_ANSWER_LAYER", "false")
     payload = {
         "reply": "Fallback",
         "answer_markdown": "Prepared answer",
@@ -21,6 +21,23 @@ def test_final_answer_layer_disabled_is_passthrough(monkeypatch):
     )
 
     assert result == payload
+
+
+def test_final_answer_layer_defaults_to_enabled(monkeypatch):
+    monkeypatch.delenv("SEALAI_ENABLE_FINAL_ANSWER_LAYER", raising=False)
+    payload = {"reply": "Fallback", "run_meta": {"answer_trace": {}}}
+
+    result = apply_final_answer_layer(
+        payload,
+        FinalAnswerEnvelope(
+            route="governed",
+            answer_mode="structured_clarification",
+            deterministic_fallback_reply="Fallback",
+        ),
+    )
+
+    assert result["answer_markdown"] == "Fallback"
+    assert result["run_meta"]["final_answer_layer"]["enabled"] is True
 
 
 def test_final_answer_layer_enabled_falls_back_to_deterministic_reply(monkeypatch):

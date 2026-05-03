@@ -106,6 +106,37 @@ def _governed_state_has_active_case(state: GovernedSessionState | None) -> bool:
     return False
 
 
+def _knowledge_turn_needs_active_case_probe(message: str) -> bool:
+    """Return whether a knowledge-looking turn is context-fragmentary.
+
+    V7 keeps no-case knowledge independent from governed case state. The only
+    exception here is a short elliptical follow-up that cannot be interpreted
+    responsibly without knowing the active primary task, for example
+    "und FKM mit NBR?" after a material discussion. This avoids the old broad
+    behavior where every knowledge question loaded governed state and could be
+    mistaken for case intake.
+    """
+
+    normalized = " ".join((message or "").casefold().strip().split())
+    if not normalized:
+        return False
+    if len(normalized) > 80:
+        return False
+    return normalized.startswith(
+        (
+            "und ",
+            "auch ",
+            "damit ",
+            "dann ",
+            "wie damit",
+            "was damit",
+            "wie ist es mit ",
+            "wie sieht es mit ",
+            "was ist mit ",
+        )
+    )
+
+
 async def _load_existing_governed_state_for_v7(
     *,
     request: Any,
@@ -219,10 +250,12 @@ async def _resolve_runtime_dispatch(
             PreGateClassification.KNOWLEDGE_QUERY,
             PreGateClassification.DEEP_DIVE,
         }:
-            governed_state = await _load_existing_governed_state_for_v7(
-                request=request,
-                current_user=current_user,
-            )
+            governed_state = None
+            if _knowledge_turn_needs_active_case_probe(request.message):
+                governed_state = await _load_existing_governed_state_for_v7(
+                    request=request,
+                    current_user=current_user,
+                )
             turn_decision = _resolve_v7_turn_decision(
                 request=request,
                 pre_gate=pre_gate,

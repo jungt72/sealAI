@@ -8,7 +8,7 @@ _TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 
 
 def is_final_answer_layer_enabled() -> bool:
-    return os.getenv("SEALAI_ENABLE_FINAL_ANSWER_LAYER", "false").strip().lower() in _TRUE_VALUES
+    return os.getenv("SEALAI_ENABLE_FINAL_ANSWER_LAYER", "true").strip().lower() in _TRUE_VALUES
 
 
 @dataclass(frozen=True, slots=True)

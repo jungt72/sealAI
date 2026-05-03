@@ -13,10 +13,7 @@ from app.agent.runtime.final_answer_layer import (
     answer_mode_for_fast_classification,
     apply_final_answer_layer,
 )
-from app.agent.runtime.user_facing_reply import (
-    collect_governed_visible_reply_with_trace,
-    _guard_unsafe_user_instruction,
-)
+from app.agent.runtime.user_facing_reply import _guard_unsafe_user_instruction
 from app.agent.graph.output_contract_assembly import (
     classify_message_as_knowledge_override,
 )
@@ -39,7 +36,6 @@ from app.agent.api.governed_runtime import run_governed_graph_turn
 from app.agent.api.assembly import (
     _build_governed_reply_context,
     _assemble_governed_stream_payload,
-    _governed_composer_visible_answer,
 )
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.api.streaming import event_generator, _build_fast_path_version_provenance
@@ -150,28 +146,23 @@ async def _run_governed_chat_response(
         result_state=result_state,
         persisted_state=persisted_state,
     )
-    visible_reply = _governed_composer_visible_answer(result_state)
-    visible_reply_trace = None
-    if visible_reply is None:
-        visible_result = await collect_governed_visible_reply_with_trace(
-            response_class=context.response_class,
-            turn_context=context.turn_context,
-            fallback_text=context.deterministic_reply,
-            latest_user_message=request.message,
-        )
-        visible_reply = visible_result.text
-        visible_reply_trace = visible_result.answer_trace
-
-    if visible_reply:
+    payload = _assemble_governed_stream_payload(context=context)
+    assistant_message = str(
+        payload.get("assistant_message")
+        or payload.get("answer_markdown")
+        or payload.get("reply")
+        or ""
+    ).strip()
+    if assistant_message:
         updated_state = _with_governed_conversation_turn(
             persisted_state,
             role="assistant",
-            content=visible_reply,
+            content=assistant_message,
         )
         case_event = build_assistant_delta_event(
             case_id=str(request.session_id or "default"),
             turn_index=int(getattr(result_state, "user_turn_index", 0) or result_state.analysis_cycle or 0),
-            assistant_message=visible_reply,
+            assistant_message=assistant_message,
             delta=context.proposed_case_delta,
             persistence_marker=persisted_state.persistence_marker,
         )
@@ -185,11 +176,7 @@ async def _run_governed_chat_response(
 
     return ChatResponse(
         session_id=request.session_id,
-        **_assemble_governed_stream_payload(
-            context=context,
-            visible_reply=visible_reply,
-            visible_reply_trace=visible_reply_trace,
-        ),
+        **payload,
     )
 
 async def _chat_response_from_fast_response(

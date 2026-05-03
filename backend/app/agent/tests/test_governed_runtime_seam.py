@@ -106,10 +106,6 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
     persist = AsyncMock()
     with (
         patch("app.agent.api.streaming.run_governed_graph_turn", seam),
-        patch(
-            "app.agent.api.streaming.collect_governed_visible_reply",
-            AsyncMock(return_value="Welches Medium soll abgedichtet werden?"),
-        ),
         patch("app.agent.api.streaming._persist_live_governed_state", persist),
     ):
         frames = [
@@ -137,7 +133,7 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
         "data": {"event_type": "evidence_retrieved"},
     }
     assert payloads[1]["type"] == "state_update"
-    assert payloads[1]["reply"] == "Welches Medium soll abgedichtet werden?"
+    assert payloads[1]["reply"] == "Bitte Medium angeben."
     assert payloads[1]["answer_markdown"] == payloads[1]["reply"]
     assert payloads[1]["response_class"] == "structured_clarification"
     persist.assert_awaited_once()
@@ -146,6 +142,6 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
     assert persist.await_args.kwargs["pre_gate_classification"] == "DOMAIN_INQUIRY"
     assert persisted_state_arg.conversation_messages[-1] == ConversationMessage(
         role="assistant",
-        content="Welches Medium soll abgedichtet werden?",
+        content="Bitte Medium angeben.",
     )
     assert frames[-1] == "data: [DONE]\n\n"

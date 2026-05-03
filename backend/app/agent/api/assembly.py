@@ -155,27 +155,24 @@ def _build_governed_reply_context(
         proposed_case_delta=proposed_case_delta,
     )
 
-def _governed_composer_visible_answer(result_state: GraphState) -> str | None:
-    source = str(result_state.output_answer_markdown_source or "").strip()
-    answer = str(result_state.output_answer_markdown or "").strip()
-    if source == "governed_composer" and answer:
-        return answer
-    return None
-
-
 def _assemble_governed_stream_payload(
     *,
     context: GovernedReplyAssemblyContext,
     visible_reply: str | None = None,
     visible_reply_trace: AnswerTrace | None = None,
 ) -> dict[str, Any]:
+    # V7 invariant: governed runtime has exactly one visible answer selector.
+    # ``reply`` remains the deterministic backend fallback; ``answer_markdown``
+    # may only come from the governed composer or that same fallback. The legacy
+    # visible-reply/HCL parameters are kept for old call-site compatibility but
+    # are intentionally ignored here.
+    _ = (visible_reply, visible_reply_trace)
     fallback_reply = str(context.deterministic_reply or "").strip()
     composed_answer = (
         str(context.answer_markdown or "").strip()
         if context.answer_markdown_source == "governed_composer"
         else ""
     )
-    final_reply = fallback_reply if composed_answer else (str(visible_reply or "").strip() or fallback_reply)
     composer_attempted = context.answer_markdown_source in {
         "governed_composer",
         "composer_fallback",
@@ -188,19 +185,17 @@ def _assemble_governed_stream_payload(
     )
 
     public_reply = assemble_user_facing_reply(
-        reply=final_reply,
+        reply=fallback_reply,
         structured_state=context.structured_state,
         policy_path="governed",
         run_meta=context.run_meta,
         response_class=context.response_class,
         fallback_text=fallback_reply,
     )
-    assistant_message = public_reply.get("reply")
     assembly_reply = str(public_reply.get("reply") or "").strip()
-    assembly_guard_overwrote = bool(final_reply and assembly_reply != final_reply)
+    assembly_guard_overwrote = bool(fallback_reply and assembly_reply != fallback_reply)
     if composed_answer:
         public_reply["answer_markdown"] = composed_answer
-        assistant_message = composed_answer
         answer_trace = build_answer_trace(
             reply_source="governed_output_contract",
             answer_markdown_source="governed_composer",
@@ -213,26 +208,9 @@ def _assemble_governed_stream_payload(
             reply_source="api_guard",
             answer_markdown_source="deterministic_fallback",
             final_visible_source="answer_markdown",
-            composer_attempted=composer_attempted or bool(
-                visible_reply_trace and visible_reply_trace["composer_attempted"]
-            ),
-            composer_succeeded=composer_succeeded or bool(
-                visible_reply_trace and visible_reply_trace["composer_succeeded"]
-            ),
-            hcl_attempted=bool(visible_reply_trace and visible_reply_trace["hcl_attempted"]),
-            hcl_succeeded=bool(visible_reply_trace and visible_reply_trace["hcl_succeeded"]),
+            composer_attempted=composer_attempted,
+            composer_succeeded=composer_succeeded,
             fallback_reason=composer_fallback_reason or "api_guard",
-        )
-    elif visible_reply_trace is not None:
-        answer_trace = build_answer_trace(
-            reply_source=visible_reply_trace["reply_source"],
-            answer_markdown_source=visible_reply_trace["answer_markdown_source"],
-            final_visible_source=visible_reply_trace["final_visible_source"],
-            composer_attempted=composer_attempted or visible_reply_trace["composer_attempted"],
-            composer_succeeded=composer_succeeded or visible_reply_trace["composer_succeeded"],
-            hcl_attempted=visible_reply_trace["hcl_attempted"],
-            hcl_succeeded=visible_reply_trace["hcl_succeeded"],
-            fallback_reason=composer_fallback_reason or visible_reply_trace["fallback_reason"],
         )
     else:
         answer_trace = build_answer_trace(
@@ -269,6 +247,9 @@ def _assemble_governed_stream_payload(
             fallback_reason=answer_trace.get("fallback_reason"),
         ),
     )
+    assistant_message = str(
+        public_reply.get("answer_markdown") or public_reply.get("reply") or ""
+    ).strip()
 
     return {
         "type": "state_update",

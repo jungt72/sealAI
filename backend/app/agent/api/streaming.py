@@ -13,11 +13,7 @@ from app.agent.runtime.final_answer_layer import (
     answer_mode_for_fast_classification,
     apply_final_answer_layer,
 )
-from app.agent.runtime.user_facing_reply import (
-    collect_governed_visible_reply as _collect_governed_visible_reply_text,
-    collect_governed_visible_reply_with_trace,
-    _guard_unsafe_user_instruction,
-)
+from app.agent.runtime.user_facing_reply import _guard_unsafe_user_instruction
 from app.agent.graph.output_contract_assembly import (
     classify_message_as_knowledge_override,
 )
@@ -46,7 +42,6 @@ from app.agent.api.governed_runtime import run_governed_graph_turn
 from app.agent.api.assembly import (
     _build_governed_reply_context,
     _assemble_governed_stream_payload,
-    _governed_composer_visible_answer,
 )
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
@@ -72,10 +67,6 @@ def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
 
 def _is_v7_active_case_side_question(dispatch: Any) -> bool:
     return _v7_dispatch_answer_mode(dispatch) == "active_case_side_question"
-
-# Legacy tests patch this module-level name. Production code takes the traced
-# path unless this alias has been monkeypatched.
-collect_governed_visible_reply = _collect_governed_visible_reply_text
 
 @dataclass(frozen=True)
 class GovernedReplyAssemblyContext:
@@ -493,36 +484,25 @@ async def _stream_governed_graph(
         result_state=turn_result.result_state,
         persisted_state=turn_result.persisted_state,
     )
-    visible_reply = _governed_composer_visible_answer(turn_result.result_state)
-    visible_reply_trace = None
-    if visible_reply is None:
-        visible_kwargs = {
-            "response_class": context.response_class,
-            "turn_context": context.turn_context,
-            "fallback_text": context.deterministic_reply,
-            "latest_user_message": request.message,
-        }
-        if collect_governed_visible_reply is not _collect_governed_visible_reply_text:
-            visible_reply = await collect_governed_visible_reply(**visible_kwargs)
-            visible_reply_trace = build_answer_trace(
-                reply_source="legacy_renderer",
-                answer_markdown_source="legacy_renderer",
-                final_visible_source="answer_markdown",
-            )
-        else:
-            visible_result = await collect_governed_visible_reply_with_trace(**visible_kwargs)
-            visible_reply = visible_result.text
-            visible_reply_trace = visible_result.answer_trace
-    if visible_reply:
+    payload = _assemble_governed_stream_payload(
+        context=context,
+    )
+    assistant_message = str(
+        payload.get("assistant_message")
+        or payload.get("answer_markdown")
+        or payload.get("reply")
+        or ""
+    ).strip()
+    if assistant_message:
         updated_state = _with_governed_conversation_turn(
             turn_result.persisted_state,
             role="assistant",
-            content=visible_reply,
+            content=assistant_message,
         )
         case_event = build_assistant_delta_event(
             case_id=str(request.session_id or "default"),
             turn_index=int(getattr(turn_result.result_state, "user_turn_index", 0) or turn_result.result_state.analysis_cycle or 0),
-            assistant_message=visible_reply,
+            assistant_message=assistant_message,
             delta=context.proposed_case_delta,
             persistence_marker=turn_result.persisted_state.persistence_marker,
         )
@@ -533,12 +513,6 @@ async def _stream_governed_graph(
             state=updated_state,
             pre_gate_classification=pre_gate_classification,
         )
-
-    payload = _assemble_governed_stream_payload(
-        context=context,
-        visible_reply=visible_reply,
-        visible_reply_trace=visible_reply_trace,
-    )
     # Suffix version provenance from streaming.py locally without dropping
     # composer source/fallback metadata from the graph assembly layer.
     run_meta = dict(payload.get("run_meta") or {})
