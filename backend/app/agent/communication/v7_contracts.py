@@ -92,9 +92,12 @@ class RuntimeActionType(str, Enum):
 
 class RuntimeAnswerBuilder(str, Enum):
     NONE = "none"
+    FAST_RESPONSE = "fast_response"
+    LIGHT_RUNTIME = "light_runtime"
     ACTIVE_CASE_PROCESS = "active_case_process"
     ACTIVE_CASE_SIDE = "active_case_side"
     KNOWLEDGE = "knowledge"
+    KNOWLEDGE_OVERRIDE = "knowledge_override"
     GOVERNED_OUTPUT_CONTRACT = "governed_output_contract"
 
 
@@ -373,6 +376,58 @@ def build_runtime_action_from_turn_decision(
         reason=reason or "conversation_answer_only",
         decision_source=decision_source,
         confidence=confidence,
+    )
+
+
+def build_answer_only_runtime_action(
+    *,
+    answer_mode: AnswerMode,
+    answer_builder: RuntimeAnswerBuilder,
+    reason: str,
+    decision_source: str,
+    mutation_policy: MutationPolicy = MutationPolicy.FORBIDDEN,
+    graph_invocation_skipped_reason: str | None = None,
+    next_runtime_action: str | None = None,
+    confidence: float | None = None,
+    trace: dict[str, Any] | None = None,
+) -> RuntimeAction:
+    return RuntimeAction(
+        action_type=RuntimeActionType.ANSWER_ONLY,
+        answer_mode=answer_mode,
+        mutation_policy=mutation_policy,
+        graph_allowed=False,
+        graph_invocation_skipped_reason=(
+            graph_invocation_skipped_reason
+            or f"{answer_builder.value}_does_not_require_governed_graph"
+        ),
+        answer_builder=answer_builder,
+        resume_strategy=ResumeStrategy.NONE,
+        next_runtime_action=next_runtime_action,
+        reason=reason,
+        decision_source=decision_source,
+        confidence=confidence,
+        trace=trace or {},
+    )
+
+
+def build_knowledge_override_runtime_action(
+    *,
+    override_class: str,
+    active_case_exists: bool,
+    reason: str | None = None,
+) -> RuntimeAction:
+    return build_answer_only_runtime_action(
+        answer_mode=(
+            AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+            if active_case_exists
+            else AnswerMode.NO_CASE_KNOWLEDGE
+        ),
+        answer_builder=RuntimeAnswerBuilder.KNOWLEDGE_OVERRIDE,
+        reason=reason or "legacy_knowledge_override_before_governed_graph",
+        decision_source="knowledge_override_classifier",
+        graph_invocation_skipped_reason="legacy_knowledge_override_answer_only",
+        next_runtime_action="return_knowledge_override_answer",
+        trace={"knowledge_override_class": override_class},
     )
 
 

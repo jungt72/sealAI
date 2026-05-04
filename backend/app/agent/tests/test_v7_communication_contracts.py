@@ -26,6 +26,7 @@ from app.agent.communication.v7_contracts import (
     TaskStack,
     TurnDecision,
     TurnKind,
+    build_knowledge_override_runtime_action,
     build_runtime_action_from_turn_decision,
 )
 
@@ -197,6 +198,22 @@ def test_runtime_action_rejects_graph_allowed_for_answer_only_actions() -> None:
             answer_builder=RuntimeAnswerBuilder.ACTIVE_CASE_SIDE,
             reason="invalid_contract",
         )
+
+
+def test_knowledge_override_runtime_action_is_answer_only_and_traceable() -> None:
+    action = build_knowledge_override_runtime_action(
+        override_class="conversational_answer",
+        active_case_exists=True,
+    )
+
+    assert action.action_type == RuntimeActionType.ANSWER_ONLY
+    assert action.answer_builder == RuntimeAnswerBuilder.KNOWLEDGE_OVERRIDE
+    assert action.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+    assert action.graph_allowed is False
+    trace = action.as_trace()
+    assert trace["decision_source"] == "knowledge_override_classifier"
+    assert trace["knowledge_override_class"] == "conversational_answer"
+    assert trace["graph_invocation_skipped_reason"] == "legacy_knowledge_override_answer_only"
 
 
 def test_final_answer_contract_keeps_reply_as_fallback_and_answer_markdown_visible() -> None:

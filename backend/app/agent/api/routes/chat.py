@@ -14,9 +14,6 @@ from app.agent.runtime.final_answer_layer import (
     apply_final_answer_layer,
 )
 from app.agent.runtime.user_facing_reply import _guard_unsafe_user_instruction
-from app.agent.graph.output_contract_assembly import (
-    classify_message_as_knowledge_override,
-)
 from app.agent.api.deps import (
     _is_light_runtime_mode,
     get_current_request_user,
@@ -54,8 +51,6 @@ from app.agent.communication.active_case_side_claim_policy import (
     enforce_active_case_side_claim_policy,
 )
 from app.agent.communication.v7_contracts import (
-    AnswerMode,
-    MutationPolicy,
     RuntimeAction,
     RuntimeActionType,
     RuntimeAnswerBuilder,
@@ -141,20 +136,6 @@ def _with_runtime_action_trace(
     answer_trace.update(trace_update)
     meta["answer_trace"] = answer_trace
     return meta
-
-
-def _knowledge_override_runtime_action() -> RuntimeAction:
-    return RuntimeAction(
-        action_type=RuntimeActionType.ANSWER_ONLY,
-        answer_mode=AnswerMode.NO_CASE_KNOWLEDGE,
-        mutation_policy=MutationPolicy.FORBIDDEN,
-        graph_allowed=False,
-        graph_invocation_skipped_reason="legacy_knowledge_override_answer_only",
-        answer_builder=RuntimeAnswerBuilder.KNOWLEDGE,
-        next_runtime_action="return_knowledge_answer",
-        reason="legacy_knowledge_override_before_governed_graph",
-        decision_source="knowledge_override_classifier",
-    )
 
 
 def _runtime_action_blocked_graph_payload(runtime_action: Any | None) -> dict[str, Any]:
@@ -495,6 +476,7 @@ async def _run_light_chat_response(
     mode: Literal["CONVERSATION", "EXPLORATION"],
     governed_state_override: GovernedSessionState | None = None,
     direct_reply: str | None = None,
+    runtime_action: Any | None = None,
 ) -> ChatResponse:
     from app.agent.runtime.conversation_runtime import run_conversation  # noqa: PLC0415
 
@@ -527,22 +509,23 @@ async def _run_light_chat_response(
         )
         structured_state = _light_structured_state(updated)
 
+    run_meta = with_answer_trace(
+        {
+            "version_provenance": _build_fast_path_version_provenance(decision=None)
+        },
+        build_answer_trace(
+            reply_source="light_conversation",
+            answer_markdown_source="light_conversation",
+            final_visible_source="answer_markdown",
+        ),
+    )
     return ChatResponse(
         session_id=request.session_id,
         **build_public_response_core(
             reply=result.reply_text,
             structured_state=structured_state,
             policy_path=mode.lower(),
-            run_meta=with_answer_trace(
-                {
-                    "version_provenance": _build_fast_path_version_provenance(decision=None)
-                },
-                build_answer_trace(
-                    reply_source="light_conversation",
-                    answer_markdown_source="light_conversation",
-                    final_visible_source="answer_markdown",
-                ),
-            ),
+            run_meta=_with_runtime_action_trace(run_meta, runtime_action),
         ),
     )
 
@@ -616,6 +599,7 @@ async def _chat_response_from_fast_response(
     *,
     request: ChatRequest,
     fast_response: Any,
+    runtime_action: Any | None = None,
 ) -> ChatResponse:
     from app.agent.api.utils import _fast_response_run_meta # noqa: PLC0415
 
@@ -623,7 +607,10 @@ async def _chat_response_from_fast_response(
         reply=fast_response.content,
         structured_state=None,
         policy_path="conversation",
-        run_meta=_fast_response_run_meta(fast_response),
+        run_meta=_with_runtime_action_trace(
+            _fast_response_run_meta(fast_response),
+            runtime_action,
+        ),
     )
     payload = apply_final_answer_layer(
         payload,
@@ -717,6 +704,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         return await _chat_response_from_fast_response(
             request=request,
             fast_response=dispatch.fast_response,
+            runtime_action=_v7_dispatch_runtime_action(dispatch),
         )
     if dispatch.knowledge_response is not None:
         return await _chat_response_from_knowledge_response(
@@ -733,6 +721,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             mode=dispatch.runtime_mode,
             governed_state_override=dispatch.governed_state,
             direct_reply=dispatch.direct_reply,
+            runtime_action=_v7_dispatch_runtime_action(dispatch),
         )
 
     if dispatch.runtime_mode == "GOVERNED":
@@ -761,20 +750,6 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
                 runtime_action=runtime_action,
             )
             return ChatResponse(session_id=request.session_id, **payload)
-        _knowledge_override_json = classify_message_as_knowledge_override(request.message)
-        if _knowledge_override_json is not None:
-            knowledge_runtime_action = _knowledge_override_runtime_action()
-            knowledge_response = await build_case_side_knowledge_response(
-                message=request.message,
-                override_class=_knowledge_override_json,
-                conversation_route=dispatch.conversation_route,
-                governed_state=dispatch.governed_state,
-            )
-            return await _chat_response_from_knowledge_response(
-                request=request,
-                knowledge_response=knowledge_response,
-                runtime_action=knowledge_runtime_action,
-            )
         if not _runtime_action_allows_graph(dispatch):
             payload = _runtime_action_blocked_graph_payload(runtime_action)
             return ChatResponse(session_id=request.session_id, **payload)

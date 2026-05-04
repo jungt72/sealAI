@@ -8,7 +8,10 @@ from app.agent.state.models import GovernedSessionState
 from app.agent.communication.v7_contracts import (
     AnswerMode,
     RuntimeAction,
+    RuntimeAnswerBuilder,
     TurnDecision,
+    build_answer_only_runtime_action,
+    build_knowledge_override_runtime_action,
     build_runtime_action_from_turn_decision,
 )
 from app.agent.runtime.answer_trace import build_answer_trace
@@ -90,6 +93,7 @@ class RuntimeDispatchResolution:
     direct_reply: str | None = None
     fast_response: Any | None = None
     knowledge_response: Any | None = None
+    knowledge_override_class: str | None = None
     governed_state: GovernedSessionState | None = None
     conversation_route: ConversationRoutingDecision | None = None
     turn_decision: TurnDecision | None = None
@@ -134,6 +138,8 @@ def _knowledge_turn_needs_active_case_probe(message: str) -> bool:
             "was eigentlich ist",
             "was genau sind",
             "was eigentlich sind",
+            "was ist",
+            "was sind",
             "was bedeutet",
             "was heisst",
             "was heißt",
@@ -240,6 +246,45 @@ def _v7_runtime_action(
     return build_runtime_action_from_turn_decision(decision, reason=reason)
 
 
+def _fast_response_runtime_action(
+    classification: Any,
+    *,
+    reason: str,
+) -> RuntimeAction:
+    value = str(getattr(classification, "value", classification) or "")
+    if value == "GREETING":
+        answer_mode = AnswerMode.SMALLTALK
+    elif value == "META_QUESTION":
+        answer_mode = AnswerMode.META_QUESTION
+    elif value == "BLOCKED":
+        answer_mode = AnswerMode.SAFETY_BLOCKED
+    else:
+        answer_mode = AnswerMode.CLARIFICATION
+    return build_answer_only_runtime_action(
+        answer_mode=answer_mode,
+        answer_builder=RuntimeAnswerBuilder.FAST_RESPONSE,
+        reason=reason,
+        decision_source="pre_gate_fast_responder",
+        graph_invocation_skipped_reason="fast_response_does_not_require_governed_graph",
+        next_runtime_action="return_fast_response",
+    )
+
+
+def _light_runtime_action(
+    *,
+    reason: str,
+    decision_source: str = "pre_gate_light_runtime",
+) -> RuntimeAction:
+    return build_answer_only_runtime_action(
+        answer_mode=AnswerMode.CLARIFICATION,
+        answer_builder=RuntimeAnswerBuilder.LIGHT_RUNTIME,
+        reason=reason,
+        decision_source=decision_source,
+        graph_invocation_skipped_reason="light_runtime_does_not_require_governed_graph",
+        next_runtime_action="run_light_runtime",
+    )
+
+
 async def _resolve_runtime_dispatch(
     request: Any,  # ChatRequest
     *,
@@ -315,6 +360,10 @@ async def _resolve_runtime_dispatch(
                 pre_gate_reason=pre_gate.reasoning,
                 fast_response=fast_response,
                 conversation_route=conversation_route,
+                runtime_action=_fast_response_runtime_action(
+                    pre_gate.classification,
+                    reason=f"pre_gate:{pre_gate.reasoning}",
+                ),
             )
 
         if pre_gate.classification in {
@@ -449,6 +498,9 @@ async def _resolve_runtime_dispatch(
                 pre_gate_classification=pre_gate.classification.value,
                 pre_gate_reason=pre_gate.reasoning,
                 conversation_route=conversation_route,
+                runtime_action=_light_runtime_action(
+                    reason=f"pre_gate:{pre_gate.reasoning}",
+                ),
             )
 
         governed_state = None
@@ -500,6 +552,49 @@ async def _resolve_runtime_dispatch(
             pre_gate=pre_gate,
             governed_state=governed_state,
         )
+        runtime_action = _v7_runtime_action(
+            turn_decision,
+            reason="governed_domain_or_slot_turn",
+        )
+        if bool(getattr(runtime_action, "graph_allowed", False)) and not bool(
+            getattr(runtime_action, "slot_candidate_detected", False)
+        ):
+            from app.agent.api.knowledge_override import (  # noqa: PLC0415
+                build_case_side_knowledge_response,
+            )
+            from app.agent.graph.output_contract_assembly import (  # noqa: PLC0415
+                classify_message_as_knowledge_override,
+            )
+
+            knowledge_override = classify_message_as_knowledge_override(
+                request.message
+            )
+            if knowledge_override is not None:
+                knowledge_response = await build_case_side_knowledge_response(
+                    message=request.message,
+                    override_class=knowledge_override,
+                    conversation_route=conversation_route,
+                    governed_state=governed_state,
+                )
+                return RuntimeDispatchResolution(
+                    gate_route="CONVERSATION",
+                    gate_reason=f"runtime_action_knowledge_override:{knowledge_override}",
+                    runtime_mode="CONVERSATION",
+                    gate_applied=False,
+                    pre_gate_classification=pre_gate.classification.value,
+                    pre_gate_reason=pre_gate.reasoning,
+                    knowledge_response=knowledge_response,
+                    knowledge_override_class=knowledge_override,
+                    governed_state=governed_state,
+                    conversation_route=conversation_route,
+                    turn_decision=turn_decision,
+                    runtime_action=build_knowledge_override_runtime_action(
+                        override_class=knowledge_override,
+                        active_case_exists=_governed_state_has_active_case(
+                            governed_state
+                        ),
+                    ),
+                )
         return RuntimeDispatchResolution(
             gate_route="GOVERNED",
             gate_reason=f"pre_gate:{pre_gate.reasoning}",
@@ -510,10 +605,7 @@ async def _resolve_runtime_dispatch(
             governed_state=governed_state,
             conversation_route=conversation_route,
             turn_decision=turn_decision,
-            runtime_action=_v7_runtime_action(
-                turn_decision,
-                reason="governed_domain_or_slot_turn",
-            ),
+            runtime_action=runtime_action,
         )
 
     except Exception as exc:  # noqa: BLE001
@@ -530,6 +622,10 @@ async def _resolve_runtime_dispatch(
             direct_reply=(
                 "Ich kann die Anfrage gerade nicht sicher einordnen. "
                 "Bitte beschreibe kurz, worum es geht; ich uebernehme dabei keine technische Annahme."
+            ),
+            runtime_action=_light_runtime_action(
+                reason=f"gate_session_fail_closed:{type(exc).__name__}",
+                decision_source="runtime_dispatch_exception",
             ),
         )
 

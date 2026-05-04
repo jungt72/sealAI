@@ -14,10 +14,6 @@ from app.agent.runtime.final_answer_layer import (
     apply_final_answer_layer,
 )
 from app.agent.runtime.user_facing_reply import _guard_unsafe_user_instruction
-from app.agent.graph.output_contract_assembly import (
-    classify_message_as_knowledge_override,
-)
-from app.agent.api.knowledge_override import build_case_side_knowledge_response
 from app.agent.api.deps import (
     _is_light_runtime_mode,
     _canonical_scope,
@@ -46,8 +42,6 @@ from app.agent.api.assembly import (
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.communication.v7_contracts import (
-    AnswerMode,
-    MutationPolicy,
     RuntimeAction,
     RuntimeActionType,
     RuntimeAnswerBuilder,
@@ -62,6 +56,16 @@ from app.agent.state.case_state import (
 from app.services.auth.dependencies import RequestUser
 
 _log = logging.getLogger(__name__)
+
+
+def classify_message_as_knowledge_override(message: str) -> str | None:
+    """Compatibility alias only; dispatch owns knowledge override routing."""
+
+    from app.agent.graph.output_contract_assembly import (  # noqa: PLC0415
+        classify_message_as_knowledge_override as _classify,
+    )
+
+    return _classify(message)
 
 
 
@@ -142,19 +146,6 @@ def _with_runtime_action_trace(
     return meta
 
 
-def _knowledge_override_runtime_action() -> RuntimeAction:
-    return RuntimeAction(
-        action_type=RuntimeActionType.ANSWER_ONLY,
-        answer_mode=AnswerMode.NO_CASE_KNOWLEDGE,
-        mutation_policy=MutationPolicy.FORBIDDEN,
-        graph_allowed=False,
-        graph_invocation_skipped_reason="legacy_knowledge_override_answer_only",
-        answer_builder=RuntimeAnswerBuilder.KNOWLEDGE,
-        next_runtime_action="return_knowledge_answer",
-        reason="legacy_knowledge_override_before_governed_graph",
-        decision_source="knowledge_override_classifier",
-    )
-
 @dataclass(frozen=True)
 class GovernedReplyAssemblyContext:
     response_class: str
@@ -199,13 +190,17 @@ def _build_fast_path_version_provenance(*, decision: Any) -> dict[str, Any]:
 async def _stream_fast_response(
     *,
     fast_response: Any,
+    runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
     state_update_event = {
         "type": "state_update",
         "reply": fast_response.content,
         "answer_markdown": fast_response.content,
         "response_class": "conversational_answer",
-        "run_meta": _fast_response_run_meta(fast_response),
+        "run_meta": _with_runtime_action_trace(
+            _fast_response_run_meta(fast_response),
+            runtime_action,
+        ),
     }
     state_update_event = apply_final_answer_layer(
         state_update_event,
@@ -405,6 +400,7 @@ async def _stream_light_runtime(
     mode: Literal["CONVERSATION", "EXPLORATION"],
     governed_state_override: GovernedSessionState | None = None,
     direct_reply: str | None = None,
+    runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
     from app.agent.runtime.conversation_runtime import stream_conversation  # noqa: PLC0415
 
@@ -531,13 +527,20 @@ async def _stream_light_runtime(
                     final_visible_source="answer_markdown",
                 ),
             )
+            payload["run_meta"] = _with_runtime_action_trace(
+                payload.get("run_meta"),
+                runtime_action,
+            )
             yield f"data: {json.dumps(payload, default=str)}\n\n"
             continue
 
         if event_type == "done":
-            payload["run_meta"] = {
-                "version_provenance": _build_fast_path_version_provenance(decision=None)
-            }
+            payload["run_meta"] = _with_runtime_action_trace(
+                {
+                    "version_provenance": _build_fast_path_version_provenance(decision=None)
+                },
+                runtime_action,
+            )
             yield f"data: {json.dumps(payload, default=str)}\n\n"
             continue
 
@@ -651,7 +654,10 @@ async def event_generator(
     )
 
     if dispatch.fast_response is not None:
-        async for frame in _stream_fast_response(fast_response=dispatch.fast_response):
+        async for frame in _stream_fast_response(
+            fast_response=dispatch.fast_response,
+            runtime_action=_v7_dispatch_runtime_action(dispatch),
+        ):
             yield frame
         return
     if dispatch.knowledge_response is not None:
@@ -676,6 +682,7 @@ async def event_generator(
             mode=dispatch.runtime_mode,
             governed_state_override=dispatch.governed_state,
             direct_reply=dispatch.direct_reply,
+            runtime_action=_v7_dispatch_runtime_action(dispatch),
         ):
             yield frame
         return
@@ -719,22 +726,6 @@ async def event_generator(
             yield f"data: {json.dumps(payload, default=str)}\n\n"
             yield "data: [DONE]\n\n"
             return
-        _knowledge_override = classify_message_as_knowledge_override(request.message)
-        if _knowledge_override is not None:
-            knowledge_runtime_action = _knowledge_override_runtime_action()
-            knowledge_response = await build_case_side_knowledge_response(
-                message=request.message,
-                override_class=_knowledge_override,
-                conversation_route=dispatch.conversation_route,
-                governed_state=dispatch.governed_state,
-            )
-            async for frame in _stream_knowledge_response(
-                knowledge_response=knowledge_response,
-                runtime_action=knowledge_runtime_action,
-            ):
-                yield frame
-            return
-
         if not _runtime_action_allows_graph(dispatch):
             from app.agent.api.routes.chat import (  # noqa: PLC0415
                 _runtime_action_blocked_graph_payload,
