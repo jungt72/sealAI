@@ -1,3 +1,8 @@
+import json
+from pathlib import Path
+
+import pytest
+
 from app.agent.state.models import (
     AssertedClaim,
     AssertedState,
@@ -9,11 +14,21 @@ from app.agent.state.models import (
     MatchingState,
     PendingQuestion,
 )
-import pytest
 from app.api.v1.projections.case_workspace import (
     project_case_workspace,
     project_case_workspace_from_governed_state,
 )
+
+
+RFQ_READINESS_CONTRACT_FIXTURE = (
+    Path(__file__).resolve().parents[4]
+    / "contracts"
+    / "rfq_readiness_projection_v1.fixture.json"
+)
+
+
+def _rfq_readiness_contract_fixture() -> dict:
+    return json.loads(RFQ_READINESS_CONTRACT_FIXTURE.read_text(encoding="utf-8"))
 
 
 def test_workspace_projection_includes_clarification_communication_context() -> None:
@@ -895,6 +910,7 @@ def test_governed_workspace_projection_exposes_stale_derived_values() -> None:
 
 
 def test_governed_workspace_projection_includes_durable_rfq_readiness_projection() -> None:
+    expected = _rfq_readiness_contract_fixture()
     state = GovernedSessionState(
         pending_question=PendingQuestion(
             target_field="medium",
@@ -911,8 +927,9 @@ def test_governed_workspace_projection_includes_durable_rfq_readiness_projection
         state,
         chat_id="case-rfq-readiness-reload",
     )
-    payload = projection.rfq_readiness_projection or {}
+    payload = projection.model_dump(mode="json")["rfq_readiness_projection"] or {}
 
+    assert payload == expected
     assert payload["manufacturer_review_ready"] is False
     assert payload["rfq_basis_ready"] is False
     assert payload["known_missing_fields"] == ["Medium"]
@@ -939,6 +956,40 @@ def test_governed_workspace_projection_includes_durable_rfq_readiness_projection
     )
     assert payload["projection_version"] == "rfq_readiness_projection_v1"
     assert "preview_id" not in payload
+
+
+def test_workspace_projection_preserves_rfq_readiness_contract_fixture_from_state_json() -> None:
+    expected = _rfq_readiness_contract_fixture()
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-rfq-contract"},
+            "rfq_readiness_projection": expected,
+            "working_profile": {
+                "engineering_profile": {},
+                "completeness": {"missing_critical_parameters": ["Medium"]},
+            },
+            "reasoning": {"phase": "clarification", "state_revision": 1},
+            "system": {
+                "governance_metadata": {"release_status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    payload = projection.model_dump(mode="json")["rfq_readiness_projection"] or {}
+
+    assert payload == expected
+    assert payload["pending_question"]["target_field"] == "medium"
+    assert payload["preview_action_name"] == "create_rfq_preview"
+    assert payload["dispatch_allowed"] is False
+    assert payload["external_contact_allowed"] is False
+    assert payload["projection_version"] == "rfq_readiness_projection_v1"
 
 
 def test_workspace_projection_does_not_create_rfq_preview_as_reload_side_effect(

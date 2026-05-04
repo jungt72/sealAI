@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -36,6 +37,17 @@ from app.services.knowledge_service import (
     KnowledgeResponse,
 )
 from app.services.pre_gate_classifier import ClassificationResult, PreGateClassifier
+
+
+RFQ_READINESS_CONTRACT_FIXTURE = (
+    Path(__file__).resolve().parents[4]
+    / "contracts"
+    / "rfq_readiness_projection_v1.fixture.json"
+)
+
+
+def _rfq_readiness_contract_fixture() -> dict:
+    return json.loads(RFQ_READINESS_CONTRACT_FIXTURE.read_text(encoding="utf-8"))
 
 
 def _user() -> RequestUser:
@@ -1355,6 +1367,7 @@ async def test_stream_rfq_readiness_state_update_contains_runtime_action_trace(
     assert "Offene Punkte" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
     projection = state_update["rfq_readiness_projection"]
+    assert projection == _rfq_readiness_contract_fixture()
     assert projection["known_missing_fields"] == ["Medium"]
     assert projection["manufacturer_review_ready"] is False
     assert projection["dispatch_allowed"] is False

@@ -1,9 +1,22 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { buildStreamWorkspaceView } from "./streamWorkspace.ts";
 
+const RFQ_READINESS_CONTRACT_FIXTURE = new URL(
+  "../../../contracts/rfq_readiness_projection_v1.fixture.json",
+  import.meta.url,
+);
+
+function rfqReadinessContractFixture(): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(RFQ_READINESS_CONTRACT_FIXTURE, "utf8"),
+  ) as Record<string, unknown>;
+}
+
 test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
+  const rfqReadinessProjection = rfqReadinessContractFixture();
   const view = buildStreamWorkspaceView({
     type: "state_update",
     caseId: "case-123",
@@ -19,32 +32,7 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
       openPointsSummary: ["Betriebsdruck"],
     },
     structuredState: { output_status: "governed_non_binding_result" },
-    rfq_readiness_projection: {
-      manufacturer_review_ready: false,
-      rfq_basis_ready: true,
-      known_missing_fields: ["surface_finish"],
-      open_points: ["Compound durch Hersteller pruefen"],
-      blocking_reasons: [],
-      pending_question: {
-        target_field: "surface_finish",
-        question_text: "Welche Oberflaeche ist dokumentiert?",
-        required_for_rfq: true,
-      },
-      consent_required: true,
-      dispatch_allowed: false,
-      external_contact_allowed: false,
-      final_approval_claim_allowed: false,
-      preview_available: true,
-      preview_possible: true,
-      preview_action_available: true,
-      preview_action_name: "create_preview",
-      preview_endpoint: "/api/v1/rfq/preview",
-      preview_creation_requires_explicit_user_intent: true,
-      preview_export_requires_consent: true,
-      preview_requires_explicit_endpoint: true,
-      preview_service_boundary: "RfqPreviewService.create_preview_for_case",
-      projection_version: "rfq_readiness_projection_v1",
-    },
+    rfq_readiness_projection: rfqReadinessProjection,
     ui: {
       parameter: {
         parameters: [{ field_name: "medium", value: "steam", unit: null, confidence: "confirmed" }],
@@ -139,14 +127,18 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
   assert.equal(view.ui.medium_context.medium_label, "Salzwasser");
   assert.equal(view.turnContext?.conversationPhase, "clarification");
   assert.deepEqual(view.turnContext?.confirmedFactsSummary, ["Medium: Dampf"]);
-  assert.equal(view.rfqReadinessProjection?.preview_action_name, "create_preview");
+  assert.equal(view.rfqReadinessProjection?.preview_action_name, "create_rfq_preview");
   assert.equal(view.rfqReadinessProjection?.dispatch_allowed, false);
   assert.equal(view.rfqReadinessProjection?.external_contact_allowed, false);
-  assert.equal(view.rfqReadinessProjection?.pending_question?.target_field, "surface_finish");
+  assert.equal(view.rfqReadinessProjection?.final_approval_claim_allowed, false);
+  assert.deepEqual(view.rfqReadinessProjection?.known_missing_fields, ["Medium"]);
+  assert.equal(view.rfqReadinessProjection?.pending_question?.target_field, "medium");
   assert.equal(
     view.rfqReadinessProjection?.pending_question?.question_text,
-    "Welche Oberflaeche ist dokumentiert?",
+    "Welches Medium soll abgedichtet werden?",
   );
+  assert.equal(view.rfqReadinessProjection?.preview_endpoint, "/api/v1/rfq/preview");
+  assert.equal(view.rfqReadinessProjection?.projection_version, "rfq_readiness_projection_v1");
 });
 
 test("buildStreamWorkspaceView fills missing ui sections conservatively", () => {

@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "./route";
+
+const RFQ_READINESS_CONTRACT_FIXTURE_PATH = resolve(
+  process.cwd(),
+  "../contracts/rfq_readiness_projection_v1.fixture.json",
+);
 
 vi.mock("@/lib/bff/auth-token", () => ({
   getAccessToken: vi.fn(async () => "test-token"),
@@ -29,6 +37,12 @@ function parseSsePayloads(raw: string): Array<string | Record<string, unknown>> 
     .filter(Boolean)
     .map((frame) => frame.replace(/^data:\s*/, ""))
     .map((payload) => (payload === "[DONE]" ? payload : JSON.parse(payload)));
+}
+
+function rfqReadinessContractFixture(): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(RFQ_READINESS_CONTRACT_FIXTURE_PATH, "utf8"),
+  ) as Record<string, unknown>;
 }
 
 describe("BFF agent chat stream route", () => {
@@ -185,31 +199,7 @@ describe("BFF agent chat stream route", () => {
   });
 
   it("forwards rfq_readiness_projection from backend state_update events", async () => {
-    const rfqReadinessProjection = {
-      manufacturer_review_ready: false,
-      rfq_basis_ready: true,
-      known_missing_fields: ["surface_finish"],
-      open_points: ["Compound durch Hersteller pruefen"],
-      blocking_reasons: [],
-      pending_question: {
-        target_field: "surface_finish",
-        question_text: "Welche Oberflaeche ist dokumentiert?",
-      },
-      consent_required: true,
-      dispatch_allowed: false,
-      external_contact_allowed: false,
-      final_approval_claim_allowed: false,
-      preview_available: true,
-      preview_possible: true,
-      preview_action_available: true,
-      preview_action_name: "create_preview",
-      preview_endpoint: "/api/v1/rfq/preview",
-      preview_creation_requires_explicit_user_intent: true,
-      preview_export_requires_consent: true,
-      preview_requires_explicit_endpoint: true,
-      preview_service_boundary: "RfqPreviewService.create_preview_for_case",
-      projection_version: "rfq_readiness_projection_v1",
-    };
+    const rfqReadinessProjection = rfqReadinessContractFixture();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         buildBackendSseStream([
@@ -239,16 +229,11 @@ describe("BFF agent chat stream route", () => {
 
     expect(payloads[1]).toMatchObject({
       type: "state_update",
-      rfq_readiness_projection: {
-        preview_action_name: "create_preview",
-        dispatch_allowed: false,
-        external_contact_allowed: false,
-        pending_question: {
-          target_field: "surface_finish",
-          question_text: "Welche Oberflaeche ist dokumentiert?",
-        },
-      },
+      rfq_readiness_projection: rfqReadinessProjection,
     });
+    expect((payloads[1] as Record<string, unknown>).rfq_readiness_projection).toEqual(
+      rfqReadinessProjection,
+    );
   });
 
   it("forwards assertions from backend state_update events", async () => {
