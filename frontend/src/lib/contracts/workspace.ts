@@ -241,13 +241,24 @@ export type WorkspaceSealDesignIntake = {
   eventNames: string[];
 };
 
+export type WorkspaceRfqPendingQuestion = {
+  question_text: string;
+  target_field?: string | null;
+  label?: string | null;
+  reason?: string | null;
+  required_for_rfq?: boolean;
+  expected_answer_type?: string | null;
+  source?: string | null;
+  status?: string | null;
+};
+
 export type WorkspaceRfqReadinessProjection = {
   manufacturer_review_ready: boolean;
   rfq_basis_ready: boolean;
   known_missing_fields: string[];
   open_points: string[];
   blocking_reasons: string[];
-  pending_question: string | null;
+  pending_question: WorkspaceRfqPendingQuestion | null;
   consent_required: boolean;
   dispatch_allowed: boolean;
   external_contact_allowed: boolean;

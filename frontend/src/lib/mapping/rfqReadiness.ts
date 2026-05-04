@@ -1,4 +1,7 @@
-import type { WorkspaceRfqReadinessProjection } from "../contracts/workspace.ts";
+import type {
+  WorkspaceRfqPendingQuestion,
+  WorkspaceRfqReadinessProjection,
+} from "../contracts/workspace.ts";
 
 function asStrings(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -11,20 +14,36 @@ function asStringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function asPendingQuestion(value: unknown): string | null {
+function asOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function asPendingQuestion(value: unknown): WorkspaceRfqPendingQuestion | null {
   const direct = asStringOrNull(value);
   if (direct) {
-    return direct;
+    return { question_text: direct };
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
   const raw = value as Record<string, unknown>;
-  return (
+  const questionText =
     asStringOrNull(raw.question_text) ||
     asStringOrNull(raw.question) ||
-    asStringOrNull(raw.text)
-  );
+    asStringOrNull(raw.text);
+  if (!questionText) {
+    return null;
+  }
+  return {
+    question_text: questionText,
+    target_field: asStringOrNull(raw.target_field),
+    label: asStringOrNull(raw.label),
+    reason: asStringOrNull(raw.reason),
+    required_for_rfq: asOptionalBoolean(raw.required_for_rfq),
+    expected_answer_type: asStringOrNull(raw.expected_answer_type),
+    source: asStringOrNull(raw.source),
+    status: asStringOrNull(raw.status),
+  };
 }
 
 export function mapRfqReadinessProjection(value: unknown): WorkspaceRfqReadinessProjection | null {

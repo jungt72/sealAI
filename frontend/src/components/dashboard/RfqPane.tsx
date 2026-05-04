@@ -553,9 +553,9 @@ function RfqReadinessPanel({
         />
       </div>
 
-      {readiness.pending_question ? (
+      {readiness.pending_question?.question_text ? (
         <div className="mt-3 rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#4B5563]">
-          Nächste Frage: {readiness.pending_question}
+          Nächste Frage: {readiness.pending_question.question_text}
         </div>
       ) : null}
 

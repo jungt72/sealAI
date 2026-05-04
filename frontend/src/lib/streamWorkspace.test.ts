@@ -25,7 +25,11 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
       known_missing_fields: ["surface_finish"],
       open_points: ["Compound durch Hersteller pruefen"],
       blocking_reasons: [],
-      pending_question: "Welche Oberflaeche ist dokumentiert?",
+      pending_question: {
+        target_field: "surface_finish",
+        question_text: "Welche Oberflaeche ist dokumentiert?",
+        required_for_rfq: true,
+      },
       consent_required: true,
       dispatch_allowed: false,
       external_contact_allowed: false,
@@ -138,6 +142,11 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
   assert.equal(view.rfqReadinessProjection?.preview_action_name, "create_preview");
   assert.equal(view.rfqReadinessProjection?.dispatch_allowed, false);
   assert.equal(view.rfqReadinessProjection?.external_contact_allowed, false);
+  assert.equal(view.rfqReadinessProjection?.pending_question?.target_field, "surface_finish");
+  assert.equal(
+    view.rfqReadinessProjection?.pending_question?.question_text,
+    "Welche Oberflaeche ist dokumentiert?",
+  );
 });
 
 test("buildStreamWorkspaceView fills missing ui sections conservatively", () => {

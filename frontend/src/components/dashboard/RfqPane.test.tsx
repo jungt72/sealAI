@@ -15,7 +15,11 @@ function readinessProjection(
     known_missing_fields: ["shaft_diameter_mm"],
     open_points: ["Druckspitzen offen"],
     blocking_reasons: ["Medium noch nicht bestaetigt"],
-    pending_question: "Welche Wellendurchmesser-Dokumentation liegt vor?",
+    pending_question: {
+      target_field: "shaft_diameter_mm",
+      question_text: "Welche Wellendurchmesser-Dokumentation liegt vor?",
+      required_for_rfq: true,
+    },
     consent_required: true,
     dispatch_allowed: false,
     external_contact_allowed: false,
@@ -327,6 +331,7 @@ describe("RfqPane", () => {
     expect(await screen.findByText("Anfragebasis für Herstellerprüfung")).toBeInTheDocument();
     expect(screen.getByText("Anfragebasis offen")).toBeInTheDocument();
     expect(screen.getByText("shaft_diameter_mm")).toBeInTheDocument();
+    expect(screen.getByText(/Nächste Frage: Welche Wellendurchmesser-Dokumentation liegt vor/i)).toBeInTheDocument();
     expect(screen.getByText("Druckspitzen offen")).toBeInTheDocument();
     expect(screen.getByText("Medium noch nicht bestaetigt")).toBeInTheDocument();
     expect(screen.getByText(/Vorschau bedeutet Anfragebasis für die Herstellerprüfung/i)).toBeInTheDocument();

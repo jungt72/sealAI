@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { mapRfqReadinessProjection } from "@/lib/mapping/rfqReadiness";
 import { mapWorkspaceView } from "@/lib/mapping/workspace";
 
 describe("mapWorkspaceView", () => {
@@ -164,6 +165,8 @@ describe("mapWorkspaceView", () => {
         pending_question: {
           target_field: "surface_finish",
           question_text: "Welche Oberflaeche ist dokumentiert?",
+          reason: "Oberflaeche ist fuer die Herstellerpruefung offen.",
+          required_for_rfq: true,
         },
         consent_required: true,
         dispatch_allowed: false,
@@ -304,8 +307,37 @@ describe("mapWorkspaceView", () => {
     expect(workspace.rfqReadinessProjection?.dispatch_allowed).toBe(false);
     expect(workspace.rfqReadinessProjection?.external_contact_allowed).toBe(false);
     expect(workspace.rfqReadinessProjection?.preview_action_name).toBe("create_preview");
-    expect(workspace.rfqReadinessProjection?.pending_question).toBe(
+    expect(workspace.rfqReadinessProjection?.pending_question?.target_field).toBe("surface_finish");
+    expect(workspace.rfqReadinessProjection?.pending_question?.question_text).toBe(
       "Welche Oberflaeche ist dokumentiert?",
     );
+    expect(workspace.rfqReadinessProjection?.pending_question?.required_for_rfq).toBe(true);
+  });
+
+  it("maps legacy string RFQ pending questions to a structured fallback", () => {
+    const projection = mapRfqReadinessProjection({
+      manufacturer_review_ready: false,
+      rfq_basis_ready: false,
+      known_missing_fields: ["medium"],
+      open_points: [],
+      blocking_reasons: ["medium"],
+      pending_question: "Welches Medium?",
+      consent_required: true,
+      dispatch_allowed: false,
+      external_contact_allowed: false,
+      final_approval_claim_allowed: false,
+      preview_available: false,
+      preview_possible: true,
+      preview_action_available: true,
+      preview_action_name: "create_preview",
+      preview_endpoint: "/api/v1/rfq/preview",
+      preview_creation_requires_explicit_user_intent: true,
+      preview_export_requires_consent: true,
+      preview_requires_explicit_endpoint: true,
+      preview_service_boundary: "RfqPreviewService.create_preview_for_case",
+      projection_version: "rfq_readiness_projection_v1",
+    });
+
+    expect(projection?.pending_question).toEqual({ question_text: "Welches Medium?" });
   });
 });
