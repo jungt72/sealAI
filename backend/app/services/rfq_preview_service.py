@@ -189,6 +189,7 @@ class RfqPreviewService:
         tenant_id: str,
         user_id: str,
         created_by: str,
+        expected_case_revision: int | None = None,
     ) -> RfqPreviewView:
         case_row = await self._load_owned_case(case_id=case_id, tenant_id=tenant_id, user_id=user_id)
         snapshot = await self._latest_snapshot(case_id=case_id)
@@ -196,6 +197,10 @@ class RfqPreviewService:
             raise RfqPreviewNotFound("case not found")
 
         revision = int(case_row.case_revision or snapshot.revision or 0)
+        if expected_case_revision is not None and int(expected_case_revision) != revision:
+            raise RfqPreviewStaleError(
+                "case revision changed; refresh the case before creating an RFQ preview"
+            )
         existing = await self._load_preview(case_id=case_id, tenant_id=tenant_id, case_revision=revision)
         if existing is not None:
             return _view(existing, current_case_revision=revision)

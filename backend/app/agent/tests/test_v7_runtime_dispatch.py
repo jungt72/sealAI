@@ -411,6 +411,11 @@ async def test_active_case_rfq_readiness_question_answers_open_points_without_gr
     assert projection["preview_available"] is False
     assert projection["preview_possible"] is True
     assert projection["preview_requires_explicit_endpoint"] is True
+    assert projection["preview_action_available"] is True
+    assert projection["preview_action_name"] == "create_rfq_preview"
+    assert projection["preview_endpoint"] == "/api/v1/rfq/preview"
+    assert projection["preview_creation_requires_explicit_user_intent"] is True
+    assert projection["preview_export_requires_consent"] is True
     assert "preview_id" not in projection
     trace = response.run_meta["answer_trace"]
     assert trace["answer_mode"] == "rfq_readiness"
@@ -431,6 +436,11 @@ async def test_active_case_rfq_readiness_question_answers_open_points_without_gr
     assert trace["preview_available"] is False
     assert trace["preview_possible"] is True
     assert trace["preview_requires_explicit_endpoint"] is True
+    assert trace["preview_action_available"] is True
+    assert trace["preview_action_name"] == "create_rfq_preview"
+    assert trace["preview_endpoint"] == "/api/v1/rfq/preview"
+    assert trace["preview_creation_requires_explicit_user_intent"] is True
+    assert trace["preview_export_requires_consent"] is True
 
 
 @pytest.mark.asyncio
@@ -485,6 +495,11 @@ async def test_active_case_create_inquiry_deferred_until_fields_and_consent(
     assert projection["preview_available"] is False
     assert projection["preview_possible"] is True
     assert projection["preview_requires_explicit_endpoint"] is True
+    assert projection["preview_action_available"] is True
+    assert projection["preview_action_name"] == "create_rfq_preview"
+    assert projection["preview_endpoint"] == "/api/v1/rfq/preview"
+    assert projection["preview_creation_requires_explicit_user_intent"] is True
+    assert projection["preview_export_requires_consent"] is True
     assert projection["preview_blocking_reason"] == (
         "preview_creation_requires_durable_case_endpoint_and_consent_flow"
     )
@@ -557,6 +572,7 @@ async def test_no_active_case_create_inquiry_asks_for_qualification_without_grap
     assert projection["rfq_basis_ready"] is False
     assert projection["preview_possible"] is False
     assert projection["preview_available"] is False
+    assert projection["preview_action_available"] is False
     assert projection["preview_blocking_reason"] == "no_active_case"
     trace = response.run_meta["answer_trace"]
     assert trace["runtime_action_type"] == "defer_rfq_until_required_fields"
@@ -1344,6 +1360,11 @@ async def test_stream_rfq_readiness_state_update_contains_runtime_action_trace(
     assert projection["dispatch_allowed"] is False
     assert projection["external_contact_allowed"] is False
     assert projection["preview_requires_explicit_endpoint"] is True
+    assert projection["preview_action_available"] is True
+    assert projection["preview_action_name"] == "create_rfq_preview"
+    assert projection["preview_endpoint"] == "/api/v1/rfq/preview"
+    assert projection["preview_creation_requires_explicit_user_intent"] is True
+    assert projection["preview_export_requires_consent"] is True
     trace = state_update["run_meta"]["answer_trace"]
     assert trace["answer_mode"] == "rfq_readiness"
     assert trace["runtime_action_type"] == "show_rfq_readiness"
@@ -1355,4 +1376,9 @@ async def test_stream_rfq_readiness_state_update_contains_runtime_action_trace(
     assert trace["consent_required"] is True
     assert trace["rfq_readiness_projection_built"] is True
     assert trace["preview_requires_explicit_endpoint"] is True
+    assert trace["preview_action_available"] is True
+    assert trace["preview_action_name"] == "create_rfq_preview"
+    assert trace["preview_endpoint"] == "/api/v1/rfq/preview"
+    assert trace["preview_creation_requires_explicit_user_intent"] is True
+    assert trace["preview_export_requires_consent"] is True
     assert trace["operational_contract_version"] == "runtime_action_v1"

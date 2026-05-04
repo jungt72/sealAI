@@ -56,6 +56,13 @@ export async function POST(
     const { caseId } = await context.params;
     const response = await fetchBackend(buildRfqPreviewBackendPath(caseId), request, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "create_preview",
+        explicit_user_intent: true,
+        dispatch_allowed: false,
+        external_contact_allowed: false,
+      }),
     });
     const body = await response.json().catch(() => null);
 

@@ -58,6 +58,11 @@ class RfqReadinessProjection(BaseModel):
     preview_possible: bool = False
     preview_id: str | None = None
     preview_requires_explicit_endpoint: bool = True
+    preview_action_available: bool = False
+    preview_action_name: str = "create_rfq_preview"
+    preview_endpoint: str = "/api/v1/rfq/preview"
+    preview_creation_requires_explicit_user_intent: bool = True
+    preview_export_requires_consent: bool = True
     preview_service_boundary: str = "RfqPreviewService.create_preview_for_case"
     preview_blocking_reason: str | None = None
     projection_source: str = "governed_session_state"
@@ -78,6 +83,11 @@ class RfqReadinessProjection(BaseModel):
             "preview_possible": self.preview_possible,
             "preview_id": self.preview_id,
             "preview_requires_explicit_endpoint": self.preview_requires_explicit_endpoint,
+            "preview_action_available": self.preview_action_available,
+            "preview_action_name": self.preview_action_name,
+            "preview_endpoint": self.preview_endpoint,
+            "preview_creation_requires_explicit_user_intent": self.preview_creation_requires_explicit_user_intent,
+            "preview_export_requires_consent": self.preview_export_requires_consent,
             "preview_service_boundary": self.preview_service_boundary,
             "preview_blocking_reason": self.preview_blocking_reason,
             "projection_source": self.projection_source,
@@ -279,6 +289,7 @@ def build_rfq_readiness_projection(
             preview_possible=False,
             preview_available=False,
             preview_requires_explicit_endpoint=True,
+            preview_action_available=False,
             preview_blocking_reason="no_active_case",
             projection_source="no_active_case",
         )
@@ -319,6 +330,11 @@ def build_rfq_readiness_projection(
         preview_possible=preview_possible,
         preview_id=None,
         preview_requires_explicit_endpoint=True,
+        preview_action_available=preview_possible,
+        preview_action_name="create_rfq_preview",
+        preview_endpoint="/api/v1/rfq/preview",
+        preview_creation_requires_explicit_user_intent=True,
+        preview_export_requires_consent=True,
         preview_service_boundary="RfqPreviewService.create_preview_for_case",
         preview_blocking_reason=preview_blocking_reason,
         projection_source="governed_session_state",
@@ -361,7 +377,9 @@ def _active_build_answer(
     if rfq_ready and not missing_fields:
         return (
             f"Ich kann die {artifact} als manufacturer-review-ready RFQ-Basis vorbereiten, "
-            "aber das Teilen oder Exportieren laeuft ueber den geregelten Preview- und Consent-Fluss. "
+            "aber die dauerhafte Anfragevorschau entsteht erst ueber die explizite Aktion "
+            "'Anfragevorschau vorbereiten'. Das Teilen oder Exportieren laeuft danach ueber den "
+            "geregelten Preview- und Consent-Fluss. "
             "Ich sende nichts automatisch extern und treffe keine technische Endentscheidung."
         )
     open_points = _open_points_text(missing_fields)
@@ -370,7 +388,9 @@ def _active_build_answer(
         f"Ich kann daraus eine {artifact} vorbereiten, aber im aktuellen Fall fehlen noch Angaben "
         f"fuer eine belastbare Herstellerpruefung. Offene Punkte: {open_points}.\n\n"
         "Sobald die Pflichtangaben im governed Fall sauber vorliegen, kann daraus eine RFQ-Basis fuer "
-        "die Herstellerpruefung entstehen. Das ist keine technische Endentscheidung und kein automatischer Versand."
+        "die Herstellerpruefung entstehen. Die dauerhafte Anfragevorschau wird ueber die explizite "
+        "Aktion 'Anfragevorschau vorbereiten' erstellt. Das ist keine technische Endentscheidung "
+        "und kein automatischer Versand."
         f"{resume}"
     )
 

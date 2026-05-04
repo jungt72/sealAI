@@ -216,6 +216,19 @@ def _build_rfq_readiness_payload(
                 "preview_requires_explicit_endpoint": bool(
                     projection_payload.get("preview_requires_explicit_endpoint", True)
                 ),
+                "preview_action_available": bool(
+                    projection_payload.get("preview_action_available", False)
+                ),
+                "preview_action_name": projection_payload.get("preview_action_name"),
+                "preview_endpoint": projection_payload.get("preview_endpoint"),
+                "preview_creation_requires_explicit_user_intent": bool(
+                    projection_payload.get(
+                        "preview_creation_requires_explicit_user_intent", True
+                    )
+                ),
+                "preview_export_requires_consent": bool(
+                    projection_payload.get("preview_export_requires_consent", True)
+                ),
                 "preview_service_boundary": projection_payload.get("preview_service_boundary"),
                 "preview_blocking_reason": projection_payload.get("preview_blocking_reason"),
                 "projection_version": projection_payload.get("projection_version"),
@@ -255,6 +268,19 @@ def _build_rfq_readiness_payload(
             "external_contact_allowed": False,
             "preview_available": bool(projection_payload.get("preview_available", False)),
             "preview_possible": bool(projection_payload.get("preview_possible", False)),
+            "preview_action_available": bool(
+                projection_payload.get("preview_action_available", False)
+            ),
+            "preview_action_name": projection_payload.get("preview_action_name"),
+            "preview_endpoint": projection_payload.get("preview_endpoint"),
+            "preview_creation_requires_explicit_user_intent": bool(
+                projection_payload.get(
+                    "preview_creation_requires_explicit_user_intent", True
+                )
+            ),
+            "preview_export_requires_consent": bool(
+                projection_payload.get("preview_export_requires_consent", True)
+            ),
         }
         payload["result_contract"] = {
             "artifact_type": "rfq_readiness_projection",
@@ -263,6 +289,8 @@ def _build_rfq_readiness_payload(
                 projection_payload.get("manufacturer_review_ready", False)
             ),
             "no_external_dispatch": True,
+            "preview_action_name": projection_payload.get("preview_action_name"),
+            "preview_endpoint": projection_payload.get("preview_endpoint"),
             "preview_service_boundary": projection_payload.get("preview_service_boundary"),
         }
     payload["type"] = "state_update"

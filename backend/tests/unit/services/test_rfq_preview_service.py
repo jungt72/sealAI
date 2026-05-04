@@ -755,6 +755,20 @@ async def test_create_preview_rejects_cross_user_case_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_preview_rejects_stale_expected_case_revision() -> None:
+    service = RfqPreviewService(_FilteringPreviewSession([_case(), _snapshot()]))
+
+    with pytest.raises(RfqPreviewStaleError):
+        await service.create_preview_for_case(
+            case_id="case-123",
+            tenant_id="tenant-1",
+            user_id="user-1",
+            created_by="user-1",
+            expected_case_revision=3,
+        )
+
+
+@pytest.mark.asyncio
 async def test_get_latest_preview_rejects_cross_user_case_id() -> None:
     service = RfqPreviewService(_FilteringPreviewSession([_case()]))
 
