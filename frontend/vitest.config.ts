@@ -9,7 +9,12 @@ export default defineConfig({
   plugins: [react()],
   test: {
     // Nur Vitest-native Tests — node:test-Dateien laufen via test:node
-    include: ["src/test/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts"],
+    include: [
+      "src/test/**/*.test.ts",
+      "src/**/*.test.tsx",
+      "src/**/*.spec.ts",
+      "src/lib/mapping/workspace.test.ts",
+    ],
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],

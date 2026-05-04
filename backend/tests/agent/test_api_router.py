@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import json
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -32,14 +33,14 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent.api.router import (
     SESSION_STORE,
-    _apply_review_decision,
-    _cache_loaded_state,
     _resolve_runtime_dispatch,
     event_generator,
-    build_runtime_payload,
     chat_endpoint,
     router,
 )
+from app.agent.api.deps import _cache_loaded_state
+from app.agent.api.routes.review import _apply_review_decision
+from app.agent.api.routes.workspace import get_workspace_rfq_document
 from app.agent.api.models import ChatRequest, ChatResponse
 from app.agent.api.models import ReviewRequest
 from app.agent.state.models import (
@@ -658,11 +659,13 @@ def test_revision_snapshot_endpoint_returns_404_when_revision_missing() -> None:
 
 
 def test_workspace_rfq_document_legacy_route_is_disabled_and_safe() -> None:
-    response = client.get("/workspace/case-1/rfq-document")
+    response = asyncio.run(
+        get_workspace_rfq_document("case-1", current_user=_TEST_USER)
+    )
 
     assert response.status_code == 410
     assert response.headers["content-type"].startswith("application/json")
-    body = response.json()
+    body = json.loads(response.body)
     assert body["error"]["code"] == "rfq_document_legacy_disabled"
     assert "governed RFQ preview/export flow" in body["error"]["message"]
     assert body["dispatch_allowed"] is False
@@ -670,18 +673,20 @@ def test_workspace_rfq_document_legacy_route_is_disabled_and_safe() -> None:
     assert body["export_requires_consent"] is True
     assert body["final_approval_claim_allowed"] is False
     assert body["preview_service_boundary"] == "RfqPreviewService.create_preview_for_case"
-    assert "<html" not in response.text.lower()
+    assert "<html" not in response.body.decode("utf-8").lower()
 
 
 def test_workspace_rfq_document_legacy_route_does_not_load_or_render_state() -> None:
     with patch(
-        "app.agent.api.router._load_preferred_governed_workspace_source",
-        new=AsyncMock(side_effect=AssertionError("legacy RFQ document route must not load case state")),
-    ) as mock_loader:
-        response = client.get("/workspace/case-1/rfq-document")
+        "app.agent.api.routes.workspace.project_case_workspace_from_governed_state",
+        side_effect=AssertionError("legacy RFQ document route must not project RFQ HTML state"),
+    ) as mock_project:
+        response = asyncio.run(
+            get_workspace_rfq_document("case-1", current_user=_TEST_USER)
+        )
 
     assert response.status_code == 410
-    assert mock_loader.await_count == 0
+    assert mock_project.call_count == 0
 
 
 def test_workspace_projection_prefers_canonical_rfq_object_and_matching_state() -> None:
