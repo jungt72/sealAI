@@ -653,6 +653,19 @@ async def event_generator(
         current_user=current_user,
     )
 
+    if dispatch.rfq_response is not None:
+        from app.agent.api.routes.chat import (  # noqa: PLC0415
+            _build_rfq_readiness_payload,
+        )
+
+        payload = _build_rfq_readiness_payload(
+            answer_markdown=dispatch.rfq_response,
+            runtime_action=_v7_dispatch_runtime_action(dispatch),
+        )
+        yield f"data: {json.dumps(payload, default=str)}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
     if dispatch.fast_response is not None:
         async for frame in _stream_fast_response(
             fast_response=dispatch.fast_response,

@@ -173,6 +173,70 @@ def _runtime_action_blocked_graph_payload(runtime_action: Any | None) -> dict[st
     return payload
 
 
+def _build_rfq_readiness_payload(
+    *,
+    answer_markdown: str,
+    runtime_action: Any | None = None,
+) -> dict[str, Any]:
+    answer = str(answer_markdown or "").strip()
+    trace = build_answer_trace(
+        reply_source="governed_output_contract",
+        answer_markdown_source="deterministic_fallback",
+        final_visible_source="answer_markdown",
+    )
+    trace.update(
+        {
+            "answer_mode": "rfq_readiness",
+            "mutation_policy": "forbidden",
+            "rfq_readiness_answer_builder": "deterministic_rfq_readiness_v1",
+            "governed_graph_bypassed": True,
+            "case_delta_allowed": False,
+            "latest_user_question_answered": True,
+        }
+    )
+    trace.update(_runtime_action_trace(runtime_action))
+    payload = build_public_response_core(
+        reply=answer,
+        structured_state=None,
+        policy_path="rfq_readiness",
+        run_meta=with_answer_trace(None, trace),
+    )
+    payload["answer_markdown"] = answer
+    payload = apply_final_answer_layer(
+        payload,
+        FinalAnswerEnvelope(
+            route="rfq_readiness",
+            answer_mode="rfq_readiness",
+            deterministic_fallback_reply=answer,
+            existing_answer_markdown=payload.get("answer_markdown"),
+            existing_answer_markdown_source=trace.get("answer_markdown_source"),
+            existing_reply_source=trace.get("reply_source"),
+            composer_tier="tier_a",
+        ),
+    )
+    payload["assistant_message"] = str(
+        payload.get("answer_markdown") or payload.get("reply") or ""
+    ).strip()
+    payload["rfq_ready"] = bool(trace.get("rfq_ready", False))
+    payload["type"] = "state_update"
+    return payload
+
+
+async def _chat_response_from_rfq_readiness(
+    *,
+    request: ChatRequest,
+    answer_markdown: str,
+    runtime_action: Any | None = None,
+) -> ChatResponse:
+    return ChatResponse(
+        session_id=str(request.session_id or "default"),
+        **_build_rfq_readiness_payload(
+            answer_markdown=answer_markdown,
+            runtime_action=runtime_action,
+        ),
+    )
+
+
 def _process_answer_trace(
     *,
     result: Any,
@@ -700,6 +764,12 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         )
 
     dispatch = await _resolve_runtime_dispatch(request, current_user=current_user)
+    if dispatch.rfq_response is not None:
+        return await _chat_response_from_rfq_readiness(
+            request=request,
+            answer_markdown=dispatch.rfq_response,
+            runtime_action=_v7_dispatch_runtime_action(dispatch),
+        )
     if dispatch.fast_response is not None:
         return await _chat_response_from_fast_response(
             request=request,

@@ -27,6 +27,7 @@ from app.agent.communication.v7_contracts import (
     TurnDecision,
     TurnKind,
     build_knowledge_override_runtime_action,
+    build_rfq_readiness_runtime_action,
     build_runtime_action_from_turn_decision,
 )
 
@@ -214,6 +215,29 @@ def test_knowledge_override_runtime_action_is_answer_only_and_traceable() -> Non
     assert trace["decision_source"] == "knowledge_override_classifier"
     assert trace["knowledge_override_class"] == "conversational_answer"
     assert trace["graph_invocation_skipped_reason"] == "legacy_knowledge_override_answer_only"
+
+
+def test_rfq_readiness_runtime_action_is_answer_only_and_consent_bounded() -> None:
+    action = build_rfq_readiness_runtime_action(
+        rfq_action_type="show_readiness",
+        action_type=RuntimeActionType.SHOW_RFQ_READINESS,
+        reason="deterministic_rfq_readiness_question",
+        trace={"rfq_ready": False, "rfq_known_missing_fields": ["Medium"]},
+    )
+
+    assert action.action_type == RuntimeActionType.SHOW_RFQ_READINESS
+    assert action.answer_mode == AnswerMode.RFQ_READINESS
+    assert action.answer_builder == RuntimeAnswerBuilder.RFQ_READINESS
+    assert action.graph_allowed is False
+    trace = action.as_trace()
+    assert trace["rfq_intent_detected"] is True
+    assert trace["rfq_action_type"] == "show_readiness"
+    assert trace["consent_required"] is True
+    assert trace["dispatch_allowed"] is False
+    assert trace["external_contact_allowed"] is False
+    assert trace["manufacturer_review_framing"] is True
+    assert trace["final_approval_claim_allowed"] is False
+    assert trace["graph_invocation_skipped_reason"] == "rfq_readiness_answered_without_governed_graph"
 
 
 def test_final_answer_contract_keeps_reply_as_fallback_and_answer_markdown_visible() -> None:

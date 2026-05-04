@@ -25,6 +25,7 @@ class AnswerMode(str, Enum):
     META_QUESTION = "meta_question"
     NO_CASE_KNOWLEDGE = "no_case_knowledge"
     MATERIAL_COMPARISON = "material_comparison"
+    RFQ_READINESS = "rfq_readiness"
     GOVERNED_INTAKE = "governed_intake"
     PENDING_SLOT_ANSWER = "pending_slot_answer"
     ACTIVE_CASE_SIDE_QUESTION = "active_case_side_question"
@@ -86,7 +87,10 @@ class RuntimeActionType(str, Enum):
     ANSWER_THEN_RESUME = "answer_then_resume"
     ROUTE_SLOT_CANDIDATE = "route_slot_candidate"
     ENTER_GOVERNED_GRAPH = "enter_governed_graph"
+    SHOW_RFQ_READINESS = "show_rfq_readiness"
+    ANSWER_RFQ_STATUS = "answer_rfq_status"
     BUILD_RFQ_PREVIEW = "build_rfq_preview"
+    DEFER_RFQ_UNTIL_REQUIRED_FIELDS = "defer_rfq_until_required_fields"
     WAIT_FOR_USER = "wait_for_user"
 
 
@@ -98,6 +102,7 @@ class RuntimeAnswerBuilder(str, Enum):
     ACTIVE_CASE_SIDE = "active_case_side"
     KNOWLEDGE = "knowledge"
     KNOWLEDGE_OVERRIDE = "knowledge_override"
+    RFQ_READINESS = "rfq_readiness"
     GOVERNED_OUTPUT_CONTRACT = "governed_output_contract"
 
 
@@ -428,6 +433,39 @@ def build_knowledge_override_runtime_action(
         graph_invocation_skipped_reason="legacy_knowledge_override_answer_only",
         next_runtime_action="return_knowledge_override_answer",
         trace={"knowledge_override_class": override_class},
+    )
+
+
+def build_rfq_readiness_runtime_action(
+    *,
+    rfq_action_type: str,
+    action_type: RuntimeActionType = RuntimeActionType.SHOW_RFQ_READINESS,
+    reason: str | None = None,
+    trace: dict[str, Any] | None = None,
+) -> RuntimeAction:
+    safe_trace = {
+        "rfq_intent_detected": True,
+        "rfq_action_type": rfq_action_type,
+        "consent_required": True,
+        "dispatch_allowed": False,
+        "external_contact_allowed": False,
+        "manufacturer_review_framing": True,
+        "final_approval_claim_allowed": False,
+    }
+    safe_trace.update(trace or {})
+    return RuntimeAction(
+        action_type=action_type,
+        answer_mode=AnswerMode.RFQ_READINESS,
+        mutation_policy=MutationPolicy.FORBIDDEN,
+        graph_allowed=False,
+        graph_invocation_skipped_reason="rfq_readiness_answered_without_governed_graph",
+        answer_builder=RuntimeAnswerBuilder.RFQ_READINESS,
+        resume_strategy=ResumeStrategy.NONE,
+        next_runtime_action="return_rfq_readiness_answer",
+        reason=reason or "rfq_readiness_runtime_action",
+        decision_source="rfq_readiness_intent",
+        rfq_action=rfq_action_type,
+        trace=safe_trace,
     )
 
 

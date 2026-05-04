@@ -12,7 +12,12 @@ from app.agent.communication.v7_contracts import (
     TurnDecision,
     build_answer_only_runtime_action,
     build_knowledge_override_runtime_action,
+    build_rfq_readiness_runtime_action,
     build_runtime_action_from_turn_decision,
+)
+from app.agent.communication.rfq_intent import (
+    build_rfq_readiness_answer,
+    classify_rfq_readiness_intent,
 )
 from app.agent.runtime.answer_trace import build_answer_trace
 from app.services.auth.dependencies import RequestUser
@@ -91,6 +96,7 @@ class RuntimeDispatchResolution:
     pre_gate_reason: str | None = None
     session_zone: str | None = None
     direct_reply: str | None = None
+    rfq_response: str | None = None
     fast_response: Any | None = None
     knowledge_response: Any | None = None
     knowledge_override_class: str | None = None
@@ -317,6 +323,35 @@ async def _resolve_runtime_dispatch(
             request.message,
             pre_gate_classification=pre_gate.classification,
         )
+        if pre_gate.classification is not PreGateClassification.BLOCKED:
+            rfq_intent = classify_rfq_readiness_intent(request.message)
+            if rfq_intent.detected:
+                governed_state = await _load_existing_governed_state_for_v7(
+                    request=request,
+                    current_user=current_user,
+                )
+                rfq_answer = build_rfq_readiness_answer(
+                    latest_user_message=request.message,
+                    governed_state=governed_state,
+                    intent=rfq_intent,
+                )
+                return RuntimeDispatchResolution(
+                    gate_route="CONVERSATION",
+                    gate_reason=f"runtime_action_rfq_readiness:{rfq_intent.reason}",
+                    runtime_mode="CONVERSATION",
+                    gate_applied=False,
+                    pre_gate_classification=pre_gate.classification.value,
+                    pre_gate_reason=pre_gate.reasoning,
+                    rfq_response=rfq_answer.answer_markdown,
+                    governed_state=governed_state,
+                    conversation_route=conversation_route,
+                    runtime_action=build_rfq_readiness_runtime_action(
+                        rfq_action_type=rfq_answer.rfq_action_type,
+                        action_type=rfq_answer.action_type,
+                        reason=rfq_intent.reason,
+                        trace=rfq_answer.trace,
+                    ),
+                )
         if pre_gate.classification is PreGateClassification.META_QUESTION and request.session_id:
             governed_state = await _load_existing_governed_state_for_v7(
                 request=request,
