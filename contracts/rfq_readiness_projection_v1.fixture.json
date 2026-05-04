@@ -1,0 +1,33 @@
+{
+  "blocking_reasons": [
+    "Medium"
+  ],
+  "consent_required": true,
+  "dispatch_allowed": false,
+  "external_contact_allowed": false,
+  "final_approval_claim_allowed": false,
+  "known_case_facts_count": 0,
+  "known_case_summary": [],
+  "known_missing_fields": [
+    "Medium"
+  ],
+  "manufacturer_review_ready": false,
+  "open_points": [],
+  "pending_question": {
+    "question_text": "Welches Medium soll abgedichtet werden?",
+    "target_field": "medium"
+  },
+  "preview_action_available": true,
+  "preview_action_name": "create_rfq_preview",
+  "preview_available": false,
+  "preview_blocking_reason": "preview_not_requested",
+  "preview_creation_requires_explicit_user_intent": true,
+  "preview_endpoint": "/api/v1/rfq/preview",
+  "preview_export_requires_consent": true,
+  "preview_possible": true,
+  "preview_requires_explicit_endpoint": true,
+  "preview_service_boundary": "RfqPreviewService.create_preview_for_case",
+  "projection_source": "governed_session_state",
+  "projection_version": "rfq_readiness_projection_v1",
+  "rfq_basis_ready": false
+}

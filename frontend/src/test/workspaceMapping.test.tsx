@@ -1,7 +1,44 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { mapRfqReadinessProjection } from "@/lib/mapping/rfqReadiness";
 import { mapWorkspaceView } from "@/lib/mapping/workspace";
+
+const RFQ_READINESS_CONTRACT_FIXTURE_PATH = resolve(
+  process.cwd(),
+  "../contracts/rfq_readiness_projection_v1.fixture.json",
+);
+
+const REQUIRED_RFQ_READINESS_FRONTEND_KEYS = [
+  "manufacturer_review_ready",
+  "rfq_basis_ready",
+  "known_missing_fields",
+  "open_points",
+  "blocking_reasons",
+  "pending_question",
+  "consent_required",
+  "dispatch_allowed",
+  "external_contact_allowed",
+  "final_approval_claim_allowed",
+  "preview_available",
+  "preview_possible",
+  "preview_action_available",
+  "preview_action_name",
+  "preview_endpoint",
+  "preview_creation_requires_explicit_user_intent",
+  "preview_export_requires_consent",
+  "preview_requires_explicit_endpoint",
+  "preview_service_boundary",
+  "projection_version",
+].sort();
+
+function rfqReadinessContractFixture(): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(RFQ_READINESS_CONTRACT_FIXTURE_PATH, "utf8"),
+  ) as Record<string, unknown>;
+}
 
 describe("mapWorkspaceView", () => {
   it("uses canonical RFQ readiness and pdf availability", () => {
@@ -339,5 +376,32 @@ describe("mapWorkspaceView", () => {
     });
 
     expect(projection?.pending_question).toEqual({ question_text: "Welches Medium?" });
+  });
+
+  it("maps the shared backend RFQ readiness contract fixture without dropping fields", () => {
+    const raw = rfqReadinessContractFixture();
+    const projection = mapRfqReadinessProjection(raw);
+
+    for (const key of REQUIRED_RFQ_READINESS_FRONTEND_KEYS) {
+      expect(raw).toHaveProperty(key);
+    }
+    expect(projection).not.toBeNull();
+    expect(Object.keys(projection || {}).sort()).toEqual(REQUIRED_RFQ_READINESS_FRONTEND_KEYS);
+    expect(projection?.pending_question).toEqual({
+      question_text: "Welches Medium soll abgedichtet werden?",
+      target_field: "medium",
+      label: null,
+      reason: null,
+      required_for_rfq: undefined,
+      expected_answer_type: null,
+      source: null,
+      status: null,
+    });
+    expect(typeof projection?.pending_question).toBe("object");
+    expect(projection?.dispatch_allowed).toBe(false);
+    expect(projection?.external_contact_allowed).toBe(false);
+    expect(projection?.final_approval_claim_allowed).toBe(false);
+    expect(projection?.preview_action_name).toBe("create_rfq_preview");
+    expect(projection?.projection_version).toBe("rfq_readiness_projection_v1");
   });
 });
