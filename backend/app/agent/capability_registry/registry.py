@@ -23,9 +23,13 @@ class CapabilityRegistry:
     _modules_by_id: dict[str, CapabilityModule] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._modules_by_id = {
-            module.descriptor.capability_id.value: module for module in self.modules
-        }
+        modules_by_id: dict[str, CapabilityModule] = {}
+        for module in self.modules:
+            capability_id = module.descriptor.capability_id.value
+            if capability_id in modules_by_id:
+                raise ValueError(f"duplicate capability_id registered: {capability_id}")
+            modules_by_id[capability_id] = module
+        self._modules_by_id = modules_by_id
 
     def list_capabilities(self) -> tuple[CapabilityDescriptor, ...]:
         return tuple(module.descriptor for module in self._modules_by_id.values())

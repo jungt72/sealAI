@@ -4,9 +4,13 @@ import ast
 from pathlib import Path
 from typing import Any, Mapping
 
+import pytest
+
 from app.agent.capability_registry import (
+    CapabilityDescriptor,
     CapabilityId,
     CapabilityKind,
+    CapabilityRegistry,
     CapabilityResult,
     CapabilitySafetyFlags,
     build_default_capability_registry,
@@ -119,6 +123,25 @@ def test_default_capability_registry_matches_static_allowlist() -> None:
     assert first_ids == EXPECTED_DEFAULT_CAPABILITY_IDS
     assert second_ids == EXPECTED_DEFAULT_CAPABILITY_IDS
     assert first_ids == tuple(sorted(first_ids))
+
+
+def test_capability_registry_rejects_duplicate_capability_ids() -> None:
+    original_registry = build_default_capability_registry()
+    original_module = original_registry.get(CapabilityId.MEDIUM_INTELLIGENCE)
+
+    with pytest.raises(ValueError, match="duplicate capability_id registered: medium_intelligence"):
+        CapabilityRegistry(
+            modules=(
+                original_module,
+                _DuplicateMediumCapability(),
+            )
+        )
+
+    after_failed_registration = build_default_capability_registry()
+    assert _capability_ids(after_failed_registration) == EXPECTED_DEFAULT_CAPABILITY_IDS
+    assert type(after_failed_registration.get(CapabilityId.MEDIUM_INTELLIGENCE)) is type(
+        original_module
+    )
 
 
 def test_capability_registry_uses_no_dynamic_discovery_or_env_registration() -> None:
@@ -280,3 +303,22 @@ def _flatten_text(value: Any) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+class _DuplicateMediumCapability:
+    @property
+    def descriptor(self) -> CapabilityDescriptor:
+        return CapabilityDescriptor(
+            capability_id=CapabilityId.MEDIUM_INTELLIGENCE,
+            kind=CapabilityKind.DOMAIN_CONTEXT,
+            name="Duplicate Medium",
+            version="duplicate_test_v1",
+            description="Test-only duplicate capability.",
+        )
+
+    def run(self, capability_input: object) -> CapabilityResult:
+        return CapabilityResult(
+            capability_id=CapabilityId.MEDIUM_INTELLIGENCE,
+            capability_kind=CapabilityKind.DOMAIN_CONTEXT,
+            input_summary="duplicate_test",
+        )
