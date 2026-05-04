@@ -227,8 +227,16 @@ async def test_chat_endpoint_preserves_v7_side_question_as_knowledge_answer(
         turn_decision=decision,
     )
     side_answer = KnowledgeResponse(
-        content="## Werkstoffvergleich: FKM vs NBR\n\nAllgemeine Orientierung, keine Materialfreigabe.",
-        answer_markdown="## Werkstoffvergleich: FKM vs NBR\n\nAllgemeine Orientierung, keine Materialfreigabe.",
+        content=(
+            "## Werkstoffvergleich: FKM vs NBR\n\n"
+            "FKM wird haeufig bei Oelen, Kraftstoffen und hoeheren Temperaturen betrachtet. "
+            "NBR wird haeufig bei Oelen, Fetten und moderaten Bedingungen betrachtet."
+        ),
+        answer_markdown=(
+            "## Werkstoffvergleich: FKM vs NBR\n\n"
+            "FKM wird haeufig bei Oelen, Kraftstoffen und hoeheren Temperaturen betrachtet. "
+            "NBR wird haeufig bei Oelen, Fetten und moderaten Bedingungen betrachtet."
+        ),
     )
 
     monkeypatch.setattr(
@@ -253,9 +261,13 @@ async def test_chat_endpoint_preserves_v7_side_question_as_knowledge_answer(
     )
 
     assert "Werkstoffvergleich: FKM vs NBR" in response.answer_markdown
+    assert "Oelen" in response.answer_markdown
+    assert "Kraftstoffen" in response.answer_markdown
+    assert "Herstellerpruefung" in response.answer_markdown
     assert "Welches Medium soll abgedichtet werden?" in response.answer_markdown
     assert "final approved solution" not in response.answer_markdown.casefold()
     assert "guaranteed suitable" not in response.answer_markdown.casefold()
+    assert "garantiert geeignet" not in response.answer_markdown.casefold()
     assert response.structured_state is None
     assert response.proposed_case_delta is None
     trace = response.run_meta["answer_trace"]
@@ -265,8 +277,14 @@ async def test_chat_endpoint_preserves_v7_side_question_as_knowledge_answer(
     assert trace["resume_strategy"] == "answer_then_continue_pending_question"
     assert trace["resume_target_field"] == "medium"
     assert trace["governed_graph_bypassed"] is True
+    assert trace["claim_policy_applied"] is True
+    assert trace["speakable_facts_built"] is True
+    assert trace["claim_policy_result"] == "rewritten"
+    assert trace["forbidden_claims_detected"] == []
     assert trace["latest_user_question_answered"] is True
     assert trace["pending_question_restored"] is True
+    assert trace["answer_safety_fallback_used"] is False
+    assert trace["evidence_context_available"] is False
     build_side.assert_awaited_once()
 
 
@@ -323,7 +341,11 @@ async def test_active_case_medium_definition_side_answer_resumes_pending_medium(
 
     answer = response.answer_markdown or ""
     assert "Stoff" in answer
+    assert "Werkstoffbestaendigkeit" in answer
+    assert "Quellung" in answer
+    assert "Ich setze dabei kein Medium voraus" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
+    assert "Wasser" not in answer
     assert response.proposed_case_delta is None
     trace = response.run_meta["answer_trace"]
     assert trace["answer_mode"] == "active_case_side_question"
@@ -331,6 +353,65 @@ async def test_active_case_medium_definition_side_answer_resumes_pending_medium(
     assert trace["resume_strategy"] == "answer_then_continue_pending_question"
     assert trace["pending_question_restored"] is True
     assert trace["governed_graph_bypassed"] is True
+    assert trace["claim_policy_applied"] is True
+    assert trace["claim_policy_result"] == "rewritten"
+
+
+@pytest.mark.asyncio
+async def test_active_case_why_medium_important_side_answer_uses_claim_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = "Warum ist das Medium wichtig?"
+    pre_gate = PreGateClassifier().classify(message)
+    decision = ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=pre_gate.confidence,
+            pre_gate_reason=pre_gate.reasoning,
+            active_case_exists=True,
+            pending_question=_pending_medium_question(),
+        )
+    )
+    dispatch = RuntimeDispatchResolution(
+        gate_route="GOVERNED",
+        gate_reason="v7_active_case_side_question:test",
+        runtime_mode="GOVERNED",
+        gate_applied=False,
+        pre_gate_classification=pre_gate.classification.value,
+        pre_gate_reason=pre_gate.reasoning,
+        governed_state=_active_state(),
+        turn_decision=decision,
+    )
+    side_answer = KnowledgeResponse(
+        content="Das Medium beeinflusst die Werkstoffauswahl.",
+        answer_markdown="Das Medium beeinflusst die Werkstoffauswahl.",
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._resolve_runtime_dispatch",
+        AsyncMock(return_value=dispatch),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat.build_case_side_knowledge_response",
+        AsyncMock(return_value=side_answer),
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message=message, session_id="active-case"),
+        current_user=_user(),
+    )
+
+    answer = response.answer_markdown or ""
+    assert "Werkstoffauswahl" in answer
+    assert "Werkstoffbestaendigkeit" in answer
+    assert "Ich setze dabei kein Medium voraus" in answer
+    assert "Wasser" not in answer
+    assert "Welches Medium soll abgedichtet werden?" in answer
+    trace = response.run_meta["answer_trace"]
+    assert trace["answer_mode"] == "active_case_side_question"
+    assert trace["resume_strategy"] == "answer_then_continue_pending_question"
+    assert trace["claim_policy_applied"] is True
+    assert trace["claim_policy_result"] == "rewritten"
 
 
 @pytest.mark.asyncio

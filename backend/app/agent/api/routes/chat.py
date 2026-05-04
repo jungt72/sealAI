@@ -47,6 +47,10 @@ from app.agent.communication.active_case_process_answer import (
 from app.agent.communication.active_case_resume import (
     reevaluate_active_case_resume,
 )
+from app.agent.communication.active_case_side_claim_policy import (
+    build_active_case_side_speakable_facts,
+    enforce_active_case_side_claim_policy,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -115,7 +119,13 @@ def _process_answer_trace(*, result: Any, decision: Any) -> dict[str, Any]:
     return trace
 
 
-def _side_answer_trace(*, knowledge_response: Any, resume_decision: Any, decision: Any) -> dict[str, Any]:
+def _side_answer_trace(
+    *,
+    knowledge_response: Any,
+    resume_decision: Any,
+    decision: Any,
+    claim_policy_result: Any,
+) -> dict[str, Any]:
     existing_trace = getattr(knowledge_response, "answer_trace", None)
     trace = (
         dict(existing_trace)
@@ -146,6 +156,8 @@ def _side_answer_trace(*, knowledge_response: Any, resume_decision: Any, decisio
     )
     if resume_trace.get("detected_slot_field"):
         trace["detected_slot_field"] = resume_trace.get("detected_slot_field")
+    if hasattr(claim_policy_result, "as_trace"):
+        trace.update(claim_policy_result.as_trace())
     return trace
 
 
@@ -243,11 +255,21 @@ async def _build_active_case_side_payload(
         or getattr(knowledge_response, "content", "")
         or ""
     ).strip()
-    answer_markdown = _side_answer_with_resume(base_answer, resume_decision)
+    speakable_facts = build_active_case_side_speakable_facts(governed_state)
+    claim_policy_result = enforce_active_case_side_claim_policy(
+        latest_user_message=message,
+        answer_markdown=base_answer,
+        speakable_facts=speakable_facts,
+    )
+    answer_markdown = _side_answer_with_resume(
+        claim_policy_result.answer_markdown,
+        resume_decision,
+    )
     answer_trace = _side_answer_trace(
         knowledge_response=knowledge_response,
         resume_decision=resume_decision,
         decision=decision,
+        claim_policy_result=claim_policy_result,
     )
 
     from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
