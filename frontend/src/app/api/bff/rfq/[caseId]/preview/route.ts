@@ -12,6 +12,29 @@ function friendlyPreviewMessage(status: number, message: string) {
   return message;
 }
 
+async function readPreviewCreateRequest(request: Request): Promise<Record<string, unknown>> {
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return {};
+  }
+  return body as Record<string, unknown>;
+}
+
+function buildPreviewCreateBackendBody(callerBody: Record<string, unknown>) {
+  const backendBody: Record<string, unknown> = {
+    action: "create_preview",
+    explicit_user_intent: true,
+    dispatch_allowed: false,
+    external_contact_allowed: false,
+  };
+
+  if (Object.prototype.hasOwnProperty.call(callerBody, "expected_case_revision")) {
+    backendBody.expected_case_revision = callerBody.expected_case_revision;
+  }
+
+  return backendBody;
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ caseId: string }> },
@@ -54,15 +77,11 @@ export async function POST(
 ) {
   try {
     const { caseId } = await context.params;
+    const callerBody = await readPreviewCreateRequest(request);
     const response = await fetchBackend(buildRfqPreviewBackendPath(caseId), request, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "create_preview",
-        explicit_user_intent: true,
-        dispatch_allowed: false,
-        external_contact_allowed: false,
-      }),
+      body: JSON.stringify(buildPreviewCreateBackendBody(callerBody)),
     });
     const body = await response.json().catch(() => null);
 
