@@ -45,6 +45,14 @@ from app.agent.api.assembly import (
 )
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
+from app.agent.communication.v7_contracts import (
+    AnswerMode,
+    MutationPolicy,
+    RuntimeAction,
+    RuntimeActionType,
+    RuntimeAnswerBuilder,
+    build_runtime_action_from_turn_decision,
+)
 from app.agent.state.case_state import (
     PROJECTION_VERSION,
     CASE_STATE_BUILDER_VERSION,
@@ -65,12 +73,87 @@ def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
     return str(getattr(mode, "value", mode) or "") or None
 
 
+def _v7_dispatch_runtime_action(dispatch: Any) -> RuntimeAction | None:
+    runtime_action = getattr(dispatch, "runtime_action", None)
+    if runtime_action is not None:
+        return runtime_action
+    decision = getattr(dispatch, "turn_decision", None)
+    if decision is None:
+        return None
+    return build_runtime_action_from_turn_decision(
+        decision,
+        reason="runtime_action_synthesized_from_turn_decision",
+    )
+
+
+def _runtime_action_value(value: Any) -> str:
+    return str(getattr(value, "value", value) or "")
+
+
 def _is_v7_active_case_side_question(dispatch: Any) -> bool:
+    runtime_action = _v7_dispatch_runtime_action(dispatch)
+    if runtime_action is not None:
+        return (
+            _runtime_action_value(getattr(runtime_action, "answer_builder", None))
+            == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE.value
+        )
     return _v7_dispatch_answer_mode(dispatch) == "active_case_side_question"
 
 
 def _is_v7_active_case_process_question(dispatch: Any) -> bool:
+    runtime_action = _v7_dispatch_runtime_action(dispatch)
+    if runtime_action is not None:
+        return (
+            _runtime_action_value(getattr(runtime_action, "answer_builder", None))
+            == RuntimeAnswerBuilder.ACTIVE_CASE_PROCESS.value
+        )
     return _v7_dispatch_answer_mode(dispatch) == "active_case_process_question"
+
+
+def _runtime_action_allows_graph(dispatch: Any) -> bool:
+    runtime_action = _v7_dispatch_runtime_action(dispatch)
+    if runtime_action is None:
+        return True
+    return (
+        bool(getattr(runtime_action, "graph_allowed", False))
+        and _runtime_action_value(getattr(runtime_action, "action_type", None))
+        == RuntimeActionType.ENTER_GOVERNED_GRAPH.value
+    )
+
+
+def _runtime_action_trace(runtime_action: Any | None) -> dict[str, Any]:
+    if hasattr(runtime_action, "as_trace"):
+        return runtime_action.as_trace()
+    return {}
+
+
+def _with_runtime_action_trace(
+    run_meta: dict[str, Any] | None,
+    runtime_action: Any | None,
+) -> dict[str, Any]:
+    trace_update = _runtime_action_trace(runtime_action)
+    if not trace_update:
+        return dict(run_meta or {})
+    meta = dict(run_meta or {})
+    existing_trace = meta.get("answer_trace")
+    answer_trace = dict(existing_trace) if isinstance(existing_trace, dict) else {}
+    answer_trace.update(trace_update)
+    meta["answer_trace"] = answer_trace
+    return meta
+
+
+def _knowledge_override_runtime_action() -> RuntimeAction:
+    return RuntimeAction(
+        action_type=RuntimeActionType.ANSWER_ONLY,
+        answer_mode=AnswerMode.NO_CASE_KNOWLEDGE,
+        mutation_policy=MutationPolicy.FORBIDDEN,
+        graph_allowed=False,
+        graph_invocation_skipped_reason="legacy_knowledge_override_answer_only",
+        answer_builder=RuntimeAnswerBuilder.KNOWLEDGE,
+        next_runtime_action="return_knowledge_answer",
+        reason="legacy_knowledge_override_before_governed_graph",
+        decision_source="knowledge_override_classifier",
+    )
 
 @dataclass(frozen=True)
 class GovernedReplyAssemblyContext:
@@ -145,6 +228,7 @@ async def _stream_fast_response(
 async def _stream_knowledge_response(
     *,
     knowledge_response: Any,
+    runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
     from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
 
@@ -156,7 +240,10 @@ async def _stream_knowledge_response(
         "response_class": knowledge_response.output_class,
         "structured_state": None,
         "policy_path": "knowledge",
-        "run_meta": _knowledge_response_run_meta(knowledge_response),
+        "run_meta": _with_runtime_action_trace(
+            _knowledge_response_run_meta(knowledge_response),
+            runtime_action,
+        ),
     }
     answer_trace = getattr(knowledge_response, "answer_trace", None)
     answer_markdown_source = (
@@ -467,6 +554,7 @@ async def _stream_governed_graph(
     *,
     current_user: RequestUser,
     pre_gate_classification: str | None = None,
+    runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
     try:
         turn_result = await run_governed_graph_turn(
@@ -521,7 +609,7 @@ async def _stream_governed_graph(
     # composer source/fallback metadata from the graph assembly layer.
     run_meta = dict(payload.get("run_meta") or {})
     run_meta["version_provenance"] = _build_structured_version_provenance(decision=None)
-    payload["run_meta"] = run_meta
+    payload["run_meta"] = _with_runtime_action_trace(run_meta, runtime_action)
 
     yield f"data: {json.dumps(payload, default=str)}\n\n"
     yield "data: [DONE]\n\n"
@@ -569,6 +657,7 @@ async def event_generator(
     if dispatch.knowledge_response is not None:
         async for frame in _stream_knowledge_response(
             knowledge_response=dispatch.knowledge_response,
+            runtime_action=_v7_dispatch_runtime_action(dispatch),
         ):
             yield frame
         return
@@ -592,6 +681,7 @@ async def event_generator(
         return
 
     if dispatch.runtime_mode == "GOVERNED":
+        runtime_action = _v7_dispatch_runtime_action(dispatch)
         if _is_v7_active_case_process_question(dispatch):
             from app.agent.api.routes.chat import (  # noqa: PLC0415
                 _build_active_case_process_payload,
@@ -602,6 +692,7 @@ async def event_generator(
                 message=request.message,
                 governed_state=dispatch.governed_state,
                 decision=dispatch.turn_decision,
+                runtime_action=runtime_action,
             )
             await _persist_active_case_process_turn(
                 request=request,
@@ -623,12 +714,14 @@ async def event_generator(
                 governed_state=dispatch.governed_state,
                 decision=dispatch.turn_decision,
                 conversation_route=dispatch.conversation_route,
+                runtime_action=runtime_action,
             )
             yield f"data: {json.dumps(payload, default=str)}\n\n"
             yield "data: [DONE]\n\n"
             return
         _knowledge_override = classify_message_as_knowledge_override(request.message)
         if _knowledge_override is not None:
+            knowledge_runtime_action = _knowledge_override_runtime_action()
             knowledge_response = await build_case_side_knowledge_response(
                 message=request.message,
                 override_class=_knowledge_override,
@@ -637,8 +730,19 @@ async def event_generator(
             )
             async for frame in _stream_knowledge_response(
                 knowledge_response=knowledge_response,
+                runtime_action=knowledge_runtime_action,
             ):
                 yield frame
+            return
+
+        if not _runtime_action_allows_graph(dispatch):
+            from app.agent.api.routes.chat import (  # noqa: PLC0415
+                _runtime_action_blocked_graph_payload,
+            )
+
+            payload = _runtime_action_blocked_graph_payload(runtime_action)
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            yield "data: [DONE]\n\n"
             return
 
         _log.debug(
@@ -650,6 +754,7 @@ async def event_generator(
             request,
             current_user=current_user,
             pre_gate_classification=dispatch.pre_gate_classification,
+            runtime_action=runtime_action,
         ):
             yield frame
         return
@@ -658,5 +763,6 @@ async def event_generator(
         request,
         current_user=current_user,
         pre_gate_classification=dispatch.pre_gate_classification,
+        runtime_action=_v7_dispatch_runtime_action(dispatch),
     ):
         yield frame

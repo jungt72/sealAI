@@ -6,14 +6,18 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.agent.api.dispatch import RuntimeDispatchResolution, _resolve_runtime_dispatch
-from app.agent.api.models import ChatRequest
+from app.agent.api.models import ChatRequest, ChatResponse
 from app.agent.api.routes.chat import chat_endpoint
 from app.agent.api.streaming import event_generator
 from app.agent.communication.conversation_controller_v7 import (
     ConversationControllerInput,
     ConversationControllerV7,
 )
-from app.agent.communication.v7_contracts import AnswerMode, MutationPolicy
+from app.agent.communication.v7_contracts import (
+    AnswerMode,
+    MutationPolicy,
+    RuntimeActionType,
+)
 from app.agent.state.models import (
     AssertedClaim,
     AssertedState,
@@ -172,6 +176,12 @@ async def test_active_case_material_followup_routes_as_v7_side_question(
     assert dispatch.turn_decision.mutation_policy == MutationPolicy.FORBIDDEN
     assert dispatch.turn_decision.resume_target_candidate is not None
     assert dispatch.turn_decision.resume_target_candidate.target_field == "medium"
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
+    assert dispatch.runtime_action.graph_allowed is False
+    assert dispatch.runtime_action.graph_invocation_skipped_reason == (
+        "active_case_side_question_answered_by_communication_runtime"
+    )
     load_state.assert_awaited_once_with(
         current_user=_user(),
         session_id="active-case",
@@ -203,6 +213,9 @@ async def test_active_case_explanatory_term_question_routes_as_v7_side_question(
     assert dispatch.turn_decision.mutation_policy == MutationPolicy.FORBIDDEN
     assert dispatch.turn_decision.resume_target_candidate is not None
     assert dispatch.turn_decision.resume_target_candidate.target_field == "medium"
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
+    assert dispatch.runtime_action.graph_allowed is False
     load_state.assert_awaited_once_with(
         current_user=_user(),
         session_id="active-case",
@@ -233,7 +246,44 @@ async def test_no_case_material_comparison_stays_direct_knowledge_without_case_m
     assert "Werkstoffvergleich: NBR vs PTFE" in dispatch.knowledge_response.content
     assert dispatch.turn_decision is not None
     assert dispatch.turn_decision.answer_mode == AnswerMode.MATERIAL_COMPARISON
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_ONLY
+    assert dispatch.runtime_action.graph_allowed is False
     load_state.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_domain_inquiry_builds_runtime_action_for_governed_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _active_state()
+    monkeypatch.setattr(
+        "app.agent.api.dispatch._load_live_knowledge_session_context",
+        AsyncMock(return_value=None),
+    )
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message="Ich brauche eine Dichtung fuer eine Pumpe",
+            session_id="active-case",
+        ),
+        current_user=_user(),
+    )
+
+    assert dispatch.runtime_mode == "GOVERNED"
+    assert dispatch.turn_decision is not None
+    assert dispatch.turn_decision.answer_mode == AnswerMode.GOVERNED_INTAKE
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+    assert dispatch.runtime_action.graph_allowed is True
+    assert dispatch.runtime_action.graph_entry_reason == "governed_intake_or_domain_continuation"
+    load_state.assert_awaited_once_with(
+        current_user=_user(),
+        session_id="active-case",
+        create_if_missing=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -319,6 +369,13 @@ async def test_chat_endpoint_preserves_v7_side_question_as_knowledge_answer(
     assert trace["evidence_source_validation_status"] == ["documented"]
     assert trace["evidence_used_in_answer"] is True
     assert trace["evidence_fallback_reason"] is None
+    assert trace["runtime_action_built"] is True
+    assert trace["runtime_action_type"] == "answer_then_resume"
+    assert trace["graph_allowed"] is False
+    assert trace["graph_invocation_skipped_reason"] == (
+        "active_case_side_question_answered_by_communication_runtime"
+    )
+    assert trace["operational_contract_version"] == "runtime_action_v1"
     build_side.assert_awaited_once()
 
 
@@ -394,6 +451,8 @@ async def test_active_case_medium_definition_side_answer_resumes_pending_medium(
     assert trace["evidence_refs_count"] == 0
     assert trace["evidence_used_in_answer"] is False
     assert trace["evidence_fallback_reason"] == "rag_miss"
+    assert trace["runtime_action_type"] == "answer_then_resume"
+    assert trace["graph_allowed"] is False
 
 
 @pytest.mark.asyncio
@@ -454,6 +513,8 @@ async def test_active_case_why_medium_important_side_answer_uses_claim_policy(
     assert trace["evidence_context_built"] is True
     assert trace["evidence_refs_count"] == 0
     assert trace["evidence_used_in_answer"] is False
+    assert trace["runtime_action_type"] == "answer_then_resume"
+    assert trace["graph_allowed"] is False
 
 
 @pytest.mark.asyncio
@@ -510,6 +571,81 @@ async def test_active_case_help_question_answer_markdown_answers_question_before
     assert trace["governed_graph_bypassed"] is True
     assert trace["latest_user_question_answered"] is True
     assert trace["pending_question_restored"] is True
+    assert trace["runtime_action_built"] is True
+    assert trace["runtime_action_type"] == "answer_then_resume"
+    assert trace["graph_allowed"] is False
+    assert trace["graph_invocation_skipped_reason"] == (
+        "active_case_process_question_answered_by_communication_runtime"
+    )
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_enters_governed_graph_for_enter_graph_runtime_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = "Ich brauche eine Dichtung fuer eine Pumpe"
+    pre_gate = PreGateClassifier().classify(message)
+    decision = ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=pre_gate.confidence,
+            pre_gate_reason=pre_gate.reasoning,
+            active_case_exists=True,
+            pending_question=_pending_medium_question(),
+        )
+    )
+    dispatch = RuntimeDispatchResolution(
+        gate_route="GOVERNED",
+        gate_reason="pre_gate:deterministic_domain_inquiry",
+        runtime_mode="GOVERNED",
+        gate_applied=False,
+        pre_gate_classification=PreGateClassification.DOMAIN_INQUIRY.value,
+        pre_gate_reason="deterministic_domain_inquiry",
+        governed_state=_active_state(),
+        turn_decision=decision,
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._resolve_runtime_dispatch",
+        AsyncMock(return_value=dispatch),
+    )
+
+    async def fake_governed(
+        request,
+        *,
+        current_user,
+        pre_gate_classification=None,
+        runtime_action=None,
+    ):
+        assert runtime_action is not None
+        assert runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+        assert runtime_action.graph_allowed is True
+        assert runtime_action.graph_entry_reason == "governed_intake_or_domain_continuation"
+        return ChatResponse(
+            session_id=request.session_id,
+            reply="Graph path",
+            answer_markdown="Graph path",
+            structured_state=None,
+            policy_path="governed",
+            run_meta={
+                "answer_trace": runtime_action.as_trace(),
+            },
+        )
+
+    run_governed = AsyncMock(side_effect=fake_governed)
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_governed_chat_response",
+        run_governed,
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message=message, session_id="active-case"),
+        current_user=_user(),
+    )
+
+    assert response.answer_markdown == "Graph path"
+    assert response.run_meta["answer_trace"]["runtime_action_type"] == "enter_governed_graph"
+    run_governed.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -619,6 +755,11 @@ async def test_pending_medium_answer_wasser_still_routes_as_slot_answer(
     assert dispatch.turn_decision.answer_mode == AnswerMode.PENDING_SLOT_ANSWER
     assert dispatch.turn_decision.answer_mode != AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
     assert dispatch.turn_decision.state_actions[0].field == "medium"
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+    assert dispatch.runtime_action.graph_allowed is True
+    assert dispatch.runtime_action.graph_entry_reason == "pending_slot_answer_requires_governed_validation"
+    assert dispatch.runtime_action.slot_candidate_detected is True
 
 
 @pytest.mark.asyncio
@@ -832,6 +973,8 @@ async def test_stream_active_case_process_question_final_state_update_uses_answe
     assert state_update["run_meta"]["answer_trace"]["resume_reevaluation_attempted"] is True
     assert state_update["run_meta"]["answer_trace"]["resume_strategy"] == "answer_then_continue_pending_question"
     assert state_update["run_meta"]["answer_trace"]["resume_target_field"] == "medium"
+    assert state_update["run_meta"]["answer_trace"]["runtime_action_type"] == "answer_then_resume"
+    assert state_update["run_meta"]["answer_trace"]["graph_allowed"] is False
 
 
 @pytest.mark.asyncio
@@ -890,3 +1033,6 @@ async def test_stream_active_case_side_question_final_state_update_uses_resume_t
     assert trace["resume_strategy"] == "answer_then_continue_pending_question"
     assert trace["resume_target_field"] == "medium"
     assert trace["governed_graph_bypassed"] is True
+    assert trace["runtime_action_type"] == "answer_then_resume"
+    assert trace["graph_allowed"] is False
+    assert trace["operational_contract_version"] == "runtime_action_v1"

@@ -15,6 +15,9 @@ from app.agent.communication.v7_contracts import (
     MutationPolicy,
     ResumeStrategy,
     ResumeTarget,
+    RuntimeAction,
+    RuntimeActionType,
+    RuntimeAnswerBuilder,
     RouterSignals,
     SpeakableFact,
     StateAction,
@@ -23,6 +26,7 @@ from app.agent.communication.v7_contracts import (
     TaskStack,
     TurnDecision,
     TurnKind,
+    build_runtime_action_from_turn_decision,
 )
 
 
@@ -141,6 +145,58 @@ def test_answer_plan_carries_resume_target_and_forbidden_claims() -> None:
     assert plan.resume_target is not None
     assert plan.resume_target.target_field == "medium"
     assert "rfq_ready" in plan.forbidden_claims
+
+
+def test_runtime_action_maps_active_case_side_question_to_answer_then_resume() -> None:
+    decision = TurnDecision(
+        turn_kind=TurnKind.ACTIVE_CASE_SIDE_QUESTION,
+        primary_interpretation="active_case_side_question",
+        answer_mode=AnswerMode.ACTIVE_CASE_SIDE_QUESTION,
+        mutation_policy=MutationPolicy.FORBIDDEN,
+        resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
+        resume_target_candidate=ResumeTarget(type="pending_question", target_field="medium"),
+    )
+
+    action = build_runtime_action_from_turn_decision(decision)
+
+    assert action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
+    assert action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE
+    assert action.graph_allowed is False
+    trace = action.as_trace()
+    assert trace["runtime_action_built"] is True
+    assert trace["runtime_action_type"] == "answer_then_resume"
+    assert trace["graph_invocation_skipped_reason"] == (
+        "active_case_side_question_answered_by_communication_runtime"
+    )
+
+
+def test_runtime_action_maps_pending_slot_answer_to_governed_graph_entry() -> None:
+    decision = TurnDecision(
+        turn_kind=TurnKind.PENDING_SLOT_ANSWER,
+        primary_interpretation="pending_slot_answer",
+        answer_mode=AnswerMode.PENDING_SLOT_ANSWER,
+        mutation_policy=MutationPolicy.ALLOWED_BY_VALIDATOR,
+        resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
+    )
+
+    action = build_runtime_action_from_turn_decision(decision)
+
+    assert action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+    assert action.graph_allowed is True
+    assert action.graph_entry_reason == "pending_slot_answer_requires_governed_validation"
+    assert action.slot_candidate_detected is True
+
+
+def test_runtime_action_rejects_graph_allowed_for_answer_only_actions() -> None:
+    with pytest.raises(ValidationError):
+        RuntimeAction(
+            action_type=RuntimeActionType.ANSWER_ONLY,
+            answer_mode=AnswerMode.ACTIVE_CASE_SIDE_QUESTION,
+            mutation_policy=MutationPolicy.FORBIDDEN,
+            graph_allowed=True,
+            answer_builder=RuntimeAnswerBuilder.ACTIVE_CASE_SIDE,
+            reason="invalid_contract",
+        )
 
 
 def test_final_answer_contract_keeps_reply_as_fallback_and_answer_markdown_visible() -> None:

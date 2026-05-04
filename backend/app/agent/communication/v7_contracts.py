@@ -81,6 +81,23 @@ class StateActionType(str, Enum):
     BLOCK = "block"
 
 
+class RuntimeActionType(str, Enum):
+    ANSWER_ONLY = "answer_only"
+    ANSWER_THEN_RESUME = "answer_then_resume"
+    ROUTE_SLOT_CANDIDATE = "route_slot_candidate"
+    ENTER_GOVERNED_GRAPH = "enter_governed_graph"
+    BUILD_RFQ_PREVIEW = "build_rfq_preview"
+    WAIT_FOR_USER = "wait_for_user"
+
+
+class RuntimeAnswerBuilder(str, Enum):
+    NONE = "none"
+    ACTIVE_CASE_PROCESS = "active_case_process"
+    ACTIVE_CASE_SIDE = "active_case_side"
+    KNOWLEDGE = "knowledge"
+    GOVERNED_OUTPUT_CONTRACT = "governed_output_contract"
+
+
 class RouterSignals(BaseModel):
     nano_intent: str | None = None
     nano_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -167,6 +184,221 @@ class TurnDecision(BaseModel):
         if self.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION and self.mutation_policy == MutationPolicy.ALLOWED_BY_VALIDATOR:
             raise ValueError("active-case side questions may not default to allowed_by_validator")
         return self
+
+
+class RuntimeAction(BaseModel):
+    action_type: RuntimeActionType
+    answer_mode: AnswerMode | None = None
+    mutation_policy: MutationPolicy | None = None
+    graph_allowed: bool = False
+    graph_entry_reason: str | None = None
+    graph_invocation_skipped_reason: str | None = None
+    answer_builder: RuntimeAnswerBuilder = RuntimeAnswerBuilder.NONE
+    resume_strategy: ResumeStrategy | None = None
+    slot_candidate_detected: bool = False
+    next_runtime_action: str | None = None
+    reason: str = ""
+    decision_source: str = "turn_decision_v7"
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    rfq_action: str | None = None
+    trace: dict[str, Any] = Field(default_factory=dict)
+    operational_contract_version: Literal["runtime_action_v1"] = "runtime_action_v1"
+
+    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+
+    @model_validator(mode="after")
+    def _only_enter_graph_action_may_allow_graph(self) -> "RuntimeAction":
+        if self.graph_allowed and self.action_type != RuntimeActionType.ENTER_GOVERNED_GRAPH:
+            raise ValueError("graph_allowed=true requires action_type=enter_governed_graph")
+        if self.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH and not self.graph_allowed:
+            raise ValueError("enter_governed_graph requires graph_allowed=true")
+        return self
+
+    def as_trace(self) -> dict[str, Any]:
+        trace = {
+            "runtime_action_built": True,
+            "runtime_action_type": _enum_value(self.action_type),
+            "runtime_action_reason": self.reason,
+            "graph_allowed": bool(self.graph_allowed),
+            "graph_entry_reason": self.graph_entry_reason,
+            "graph_invocation_skipped_reason": self.graph_invocation_skipped_reason,
+            "decision_source": self.decision_source,
+            "operational_contract_version": self.operational_contract_version,
+            "runtime_answer_builder": _enum_value(self.answer_builder),
+            "slot_candidate_detected": bool(self.slot_candidate_detected),
+            "next_runtime_action": self.next_runtime_action,
+            "runtime_action_answer_mode": _enum_value(self.answer_mode),
+            "runtime_action_mutation_policy": _enum_value(self.mutation_policy),
+            "runtime_action_resume_strategy": _enum_value(self.resume_strategy),
+        }
+        if self.confidence is not None:
+            trace["runtime_action_confidence"] = self.confidence
+        if self.rfq_action:
+            trace["rfq_action"] = self.rfq_action
+        trace.update(self.trace)
+        return trace
+
+
+def build_runtime_action_from_turn_decision(
+    decision: TurnDecision | None,
+    *,
+    reason: str | None = None,
+    decision_source: str = "turn_decision_v7",
+) -> RuntimeAction:
+    if decision is None:
+        return RuntimeAction(
+            action_type=RuntimeActionType.ENTER_GOVERNED_GRAPH,
+            answer_mode=AnswerMode.GOVERNED_INTAKE,
+            mutation_policy=MutationPolicy.PROPOSED,
+            graph_allowed=True,
+            graph_entry_reason="missing_turn_decision_fail_closed_to_governed_graph",
+            answer_builder=RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT,
+            reason=reason or "missing_turn_decision",
+            decision_source=decision_source,
+        )
+
+    mode = _answer_mode(decision.answer_mode)
+    resume_strategy = _resume_strategy(getattr(decision, "resume_strategy", None))
+    mutation_policy = _mutation_policy(getattr(decision, "mutation_policy", None))
+    confidence = float(getattr(decision, "confidence", 0.0) or 0.0)
+
+    if mode is AnswerMode.ACTIVE_CASE_PROCESS_QUESTION:
+        action_type = (
+            RuntimeActionType.ANSWER_THEN_RESUME
+            if resume_strategy is not ResumeStrategy.NONE
+            else RuntimeActionType.ANSWER_ONLY
+        )
+        return RuntimeAction(
+            action_type=action_type,
+            answer_mode=mode,
+            mutation_policy=mutation_policy,
+            graph_allowed=False,
+            graph_invocation_skipped_reason="active_case_process_question_answered_by_communication_runtime",
+            answer_builder=RuntimeAnswerBuilder.ACTIVE_CASE_PROCESS,
+            resume_strategy=resume_strategy,
+            next_runtime_action="build_active_case_process_answer",
+            reason=reason or "active_case_process_question_requires_answer_first",
+            decision_source=decision_source,
+            confidence=confidence,
+        )
+
+    if mode is AnswerMode.ACTIVE_CASE_SIDE_QUESTION:
+        action_type = (
+            RuntimeActionType.ANSWER_THEN_RESUME
+            if resume_strategy is not ResumeStrategy.NONE
+            else RuntimeActionType.ANSWER_ONLY
+        )
+        return RuntimeAction(
+            action_type=action_type,
+            answer_mode=mode,
+            mutation_policy=mutation_policy,
+            graph_allowed=False,
+            graph_invocation_skipped_reason="active_case_side_question_answered_by_communication_runtime",
+            answer_builder=RuntimeAnswerBuilder.ACTIVE_CASE_SIDE,
+            resume_strategy=resume_strategy,
+            next_runtime_action="build_active_case_side_answer",
+            reason=reason or "active_case_side_question_requires_answer_first",
+            decision_source=decision_source,
+            confidence=confidence,
+        )
+
+    if mode is AnswerMode.PENDING_SLOT_ANSWER:
+        return RuntimeAction(
+            action_type=RuntimeActionType.ENTER_GOVERNED_GRAPH,
+            answer_mode=mode,
+            mutation_policy=mutation_policy,
+            graph_allowed=True,
+            graph_entry_reason="pending_slot_answer_requires_governed_validation",
+            answer_builder=RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT,
+            resume_strategy=resume_strategy,
+            slot_candidate_detected=True,
+            next_runtime_action="route_slot_candidate_to_governed_graph",
+            reason=reason or "pending_slot_answer_governed_binding",
+            decision_source=decision_source,
+            confidence=confidence,
+        )
+
+    if mode is AnswerMode.GOVERNED_INTAKE:
+        return RuntimeAction(
+            action_type=RuntimeActionType.ENTER_GOVERNED_GRAPH,
+            answer_mode=mode,
+            mutation_policy=mutation_policy,
+            graph_allowed=True,
+            graph_entry_reason="governed_intake_or_domain_continuation",
+            answer_builder=RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT,
+            resume_strategy=resume_strategy,
+            next_runtime_action="enter_governed_langgraph",
+            reason=reason or "governed_intake_requires_langgraph",
+            decision_source=decision_source,
+            confidence=confidence,
+        )
+
+    if mode in {AnswerMode.NO_CASE_KNOWLEDGE, AnswerMode.MATERIAL_COMPARISON}:
+        return RuntimeAction(
+            action_type=RuntimeActionType.ANSWER_ONLY,
+            answer_mode=mode,
+            mutation_policy=mutation_policy,
+            graph_allowed=False,
+            graph_invocation_skipped_reason="no_case_knowledge_answered_by_knowledge_path",
+            answer_builder=RuntimeAnswerBuilder.KNOWLEDGE,
+            resume_strategy=resume_strategy,
+            next_runtime_action="return_knowledge_answer",
+            reason=reason or "knowledge_answer_without_case_mutation",
+            decision_source=decision_source,
+            confidence=confidence,
+        )
+
+    if mode is AnswerMode.SAFETY_BLOCKED:
+        return RuntimeAction(
+            action_type=RuntimeActionType.ANSWER_ONLY,
+            answer_mode=mode,
+            mutation_policy=mutation_policy,
+            graph_allowed=False,
+            graph_invocation_skipped_reason="safety_blocked_before_governed_graph",
+            resume_strategy=resume_strategy,
+            next_runtime_action="return_safety_answer",
+            reason=reason or "safety_blocked_answer_only",
+            decision_source=decision_source,
+            confidence=confidence,
+        )
+
+    return RuntimeAction(
+        action_type=RuntimeActionType.ANSWER_ONLY,
+        answer_mode=mode,
+        mutation_policy=mutation_policy,
+        graph_allowed=False,
+        graph_invocation_skipped_reason="conversation_answer_does_not_require_governed_graph",
+        resume_strategy=resume_strategy,
+        next_runtime_action="return_conversation_answer",
+        reason=reason or "conversation_answer_only",
+        decision_source=decision_source,
+        confidence=confidence,
+    )
+
+
+def _enum_value(value: Any) -> str | None:
+    return str(getattr(value, "value", value) or "") or None
+
+
+def _answer_mode(value: Any) -> AnswerMode:
+    try:
+        return AnswerMode(_enum_value(value))
+    except Exception:
+        return AnswerMode.GOVERNED_INTAKE
+
+
+def _mutation_policy(value: Any) -> MutationPolicy:
+    try:
+        return MutationPolicy(_enum_value(value))
+    except Exception:
+        return MutationPolicy.PROPOSED
+
+
+def _resume_strategy(value: Any) -> ResumeStrategy:
+    try:
+        return ResumeStrategy(_enum_value(value))
+    except Exception:
+        return ResumeStrategy.NONE
 
 
 class EvidenceItem(BaseModel):

@@ -5,7 +5,12 @@ from typing import Any, Literal
 
 from app.domain.conversation_intent import ConversationRoutingDecision
 from app.agent.state.models import GovernedSessionState
-from app.agent.communication.v7_contracts import AnswerMode, TurnDecision
+from app.agent.communication.v7_contracts import (
+    AnswerMode,
+    RuntimeAction,
+    TurnDecision,
+    build_runtime_action_from_turn_decision,
+)
 from app.agent.runtime.answer_trace import build_answer_trace
 from app.services.auth.dependencies import RequestUser
 from app.agent.api.deps import (
@@ -88,6 +93,7 @@ class RuntimeDispatchResolution:
     governed_state: GovernedSessionState | None = None
     conversation_route: ConversationRoutingDecision | None = None
     turn_decision: TurnDecision | None = None
+    runtime_action: RuntimeAction | None = None
 
 
 def _governed_state_has_active_case(state: GovernedSessionState | None) -> bool:
@@ -224,6 +230,16 @@ def _v7_answer_mode(decision: TurnDecision | None) -> str | None:
     return str(getattr(mode, "value", mode) or "") or None
 
 
+def _v7_runtime_action(
+    decision: TurnDecision | None,
+    *,
+    reason: str | None = None,
+) -> RuntimeAction | None:
+    if decision is None:
+        return None
+    return build_runtime_action_from_turn_decision(decision, reason=reason)
+
+
 async def _resolve_runtime_dispatch(
     request: Any,  # ChatRequest
     *,
@@ -280,6 +296,10 @@ async def _resolve_runtime_dispatch(
                     governed_state=governed_state,
                     conversation_route=conversation_route,
                     turn_decision=turn_decision,
+                    runtime_action=_v7_runtime_action(
+                        turn_decision,
+                        reason="active_case_process_question_before_governed_graph",
+                    ),
                 )
         if pre_gate.classification in FastResponderService.allowed_classifications:
             fast_response = FastResponderService().respond(
@@ -331,6 +351,10 @@ async def _resolve_runtime_dispatch(
                     governed_state=governed_state,
                     conversation_route=conversation_route,
                     turn_decision=turn_decision,
+                    runtime_action=_v7_runtime_action(
+                        turn_decision,
+                        reason="active_case_side_or_process_question_before_governed_graph",
+                    ),
                 )
 
             from dataclasses import replace  # noqa: PLC0415
@@ -405,6 +429,10 @@ async def _resolve_runtime_dispatch(
                 knowledge_response=knowledge_response,
                 conversation_route=conversation_route,
                 turn_decision=turn_decision,
+                runtime_action=_v7_runtime_action(
+                    turn_decision,
+                    reason="direct_knowledge_response",
+                ),
             )
 
         if pre_gate.classification is not PreGateClassification.DOMAIN_INQUIRY:
@@ -482,6 +510,10 @@ async def _resolve_runtime_dispatch(
             governed_state=governed_state,
             conversation_route=conversation_route,
             turn_decision=turn_decision,
+            runtime_action=_v7_runtime_action(
+                turn_decision,
+                reason="governed_domain_or_slot_turn",
+            ),
         )
 
     except Exception as exc:  # noqa: BLE001

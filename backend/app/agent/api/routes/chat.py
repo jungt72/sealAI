@@ -53,6 +53,14 @@ from app.agent.communication.active_case_side_claim_policy import (
     enrich_active_case_side_answer_with_evidence,
     enforce_active_case_side_claim_policy,
 )
+from app.agent.communication.v7_contracts import (
+    AnswerMode,
+    MutationPolicy,
+    RuntimeAction,
+    RuntimeActionType,
+    RuntimeAnswerBuilder,
+    build_runtime_action_from_turn_decision,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -66,15 +74,130 @@ def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
     return str(getattr(mode, "value", mode) or "") or None
 
 
+def _v7_dispatch_runtime_action(dispatch: Any) -> RuntimeAction | None:
+    runtime_action = getattr(dispatch, "runtime_action", None)
+    if runtime_action is not None:
+        return runtime_action
+    decision = getattr(dispatch, "turn_decision", None)
+    if decision is None:
+        return None
+    return build_runtime_action_from_turn_decision(
+        decision,
+        reason="runtime_action_synthesized_from_turn_decision",
+    )
+
+
+def _runtime_action_value(value: Any) -> str:
+    return str(getattr(value, "value", value) or "")
+
+
 def _is_v7_active_case_side_question(dispatch: Any) -> bool:
+    runtime_action = _v7_dispatch_runtime_action(dispatch)
+    if runtime_action is not None:
+        return (
+            _runtime_action_value(getattr(runtime_action, "answer_builder", None))
+            == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE.value
+        )
     return _v7_dispatch_answer_mode(dispatch) == "active_case_side_question"
 
 
 def _is_v7_active_case_process_question(dispatch: Any) -> bool:
+    runtime_action = _v7_dispatch_runtime_action(dispatch)
+    if runtime_action is not None:
+        return (
+            _runtime_action_value(getattr(runtime_action, "answer_builder", None))
+            == RuntimeAnswerBuilder.ACTIVE_CASE_PROCESS.value
+        )
     return _v7_dispatch_answer_mode(dispatch) == "active_case_process_question"
 
 
-def _process_answer_trace(*, result: Any, decision: Any) -> dict[str, Any]:
+def _runtime_action_allows_graph(dispatch: Any) -> bool:
+    runtime_action = _v7_dispatch_runtime_action(dispatch)
+    if runtime_action is None:
+        return True
+    return (
+        bool(getattr(runtime_action, "graph_allowed", False))
+        and _runtime_action_value(getattr(runtime_action, "action_type", None))
+        == RuntimeActionType.ENTER_GOVERNED_GRAPH.value
+    )
+
+
+def _runtime_action_trace(runtime_action: Any | None) -> dict[str, Any]:
+    if hasattr(runtime_action, "as_trace"):
+        return runtime_action.as_trace()
+    return {}
+
+
+def _with_runtime_action_trace(
+    run_meta: dict[str, Any] | None,
+    runtime_action: Any | None,
+) -> dict[str, Any]:
+    trace_update = _runtime_action_trace(runtime_action)
+    if not trace_update:
+        return dict(run_meta or {})
+    meta = dict(run_meta or {})
+    existing_trace = meta.get("answer_trace")
+    answer_trace = dict(existing_trace) if isinstance(existing_trace, dict) else {}
+    answer_trace.update(trace_update)
+    meta["answer_trace"] = answer_trace
+    return meta
+
+
+def _knowledge_override_runtime_action() -> RuntimeAction:
+    return RuntimeAction(
+        action_type=RuntimeActionType.ANSWER_ONLY,
+        answer_mode=AnswerMode.NO_CASE_KNOWLEDGE,
+        mutation_policy=MutationPolicy.FORBIDDEN,
+        graph_allowed=False,
+        graph_invocation_skipped_reason="legacy_knowledge_override_answer_only",
+        answer_builder=RuntimeAnswerBuilder.KNOWLEDGE,
+        next_runtime_action="return_knowledge_answer",
+        reason="legacy_knowledge_override_before_governed_graph",
+        decision_source="knowledge_override_classifier",
+    )
+
+
+def _runtime_action_blocked_graph_payload(runtime_action: Any | None) -> dict[str, Any]:
+    reply = (
+        "Ich kann diesen Schritt gerade nicht sicher in den geregelten Fallfluss geben. "
+        "Bitte formuliere die naechste technische Angabe oder Frage noch einmal."
+    )
+    trace = build_answer_trace(
+        reply_source="runtime_action_guard",
+        answer_markdown_source="deterministic_fallback",
+        final_visible_source="answer_markdown",
+        fallback_reason="runtime_action_disallowed_graph_invocation",
+    )
+    trace.update(_runtime_action_trace(runtime_action))
+    payload = build_public_response_core(
+        reply=reply,
+        structured_state=None,
+        policy_path="runtime_action_guard",
+        run_meta=with_answer_trace(None, trace),
+    )
+    payload = apply_final_answer_layer(
+        payload,
+        FinalAnswerEnvelope(
+            route="runtime_action_guard",
+            answer_mode=str(trace.get("runtime_action_answer_mode") or "runtime_action_guard"),
+            deterministic_fallback_reply=reply,
+            existing_answer_markdown=payload.get("answer_markdown"),
+            existing_answer_markdown_source=trace.get("answer_markdown_source"),
+            existing_reply_source=trace.get("reply_source"),
+            composer_tier="fallback",
+            fallback_reason=trace.get("fallback_reason"),
+        ),
+    )
+    payload["type"] = "state_update"
+    return payload
+
+
+def _process_answer_trace(
+    *,
+    result: Any,
+    decision: Any,
+    runtime_action: Any | None = None,
+) -> dict[str, Any]:
     mutation_policy = str(getattr(decision, "mutation_policy", "forbidden") or "forbidden")
     resume_decision = getattr(result, "resume_decision", None)
     resume_trace = (
@@ -118,6 +241,7 @@ def _process_answer_trace(*, result: Any, decision: Any) -> dict[str, Any]:
     )
     if resume_trace.get("detected_slot_field"):
         trace["detected_slot_field"] = resume_trace.get("detected_slot_field")
+    trace.update(_runtime_action_trace(runtime_action))
     return trace
 
 
@@ -129,6 +253,7 @@ def _side_answer_trace(
     claim_policy_result: Any,
     evidence_context: Any,
     evidence_used_in_answer: bool,
+    runtime_action: Any | None = None,
 ) -> dict[str, Any]:
     existing_trace = getattr(knowledge_response, "answer_trace", None)
     trace = (
@@ -165,6 +290,7 @@ def _side_answer_trace(
     if hasattr(evidence_context, "as_trace"):
         trace.update(evidence_context.as_trace())
     trace["evidence_used_in_answer"] = bool(evidence_used_in_answer)
+    trace.update(_runtime_action_trace(runtime_action))
     return trace
 
 
@@ -205,13 +331,18 @@ async def _build_active_case_process_payload(
     message: str,
     governed_state: GovernedSessionState | None,
     decision: Any,
+    runtime_action: Any | None = None,
 ) -> dict[str, Any]:
     result = await build_active_case_process_answer(
         latest_user_message=message,
         governed_state=governed_state,
         turn_decision=decision,
     )
-    answer_trace = _process_answer_trace(result=result, decision=decision)
+    answer_trace = _process_answer_trace(
+        result=result,
+        decision=decision,
+        runtime_action=runtime_action,
+    )
     payload = build_public_response_core(
         reply=result.deterministic_fallback,
         structured_state=None,
@@ -245,6 +376,7 @@ async def _build_active_case_side_payload(
     governed_state: GovernedSessionState | None,
     decision: Any,
     conversation_route: Any | None,
+    runtime_action: Any | None = None,
 ) -> dict[str, Any]:
     knowledge_response = await build_case_side_knowledge_response(
         message=message,
@@ -291,6 +423,7 @@ async def _build_active_case_side_payload(
         claim_policy_result=claim_policy_result,
         evidence_context=evidence_context,
         evidence_used_in_answer=evidence_enrichment.evidence_used_in_answer,
+        runtime_action=runtime_action,
     )
 
     from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
@@ -431,6 +564,7 @@ async def _run_governed_chat_response(
     *,
     current_user: RequestUser,
     pre_gate_classification: str | None = None,
+    runtime_action: Any | None = None,
 ) -> ChatResponse:
     result_state, persisted_state = await _run_governed_graph_once(
         request,
@@ -442,6 +576,10 @@ async def _run_governed_chat_response(
         persisted_state=persisted_state,
     )
     payload = _assemble_governed_stream_payload(context=context)
+    payload["run_meta"] = _with_runtime_action_trace(
+        payload.get("run_meta"),
+        runtime_action,
+    )
     assistant_message = str(
         payload.get("assistant_message")
         or payload.get("answer_markdown")
@@ -508,13 +646,17 @@ async def _chat_response_from_knowledge_response(
     *,
     request: ChatRequest,
     knowledge_response: Any,
+    runtime_action: Any | None = None,
 ) -> ChatResponse:
     from app.agent.api.utils import _knowledge_response_run_meta # noqa: PLC0415
     payload = build_public_response_core(
         reply=knowledge_response.content,
         structured_state=None,
         policy_path="knowledge",
-        run_meta=_knowledge_response_run_meta(knowledge_response),
+        run_meta=_with_runtime_action_trace(
+            _knowledge_response_run_meta(knowledge_response),
+            runtime_action,
+        ),
     )
     answer_markdown = str(getattr(knowledge_response, "answer_markdown", "") or "").strip()
     if answer_markdown:
@@ -580,6 +722,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         return await _chat_response_from_knowledge_response(
             request=request,
             knowledge_response=dispatch.knowledge_response,
+            runtime_action=_v7_dispatch_runtime_action(dispatch),
         )
 
     if _is_light_runtime_mode(dispatch.runtime_mode):
@@ -593,11 +736,13 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         )
 
     if dispatch.runtime_mode == "GOVERNED":
+        runtime_action = _v7_dispatch_runtime_action(dispatch)
         if _is_v7_active_case_process_question(dispatch):
             payload = await _build_active_case_process_payload(
                 message=request.message,
                 governed_state=dispatch.governed_state,
                 decision=dispatch.turn_decision,
+                runtime_action=runtime_action,
             )
             await _persist_active_case_process_turn(
                 request=request,
@@ -613,10 +758,12 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
                 governed_state=dispatch.governed_state,
                 decision=dispatch.turn_decision,
                 conversation_route=dispatch.conversation_route,
+                runtime_action=runtime_action,
             )
             return ChatResponse(session_id=request.session_id, **payload)
         _knowledge_override_json = classify_message_as_knowledge_override(request.message)
         if _knowledge_override_json is not None:
+            knowledge_runtime_action = _knowledge_override_runtime_action()
             knowledge_response = await build_case_side_knowledge_response(
                 message=request.message,
                 override_class=_knowledge_override_json,
@@ -626,7 +773,11 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             return await _chat_response_from_knowledge_response(
                 request=request,
                 knowledge_response=knowledge_response,
+                runtime_action=knowledge_runtime_action,
             )
+        if not _runtime_action_allows_graph(dispatch):
+            payload = _runtime_action_blocked_graph_payload(runtime_action)
+            return ChatResponse(session_id=request.session_id, **payload)
         _log.debug(
             "[runtime_authority] json session=%s authority=governed_graph reason=%s",
             request.session_id,
@@ -636,6 +787,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             request,
             current_user=current_user,
             pre_gate_classification=dispatch.pre_gate_classification,
+            runtime_action=runtime_action,
         )
 
     _log.warning(
