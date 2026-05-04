@@ -14,6 +14,7 @@ import {
   buildMediumStatusViewFromWorkspace, 
   buildMediumStatusViewFromStream 
 } from "@/lib/mediumStatusView";
+import type { WorkspaceRfqReadinessProjection } from "@/lib/contracts/workspace";
 
 export type CockpitData = {
   view: EngineeringCockpitView;
@@ -21,6 +22,7 @@ export type CockpitData = {
   coverage: number;
   releaseStatus: string;
   mediumStatus: MediumStatusViewModel;
+  rfqReadinessProjection?: WorkspaceRfqReadinessProjection | null;
 };
 
 function isEngineeringPath(value: string | null | undefined): value is EngineeringPath {
@@ -245,6 +247,7 @@ export function useCockpitData(): CockpitData | null {
         coverage: workspace?.completeness?.coverageScore || 0,
         releaseStatus: workspace?.governance.releaseStatus || "inadmissible",
         mediumStatus,
+        rfqReadinessProjection: workspace.rfqReadinessProjection ?? null,
       };
     }
 
@@ -255,7 +258,9 @@ export function useCockpitData(): CockpitData | null {
       parameters: rawParams,
       coverage: workspace?.completeness?.coverageScore || 0,
       releaseStatus: workspace?.governance.releaseStatus || "inadmissible",
-      mediumStatus
+      mediumStatus,
+      rfqReadinessProjection:
+        workspace?.rfqReadinessProjection ?? streamWorkspace?.rfqReadinessProjection ?? null,
     };
   }, [workspace, streamWorkspace, streamAssertions]);
 }

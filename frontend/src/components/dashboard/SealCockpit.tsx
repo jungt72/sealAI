@@ -15,6 +15,7 @@ import {
 
 import { DecisionUnderstandingPanel } from "@/components/dashboard/DecisionUnderstandingPanel";
 import { ParameterWorkspaceTab } from "@/components/dashboard/ParameterWorkspaceTab";
+import RfqPane from "@/components/dashboard/RfqPane";
 import type { AgentOverrideItemRequest } from "@/lib/bff/parameterOverride";
 import type { WorkspaceView } from "@/lib/contracts/workspace";
 import {
@@ -546,6 +547,9 @@ function BriefingTab({
         <ItemList title="Nächste sinnvolle Frage" items={[decision?.nextBestQuestion, workspace?.communication?.primaryQuestion]} />
         <ItemList title="Grenzen" items={[...(workspace?.governance.requiredDisclaimers ?? []), "Der Hersteller muss die Auslegung später prüfen."]} />
         <ItemList title="Blocker" items={[...(workspace?.rfq.blockers ?? []), ...(workspace?.matching.blockingReasons ?? [])]} empty="Keine Blocker gemeldet" />
+      </div>
+      <div className="mt-4">
+        <RfqPane data={data} caseId={workspace?.caseId} workspace={workspace} />
       </div>
     </WorkspaceTabShell>
   );

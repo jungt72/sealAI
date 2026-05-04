@@ -19,6 +19,28 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
       openPointsSummary: ["Betriebsdruck"],
     },
     structuredState: { output_status: "governed_non_binding_result" },
+    rfq_readiness_projection: {
+      manufacturer_review_ready: false,
+      rfq_basis_ready: true,
+      known_missing_fields: ["surface_finish"],
+      open_points: ["Compound durch Hersteller pruefen"],
+      blocking_reasons: [],
+      pending_question: "Welche Oberflaeche ist dokumentiert?",
+      consent_required: true,
+      dispatch_allowed: false,
+      external_contact_allowed: false,
+      final_approval_claim_allowed: false,
+      preview_available: true,
+      preview_possible: true,
+      preview_action_available: true,
+      preview_action_name: "create_preview",
+      preview_endpoint: "/api/v1/rfq/preview",
+      preview_creation_requires_explicit_user_intent: true,
+      preview_export_requires_consent: true,
+      preview_requires_explicit_endpoint: true,
+      preview_service_boundary: "RfqPreviewService.create_preview_for_case",
+      projection_version: "rfq_readiness_projection_v1",
+    },
     ui: {
       parameter: {
         parameters: [{ field_name: "medium", value: "steam", unit: null, confidence: "confirmed" }],
@@ -113,6 +135,9 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
   assert.equal(view.ui.medium_context.medium_label, "Salzwasser");
   assert.equal(view.turnContext?.conversationPhase, "clarification");
   assert.deepEqual(view.turnContext?.confirmedFactsSummary, ["Medium: Dampf"]);
+  assert.equal(view.rfqReadinessProjection?.preview_action_name, "create_preview");
+  assert.equal(view.rfqReadinessProjection?.dispatch_allowed, false);
+  assert.equal(view.rfqReadinessProjection?.external_contact_allowed, false);
 });
 
 test("buildStreamWorkspaceView fills missing ui sections conservatively", () => {
@@ -131,4 +156,5 @@ test("buildStreamWorkspaceView fills missing ui sections conservatively", () => 
   assert.equal(view.ui.rfq.dispatch_status, "pending");
   assert.equal(view.ui.medium_classification.status, "unavailable");
   assert.equal(view.ui.medium_context.status, "unavailable");
+  assert.equal(view.rfqReadinessProjection, null);
 });

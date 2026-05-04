@@ -155,6 +155,28 @@ describe("mapWorkspaceView", () => {
         boundary_notice: "Read-only Vorqualifikation fuer Herstellerpruefung.",
         event_names: ["SealDesignIntakeGenerated"],
       },
+      rfq_readiness_projection: {
+        manufacturer_review_ready: false,
+        rfq_basis_ready: true,
+        known_missing_fields: ["surface_finish"],
+        open_points: ["Compound durch Hersteller pruefen"],
+        blocking_reasons: [],
+        pending_question: "Welche Oberflaeche ist dokumentiert?",
+        consent_required: true,
+        dispatch_allowed: false,
+        external_contact_allowed: false,
+        final_approval_claim_allowed: false,
+        preview_available: true,
+        preview_possible: true,
+        preview_action_available: true,
+        preview_action_name: "create_preview",
+        preview_endpoint: "/api/v1/rfq/preview",
+        preview_creation_requires_explicit_user_intent: true,
+        preview_export_requires_consent: true,
+        preview_requires_explicit_endpoint: true,
+        preview_service_boundary: "RfqPreviewService.create_preview_for_case",
+        projection_version: "rfq_readiness_projection_v1",
+      },
       case_summary: {
         thread_id: "case-123",
         turn_count: 4,
@@ -275,5 +297,9 @@ describe("mapWorkspaceView", () => {
     expect(workspace.designIntake?.missingFields[0]?.key).toBe("leakage_target");
     expect(workspace.designIntake?.screeningChecks[0]?.value).toBe(15.5);
     expect(workspace.designIntake?.escalationTriggers[0]?.severity).toBe("critical");
+    expect(workspace.rfqReadinessProjection?.rfq_basis_ready).toBe(true);
+    expect(workspace.rfqReadinessProjection?.dispatch_allowed).toBe(false);
+    expect(workspace.rfqReadinessProjection?.external_contact_allowed).toBe(false);
+    expect(workspace.rfqReadinessProjection?.preview_action_name).toBe("create_preview");
   });
 });

@@ -1,3 +1,5 @@
+import type { WorkspaceRfqReadinessProjection } from "./workspace.ts";
+
 export type AgentStreamRequest = {
   caseId?: string;
   message: string;
@@ -265,6 +267,7 @@ export type AgentStateUpdateEvent = {
   conversationStrategy?: AgentConversationStrategy | null;
   turnContext?: AgentTurnContext | null;
   proposedCaseDelta?: ProposedCaseDelta | null;
+  rfq_readiness_projection?: WorkspaceRfqReadinessProjection | null;
   ui?: AgentWorkspaceUi;
   runMeta?: AgentRunMeta | null;
 };

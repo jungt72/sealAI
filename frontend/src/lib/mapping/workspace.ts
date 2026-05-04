@@ -16,6 +16,7 @@ import type {
   EngineeringSection,
   EngineeringSectionId,
 } from "@/lib/engineering/cockpitModel";
+import { mapRfqReadinessProjection } from "@/lib/mapping/rfqReadiness";
 import { buildRfqDocumentReadPath } from "../bff/workspace.ts";
 
 type RawCockpitProperty = {
@@ -238,6 +239,7 @@ type LegacyWorkspaceProjection = {
   seal_application_profile?: RawSealApplicationProfile | null;
   design_intake?: RawSealDesignIntake | null;
   decision_understanding?: RawDecisionUnderstanding | null;
+  rfq_readiness_projection?: Record<string, unknown> | null;
   needs_analysis?: RawNeedsAnalysis | null;
   current_state_analysis?: RawCurrentStateAnalysis | null;
   next_best_questions?: RawNextBestQuestion[];
@@ -933,6 +935,7 @@ export function mapWorkspaceView(
     sealApplicationProfile: mapSealApplicationProfile(projection.seal_application_profile),
     designIntake: mapDesignIntake(projection.design_intake),
     decisionUnderstanding: mapDecisionUnderstanding(projection),
+    rfqReadinessProjection: mapRfqReadinessProjection(projection.rfq_readiness_projection),
     cockpit: mapCockpitView(projection),
     communication: projection.communication_context
       ? {

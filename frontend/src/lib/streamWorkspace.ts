@@ -5,6 +5,8 @@ import type {
   AssertionEntry,
   ProposedCaseDelta,
 } from "@/lib/contracts/agent";
+import type { WorkspaceRfqReadinessProjection } from "./contracts/workspace.ts";
+import { mapRfqReadinessProjection } from "./mapping/rfqReadiness.ts";
 
 export type StreamWorkspaceView = {
   caseId: string;
@@ -14,6 +16,7 @@ export type StreamWorkspaceView = {
   structuredState: Record<string, unknown> | null;
   turnContext: AgentTurnContext | null;
   proposedCaseDelta: ProposedCaseDelta | null;
+  rfqReadinessProjection: WorkspaceRfqReadinessProjection | null;
   ui: Required<Pick<AgentWorkspaceUi, "parameter" | "assumption" | "recommendation" | "compute" | "matching" | "rfq" | "medium_classification" | "medium_context">> &
     AgentWorkspaceUi;
 };
@@ -90,6 +93,7 @@ export function buildStreamWorkspaceView(
       event.proposedCaseDelta && Array.isArray(event.proposedCaseDelta.fields)
         ? event.proposedCaseDelta
         : null,
+    rfqReadinessProjection: mapRfqReadinessProjection(event.rfq_readiness_projection),
     ui: {
       ...ui,
       parameter: {

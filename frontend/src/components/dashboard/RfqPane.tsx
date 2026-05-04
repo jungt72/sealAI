@@ -11,16 +11,18 @@ import {
 } from "lucide-react";
 
 import { StatusBadge } from "./CockpitElements";
-import type { CockpitData } from "@/hooks/useCockpitData";
+import type { WorkspaceRfqReadinessProjection, WorkspaceView } from "@/lib/contracts/workspace";
 import {
   buildRfqPreviewConsentReadPath,
   buildRfqPreviewReadPath,
 } from "@/lib/bff/workspace";
+import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { cn } from "@/lib/utils";
 
 interface RfqPaneProps {
-  data: CockpitData | null;
+  data: unknown | null;
   caseId?: string;
+  workspace?: WorkspaceView | null;
 }
 
 type RfqPreviewSection = {
@@ -148,7 +150,28 @@ function friendlyRfqError(message: string) {
   return message;
 }
 
-export default function RfqPane({ data, caseId }: RfqPaneProps) {
+function readExpectedCaseRevision(workspace: WorkspaceView | null | undefined): number | null {
+  const revision = workspace?.summary?.stateRevision;
+  return typeof revision === "number" && Number.isFinite(revision) ? revision : null;
+}
+
+function readDataReadinessProjection(data: unknown): WorkspaceRfqReadinessProjection | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+  const projection = (data as { rfqReadinessProjection?: WorkspaceRfqReadinessProjection | null }).rfqReadinessProjection;
+  return projection ?? null;
+}
+
+function previewActionIsAvailable(readiness: WorkspaceRfqReadinessProjection | null): boolean {
+  if (!readiness) {
+    return true;
+  }
+  return Boolean(readiness.preview_action_available && readiness.preview_possible);
+}
+
+export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
+  const streamReadiness = useWorkspaceStore((state) => state.streamWorkspace?.rfqReadinessProjection ?? null);
   const [preview, setPreview] = useState<RfqPreviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -159,6 +182,10 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
     openPoints: false,
     exportSharing: false,
   });
+  const readinessProjection =
+    workspace?.rfqReadinessProjection ?? readDataReadinessProjection(data) ?? streamReadiness;
+  const expectedCaseRevision = readExpectedCaseRevision(workspace);
+  const canCreatePreview = previewActionIsAvailable(readinessProjection);
 
   const loadPreview = async () => {
     if (!caseId) {
@@ -229,7 +256,12 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
     setIsCreating(true);
     setError(null);
     try {
-      const response = await fetch(buildRfqPreviewReadPath(caseId), { method: "POST" });
+      const createInit: RequestInit = { method: "POST" };
+      if (expectedCaseRevision !== null) {
+        createInit.headers = { "Content-Type": "application/json" };
+        createInit.body = JSON.stringify({ expected_case_revision: expectedCaseRevision });
+      }
+      const response = await fetch(buildRfqPreviewReadPath(caseId), createInit);
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(getErrorMessage(body, "Anfragevorschau konnte nicht vorbereitet werden."));
@@ -277,7 +309,7 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
     }
   };
 
-  if (!data || !caseId) {
+  if ((!data && !workspace) || !caseId) {
     return (
       <div className="rounded-[18px] border border-dashed border-[#D1D5DB] bg-white p-4 text-sm text-[#6B7280]">
         Die Anfragevorschau erscheint, sobald ein konkreter Fall gespeichert ist.
@@ -322,6 +354,11 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
           </div>
         )}
 
+        <RfqReadinessPanel
+          readiness={readinessProjection}
+          expectedCaseRevision={expectedCaseRevision}
+        />
+
         {!preview ? (
           <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-4">
             <div className="flex items-start gap-3">
@@ -331,10 +368,15 @@ export default function RfqPane({ data, caseId }: RfqPaneProps) {
                 <p className="mt-1 text-sm text-[#4B5563]">
                   SeaLAI erstellt die Vorschau aus dem gespeicherten Fallstand. Demo- oder lokale Platzhalter werden hier nicht als Wahrheit verwendet.
                 </p>
+                {readinessProjection && !canCreatePreview ? (
+                  <p className="mt-2 text-sm font-medium text-[#9A3412]">
+                    Die Vorschau-Aktion ist aktuell noch nicht verfügbar. Kläre zuerst die offenen Punkte oder Blocker.
+                  </p>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void createPreview()}
-                  disabled={isCreating}
+                  disabled={isCreating || !canCreatePreview}
                   className="mt-3 rounded-[14px] bg-[#0B57D0] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0847AD] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
                 >
                   {isCreating ? "Anfragevorschau wird vorbereitet..." : "Anfragevorschau vorbereiten"}
@@ -444,6 +486,83 @@ function MetaTile({ label, value }: { label: string; value: string | number }) {
       <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">{label}</div>
       <div className="mt-1 break-all text-sm font-medium text-[#111827]">{value}</div>
     </div>
+  );
+}
+
+function RfqReadinessPanel({
+  readiness,
+  expectedCaseRevision,
+}: {
+  readiness: WorkspaceRfqReadinessProjection | null;
+  expectedCaseRevision: number | null;
+}) {
+  if (!readiness) {
+    return null;
+  }
+
+  const status = readiness.rfq_basis_ready || readiness.manufacturer_review_ready
+    ? "Anfragebasis vorbereitbar"
+    : "Anfragebasis offen";
+  const previewStatus =
+    readiness.preview_action_available && readiness.preview_possible
+      ? "Vorschau verfügbar"
+      : "Vorschau noch blockiert";
+  const consentStatus = readiness.preview_export_requires_consent || readiness.consent_required
+    ? "Zustimmung erforderlich"
+    : "Zustimmung nicht gemeldet";
+
+  return (
+    <section className="mb-4 rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
+            Anfragebasis für Herstellerprüfung
+          </div>
+          <div className="mt-1 text-sm font-semibold text-[#111827]">{status}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge label={previewStatus} variant={readiness.preview_action_available && readiness.preview_possible ? "success" : "warning"} />
+          <StatusBadge label={consentStatus} variant="info" />
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetaTile label="Herstellerprüfung" value={readiness.manufacturer_review_ready ? "vorbereitbar" : "noch offen"} />
+        <MetaTile label="RFQ-Basis" value={readiness.rfq_basis_ready ? "vorbereitbar" : "noch offen"} />
+        <MetaTile label="Fallstand" value={expectedCaseRevision !== null ? expectedCaseRevision : "nicht geliefert"} />
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <ListPanel
+          title="Fehlende Angaben"
+          items={readiness.known_missing_fields}
+          empty="Keine fehlenden Angaben in der Readiness-Projektion gemeldet."
+          tone="warning"
+        />
+        <ListPanel
+          title="Offene Punkte"
+          items={readiness.open_points}
+          empty="Keine offenen Punkte in der Readiness-Projektion gemeldet."
+          tone="warning"
+        />
+        <ListPanel
+          title="Blocker"
+          items={readiness.blocking_reasons}
+          empty="Keine Blocker in der Readiness-Projektion gemeldet."
+          tone="neutral"
+        />
+      </div>
+
+      {readiness.pending_question ? (
+        <div className="mt-3 rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#4B5563]">
+          Nächste Frage: {readiness.pending_question}
+        </div>
+      ) : null}
+
+      <div className="mt-3 rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#4B5563]">
+        Vorschau bedeutet Anfragebasis für die Herstellerprüfung. Das ist keine Weitergabe, kein Herstellerkontakt und keine Auslegungsfreigabe.
+      </div>
+    </section>
   );
 }
 

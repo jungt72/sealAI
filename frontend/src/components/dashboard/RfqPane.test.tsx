@@ -4,6 +4,46 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import RfqPane from "./RfqPane";
 import type { CockpitData } from "@/hooks/useCockpitData";
+import type { WorkspaceRfqReadinessProjection, WorkspaceView } from "@/lib/contracts/workspace";
+
+function readinessProjection(
+  overrides: Partial<WorkspaceRfqReadinessProjection> = {},
+): WorkspaceRfqReadinessProjection {
+  return {
+    manufacturer_review_ready: false,
+    rfq_basis_ready: false,
+    known_missing_fields: ["shaft_diameter_mm"],
+    open_points: ["Druckspitzen offen"],
+    blocking_reasons: ["Medium noch nicht bestaetigt"],
+    pending_question: "Welche Wellendurchmesser-Dokumentation liegt vor?",
+    consent_required: true,
+    dispatch_allowed: false,
+    external_contact_allowed: false,
+    final_approval_claim_allowed: false,
+    preview_available: true,
+    preview_possible: true,
+    preview_action_available: true,
+    preview_action_name: "create_preview",
+    preview_endpoint: "/api/v1/rfq/preview",
+    preview_creation_requires_explicit_user_intent: true,
+    preview_export_requires_consent: true,
+    preview_requires_explicit_endpoint: true,
+    preview_service_boundary: "RfqPreviewService.create_preview_for_case",
+    projection_version: "rfq_readiness_projection_v1",
+    ...overrides,
+  };
+}
+
+function workspaceWithReadiness(
+  projection: WorkspaceRfqReadinessProjection,
+  stateRevision: number | null = 6,
+): WorkspaceView {
+  return {
+    caseId: "case-1",
+    rfqReadinessProjection: projection,
+    summary: stateRevision === null ? {} : { stateRevision },
+  } as WorkspaceView;
+}
 
 function cockpitData(): CockpitData {
   return {
@@ -271,6 +311,112 @@ describe("RfqPane", () => {
     );
   });
 
+  it("renders RFQ readiness projection with Anfragebasis and Herstellerprüfung framing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { code: "rfq_preview_not_found" } }),
+      }),
+    );
+    const workspace = workspaceWithReadiness(readinessProjection());
+
+    render(<RfqPane data={cockpitData()} caseId="case-1" workspace={workspace} />);
+
+    expect(await screen.findByText("Anfragebasis für Herstellerprüfung")).toBeInTheDocument();
+    expect(screen.getByText("Anfragebasis offen")).toBeInTheDocument();
+    expect(screen.getByText("shaft_diameter_mm")).toBeInTheDocument();
+    expect(screen.getByText("Druckspitzen offen")).toBeInTheDocument();
+    expect(screen.getByText("Medium noch nicht bestaetigt")).toBeInTheDocument();
+    expect(screen.getByText(/Vorschau bedeutet Anfragebasis für die Herstellerprüfung/i)).toBeInTheDocument();
+    expect(screen.getByText(/kein Herstellerkontakt/i)).toBeInTheDocument();
+    expect(screen.queryByText(/final approved|garantiert geeignet|freigegeben/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(["An Hersteller", "senden"].join(" "))).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hersteller kontaktieren/i)).not.toBeInTheDocument();
+  });
+
+  it("sends only expected_case_revision when the preview action is triggered from readiness", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { code: "rfq_preview_not_found" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          preview_id: "preview-3",
+          case_id: "case-1",
+          case_revision: 6,
+          current_case_revision: 6,
+          stale: false,
+          consent_status: "not_requested",
+          dispatch_enabled: false,
+          dispatch_allowed: false,
+          external_contact_allowed: false,
+          created_at: null,
+          payload: {
+            rfq_preview: {
+              sections: [],
+              technical_field_statuses: [],
+            },
+          },
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    const workspace = workspaceWithReadiness(readinessProjection(), 6);
+
+    render(<RfqPane data={cockpitData()} caseId="case-1" workspace={workspace} />);
+
+    const button = await screen.findByRole("button", { name: /Anfragevorschau vorbereiten/i });
+    expect(button).toBeEnabled();
+    expect(screen.getByText("Vorschau verfügbar")).toBeInTheDocument();
+    await user.click(button);
+
+    expect(await screen.findByText("Stand 6")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/bff/rfq/case-1/preview",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const createBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(createBody).toEqual({ expected_case_revision: 6 });
+    expect(createBody).not.toHaveProperty("dispatch_allowed");
+    expect(createBody).not.toHaveProperty("external_contact_allowed");
+    expect(createBody).not.toHaveProperty("export_allowed");
+    expect(createBody).not.toHaveProperty("contact_manufacturer");
+  });
+
+  it("disables preview creation when the readiness projection blocks the action", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { code: "rfq_preview_not_found" } }),
+      }),
+    );
+    const workspace = workspaceWithReadiness(
+      readinessProjection({
+        preview_possible: false,
+        preview_action_available: false,
+        blocking_reasons: ["Fall noch nicht als Case-Revision gespeichert"],
+      }),
+    );
+
+    render(<RfqPane data={cockpitData()} caseId="case-1" workspace={workspace} />);
+
+    expect(await screen.findByText("Vorschau noch blockiert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Anfragevorschau vorbereiten/i })).toBeDisabled();
+    expect(screen.queryByText(["An Hersteller", "senden"].join(" "))).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hersteller kontaktieren/i)).not.toBeInTheDocument();
+  });
+
   it("shows a product-safe message when preview creation has no persisted case revision", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
@@ -288,7 +434,9 @@ describe("RfqPane", () => {
 
     render(<RfqPane data={cockpitData()} caseId="case-1" />);
 
-    await user.click(await screen.findByRole("button", { name: /Anfragevorschau vorbereiten/i }));
+    const button = await screen.findByRole("button", { name: /Anfragevorschau vorbereiten/i });
+    expect(button).toBeEnabled();
+    await user.click(button);
 
     expect(
       await screen.findByText(

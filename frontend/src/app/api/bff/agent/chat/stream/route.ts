@@ -219,6 +219,7 @@ export async function POST(request: Request) {
                 const proposedCaseDelta = asRecord(payload.proposed_case_delta);
                 const ui = asRecord(payload.ui);
                 const assertions = asRecord(payload.assertions);
+                const rfqReadinessProjection = asRecord(payload.rfq_readiness_projection);
                 const shouldBindCase = !noCaseCreated;
                 if (shouldBindCase) {
                   pushCaseBinding();
@@ -235,6 +236,7 @@ export async function POST(request: Request) {
                     conversationStrategy: mapConversationStrategy(payload.conversation_strategy),
                     turnContext: mapTurnContext(payload.turn_context),
                     proposedCaseDelta,
+                    rfq_readiness_projection: rfqReadinessProjection,
                     ui,
                     assertions,
                     runMeta,

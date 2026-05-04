@@ -241,6 +241,29 @@ export type WorkspaceSealDesignIntake = {
   eventNames: string[];
 };
 
+export type WorkspaceRfqReadinessProjection = {
+  manufacturer_review_ready: boolean;
+  rfq_basis_ready: boolean;
+  known_missing_fields: string[];
+  open_points: string[];
+  blocking_reasons: string[];
+  pending_question: string | null;
+  consent_required: boolean;
+  dispatch_allowed: boolean;
+  external_contact_allowed: boolean;
+  final_approval_claim_allowed: boolean;
+  preview_available: boolean;
+  preview_possible: boolean;
+  preview_action_available: boolean;
+  preview_action_name: string | null;
+  preview_endpoint: string | null;
+  preview_creation_requires_explicit_user_intent: boolean;
+  preview_export_requires_consent: boolean;
+  preview_requires_explicit_endpoint: boolean;
+  preview_service_boundary: string | null;
+  projection_version: string | null;
+};
+
 export type WorkspaceView = {
   caseId: string;
   caseType?: string | null;
@@ -249,6 +272,7 @@ export type WorkspaceView = {
   sealApplicationProfile?: WorkspaceSealApplicationProfile;
   designIntake?: WorkspaceSealDesignIntake;
   decisionUnderstanding?: WorkspaceDecisionUnderstanding;
+  rfqReadinessProjection?: WorkspaceRfqReadinessProjection | null;
   cockpit?: EngineeringCockpitView | null;
   communication?: {
     conversationPhase?: string | null;
