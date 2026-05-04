@@ -7,6 +7,7 @@ from app.agent.state.models import (
     GovernanceState,
     GovernedSessionState,
     MatchingState,
+    PendingQuestion,
 )
 import pytest
 from app.api.v1.projections.case_workspace import (
@@ -891,6 +892,85 @@ def test_governed_workspace_projection_exposes_stale_derived_values() -> None:
         projection.technical_derivations[0].stale_reason
         == "accepted_case_delta_changed_inputs"
     )
+
+
+def test_governed_workspace_projection_includes_durable_rfq_readiness_projection() -> None:
+    state = GovernedSessionState(
+        pending_question=PendingQuestion(
+            target_field="medium",
+            expected_answer_type="medium_value",
+            question_text="Welches Medium soll abgedichtet werden?",
+            ambiguity_policy="clarify_if_broad_or_hazardous",
+            source="governed_next_question",
+            status="open",
+        ),
+        analysis_cycle=13,
+    )
+
+    projection = project_case_workspace_from_governed_state(
+        state,
+        chat_id="case-rfq-readiness-reload",
+    )
+    payload = projection.rfq_readiness_projection or {}
+
+    assert payload["manufacturer_review_ready"] is False
+    assert payload["rfq_basis_ready"] is False
+    assert payload["known_missing_fields"] == ["Medium"]
+    assert payload["open_points"] == []
+    assert payload["blocking_reasons"] == ["Medium"]
+    assert payload["pending_question"]["target_field"] == "medium"
+    assert payload["pending_question"]["question_text"] == (
+        "Welches Medium soll abgedichtet werden?"
+    )
+    assert payload["consent_required"] is True
+    assert payload["dispatch_allowed"] is False
+    assert payload["external_contact_allowed"] is False
+    assert payload["final_approval_claim_allowed"] is False
+    assert payload["preview_available"] is False
+    assert payload["preview_possible"] is True
+    assert payload["preview_action_available"] is True
+    assert payload["preview_action_name"] == "create_rfq_preview"
+    assert payload["preview_endpoint"] == "/api/v1/rfq/preview"
+    assert payload["preview_creation_requires_explicit_user_intent"] is True
+    assert payload["preview_export_requires_consent"] is True
+    assert payload["preview_requires_explicit_endpoint"] is True
+    assert payload["preview_service_boundary"] == (
+        "RfqPreviewService.create_preview_for_case"
+    )
+    assert payload["projection_version"] == "rfq_readiness_projection_v1"
+    assert "preview_id" not in payload
+
+
+def test_workspace_projection_does_not_create_rfq_preview_as_reload_side_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.rfq_preview_service import RfqPreviewService
+
+    def fail_preview_creation(*args, **kwargs):
+        raise AssertionError("workspace projection must not create RFQ previews")
+
+    monkeypatch.setattr(
+        RfqPreviewService,
+        "create_preview_for_case",
+        fail_preview_creation,
+    )
+
+    projection = project_case_workspace_from_governed_state(
+        GovernedSessionState(
+            pending_question=PendingQuestion(
+                target_field="medium",
+                expected_answer_type="medium_value",
+                question_text="Welches Medium soll abgedichtet werden?",
+            ),
+        ),
+        chat_id="case-side-effect-free",
+    )
+
+    payload = projection.rfq_readiness_projection or {}
+    assert payload["preview_available"] is False
+    assert payload["preview_action_available"] is True
+    assert payload["preview_requires_explicit_endpoint"] is True
+    assert "preview_id" not in payload
 
 
 def test_workspace_projection_exposes_read_only_design_intake() -> None:

@@ -43,6 +43,7 @@ from app.agent.state.models import (
     GovernedSessionState,
     NormalizedParameter,
     NormalizedState,
+    PendingQuestion,
     RfqState,
     SealaiNormIdentity,
     SealaiNormMaterial,
@@ -1277,6 +1278,116 @@ async def test_workspace_projection_preserves_empty_state_creation_when_no_redis
 
     assert projection.case_summary.thread_id == "case-empty"
     assert projection.cycle_info.state_revision == 11
+
+
+@pytest.mark.asyncio
+async def test_agent_workspace_projection_includes_rfq_readiness_after_reload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active_state = GovernedSessionState(
+        analysis_cycle=13,
+        pending_question=PendingQuestion(
+            target_field="medium",
+            expected_answer_type="medium_value",
+            question_text="Welches Medium soll abgedichtet werden?",
+            ambiguity_policy="clarify_if_broad_or_hazardous",
+            source="governed_next_question",
+            status="open",
+        ),
+    )
+
+    async def _fake_guarded_source(*, current_user, case_id):
+        assert case_id == "case-rfq-readiness"
+        return active_state
+
+    monkeypatch.setattr(
+        workspace_routes,
+        "_load_guarded_workspace_projection_source",
+        _fake_guarded_source,
+    )
+
+    projection = await workspace_routes.get_workspace_projection(
+        "case-rfq-readiness",
+        revision=None,
+        current_user=RequestUser(
+            user_id="user-1",
+            username="tester",
+            sub="ignored-sub",
+            roles=[],
+            scopes=[],
+            tenant_id="tenant-1",
+        ),
+    )
+
+    payload = projection.model_dump(mode="json")["rfq_readiness_projection"]
+    assert payload["known_missing_fields"] == ["Medium"]
+    assert payload["manufacturer_review_ready"] is False
+    assert payload["dispatch_allowed"] is False
+    assert payload["external_contact_allowed"] is False
+    assert payload["final_approval_claim_allowed"] is False
+    assert payload["pending_question"]["target_field"] == "medium"
+    assert "preview_id" not in payload
+
+
+@pytest.mark.asyncio
+async def test_v1_state_workspace_projection_includes_rfq_readiness_after_reload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from starlette.requests import Request
+
+    from app.agent.api import router as agent_router
+    from app.api.v1.endpoints import state as state_endpoints
+
+    active_state = GovernedSessionState(
+        analysis_cycle=14,
+        pending_question=PendingQuestion(
+            target_field="temperature_c",
+            expected_answer_type="temperature_value",
+            question_text="Welche Temperatur liegt an?",
+            source="governed_next_question",
+            status="open",
+        ),
+    )
+
+    async def _fake_governed_source(*, current_user, session_id):
+        assert session_id == "case-state-workspace-rfq-readiness"
+        return active_state
+
+    async def _unexpected_residual_state(*args, **kwargs):
+        raise AssertionError("governed workspace source should satisfy this read")
+
+    monkeypatch.setattr(
+        agent_router,
+        "_load_preferred_governed_workspace_source",
+        _fake_governed_source,
+    )
+    monkeypatch.setattr(
+        agent_router,
+        "load_structured_residual_state",
+        _unexpected_residual_state,
+    )
+
+    projection = await state_endpoints.get_case_workspace(
+        Request({"type": "http", "headers": []}),
+        thread_id="case-state-workspace-rfq-readiness",
+        user=RequestUser(
+            user_id="user-1",
+            username="tester",
+            sub="ignored-sub",
+            roles=[],
+            scopes=[],
+            tenant_id="tenant-1",
+        ),
+    )
+
+    payload = projection.model_dump(mode="json")["rfq_readiness_projection"]
+    assert payload["known_missing_fields"] == ["Temperatur"]
+    assert payload["manufacturer_review_ready"] is False
+    assert payload["dispatch_allowed"] is False
+    assert payload["external_contact_allowed"] is False
+    assert payload["final_approval_claim_allowed"] is False
+    assert payload["pending_question"]["target_field"] == "temperature_c"
+    assert "preview_id" not in payload
 
 
 @pytest.mark.asyncio

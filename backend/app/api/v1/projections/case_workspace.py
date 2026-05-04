@@ -25,6 +25,10 @@ from app.api.v1.projections.workspace_routing import (
 from app.agent.runtime.clarification_priority import (
     select_next_focus_from_known_context,
 )
+from app.agent.communication.rfq_intent import (
+    RfqReadinessIntent,
+    build_rfq_readiness_projection,
+)
 from app.agent.state.models import GovernedSessionState
 from app.agent.domain.checks_registry import build_registered_check_results
 from app.agent.domain.delta_conflicts import build_governed_conflict_summary
@@ -1683,6 +1687,20 @@ def _governed_working_profile(state: GovernedSessionState) -> Dict[str, Any]:
     return profile
 
 
+def _build_durable_workspace_rfq_readiness_projection(
+    state: GovernedSessionState,
+) -> Dict[str, Any]:
+    projection = build_rfq_readiness_projection(
+        governed_state=state,
+        intent=RfqReadinessIntent(
+            detected=False,
+            rfq_action_type="workspace_projection",
+            reason="durable_workspace_projection",
+        ),
+    )
+    return projection.public_dict()
+
+
 def synthesize_workspace_state_from_governed(
     state: GovernedSessionState,
     *,
@@ -1945,6 +1963,9 @@ def synthesize_workspace_state_from_governed(
             "technical_derivations": technical_derivations,
             "matching_state": matching_state,
             "rfq_state": rfq_state,
+            "rfq_readiness_projection": _build_durable_workspace_rfq_readiness_projection(
+                state
+            ),
             "rfq_object": dict(state.rfq.rfq_object or {}),
             "manufacturer_state": {"data_source": "candidate_derived"},
             "conflict_summary": build_governed_conflict_summary(state),
@@ -2010,6 +2031,12 @@ def synthesize_workspace_state_from_ssot(
     governance_state: Dict[str, Any] = dict(case_state.get("governance_state") or {})
     matching_state: Dict[str, Any] = dict(case_state.get("matching_state") or {})
     rfq_state: Dict[str, Any] = dict(case_state.get("rfq_state") or {})
+    rfq_readiness_projection: Dict[str, Any] = dict(
+        state.get("rfq_readiness_projection")
+        or case_state.get("rfq_readiness_projection")
+        or rfq_state.get("rfq_readiness_projection")
+        or {}
+    )
     manufacturer_state: Dict[str, Any] = dict(
         case_state.get("manufacturer_state") or {}
     )
@@ -2135,6 +2162,7 @@ def synthesize_workspace_state_from_ssot(
             "evidence_state": evidence_state,
             "matching_state": matching_state,
             "rfq_state": rfq_state,
+            "rfq_readiness_projection": rfq_readiness_projection,
             "rfq_object": rfq_object,
             "manufacturer_state": manufacturer_state,
         },
@@ -2195,6 +2223,10 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     )
     rfq_handover_initiated = bool(system.get("rfq_handover_initiated", False))
     rfq_state = _d(system.get("rfq_state"))
+    rfq_readiness_projection = _d(
+        state_values.get("rfq_readiness_projection")
+        or system.get("rfq_readiness_projection")
+    ) or None
     matching_state = _d(system.get("matching_state"))
     manufacturer_state = _d(system.get("manufacturer_state"))
     state_revision = int(reasoning.get("state_revision") or 0)
@@ -2566,6 +2598,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         cockpit_view=cockpit_view,
         deep_dive_tabs=deep_dive_tabs,
         decision_understanding=decision_understanding,
+        rfq_readiness_projection=rfq_readiness_projection,
         needs_analysis=nbq_projection.needs_analysis,
         current_state_analysis=nbq_projection.current_state_analysis,
         next_best_questions=nbq_projection.next_best_questions,

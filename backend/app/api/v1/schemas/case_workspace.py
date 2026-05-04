@@ -685,6 +685,7 @@ class CaseWorkspaceProjection(BaseModel):
     decision_understanding: DecisionUnderstandingProjection = Field(
         default_factory=DecisionUnderstandingProjection
     )
+    rfq_readiness_projection: Optional[Dict[str, Any]] = None
     needs_analysis: NeedsAnalysisProjection = Field(
         default_factory=NeedsAnalysisProjection
     )

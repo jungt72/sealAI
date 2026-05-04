@@ -161,7 +161,10 @@ describe("mapWorkspaceView", () => {
         known_missing_fields: ["surface_finish"],
         open_points: ["Compound durch Hersteller pruefen"],
         blocking_reasons: [],
-        pending_question: "Welche Oberflaeche ist dokumentiert?",
+        pending_question: {
+          target_field: "surface_finish",
+          question_text: "Welche Oberflaeche ist dokumentiert?",
+        },
         consent_required: true,
         dispatch_allowed: false,
         external_contact_allowed: false,
@@ -301,5 +304,8 @@ describe("mapWorkspaceView", () => {
     expect(workspace.rfqReadinessProjection?.dispatch_allowed).toBe(false);
     expect(workspace.rfqReadinessProjection?.external_contact_allowed).toBe(false);
     expect(workspace.rfqReadinessProjection?.preview_action_name).toBe("create_preview");
+    expect(workspace.rfqReadinessProjection?.pending_question).toBe(
+      "Welche Oberflaeche ist dokumentiert?",
+    );
   });
 });

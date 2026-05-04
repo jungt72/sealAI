@@ -11,6 +11,22 @@ function asStringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function asPendingQuestion(value: unknown): string | null {
+  const direct = asStringOrNull(value);
+  if (direct) {
+    return direct;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  return (
+    asStringOrNull(raw.question_text) ||
+    asStringOrNull(raw.question) ||
+    asStringOrNull(raw.text)
+  );
+}
+
 export function mapRfqReadinessProjection(value: unknown): WorkspaceRfqReadinessProjection | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -23,7 +39,7 @@ export function mapRfqReadinessProjection(value: unknown): WorkspaceRfqReadiness
     known_missing_fields: asStrings(raw.known_missing_fields),
     open_points: asStrings(raw.open_points),
     blocking_reasons: asStrings(raw.blocking_reasons),
-    pending_question: asStringOrNull(raw.pending_question),
+    pending_question: asPendingQuestion(raw.pending_question),
     consent_required: raw.consent_required !== false,
     dispatch_allowed: Boolean(raw.dispatch_allowed),
     external_contact_allowed: Boolean(raw.external_contact_allowed),
