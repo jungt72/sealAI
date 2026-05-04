@@ -26,24 +26,54 @@ export type ActivePanel =
   | null;
 
 // ── Medium Intelligence types (fetched via BFF) ────────────────────────────
+export interface MediumResearchAttempt {
+  attempted: boolean;
+  status: "ok" | "no_hits" | "disabled" | "not_configured" | "error" | "tenant_missing";
+  hit_count: number;
+  tier?: string | null;
+  note?: string | null;
+}
+
+export interface MediumEvidenceItem {
+  id: string;
+  source_type: "deterministic" | "rag" | "web";
+  validation_status: "system_derived" | "documented" | "web_retrieved" | "not_available";
+  title: string;
+  source_name?: string | null;
+  excerpt: string;
+  confidence: "low" | "medium" | "high";
+  url?: string | null;
+}
+
+export interface MediumResearchSection {
+  id: string;
+  title: string;
+  content: string;
+  bullets: string[];
+  evidence_ref_ids: string[];
+}
+
 export interface MediumIntelligenceData {
-  canonicalName: string;
-  family: string;
-  subFamily?: string;
-  pH: { min: number | null; max: number | null; note: string };
-  viscosityMpas: { at20c: number | null; at40c: number | null; at80c: number | null };
-  temperatureRange: { minC: number; maxC: number; criticalNoteC: number | null };
-  pressureTypical: { maxBar: number | null; note: string };
-  corrosiveness: "low" | "medium" | "high" | "very_high";
-  chemicalAggressiveness: "low" | "medium" | "high" | "very_high";
-  compatibleMaterials: string[];
-  incompatibleMaterials: Array<string | { material: string; reason: string }>;
-  specialChallenges: string[];
-  sealingConsiderations: string[];
-  typicalIndustries: string[];
-  normsStandards: string[];
-  warningFlags: string[];
-  confidenceLevel: "high" | "medium" | "low";
+  medium: string;
+  resolved_medium?: string | null;
+  summary?: string | null;
+  answer_markdown?: string | null;
+  answer_markdown_source?: "deterministic_sections" | "medium_composer" | "composer_fallback";
+  sections: MediumResearchSection[];
+  evidence: MediumEvidenceItem[];
+  research_status: {
+    rag: MediumResearchAttempt;
+    web: MediumResearchAttempt;
+  };
+  composer?: {
+    enabled: boolean;
+    attempted: boolean;
+    succeeded: boolean;
+    source: "deterministic_sections" | "medium_composer" | "composer_fallback";
+    fallback_reason?: string | null;
+  };
+  limitations: string[];
+  not_for_release_decisions: boolean;
 }
 
 interface WorkspaceStore {
@@ -88,6 +118,7 @@ interface WorkspaceStore {
   setMediumIntelligence: (data: MediumIntelligenceData | null) => void;
   setMediumIntelligenceLoading: (v: boolean) => void;
   setMediumIntelligenceFor: (label: string | null) => void;
+  setMediumIntelligenceResult: (label: string | null, data: MediumIntelligenceData | null) => void;
 
   // ── UI-Aktionen ───────────────────────────────────────────────────────────
   toggleSidebar: () => void;
@@ -141,6 +172,12 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set) => ({
   setMediumIntelligence: (data) => set({ mediumIntelligence: data }),
   setMediumIntelligenceLoading: (v) => set({ mediumIntelligenceLoading: v }),
   setMediumIntelligenceFor: (label) => set({ mediumIntelligenceFor: label }),
+  setMediumIntelligenceResult: (label, data) =>
+    set({
+      mediumIntelligence: data,
+      mediumIntelligenceFor: label,
+      mediumIntelligenceLoading: false,
+    }),
 
   toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
   closeSidebar: () => set({ isSidebarOpen: false }),

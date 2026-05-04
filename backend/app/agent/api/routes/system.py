@@ -1,7 +1,8 @@
 import logging
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
-from app.agent.services.medium_context import resolve_medium_context
+from app.agent.services.medium_research import MediumResearchService
+from app.services.auth.dependencies import RequestUser, get_current_request_user
 
 _log = logging.getLogger(__name__)
 
@@ -14,12 +15,12 @@ async def agent_health() -> dict:
 @router.get("/medium-intelligence")
 async def get_medium_intelligence(
     medium: str = Query(...),
+    current_user: RequestUser = Depends(get_current_request_user),
 ):
-    context = await resolve_medium_context(medium)
-    return {
-        "canonical_name": context.canonical_name,
-        "is_hazardous": context.is_hazardous,
-        "is_food_grade": context.is_food_grade,
-        "is_gas": context.is_gas,
-        "context_notes": list(context.context_notes),
-    }
+    service = MediumResearchService()
+    result = await service.build(
+        medium,
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.user_id,
+    )
+    return result.model_dump()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Beaker,
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { DecisionUnderstandingPanel } from "@/components/dashboard/DecisionUnderstandingPanel";
+import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
 import { ParameterWorkspaceTab } from "@/components/dashboard/ParameterWorkspaceTab";
 import RfqPane from "@/components/dashboard/RfqPane";
 import type { AgentOverrideItemRequest } from "@/lib/bff/parameterOverride";
@@ -26,6 +27,7 @@ import {
   type SealCockpitOverview,
 } from "@/lib/engineering/sealCockpitViewModel";
 import { humanizeDisplayText, uniqueDisplayItems } from "@/lib/engineering/displayLabels";
+import { type MediumEvidenceItem, type MediumIntelligenceData, useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { cn } from "@/lib/utils";
 
 export function CockpitTabs({
@@ -436,7 +438,247 @@ function sourceStatusLine(workspace: WorkspaceView | null) {
   return `${source} · ${status}`;
 }
 
+function researchStatusLabel(attempt: MediumIntelligenceData["research_status"]["rag"] | undefined, label: string) {
+  if (!attempt) {
+    return `${label}: noch nicht geprüft`;
+  }
+  if (!attempt.attempted) {
+    return `${label}: ${attempt.note || "nicht gestartet"}`;
+  }
+  if (attempt.status === "ok") {
+    return `${label}: ${attempt.hit_count} Treffer${attempt.tier ? ` · ${attempt.tier}` : ""}`;
+  }
+  if (attempt.status === "no_hits") {
+    return `${label}: keine Treffer`;
+  }
+  return `${label}: ${attempt.note || "nicht verfügbar"}`;
+}
+
+function evidenceStatusLabel(item: MediumEvidenceItem) {
+  const source =
+    item.source_type === "rag"
+      ? "RAG"
+      : item.source_type === "web"
+        ? "Web"
+        : "System";
+  const status =
+    item.validation_status === "documented"
+      ? "dokumentiert"
+      : item.validation_status === "web_retrieved"
+        ? "live abgerufen"
+        : item.validation_status === "system_derived"
+          ? "systemseitig abgeleitet"
+          : "nicht verfügbar";
+  return `${source} · ${status}`;
+}
+
+function mediumAnswerSourceLabel(data: MediumIntelligenceData) {
+  if (data.answer_markdown_source === "medium_composer" && data.composer?.succeeded) {
+    return "LLM formuliert · quellengebunden";
+  }
+  if (data.answer_markdown_source === "composer_fallback") {
+    return "Fallback · geprüfte Sektionen";
+  }
+  return "Deterministisch · geprüfte Sektionen";
+}
+
+function MediumDeepDive({
+  data,
+  loading,
+  error,
+}: {
+  data: MediumIntelligenceData | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) {
+    return (
+      <section className="mt-4 rounded-[16px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
+        <h3 className="text-sm font-semibold text-[#111827]">Medium-Deep-Dive</h3>
+        <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">
+          SeaLAI prüft gerade den kuratierten Medium-Kontext und interne Wissensquellen.
+        </p>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="mt-4 rounded-[16px] border border-[#FDE2B8] bg-[#FFF4E5] p-4">
+        <h3 className="text-sm font-semibold text-[#111827]">Medium-Deep-Dive</h3>
+        <p className="mt-2 text-sm leading-relaxed text-[#9A3412]">{error}</p>
+      </section>
+    );
+  }
+
+  if (!data) {
+    return (
+      <section className="mt-4 rounded-[16px] border border-[#E5E7EB] bg-[#FAFAFB] p-4">
+        <h3 className="text-sm font-semibold text-[#111827]">Medium-Deep-Dive</h3>
+        <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">
+          Sobald ein Medium erkannt wurde, zeigt SeaLAI hier einen quellenmarkierten Deep-Dive.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-4 space-y-4 rounded-[16px] border border-[#E5E7EB] bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-[#111827]">Medium-Deep-Dive</h3>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
+            Quellenmarkierte Orientierung zu {normalizeText(data.resolved_medium ?? data.medium) || "diesem Medium"}.
+            Keine Werkstofffreigabe, keine Compliance-Aussage.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[12px] font-semibold">
+          <span className="rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1 text-[#0B57D0]">
+            {researchStatusLabel(data.research_status.rag, "RAG")}
+          </span>
+          <span className="rounded-full border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-1 text-[#4B5563]">
+            {researchStatusLabel(data.research_status.web, "Web")}
+          </span>
+        </div>
+      </div>
+
+      {data.answer_markdown ? (
+        <div className="rounded-[14px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+              LLM-Deep-Dive
+            </div>
+            <span className="rounded-full border border-[#D7E5FF] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0B57D0]">
+              {mediumAnswerSourceLabel(data)}
+            </span>
+          </div>
+          <div className="text-sm leading-relaxed text-[#111827]">
+            <MarkdownRenderer variant="chat">{data.answer_markdown}</MarkdownRenderer>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        {data.sections.map((section) => (
+          <div key={section.id} className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">{section.title}</div>
+            <p className="mt-2 text-sm leading-relaxed text-[#111827]">{normalizeText(section.content)}</p>
+            {section.bullets.length ? (
+              <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-[#4B5563]">
+                {section.bullets.slice(0, 8).map((bullet) => (
+                  <li key={bullet}>{normalizeText(bullet)}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Quellen & Nachweise</div>
+        {data.evidence.length ? (
+          <div className="mt-3 space-y-3">
+            {data.evidence.map((item) => (
+              <div key={item.id} className="rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-[#111827]">{normalizeText(item.title)}</div>
+                  <span className="rounded-full border border-[#E5E7EB] bg-[#FAFAFB] px-2.5 py-1 text-[11px] font-semibold text-[#4B5563]">
+                    {evidenceStatusLabel(item)}
+                  </span>
+                </div>
+                {item.source_name ? <p className="mt-1 text-[12px] text-[#6B7280]">{normalizeText(item.source_name)}</p> : null}
+                <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">{normalizeText(item.excerpt)}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">
+            Keine belastbare Quelle gefunden. SeaLAI zeigt dann keine erfundenen Medienaussagen.
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-[14px] border border-[#FFF4E5] bg-[#FFF4E5] px-3 py-2 text-sm leading-relaxed text-[#9A3412]">
+        {data.limitations.map((limitation) => (
+          <p key={limitation}>{normalizeText(limitation)}</p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
+  const mediumIntelligence = useWorkspaceStore((state) => state.mediumIntelligence);
+  const mediumIntelligenceLoading = useWorkspaceStore((state) => state.mediumIntelligenceLoading);
+  const mediumIntelligenceFor = useWorkspaceStore((state) => state.mediumIntelligenceFor);
+  const setMediumIntelligence = useWorkspaceStore((state) => state.setMediumIntelligence);
+  const setMediumIntelligenceLoading = useWorkspaceStore((state) => state.setMediumIntelligenceLoading);
+  const setMediumIntelligenceFor = useWorkspaceStore((state) => state.setMediumIntelligenceFor);
+  const setMediumIntelligenceResult = useWorkspaceStore((state) => state.setMediumIntelligenceResult);
+  const [mediumIntelligenceError, setMediumIntelligenceError] = useState<string | null>(null);
+  const mediumLabel = normalizeText(
+    workspace?.mediumContext.mediumLabel ??
+      workspace?.parameters?.medium ??
+      workspace?.mediumClassification.canonicalLabel,
+  );
+
+  useEffect(() => {
+    if (!mediumLabel) {
+      setMediumIntelligence(null);
+      setMediumIntelligenceFor(null);
+      return;
+    }
+    if (mediumIntelligenceFor === mediumLabel) {
+      return;
+    }
+
+    const controller = new AbortController();
+    setMediumIntelligenceLoading(true);
+
+    fetch("/api/bff/medium-intelligence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ medium: mediumLabel }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Medium-Deep-Dive konnte nicht geladen werden.");
+        }
+        return (await response.json()) as MediumIntelligenceData;
+      })
+      .then((payload) => {
+        setMediumIntelligenceError(null);
+        setMediumIntelligenceResult(mediumLabel, payload);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setMediumIntelligence(null);
+        setMediumIntelligenceFor(null);
+        setMediumIntelligenceError(
+          error instanceof Error ? error.message : "Medium-Deep-Dive konnte nicht geladen werden.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setMediumIntelligenceLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    mediumLabel,
+    mediumIntelligenceFor,
+    setMediumIntelligence,
+    setMediumIntelligenceFor,
+    setMediumIntelligenceLoading,
+    setMediumIntelligenceResult,
+  ]);
+
   return (
     <WorkspaceTabShell
       title="Medium"
@@ -453,6 +695,11 @@ function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
         <ItemList title="Offen" items={[...(workspace?.mediumContext.followupPoints ?? []), ...(workspace?.completeness.coverageGaps ?? [])]} />
         <ItemList title="Nächste Frage" items={[workspace?.mediumClassification.followupQuestion, workspace?.communication?.primaryQuestion]} />
       </div>
+      <MediumDeepDive
+        data={mediumIntelligenceFor === mediumLabel ? mediumIntelligence : null}
+        loading={mediumIntelligenceLoading}
+        error={mediumLabel ? mediumIntelligenceError : null}
+      />
     </WorkspaceTabShell>
   );
 }

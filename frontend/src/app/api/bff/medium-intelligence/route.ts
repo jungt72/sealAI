@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAccessToken } from "@/lib/bff/auth-token";
 import { buildBackendUrl } from "@/lib/bff/backend";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 /**
  * POST /api/bff/medium-intelligence
  * Proxies to backend GET /api/agent/medium-intelligence?medium=...
@@ -42,13 +45,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
+      cache: "no-store",
       signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
       return NextResponse.json(
-        { error: `Backend error: ${res.status}`, detail: text },
+        { error: `Backend error: ${res.status}` },
         { status: res.status }
       );
     }
