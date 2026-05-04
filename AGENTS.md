@@ -154,6 +154,7 @@ Forbidden language unless backed by explicit evidence:
 Coding agents must implement V8 as an architecture, not as example-specific fixes:
 
 - SealAI does not build its own LLM. It uses existing model roles through the model registry.
+- The V8 Communication Runtime may use the `communication_runtime` model role (`SEALAI_COMMUNICATION_RUNTIME_MODEL`, enabled by `SEALAI_ENABLE_COMMUNICATION_RUNTIME_LLM`) to classify user intent, but it may only emit a bounded `TurnDecision` proposal; it must not answer users or set engineering truth.
 - Every user turn must pass through the Communication Runtime and produce an explicit `TurnDecision` plus `RuntimeAction`.
 - `RuntimeAction` is the hard contract before LangGraph. Only `RuntimeActionType.ENTER_GOVERNED_GRAPH` may set `graph_allowed=true`.
 - `ANSWER_ONLY`, `ANSWER_THEN_RESUME`, `ROUTE_SLOT_CANDIDATE`, `SHOW_RFQ_READINESS`, `ANSWER_RFQ_STATUS`, `DEFER_RFQ_UNTIL_REQUIRED_FIELDS`, and `WAIT_FOR_USER` bypass LangGraph.

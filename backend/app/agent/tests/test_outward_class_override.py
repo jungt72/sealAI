@@ -1,9 +1,9 @@
 """
-Tests for knowledge/comparison question override in GOVERNED sessions.
+Tests for the legacy knowledge/comparison classifier and V8 graph boundary.
 
 Verifies that:
-  - Knowledge questions in a GOVERNED session → conversational_answer
-  - Comparison questions in a GOVERNED session → exploration_answer
+  - Knowledge questions are classified before graph entry by the V8 runtime
+  - output_contract no longer changes response_class after graph entry
   - Parameter corrections ("statt", "korrigiere") → governed_state_update (no override)
   - Sealing type changes → governed_state_update (no override)
   - classify_message_as_knowledge_override returns None for normal messages
@@ -166,18 +166,18 @@ class TestClassifyMessageAsKnowledgeOverride:
 # Integration tests: _determine_response_class with pending_message
 # ---------------------------------------------------------------------------
 
-class TestDetermineResponseClassWithOverride:
-    """Tests that _determine_response_class respects knowledge/comparison overrides."""
+class TestDetermineResponseClassWithV8Boundary:
+    """output_contract must not own knowledge/side-question routing anymore."""
 
-    def test_knowledge_question_in_governed_returns_conversational_answer(self):
+    def test_knowledge_question_in_graph_falls_through_to_governed_state_update(self):
         state = _full_a_state(pending="was ist ein O-Ring?")
         result = _determine_response_class(state)
-        assert result == "conversational_answer"
+        assert result == "governed_state_update"
 
-    def test_comparison_question_in_governed_returns_exploration_answer(self):
+    def test_comparison_question_in_graph_falls_through_to_governed_state_update(self):
         state = _full_a_state(pending="vergleiche NBR und PTFE")
         result = _determine_response_class(state)
-        assert result == "exploration_answer"
+        assert result == "governed_state_update"
 
     def test_param_update_statt_remains_governed_state_update(self):
         state = _full_a_state(pending="80°C statt 90°C")
@@ -204,9 +204,9 @@ class TestDetermineResponseClassWithOverride:
     def test_was_sind_gleitringdichtungen_returns_conversational_answer(self):
         state = _full_a_state(pending="Was sind Gleitringdichtungen?")
         result = _determine_response_class(state)
-        assert result == "conversational_answer"
+        assert result == "governed_state_update"
 
     def test_erklaere_ptfe_returns_conversational_answer(self):
         state = _full_a_state(pending="Erkläre mir PTFE kurz")
         result = _determine_response_class(state)
-        assert result == "conversational_answer"
+        assert result == "governed_state_update"

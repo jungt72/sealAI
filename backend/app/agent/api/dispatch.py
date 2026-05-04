@@ -11,7 +11,6 @@ from app.agent.communication.v7_contracts import (
     RuntimeAnswerBuilder,
     TurnDecision,
     build_answer_only_runtime_action,
-    build_knowledge_override_runtime_action,
     build_rfq_readiness_runtime_action,
     build_runtime_action_from_turn_decision,
 )
@@ -200,15 +199,17 @@ async def _load_existing_governed_state_for_v7(
         return None
 
 
-def _resolve_v7_turn_decision(
+async def _resolve_v8_turn_decision(
     *,
     request: Any,
     pre_gate: Any,
     governed_state: GovernedSessionState | None,
 ) -> TurnDecision:
+    from app.agent.communication.communication_runtime_v8 import (  # noqa: PLC0415
+        CommunicationRuntimeV8,
+    )
     from app.agent.communication.conversation_controller_v7 import (  # noqa: PLC0415
         ConversationControllerInput,
-        ConversationControllerV7,
     )
     from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding  # noqa: PLC0415
 
@@ -223,7 +224,7 @@ def _resolve_v7_turn_decision(
         message=request.message,
         turn_index=turn_index,
     )
-    return ConversationControllerV7().decide(
+    return await CommunicationRuntimeV8().decide(
         ConversationControllerInput(
             user_message=request.message,
             pre_gate_classification=pre_gate.classification,
@@ -250,7 +251,11 @@ def _v7_runtime_action(
 ) -> RuntimeAction | None:
     if decision is None:
         return None
-    return build_runtime_action_from_turn_decision(decision, reason=reason)
+    return build_runtime_action_from_turn_decision(
+        decision,
+        reason=reason,
+        decision_source="communication_runtime_v8",
+    )
 
 
 def _fast_response_runtime_action(
@@ -359,7 +364,7 @@ async def _resolve_runtime_dispatch(
                 request=request,
                 current_user=current_user,
             )
-            turn_decision = _resolve_v7_turn_decision(
+            turn_decision = await _resolve_v8_turn_decision(
                 request=request,
                 pre_gate=pre_gate,
                 governed_state=governed_state,
@@ -408,14 +413,12 @@ async def _resolve_runtime_dispatch(
             PreGateClassification.DEEP_DIVE,
         }:
             governed_state = None
-            if request.session_id and _knowledge_turn_needs_active_case_probe(
-                request.message
-            ):
+            if request.session_id:
                 governed_state = await _load_existing_governed_state_for_v7(
                     request=request,
                     current_user=current_user,
                 )
-            turn_decision = _resolve_v7_turn_decision(
+            turn_decision = await _resolve_v8_turn_decision(
                 request=request,
                 pre_gate=pre_gate,
                 governed_state=governed_state,
@@ -584,7 +587,7 @@ async def _resolve_runtime_dispatch(
                         type(exc).__name__,
                         exc,
                     )
-        turn_decision = _resolve_v7_turn_decision(
+        turn_decision = await _resolve_v8_turn_decision(
             request=request,
             pre_gate=pre_gate,
             governed_state=governed_state,
@@ -593,45 +596,6 @@ async def _resolve_runtime_dispatch(
             turn_decision,
             reason="governed_domain_or_slot_turn",
         )
-        if bool(getattr(runtime_action, "graph_allowed", False)) and not bool(
-            getattr(runtime_action, "slot_candidate_detected", False)
-        ):
-            from app.agent.api.knowledge_override import (  # noqa: PLC0415
-                build_case_side_knowledge_response,
-            )
-            from app.agent.graph.output_contract_assembly import (  # noqa: PLC0415
-                classify_message_as_knowledge_override,
-            )
-
-            knowledge_override = classify_message_as_knowledge_override(
-                request.message
-            )
-            if knowledge_override is not None:
-                knowledge_response = await build_case_side_knowledge_response(
-                    message=request.message,
-                    override_class=knowledge_override,
-                    conversation_route=conversation_route,
-                    governed_state=governed_state,
-                )
-                return RuntimeDispatchResolution(
-                    gate_route="CONVERSATION",
-                    gate_reason=f"runtime_action_knowledge_override:{knowledge_override}",
-                    runtime_mode="CONVERSATION",
-                    gate_applied=False,
-                    pre_gate_classification=pre_gate.classification.value,
-                    pre_gate_reason=pre_gate.reasoning,
-                    knowledge_response=knowledge_response,
-                    knowledge_override_class=knowledge_override,
-                    governed_state=governed_state,
-                    conversation_route=conversation_route,
-                    turn_decision=turn_decision,
-                    runtime_action=build_knowledge_override_runtime_action(
-                        override_class=knowledge_override,
-                        active_case_exists=_governed_state_has_active_case(
-                            governed_state
-                        ),
-                    ),
-                )
         return RuntimeDispatchResolution(
             gate_route="GOVERNED",
             gate_reason=f"pre_gate:{pre_gate.reasoning}",

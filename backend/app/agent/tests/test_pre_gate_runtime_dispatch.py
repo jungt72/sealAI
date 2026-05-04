@@ -416,19 +416,18 @@ async def test_knowledge_chat_path_uses_knowledge_service_without_case_creation(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("message", "expects_active_case_probe"),
+    "message",
     [
-        ("Vergleiche FKM und EPDM für Dichtungen.", False),
-        ("Wann nimmt man EPDM statt FKM?", False),
-        ("PTFE vs FKM", False),
-        ("und fkm mit nbr?", True),
-        ("FKM mit NBR?", False),
+        "Vergleiche FKM und EPDM für Dichtungen.",
+        "Wann nimmt man EPDM statt FKM?",
+        "PTFE vs FKM",
+        "und fkm mit nbr?",
+        "FKM mit NBR?",
     ],
 )
 async def test_material_comparison_dispatch_uses_knowledge_without_case_creation(
     monkeypatch,
     message: str,
-    expects_active_case_probe: bool,
 ) -> None:
     load_state = AsyncMock(return_value=None)
     load_context = AsyncMock(return_value=None)
@@ -455,14 +454,11 @@ async def test_material_comparison_dispatch_uses_knowledge_without_case_creation
     assert dispatch.knowledge_response.no_case_created is True
     assert dispatch.fast_response is None
     assert dispatch.governed_state is None
-    if expects_active_case_probe:
-        load_state.assert_awaited_once_with(
-            current_user=_user(),
-            session_id="material-comparison-no-case",
-            create_if_missing=False,
-        )
-    else:
-        load_state.assert_not_awaited()
+    load_state.assert_awaited_once_with(
+        current_user=_user(),
+        session_id="material-comparison-no-case",
+        create_if_missing=False,
+    )
 
 
 @pytest.mark.asyncio

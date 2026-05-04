@@ -59,7 +59,6 @@ output_public shape (Invariant 8 — no internal artefacts):
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, Callable, Literal
 
 from langgraph.types import Command, interrupt
@@ -67,6 +66,9 @@ from langgraph.types import Command, interrupt
 from app.agent.domain.admissibility import check_inquiry_admissibility
 from app.agent.communication.governed_answer_context import (
     build_governed_answer_context,
+)
+from app.agent.communication.side_question_detection import (
+    classify_message_as_knowledge_side_question,
 )
 from app.agent.graph import GraphState
 from app.agent.runtime.clarification_priority import (
@@ -82,94 +84,22 @@ from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.state.models import ConversationStrategyContract, PendingQuestion
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.output_classifier import OutputClassificationInput, OutputClassifier
-from app.services.knowledge.material_comparison import is_material_comparison_question
 
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Knowledge / comparison question detection (zone-stickiness override)
+# Knowledge / comparison question detection compatibility wrapper
 # ---------------------------------------------------------------------------
-# In a GOVERNED session, pure knowledge or comparison questions must NOT trigger
-# a governed_state_update. Instead they are routed to the light runtime
-# (conversation_runtime or exploration_runtime) without any state dump.
-
-_KNOWLEDGE_PATTERNS: tuple[str, ...] = (
-    r"was ist\b",
-    r"was genau ist\b",
-    r"was eigentlich ist\b",
-    r"was sind\b",
-    r"erkl[äa]r",
-    r"erkläre\b",
-    r"erklär\b",
-    r"wie funktioniert",
-    r"was bedeutet",
-    r"was bedeutet\b",
-    r"was heisst",
-    r"was versteht man unter",
-    r"kannst du.*erklären",
-)
-
-_COMPARISON_PATTERNS: tuple[str, ...] = (
-    r"vergleich",
-    r"\bunterschied\b",
-    r"\bversus\b",
-    r"\bvs\.?\b",
-    r"besser.*oder",
-    r"oder.*besser",
-)
-
-# These markers indicate a parameter correction/update — override is suppressed.
-_PARAM_UPDATE_MARKERS: tuple[str, ...] = (
-    r"\bstatt\b",
-    r"\bkorrig",
-    r"\bsondern\b",
-    r"\bänder",
-    r"\bkorrekt(?:ur)?\b",
-)
-
-_CONCRETE_CASE_MARKERS: tuple[str, ...] = (
-    r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|barg|bara|psi|°?\s*[cCfF]|grad|rpm|u\.?/?min)\b",
-    r"\b(salzwasser|wasser|öl|oel|ethanol|dampf|medium)\b.*\b(\d|bar|grad|welle|pumpe|ruehrwerk|rührwerk)\b",
-    r"\b(rotierende?\s+welle|welle|pumpe|ruehrwerk|rührwerk|getriebe)\b.*\b(salzwasser|wasser|öl|oel|ethanol|medium|ptfe|fkm|nbr|epdm)\b",
-)
-
-
-def _contains_concrete_case_marker(lowered: str) -> bool:
-    return any(
-        re.search(pattern, lowered, re.IGNORECASE) for pattern in _CONCRETE_CASE_MARKERS
-    )
+# V8 moved this decision before graph entry. The public symbol remains here for
+# legacy tests and callers while output assembly no longer owns runtime routing.
 
 
 def classify_message_as_knowledge_override(
     message: str,
 ) -> Literal["conversational_answer", "exploration_answer"] | None:
-    """Return an override response class for knowledge/comparison questions in GOVERNED.
+    """Compatibility wrapper for the V8 communication-runtime classifier."""
 
-    Returns None when the message is a parameter update (correction markers present)
-    or when no knowledge/comparison pattern matches.
-    """
-    lowered = str(message or "").strip().lower()
-    if not lowered:
-        return None
-    # Generic material-pair questions, including elliptical follow-ups such as
-    # "und FKM mit NBR?", are educational side questions. They must not become
-    # governed material mutations inside an active case.
-    if is_material_comparison_question(lowered):
-        return "exploration_answer"
-    # Parameter update markers suppress the override — keep governed flow
-    if any(re.search(p, lowered, re.IGNORECASE) for p in _PARAM_UPDATE_MARKERS):
-        return None
-    # A comparison with concrete operating data is no longer a pure knowledge turn.
-    # Keep it governed so intake, cockpit projection and state revision can capture
-    # the mentioned medium/temperature/pressure/motion instead of losing them in chat.
-    if _contains_concrete_case_marker(lowered):
-        return None
-    # Comparison is checked first — "was ist besser: X oder Y?" should use RAG
-    if any(re.search(p, lowered, re.IGNORECASE) for p in _COMPARISON_PATTERNS):
-        return "exploration_answer"
-    if any(re.search(p, lowered, re.IGNORECASE) for p in _KNOWLEDGE_PATTERNS):
-        return "conversational_answer"
-    return None
+    return classify_message_as_knowledge_side_question(message)
 
 
 # Outward response classes (Blaupause V1.1)
@@ -638,15 +568,6 @@ def build_governed_conversation_strategy_contract(
 
 def _determine_response_class(state: GraphState) -> str:
     """Select the outward response class deterministically from GovernanceState."""
-    pending_message = str(getattr(state, "pending_message", "") or "").strip()
-
-    # Knowledge / comparison override: pure questions in a GOVERNED session must
-    # not emit a governed_state_update. Correction markers ("statt", "korrigiere")
-    # suppress the override so parameter updates go through the governed flow.
-    knowledge_override = classify_message_as_knowledge_override(pending_message)
-    if knowledge_override is not None:
-        return knowledge_override
-
     gov_class = state.governance.gov_class
     preselection_blockers = _preselection_blocker_fields(state)
 

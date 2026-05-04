@@ -294,7 +294,7 @@ async def test_no_case_term_question_uses_runtime_action_answer_only_knowledge(
 
 
 @pytest.mark.asyncio
-async def test_active_case_legacy_knowledge_override_is_runtime_action_owned(
+async def test_active_case_knowledge_question_forced_domain_is_v8_side_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = _active_state()
@@ -304,7 +304,7 @@ async def test_active_case_legacy_knowledge_override_is_runtime_action_owned(
         lambda self, message, language_hint=None: ClassificationResult(
             classification=PreGateClassification.DOMAIN_INQUIRY,
             confidence=0.88,
-            reasoning="forced_domain_for_legacy_override",
+            reasoning="forced_domain_for_v8_side_question",
             escalate_to_graph=True,
         ),
     )
@@ -316,32 +316,23 @@ async def test_active_case_legacy_knowledge_override_is_runtime_action_owned(
         "app.agent.api.dispatch._load_live_governed_state",
         AsyncMock(return_value=state),
     )
-    side_answer = KnowledgeResponse(
-        content="Ein Radialwellendichtring dichtet an einer rotierenden Welle ab.",
-        answer_markdown="Ein Radialwellendichtring dichtet an einer rotierenden Welle ab.",
-    )
-    build_override = AsyncMock(return_value=side_answer)
-    monkeypatch.setattr(
-        "app.agent.api.knowledge_override.build_case_side_knowledge_response",
-        build_override,
-    )
-
     dispatch = await _resolve_runtime_dispatch(
         ChatRequest(message="Was ist ein Radialwellendichtring?", session_id="active-case"),
         current_user=_user(),
     )
 
-    assert dispatch.knowledge_response is side_answer
-    assert dispatch.knowledge_override_class == "conversational_answer"
+    assert dispatch.knowledge_response is None
+    assert dispatch.knowledge_override_class is None
+    assert dispatch.turn_decision is not None
+    assert dispatch.turn_decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
     assert dispatch.runtime_action is not None
-    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_ONLY
-    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.KNOWLEDGE_OVERRIDE
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE
     assert dispatch.runtime_action.graph_allowed is False
     assert dispatch.runtime_action.graph_invocation_skipped_reason == (
-        "legacy_knowledge_override_answer_only"
+        "active_case_side_question_answered_by_communication_runtime"
     )
-    assert dispatch.runtime_action.as_trace()["knowledge_override_class"] == "conversational_answer"
-    build_override.assert_awaited_once()
+    assert dispatch.runtime_action.as_trace()["decision_source"] == "communication_runtime_v8"
 
 
 @pytest.mark.asyncio

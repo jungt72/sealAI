@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.agent.communication.side_question_detection import (
+    classify_message_as_knowledge_side_question,
+)
 from app.agent.communication.v7_contracts import (
     AnswerMode,
     CaseRelevance,
@@ -88,6 +91,8 @@ class ConversationControllerV7:
         )
 
     def _looks_like_side_question(self, message: str) -> bool:
+        if classify_message_as_knowledge_side_question(message) is not None:
+            return True
         normalized = " ".join((message or "").casefold().split())
         if not normalized:
             return False
