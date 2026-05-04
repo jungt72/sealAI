@@ -23,7 +23,7 @@ AnswerMarkdownSource = Literal["deterministic_sections", "medium_composer", "com
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
-_MAX_MEDIUM_ANSWER_CHARS = 3800
+_MAX_MEDIUM_ANSWER_CHARS = 9000
 
 _INTERNAL_LEAKAGE_FRAGMENTS = (
     "```json",
@@ -206,7 +206,7 @@ async def _compose_medium_answer_markdown(
             model=model,
             messages=messages,
             temperature=0.25,
-            max_tokens=1200,
+            max_tokens=2400,
         )
         raw_content = response.choices[0].message.content
         answer = _parse_medium_answer_output(raw_content)

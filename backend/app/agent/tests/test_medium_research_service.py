@@ -167,6 +167,58 @@ async def test_medium_answer_composer_can_produce_visible_markdown(monkeypatch: 
 
 
 @pytest.mark.asyncio
+async def test_medium_answer_composer_accepts_detailed_bounded_markdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    detailed_answer = (
+        "### Salzwasser\n\n"
+        + "\n".join(
+            [
+                "- Chloridkorrosion, Federwerkstoff, Wellenoberflaeche, Ablagerungen und "
+                "Nass-Trocken-Wechsel bleiben Pruefpunkte."
+                for _ in range(45)
+            ]
+        )
+        + "\n\nDas ist Orientierung, keine Freigabe."
+    )
+    assert len(detailed_answer) > 3800
+    assert len(detailed_answer) < 9000
+    captured: dict[str, object] = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=json.dumps(
+                                {
+                                    "answer_markdown": detailed_answer,
+                                    "confidence_note": None,
+                                }
+                            )
+                        )
+                    )
+                ]
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_ANSWER_COMPOSER", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(medium_research, "get_async_llm", lambda _role: (fake_client, "test-model"))
+    monkeypatch.setattr(medium_research, "_retrieve_rag_evidence", _empty_rag)
+    monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
+
+    result = await MediumResearchService().build("Salzwasser", tenant_id="tenant-1", user_id="user-1")
+
+    assert result.answer_markdown_source == "medium_composer"
+    assert result.composer.succeeded is True
+    assert result.answer_markdown == detailed_answer
+    assert captured["max_tokens"] == 2400
+
+
+@pytest.mark.asyncio
 async def test_medium_answer_composer_falls_back_on_unsafe_output(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeCompletions:
         async def create(self, **_kwargs):
