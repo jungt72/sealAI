@@ -57,6 +57,27 @@ async def test_medium_research_injects_rag_evidence(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
+async def test_medium_research_uses_default_tenant_for_rag_when_auth_tenant_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, str] = {}
+
+    async def fake_retrieve_with_tenant(_query, tenant_id, **_kwargs):
+        seen["tenant_id"] = tenant_id
+        return [], {"tier": "tier3_empty", "k_returned": 0}
+
+    monkeypatch.delenv("SEALAI_DEFAULT_TENANT_ID", raising=False)
+    monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
+    monkeypatch.setattr("app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant)
+
+    result = await MediumResearchService().build("Salzwasser", tenant_id=None, user_id="user-1")
+
+    assert seen["tenant_id"] == "default"
+    assert result.research_status.rag.attempted is True
+    assert result.research_status.rag.status == "no_hits"
+
+
+@pytest.mark.asyncio
 async def test_medium_research_does_not_fake_web_sources_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_retrieve_with_tenant(*_args, **_kwargs):
         return [], {"tier": "tier3_empty", "k_returned": 0}

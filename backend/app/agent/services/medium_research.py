@@ -105,6 +105,7 @@ class MediumResearchService:
         user_id: str | None = None,
     ) -> MediumResearchResult:
         medium_label = _clean_text(medium, limit=120)
+        effective_tenant_id = _effective_tenant_id(tenant_id)
         context = resolve_medium_context(medium_label)
         evidence: list[MediumEvidenceItem] = []
 
@@ -113,7 +114,7 @@ class MediumResearchService:
 
         rag_items, rag_attempt = await _retrieve_rag_evidence(
             medium_label,
-            tenant_id=tenant_id,
+            tenant_id=effective_tenant_id,
             user_id=user_id,
             k=self.rag_k,
         )
@@ -339,6 +340,11 @@ def _medium_answer_response_format() -> dict[str, Any]:
             },
         },
     }
+
+
+def _effective_tenant_id(tenant_id: str | None) -> str:
+    configured = os.getenv("SEALAI_DEFAULT_TENANT_ID")
+    return _clean_text(tenant_id or configured or "default", limit=80)
 
 
 def _parse_medium_answer_output(raw_content: Any) -> str:
