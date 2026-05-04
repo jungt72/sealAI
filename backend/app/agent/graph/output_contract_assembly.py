@@ -55,6 +55,7 @@ output_public shape (Invariant 8 — no internal artefacts):
     dispatch_contract   — bounded connector-ready contract for outward use
     message             — human-readable stub (template, not LLM)
 """
+
 from __future__ import annotations
 
 import logging
@@ -64,11 +65,19 @@ from typing import Any, Callable, Literal
 from langgraph.types import Command, interrupt
 
 from app.agent.domain.admissibility import check_inquiry_admissibility
-from app.agent.communication.governed_answer_context import build_governed_answer_context
+from app.agent.communication.governed_answer_context import (
+    build_governed_answer_context,
+)
 from app.agent.graph import GraphState
-from app.agent.runtime.clarification_priority import prioritized_open_point_labels, select_clarification_priority
+from app.agent.runtime.clarification_priority import (
+    prioritized_open_point_labels,
+    select_clarification_priority,
+)
 from app.agent.runtime.outward_names import build_admissibility_payload
-from app.agent.runtime.reply_composition import compose_clarification_reply, compose_result_reply
+from app.agent.runtime.reply_composition import (
+    compose_clarification_reply,
+    compose_result_reply,
+)
 from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.state.models import ConversationStrategyContract, PendingQuestion
 from app.domain.pre_gate_classification import PreGateClassification
@@ -86,6 +95,8 @@ log = logging.getLogger(__name__)
 
 _KNOWLEDGE_PATTERNS: tuple[str, ...] = (
     r"was ist\b",
+    r"was genau ist\b",
+    r"was eigentlich ist\b",
     r"was sind\b",
     r"erkl[äa]r",
     r"erkläre\b",
@@ -124,7 +135,9 @@ _CONCRETE_CASE_MARKERS: tuple[str, ...] = (
 
 
 def _contains_concrete_case_marker(lowered: str) -> bool:
-    return any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _CONCRETE_CASE_MARKERS)
+    return any(
+        re.search(pattern, lowered, re.IGNORECASE) for pattern in _CONCRETE_CASE_MARKERS
+    )
 
 
 def classify_message_as_knowledge_override(
@@ -161,7 +174,7 @@ def classify_message_as_knowledge_override(
 
 # Outward response classes (Blaupause V1.1)
 _STRUCTURED_CLARIFICATION = "structured_clarification"
-_GOVERNED_STATE_UPDATE     = "governed_state_update"
+_GOVERNED_STATE_UPDATE = "governed_state_update"
 _TECHNICAL_PRESELECTION = "technical_preselection"
 _CANDIDATE_SHORTLIST = "candidate_shortlist"
 _INQUIRY_READY = "inquiry_ready"
@@ -170,19 +183,21 @@ _OUTPUT_CLASSIFIER = OutputClassifier()
 # Fields that are treated as optional when 4+ core params are already confirmed.
 # When all remaining missing fields are in this set, the system confirms parameters
 # and states assumptions instead of asking a question.
-_OPTIONAL_CLARIFICATION_FIELDS: frozenset[str] = frozenset({
-    "installation",
-    "geometry_context",
-    "duty_profile",
-    "counterface_surface",
-    "contamination",
-    "tolerances",
-    "industry",
-    "compliance",
-    "motion_type",
-    "pressure_direction",
-    "medium_qualifiers",
-})
+_OPTIONAL_CLARIFICATION_FIELDS: frozenset[str] = frozenset(
+    {
+        "installation",
+        "geometry_context",
+        "duty_profile",
+        "counterface_surface",
+        "contamination",
+        "tolerances",
+        "industry",
+        "compliance",
+        "motion_type",
+        "pressure_direction",
+        "medium_qualifiers",
+    }
+)
 
 # Default assumptions stated when optional fields are missing and we skip asking.
 _ASSUMPTION_DEFAULTS: dict[str, str] = {
@@ -207,12 +222,12 @@ _CORE_TECH_FIELDS: tuple[str, ...] = (
 
 # Core fields the system always asks for when missing
 _CORE_FIELD_LABELS: dict[str, str] = {
-    "medium":            "Medium",
-    "pressure_bar":      "Betriebsdruck [bar]",
-    "temperature_c":     "Betriebstemperatur [°C]",
-    "sealing_type":      "Dichtungstyp",
+    "medium": "Medium",
+    "pressure_bar": "Betriebsdruck [bar]",
+    "temperature_c": "Betriebstemperatur [°C]",
+    "sealing_type": "Dichtungstyp",
     "shaft_diameter_mm": "Wellendurchmesser [mm]",
-    "speed_rpm":         "Drehzahl [rpm]",
+    "speed_rpm": "Drehzahl [rpm]",
     "duty_profile": "Betriebsprofil",
     "installation": "Einbausituation",
     "geometry_context": "Geometrie / Bauform",
@@ -353,8 +368,13 @@ def _has_recommendation_boundary_anchor(state: GraphState) -> bool:
     if isinstance(state.application_hint, dict):
         application_label = state.application_hint.get("label")
 
-    if motion_label == "rotary" or application_label in {"shaft_sealing", "marine_propulsion"}:
-        return _has_asserted_value(state, "shaft_diameter_mm") and _has_asserted_value(state, "speed_rpm")
+    if motion_label == "rotary" or application_label in {
+        "shaft_sealing",
+        "marine_propulsion",
+    }:
+        return _has_asserted_value(state, "shaft_diameter_mm") and _has_asserted_value(
+            state, "speed_rpm"
+        )
     return False
 
 
@@ -370,7 +390,9 @@ def _is_recommendation_ready(state: GraphState) -> bool:
     if not class_id:
         return False
 
-    open_points = [str(item or "").strip() for item in state.governance.open_validation_points]
+    open_points = [
+        str(item or "").strip() for item in state.governance.open_validation_points
+    ]
     blocking_open_points = [
         item
         for item in open_points
@@ -395,7 +417,10 @@ def _blocking_evidence_gaps_for_preselection(state: GraphState) -> list[str]:
         text = str(gap or "").strip()
         if not text:
             continue
-        if text.startswith("missing_source_for_") or text in {"retrieval_failed", "no_evidence_retrieved"}:
+        if text.startswith("missing_source_for_") or text in {
+            "retrieval_failed",
+            "no_evidence_retrieved",
+        }:
             blocking.append(text)
     return list(dict.fromkeys(blocking))
 
@@ -407,8 +432,12 @@ def _shortlist_release_blockers(state: GraphState) -> list[str]:
     blockers.extend(list(state.matching.release_blockers))
     blockers.extend(_preselection_blocker_fields(state))
     blockers.extend(_blocking_evidence_gaps_for_preselection(state))
-    blockers.extend(str(item) for item in list(state.asserted.blocking_unknowns or []) if item)
-    blockers.extend(f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item)
+    blockers.extend(
+        str(item) for item in list(state.asserted.blocking_unknowns or []) if item
+    )
+    blockers.extend(
+        f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item
+    )
     return list(dict.fromkeys(blockers))
 
 
@@ -416,8 +445,14 @@ def _inquiry_release_blockers(state: GraphState) -> list[str]:
     blockers = _shortlist_release_blockers(state)
     if not state.matching.inquiry_ready:
         blockers.append("matching_not_inquiry_ready")
-    blockers.extend(str(item) for item in list(state.rfq.blocking_findings or []) if item)
-    blockers.extend(f"open_point:{item}" for item in list(state.governance.open_validation_points or []) if item)
+    blockers.extend(
+        str(item) for item in list(state.rfq.blocking_findings or []) if item
+    )
+    blockers.extend(
+        f"open_point:{item}"
+        for item in list(state.governance.open_validation_points or [])
+        if item
+    )
     if not state.rfq.rfq_ready or state.rfq.status != "rfq_ready":
         blockers.append("rfq_not_ready")
     return list(dict.fromkeys(blockers))
@@ -450,13 +485,21 @@ def _clarification_field_meta(field_name: str | None) -> dict[str, str | int]:
 def _medium_detail_question(state: GraphState) -> dict[str, str | None] | None:
     classification = getattr(state, "medium_classification", None)
     followup = str(getattr(classification, "followup_question", "") or "").strip()
-    has_medium = "medium" in state.asserted.assertions or "medium" in state.normalized.parameters
-    has_qualifier = "medium_qualifiers" in state.asserted.assertions or "medium_qualifiers" in state.normalized.parameters
+    has_medium = (
+        "medium" in state.asserted.assertions or "medium" in state.normalized.parameters
+    )
+    has_qualifier = (
+        "medium_qualifiers" in state.asserted.assertions
+        or "medium_qualifiers" in state.normalized.parameters
+    )
     if not has_medium or has_qualifier or not followup:
         return None
     medium_label = (
         str(getattr(classification, "canonical_label", "") or "").strip()
-        or str(getattr(getattr(state, "medium_capture", None), "primary_raw_text", "") or "").strip()
+        or str(
+            getattr(getattr(state, "medium_capture", None), "primary_raw_text", "")
+            or ""
+        ).strip()
         or "das Medium"
     )
     return {
@@ -474,12 +517,13 @@ def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | No
     conflicts = state.asserted.conflict_flags
     missing = list(
         dict.fromkeys(
-            list(state.asserted.blocking_unknowns)
-            + _preselection_blocker_fields(state)
+            list(state.asserted.blocking_unknowns) + _preselection_blocker_fields(state)
         )
     )
     pending_message = str(getattr(state, "pending_message", "") or "").strip().lower()
-    is_correction_turn = any(marker in pending_message for marker in ("korrig", "statt", "sondern"))
+    is_correction_turn = any(
+        marker in pending_message for marker in ("korrig", "statt", "sondern")
+    )
     motion_label = getattr(state.motion_hint, "label", None)
     motion_turn = getattr(state.motion_hint, "source_turn_index", None)
     medium_param = state.normalized.parameters.get("medium")
@@ -490,7 +534,11 @@ def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | No
             correction_mirror = "Verstanden, damit ist das kein rotativer, sondern ein linearer Dichtkontext."
         elif motion_label == "static" and motion_turn == state.analysis_cycle:
             correction_mirror = "Verstanden, damit liegt hier kein bewegter, sondern ein statischer Dichtkontext vor."
-        elif medium_param is not None and medium_param.source_turn == state.analysis_cycle and medium_param.value is not None:
+        elif (
+            medium_param is not None
+            and medium_param.source_turn == state.analysis_cycle
+            and medium_param.value is not None
+        ):
             correction_mirror = f"Verstanden, ich gehe jetzt vom korrigierten Medium {medium_param.value} aus."
         else:
             correction_mirror = "Verstanden, ich richte die technische Einordnung an Ihrer Korrektur neu aus."
@@ -514,7 +562,8 @@ def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | No
         if priority is not None:
             return {
                 "focus_key": priority.focus_key,
-                "user_signal_mirror": correction_mirror or "Die technische Richtung ist schon enger, jetzt brauche ich noch genau einen belastbaren Hebel.",
+                "user_signal_mirror": correction_mirror
+                or "Die technische Richtung ist schon enger, jetzt brauche ich noch genau einen belastbaren Hebel.",
                 "primary_question": priority.question,
                 "primary_question_reason": priority.reason,
             }
@@ -522,7 +571,8 @@ def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | No
         meta = _clarification_field_meta(primary_missing)
         return {
             "focus_key": str(primary_missing) if primary_missing else None,
-            "user_signal_mirror": correction_mirror or "Ich habe schon genug Kontext, um den naechsten technischen Hebel gezielt zu setzen.",
+            "user_signal_mirror": correction_mirror
+            or "Ich habe schon genug Kontext, um den naechsten technischen Hebel gezielt zu setzen.",
             "primary_question": str(meta["question"]),
             "primary_question_reason": str(meta["reason"]),
         }
@@ -560,9 +610,15 @@ def build_governed_conversation_strategy_contract(
             conversation_phase="narrowing",
             turn_goal="clarify_primary_open_point",
             focus_key=str(hints["focus_key"]) if hints.get("focus_key") else None,
-            user_signal_mirror=str(hints["user_signal_mirror"]) if hints.get("user_signal_mirror") else "",
-            primary_question=str(hints["primary_question"]) if hints.get("primary_question") else None,
-            primary_question_reason=str(hints["primary_question_reason"]) if hints.get("primary_question_reason") else "",
+            user_signal_mirror=str(hints["user_signal_mirror"])
+            if hints.get("user_signal_mirror")
+            else "",
+            primary_question=str(hints["primary_question"])
+            if hints.get("primary_question")
+            else None,
+            primary_question_reason=str(hints["primary_question_reason"])
+            if hints.get("primary_question_reason")
+            else "",
             response_mode="single_question",
         )
     factory = _GOVERNED_STRATEGY_FACTORIES.get(response_class)
@@ -578,6 +634,7 @@ def build_governed_conversation_strategy_contract(
 # ---------------------------------------------------------------------------
 # Response class selection
 # ---------------------------------------------------------------------------
+
 
 def _determine_response_class(state: GraphState) -> str:
     """Select the outward response class deterministically from GovernanceState."""
@@ -623,12 +680,13 @@ def _determine_response_class(state: GraphState) -> str:
 # Public payload assembly
 # ---------------------------------------------------------------------------
 
+
 def _parameters_public(state: GraphState) -> dict[str, Any]:
     """Derive a clean parameters dict from AssertedState (no internal objects)."""
     out: dict[str, Any] = {}
     for field_name, claim in state.asserted.assertions.items():
         out[field_name] = {
-            "value":      claim.asserted_value,
+            "value": claim.asserted_value,
             "confidence": claim.confidence,
         }
     return out
@@ -640,17 +698,19 @@ def _compute_public(state: GraphState) -> list[dict[str, Any]]:
     for r in state.compute_results:
         calc_type = r.get("calc_type", "unknown")
         if calc_type == "rwdr":
-            summaries.append({
-                "calc_type":        "rwdr",
-                "status":           r.get("status"),
-                "v_surface_m_s":    r.get("v_surface_m_s"),
-                "pv_value_mpa_m_s": r.get("pv_value_mpa_m_s"),
-                "dn_value":         r.get("dn_value"),
-                "dn_warning":       r.get("dn_warning"),
-                "pv_warning":       r.get("pv_warning"),
-                "hrc_warning":      r.get("hrc_warning"),
-                "notes":            r.get("notes", []),
-            })
+            summaries.append(
+                {
+                    "calc_type": "rwdr",
+                    "status": r.get("status"),
+                    "v_surface_m_s": r.get("v_surface_m_s"),
+                    "pv_value_mpa_m_s": r.get("pv_value_mpa_m_s"),
+                    "dn_value": r.get("dn_value"),
+                    "dn_warning": r.get("dn_warning"),
+                    "pv_warning": r.get("pv_warning"),
+                    "hrc_warning": r.get("hrc_warning"),
+                    "notes": r.get("notes", []),
+                }
+            )
         else:
             summaries.append({"calc_type": calc_type, "status": r.get("status")})
     return summaries
@@ -663,19 +723,21 @@ def _build_output_public_base(state: GraphState, response_class: str) -> dict[st
     output_contract_node after awaiting the async _build_reply().
     """
     return {
-        "response_class":  response_class,
-        "gov_class":       state.governance.gov_class,
+        "response_class": response_class,
+        "gov_class": state.governance.gov_class,
         **build_admissibility_payload(state.governance.rfq_admissible),
-        "parameters":      _parameters_public(state),
-        "missing_fields":  list(
+        "parameters": _parameters_public(state),
+        "missing_fields": list(
             dict.fromkeys(
                 list(state.asserted.blocking_unknowns)
                 + _preselection_blocker_fields(state)
             )
         ),
-        "conflicts":       list(state.asserted.conflict_flags),
-        "validity_notes":  list(state.governance.validity_limits),
-        "open_points":     prioritized_open_point_labels(state, state.governance.open_validation_points),
+        "conflicts": list(state.asserted.conflict_flags),
+        "validity_notes": list(state.governance.validity_limits),
+        "open_points": prioritized_open_point_labels(
+            state, state.governance.open_validation_points
+        ),
         "evidence": {
             "evidence_present": state.evidence.evidence_present,
             "evidence_count": state.evidence.evidence_count,
@@ -689,22 +751,33 @@ def _build_output_public_base(state: GraphState, response_class: str) -> dict[st
             "blocking_evidence_gaps": _blocking_evidence_gaps_for_preselection(state),
         },
         "readiness": {
-            "shortlist_ready": state.matching.shortlist_ready and not _shortlist_release_blockers(state),
-            "inquiry_ready": state.matching.inquiry_ready and state.rfq.rfq_ready and not _inquiry_release_blockers(state),
+            "shortlist_ready": state.matching.shortlist_ready
+            and not _shortlist_release_blockers(state),
+            "inquiry_ready": state.matching.inquiry_ready
+            and state.rfq.rfq_ready
+            and not _inquiry_release_blockers(state),
             "shortlist_blockers": _shortlist_release_blockers(state),
             "inquiry_blockers": _inquiry_release_blockers(state),
         },
         "preselection_blockers": _preselection_blocker_fields(state),
-        "missing_but_assumable": list(getattr(state.governance, "missing_but_assumable", []) or []),
-        "optional_context": list(getattr(state.governance, "optional_context", []) or []),
-        "compliance_blockers": list(getattr(state.governance, "compliance_blockers", []) or []),
-        "type_sensitive_required": list(getattr(state.governance, "type_sensitive_required", []) or []),
-        "compute":         _compute_public(state),
-        "matching":        _matching_public(state),
-        "rfq":             _rfq_public(state),
-        "dispatch":        _dispatch_public(state),
-        "norm":            _norm_public(state),
-        "export_profile":  _export_profile_public(state),
+        "missing_but_assumable": list(
+            getattr(state.governance, "missing_but_assumable", []) or []
+        ),
+        "optional_context": list(
+            getattr(state.governance, "optional_context", []) or []
+        ),
+        "compliance_blockers": list(
+            getattr(state.governance, "compliance_blockers", []) or []
+        ),
+        "type_sensitive_required": list(
+            getattr(state.governance, "type_sensitive_required", []) or []
+        ),
+        "compute": _compute_public(state),
+        "matching": _matching_public(state),
+        "rfq": _rfq_public(state),
+        "dispatch": _dispatch_public(state),
+        "norm": _norm_public(state),
+        "export_profile": _export_profile_public(state),
         "manufacturer_mapping": _manufacturer_mapping_public(state),
         "dispatch_contract": _dispatch_contract_public(state),
     }
@@ -715,11 +788,15 @@ def _matching_public(state: GraphState) -> dict[str, Any]:
     return {
         "status": state.matching.status,
         "matchability_status": state.matching.matchability_status,
-        "shortlist_ready": state.matching.shortlist_ready and not _shortlist_release_blockers(state),
-        "inquiry_ready": state.matching.inquiry_ready and not _inquiry_release_blockers(state),
+        "shortlist_ready": state.matching.shortlist_ready
+        and not _shortlist_release_blockers(state),
+        "inquiry_ready": state.matching.inquiry_ready
+        and not _inquiry_release_blockers(state),
         "release_blockers": _shortlist_release_blockers(state),
         "data_source": state.matching.data_source,
-        "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
+        "selected_manufacturer": selected.manufacturer_name
+        if selected is not None
+        else None,
         "manufacturer_count": len(state.matching.manufacturer_refs),
         "manufacturers": [
             ref.manufacturer_name
@@ -739,12 +816,16 @@ def _rfq_public(state: GraphState) -> dict[str, Any]:
         "release_blockers": _inquiry_release_blockers(state),
         **build_admissibility_payload(state.rfq.rfq_admissible),
         "handover_status": state.rfq.handover_status,
-        "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
+        "selected_manufacturer": selected.manufacturer_name
+        if selected is not None
+        else None,
         "recipient_count": len(state.rfq.recipient_refs),
         "qualified_material_count": len(state.rfq.qualified_material_ids),
         "confirmed_parameter_count": len(state.rfq.confirmed_parameters),
         "dimension_count": len(state.rfq.dimensions),
-        "requirement_class": requirement_class.class_id if requirement_class is not None else None,
+        "requirement_class": requirement_class.class_id
+        if requirement_class is not None
+        else None,
         "notes": list(state.rfq.notes),
     }
 
@@ -779,9 +860,13 @@ def _dispatch_public(state: GraphState) -> dict[str, Any]:
     return {
         "dispatch_ready": state.dispatch.dispatch_ready,
         "dispatch_status": state.dispatch.dispatch_status,
-        "selected_manufacturer": selected.manufacturer_name if selected is not None else None,
+        "selected_manufacturer": selected.manufacturer_name
+        if selected is not None
+        else None,
         "recipient_count": len(state.dispatch.recipient_refs),
-        "requirement_class": requirement_class.class_id if requirement_class is not None else None,
+        "requirement_class": requirement_class.class_id
+        if requirement_class is not None
+        else None,
         "notes": _sanitize_public_notes(list(state.dispatch.dispatch_notes)),
     }
 
@@ -863,11 +948,15 @@ def _dispatch_contract_public(state: GraphState) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _REPLY_BUILDERS: dict[str, Callable[..., str]] = {
-    _STRUCTURED_CLARIFICATION: lambda state, strategy: _reply_clarification(state, strategy),
-    _INQUIRY_READY:            lambda state, strategy: _reply_rfq_ready(state, strategy),
-    _CANDIDATE_SHORTLIST:      lambda state, strategy: _reply_matching(state, strategy),
-    _GOVERNED_STATE_UPDATE:    lambda state, strategy: _reply_state_update(state),
-    _TECHNICAL_PRESELECTION:   lambda state, strategy: _reply_recommendation(state, strategy),
+    _STRUCTURED_CLARIFICATION: lambda state, strategy: _reply_clarification(
+        state, strategy
+    ),
+    _INQUIRY_READY: lambda state, strategy: _reply_rfq_ready(state, strategy),
+    _CANDIDATE_SHORTLIST: lambda state, strategy: _reply_matching(state, strategy),
+    _GOVERNED_STATE_UPDATE: lambda state, strategy: _reply_state_update(state),
+    _TECHNICAL_PRESELECTION: lambda state, strategy: _reply_recommendation(
+        state, strategy
+    ),
 }
 
 
@@ -882,7 +971,9 @@ async def _build_reply(
     wording is assembled later through the canonical user-facing reply layer,
     so this node must not introduce an additional LLM speaking authority.
     """
-    strategy = strategy or build_governed_conversation_strategy_contract(state, response_class)
+    strategy = strategy or build_governed_conversation_strategy_contract(
+        state, response_class
+    )
     builder = _REPLY_BUILDERS.get(response_class)
     if builder is not None:
         return builder(state, strategy)
@@ -921,7 +1012,8 @@ def _pending_question_from_strategy(
 def _confirmed_core_tech_count(state: GraphState) -> int:
     """Count how many core technical fields have any asserted value (any confidence)."""
     return sum(
-        1 for f in _CORE_TECH_FIELDS
+        1
+        for f in _CORE_TECH_FIELDS
         if state.asserted.assertions.get(f) is not None
         and state.asserted.assertions[f].asserted_value is not None
     )
@@ -937,8 +1029,7 @@ def _is_fast_confirm_applicable(state: GraphState) -> bool:
         return False
     missing = list(
         dict.fromkeys(
-            list(state.asserted.blocking_unknowns)
-            + _preselection_blocker_fields(state)
+            list(state.asserted.blocking_unknowns) + _preselection_blocker_fields(state)
         )
     )
     if not missing:
@@ -970,7 +1061,14 @@ def _reply_params_confirmed_with_assumptions(
 
     params = state.asserted.assertions
     parts: list[str] = []
-    for field_name in ("medium", "sealing_type", "pressure_bar", "temperature_c", "shaft_diameter_mm", "speed_rpm"):
+    for field_name in (
+        "medium",
+        "sealing_type",
+        "pressure_bar",
+        "temperature_c",
+        "shaft_diameter_mm",
+        "speed_rpm",
+    ):
         if field_name in params and params[field_name].asserted_value is not None:
             label = _CORE_FIELD_LABELS.get(field_name, field_name)
             raw_val = params[field_name].asserted_value
@@ -1008,19 +1106,24 @@ def _reply_clarification(
 ) -> str:
     missing = list(
         dict.fromkeys(
-            list(state.asserted.blocking_unknowns)
-            + _preselection_blocker_fields(state)
+            list(state.asserted.blocking_unknowns) + _preselection_blocker_fields(state)
         )
     )
     conflicts = state.asserted.conflict_flags
     primary_question = (
         str(strategy.primary_question).strip()
-        if strategy and isinstance(strategy.primary_question, str) and strategy.primary_question.strip()
+        if strategy
+        and isinstance(strategy.primary_question, str)
+        and strategy.primary_question.strip()
         else None
     )
     supporting_reason = (
         str(strategy.primary_question_reason or strategy.supporting_reason).strip()
-        if strategy and isinstance((strategy.primary_question_reason or strategy.supporting_reason), str) and str(strategy.primary_question_reason or strategy.supporting_reason).strip()
+        if strategy
+        and isinstance(
+            (strategy.primary_question_reason or strategy.supporting_reason), str
+        )
+        and str(strategy.primary_question_reason or strategy.supporting_reason).strip()
         else None
     )
     response_mode = (
@@ -1030,7 +1133,10 @@ def _reply_clarification(
     )
     turn_context = build_governed_turn_context(
         state=state,
-        strategy=strategy or build_governed_conversation_strategy_contract(state, _STRUCTURED_CLARIFICATION),
+        strategy=strategy
+        or build_governed_conversation_strategy_contract(
+            state, _STRUCTURED_CLARIFICATION
+        ),
         response_class=_STRUCTURED_CLARIFICATION,
     )
 
@@ -1058,11 +1164,21 @@ def _reply_clarification(
         return f"Ich sehe noch offene Widersprueche bei {fields}. Damit ich sauber eingrenzen kann, brauche ich hier eine kurze Klaerung."
     if missing:
         priority = select_clarification_priority(state, missing)
-        primary_missing = priority.focus_key if priority is not None else _pick_priority_clarification_field(missing)
+        primary_missing = (
+            priority.focus_key
+            if priority is not None
+            else _pick_priority_clarification_field(missing)
+        )
         meta = _clarification_field_meta(primary_missing)
-        question = primary_question or (priority.question if priority is not None else str(meta["question"]))
-        reason = supporting_reason or (priority.reason if priority is not None else str(meta["reason"]))
-        if (primary_missing or priority is not None) and response_mode == "single_question":
+        question = primary_question or (
+            priority.question if priority is not None else str(meta["question"])
+        )
+        reason = supporting_reason or (
+            priority.reason if priority is not None else str(meta["reason"])
+        )
+        if (
+            primary_missing or priority is not None
+        ) and response_mode == "single_question":
             return compose_clarification_reply(
                 turn_context.model_copy(
                     update={"primary_question": question, "supporting_reason": reason}
@@ -1096,12 +1212,17 @@ def _reply_state_update(state: GraphState) -> str:
     params = state.asserted.assertions
     missing = list(
         dict.fromkeys(
-            list(state.asserted.blocking_unknowns)
-            + _preselection_blocker_fields(state)
+            list(state.asserted.blocking_unknowns) + _preselection_blocker_fields(state)
         )
     )
     parts = []
-    for field_name in ("medium", "pressure_bar", "temperature_c", "shaft_diameter_mm", "speed_rpm"):
+    for field_name in (
+        "medium",
+        "pressure_bar",
+        "temperature_c",
+        "shaft_diameter_mm",
+        "speed_rpm",
+    ):
         if field_name in params:
             label = _CORE_FIELD_LABELS.get(field_name, field_name)
             raw_val = params[field_name].asserted_value
@@ -1178,7 +1299,10 @@ def _reply_recommendation(
     fallback = "\n".join(lines)
     turn_context = build_governed_turn_context(
         state=state,
-        strategy=strategy or build_governed_conversation_strategy_contract(state, _TECHNICAL_PRESELECTION),
+        strategy=strategy
+        or build_governed_conversation_strategy_contract(
+            state, _TECHNICAL_PRESELECTION
+        ),
         response_class=_TECHNICAL_PRESELECTION,
     )
     return compose_result_reply(
@@ -1206,7 +1330,8 @@ def _reply_matching(
         line += " " + notes[-1]
     turn_context = build_governed_turn_context(
         state=state,
-        strategy=strategy or build_governed_conversation_strategy_contract(state, _CANDIDATE_SHORTLIST),
+        strategy=strategy
+        or build_governed_conversation_strategy_contract(state, _CANDIDATE_SHORTLIST),
         response_class=_CANDIDATE_SHORTLIST,
     )
     return compose_result_reply(
@@ -1222,8 +1347,16 @@ def _reply_rfq_ready(
     strategy: ConversationStrategyContract | None = None,
 ) -> str:
     selected = state.rfq.selected_manufacturer_ref
-    manufacturer = selected.manufacturer_name if selected is not None else "dem ausgewählten Hersteller"
-    req = state.rfq.requirement_class.class_id if state.rfq.requirement_class is not None else "ohne Requirement Class"
+    manufacturer = (
+        selected.manufacturer_name
+        if selected is not None
+        else "dem ausgewählten Hersteller"
+    )
+    req = (
+        state.rfq.requirement_class.class_id
+        if state.rfq.requirement_class is not None
+        else "ohne Requirement Class"
+    )
     line = (
         f"Die Anfragebasis ist inquiry-ready. "
         f"Requirement Class: {req}. "
@@ -1233,7 +1366,8 @@ def _reply_rfq_ready(
         line += " Die spätere Partnerübergabe ist vorbereitet."
     turn_context = build_governed_turn_context(
         state=state,
-        strategy=strategy or build_governed_conversation_strategy_contract(state, _INQUIRY_READY),
+        strategy=strategy
+        or build_governed_conversation_strategy_contract(state, _INQUIRY_READY),
         response_class=_INQUIRY_READY,
     )
     return compose_result_reply(
@@ -1248,6 +1382,7 @@ def _reply_rfq_ready(
 # Inquiry confirmation (H1.2)
 # ---------------------------------------------------------------------------
 
+
 def build_inquiry_summary(state: GraphState) -> dict[str, Any]:
     """Build a compact, outward-safe inquiry summary for the confirmation interrupt.
 
@@ -1259,25 +1394,34 @@ def build_inquiry_summary(state: GraphState) -> dict[str, Any]:
     for key in ("sealing_type",):
         p = norm_params.get(key)
         if p is not None:
-            sealing_type = getattr(p, "value", None) or (p.get("value") if isinstance(p, dict) else None)
+            sealing_type = getattr(p, "value", None) or (
+                p.get("value") if isinstance(p, dict) else None
+            )
             break
 
     # Material combination from decision.preselection
     preselection = state.decision.preselection or {}
-    material_combination = preselection.get("material_combination") or preselection.get("material")
+    material_combination = preselection.get("material_combination") or preselection.get(
+        "material"
+    )
 
     # Key parameters
     key_parameters: dict[str, Any] = {}
     for field_key, label in (
-        ("medium",            "medium"),
+        ("medium", "medium"),
         ("temperature_max_c", "temperature_max_c"),
-        ("pressure_max_bar",  "pressure_max_bar"),
+        ("pressure_max_bar", "pressure_max_bar"),
         ("shaft_diameter_mm", "shaft_diameter_mm"),
     ):
-        for alias in (field_key, field_key.replace("_max_c", "_c").replace("_max_bar", "_bar")):
+        for alias in (
+            field_key,
+            field_key.replace("_max_c", "_c").replace("_max_bar", "_bar"),
+        ):
             p = norm_params.get(alias)
             if p is not None:
-                val = getattr(p, "value", None) or (p.get("value") if isinstance(p, dict) else None)
+                val = getattr(p, "value", None) or (
+                    p.get("value") if isinstance(p, dict) else None
+                )
                 key_parameters[label] = val
                 break
 
@@ -1310,6 +1454,7 @@ def build_inquiry_summary(state: GraphState) -> dict[str, Any]:
 # Node
 # ---------------------------------------------------------------------------
 
+
 async def output_contract_node(state: GraphState) -> GraphState:
     """Zone 7 — Assemble outward contract.
 
@@ -1339,11 +1484,15 @@ async def output_contract_node(state: GraphState) -> GraphState:
             )
             response_class = _STRUCTURED_CLARIFICATION
             # Store blocking_reasons in DecisionState so frontend can surface them
-            state = state.model_copy(update={
-                "decision": state.decision.model_copy(
-                    update={"blocking_reasons": list(admissibility.blocking_reasons)}
-                )
-            })
+            state = state.model_copy(
+                update={
+                    "decision": state.decision.model_copy(
+                        update={
+                            "blocking_reasons": list(admissibility.blocking_reasons)
+                        }
+                    )
+                }
+            )
         else:
             # Admissible — require explicit user confirmation via interrupt()
             summary = build_inquiry_summary(state)
@@ -1355,33 +1504,41 @@ async def output_contract_node(state: GraphState) -> GraphState:
                 _pre_state = state.model_copy(
                     update={"output_response_class": _INQUIRY_READY}
                 )
-                confirmation = interrupt({
-                    "type": "inquiry_confirmation",
-                    "case_summary": summary,
-                    "blocking_reasons": [],
-                    "basis_hash": admissibility.basis_hash,
-                    "state": _pre_state.model_dump(mode="python"),
-                })
+                confirmation = interrupt(
+                    {
+                        "type": "inquiry_confirmation",
+                        "case_summary": summary,
+                        "blocking_reasons": [],
+                        "basis_hash": admissibility.basis_hash,
+                        "state": _pre_state.model_dump(mode="python"),
+                    }
+                )
             except RuntimeError:
                 # interrupt() not available (e.g. tests without checkpointer)
                 confirmation = None
 
             if confirmation is not None:
                 confirmed = bool(
-                    confirmation.get("confirmed") if isinstance(confirmation, dict) else confirmation
+                    confirmation.get("confirmed")
+                    if isinstance(confirmation, dict)
+                    else confirmation
                 )
                 if confirmed:
                     log.info(
                         "[output_contract_node] inquiry confirmed by user. basis_hash=%s",
                         admissibility.basis_hash,
                     )
-                    state = state.model_copy(update={
-                        "action_readiness": state.action_readiness.model_copy(
-                            update={"inquiry_confirmed": True}
-                        )
-                    })
+                    state = state.model_copy(
+                        update={
+                            "action_readiness": state.action_readiness.model_copy(
+                                update={"inquiry_confirmed": True}
+                            )
+                        }
+                    )
                 else:
-                    log.info("[output_contract_node] inquiry rejected by user — downgrading to governed_state_update")
+                    log.info(
+                        "[output_contract_node] inquiry rejected by user — downgrading to governed_state_update"
+                    )
                     response_class = _GOVERNED_STATE_UPDATE
 
     strategy = build_governed_conversation_strategy_contract(state, response_class)
@@ -1409,18 +1566,24 @@ async def output_contract_node(state: GraphState) -> GraphState:
         state.governance.rfq_admissible,
     )
 
-    result_state = state.model_copy(update={
-        "output_response_class": response_class,
-        "output_public":         output_public,
-        "output_reply":          reply,
-        "pending_question":      next_pending_question,
-        "governed_answer_context": governed_answer_context.model_dump(mode="python"),
-    })
+    result_state = state.model_copy(
+        update={
+            "output_response_class": response_class,
+            "output_public": output_public,
+            "output_reply": reply,
+            "pending_question": next_pending_question,
+            "governed_answer_context": governed_answer_context.model_dump(
+                mode="python"
+            ),
+        }
+    )
 
     # structured_clarification interrupts below, so the text-only composer must
     # run before that terminal boundary. The node remains idempotent for normal
     # graph edge traversal.
-    from app.agent.graph.nodes.governed_answer_composer_node import governed_answer_composer_node
+    from app.agent.graph.nodes.governed_answer_composer_node import (
+        governed_answer_composer_node,
+    )
 
     result_state = await governed_answer_composer_node(result_state)
 

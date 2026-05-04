@@ -140,7 +140,10 @@ class PreGateClassifier:
 
     @staticmethod
     def _mentions_multiple_materials(text: str) -> bool:
-        materials = {match.group(0).casefold() for match in _MATERIAL_TOKEN_PATTERN.finditer(text)}
+        materials = {
+            match.group(0).casefold()
+            for match in _MATERIAL_TOKEN_PATTERN.finditer(text)
+        }
         return len(materials) >= 2
 
     @staticmethod
@@ -165,7 +168,9 @@ class PreGateClassifier:
 
 
 def _compile(*patterns: str) -> tuple[Pattern[str], ...]:
-    return tuple(re.compile(pattern, re.IGNORECASE | re.UNICODE) for pattern in patterns)
+    return tuple(
+        re.compile(pattern, re.IGNORECASE | re.UNICODE) for pattern in patterns
+    )
 
 
 _GREETING_PATTERNS = _compile(
@@ -177,6 +182,10 @@ _GREETING_PATTERNS = _compile(
 )
 
 _SOCIAL_CONVERSATION_PATTERNS = _compile(
+    r"^\s*(?:hallo|hi|hey|moin|servus|grüß\s*(?:gott|dich)|gruss|gruß|"
+    r"guten\s+\w+|gute[nr]?\s+\w+)(?:\s*(?:,|und)?\s*"
+    r"(?:hallo|hi|hey|moin|servus|grüß\s*(?:gott|dich)|gruss|gruß|"
+    r"guten\s+\w+|gute[nr]?\s+\w+))*[\s!.?,]*$",
     r"\bwie\s+geht(?:'s|\s+es)?\s+dir\b",
     r"\bwie\s+geht(?:'s|\s+es)?\s+(ihnen|euch)\b",
     r"\bwie\s+(?:l[äa]uft'?s?|laeuft'?s?|steht'?s?|schaut'?s?|sieht'?s?)\b.*\b(?:dir|bei\s+dir|ihnen|euch)\b",
@@ -265,7 +274,7 @@ _MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS = _compile(
 )
 
 _KNOWLEDGE_QUERY_PATTERNS = _compile(
-    r"^\s*(was\s+ist|was\s+bedeutet|was\s+versteht|erklär\w*|erklaer\w*|definiere)\b",
+    r"^\s*(was\s+(?:genau\s+|eigentlich\s+)?(?:ist|sind)|was\s+bedeutet|was\s+versteht|erklär\w*|erklaer\w*|definiere)\b",
     r"^\s*(what\s+is|explain|define)\b",
     r"\b(unterschied\s+zwischen|vergleich\s+zwischen|difference\s+between)\b",
     r"^\s*vergleich\b",

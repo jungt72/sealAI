@@ -43,8 +43,7 @@ class KnowledgeRetriever(Protocol):
         tenant_id: str | None = None,
         user_id: str | None = None,
         max_results: int = 3,
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
 
 KnowledgeEvidenceSourceType = Literal[
@@ -285,7 +284,6 @@ class KnowledgeService:
         evidence: list[KnowledgeEvidence] = []
         seen_sources: set[str] = set()
         for card in cards:
-            card_id = str(card.get("id") or "knowledge-card")
             topic = str(card.get("topic") or "Wissenseintrag")
             prop = str(card.get("property") or "").strip()
             value = str(card.get("value") or "").strip()
@@ -342,7 +340,9 @@ class KnowledgeService:
             text = _clean_excerpt(hit.get("text") or hit.get("content") or "")
             if text:
                 lines.append(f"- {text}")
-            metadata = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
+            metadata = (
+                hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
+            )
             source_id = str(
                 metadata.get("source_id")
                 or metadata.get("document_id")
@@ -377,8 +377,7 @@ class KnowledgeService:
                     url=metadata.get("source_url") or metadata.get("url"),
                     source_type=SourceType.rag_verified,
                     validation_status=ValidationStatus.documented,
-                    evidence_ref=str(metadata.get("chunk_id") or "")
-                    or None,
+                    evidence_ref=str(metadata.get("chunk_id") or "") or None,
                     excerpt=text or None,
                     confidence=confidence,
                     rank=index,
@@ -419,6 +418,9 @@ class KnowledgeService:
         tenant_id: str | None,
         user_id: str | None,
     ) -> KnowledgeAnswerResult:
+        term_orientation = _unknown_term_orientation_result(user_input)
+        if term_orientation is not None:
+            return term_orientation
         if not self._llm_research_fallback_enabled:
             return _miss_result(KNOWLEDGE_MISS_ANSWER)
         if self._llm_fallback_runner is None:
@@ -725,6 +727,102 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
     return None
 
 
+def _extract_unknown_term_question(user_input: str) -> str | None:
+    text = " ".join(str(user_input or "").strip().split())
+    if not text:
+        return None
+    patterns = (
+        r"^\s*was\s+(?:genau\s+|eigentlich\s+)?(?:ist|sind)\s+(?P<term>[^?!.;,]{2,80})",
+        r"^\s*was\s+bedeutet\s+(?P<term>[^?!.;,]{2,80})",
+        r"^\s*was\s+(?:heisst|heißt)\s+(?P<term>[^?!.;,]{2,80})",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE | re.UNICODE)
+        if not match:
+            continue
+        term = str(match.group("term") or "").strip(" '\"`´“”„")
+        term = re.sub(r"\s+", " ", term).strip()
+        lowered = term.casefold()
+        if not term or lowered.startswith(
+            (
+                "bei ",
+                "besser",
+                "schlechter",
+                "der unterschied",
+                "die unterschied",
+                "das unterschied",
+            )
+        ):
+            return None
+        return term[:80]
+    return None
+
+
+def _unknown_term_orientation_result(user_input: str) -> KnowledgeAnswerResult | None:
+    term = _extract_unknown_term_question(user_input)
+    if term is None:
+        return None
+
+    lowered = term.casefold()
+    extra_note = ""
+    if any(marker in lowered for marker in ("chlor", "oxid", "hypo")):
+        extra_note = (
+            "\n\nWeil der Begriff nach Chlor- oder Oxidationschemie klingt, sollte "
+            "die genaue chemische Form besonders sauber geklaert werden. Je nach "
+            "Stoff kann das fuer Elastomere, Metalle, Federn, Beschichtungen und "
+            "Sicherheitsanforderungen sehr unterschiedlich sein."
+        )
+
+    answer = "\n".join(
+        [
+            f'Den Begriff "{term}" kann ich in der kuratierten SeaLAI-Wissensbasis nicht eindeutig als belastbaren Dichtungsbegriff oder eindeutig beschriebenes Medium zuordnen.',
+            "",
+            "Fuer eine Dichtung reicht so ein Kurzname allein nicht. Entscheidend sind die genaue chemische Bezeichnung, Sicherheitsdatenblatt, Konzentration, Temperatur, Aggregatzustand, Verunreinigungen und ob das Medium dauerhaft oder nur zeitweise an der Dichtstelle anliegt.",
+            extra_note.strip(),
+            "",
+            "Wenn du den Stoff in deinem Fall verwenden willst, gib mir bitte die genaue Bezeichnung aus dem Sicherheitsdatenblatt oder die Zusammensetzung. Daraus kann SeaLAI den Fall weiter strukturieren. Eine Werkstofffreigabe oder Kompatibilitaetsaussage entsteht daraus aber erst nach Hersteller- oder Fachpruefung.",
+        ]
+    )
+    answer = "\n".join(
+        line for line in answer.splitlines() if line.strip() or line == ""
+    )
+    answer = humanize_german_technical_text(answer)
+    return KnowledgeAnswerResult(
+        answer=answer,
+        answer_available=True,
+        rag_lookup_attempted=True,
+        rag_answer_found=False,
+        rag_miss=True,
+        source_type=SourceType.system_derived,
+        validation_status=ValidationStatus.unvalidated,
+        use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+        not_final_release=True,
+        fallback_allowed=False,
+        fallback_used=False,
+        user_visible_label="SeaLAI-Begriffsklaerung - allgemeine Orientierung",
+        missing_reason="unknown_term_orientation_without_rag_hit",
+        next_step=(
+            "Genaue chemische Bezeichnung, Sicherheitsdatenblatt, Konzentration "
+            "und Betriebsdaten erfassen."
+        ),
+        knowledge_evidence=(
+            _knowledge_evidence(
+                source_type="deterministic",
+                title=f"Begriffsklaerung: {term}",
+                content=answer,
+                note="system_derived_unknown_term_orientation",
+            ),
+        ),
+        event_names=(
+            "KnowledgeQuestionReceived",
+            "KnowledgeRAGLookupRequested",
+            "KnowledgeRAGAnswerMissing",
+            "SourceValidationStatusAssigned",
+            "KnowledgeAnswerGenerated",
+        ),
+    )
+
+
 def _miss_result(
     answer: str,
     *,
@@ -893,7 +991,9 @@ def _settings_fallback_enabled() -> bool:
 def _clean_excerpt(value: Any, *, limit: int = 420) -> str:
     text = " ".join(str(value or "").split())
     text = re.sub(r"\b[A-Z]{2,8}-[A-Z]-\d{2,4}\b", "", text).strip()
-    text = re.sub(r"\b(?:chemical_resistance|weather_ozone_uv|temperature_window)/", "", text)
+    text = re.sub(
+        r"\b(?:chemical_resistance|weather_ozone_uv|temperature_window)/", "", text
+    )
     if len(text) <= limit:
         return text
     return text[:limit].rstrip() + "..."

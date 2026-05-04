@@ -29,8 +29,12 @@ def _user() -> RequestUser:
 
 
 @pytest.mark.asyncio
-async def test_greeting_routes_to_frontdoor_without_governed_case_intake(monkeypatch) -> None:
-    load_state = AsyncMock(side_effect=AssertionError("greeting must not load/create governed case state"))
+async def test_greeting_routes_to_frontdoor_without_governed_case_intake(
+    monkeypatch,
+) -> None:
+    load_state = AsyncMock(
+        side_effect=AssertionError("greeting must not load/create governed case state")
+    )
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
     dispatch = await _resolve_runtime_dispatch(
@@ -45,14 +49,54 @@ async def test_greeting_routes_to_frontdoor_without_governed_case_intake(monkeyp
     assert dispatch.conversation_route is not None
     assert dispatch.conversation_route.intent is ConversationIntent.small_talk
     assert dispatch.conversation_route.response_mode is ResponseMode.fast_responder
-    assert dispatch.conversation_route.route_view is ConversationRouteView.conversation_frontdoor
+    assert (
+        dispatch.conversation_route.route_view
+        is ConversationRouteView.conversation_frontdoor
+    )
     assert dispatch.conversation_route.no_durable_engineering_case_state is True
     load_state.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_general_knowledge_routes_to_knowledge_without_governed_case_intake(monkeypatch) -> None:
-    load_state = AsyncMock(side_effect=AssertionError("knowledge must not load/create governed case state"))
+async def test_bare_compound_greeting_routes_to_frontdoor_without_governed_case_intake(
+    monkeypatch,
+) -> None:
+    load_state = AsyncMock(
+        side_effect=AssertionError(
+            "bare greeting must not load/create governed case state"
+        )
+    )
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message="Hallo und guten morgen", session_id="bare-greeting-no-case"
+        ),
+        current_user=_user(),
+    )
+
+    assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
+    assert dispatch.fast_response is not None
+    assert dispatch.knowledge_response is None
+    assert dispatch.governed_state is None
+    assert dispatch.conversation_route is not None
+    assert dispatch.conversation_route.intent is ConversationIntent.small_talk
+    assert dispatch.conversation_route.response_mode is ResponseMode.fast_responder
+    assert (
+        dispatch.conversation_route.route_view
+        is ConversationRouteView.conversation_frontdoor
+    )
+    assert dispatch.conversation_route.no_durable_engineering_case_state is True
+    load_state.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_general_knowledge_routes_to_knowledge_without_governed_case_intake(
+    monkeypatch,
+) -> None:
+    load_state = AsyncMock(
+        side_effect=AssertionError("knowledge must not load/create governed case state")
+    )
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
     dispatch = await _resolve_runtime_dispatch(
@@ -60,15 +104,23 @@ async def test_general_knowledge_routes_to_knowledge_without_governed_case_intak
         current_user=_user(),
     )
 
-    assert dispatch.pre_gate_classification == PreGateClassification.KNOWLEDGE_QUERY.value
+    assert (
+        dispatch.pre_gate_classification == PreGateClassification.KNOWLEDGE_QUERY.value
+    )
     assert dispatch.fast_response is None
     assert dispatch.knowledge_response is not None
     assert dispatch.knowledge_response.no_case_created is True
     assert dispatch.governed_state is None
     assert dispatch.conversation_route is not None
-    assert dispatch.conversation_route.intent is ConversationIntent.general_sealing_question
+    assert (
+        dispatch.conversation_route.intent
+        is ConversationIntent.general_sealing_question
+    )
     assert dispatch.conversation_route.response_mode is ResponseMode.knowledge_answer
-    assert dispatch.conversation_route.route_view is ConversationRouteView.knowledge_question
+    assert (
+        dispatch.conversation_route.route_view
+        is ConversationRouteView.knowledge_question
+    )
     assert dispatch.conversation_route.no_durable_engineering_case_state is True
     assert dispatch.conversation_route.selects_governed_case_intake is False
     load_state.assert_not_awaited()
@@ -91,7 +143,9 @@ async def test_general_knowledge_routes_to_knowledge_without_governed_case_intak
 )
 def test_generic_material_comparison_routes_to_knowledge(message: str) -> None:
     pre_gate = PreGateClassifier().classify(message)
-    route = classify_conversation_route(message, pre_gate_classification=pre_gate.classification)
+    route = classify_conversation_route(
+        message, pre_gate_classification=pre_gate.classification
+    )
 
     assert pre_gate.classification is PreGateClassification.KNOWLEDGE_QUERY
     assert pre_gate.reasoning == "deterministic_material_comparison_knowledge"
@@ -111,7 +165,9 @@ def test_generic_material_comparison_routes_to_knowledge(message: str) -> None:
 )
 def test_concrete_material_or_application_prompts_remain_governed(message: str) -> None:
     pre_gate = PreGateClassifier().classify(message)
-    route = classify_conversation_route(message, pre_gate_classification=pre_gate.classification)
+    route = classify_conversation_route(
+        message, pre_gate_classification=pre_gate.classification
+    )
 
     assert pre_gate.classification is PreGateClassification.DOMAIN_INQUIRY
     assert route.selects_governed_case_intake is True
@@ -198,7 +254,9 @@ def test_pre_gate_output_refines_to_v083_route_facts(
     expected_mode: ResponseMode,
 ) -> None:
     pre_gate = PreGateClassifier().classify(message)
-    route = classify_conversation_route(message, pre_gate_classification=pre_gate.classification)
+    route = classify_conversation_route(
+        message, pre_gate_classification=pre_gate.classification
+    )
 
     assert pre_gate.classification is expected_pre_gate
     assert route.intent is expected_intent
@@ -221,8 +279,16 @@ def test_off_topic_input_has_boundary_route_fact_without_case_intake() -> None:
 @pytest.mark.parametrize(
     "pre_gate, expected_intent, expected_mode",
     [
-        (PreGateClassification.GREETING, ConversationIntent.small_talk, ResponseMode.fast_responder),
-        (PreGateClassification.META_QUESTION, ConversationIntent.meta_question, ResponseMode.fast_responder),
+        (
+            PreGateClassification.GREETING,
+            ConversationIntent.small_talk,
+            ResponseMode.fast_responder,
+        ),
+        (
+            PreGateClassification.META_QUESTION,
+            ConversationIntent.meta_question,
+            ResponseMode.fast_responder,
+        ),
         (
             PreGateClassification.KNOWLEDGE_QUERY,
             ConversationIntent.general_sealing_question,
@@ -233,7 +299,11 @@ def test_off_topic_input_has_boundary_route_fact_without_case_intake() -> None:
             ConversationIntent.general_sealing_question,
             ResponseMode.knowledge_answer,
         ),
-        (PreGateClassification.BLOCKED, ConversationIntent.unsupported, ResponseMode.refusal_or_boundary),
+        (
+            PreGateClassification.BLOCKED,
+            ConversationIntent.unsupported,
+            ResponseMode.refusal_or_boundary,
+        ),
         (
             PreGateClassification.DOMAIN_INQUIRY,
             ConversationIntent.new_rfq,
@@ -251,7 +321,9 @@ def test_old_pre_gate_categories_still_have_stable_mapping(
     expected_intent: ConversationIntent,
     expected_mode: ResponseMode,
 ) -> None:
-    route = classify_conversation_route("Unklarer Text", pre_gate_classification=pre_gate)
+    route = classify_conversation_route(
+        "Unklarer Text", pre_gate_classification=pre_gate
+    )
 
     assert route.pre_gate_classification is pre_gate
     assert route.intent is expected_intent

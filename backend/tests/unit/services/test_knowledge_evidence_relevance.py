@@ -97,7 +97,10 @@ def test_saltwater_deterministic_answer_wins_over_irrelevant_factcard() -> None:
     ).answer("Was ist bei Salzwasser und Dichtungen kritisch?")
     text = _combined_answer_and_evidence(response)
 
-    assert response.knowledge_answer_view.knowledge_evidence[0].source_type == "deterministic"
+    assert (
+        response.knowledge_answer_view.knowledge_evidence[0].source_type
+        == "deterministic"
+    )
     assert "chlorid" in text
     assert "korrosion" in text
     assert "molten alkali" not in text
@@ -109,7 +112,10 @@ def test_factcard_matching_ignores_generic_saltwater_question_tokens() -> None:
         "Was ist bei Salzwasser und Dichtungen kritisch?".lower()
     )
     rendered = "\n".join(
-        " ".join(str(card.get(field) or "") for field in ("topic", "property", "value", "conditions"))
+        " ".join(
+            str(card.get(field) or "")
+            for field in ("topic", "property", "value", "conditions")
+        )
         for card in cards
     ).casefold()
 
@@ -136,9 +142,9 @@ def test_composer_bypass_still_has_useful_deterministic_evidence() -> None:
 
 
 def test_generic_material_comparison_nbr_ptfe_is_structured_and_bounded() -> None:
-    response = KnowledgeService(factcard_store=_FactcardStore([_irrelevant_alkali_card()])).answer(
-        "bitte vergleiche NBR und PTFE fuer mich"
-    )
+    response = KnowledgeService(
+        factcard_store=_FactcardStore([_irrelevant_alkali_card()])
+    ).answer("bitte vergleiche NBR und PTFE fuer mich")
     view = response.knowledge_answer_view
     text = _combined_answer_and_evidence(response)
 
@@ -193,14 +199,21 @@ def test_material_comparison_supported_pairs_have_structured_answer() -> None:
                 f"Vergleiche {left} und {right} fuer Dichtungen."
             )
             text = _combined_answer_and_evidence(response)
-            assert response.knowledge_answer_view.knowledge_evidence[0].source_type == "deterministic"
-            assert f"werkstoffvergleich: {left.casefold()} vs {right.casefold()}" in text
+            assert (
+                response.knowledge_answer_view.knowledge_evidence[0].source_type
+                == "deterministic"
+            )
+            assert (
+                f"werkstoffvergleich: {left.casefold()} vs {right.casefold()}" in text
+            )
             assert "direkter vergleich" in text
             assert "keine konkrete materialfreigabe" in text
             assert not re.search(r"(?:\\b\\w;\\s*){4,}", text)
 
 
-def test_material_comparison_profiles_do_not_render_single_strings_as_char_lists() -> None:
+def test_material_comparison_profiles_do_not_render_single_strings_as_char_lists() -> (
+    None
+):
     response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
         "biite vergleiche peek und ptfe"
     )
@@ -215,14 +228,17 @@ def test_material_comparison_profiles_do_not_render_single_strings_as_char_lists
     assert "designaenderung" not in text
 
 
-
-
 def test_elliptical_material_pair_followup_is_structured_knowledge() -> None:
-    response = KnowledgeService(factcard_store=_FactcardStore([])).answer("und fkm mit nbr?")
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "und fkm mit nbr?"
+    )
     text = _combined_answer_and_evidence(response)
 
     assert response.knowledge_answer_view.answer_available is True
-    assert response.knowledge_answer_view.knowledge_evidence[0].source_type == "deterministic"
+    assert (
+        response.knowledge_answer_view.knowledge_evidence[0].source_type
+        == "deterministic"
+    )
     assert "werkstoffvergleich: fkm vs nbr" in text
     assert "fluorelastomer" in text
     assert "nitrilkautschuk" in text
@@ -230,11 +246,39 @@ def test_elliptical_material_pair_followup_is_structured_knowledge() -> None:
 
 
 def test_short_material_pair_without_full_instruction_is_structured_knowledge() -> None:
-    response = KnowledgeService(factcard_store=_FactcardStore([])).answer("FKM und NBR?")
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "FKM und NBR?"
+    )
     text = _combined_answer_and_evidence(response)
 
     assert "werkstoffvergleich: fkm vs nbr" in text
     assert "direkter vergleich" in text
+
+
+def test_unknown_term_question_gets_safe_orientation_instead_of_case_intake_fallback() -> (
+    None
+):
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "was genau ist chloroxyd?"
+    )
+    view = response.knowledge_answer_view
+    text = _combined_answer_and_evidence(response)
+
+    assert response.no_case_created is True
+    assert view.answer_available is True
+    assert view.validation_status == "unvalidated"
+    assert view.knowledge_evidence
+    assert view.knowledge_evidence[0].source_type == "deterministic"
+    assert "chloroxyd" in text
+    assert "nicht eindeutig" in text
+    assert "sicherheitsdatenblatt" in text
+    assert "konzentration" in text
+    assert "temperatur" in text
+    assert "chlor" in text or "oxidationschemie" in text
+    assert "werkstofffreigabe" in text
+    assert "kompatibilitätsaussage" in text
+    assert "freigegeben" not in text
+    assert "garantiert" not in text
 
 
 def test_concrete_material_replacement_does_not_use_generic_comparison_answer() -> None:
@@ -244,7 +288,12 @@ def test_concrete_material_replacement_does_not_use_generic_comparison_answer() 
 
     assert "werkstoffvergleich" not in response.content.casefold()
 
-def test_non_comparison_material_question_can_still_use_existing_knowledge_path() -> None:
-    response = KnowledgeService(factcard_store=_FactcardStore([])).answer("Was ist FKM?")
+
+def test_non_comparison_material_question_can_still_use_existing_knowledge_path() -> (
+    None
+):
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "Was ist FKM?"
+    )
 
     assert "werkstoffvergleich" not in response.content.casefold()

@@ -28,8 +28,11 @@ _ENABLE_CONVERSATION_RUNTIME: bool = (
     os.environ.get("SEALAI_ENABLE_CONVERSATION_RUNTIME", "true").lower() == "true"
 )
 
+
 def _knowledge_answer_composer_enabled() -> bool:
-    return os.environ.get("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "false").lower() in {
+    return os.environ.get(
+        "SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "false"
+    ).lower() in {
         "1",
         "true",
         "yes",
@@ -107,19 +110,38 @@ def _governed_state_has_active_case(state: GovernedSessionState | None) -> bool:
 
 
 def _knowledge_turn_needs_active_case_probe(message: str) -> bool:
-    """Return whether a knowledge-looking turn is context-fragmentary.
+    """Return whether a knowledge-looking turn should inspect active case state.
 
-    V7 keeps no-case knowledge independent from governed case state. The only
-    exception here is a short elliptical follow-up that cannot be interpreted
-    responsibly without knowing the active primary task, for example
-    "und FKM mit NBR?" after a material discussion. This avoids the old broad
-    behavior where every knowledge question loaded governed state and could be
-    mistaken for case intake.
+    V7 treats knowledge inside an active case as a side question: answer it
+    without mutation, then resume the primary task. To make that decision
+    reliably, a session-scoped knowledge turn may read existing governed state
+    with ``create_if_missing=False``. This read-only probe must never create a
+    case or convert the knowledge turn into governed intake.
     """
 
     normalized = " ".join((message or "").casefold().strip().split())
     if not normalized:
         return False
+    if normalized.startswith(
+        (
+            "was genau ist",
+            "was eigentlich ist",
+            "was genau sind",
+            "was eigentlich sind",
+            "was bedeutet",
+            "was heisst",
+            "was heißt",
+            "wie funktioniert",
+            "warum",
+            "wieso",
+            "weshalb",
+            "erkläre",
+            "erklaere",
+            "erklär",
+            "erklaer",
+        )
+    ):
+        return True
     if len(normalized) > 80:
         return False
     return normalized.startswith(
@@ -172,7 +194,11 @@ def _resolve_v7_turn_decision(
     from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding  # noqa: PLC0415
 
     turn_index = int(getattr(governed_state, "user_turn_index", 0) or 0) + 1
-    pending_question = getattr(governed_state, "pending_question", None) if governed_state is not None else None
+    pending_question = (
+        getattr(governed_state, "pending_question", None)
+        if governed_state is not None
+        else None
+    )
     slot_binding = resolve_slot_answer_binding(
         pending_question=pending_question,
         message=request.message,
@@ -199,7 +225,7 @@ def _v7_answer_mode(decision: TurnDecision | None) -> str | None:
 
 
 async def _resolve_runtime_dispatch(
-    request: Any, # ChatRequest
+    request: Any,  # ChatRequest
     *,
     current_user: RequestUser | None,
 ) -> RuntimeDispatchResolution:
@@ -251,7 +277,9 @@ async def _resolve_runtime_dispatch(
             PreGateClassification.DEEP_DIVE,
         }:
             governed_state = None
-            if _knowledge_turn_needs_active_case_probe(request.message):
+            if request.session_id and _knowledge_turn_needs_active_case_probe(
+                request.message
+            ):
                 governed_state = await _load_existing_governed_state_for_v7(
                     request=request,
                     current_user=current_user,
@@ -261,7 +289,10 @@ async def _resolve_runtime_dispatch(
                 pre_gate=pre_gate,
                 governed_state=governed_state,
             )
-            if _v7_answer_mode(turn_decision) == AnswerMode.ACTIVE_CASE_SIDE_QUESTION.value:
+            if (
+                _v7_answer_mode(turn_decision)
+                == AnswerMode.ACTIVE_CASE_SIDE_QUESTION.value
+            ):
                 return RuntimeDispatchResolution(
                     gate_route="GOVERNED",
                     gate_reason=f"v7_active_case_side_question:{pre_gate.reasoning}",
@@ -276,7 +307,9 @@ async def _resolve_runtime_dispatch(
 
             from dataclasses import replace  # noqa: PLC0415
             from app.services.knowledge_service import KnowledgeService  # noqa: PLC0415
-            from app.services.knowledge_case_bridge_service import KnowledgeCaseBridgeService  # noqa: PLC0415
+            from app.services.knowledge_case_bridge_service import (
+                KnowledgeCaseBridgeService,
+            )  # noqa: PLC0415
 
             knowledge_response = KnowledgeService().answer(
                 request.message,
@@ -471,14 +504,17 @@ async def _compose_knowledge_answer_if_enabled(
         )
 
         answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
-        knowledge_mode = str(
-            getattr(
-                getattr(knowledge_response, "source_classification", None),
-                "value",
-                getattr(knowledge_response, "source_classification", None),
+        knowledge_mode = (
+            str(
+                getattr(
+                    getattr(knowledge_response, "source_classification", None),
+                    "value",
+                    getattr(knowledge_response, "source_classification", None),
+                )
+                or ""
             )
-            or ""
-        ) or None
+            or None
+        )
         context = KnowledgeContextBuilder().build(
             user_message=user_message,
             deterministic_answer=str(getattr(knowledge_response, "content", "") or ""),
@@ -651,7 +687,9 @@ def _build_knowledge_debug_trace(
         if source_type not in evidence_source_types:
             evidence_source_types.append(source_type)
     route = getattr(context, "route_label", None) if context is not None else None
-    knowledge_mode = getattr(context, "knowledge_mode", None) if context is not None else None
+    knowledge_mode = (
+        getattr(context, "knowledge_mode", None) if context is not None else None
+    )
     return KnowledgeDebugTrace(
         route=str(route or source_classification or "") or None,
         knowledge_mode=str(knowledge_mode or source_classification or "") or None,
