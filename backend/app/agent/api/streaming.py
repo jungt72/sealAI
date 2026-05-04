@@ -614,16 +614,18 @@ async def event_generator(
             yield "data: [DONE]\n\n"
             return
         if _is_v7_active_case_side_question(dispatch):
-            knowledge_response = await build_case_side_knowledge_response(
-                message=request.message,
-                override_class="exploration_answer",
-                conversation_route=dispatch.conversation_route,
-                governed_state=dispatch.governed_state,
+            from app.agent.api.routes.chat import (  # noqa: PLC0415
+                _build_active_case_side_payload,
             )
-            async for frame in _stream_knowledge_response(
-                knowledge_response=knowledge_response,
-            ):
-                yield frame
+
+            payload = await _build_active_case_side_payload(
+                message=request.message,
+                governed_state=dispatch.governed_state,
+                decision=dispatch.turn_decision,
+                conversation_route=dispatch.conversation_route,
+            )
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            yield "data: [DONE]\n\n"
             return
         _knowledge_override = classify_message_as_knowledge_override(request.message)
         if _knowledge_override is not None:

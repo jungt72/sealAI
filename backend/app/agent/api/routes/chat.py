@@ -44,6 +44,9 @@ from app.agent.api.knowledge_override import build_case_side_knowledge_response
 from app.agent.communication.active_case_process_answer import (
     build_active_case_process_answer,
 )
+from app.agent.communication.active_case_resume import (
+    reevaluate_active_case_resume,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -112,6 +115,72 @@ def _process_answer_trace(*, result: Any, decision: Any) -> dict[str, Any]:
     return trace
 
 
+def _side_answer_trace(*, knowledge_response: Any, resume_decision: Any, decision: Any) -> dict[str, Any]:
+    existing_trace = getattr(knowledge_response, "answer_trace", None)
+    trace = (
+        dict(existing_trace)
+        if isinstance(existing_trace, dict)
+        else build_answer_trace(
+            reply_source="knowledge_service",
+            answer_markdown_source="knowledge_service",
+            final_visible_source="answer_markdown",
+        )
+    )
+    resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    trace.update(
+        {
+            "answer_mode": "active_case_side_question",
+            "mutation_policy": str(getattr(decision, "mutation_policy", "forbidden") or "forbidden"),
+            "resume_strategy": str(resume_trace.get("resume_strategy") or getattr(decision, "resume_strategy", "") or ""),
+            "resume_reevaluation_attempted": True,
+            "resume_reason": resume_trace.get("resume_reason"),
+            "resume_target_field": resume_trace.get("resume_target_field"),
+            "next_runtime_action": resume_trace.get("next_runtime_action"),
+            "pending_question_restored": bool(resume_trace.get("pending_question_restored", False)),
+            "governed_graph_bypassed": True,
+            "latest_user_question_answered": True,
+            "slot_answer_detected": bool(resume_trace.get("slot_answer_detected", False)),
+            "case_delta_allowed": bool(resume_trace.get("case_delta_allowed", False)),
+            "governed_graph_allowed": bool(resume_trace.get("governed_graph_allowed", False)),
+        }
+    )
+    if resume_trace.get("detected_slot_field"):
+        trace["detected_slot_field"] = resume_trace.get("detected_slot_field")
+    return trace
+
+
+def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
+    base = str(answer_markdown or "").strip()
+    if not base:
+        base = "Ich beantworte die Nebenfrage allgemein und ohne technische Freigabe."
+
+    if bool(getattr(resume_decision, "slot_answer_detected", False)):
+        detected_value = str(getattr(resume_decision, "detected_slot_value", "") or "").strip()
+        detected_field = str(getattr(resume_decision, "detected_slot_field", "") or "").strip()
+        if detected_value and detected_field == "medium":
+            return (
+                f"{base}\n\n"
+                f"Ich habe {detected_value} als moegliche Angabe zum Medium erkannt. "
+                "Die technische Uebernahme laeuft nicht ueber diese Erklaerung, "
+                "sondern ueber den geregelten Fallfluss."
+            ).strip()
+        return (
+            f"{base}\n\n"
+            "Ich habe in deiner Nachricht eine moegliche technische Angabe erkannt. "
+            "Die Erklaerung selbst bestaetigt diesen Wert nicht als technische Wahrheit."
+        ).strip()
+
+    target_question = str(getattr(resume_decision, "resume_target_question", "") or "").strip()
+    next_action = str(getattr(resume_decision, "next_runtime_action", "") or "")
+    if target_question and next_action in {
+        "continue_pending_question",
+        "ask_reprioritized_question",
+    }:
+        if target_question.casefold() not in base.casefold():
+            return f"{base}\n\n{target_question}".strip()
+    return base
+
+
 async def _build_active_case_process_payload(
     *,
     message: str,
@@ -141,6 +210,68 @@ async def _build_active_case_process_payload(
             existing_answer_markdown_source=answer_trace.get("answer_markdown_source"),
             existing_reply_source=answer_trace.get("reply_source"),
             composer_tier="tier_a",
+            fallback_reason=answer_trace.get("fallback_reason"),
+        ),
+    )
+    payload["assistant_message"] = str(
+        payload.get("answer_markdown") or payload.get("reply") or ""
+    ).strip()
+    payload["type"] = "state_update"
+    return payload
+
+
+async def _build_active_case_side_payload(
+    *,
+    message: str,
+    governed_state: GovernedSessionState | None,
+    decision: Any,
+    conversation_route: Any | None,
+) -> dict[str, Any]:
+    knowledge_response = await build_case_side_knowledge_response(
+        message=message,
+        override_class="exploration_answer",
+        conversation_route=conversation_route,
+        governed_state=governed_state,
+    )
+    resume_decision = reevaluate_active_case_resume(
+        latest_user_message=message,
+        governed_state=governed_state,
+        turn_decision=decision,
+    )
+    base_answer = str(
+        getattr(knowledge_response, "answer_markdown", None)
+        or getattr(knowledge_response, "content", "")
+        or ""
+    ).strip()
+    answer_markdown = _side_answer_with_resume(base_answer, resume_decision)
+    answer_trace = _side_answer_trace(
+        knowledge_response=knowledge_response,
+        resume_decision=resume_decision,
+        decision=decision,
+    )
+
+    from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
+
+    payload = build_public_response_core(
+        reply=answer_markdown,
+        structured_state=None,
+        policy_path="knowledge",
+        run_meta=with_answer_trace(
+            _knowledge_response_run_meta(knowledge_response),
+            answer_trace,
+        ),
+    )
+    payload["answer_markdown"] = answer_markdown
+    payload = apply_final_answer_layer(
+        payload,
+        FinalAnswerEnvelope(
+            route="knowledge",
+            answer_mode="active_case_side_question",
+            deterministic_fallback_reply=answer_markdown,
+            existing_answer_markdown=payload.get("answer_markdown"),
+            existing_answer_markdown_source=answer_trace.get("answer_markdown_source"),
+            existing_reply_source=answer_trace.get("reply_source"),
+            composer_tier="tier_b" if answer_trace.get("composer_attempted") else "tier_a",
             fallback_reason=answer_trace.get("fallback_reason"),
         ),
     )
@@ -434,16 +565,13 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             )
             return ChatResponse(session_id=request.session_id, **payload)
         if _is_v7_active_case_side_question(dispatch):
-            knowledge_response = await build_case_side_knowledge_response(
+            payload = await _build_active_case_side_payload(
                 message=request.message,
-                override_class="exploration_answer",
-                conversation_route=dispatch.conversation_route,
                 governed_state=dispatch.governed_state,
+                decision=dispatch.turn_decision,
+                conversation_route=dispatch.conversation_route,
             )
-            return await _chat_response_from_knowledge_response(
-                request=request,
-                knowledge_response=knowledge_response,
-            )
+            return ChatResponse(session_id=request.session_id, **payload)
         _knowledge_override_json = classify_message_as_knowledge_override(request.message)
         if _knowledge_override_json is not None:
             knowledge_response = await build_case_side_knowledge_response(

@@ -46,6 +46,8 @@ class ConversationControllerV7:
             if payload.active_case_exists:
                 return self._active_case_process_question(payload)
             return self._meta(payload)
+        if payload.active_case_exists and self._looks_like_side_question(payload.user_message):
+            return self._knowledge_or_side_question(payload)
         if payload.pre_gate_classification in {PreGateClassification.KNOWLEDGE_QUERY, PreGateClassification.DEEP_DIVE}:
             return self._knowledge_or_side_question(payload)
         if payload.pre_gate_classification is PreGateClassification.GREETING:
@@ -78,16 +80,40 @@ class ConversationControllerV7:
                 "was brauchst du von mir",
                 "warum fragst",
                 "warum brauchst",
-                "warum ist das wichtig",
-                "warum ist der druck wichtig",
-                "warum ist die temperatur wichtig",
-                "warum ist das medium wichtig",
                 "wozu fragst",
                 "wozu brauchst",
                 "weshalb fragst",
                 "weshalb brauchst",
             )
         )
+
+    def _looks_like_side_question(self, message: str) -> bool:
+        normalized = " ".join((message or "").casefold().split())
+        if not normalized:
+            return False
+        if any(
+            phrase in normalized
+            for phrase in (
+                "was bedeutet",
+                "was heisst",
+                "was heißt",
+                "was ist der unterschied",
+                "unterschied zwischen",
+                "welche rolle spielt",
+                "warum ist das wichtig",
+                "warum ist der druck wichtig",
+                "warum ist die temperatur wichtig",
+                "warum ist das medium wichtig",
+                "wie ist es mit",
+                "wie sieht es mit",
+                "was ist mit",
+            )
+        ):
+            return True
+        material_tokens = ("fkm", "nbr", "epdm", "ptfe", "ffkm", "vmq", "hnbr")
+        if normalized.startswith("und ") and any(token in normalized for token in material_tokens):
+            return True
+        return False
 
     def _router_signals(self, payload: ConversationControllerInput) -> RouterSignals:
         return RouterSignals(
@@ -176,7 +202,7 @@ class ConversationControllerV7:
                 mutation_policy=MutationPolicy.FORBIDDEN,
                 answer_obligations=["answer_side_question_directly", "connect_to_active_case", "return_to_primary_task"],
                 case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT,
-                resume_strategy=ResumeStrategy.RESTORE_TO_PENDING_QUESTION_V1 if pending_target else ResumeStrategy.NONE,
+                resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER if pending_target else ResumeStrategy.NONE,
                 resume_target_candidate=pending_target,
                 task_stack=self._task_stack(payload, side_topic="knowledge_side_question"),
                 confidence=payload.pre_gate_confidence,

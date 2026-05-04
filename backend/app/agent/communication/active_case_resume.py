@@ -34,7 +34,7 @@ def reevaluate_active_case_resume(
     governed_state: GovernedSessionState | None,
     turn_decision: TurnDecision | None = None,
 ) -> ActiveCaseResumeDecision:
-    """Decide how communication should resume after an active-case process answer.
+    """Decide how communication should resume after an active-case side/process answer.
 
     This seam is intentionally communication-only. It may detect that a value
     exists in the latest user turn, but it never confirms or writes engineering

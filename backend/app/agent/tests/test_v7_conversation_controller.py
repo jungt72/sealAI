@@ -55,9 +55,33 @@ def test_active_case_material_comparison_becomes_side_question_not_intake() -> N
 
     assert decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
-    assert decision.resume_strategy == ResumeStrategy.RESTORE_TO_PENDING_QUESTION_V1
+    assert decision.resume_strategy == ResumeStrategy.REEVALUATE_AFTER_ANSWER
     assert decision.resume_target_candidate is not None
     assert decision.resume_target_candidate.target_field == "medium"
+
+
+def test_active_case_medium_definition_becomes_side_question_with_resume_reevaluation() -> None:
+    pending = _medium_pending_question()
+    decision = _decide("Was bedeutet Medium?", active_case=True, pending_question=pending)
+
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+    assert decision.resume_strategy == ResumeStrategy.REEVALUATE_AFTER_ANSWER
+    assert decision.resume_target_candidate is not None
+    assert decision.resume_target_candidate.target_field == "medium"
+
+
+def test_mixed_medium_value_and_definition_routes_as_side_question_for_resume_reevaluation() -> None:
+    pending = _medium_pending_question()
+    decision = _decide(
+        "Das Medium ist Wasser. Was bedeutet Medium?",
+        active_case=True,
+        pending_question=pending,
+    )
+
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+    assert decision.resume_strategy == ResumeStrategy.REEVALUATE_AFTER_ANSWER
 
 
 def test_pending_medium_short_answer_becomes_pending_slot_turn_decision() -> None:
@@ -127,7 +151,7 @@ def test_pending_medium_explicit_answer_still_binds_as_slot_answer() -> None:
     assert decision.state_actions[0].value == "Wasser"
 
 
-def test_mixed_medium_value_and_why_question_routes_as_process_question_for_resume_reevaluation() -> None:
+def test_mixed_medium_value_and_why_question_routes_as_side_question_for_resume_reevaluation() -> None:
     pending = _medium_pending_question()
     decision = _decide(
         "Das Medium ist Wasser. Warum ist das wichtig?",
@@ -135,7 +159,7 @@ def test_mixed_medium_value_and_why_question_routes_as_process_question_for_resu
         pending_question=pending,
     )
 
-    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
     assert decision.resume_strategy == ResumeStrategy.REEVALUATE_AFTER_ANSWER
 

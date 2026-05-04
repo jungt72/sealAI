@@ -253,8 +253,84 @@ async def test_chat_endpoint_preserves_v7_side_question_as_knowledge_answer(
     )
 
     assert "Werkstoffvergleich: FKM vs NBR" in response.answer_markdown
+    assert "Welches Medium soll abgedichtet werden?" in response.answer_markdown
+    assert "final approved solution" not in response.answer_markdown.casefold()
+    assert "guaranteed suitable" not in response.answer_markdown.casefold()
     assert response.structured_state is None
+    assert response.proposed_case_delta is None
+    trace = response.run_meta["answer_trace"]
+    assert trace["answer_mode"] == "active_case_side_question"
+    assert trace["mutation_policy"] == "forbidden"
+    assert trace["resume_reevaluation_attempted"] is True
+    assert trace["resume_strategy"] == "answer_then_continue_pending_question"
+    assert trace["resume_target_field"] == "medium"
+    assert trace["governed_graph_bypassed"] is True
+    assert trace["latest_user_question_answered"] is True
+    assert trace["pending_question_restored"] is True
     build_side.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_active_case_medium_definition_side_answer_resumes_pending_medium(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = "Was bedeutet Medium?"
+    pre_gate = PreGateClassifier().classify(message)
+    decision = ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=pre_gate.confidence,
+            pre_gate_reason=pre_gate.reasoning,
+            active_case_exists=True,
+            pending_question=_pending_medium_question(),
+        )
+    )
+    dispatch = RuntimeDispatchResolution(
+        gate_route="GOVERNED",
+        gate_reason="v7_active_case_side_question:test",
+        runtime_mode="GOVERNED",
+        gate_applied=False,
+        pre_gate_classification=PreGateClassification.KNOWLEDGE_QUERY.value,
+        pre_gate_reason="deterministic_knowledge_query",
+        governed_state=_active_state(),
+        turn_decision=decision,
+    )
+    side_answer = KnowledgeResponse(
+        content="Mit Medium ist der Stoff gemeint, der an der Dichtung anliegt.",
+        answer_markdown="Mit Medium ist der Stoff gemeint, der an der Dichtung anliegt.",
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._resolve_runtime_dispatch",
+        AsyncMock(return_value=dispatch),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat.build_case_side_knowledge_response",
+        AsyncMock(return_value=side_answer),
+    )
+
+    async def fail_governed(*args, **kwargs):
+        raise AssertionError("active-case side question must not enter governed graph")
+
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message=message, session_id="active-case"),
+        current_user=_user(),
+    )
+
+    answer = response.answer_markdown or ""
+    assert "Stoff" in answer
+    assert "Welches Medium soll abgedichtet werden?" in answer
+    assert response.proposed_case_delta is None
+    trace = response.run_meta["answer_trace"]
+    assert trace["answer_mode"] == "active_case_side_question"
+    assert trace["resume_reevaluation_attempted"] is True
+    assert trace["resume_strategy"] == "answer_then_continue_pending_question"
+    assert trace["pending_question_restored"] is True
+    assert trace["governed_graph_bypassed"] is True
 
 
 @pytest.mark.asyncio
@@ -428,24 +504,44 @@ async def test_mixed_medium_answer_and_why_question_marks_slot_answer_without_bl
 ) -> None:
     message = "Das Medium ist Wasser. Warum ist das wichtig?"
     state = _active_state()
-    decision = _process_decision(message, state)
+    pre_gate = PreGateClassifier().classify(message)
+    decision = ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=pre_gate.confidence,
+            pre_gate_reason=pre_gate.reasoning,
+            active_case_exists=True,
+            pending_question=state.pending_question,
+        )
+    )
     dispatch = RuntimeDispatchResolution(
         gate_route="GOVERNED",
-        gate_reason="v7_active_case_process_question:test",
+        gate_reason="v7_active_case_side_question:test",
         runtime_mode="GOVERNED",
         gate_applied=False,
-        pre_gate_classification=PreGateClassification.DOMAIN_INQUIRY.value,
-        pre_gate_reason="ambiguous_fail_safe_domain_inquiry",
+        pre_gate_classification=pre_gate.classification.value,
+        pre_gate_reason=pre_gate.reasoning,
         governed_state=state,
         turn_decision=decision,
+    )
+    side_answer = KnowledgeResponse(
+        content=(
+            "Das Medium ist wichtig, weil es Werkstoffauswahl, "
+            "Bestaendigkeit und Risikobewertung beeinflusst."
+        ),
+        answer_markdown=(
+            "Das Medium ist wichtig, weil es Werkstoffauswahl, "
+            "Bestaendigkeit und Risikobewertung beeinflusst."
+        ),
     )
     monkeypatch.setattr(
         "app.agent.api.routes.chat._resolve_runtime_dispatch",
         AsyncMock(return_value=dispatch),
     )
     monkeypatch.setattr(
-        "app.agent.api.routes.chat._persist_live_governed_state",
-        AsyncMock(),
+        "app.agent.api.routes.chat.build_case_side_knowledge_response",
+        AsyncMock(return_value=side_answer),
     )
 
     response = await chat_endpoint(
@@ -459,12 +555,70 @@ async def test_mixed_medium_answer_and_why_question_marks_slot_answer_without_bl
     assert "Welches Medium soll abgedichtet werden?" not in answer
     assert response.proposed_case_delta is None
     trace = response.run_meta["answer_trace"]
+    assert trace["answer_mode"] == "active_case_side_question"
     assert trace["resume_strategy"] == "accept_or_route_pending_slot_answer"
     assert trace["slot_answer_detected"] is True
     assert trace["resume_target_field"] == "medium"
     assert trace["pending_question_restored"] is False
     assert trace["case_delta_allowed"] is False
     assert trace["governed_graph_allowed"] is True
+
+
+@pytest.mark.asyncio
+async def test_mixed_medium_answer_and_side_question_marks_slot_without_blind_restore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = "Das Medium ist Wasser. Was bedeutet Medium?"
+    pre_gate = PreGateClassifier().classify(message)
+    decision = ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=pre_gate.confidence,
+            pre_gate_reason=pre_gate.reasoning,
+            active_case_exists=True,
+            pending_question=_pending_medium_question(),
+        )
+    )
+    dispatch = RuntimeDispatchResolution(
+        gate_route="GOVERNED",
+        gate_reason="v7_active_case_side_question:test",
+        runtime_mode="GOVERNED",
+        gate_applied=False,
+        pre_gate_classification=pre_gate.classification.value,
+        pre_gate_reason=pre_gate.reasoning,
+        governed_state=_active_state(),
+        turn_decision=decision,
+    )
+    side_answer = KnowledgeResponse(
+        content="Mit Medium ist der Stoff gemeint, der an der Dichtung anliegt.",
+        answer_markdown="Mit Medium ist der Stoff gemeint, der an der Dichtung anliegt.",
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._resolve_runtime_dispatch",
+        AsyncMock(return_value=dispatch),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat.build_case_side_knowledge_response",
+        AsyncMock(return_value=side_answer),
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message=message, session_id="active-case"),
+        current_user=_user(),
+    )
+
+    answer = response.answer_markdown or ""
+    assert "Stoff" in answer
+    assert "Wasser" in answer
+    assert "Welches Medium soll abgedichtet werden?" not in answer
+    assert response.proposed_case_delta is None
+    trace = response.run_meta["answer_trace"]
+    assert trace["answer_mode"] == "active_case_side_question"
+    assert trace["resume_strategy"] == "accept_or_route_pending_slot_answer"
+    assert trace["slot_answer_detected"] is True
+    assert trace["pending_question_restored"] is False
+    assert trace["case_delta_allowed"] is False
 
 
 @pytest.mark.asyncio
@@ -551,3 +705,61 @@ async def test_stream_active_case_process_question_final_state_update_uses_answe
     assert state_update["run_meta"]["answer_trace"]["resume_reevaluation_attempted"] is True
     assert state_update["run_meta"]["answer_trace"]["resume_strategy"] == "answer_then_continue_pending_question"
     assert state_update["run_meta"]["answer_trace"]["resume_target_field"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_stream_active_case_side_question_final_state_update_uses_resume_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = "Was bedeutet Medium?"
+    pre_gate = PreGateClassifier().classify(message)
+    decision = ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=pre_gate.confidence,
+            pre_gate_reason=pre_gate.reasoning,
+            active_case_exists=True,
+            pending_question=_pending_medium_question(),
+        )
+    )
+    dispatch = RuntimeDispatchResolution(
+        gate_route="GOVERNED",
+        gate_reason="v7_active_case_side_question:test",
+        runtime_mode="GOVERNED",
+        gate_applied=False,
+        pre_gate_classification=pre_gate.classification.value,
+        pre_gate_reason=pre_gate.reasoning,
+        governed_state=_active_state(),
+        turn_decision=decision,
+    )
+    side_answer = KnowledgeResponse(
+        content="Mit Medium ist der Stoff gemeint, der an der Dichtung anliegt.",
+        answer_markdown="Mit Medium ist der Stoff gemeint, der an der Dichtung anliegt.",
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._resolve_runtime_dispatch",
+        AsyncMock(return_value=dispatch),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat.build_case_side_knowledge_response",
+        AsyncMock(return_value=side_answer),
+    )
+
+    payloads = await _collect_sse_payloads(
+        event_generator(
+            ChatRequest(message=message, session_id="active-case"),
+            current_user=_user(),
+        )
+    )
+
+    state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
+    answer = state_update.get("answer_markdown") or ""
+    assert "Stoff" in answer
+    assert "Welches Medium soll abgedichtet werden?" in answer
+    trace = state_update["run_meta"]["answer_trace"]
+    assert trace["answer_mode"] == "active_case_side_question"
+    assert trace["resume_reevaluation_attempted"] is True
+    assert trace["resume_strategy"] == "answer_then_continue_pending_question"
+    assert trace["resume_target_field"] == "medium"
+    assert trace["governed_graph_bypassed"] is True
