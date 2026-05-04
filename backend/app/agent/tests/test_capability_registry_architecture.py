@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any, Mapping
 
 from app.agent.capability_registry import (
     CapabilityId,
@@ -42,6 +43,22 @@ FORBIDDEN_IMPORTED_NAMES: tuple[str, ...] = (
 )
 
 EXPECTED_DEFAULT_CAPABILITY_IDS: tuple[str, ...] = ("medium_intelligence",)
+CAPABILITY_SAMPLE_INPUTS: dict[str, dict[str, Any]] = {
+    "medium_intelligence": {"medium": "HLP46"},
+}
+
+FORBIDDEN_OUTPUT_TERMS: tuple[str, ...] = (
+    "freigegeben",
+    "final approved",
+    "approved solution",
+    "certified recommendation",
+    "garantiert geeignet",
+    "garantiert beständig",
+    "garantiert bestaendig",
+    "zertifiziert",
+    "beste Lösung",
+    "beste Loesung",
+)
 
 DYNAMIC_DISCOVERY_IMPORT_PREFIXES: tuple[str, ...] = (
     "glob",
@@ -135,6 +152,42 @@ def test_capability_registry_uses_no_dynamic_discovery_or_env_registration() -> 
     assert violations == []
 
 
+def test_every_registered_capability_returns_default_deny_capability_result() -> None:
+    registry = build_default_capability_registry()
+    capability_ids = _capability_ids(registry)
+
+    assert set(CAPABILITY_SAMPLE_INPUTS) == set(EXPECTED_DEFAULT_CAPABILITY_IDS)
+
+    for capability_id in capability_ids:
+        result = registry.invoke(capability_id, CAPABILITY_SAMPLE_INPUTS[capability_id])
+
+        assert isinstance(result, CapabilityResult)
+        assert result.safety.as_dict() == {
+            "mutates_case_state": False,
+            "creates_engineering_truth": False,
+            "final_approval_claim_allowed": False,
+            "dispatch_allowed": False,
+            "external_contact_allowed": False,
+            "export_allowed": False,
+        }
+
+        payload = result.as_dict()
+        assert "answer_markdown" not in payload
+        assert "reply" not in payload
+        assert "proposed_case_delta" not in payload
+
+        user_visible_candidate_context = {
+            "candidate_facts": payload["candidate_facts"],
+            "context_notes": payload["context_notes"],
+            "risk_notes": payload["risk_notes"],
+            "missing_field_hints": payload["missing_field_hints"],
+            "rfq_relevance_notes": payload["rfq_relevance_notes"],
+        }
+        flattened = _flatten_text(user_visible_candidate_context).casefold()
+        for term in FORBIDDEN_OUTPUT_TERMS:
+            assert term.casefold() not in flattened
+
+
 def test_capability_result_safety_defaults_are_read_only_and_non_operational() -> None:
     assert CapabilitySafetyFlags().as_dict() == {
         "mutates_case_state": False,
@@ -212,3 +265,18 @@ def _is_os_env_call(func: ast.expr) -> bool:
         and isinstance(value.value, ast.Name)
         and value.value.id == "os"
     )
+
+
+def _flatten_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        return " ".join(
+            f"{_flatten_text(key)} {_flatten_text(item)}"
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten_text(item) for item in value)
+    if value is None:
+        return ""
+    return str(value)
