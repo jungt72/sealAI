@@ -127,7 +127,9 @@ async def test_medium_research_can_accept_mocked_web_evidence(monkeypatch: pytes
 
     assert attempt.status == "ok"
     assert evidence[0].source_type == "web"
+    assert evidence[0].source_name == "Live-Websearch"
     assert "Webhinweis" in evidence[0].excerpt
+    assert "OpenAI" not in evidence[0].model_dump_json()
 
 
 @pytest.mark.asyncio
