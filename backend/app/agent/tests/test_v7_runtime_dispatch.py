@@ -395,10 +395,23 @@ async def test_active_case_rfq_readiness_question_answers_open_points_without_gr
     assert "Offene Punkte" in answer
     assert "Medium" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
-    assert "keine finale technische Freigabe" in answer
+    assert "keine technische Endentscheidung" in answer
     assert "garantiert" not in answer.casefold()
     assert "approved" not in answer.casefold()
     assert response.proposed_case_delta is None
+    projection = response.rfq_readiness_projection or {}
+    assert projection["manufacturer_review_ready"] is False
+    assert projection["rfq_basis_ready"] is False
+    assert projection["known_missing_fields"] == ["Medium"]
+    assert projection["blocking_reasons"] == ["Medium"]
+    assert projection["pending_question"]["target_field"] == "medium"
+    assert projection["consent_required"] is True
+    assert projection["dispatch_allowed"] is False
+    assert projection["external_contact_allowed"] is False
+    assert projection["preview_available"] is False
+    assert projection["preview_possible"] is True
+    assert projection["preview_requires_explicit_endpoint"] is True
+    assert "preview_id" not in projection
     trace = response.run_meta["answer_trace"]
     assert trace["answer_mode"] == "rfq_readiness"
     assert trace["runtime_action_type"] == "show_rfq_readiness"
@@ -411,6 +424,13 @@ async def test_active_case_rfq_readiness_question_answers_open_points_without_gr
     assert trace["consent_required"] is True
     assert trace["manufacturer_review_framing"] is True
     assert trace["final_approval_claim_allowed"] is False
+    assert trace["rfq_readiness_projection_built"] is True
+    assert trace["manufacturer_review_ready"] is False
+    assert trace["rfq_basis_ready"] is False
+    assert trace["known_missing_fields_count"] == 1
+    assert trace["preview_available"] is False
+    assert trace["preview_possible"] is True
+    assert trace["preview_requires_explicit_endpoint"] is True
 
 
 @pytest.mark.asyncio
@@ -431,6 +451,10 @@ async def test_active_case_rfq_missing_for_manufacturer_preserves_next_question(
     assert "Offene Punkte" in answer
     assert "Medium" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
+    projection = response.rfq_readiness_projection or {}
+    assert projection["known_missing_fields"] == ["Medium"]
+    assert projection["open_points"] == []
+    assert projection["manufacturer_review_ready"] is False
     trace = response.run_meta["answer_trace"]
     assert trace["rfq_intent_detected"] is True
     assert trace["rfq_action_type"] == "show_missing_fields"
@@ -457,11 +481,19 @@ async def test_active_case_create_inquiry_deferred_until_fields_and_consent(
     assert "Herstellerpruefung" in answer
     assert "kein automatischer Versand" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
+    projection = response.rfq_readiness_projection or {}
+    assert projection["preview_available"] is False
+    assert projection["preview_possible"] is True
+    assert projection["preview_requires_explicit_endpoint"] is True
+    assert projection["preview_blocking_reason"] == (
+        "preview_creation_requires_durable_case_endpoint_and_consent_flow"
+    )
     trace = response.run_meta["answer_trace"]
     assert trace["runtime_action_type"] == "defer_rfq_until_required_fields"
     assert trace["rfq_action_type"] == "build_rfq_basis"
     assert trace["dispatch_allowed"] is False
     assert trace["rfq_preview_invoked"] is False
+    assert trace["preview_requires_explicit_endpoint"] is True
 
 
 @pytest.mark.asyncio
@@ -481,7 +513,11 @@ async def test_active_case_manufacturer_send_requires_consent_and_no_dispatch(
     answer = response.answer_markdown or ""
     assert "explizite Zustimmung" in answer
     assert "kontaktiere keinen Hersteller automatisch" in answer
-    assert "keine finale technische Freigabe" in answer
+    assert "keine technische Endentscheidung" in answer
+    projection = response.rfq_readiness_projection or {}
+    assert projection["external_contact_allowed"] is False
+    assert projection["dispatch_allowed"] is False
+    assert projection["consent_required"] is True
     trace = response.run_meta["answer_trace"]
     assert trace["runtime_action_type"] == "answer_rfq_status"
     assert trace["rfq_action_type"] == "external_contact_request"
@@ -516,6 +552,12 @@ async def test_no_active_case_create_inquiry_asks_for_qualification_without_grap
     assert "qualifizierten Dichtungsfall" in answer
     assert "keine Herstelleranfrage" in answer
     assert "Um welche Dichtung oder Anwendung geht es?" in answer
+    projection = response.rfq_readiness_projection or {}
+    assert projection["manufacturer_review_ready"] is False
+    assert projection["rfq_basis_ready"] is False
+    assert projection["preview_possible"] is False
+    assert projection["preview_available"] is False
+    assert projection["preview_blocking_reason"] == "no_active_case"
     trace = response.run_meta["answer_trace"]
     assert trace["runtime_action_type"] == "defer_rfq_until_required_fields"
     assert trace["active_case_exists"] is False
@@ -1296,6 +1338,12 @@ async def test_stream_rfq_readiness_state_update_contains_runtime_action_trace(
     answer = state_update.get("answer_markdown") or ""
     assert "Offene Punkte" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
+    projection = state_update["rfq_readiness_projection"]
+    assert projection["known_missing_fields"] == ["Medium"]
+    assert projection["manufacturer_review_ready"] is False
+    assert projection["dispatch_allowed"] is False
+    assert projection["external_contact_allowed"] is False
+    assert projection["preview_requires_explicit_endpoint"] is True
     trace = state_update["run_meta"]["answer_trace"]
     assert trace["answer_mode"] == "rfq_readiness"
     assert trace["runtime_action_type"] == "show_rfq_readiness"
@@ -1305,4 +1353,6 @@ async def test_stream_rfq_readiness_state_update_contains_runtime_action_trace(
     assert trace["dispatch_allowed"] is False
     assert trace["external_contact_allowed"] is False
     assert trace["consent_required"] is True
+    assert trace["rfq_readiness_projection_built"] is True
+    assert trace["preview_requires_explicit_endpoint"] is True
     assert trace["operational_contract_version"] == "runtime_action_v1"

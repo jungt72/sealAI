@@ -326,6 +326,7 @@ class ChatResponse(BaseModel):
     qualified_action_gate: Optional[Dict[str, Any]] = None
     result_contract: Optional[Dict[str, Any]] = None
     rfq_ready: Optional[bool] = None
+    rfq_readiness_projection: Optional[Dict[str, Any]] = None
     visible_case_narrative: Optional[VisibleCaseNarrativeResponse | Dict[str, Any]] = None
     result_form: Optional[str] = None
     path: Optional[str] = None

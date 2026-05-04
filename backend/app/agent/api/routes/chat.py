@@ -176,9 +176,11 @@ def _runtime_action_blocked_graph_payload(runtime_action: Any | None) -> dict[st
 def _build_rfq_readiness_payload(
     *,
     answer_markdown: str,
+    projection: dict[str, Any] | None = None,
     runtime_action: Any | None = None,
 ) -> dict[str, Any]:
     answer = str(answer_markdown or "").strip()
+    projection_payload = dict(projection or {})
     trace = build_answer_trace(
         reply_source="governed_output_contract",
         answer_markdown_source="deterministic_fallback",
@@ -194,6 +196,31 @@ def _build_rfq_readiness_payload(
             "latest_user_question_answered": True,
         }
     )
+    if projection_payload:
+        trace.update(
+            {
+                "rfq_readiness_projection_built": True,
+                "manufacturer_review_ready": bool(
+                    projection_payload.get("manufacturer_review_ready", False)
+                ),
+                "rfq_basis_ready": bool(projection_payload.get("rfq_basis_ready", False)),
+                "known_missing_fields_count": len(
+                    projection_payload.get("known_missing_fields") or []
+                ),
+                "open_points_count": len(projection_payload.get("open_points") or []),
+                "blocking_reasons_count": len(
+                    projection_payload.get("blocking_reasons") or []
+                ),
+                "preview_available": bool(projection_payload.get("preview_available", False)),
+                "preview_possible": bool(projection_payload.get("preview_possible", False)),
+                "preview_requires_explicit_endpoint": bool(
+                    projection_payload.get("preview_requires_explicit_endpoint", True)
+                ),
+                "preview_service_boundary": projection_payload.get("preview_service_boundary"),
+                "preview_blocking_reason": projection_payload.get("preview_blocking_reason"),
+                "projection_version": projection_payload.get("projection_version"),
+            }
+        )
     trace.update(_runtime_action_trace(runtime_action))
     payload = build_public_response_core(
         reply=answer,
@@ -217,7 +244,27 @@ def _build_rfq_readiness_payload(
     payload["assistant_message"] = str(
         payload.get("answer_markdown") or payload.get("reply") or ""
     ).strip()
-    payload["rfq_ready"] = bool(trace.get("rfq_ready", False))
+    payload["rfq_ready"] = bool(
+        projection_payload.get("rfq_basis_ready", trace.get("rfq_ready", False))
+    )
+    if projection_payload:
+        payload["rfq_readiness_projection"] = projection_payload
+        payload["qualified_action_gate"] = {
+            "consent_required": bool(projection_payload.get("consent_required", True)),
+            "dispatch_allowed": False,
+            "external_contact_allowed": False,
+            "preview_available": bool(projection_payload.get("preview_available", False)),
+            "preview_possible": bool(projection_payload.get("preview_possible", False)),
+        }
+        payload["result_contract"] = {
+            "artifact_type": "rfq_readiness_projection",
+            "projection_version": projection_payload.get("projection_version"),
+            "manufacturer_review_ready": bool(
+                projection_payload.get("manufacturer_review_ready", False)
+            ),
+            "no_external_dispatch": True,
+            "preview_service_boundary": projection_payload.get("preview_service_boundary"),
+        }
     payload["type"] = "state_update"
     return payload
 
@@ -226,12 +273,14 @@ async def _chat_response_from_rfq_readiness(
     *,
     request: ChatRequest,
     answer_markdown: str,
+    projection: dict[str, Any] | None = None,
     runtime_action: Any | None = None,
 ) -> ChatResponse:
     return ChatResponse(
         session_id=str(request.session_id or "default"),
         **_build_rfq_readiness_payload(
             answer_markdown=answer_markdown,
+            projection=projection,
             runtime_action=runtime_action,
         ),
     )
@@ -768,6 +817,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         return await _chat_response_from_rfq_readiness(
             request=request,
             answer_markdown=dispatch.rfq_response,
+            projection=dispatch.rfq_readiness_projection,
             runtime_action=_v7_dispatch_runtime_action(dispatch),
         )
     if dispatch.fast_response is not None:

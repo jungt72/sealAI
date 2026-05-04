@@ -660,6 +660,7 @@ async def event_generator(
 
         payload = _build_rfq_readiness_payload(
             answer_markdown=dispatch.rfq_response,
+            projection=getattr(dispatch, "rfq_readiness_projection", None),
             runtime_action=_v7_dispatch_runtime_action(dispatch),
         )
         yield f"data: {json.dumps(payload, default=str)}\n\n"

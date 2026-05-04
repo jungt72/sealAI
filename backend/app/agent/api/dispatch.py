@@ -97,6 +97,7 @@ class RuntimeDispatchResolution:
     session_zone: str | None = None
     direct_reply: str | None = None
     rfq_response: str | None = None
+    rfq_readiness_projection: dict[str, Any] | None = None
     fast_response: Any | None = None
     knowledge_response: Any | None = None
     knowledge_override_class: str | None = None
@@ -343,6 +344,7 @@ async def _resolve_runtime_dispatch(
                     pre_gate_classification=pre_gate.classification.value,
                     pre_gate_reason=pre_gate.reasoning,
                     rfq_response=rfq_answer.answer_markdown,
+                    rfq_readiness_projection=rfq_answer.projection.public_dict(),
                     governed_state=governed_state,
                     conversation_route=conversation_route,
                     runtime_action=build_rfq_readiness_runtime_action(
