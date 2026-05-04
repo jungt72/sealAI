@@ -6,7 +6,7 @@ This repository builds **SeaLAI / sealingAI**.
 
 SeaLAI is not a generic chatbot, not a generic product catalog, not an ungoverned supplier directory, not a hidden advertising portal, not a price-comparison tool, and not a final engineering approval engine.
 
-SeaLAI is a **multi-scenario technical clarification system for sealing technology**:
+SeaLAI is a **governed agentic RFQ qualification runtime for sealing technology**:
 
 > SeaLAI helps users understand sealing situations, qualify technical cases, prepare manufacturer-review-ready RFQ artifacts, match cases to suitable paid partner manufacturers transparently, and support technical inquiries, compatibility questions, complaints, and failure-intake workflows with governed evidence, uncertainty, and consent.
 
@@ -18,23 +18,23 @@ Keep this file practical. Product depth belongs in the concept files. Do not tur
 
 ## Active mission
 
-The active implementation mission is **SeaLAI v0.8.3 on the current stack**, implemented safely and incrementally.
+The active implementation mission is **SealAI Architecture V8.0 — Governed Agentic RFQ Qualification Runtime** on the current stack, implemented safely and incrementally.
 
 The active product direction is:
 
 ```text
-Understand → Qualify → Match → Support → Document
+Understand → Qualify → Prepare RFQ basis → Manufacturer review → Capability context
 ```
 
 SeaLAI must increasingly feel like:
 
 > one experienced sealing engineer on the surface, backed by a disciplined, auditable engineering system underneath.
 
-The active communication target is now the **SealAI Communication Architecture V7.1 Final Freeze**:
+The active architecture target is now:
 
-> Natural user communication, explicit conversation control, governed backend truth, and exactly one final visible answer decision.
+> Communication Runtime entscheidet. Capability Registry liefert Fachkontext. LangGraph qualifiziert governed technical state. Governor/Services validieren technische Wahrheit. FinalAnswerLayer formuliert sichtbar. RFQ Layer erzeugt die Anfragebasis. Hersteller gibt final frei.
 
-The current work must move the existing app toward v0.8.3 without big-bang rewrites, without destructive production actions, and without replacing the current stack.
+The current work must move the existing app toward V8 without big-bang rewrites, without destructive production actions, and without replacing the current stack. V7.1 remains supporting communication history and partial implementation context, but V8 is now the binding target concept.
 
 ---
 
@@ -43,19 +43,24 @@ The current work must move the existing app toward v0.8.3 without big-bang rewri
 Before any non-trivial task, read from the repository root:
 
 1. `AGENTS.md`
-2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md`
-3. `docs/communication/conversation_controller_v7.md`
-4. `docs/communication/turn_decision_schema_v7.md`
-5. `docs/communication/golden_conversations_v7.md`
-6. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md`
-7. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md`
-8. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md`
-9. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`
-10. relevant source files and tests for the specific task
+2. `docs/implementation/SEALAI_ARCHITECTURE_V8_GOVERNED_AGENTIC_RFQ_RUNTIME.md`
+3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md`
+4. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md`
+5. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md`
+6. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`
+7. relevant `docs/implementation/event_model/*` files for event-modeled behavior
+8. relevant source files and tests for the specific task
+
+For communication-runtime work that touches existing V7 seams, also read the supporting historical contracts:
+
+1. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md`
+2. `docs/communication/conversation_controller_v7.md`
+3. `docs/communication/turn_decision_schema_v7.md`
+4. `docs/communication/golden_conversations_v7.md`
 
 For frontend/UI work, also read:
 
-8. `frontend/DESIGN.md`
+1. `frontend/DESIGN.md`
 
 If a directory contains another `AGENTS.md`, follow the more specific file for files inside that directory.
 
@@ -68,14 +73,14 @@ Do not work from memory. Current repository content is the evidence.
 Use this order when documents, code, or prior notes disagree:
 
 1. `AGENTS.md` for coding-agent operating rules and safety boundaries.
-2. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md` for the active communication architecture, TurnDecision, Conversation Controller, Task Stack, MutationPolicy, SpeakableFacts, FinalAnswerLayer, composer tiers, answer trace, eval gates, and rollout sequence.
-3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md` for active SeaLAI v0.8.3 product and implementation direction.
-4. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md` for current-stack evidence and implementation gaps.
-5. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md` for active PR order and implementation sequencing.
+2. `docs/implementation/SEALAI_ARCHITECTURE_V8_GOVERNED_AGENTIC_RFQ_RUNTIME.md` for the active target architecture, RuntimeAction gate, Capability Registry, LangGraph boundary, FinalAnswerLayer, RFQ readiness/preview boundary, claim policy, evidence policy, and V8 patch checklist.
+3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md` for event-modeled product and implementation foundations that V8 builds on.
+4. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md` for implementation sequencing where it does not conflict with V8.
+5. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md` for current-stack evidence and implementation gaps.
 6. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md` for pilot-readiness guardrails, RFQ governance, consent, IP/upload safety, and earlier implementation constraints.
 7. `frontend/DESIGN.md` for frontend design, layout, motion, spacing, cockpit, chat workspace, rails, tabs, and responsive behavior.
 8. Current code and tests as evidence of existing contracts and productive seams.
-9. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md` and older communication notes as historical context only.
+9. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md`, `docs/communication/*.md`, `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md`, and older communication notes as supporting historical context only.
 10. Older concept files, archived notes, audit notes, prompts, chat notes, or implementation history as context only.
 
 Rules:
@@ -142,52 +147,67 @@ Forbidden language unless backed by explicit evidence:
 - final compatibility confirmation
 - final root cause
 
-## Active Communication Architecture V7.1
+## Active Architecture V8
 
-`docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md` is the active implementation concept for all chat, knowledge, governed intake, active-case side questions, visible answer orchestration, and communication eval work.
+`docs/implementation/SEALAI_ARCHITECTURE_V8_GOVERNED_AGENTIC_RFQ_RUNTIME.md` is the active SSoT for all runtime, chat, knowledge, governed intake, capability, RFQ readiness, RFQ preview, projection, answer, evidence, and claim-policy work.
 
-Coding agents must implement V7.1 as an architecture, not as example-specific fixes:
+Coding agents must implement V8 as an architecture, not as example-specific fixes:
 
 - SealAI does not build its own LLM. It uses existing model roles through the model registry.
-- A nano-class Router Model may classify and interpret turns, but it is not the final answer voice and must not create engineering truth.
-- User messages must produce a typed `TurnDecision`, not a loose single intent.
-- The `ConversationController` owns task continuity, side-question handling, resume behavior, mutation policy, and disagreement handling.
-- The `TaskStack` must preserve the primary technical workflow while allowing bounded side questions.
-- `MutationPolicy` decides whether a turn may mutate the case, may propose candidates, or must remain answer-only.
-- Backend domain services remain responsible for case state, evidence, calculations, risks, readiness, RFQ boundaries, and stale/recompute logic.
-- `AnswerPlan` and `SpeakableFacts` define what can be said before the final response is composed.
-- Every user-visible answer must pass through exactly one final decision boundary: the `FinalAnswerLayer`.
-- Upstream components may produce deterministic fallback text, evidence, state deltas, contexts, and answer plans, but they are not independent final voices.
-- The public contract remains `reply` as deterministic fallback and `answer_markdown` as the final visible answer.
-- `answer_trace` must explain route, answer mode, task context, composer tier, source, fallback reason, safety result, and provenance without exposing secrets, raw prompts, raw evidence chunks, embeddings, stack traces, or internal graph state.
-- Tier A / Micro Composer is for smalltalk, meta, short confirmations, transitions, and simple resume statements.
-- Tier B / Standard Composer is for knowledge, material comparison, PFAS orientation, needs analysis, governed intake, active-case side questions, and richer explanations.
-- No larger deep-dive composer tier may be introduced without an explicit concept/eval update.
+- Every user turn must pass through the Communication Runtime and produce an explicit `TurnDecision` plus `RuntimeAction`.
+- `RuntimeAction` is the hard contract before LangGraph. Only `RuntimeActionType.ENTER_GOVERNED_GRAPH` may set `graph_allowed=true`.
+- `ANSWER_ONLY`, `ANSWER_THEN_RESUME`, `ROUTE_SLOT_CANDIDATE`, `SHOW_RFQ_READINESS`, `ANSWER_RFQ_STATUS`, `DEFER_RFQ_UNTIL_REQUIRED_FIELDS`, and `WAIT_FOR_USER` bypass LangGraph.
+- LangGraph is the governed technical execution engine only: intake observation, slot binding, normalization, assertion, evidence, deterministic services, calculation, risk/readiness, matching preparation, and output contract.
+- LangGraph must not own smalltalk, pure knowledge answers, active-case side answers, process/meta answers, RFQ status answers, or RFQ preview/export outside the explicit V8 boundaries.
+- Backend Governor and deterministic services remain responsible for case state, evidence, calculations, risks, readiness, RFQ boundaries, stale/recompute logic, and technical truth.
+- The Capability Registry is read-only Fachkontext, not autonomous agent orchestration. It may return candidate facts, context notes, risk notes, missing-field hints, RFQ relevance notes, and evidence refs.
+- Capability outputs must not mutate case state, confirm engineering truth, create readiness, call LangGraph, call `RfqPreviewService`, export, dispatch, contact manufacturers, or build final `answer_markdown`.
+- The first capability family is `medium_intelligence`; future capability families must follow the same read-only contract.
+- Every user-visible answer must pass through exactly one final visible answer boundary: the `FinalAnswerLayer`.
+- The public output contract remains `reply` as deterministic fallback, `answer_markdown` as the final visible answer, and `answer_trace` as safe trace metadata.
+- `answer_trace` must explain route, RuntimeAction, graph allowance, answer mode, capability involvement, composer tier/source, fallback reason, safety result, and provenance without exposing secrets, raw prompts, raw evidence chunks, embeddings, stack traces, or internal graph state.
+- RFQ readiness projection is a product-center artifact and must remain stable across backend builder, fixture, durable workspace projection, SSE state update, frontend BFF chat stream, BFF workspace reload, frontend mapping, streamWorkspace, and `RfqPane`.
+- RFQ Preview is an explicit action boundary. Preview/export may only go through `RfqPreviewService` and the approved BFF preview endpoint with explicit user intent. Preview is not export, dispatch, or manufacturer contact.
+- Legacy RFQ document bypass routes must remain disabled.
+- Evidence is required for manufacturer datasheets, compound data, standards, approvals, compliance, PFAS/REACH/ECHA currentness, uploaded/customer documents, and supplier capability claims.
+- General model knowledge may explain general fundamentals, material families, sealing principles, typical risk concepts, and how to structure questions, but it must not become concrete case truth.
 - Material comparison must be generic over supported material pairs and capable of detailed pairwise comparisons, not hardcoded to examples such as NBR/PTFE or FKM/EPDM.
-- Active-case side questions such as material comparisons, roughness questions, PFAS questions, or "why do you ask that?" must not be forced through governed intake just because a case exists.
-- A side question must be answered, then the system must intentionally resume, continue, or pause the primary task according to `ResumeStrategy`.
+- Active-case side questions such as material comparisons, roughness questions, PFAS questions, or "why do you ask that?" must be answered as side questions when the `RuntimeAction` says so, then intentionally resume, continue, or pause the primary task.
 - Fallback is safe degradation only; it is not the target UX when a composer is allowed, available, and passes guards.
-- Every V7.1 patch needs deterministic tests for turn decision, task-stack behavior, mutation policy, answer mode, fallback, trace metadata, safety guards, and no unintended case mutation.
-- The implementation contracts in `docs/communication/*.md` and `backend/app/agent/communication/v7_contracts.py` are binding for new communication work. Do not add or preserve a user-visible answer path that bypasses TurnDecision, AnswerPlan/SpeakableFacts, FinalAnswerLayer policy, and answer_trace once its mode is migrated.
-- Follow the V7.1 patch order: Specs + Golden Set, Thin Visible Spike, Resume Re-Evaluation, Knowledge / Material Evidence, SpeakableFacts, Guard Hardening, broader rollout.
+
+Every V8 patch report must explicitly answer:
+
+1. Which boundary changes?
+2. Is `RuntimeAction` before LangGraph still intact?
+3. Does LangGraph run only on `ENTER_GOVERNED_GRAPH`?
+4. Is technical truth still owned only by governed state, Governor, deterministic services, and evidence?
+5. Is `RfqPreviewService` still the only preview/export boundary?
+6. Are any new user-visible claims introduced?
+7. Is `answer_markdown` still the visible final answer?
+8. Are Chat/SSE/Workspace/BFF/Frontend contracts affected?
+9. Which boundary tests were added or run?
+10. Is there still no manufacturer contact, RFQ export, or dispatch without explicit consent?
 
 ## SeaLAI LLM Safety Rules
 
 - Backend state, deterministic services, calculations, rules, and evidence are the source of truth.
 - LLMs may explain, summarize, ask targeted questions, and make the experience more human, but must not create engineering truth.
-- Router or interpreter LLMs may produce typed `TurnDecision` proposals only; backend policy validation decides whether to route, answer, mutate, resume, or reject.
+- Router or interpreter LLMs may produce typed `TurnDecision` / `RuntimeAction` proposals only; backend policy validation decides whether to route, answer, mutate, resume, enter LangGraph, or reject.
+- `RuntimeActionType.ENTER_GOVERNED_GRAPH` is the only LLM-adjacent path that may allow LangGraph execution.
 - Composer LLMs may produce visible language only from `AnswerPlan`, `SpeakableFacts`, evidence, and allowed claims; they must not mutate state.
 - Case-bound engineering statements must be grounded in explicit `allowed_claims`.
 - Evidence-based statements must cite explicit evidence refs supplied by the backend; never invent sources, standards, datasheets, or manufacturer statements.
 - LLMs must never directly confirm fields, compute readiness, approve materials, select final sealing solutions, assert manufacturer acceptance, or override deterministic services.
+- LLMs must never trigger RFQ preview, export, dispatch, manufacturer contact, matching visibility, or paid partner exposure outside the explicit V8 service and consent boundaries.
 - Field extraction from chat creates proposals only; the communication LLM may only echo extracted proposals and must not introduce new engineering fields.
+- Capability Registry outputs are read-only context; LLMs may speak from allowed capability facts, but must not treat capability outputs as confirmed case truth unless the governed backend has accepted them.
 - Tests for LLM-facing features must use deterministic mocks and cover prompt injection, unsupported claims, fabricated IDs/evidence, wrong mutation policy, task-stack resume errors, and final-release language.
 
 ---
 
 ## Current scope
 
-v0.8.2 extends the earlier RFQ-only MVP into a multi-scenario case system.
+V8 extends the earlier v0.8.x and V7 communication work into a governed agentic RFQ qualification runtime.
 
 ### In scope
 
