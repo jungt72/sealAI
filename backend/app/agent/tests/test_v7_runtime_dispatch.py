@@ -22,8 +22,14 @@ from app.agent.state.models import (
     PendingQuestion,
 )
 from app.domain.pre_gate_classification import PreGateClassification
+from app.domain.source_validation import SourceType, ValidationStatus
 from app.services.auth.dependencies import RequestUser
-from app.services.knowledge_service import KnowledgeResponse
+from app.services.knowledge_service import (
+    KNOWLEDGE_RAG_HIT_LABEL,
+    KnowledgeAnswerResult,
+    KnowledgeEvidence,
+    KnowledgeResponse,
+)
 from app.services.pre_gate_classifier import PreGateClassifier
 
 
@@ -86,6 +92,35 @@ def _active_state_with_medium_asserted() -> GovernedSessionState:
             blocking_unknowns=["temperature_c", "pressure_bar"],
         ),
         user_turn_index=3,
+    )
+
+
+def _knowledge_response_with_fact_evidence(content: str) -> KnowledgeResponse:
+    return KnowledgeResponse(
+        content=content,
+        answer_markdown=content,
+        answer_result=KnowledgeAnswerResult(
+            answer=content,
+            answer_available=True,
+            rag_lookup_attempted=True,
+            rag_answer_found=True,
+            rag_miss=False,
+            source_type=SourceType.rag_verified,
+            validation_status=ValidationStatus.documented,
+            user_visible_label=KNOWLEDGE_RAG_HIT_LABEL,
+            knowledge_evidence=(
+                KnowledgeEvidence(
+                    source_type="fact_card",
+                    title="Elastomer-Werkstoffkontext",
+                    content=(
+                        "FKM wird haeufig bei Oelen, Kraftstoffen und hoeheren Temperaturen betrachtet; "
+                        "NBR wird haeufig bei Oelen, Fetten und moderaten Bedingungen betrachtet."
+                    ),
+                    source_name="SeaLAI FactCard",
+                    note="documented",
+                ),
+            ),
+        ),
     )
 
 
@@ -226,17 +261,10 @@ async def test_chat_endpoint_preserves_v7_side_question_as_knowledge_answer(
         governed_state=_active_state(),
         turn_decision=decision,
     )
-    side_answer = KnowledgeResponse(
-        content=(
-            "## Werkstoffvergleich: FKM vs NBR\n\n"
-            "FKM wird haeufig bei Oelen, Kraftstoffen und hoeheren Temperaturen betrachtet. "
-            "NBR wird haeufig bei Oelen, Fetten und moderaten Bedingungen betrachtet."
-        ),
-        answer_markdown=(
-            "## Werkstoffvergleich: FKM vs NBR\n\n"
-            "FKM wird haeufig bei Oelen, Kraftstoffen und hoeheren Temperaturen betrachtet. "
-            "NBR wird haeufig bei Oelen, Fetten und moderaten Bedingungen betrachtet."
-        ),
+    side_answer = _knowledge_response_with_fact_evidence(
+        "## Werkstoffvergleich: FKM vs NBR\n\n"
+        "FKM wird haeufig bei Oelen, Kraftstoffen und hoeheren Temperaturen betrachtet. "
+        "NBR wird haeufig bei Oelen, Fetten und moderaten Bedingungen betrachtet."
     )
 
     monkeypatch.setattr(
@@ -263,6 +291,7 @@ async def test_chat_endpoint_preserves_v7_side_question_as_knowledge_answer(
     assert "Werkstoffvergleich: FKM vs NBR" in response.answer_markdown
     assert "Oelen" in response.answer_markdown
     assert "Kraftstoffen" in response.answer_markdown
+    assert "Evidenzkontext: Elastomer-Werkstoffkontext" in response.answer_markdown
     assert "Herstellerpruefung" in response.answer_markdown
     assert "Welches Medium soll abgedichtet werden?" in response.answer_markdown
     assert "final approved solution" not in response.answer_markdown.casefold()
@@ -284,7 +313,12 @@ async def test_chat_endpoint_preserves_v7_side_question_as_knowledge_answer(
     assert trace["latest_user_question_answered"] is True
     assert trace["pending_question_restored"] is True
     assert trace["answer_safety_fallback_used"] is False
-    assert trace["evidence_context_available"] is False
+    assert trace["evidence_context_built"] is True
+    assert trace["evidence_context_available"] is True
+    assert trace["evidence_refs_count"] == 1
+    assert trace["evidence_source_validation_status"] == ["documented"]
+    assert trace["evidence_used_in_answer"] is True
+    assert trace["evidence_fallback_reason"] is None
     build_side.assert_awaited_once()
 
 
@@ -355,6 +389,11 @@ async def test_active_case_medium_definition_side_answer_resumes_pending_medium(
     assert trace["governed_graph_bypassed"] is True
     assert trace["claim_policy_applied"] is True
     assert trace["claim_policy_result"] == "rewritten"
+    assert trace["evidence_context_built"] is True
+    assert trace["evidence_context_available"] is False
+    assert trace["evidence_refs_count"] == 0
+    assert trace["evidence_used_in_answer"] is False
+    assert trace["evidence_fallback_reason"] == "rag_miss"
 
 
 @pytest.mark.asyncio
@@ -412,6 +451,9 @@ async def test_active_case_why_medium_important_side_answer_uses_claim_policy(
     assert trace["resume_strategy"] == "answer_then_continue_pending_question"
     assert trace["claim_policy_applied"] is True
     assert trace["claim_policy_result"] == "rewritten"
+    assert trace["evidence_context_built"] is True
+    assert trace["evidence_refs_count"] == 0
+    assert trace["evidence_used_in_answer"] is False
 
 
 @pytest.mark.asyncio
@@ -643,6 +685,10 @@ async def test_mixed_medium_answer_and_why_question_marks_slot_answer_without_bl
     assert trace["pending_question_restored"] is False
     assert trace["case_delta_allowed"] is False
     assert trace["governed_graph_allowed"] is True
+    assert trace["claim_policy_applied"] is True
+    assert trace["evidence_context_built"] is True
+    assert trace["evidence_refs_count"] == 0
+    assert trace["evidence_used_in_answer"] is False
 
 
 @pytest.mark.asyncio

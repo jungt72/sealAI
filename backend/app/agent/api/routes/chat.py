@@ -49,6 +49,8 @@ from app.agent.communication.active_case_resume import (
 )
 from app.agent.communication.active_case_side_claim_policy import (
     build_active_case_side_speakable_facts,
+    build_active_case_side_evidence_context,
+    enrich_active_case_side_answer_with_evidence,
     enforce_active_case_side_claim_policy,
 )
 
@@ -125,6 +127,8 @@ def _side_answer_trace(
     resume_decision: Any,
     decision: Any,
     claim_policy_result: Any,
+    evidence_context: Any,
+    evidence_used_in_answer: bool,
 ) -> dict[str, Any]:
     existing_trace = getattr(knowledge_response, "answer_trace", None)
     trace = (
@@ -158,6 +162,9 @@ def _side_answer_trace(
         trace["detected_slot_field"] = resume_trace.get("detected_slot_field")
     if hasattr(claim_policy_result, "as_trace"):
         trace.update(claim_policy_result.as_trace())
+    if hasattr(evidence_context, "as_trace"):
+        trace.update(evidence_context.as_trace())
+    trace["evidence_used_in_answer"] = bool(evidence_used_in_answer)
     return trace
 
 
@@ -255,10 +262,22 @@ async def _build_active_case_side_payload(
         or getattr(knowledge_response, "content", "")
         or ""
     ).strip()
-    speakable_facts = build_active_case_side_speakable_facts(governed_state)
-    claim_policy_result = enforce_active_case_side_claim_policy(
+    evidence_context = build_active_case_side_evidence_context(
+        knowledge_response=knowledge_response,
+        latest_user_message=message,
+    )
+    speakable_facts = build_active_case_side_speakable_facts(
+        governed_state,
+        evidence_context=evidence_context,
+    )
+    evidence_enrichment = enrich_active_case_side_answer_with_evidence(
         latest_user_message=message,
         answer_markdown=base_answer,
+        evidence_context=evidence_context,
+    )
+    claim_policy_result = enforce_active_case_side_claim_policy(
+        latest_user_message=message,
+        answer_markdown=evidence_enrichment.answer_markdown,
         speakable_facts=speakable_facts,
     )
     answer_markdown = _side_answer_with_resume(
@@ -270,6 +289,8 @@ async def _build_active_case_side_payload(
         resume_decision=resume_decision,
         decision=decision,
         claim_policy_result=claim_policy_result,
+        evidence_context=evidence_context,
+        evidence_used_in_answer=evidence_enrichment.evidence_used_in_answer,
     )
 
     from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415

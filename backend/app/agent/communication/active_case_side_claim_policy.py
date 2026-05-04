@@ -25,6 +25,33 @@ _FORBIDDEN_CLAIM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 _MATERIAL_TOKENS = ("fkm", "nbr", "epdm", "ptfe", "ffkm", "vmq", "hnbr")
+_MAX_EVIDENCE_SNIPPET_CHARS = 220
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveCaseSideEvidenceContext:
+    evidence_available: bool = False
+    evidence_refs: tuple[str, ...] = ()
+    source_titles: tuple[str, ...] = ()
+    short_evidence_snippets: tuple[str, ...] = ()
+    source_validation_status: tuple[str, ...] = ()
+    retrieval_query: str | None = None
+    evidence_fallback_reason: str | None = None
+
+    def as_trace(self) -> dict[str, Any]:
+        return {
+            "evidence_context_built": True,
+            "evidence_context_available": self.evidence_available,
+            "evidence_refs_count": len(self.evidence_refs),
+            "evidence_source_validation_status": list(self.source_validation_status),
+            "evidence_fallback_reason": self.evidence_fallback_reason,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveCaseSideEvidenceEnrichmentResult:
+    answer_markdown: str
+    evidence_used_in_answer: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +76,7 @@ class ActiveCaseSideSpeakableFacts:
     calculated_values: tuple[SpeakableCaseFact, ...] = ()
     uncertainty_notes: tuple[str, ...] = ()
     evidence_refs: tuple[str, ...] = ()
+    evidence_context: ActiveCaseSideEvidenceContext | None = None
     forbidden_claims: tuple[str, ...] = field(
         default_factory=lambda: tuple(name for name, _pattern in _FORBIDDEN_CLAIM_PATTERNS)
     )
@@ -60,7 +88,9 @@ class ActiveCaseSideSpeakableFacts:
 
     @property
     def evidence_context_available(self) -> bool:
-        return bool(self.evidence_refs)
+        return bool(self.evidence_refs) or bool(
+            self.evidence_context and self.evidence_context.evidence_available
+        )
 
     def as_trace(self) -> dict[str, Any]:
         return {
@@ -94,7 +124,11 @@ class ActiveCaseSideClaimPolicyResult:
         }
 
 
-def build_active_case_side_speakable_facts(governed_state: Any | None) -> ActiveCaseSideSpeakableFacts:
+def build_active_case_side_speakable_facts(
+    governed_state: Any | None,
+    *,
+    evidence_context: ActiveCaseSideEvidenceContext | None = None,
+) -> ActiveCaseSideSpeakableFacts:
     pending = getattr(governed_state, "pending_question", None) if governed_state is not None else None
     pending_field = str(getattr(pending, "target_field", "") or "").strip() or None
     pending_text = str(getattr(pending, "question_text", "") or "").strip() or None
@@ -140,7 +174,104 @@ def build_active_case_side_speakable_facts(governed_state: Any | None) -> Active
         pending_question_text=pending_text,
         missing_fields=tuple(missing_fields),
         uncertainty_notes=tuple(uncertainty_notes),
-        evidence_refs=tuple(evidence_refs),
+        evidence_refs=tuple(dict.fromkeys(evidence_refs + list(getattr(evidence_context, "evidence_refs", ()) or ()))),
+        evidence_context=evidence_context,
+    )
+
+
+def build_active_case_side_evidence_context(
+    *,
+    knowledge_response: Any | None,
+    latest_user_message: str,
+) -> ActiveCaseSideEvidenceContext:
+    answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
+    evidence_items = list(getattr(answer_view, "knowledge_evidence", ()) or ())
+    citations = list(getattr(knowledge_response, "citations", ()) or ())
+    refs: list[str] = []
+    titles: list[str] = []
+    snippets: list[str] = []
+    statuses: list[str] = []
+
+    for item in evidence_items:
+        source_type = str(getattr(item, "source_type", "") or "").strip()
+        if source_type not in {"rag", "fact_card"}:
+            continue
+        title = _safe_text(getattr(item, "title", None) or getattr(item, "source_name", None))
+        snippet = _safe_text(getattr(item, "content", None), limit=_MAX_EVIDENCE_SNIPPET_CHARS)
+        ref = title or str(getattr(item, "source_name", "") or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+        if title and title not in titles:
+            titles.append(title)
+        if snippet and snippet not in snippets:
+            snippets.append(snippet)
+
+    for source in citations:
+        title = _safe_text(getattr(source, "title", None))
+        source_id = _safe_text(getattr(source, "source_id", None))
+        evidence_ref = _safe_text(getattr(source, "evidence_ref", None))
+        snippet = _safe_text(getattr(source, "excerpt", None), limit=_MAX_EVIDENCE_SNIPPET_CHARS)
+        ref = evidence_ref or source_id or title
+        if ref and ref not in refs:
+            refs.append(ref)
+        if title and title not in titles:
+            titles.append(title)
+        if snippet and snippet not in snippets:
+            snippets.append(snippet)
+        status = str(getattr(getattr(source, "validation_status", None), "value", getattr(source, "validation_status", "") or "")).strip()
+        if status and status not in statuses:
+            statuses.append(status)
+
+    for badge in tuple(getattr(answer_view, "source_validation_badges", ()) or ()):
+        status = str(getattr(getattr(badge, "validation_status", None), "value", getattr(badge, "validation_status", "") or "")).strip()
+        if status and status not in statuses:
+            statuses.append(status)
+
+    evidence_available = bool(refs or titles or snippets)
+    fallback_reason = None
+    if not evidence_available:
+        fallback_reason = "rag_miss" if bool(getattr(answer_view, "rag_miss", False)) else "no_retrieval_evidence_available"
+
+    return ActiveCaseSideEvidenceContext(
+        evidence_available=evidence_available,
+        evidence_refs=tuple(refs[:3]),
+        source_titles=tuple(titles[:3]),
+        short_evidence_snippets=tuple(snippets[:3]),
+        source_validation_status=tuple(statuses[:3]) or (("documented",) if evidence_available else ()),
+        retrieval_query=_safe_text(latest_user_message, limit=160) or None,
+        evidence_fallback_reason=fallback_reason,
+    )
+
+
+def enrich_active_case_side_answer_with_evidence(
+    *,
+    latest_user_message: str,
+    answer_markdown: str,
+    evidence_context: ActiveCaseSideEvidenceContext,
+) -> ActiveCaseSideEvidenceEnrichmentResult:
+    answer = str(answer_markdown or "").strip()
+    if not evidence_context.evidence_available:
+        return ActiveCaseSideEvidenceEnrichmentResult(answer_markdown=answer)
+    answer_lower = _normalize(answer)
+    if any(token in answer_lower for token in ("evidenzkontext", "quelle", "dokumentiert", "rag")):
+        return ActiveCaseSideEvidenceEnrichmentResult(
+            answer_markdown=answer,
+            evidence_used_in_answer=True,
+        )
+    title = evidence_context.source_titles[0] if evidence_context.source_titles else "dokumentierter Wissenskontext"
+    snippet = evidence_context.short_evidence_snippets[0] if evidence_context.short_evidence_snippets else ""
+    context_line = (
+        f"Evidenzkontext: {title} stuetzt diese allgemeine Einordnung"
+        if not snippet
+        else f"Evidenzkontext: {title}: {snippet}"
+    )
+    context_line += (
+        ". Ich nutze diesen Kontext als Orientierung fuer die Anfragebasis, "
+        "nicht als technische Freigabe oder abschliessende Eignungsaussage."
+    )
+    return ActiveCaseSideEvidenceEnrichmentResult(
+        answer_markdown=f"{answer}\n\n{context_line}".strip(),
+        evidence_used_in_answer=True,
     )
 
 
@@ -339,6 +470,13 @@ def _message_contains_explicit_medium_answer(normalized_message: str) -> bool:
             re.IGNORECASE,
         )
     )
+
+
+def _safe_text(value: Any, *, limit: int = 240) -> str:
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        return ""
+    return text[:limit].rstrip()
 
 
 def _normalize(text: str) -> str:
