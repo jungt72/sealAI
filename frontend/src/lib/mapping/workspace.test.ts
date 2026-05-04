@@ -303,6 +303,7 @@ function legacyProjection() {
       open_points: ["compound approval"],
       has_pdf: false,
       has_html_report: true,
+      document_url: "/legacy/rfq-document",
       handover_ready: false,
       handover_initiated: false,
     },
@@ -369,7 +370,7 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   assert.equal(workspace.matching.manufacturerFitMatrix?.rows[0]?.manufacturerId, "partner-a");
   assert.equal(workspace.matching.manufacturerFitMatrix?.rows[0]?.fitScore, 93.5);
   assert.equal(workspace.matching.manufacturerFitMatrix?.rows[0]?.verificationLevel, "documented");
-  assert.equal(workspace.rfq.documentUrl, "/api/bff/rfq/case-123/document");
+  assert.equal(workspace.rfq.documentUrl, null);
   assert.equal(workspace.communication?.conversationPhase, "clarification");
   assert.equal(workspace.communication?.primaryQuestion, "Können Sie den Betriebsdruck noch einordnen?");
   assert.equal(workspace.parameters?.shaft_diameter_mm, 50);

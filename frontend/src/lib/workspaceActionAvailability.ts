@@ -32,7 +32,7 @@ export function getUnavailableRfqActions(
     });
   }
 
-  if (!rfq.hasHtmlReport) {
+  if (!rfq.documentUrl) {
     actions.push({
       id: "rfq_generate_document",
       label: "Anfragebasis exportieren",

@@ -17,7 +17,6 @@ import type {
   EngineeringSectionId,
 } from "@/lib/engineering/cockpitModel";
 import { mapRfqReadinessProjection } from "@/lib/mapping/rfqReadiness";
-import { buildRfqDocumentReadPath } from "../bff/workspace.ts";
 
 type RawCockpitProperty = {
   key?: string;
@@ -1162,7 +1161,7 @@ export function mapWorkspaceView(
       hasPdf: projection.rfq_status.has_pdf,
       hasHtmlReport: hasDocument,
       hasDraft: projection.rfq_package.has_draft,
-      documentUrl: hasDocument ? buildRfqDocumentReadPath(caseId) : null,
+      documentUrl: null,
       handoverReady: Boolean(projection.rfq_status.handover_ready),
       handoverInitiated: Boolean(projection.rfq_status.handover_initiated),
       package: {

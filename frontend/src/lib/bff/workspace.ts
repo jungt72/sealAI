@@ -55,12 +55,9 @@ export async function fetchWorkspace(caseId: string): Promise<WorkspaceView> {
 }
 
 export async function submitRfq(caseId: string, payload: any): Promise<any> {
-  const response = await fetch(`/api/bff/rfq/${encodeURIComponent(caseId)}/document`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  return ensureJson<any>(response);
+  void caseId;
+  void payload;
+  throw new Error(
+    "Legacy RFQ document submission is disabled. Use the governed RFQ preview/export flow; consent required before export.",
+  );
 }

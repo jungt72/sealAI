@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
-from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse
 
 from app.agent.api.models import (
     CaseListItemResponse,
@@ -15,7 +15,6 @@ from app.api.v1.projections.case_workspace import (
     project_case_workspace_from_governed_state,
     project_case_workspace_from_ssot,
 )
-from app.api.v1.renderers.rfq_html import render_rfq_html
 from app.agent.state.persistence import (
     list_cases_async,
     get_case_by_number_async,
@@ -29,12 +28,27 @@ from app.agent.api.loaders import (
     _load_live_governed_state,
     _load_guarded_workspace_projection_source,
     _load_governed_state_snapshot_projection_source,
-    _load_preferred_governed_workspace_source,
 )
 
 _log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_RFQ_DOCUMENT_LEGACY_DISABLED_PAYLOAD = {
+    "error": {
+        "code": "rfq_document_legacy_disabled",
+        "message": (
+            "Legacy RFQ document access is disabled. Use the governed RFQ "
+            "preview/export flow for the Anfragebasis for manufacturer review; "
+            "consent required before export."
+        ),
+    },
+    "dispatch_allowed": False,
+    "external_contact_allowed": False,
+    "export_requires_consent": True,
+    "final_approval_claim_allowed": False,
+    "preview_service_boundary": "RfqPreviewService.create_preview_for_case",
+}
 
 @router.get("/cases", response_model=List[CaseListItemResponse])
 async def list_cases(
@@ -159,14 +173,12 @@ async def get_workspace_projection(
 
     return project_case_workspace_from_governed_state(governed, chat_id=case_id)
 
-@router.get("/workspace/{case_id}/rfq-document", response_class=HTMLResponse)
+@router.get("/workspace/{case_id}/rfq-document")
 async def get_workspace_rfq_document(
     case_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
 ):
-    governed = await _load_preferred_governed_workspace_source(
-        current_user=current_user,
-        case_id=case_id,
+    return JSONResponse(
+        status_code=410,
+        content=_RFQ_DOCUMENT_LEGACY_DISABLED_PAYLOAD,
     )
-    workspace = project_case_workspace_from_governed_state(governed, chat_id=case_id)
-    return render_rfq_html(workspace)

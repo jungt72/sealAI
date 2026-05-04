@@ -1,6 +1,9 @@
+import asyncio
 import copy
 import importlib
+import json
 import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
@@ -653,48 +656,46 @@ def test_workspace_projection_prefers_case_state_lifecycle_fields(monkeypatch) -
     assert body["rfq_status"]["handover_ready"] is True
 
 
-def test_state_workspace_rfq_document_uses_structured_handover_special_case_loader() -> None:
-    auth_deps = importlib.import_module("app.services.auth.dependencies")
+def test_state_workspace_rfq_document_legacy_route_is_disabled_and_safe() -> None:
     state_mod = importlib.import_module("app.api.v1.endpoints.state")
-
-    persisted_state = {
-        "messages": [],
-        "working_profile": {},
-        "case_state": {},
-        "sealing_state": {
-            "handover": {
-                "rfq_html_report": "<html><body>rfq-special-case</body></html>",
-            },
-        },
-    }
+    auth_deps = importlib.import_module("app.services.auth.dependencies")
+    user = auth_deps.RequestUser(
+        user_id="alice",
+        username="alice",
+        sub="alice",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-a",
+    )
 
     with patch(
         "app.agent.api.router.load_structured_handover_state",
-        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
+        new=AsyncMock(side_effect=AssertionError("legacy RFQ document route must not load handover state")),
     ) as mock_special_loader, patch(
         "app.agent.api.router._load_preferred_governed_workspace_source",
         new=AsyncMock(side_effect=AssertionError("governed read helper should not be used for RFQ special-case reads")),
     ):
-        app = FastAPI()
-        app.include_router(getattr(state_mod, "router"))
-        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
-            user_id="alice",
-            username="alice",
-            sub="alice",
-            roles=[],
-            scopes=[],
-            tenant_id="tenant-a",
-        )
-        client = TestClient(app)
-        response = client.get(
-            "/state/workspace/rfq-document",
-            params={"thread_id": "case-1"},
-            headers={"X-Request-Id": "state-workspace-rfq-special"},
+        response = asyncio.run(
+            state_mod.get_rfq_document(
+                raw_request=SimpleNamespace(headers={"X-Request-Id": "state-workspace-rfq-special"}),
+                thread_id="case-1",
+                user=user,
+            )
         )
 
-    assert response.status_code == 200
-    assert response.text == "<html><body>rfq-special-case</body></html>"
-    assert mock_special_loader.await_count == 1
+    assert response.status_code == 410
+    assert response.headers["content-type"].startswith("application/json")
+    body = json.loads(response.body)
+    assert body["error"]["code"] == "rfq_document_legacy_disabled"
+    assert "governed RFQ preview/export flow" in body["error"]["message"]
+    assert body["dispatch_allowed"] is False
+    assert body["external_contact_allowed"] is False
+    assert body["export_requires_consent"] is True
+    assert body["final_approval_claim_allowed"] is False
+    assert body["preview_service_boundary"] == "RfqPreviewService.create_preview_for_case"
+    assert body["request_id"] == "state-workspace-rfq-special"
+    assert "<html" not in response.body.decode("utf-8").lower()
+    assert mock_special_loader.await_count == 0
 
 
 def test_state_workspace_prefers_governed_source_before_canonical_state() -> None:

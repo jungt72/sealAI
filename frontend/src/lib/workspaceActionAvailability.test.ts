@@ -190,19 +190,19 @@ test("RFQ unavailable actions are still shown when the panel is relevant without
   );
 });
 
-test("RFQ document download does not create a fake unavailable action once the read is present", () => {
+test("legacy RFQ document flags do not clear export action without a governed URL", () => {
   const workspace = makeWorkspace({
     rfq: {
       ...makeWorkspace().rfq,
       confirmed: true,
       hasHtmlReport: true,
-      documentUrl: "/api/bff/rfq/case-123/document",
+      documentUrl: null,
     },
   });
 
   assert.deepEqual(
     getUnavailableRfqActions(workspace).map((action) => action.id),
-    ["rfq_handover"],
+    ["rfq_generate_document", "rfq_handover"],
   );
 });
 

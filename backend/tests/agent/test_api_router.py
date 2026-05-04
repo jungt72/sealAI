@@ -657,115 +657,31 @@ def test_revision_snapshot_endpoint_returns_404_when_revision_missing() -> None:
     assert response.json()["detail"] == "Snapshot revision 9 for case 'case-1' not found"
 
 
-def test_workspace_rfq_document_reads_canonical_html_report() -> None:
-    persisted_state = {
-        "messages": [],
-        "working_profile": {},
-        "case_state": {
-            "rfq_state": {
-                "handover_ready": True,
-                "rfq_object": {
-                    "object_type": "rfq_payload_basis",
-                    "object_version": "rfq_payload_basis_v1",
-                    "confirmed_parameters": {"medium": "Steam", "pressure_bar": 12},
-                },
-            },
-        },
-        "sealing_state": {
-            "handover": {
-                "rfq_html_report": "<html><body>legacy</body></html>",
-            },
-        },
-    }
+def test_workspace_rfq_document_legacy_route_is_disabled_and_safe() -> None:
+    response = client.get("/workspace/case-1/rfq-document")
 
+    assert response.status_code == 410
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert body["error"]["code"] == "rfq_document_legacy_disabled"
+    assert "governed RFQ preview/export flow" in body["error"]["message"]
+    assert body["dispatch_allowed"] is False
+    assert body["external_contact_allowed"] is False
+    assert body["export_requires_consent"] is True
+    assert body["final_approval_claim_allowed"] is False
+    assert body["preview_service_boundary"] == "RfqPreviewService.create_preview_for_case"
+    assert "<html" not in response.text.lower()
+
+
+def test_workspace_rfq_document_legacy_route_does_not_load_or_render_state() -> None:
     with patch(
-        "app.agent.api.router.load_structured_case",
-        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
-    ):
-        response = client.get("/workspace/case-1/rfq-document")
-
-    assert response.status_code == 200
-    assert response.headers["content-disposition"] == 'inline; filename="sealai-rfq-document.html"'
-    assert "Technical RFQ Document" in response.text
-    assert "Steam" in response.text
-    assert "legacy" not in response.text
-
-
-def test_workspace_rfq_document_blocks_when_canonical_rfq_basis_is_not_releasable() -> None:
-    persisted_state = {
-        "messages": [],
-        "working_profile": {},
-        "case_state": {
-            "rfq_state": {
-                "handover_ready": False,
-                "critical_review_passed": False,
-                "rfq_object": {
-                    "object_type": "rfq_payload_basis",
-                    "object_version": "rfq_payload_basis_v1",
-                    "confirmed_parameters": {"medium": "Steam"},
-                },
-            },
-        },
-        "sealing_state": {
-            "handover": {
-                "is_handover_ready": False,
-            },
-        },
-    }
-
-    with patch(
-        "app.agent.api.router.load_structured_case",
-        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
-    ):
-        response = client.get("/workspace/case-1/rfq-document")
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "RFQ document is blocked until the mandatory critical review passes."
-
-
-def test_workspace_rfq_document_returns_404_without_generated_html_report() -> None:
-    persisted_state = {
-        "messages": [],
-        "working_profile": {},
-        "case_state": {},
-        "sealing_state": {"handover": {}},
-    }
-
-    with patch(
-        "app.agent.api.router.load_structured_case",
-        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
-    ):
-        response = client.get("/workspace/case-1/rfq-document")
-
-    assert response.status_code == 404
-    assert response.json()["detail"] == "No RFQ document has been generated yet."
-
-
-def test_workspace_rfq_document_uses_structured_handover_special_case_loader() -> None:
-    persisted_state = {
-        "messages": [],
-        "working_profile": {},
-        "case_state": {},
-        "sealing_state": {
-            "handover": {
-                "is_handover_ready": True,
-                "rfq_html_report": "<html><body>handover</body></html>",
-            },
-        },
-    }
-
-    with patch(
-        "app.agent.api.router.require_structured_handover_state",
-        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
-    ) as mock_special_loader, patch(
         "app.agent.api.router._load_preferred_governed_workspace_source",
-        new=AsyncMock(side_effect=AssertionError("governed read helper should not be used for RFQ special-case reads")),
-    ):
+        new=AsyncMock(side_effect=AssertionError("legacy RFQ document route must not load case state")),
+    ) as mock_loader:
         response = client.get("/workspace/case-1/rfq-document")
 
-    assert response.status_code == 200
-    assert response.text == "<html><body>handover</body></html>"
-    mock_special_loader.assert_awaited_once()
+    assert response.status_code == 410
+    assert mock_loader.await_count == 0
 
 
 def test_workspace_projection_prefers_canonical_rfq_object_and_matching_state() -> None:

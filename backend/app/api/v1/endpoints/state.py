@@ -8,7 +8,7 @@ import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.v1.projections.case_workspace import (
@@ -19,7 +19,6 @@ from app.api.v1.projections.case_workspace import (
     synthesize_workspace_state_from_ssot,
 )
 from app.api.v1.schemas.case_workspace import CaseWorkspaceProjection
-from app.api.v1.renderers.rfq_html import render_rfq_html
 from app.common.errors import error_detail
 from app.services.auth.dependencies import RequestUser, get_current_request_user
 from app.services.rag.state import WorkingProfile
@@ -27,6 +26,29 @@ from app.services.rag.state import WorkingProfile
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_RFQ_DOCUMENT_LEGACY_DISABLED_CODE = "rfq_document_legacy_disabled"
+_RFQ_DOCUMENT_LEGACY_DISABLED_MESSAGE = (
+    "Legacy RFQ document access is disabled. Use the governed RFQ preview/export "
+    "flow for the Anfragebasis for manufacturer review; consent required before export."
+)
+
+
+def _rfq_document_legacy_disabled_payload(request_id: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "error": {
+            "code": _RFQ_DOCUMENT_LEGACY_DISABLED_CODE,
+            "message": _RFQ_DOCUMENT_LEGACY_DISABLED_MESSAGE,
+        },
+        "dispatch_allowed": False,
+        "external_contact_allowed": False,
+        "export_requires_consent": True,
+        "final_approval_claim_allowed": False,
+        "preview_service_boundary": "RfqPreviewService.create_preview_for_case",
+    }
+    if request_id:
+        payload["request_id"] = request_id
+    return payload
 
 
 class StateUpdate(BaseModel):
@@ -287,44 +309,19 @@ async def get_rfq_document(
     raw_request: Request,
     thread_id: str = Query(..., description="Thread ID"),
     user: RequestUser = Depends(get_current_request_user),
-) -> HTMLResponse:
-    """Return the stored RFQ HTML document for download/display.
+) -> JSONResponse:
+    """Disabled legacy RFQ document read path.
 
-    Returns 404 if no document has been generated yet.
+    RFQ preview/export must use the governed preview service boundary.
     """
     request_id = (
         raw_request.headers.get("X-Request-Id")
         or raw_request.headers.get("X-Request-ID")
     )
 
-    from app.agent.api.router import load_structured_handover_state
-
-    ssot_state = await load_structured_handover_state(
-        current_user=user,
-        session_id=thread_id,
-    )
-    if ssot_state is None:
-        raise HTTPException(
-            status_code=404,
-            detail=error_detail("session_not_found", request_id=request_id),
-        )
-    sealing = dict(ssot_state.get("sealing_state") or {})
-    handover = dict(sealing.get("handover") or {})
-    html_report = handover.get("rfq_html_report")
-    if not html_report:
-        raise HTTPException(
-            status_code=404,
-            detail=error_detail(
-                "rfq_no_document",
-                request_id=request_id,
-                message="No RFQ document has been generated yet.",
-            ),
-        )
-    return HTMLResponse(
-        content=html_report,
-        headers={
-            "Content-Disposition": "inline; filename=\"sealai-rfq-document.html\"",
-        },
+    return JSONResponse(
+        status_code=410,
+        content=_rfq_document_legacy_disabled_payload(request_id=request_id),
     )
 
 

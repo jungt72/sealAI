@@ -291,6 +291,7 @@ describe("mapWorkspaceView", () => {
         open_points: [],
         has_pdf: true,
         has_html_report: false,
+        document_url: "/legacy/rfq-document",
         handover_ready: false,
         handover_initiated: false,
       },
@@ -321,7 +322,11 @@ describe("mapWorkspaceView", () => {
     expect(workspace.cockpit?.checks[0]?.calcId).toBe("rwdr_circumferential_speed");
     expect(workspace.cockpit?.checks[0]?.outputKey).toBe("v_surface_m_s");
     expect(workspace.cockpit?.readiness.missingMandatoryKeys).toEqual(["geometry_context"]);
-    expect(workspace.rfq.documentUrl).toBe("/api/bff/rfq/case-123/document");
+    expect(workspace.rfq.documentUrl).toBeNull();
+    expect(workspace.rfqReadinessProjection?.preview_action_available).toBe(true);
+    expect(workspace.rfqReadinessProjection?.preview_service_boundary).toBe(
+      "RfqPreviewService.create_preview_for_case",
+    );
     expect(workspace.communication?.conversationPhase).toBe("clarification");
     expect(workspace.communication?.primaryQuestion).toBe(
       "Können Sie den Betriebsdruck noch einordnen?",
