@@ -256,6 +256,31 @@ async def _resolve_runtime_dispatch(
             request.message,
             pre_gate_classification=pre_gate.classification,
         )
+        if pre_gate.classification is PreGateClassification.META_QUESTION and request.session_id:
+            governed_state = await _load_existing_governed_state_for_v7(
+                request=request,
+                current_user=current_user,
+            )
+            turn_decision = _resolve_v7_turn_decision(
+                request=request,
+                pre_gate=pre_gate,
+                governed_state=governed_state,
+            )
+            if (
+                _v7_answer_mode(turn_decision)
+                == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION.value
+            ):
+                return RuntimeDispatchResolution(
+                    gate_route="GOVERNED",
+                    gate_reason=f"v7_active_case_process_question:{pre_gate.reasoning}",
+                    runtime_mode="GOVERNED",
+                    gate_applied=False,
+                    pre_gate_classification=pre_gate.classification.value,
+                    pre_gate_reason=pre_gate.reasoning,
+                    governed_state=governed_state,
+                    conversation_route=conversation_route,
+                    turn_decision=turn_decision,
+                )
         if pre_gate.classification in FastResponderService.allowed_classifications:
             fast_response = FastResponderService().respond(
                 request.message,
@@ -291,11 +316,14 @@ async def _resolve_runtime_dispatch(
             )
             if (
                 _v7_answer_mode(turn_decision)
-                == AnswerMode.ACTIVE_CASE_SIDE_QUESTION.value
+                in {
+                    AnswerMode.ACTIVE_CASE_SIDE_QUESTION.value,
+                    AnswerMode.ACTIVE_CASE_PROCESS_QUESTION.value,
+                }
             ):
                 return RuntimeDispatchResolution(
                     gate_route="GOVERNED",
-                    gate_reason=f"v7_active_case_side_question:{pre_gate.reasoning}",
+                    gate_reason=f"v7_{_v7_answer_mode(turn_decision)}:{pre_gate.reasoning}",
                     runtime_mode="GOVERNED",
                     gate_applied=False,
                     pre_gate_classification=pre_gate.classification.value,

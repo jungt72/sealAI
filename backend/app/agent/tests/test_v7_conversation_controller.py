@@ -79,15 +79,65 @@ def test_smalltalk_is_answer_only_even_with_active_case_context() -> None:
     assert decision.resume_strategy == ResumeStrategy.NONE
 
 
-def test_meta_question_preserves_pending_resume_target() -> None:
+def test_process_question_preserves_pending_resume_target() -> None:
     pending = _medium_pending_question()
     decision = _decide("Warum fragst du das?", active_case=True, pending_question=pending)
 
-    assert decision.answer_mode == AnswerMode.META_QUESTION
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
-    assert decision.resume_strategy == ResumeStrategy.RESTORE_TO_PENDING_QUESTION_V1
+    assert decision.resume_strategy == ResumeStrategy.REEVALUATE_AFTER_ANSWER
     assert decision.resume_target_candidate is not None
     assert decision.resume_target_candidate.target_field == "medium"
+
+
+def test_active_case_help_question_classifies_as_process_question_with_pending_medium() -> None:
+    pending = _medium_pending_question()
+    decision = _decide(
+        "Wie kannst du mir bei meiner Dichtungssituation helfen?",
+        active_case=True,
+        pending_question=pending,
+    )
+
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+    assert decision.resume_strategy == ResumeStrategy.REEVALUATE_AFTER_ANSWER
+    assert "answer_latest_user_question_first" in decision.answer_obligations
+    assert "do_not_mutate_case_state" in decision.answer_obligations
+
+
+def test_pending_medium_answer_wasser_still_binds_as_slot_answer() -> None:
+    pending = _medium_pending_question()
+    decision = _decide("Wasser", active_case=True, pending_question=pending)
+
+    assert decision.answer_mode == AnswerMode.PENDING_SLOT_ANSWER
+    assert decision.answer_mode != AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
+    assert decision.mutation_policy in {
+        MutationPolicy.PROPOSED,
+        MutationPolicy.ALLOWED_BY_VALIDATOR,
+    }
+
+
+def test_pending_medium_explicit_answer_still_binds_as_slot_answer() -> None:
+    pending = _medium_pending_question()
+    decision = _decide("Das Medium ist Wasser.", active_case=True, pending_question=pending)
+
+    assert decision.answer_mode == AnswerMode.PENDING_SLOT_ANSWER
+    assert decision.answer_mode != AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
+    assert decision.state_actions[0].field == "medium"
+    assert decision.state_actions[0].value == "Wasser"
+
+
+def test_mixed_medium_value_and_why_question_routes_as_process_question_for_resume_reevaluation() -> None:
+    pending = _medium_pending_question()
+    decision = _decide(
+        "Das Medium ist Wasser. Warum ist das wichtig?",
+        active_case=True,
+        pending_question=pending,
+    )
+
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+    assert decision.resume_strategy == ResumeStrategy.REEVALUATE_AFTER_ANSWER
 
 
 def test_concrete_application_remains_governed_intake() -> None:

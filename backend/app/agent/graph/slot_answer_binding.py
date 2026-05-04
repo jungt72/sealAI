@@ -58,6 +58,12 @@ def _resolve_medium_answer(
 ) -> SlotAnswerBinding | None:
     if pending_question.expected_answer_type != "medium_value":
         return None
+    explicit_binding = _resolve_explicit_medium_answer(
+        message=message,
+        turn_index=turn_index,
+    )
+    if explicit_binding is not None:
+        return explicit_binding
     if not _looks_like_short_slot_answer(message):
         return None
 
@@ -67,6 +73,43 @@ def _resolve_medium_answer(
     confidence = 0.92 if decision.mapping_confidence in {"confirmed", "estimated"} else 0.72
     needs_clarification = decision.mapping_confidence == "requires_confirmation" or decision.canonical_label is None
 
+    return SlotAnswerBinding(
+        target_field="medium",
+        raw_value=raw,
+        normalized_value=normalized,
+        source="pending_question",
+        confidence=confidence,
+        ambiguity=needs_clarification,
+        needs_clarification=needs_clarification,
+        turn_index=turn_index,
+    )
+
+
+def _resolve_explicit_medium_answer(
+    *,
+    message: str,
+    turn_index: int,
+) -> SlotAnswerBinding | None:
+    text = " ".join(str(message or "").strip().split())
+    if not text:
+        return None
+    lowered = text.casefold()
+    if "?" in text or any(token in lowered for token in ("warum", "wozu", "weshalb", "wieso")):
+        return None
+    match = re.search(
+        r"\b(?:das\s+)?medium\s+(?:ist|waere|wäre|is|=|:)\s+([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß0-9 /+\-.]{1,48})",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    raw = match.group(1).strip(" .,!;:")
+    if not raw:
+        return None
+    decision = classify_medium_value(raw)
+    normalized: Any = decision.canonical_label or _titlecase_answer(raw)
+    confidence = 0.9 if decision.mapping_confidence in {"confirmed", "estimated"} else 0.76
+    needs_clarification = decision.mapping_confidence == "requires_confirmation" or decision.canonical_label is None
     return SlotAnswerBinding(
         target_field="medium",
         raw_value=raw,

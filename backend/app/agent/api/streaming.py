@@ -68,6 +68,10 @@ def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
 def _is_v7_active_case_side_question(dispatch: Any) -> bool:
     return _v7_dispatch_answer_mode(dispatch) == "active_case_side_question"
 
+
+def _is_v7_active_case_process_question(dispatch: Any) -> bool:
+    return _v7_dispatch_answer_mode(dispatch) == "active_case_process_question"
+
 @dataclass(frozen=True)
 class GovernedReplyAssemblyContext:
     response_class: str
@@ -588,6 +592,27 @@ async def event_generator(
         return
 
     if dispatch.runtime_mode == "GOVERNED":
+        if _is_v7_active_case_process_question(dispatch):
+            from app.agent.api.routes.chat import (  # noqa: PLC0415
+                _build_active_case_process_payload,
+                _persist_active_case_process_turn,
+            )
+
+            payload = await _build_active_case_process_payload(
+                message=request.message,
+                governed_state=dispatch.governed_state,
+                decision=dispatch.turn_decision,
+            )
+            await _persist_active_case_process_turn(
+                request=request,
+                current_user=current_user,
+                governed_state=dispatch.governed_state,
+                assistant_message=str(payload.get("assistant_message") or ""),
+                pre_gate_classification=dispatch.pre_gate_classification,
+            )
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
         if _is_v7_active_case_side_question(dispatch):
             knowledge_response = await build_case_side_knowledge_response(
                 message=request.message,

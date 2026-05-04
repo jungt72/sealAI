@@ -41,6 +41,9 @@ from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.api.streaming import event_generator, _build_fast_path_version_provenance
 from app.agent.api.dispatch import _resolve_runtime_dispatch
 from app.agent.api.knowledge_override import build_case_side_knowledge_response
+from app.agent.communication.active_case_process_answer import (
+    build_active_case_process_answer,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -56,6 +59,124 @@ def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
 
 def _is_v7_active_case_side_question(dispatch: Any) -> bool:
     return _v7_dispatch_answer_mode(dispatch) == "active_case_side_question"
+
+
+def _is_v7_active_case_process_question(dispatch: Any) -> bool:
+    return _v7_dispatch_answer_mode(dispatch) == "active_case_process_question"
+
+
+def _process_answer_trace(*, result: Any, decision: Any) -> dict[str, Any]:
+    mutation_policy = str(getattr(decision, "mutation_policy", "forbidden") or "forbidden")
+    resume_decision = getattr(result, "resume_decision", None)
+    resume_trace = (
+        resume_decision.as_trace()
+        if hasattr(resume_decision, "as_trace")
+        else {}
+    )
+    resume_strategy = str(resume_trace.get("resume_strategy") or getattr(decision, "resume_strategy", "") or "")
+    trace = build_answer_trace(
+        reply_source="governed_output_contract",
+        answer_markdown_source=(
+            "governed_composer"
+            if getattr(result, "builder_succeeded", False)
+            else "deterministic_fallback"
+        ),
+        final_visible_source="answer_markdown",
+        composer_attempted=bool(getattr(result, "builder_attempted", False)),
+        composer_succeeded=bool(getattr(result, "builder_succeeded", False)),
+        fallback_reason=getattr(result, "fallback_reason", None),
+    )
+    trace.update(
+        {
+            "answer_mode": "active_case_process_question",
+            "mutation_policy": mutation_policy,
+            "resume_strategy": resume_strategy,
+            "resume_reevaluation_attempted": True,
+            "resume_reason": resume_trace.get("resume_reason"),
+            "resume_target_field": resume_trace.get("resume_target_field"),
+            "next_runtime_action": resume_trace.get("next_runtime_action"),
+            "process_answer_builder_attempted": bool(getattr(result, "builder_attempted", False)),
+            "process_answer_builder_succeeded": bool(getattr(result, "builder_succeeded", False)),
+            "pending_question_restored": bool(
+                resume_trace.get("pending_question_restored", getattr(result, "pending_question_restored", False))
+            ),
+            "governed_graph_bypassed": True,
+            "latest_user_question_answered": True,
+            "slot_answer_detected": bool(resume_trace.get("slot_answer_detected", False)),
+            "case_delta_allowed": bool(resume_trace.get("case_delta_allowed", False)),
+            "governed_graph_allowed": bool(resume_trace.get("governed_graph_allowed", False)),
+        }
+    )
+    if resume_trace.get("detected_slot_field"):
+        trace["detected_slot_field"] = resume_trace.get("detected_slot_field")
+    return trace
+
+
+async def _build_active_case_process_payload(
+    *,
+    message: str,
+    governed_state: GovernedSessionState | None,
+    decision: Any,
+) -> dict[str, Any]:
+    result = await build_active_case_process_answer(
+        latest_user_message=message,
+        governed_state=governed_state,
+        turn_decision=decision,
+    )
+    answer_trace = _process_answer_trace(result=result, decision=decision)
+    payload = build_public_response_core(
+        reply=result.deterministic_fallback,
+        structured_state=None,
+        policy_path="governed_process",
+        run_meta=with_answer_trace(None, answer_trace),
+    )
+    payload["answer_markdown"] = result.answer_markdown
+    payload = apply_final_answer_layer(
+        payload,
+        FinalAnswerEnvelope(
+            route="governed_process",
+            answer_mode="active_case_process_question",
+            deterministic_fallback_reply=result.deterministic_fallback,
+            existing_answer_markdown=payload.get("answer_markdown"),
+            existing_answer_markdown_source=answer_trace.get("answer_markdown_source"),
+            existing_reply_source=answer_trace.get("reply_source"),
+            composer_tier="tier_a",
+            fallback_reason=answer_trace.get("fallback_reason"),
+        ),
+    )
+    payload["assistant_message"] = str(
+        payload.get("answer_markdown") or payload.get("reply") or ""
+    ).strip()
+    payload["type"] = "state_update"
+    return payload
+
+
+async def _persist_active_case_process_turn(
+    *,
+    request: ChatRequest,
+    current_user: RequestUser,
+    governed_state: GovernedSessionState | None,
+    assistant_message: str,
+    pre_gate_classification: str | None,
+) -> None:
+    if governed_state is None or not request.session_id or not assistant_message:
+        return
+    updated_state = _with_governed_conversation_turn(
+        governed_state,
+        role="user",
+        content=request.message,
+    )
+    updated_state = _with_governed_conversation_turn(
+        updated_state,
+        role="assistant",
+        content=assistant_message,
+    )
+    await _persist_live_governed_state(
+        current_user=current_user,
+        session_id=request.session_id,
+        state=updated_state,
+        pre_gate_classification=pre_gate_classification,
+    )
 
 router = APIRouter()
 
@@ -298,6 +419,20 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         )
 
     if dispatch.runtime_mode == "GOVERNED":
+        if _is_v7_active_case_process_question(dispatch):
+            payload = await _build_active_case_process_payload(
+                message=request.message,
+                governed_state=dispatch.governed_state,
+                decision=dispatch.turn_decision,
+            )
+            await _persist_active_case_process_turn(
+                request=request,
+                current_user=current_user,
+                governed_state=dispatch.governed_state,
+                assistant_message=str(payload.get("assistant_message") or ""),
+                pre_gate_classification=dispatch.pre_gate_classification,
+            )
+            return ChatResponse(session_id=request.session_id, **payload)
         if _is_v7_active_case_side_question(dispatch):
             knowledge_response = await build_case_side_knowledge_response(
                 message=request.message,

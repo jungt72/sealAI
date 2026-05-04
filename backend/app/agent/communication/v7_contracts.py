@@ -28,6 +28,7 @@ class AnswerMode(str, Enum):
     GOVERNED_INTAKE = "governed_intake"
     PENDING_SLOT_ANSWER = "pending_slot_answer"
     ACTIVE_CASE_SIDE_QUESTION = "active_case_side_question"
+    ACTIVE_CASE_PROCESS_QUESTION = "active_case_process_question"
     SIDE_TASK_CONTINUATION = "side_task_continuation"
     CORRECTION_EXPLANATION = "correction_explanation"
     SAFETY_BLOCKED = "safety_blocked"

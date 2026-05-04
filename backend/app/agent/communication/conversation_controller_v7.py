@@ -43,6 +43,8 @@ class ConversationControllerV7:
         if payload.slot_answer_binding is not None:
             return self._pending_slot_answer(payload)
         if self._looks_like_process_question(payload.user_message):
+            if payload.active_case_exists:
+                return self._active_case_process_question(payload)
             return self._meta(payload)
         if payload.pre_gate_classification in {PreGateClassification.KNOWLEDGE_QUERY, PreGateClassification.DEEP_DIVE}:
             return self._knowledge_or_side_question(payload)
@@ -56,11 +58,30 @@ class ConversationControllerV7:
 
     def _looks_like_process_question(self, message: str) -> bool:
         normalized = " ".join((message or "").casefold().split())
+        if not normalized:
+            return False
         return any(
             phrase in normalized
             for phrase in (
+                "wie kannst du mir",
+                "wie kannst du helfen",
+                "wie hilfst du mir",
+                "was kannst du fuer mich tun",
+                "was kannst du für mich tun",
+                "was kannst du tun",
+                "was machst du jetzt",
+                "was machst du genau",
+                "wie laeuft die analyse",
+                "wie läuft die analyse",
+                "wie funktioniert die analyse",
+                "welche informationen brauchst",
+                "was brauchst du von mir",
                 "warum fragst",
                 "warum brauchst",
+                "warum ist das wichtig",
+                "warum ist der druck wichtig",
+                "warum ist die temperatur wichtig",
+                "warum ist das medium wichtig",
                 "wozu fragst",
                 "wozu brauchst",
                 "weshalb fragst",
@@ -172,6 +193,35 @@ class ConversationControllerV7:
             case_relevance=CaseRelevance.NO_CASE,
             resume_strategy=ResumeStrategy.NONE,
             confidence=payload.pre_gate_confidence,
+        )
+
+    def _active_case_process_question(self, payload: ConversationControllerInput) -> TurnDecision:
+        pending_target = None
+        if payload.pending_question is not None:
+            pending_target = ResumeTarget(
+                type="pending_question",
+                target_field=payload.pending_question.target_field,
+                question_text=payload.pending_question.question_text,
+            )
+        return TurnDecision(
+            turn_kind=TurnKind.META,
+            primary_interpretation="active_case_process_question",
+            router_signals=self._router_signals(payload),
+            answer_mode=AnswerMode.ACTIVE_CASE_PROCESS_QUESTION,
+            mutation_policy=MutationPolicy.FORBIDDEN,
+            answer_obligations=[
+                "answer_latest_user_question_first",
+                "use_active_case_context",
+                "explain_current_state_briefly",
+                "return_to_pending_question_if_still_valid",
+                "ask_at_most_one_question",
+                "do_not_mutate_case_state",
+            ],
+            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT,
+            resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER if pending_target else ResumeStrategy.NONE,
+            resume_target_candidate=pending_target,
+            task_stack=self._task_stack(payload, side_topic="process_question"),
+            confidence=max(payload.pre_gate_confidence, 0.82),
         )
 
     def _smalltalk(self, payload: ConversationControllerInput) -> TurnDecision:
