@@ -93,7 +93,9 @@ class GovernedAnswerComposer:
             max_tokens=self.max_tokens,
         )
         raw_content = response.choices[0].message.content
-        return parse_governed_answer_composer_output(raw_content)
+        output = parse_governed_answer_composer_output(raw_content)
+        _validate_contextual_answer_discipline(output.answer_markdown, request.context)
+        return output
 
 
 async def _create_completion_with_registry_fallback(
@@ -281,6 +283,44 @@ def _validate_answer_markdown(answer_markdown: str) -> None:
     safe, category = check_fast_path_output(answer_markdown)
     if not safe:
         raise GovernedAnswerComposerError(f"unsafe_answer_markdown:{category}")
+
+
+def _validate_contextual_answer_discipline(
+    answer_markdown: str,
+    context: GovernedAnswerContext,
+) -> None:
+    """Reject LLM wording that reintroduces robotic intake habits.
+
+    The deterministic fallback already knows the next governed question. If the
+    model repeats freshly supplied values or asks for routine confirmation, we
+    fall back to that governed question instead of showing a bureaucratic answer.
+    """
+
+    if not context.accepted_updates or context.ambiguous_values or not context.next_best_question:
+        return
+
+    lowered = answer_markdown.casefold()
+    routine_fragments = (
+        "danke fuer die information",
+        "danke für die information",
+        "ich habe verstanden",
+        "ich habe die",
+        "zur kenntnis genommen",
+        "technischen details sind klarer",
+        "bitte bestaetigen",
+        "bitte bestätigen",
+        "koennten sie bitte bestaetigen",
+        "könnten sie bitte bestätigen",
+    )
+    if any(fragment in lowered for fragment in routine_fragments):
+        raise GovernedAnswerComposerError("routine_confirmation_or_restatement")
+
+    for update in context.accepted_updates:
+        value = str(update.value or "").strip()
+        if len(value) < 3:
+            continue
+        if value.casefold() in lowered:
+            raise GovernedAnswerComposerError("restates_recently_supplied_value")
 
 
 def _response_format() -> dict[str, Any]:

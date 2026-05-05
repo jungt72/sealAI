@@ -164,6 +164,40 @@ def test_contextual_fallback_asks_next_best_question_without_routine_confirmatio
     assert "bestaetig" not in answer.casefold()
 
 
+def test_contextual_answer_discipline_rejects_routine_restatement() -> None:
+    context = GovernedAnswerContext(
+        accepted_updates=[
+            GovernedAnswerUpdate(
+                field_key="speed_rpm",
+                label="Drehzahl",
+                value=4000,
+                unit="rpm",
+                source="pending_question",
+                status="accepted",
+            ),
+            GovernedAnswerUpdate(
+                field_key="shaft_diameter_mm",
+                label="Wellendurchmesser",
+                value=80,
+                unit="mm",
+                source="pending_question",
+                status="accepted",
+            ),
+        ],
+        next_best_question="Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?",
+        missing_fields=["pressure_bar", "temperature_c"],
+    )
+
+    with pytest.raises(GovernedAnswerComposerError):
+        composer_module._validate_contextual_answer_discipline(
+            (
+                "Die technischen Details sind klarer, und ich habe die Drehzahl von 4000 u/min "
+                "sowie den Wellendurchmesser von 80 mm zur Kenntnis genommen. Wie hoch ist der Druck?"
+            ),
+            context,
+        )
+
+
 def test_rotary_context_with_speed_and_shaft_prioritizes_pressure_before_installation() -> None:
     state = GraphState(
         asserted=AssertedState(
