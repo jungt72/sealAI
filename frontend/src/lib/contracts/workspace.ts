@@ -78,6 +78,70 @@ export type WorkspaceTechnicalDerivation = {
   notes: string[];
 };
 
+export type WorkspaceMaterialIntelligenceSafety = {
+  mutatesCaseState: boolean;
+  createsEngineeringTruth: boolean;
+  finalApprovalClaimAllowed: boolean;
+  dispatchAllowed: boolean;
+  externalContactAllowed: boolean;
+  exportAllowed: boolean;
+};
+
+export type WorkspaceMaterialIntelligenceInput = {
+  medium: string | null;
+  mediumFamily: string;
+  knownMaterial: string | null;
+  temperatureC: number | null;
+  pressureBar: number | null;
+  sealType: string | null;
+  motionType: string | null;
+};
+
+export type WorkspaceMaterialCandidate = {
+  materialKey: string;
+  label: string;
+  family: string;
+  status: string;
+  statusLabel: string;
+  confidence: string;
+  whyConsidered: string[];
+  limits: string[];
+  blockingUnknowns: string[];
+  requiredChecks: string[];
+  evidenceRefIds: string[];
+};
+
+export type WorkspaceMaterialAlternative = {
+  fromMaterial: string;
+  toMaterial: string;
+  comparison: string;
+  tradeoffs: string[];
+  missingForDecision: string[];
+};
+
+export type WorkspaceMaterialEvidence = {
+  id: string;
+  sourceType: string;
+  validationStatus: string;
+  title: string;
+  excerpt: string;
+  confidence: string;
+};
+
+export type WorkspaceMaterialIntelligence = {
+  capabilityId: string;
+  status: string;
+  inputSummary: WorkspaceMaterialIntelligenceInput;
+  candidateMaterials: WorkspaceMaterialCandidate[];
+  alternatives: WorkspaceMaterialAlternative[];
+  missingFieldHints: string[];
+  rfqRelevanceNotes: string[];
+  evidence: WorkspaceMaterialEvidence[];
+  safety: WorkspaceMaterialIntelligenceSafety;
+  notForReleaseDecisions: boolean;
+  disclaimer: string | null;
+};
+
 export type WorkspaceMatchItem = {
   material: string;
   cluster: string;
@@ -380,6 +444,7 @@ export type WorkspaceView = {
     notForReleaseDecisions: boolean;
     disclaimer: string | null;
   };
+  materialIntelligence?: WorkspaceMaterialIntelligence;
   technicalDerivations?: WorkspaceTechnicalDerivation[];
   deepDiveTabs: WorkspaceDeepDiveTab[];
   specificity: {

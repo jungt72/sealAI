@@ -793,21 +793,79 @@ function ApplicationTab({ workspace }: { workspace: WorkspaceView | null }) {
 }
 
 function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
+  const intelligence = workspace?.materialIntelligence;
+  const input = intelligence?.inputSummary;
+  const candidates = intelligence?.candidateMaterials ?? [];
+  const alternatives = intelligence?.alternatives ?? [];
+  const hasCandidates = candidates.length > 0;
+
   return (
     <WorkspaceTabShell
       title="Werkstoff"
       icon={Layers}
-      intro="Werkstoffhinweise bleiben bewusst als Richtung sichtbar, bis Medium, Temperatur und Anwendung genug geklärt sind."
+      intro="SeaLAI entwickelt hier ein Werkstofffenster aus dem aktuellen Fallzustand. Die Entscheidung bleibt bis zur Herstellerprüfung offen."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
-        <InfoTile title="Spezifität" value={normalizeText(workspace?.specificity.materialSpecificityRequired)} tone="info" />
-        <InfoTile title="Zielniveau" value={normalizeText(workspace?.specificity.elevationTarget)} />
-        <InfoTile title="Dichtungstyp-Profil" value={normalizeText(workspace?.sealApplicationProfile?.sealType)} />
-        <InfoTile title="Sicherheit der Einordnung" value={normalizeText(workspace?.sealApplicationProfile?.confidenceBand)} />
-        <ItemList title="Werkstoffrelevante Hinweise" items={workspace?.specificity.elevationHints.map((hint) => `${hint.label}: ${hint.reason}`) ?? []} />
-        <ItemList title="Plausible Richtungen" items={workspace?.decisionUnderstanding?.plausibleDirections ?? []} />
-        <ItemList title="Noch nicht entscheidbar" items={workspace?.decisionUnderstanding?.notYetDecidable ?? []} />
-        <ItemList title="Muss noch geprüft werden" items={workspace?.governance.unknownsManufacturerValidation ?? []} />
+        <InfoTile title="Medium" value={normalizeText(input?.medium ?? workspace?.parameters?.medium)} tone="info" />
+        <InfoTile title="Medienfamilie" value={normalizeText(input?.mediumFamily)} />
+        <InfoTile title="Temperatur" value={input?.temperatureC != null ? `${input.temperatureC} °C` : null} />
+        <InfoTile title="Druck" value={input?.pressureBar != null ? `${input.pressureBar} bar` : null} />
+        <InfoTile title="Dichtprinzip" value={normalizeText(input?.sealType ?? workspace?.sealApplicationProfile?.sealType)} />
+        <InfoTile title="Bekannter Werkstoff" value={normalizeText(input?.knownMaterial)} />
+      </div>
+
+      <div className="mt-4 rounded-[14px] border border-[#D7E5FF] bg-[#EFF6FF] p-3">
+        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+          Werkstofffenster
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-[#1F3B63]">
+          Kandidaten werden nur als Prüfrahmen gezeigt. SeaLAI setzt daraus keine Materialentscheidung,
+          keinen Anfrage-Status und keine Auslegung.
+        </p>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 2xl:grid-cols-2">
+        {hasCandidates ? (
+          candidates.map((candidate) => (
+            <div key={candidate.materialKey || candidate.label} className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-semibold text-[#111827]">{candidate.label}</h3>
+                  <p className="mt-1 text-sm text-[#6B7280]">{candidate.family}</p>
+                </div>
+                <span className="rounded-full border border-[#D7E5FF] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+                  {normalizeText(candidate.statusLabel)}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <ItemList title="Warum im Fenster" items={candidate.whyConsidered} />
+                <ItemList title="Grenzen" items={candidate.limits} />
+                <ItemList title="Datenlücken" items={candidate.blockingUnknowns} empty="Keine weiteren Pflichtdaten aus diesem Fenster" />
+                <ItemList title="Noch zu prüfen" items={candidate.requiredChecks} />
+              </div>
+            </div>
+          ))
+        ) : (
+          <ItemList title="Werkstofffenster" items={[]} empty="Sobald Medium, Temperatur, Druck und Dichtprinzip vorliegen, zeigt SeaLAI hier Kandidaten und Alternativen." />
+        )}
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <ItemList
+          title="Alternativen"
+          items={alternatives.map((item) => `${item.fromMaterial} ↔ ${item.toMaterial}: ${item.comparison}`)}
+          empty="Noch keine Alternative belastbar einzugrenzen"
+        />
+        <ItemList
+          title="Was noch fehlt"
+          items={intelligence?.missingFieldHints ?? workspace?.completeness.coverageGaps ?? []}
+        />
+        <ItemList title="Anfragebasis" items={intelligence?.rfqRelevanceNotes ?? []} />
+        <ItemList
+          title="Quellenrahmen"
+          items={(intelligence?.evidence ?? []).map((item) => `${item.title}: ${item.excerpt}`)}
+          empty="Noch keine kuratierte Werkstoffgrundlage im Fall sichtbar"
+        />
       </div>
     </WorkspaceTabShell>
   );

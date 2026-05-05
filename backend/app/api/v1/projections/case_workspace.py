@@ -25,6 +25,9 @@ from app.api.v1.projections.workspace_routing import (
 from app.agent.runtime.clarification_priority import (
     select_next_focus_from_known_context,
 )
+from app.agent.services.material_intelligence import (
+    build_material_intelligence_projection,
+)
 from app.agent.communication.rfq_intent import (
     RfqReadinessIntent,
     build_rfq_readiness_projection,
@@ -74,6 +77,7 @@ from app.api.v1.schemas.case_workspace import (
     MediumCaptureSummary,
     MediumClassificationSummary,
     MediumContextSummary,
+    MaterialIntelligenceProjection,
     PartnerMatchingSummary,
     RequestType as WorkspaceRequestType,
     RFQPackageSummary,
@@ -2503,6 +2507,13 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         ),
         disclaimer=medium_context.get("disclaimer"),
     )
+    material_intelligence = MaterialIntelligenceProjection.model_validate(
+        build_material_intelligence_projection(
+            profile=routing_profile,
+            medium_classification=medium_classification_summary.model_dump(),
+            seal_application_profile=seal_application_profile.model_dump(),
+        )
+    )
     technical_derivations = _build_technical_derivations(
         working_profile_pillar=working_profile_pillar,
         system=system,
@@ -2619,5 +2630,6 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         medium_capture=medium_capture_summary,
         medium_classification=medium_classification_summary,
         medium_context=medium_context_summary,
+        material_intelligence=material_intelligence,
         technical_derivations=technical_derivations,
     )

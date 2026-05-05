@@ -231,6 +231,60 @@ type RawSealDesignIntake = {
   event_names?: string[];
 };
 
+type RawMaterialIntelligence = {
+  capability_id?: string;
+  status?: string;
+  input_summary?: {
+    medium?: string | null;
+    medium_family?: string;
+    known_material?: string | null;
+    temperature_c?: number | string | null;
+    pressure_bar?: number | string | null;
+    seal_type?: string | null;
+    motion_type?: string | null;
+  } | null;
+  candidate_materials?: Array<{
+    material_key?: string;
+    label?: string;
+    family?: string;
+    status?: string;
+    status_label?: string;
+    confidence?: string;
+    why_considered?: string[];
+    limits?: string[];
+    blocking_unknowns?: string[];
+    required_checks?: string[];
+    evidence_ref_ids?: string[];
+  }>;
+  alternatives?: Array<{
+    from_material?: string;
+    to_material?: string;
+    comparison?: string;
+    tradeoffs?: string[];
+    missing_for_decision?: string[];
+  }>;
+  missing_field_hints?: string[];
+  rfq_relevance_notes?: string[];
+  evidence?: Array<{
+    id?: string;
+    source_type?: string;
+    validation_status?: string;
+    title?: string;
+    excerpt?: string;
+    confidence?: string;
+  }>;
+  safety?: {
+    mutates_case_state?: boolean;
+    creates_engineering_truth?: boolean;
+    final_approval_claim_allowed?: boolean;
+    dispatch_allowed?: boolean;
+    external_contact_allowed?: boolean;
+    export_allowed?: boolean;
+  } | null;
+  not_for_release_decisions?: boolean;
+  disclaimer?: string | null;
+};
+
 type LegacyWorkspaceProjection = {
   case_type?: string | null;
   request_type?: string | null;
@@ -316,6 +370,7 @@ type LegacyWorkspaceProjection = {
     source_registry_key?: string | null;
     followup_question?: string | null;
   };
+  material_intelligence?: RawMaterialIntelligence | null;
   case_summary: {
     thread_id: string | null;
     intent_goal?: string | null;
@@ -840,6 +895,68 @@ function mapDesignIntake(raw: RawSealDesignIntake | null | undefined): Workspace
   };
 }
 
+function mapMaterialIntelligence(raw: RawMaterialIntelligence | null | undefined) {
+  return {
+    capabilityId: raw?.capability_id || "material_seal_type_context",
+    status: raw?.status || "insufficient_context",
+    inputSummary: {
+      medium: raw?.input_summary?.medium || null,
+      mediumFamily: raw?.input_summary?.medium_family || "unknown",
+      knownMaterial: raw?.input_summary?.known_material || null,
+      temperatureC: asNumber(raw?.input_summary?.temperature_c),
+      pressureBar: asNumber(raw?.input_summary?.pressure_bar),
+      sealType: raw?.input_summary?.seal_type || null,
+      motionType: raw?.input_summary?.motion_type || null,
+    },
+    candidateMaterials: (raw?.candidate_materials || [])
+      .map((item) => ({
+        materialKey: String(item.material_key || "").trim(),
+        label: String(item.label || item.material_key || "").trim(),
+        family: String(item.family || "").trim(),
+        status: String(item.status || "needs_more_data"),
+        statusLabel: String(item.status_label || "").trim(),
+        confidence: String(item.confidence || "low"),
+        whyConsidered: asStrings(item.why_considered),
+        limits: asStrings(item.limits),
+        blockingUnknowns: asStrings(item.blocking_unknowns),
+        requiredChecks: asStrings(item.required_checks),
+        evidenceRefIds: asStrings(item.evidence_ref_ids),
+      }))
+      .filter((item) => item.materialKey || item.label),
+    alternatives: (raw?.alternatives || [])
+      .map((item) => ({
+        fromMaterial: String(item.from_material || "").trim(),
+        toMaterial: String(item.to_material || "").trim(),
+        comparison: String(item.comparison || "").trim(),
+        tradeoffs: asStrings(item.tradeoffs),
+        missingForDecision: asStrings(item.missing_for_decision),
+      }))
+      .filter((item) => item.fromMaterial || item.toMaterial || item.comparison),
+    missingFieldHints: asStrings(raw?.missing_field_hints),
+    rfqRelevanceNotes: asStrings(raw?.rfq_relevance_notes),
+    evidence: (raw?.evidence || [])
+      .map((item) => ({
+        id: String(item.id || "").trim(),
+        sourceType: String(item.source_type || "deterministic"),
+        validationStatus: String(item.validation_status || "system_derived"),
+        title: String(item.title || "").trim(),
+        excerpt: String(item.excerpt || "").trim(),
+        confidence: String(item.confidence || "low"),
+      }))
+      .filter((item) => item.id || item.title),
+    safety: {
+      mutatesCaseState: Boolean(raw?.safety?.mutates_case_state),
+      createsEngineeringTruth: Boolean(raw?.safety?.creates_engineering_truth),
+      finalApprovalClaimAllowed: Boolean(raw?.safety?.final_approval_claim_allowed),
+      dispatchAllowed: Boolean(raw?.safety?.dispatch_allowed),
+      externalContactAllowed: Boolean(raw?.safety?.external_contact_allowed),
+      exportAllowed: Boolean(raw?.safety?.export_allowed),
+    },
+    notForReleaseDecisions: raw?.not_for_release_decisions !== false,
+    disclaimer: raw?.disclaimer || null,
+  };
+}
+
 function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockpitView | null {
   const raw = projection.cockpit_view;
   if (!raw) {
@@ -1039,6 +1156,7 @@ export function mapWorkspaceView(
         projection.medium_context?.not_for_release_decisions !== false,
       disclaimer: projection.medium_context?.disclaimer || null,
     },
+    materialIntelligence: mapMaterialIntelligence(projection.material_intelligence),
     deepDiveTabs: mapDeepDiveTabs(projection.deep_dive_tabs),
     technicalDerivations: (projection.technical_derivations || []).map((item) => ({
       calcType: item.calc_type || "unknown",

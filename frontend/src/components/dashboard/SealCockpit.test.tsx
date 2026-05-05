@@ -141,6 +141,112 @@ function workspaceWithMedium(): WorkspaceView {
   } as WorkspaceView;
 }
 
+function workspaceWithMaterialIntelligence(): WorkspaceView {
+  return {
+    caseId: "case-material",
+    parameters: { medium: "Hydraulikoel HLP 46" },
+    mediumClassification: {
+      canonicalLabel: "Hydraulikoel",
+      family: "hydraulikoel",
+      confidence: "medium",
+      status: "recognized",
+      normalizationSource: null,
+      mappingConfidence: null,
+      matchedAlias: null,
+      sourceRegistryKey: "hydraulikoel",
+      followupQuestion: null,
+    },
+    mediumContext: {
+      mediumLabel: "Hydraulikoel",
+      status: "available",
+      scope: "orientierend",
+      summary: "Oelkontakt.",
+      properties: [],
+      challenges: [],
+      followupPoints: [],
+      confidence: "medium",
+      sourceType: "deterministic",
+      validationStatus: "system_derived",
+      notForReleaseDecisions: true,
+      disclaimer: null,
+    },
+    materialIntelligence: {
+      capabilityId: "material_seal_type_context",
+      status: "available",
+      inputSummary: {
+        medium: "Hydraulikoel",
+        mediumFamily: "hydraulikoel",
+        knownMaterial: null,
+        temperatureC: 60,
+        pressureBar: 120,
+        sealType: "Hydraulikdichtung",
+        motionType: "linear",
+      },
+      candidateMaterials: [
+        {
+          materialKey: "nbr",
+          label: "NBR",
+          family: "Elastomer",
+          status: "candidate_to_check",
+          statusLabel: "Kandidat im Prueffenster",
+          confidence: "medium",
+          whyConsidered: ["Oelkontakt grenzt das elastomere Prueffenster ein."],
+          limits: ["Wasser und Dampf sind fruehe Ausschlussfragen."],
+          blockingUnknowns: ["Temperatur"],
+          requiredChecks: ["Mediumdatenblatt und Additive"],
+          evidenceRefIds: ["material-nbr"],
+        },
+        {
+          materialKey: "epdm",
+          label: "EPDM",
+          family: "Elastomer",
+          status: "excluded_by_known_constraint",
+          statusLabel: "bekannte Angabe spricht dagegen",
+          confidence: "low",
+          whyConsidered: ["Wassernahe Vergleichsfamilie."],
+          limits: ["Mineraloel ist eine fruehe Ausschlussfrage."],
+          blockingUnknowns: [],
+          requiredChecks: ["Herstellerdaten pruefen"],
+          evidenceRefIds: ["material-epdm"],
+        },
+      ],
+      alternatives: [
+        {
+          fromMaterial: "NBR",
+          toMaterial: "FKM",
+          comparison: "NBR und FKM liegen in unterschiedlichen Prueffenstern.",
+          tradeoffs: ["NBR: Kandidat im Prueffenster", "FKM: Daten fehlen"],
+          missingForDecision: ["Temperatur"],
+        },
+      ],
+      missingFieldHints: ["Temperatur"],
+      rfqRelevanceNotes: ["Werkstofffamilie, Mischung/Compound und Nachweise gehoeren spaeter in die Anfragebasis."],
+      evidence: [
+        {
+          id: "material-nbr",
+          sourceType: "deterministic",
+          validationStatus: "system_derived",
+          title: "SeaLAI Werkstoffrahmen: NBR",
+          excerpt: "Mineraloele und viele Hydraulikoele im ueblichen Vorqualifikationsfenster.",
+          confidence: "medium",
+        },
+      ],
+      safety: {
+        mutatesCaseState: false,
+        createsEngineeringTruth: false,
+        finalApprovalClaimAllowed: false,
+        dispatchAllowed: false,
+        externalContactAllowed: false,
+        exportAllowed: false,
+      },
+      notForReleaseDecisions: true,
+      disclaimer: "Werkstofffenster nur zur Orientierung.",
+    },
+    completeness: { coverageGaps: [] },
+    communication: { primaryQuestion: null },
+  } as WorkspaceView;
+}
+
 describe("SealCockpit medium deep dive", () => {
   beforeEach(() => {
     useWorkspaceStore.getState().reset();
@@ -310,5 +416,26 @@ describe("SealCockpit medium deep dive", () => {
     );
     expect(await screen.findByText(/Web: 1 Treffer/)).toBeInTheDocument();
     expect(screen.getByText(/Vertiefung mit explizit gestarteter Websearch/)).toBeInTheDocument();
+  });
+});
+
+describe("SealCockpit material intelligence", () => {
+  it("renders material candidates and alternatives as a read-only check window", () => {
+    render(
+      <SealCockpit
+        data={cockpitData}
+        workspace={workspaceWithMaterialIntelligence()}
+        preferredTab="material"
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Werkstoff" })).toBeInTheDocument();
+    expect(screen.getByText("Werkstofffenster")).toBeInTheDocument();
+    expect(screen.getByText("NBR")).toBeInTheDocument();
+    expect(screen.getByText("EPDM")).toBeInTheDocument();
+    expect(screen.getByText(/bekannte Angabe spricht dagegen/)).toBeInTheDocument();
+    expect(screen.getByText(/NBR und FKM liegen/)).toBeInTheDocument();
+    expect(screen.getByText(/SeaLAI Werkstoffrahmen: NBR/)).toBeInTheDocument();
+    expect(screen.getByText(/SeaLAI setzt daraus keine Materialentscheidung/)).toBeInTheDocument();
   });
 });

@@ -327,6 +327,86 @@ class MediumClassificationSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class MaterialIntelligenceSafety(BaseModel):
+    mutates_case_state: bool = False
+    creates_engineering_truth: bool = False
+    final_approval_claim_allowed: bool = False
+    dispatch_allowed: bool = False
+    external_contact_allowed: bool = False
+    export_allowed: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MaterialIntelligenceInputSummary(BaseModel):
+    medium: Optional[str] = None
+    medium_family: str = "unknown"
+    known_material: Optional[str] = None
+    temperature_c: Optional[float] = None
+    pressure_bar: Optional[float] = None
+    seal_type: Optional[str] = None
+    motion_type: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MaterialCandidateProjection(BaseModel):
+    material_key: str
+    label: str
+    family: str
+    status: str
+    status_label: str
+    confidence: str = "low"
+    why_considered: List[str] = Field(default_factory=list)
+    limits: List[str] = Field(default_factory=list)
+    blocking_unknowns: List[str] = Field(default_factory=list)
+    required_checks: List[str] = Field(default_factory=list)
+    evidence_ref_ids: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MaterialAlternativeProjection(BaseModel):
+    from_material: str
+    to_material: str
+    comparison: str
+    tradeoffs: List[str] = Field(default_factory=list)
+    missing_for_decision: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MaterialEvidenceProjection(BaseModel):
+    id: str
+    source_type: str = "deterministic"
+    validation_status: str = "system_derived"
+    title: str
+    excerpt: str = ""
+    confidence: str = "low"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MaterialIntelligenceProjection(BaseModel):
+    capability_id: str = "material_seal_type_context"
+    status: str = "insufficient_context"
+    input_summary: MaterialIntelligenceInputSummary = Field(
+        default_factory=MaterialIntelligenceInputSummary
+    )
+    candidate_materials: List[MaterialCandidateProjection] = Field(
+        default_factory=list
+    )
+    alternatives: List[MaterialAlternativeProjection] = Field(default_factory=list)
+    missing_field_hints: List[str] = Field(default_factory=list)
+    rfq_relevance_notes: List[str] = Field(default_factory=list)
+    evidence: List[MaterialEvidenceProjection] = Field(default_factory=list)
+    safety: MaterialIntelligenceSafety = Field(default_factory=MaterialIntelligenceSafety)
+    not_for_release_decisions: bool = True
+    disclaimer: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class TechnicalDerivationItem(BaseModel):
     calc_type: str = "unknown"
     status: str = "insufficient_data"
@@ -724,6 +804,9 @@ class CaseWorkspaceProjection(BaseModel):
         default_factory=MediumClassificationSummary
     )
     medium_context: MediumContextSummary = Field(default_factory=MediumContextSummary)
+    material_intelligence: MaterialIntelligenceProjection = Field(
+        default_factory=MaterialIntelligenceProjection
+    )
     technical_derivations: List[TechnicalDerivationItem] = Field(default_factory=list)
     cycle_info: CycleInfo = Field(default_factory=CycleInfo)
 
