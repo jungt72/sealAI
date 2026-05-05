@@ -38,8 +38,15 @@ vi.mock("@/hooks/useWorkspace", () => ({
 vi.mock("@/lib/store/workspaceStore", () => ({
   useWorkspaceStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
+      mediumIntelligence: null,
+      mediumIntelligenceLoading: false,
+      mediumIntelligenceFor: null,
       setWorkspace: vi.fn(),
       setWorkspaceLoading: vi.fn(),
+      setMediumIntelligence: vi.fn(),
+      setMediumIntelligenceLoading: vi.fn(),
+      setMediumIntelligenceFor: vi.fn(),
+      setMediumIntelligenceResult: vi.fn(),
     }),
 }));
 

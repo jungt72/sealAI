@@ -505,7 +505,7 @@ export default function ChatPane({ caseId, onCaseBound, onTurnComplete, paramete
               <div className="mx-auto flex w-full max-w-[620px] flex-col items-center">
                 <h1 className="text-[26px] font-semibold tracking-tight text-[#111827]">Hallo Thorsten,</h1>
                 <p className="mt-3 max-w-[520px] text-[15px] leading-7 text-[#4B5563]">
-                  Beschreibe kurz deine Dichtungssituation. SeaLAI hilft dir, die wichtigen Punkte sauber zu klären.
+                  Beschreibe kurz deine Dichtungssituation. Ich helfe dir, die wichtigen Punkte sauber zu klären.
                 </p>
               </div>
 

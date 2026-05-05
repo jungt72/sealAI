@@ -92,6 +92,8 @@ describe("ChatPane", () => {
     render(<ChatPane caseId="case-parameter" />);
 
     expect(screen.getByText("Hallo Thorsten,")).toBeInTheDocument();
+    expect(screen.getByText(/Ich helfe dir, die wichtigen Punkte sauber zu klären/)).toBeInTheDocument();
+    expect(screen.queryByText(/SeaLAI hilft dir/)).not.toBeInTheDocument();
     expect(screen.getByTestId("chat-composer")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "PTFE-RWDR für rotierende Welle" })).toBeInTheDocument();
 

@@ -197,9 +197,12 @@ export default function CaseScreen({ caseId }: CaseScreenProps) {
             aria-label="Cockpit-Breite anpassen"
             title="Cockpit-Breite anpassen"
             onPointerDown={handleResizeStart}
-            className="group hidden h-[calc(100%-124px)] w-5 shrink-0 cursor-col-resize items-stretch justify-center pt-[100px] lg:flex"
+            className="group relative hidden h-[calc(100%-124px)] w-7 shrink-0 cursor-col-resize items-stretch justify-center lg:flex"
           >
-            <span className="block h-full w-px rounded-full bg-[#D6DEE9] shadow-[7px_0_22px_rgba(15,23,42,0.18)] transition-colors group-hover:bg-[#9DBDED]" />
+            <span className="absolute bottom-0 left-1/2 top-[100px] w-px -translate-x-1/2 rounded-full bg-[#D6DEE9] shadow-[7px_0_22px_rgba(15,23,42,0.18)] transition-colors group-hover:bg-[#9DBDED]" />
+            <span className="absolute left-1/2 top-1/2 flex h-16 w-3 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[4px] border border-[#C7D6EA] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.14)] transition-colors group-hover:border-[#8FB2E6] group-hover:bg-[#F8FBFF]">
+              <span className="h-9 w-px rounded-full bg-[#9AA9BC]" />
+            </span>
           </button>
           <div
             className="relative min-h-[720px] min-w-0 lg:min-h-0"
