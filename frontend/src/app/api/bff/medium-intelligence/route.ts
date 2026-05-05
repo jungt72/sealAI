@@ -7,14 +7,18 @@ export const revalidate = 0;
 
 /**
  * POST /api/bff/medium-intelligence
- * Proxies to backend GET /api/agent/medium-intelligence?medium=...
+ * Proxies to backend GET /api/agent/medium-intelligence?medium=...&include_web_research=...
  * Returns structured medium intelligence JSON for the dashboard tile.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let medium: string;
+  let includeWebResearch = false;
 
   try {
-    const body = (await request.json()) as { medium?: unknown };
+    const body = (await request.json()) as {
+      medium?: unknown;
+      include_web_research?: unknown;
+    };
     const raw = body?.medium;
     if (typeof raw !== "string" || !raw.trim()) {
       return NextResponse.json(
@@ -23,6 +27,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
     medium = raw.trim();
+    includeWebResearch = body?.include_web_research === true;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -35,7 +40,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const backendUrl = buildBackendUrl(
-    `/api/agent/medium-intelligence?medium=${encodeURIComponent(medium)}`
+    `/api/agent/medium-intelligence?medium=${encodeURIComponent(medium)}&include_web_research=${includeWebResearch ? "true" : "false"}`
   );
 
   try {
@@ -46,7 +51,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         "Content-Type": "application/json",
       },
       cache: "no-store",
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(includeWebResearch ? 60_000 : 25_000),
     });
 
     if (!res.ok) {

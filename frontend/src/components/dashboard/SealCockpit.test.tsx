@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkspaceView } from "@/lib/contracts/workspace";
@@ -189,7 +189,7 @@ describe("SealCockpit medium deep dive", () => {
         ],
         research_status: {
           rag: { attempted: true, status: "no_hits", hit_count: 0, tier: "tier3_empty", note: "Keine Treffer" },
-          web: { attempted: false, status: "disabled", hit_count: 0, note: "Live-Websearch ist deaktiviert" },
+          web: { attempted: false, status: "not_requested", hit_count: 0, note: "nur auf Wunsch" },
         },
         limitations: ["Technische Orientierung, keine Auslegungsfreigabe."],
         not_for_release_decisions: true,
@@ -206,7 +206,8 @@ describe("SealCockpit medium deep dive", () => {
     expect(screen.getByText(/Chloride, Korrosion, Welle und Feder/)).toBeInTheDocument();
     expect(screen.getByText("Quellen & Nachweise")).toBeInTheDocument();
     expect(screen.getByText(/RAG: keine Treffer/)).toBeInTheDocument();
-    expect(screen.getByText(/Web: Live-Websearch ist deaktiviert/)).toBeInTheDocument();
+    expect(screen.getByText(/Web: nur auf Wunsch/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Websearch starten/ })).toBeInTheDocument();
     expect(screen.getByText(/System · systemseitig abgeleitet/)).toBeInTheDocument();
 
     await waitFor(() => {
@@ -214,9 +215,100 @@ describe("SealCockpit medium deep dive", () => {
         "/api/bff/medium-intelligence",
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify({ medium: "Salzwasser" }),
+          body: JSON.stringify({ medium: "Salzwasser", include_web_research: false }),
         }),
       );
     });
+  });
+
+  it("starts live web research only after an explicit medium-tab action", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          medium: "Salzwasser",
+          resolved_medium: "Salzwasser",
+          summary: "Salzwasser ist salzhaltig.",
+          answer_markdown: "### Salzwasser\n\nInstant-Antwort ohne Live-Websearch.",
+          answer_markdown_source: "medium_composer",
+          composer: {
+            enabled: true,
+            attempted: true,
+            succeeded: true,
+            source: "medium_composer",
+            fallback_reason: null,
+          },
+          sections: [],
+          evidence: [],
+          research_status: {
+            rag: { attempted: true, status: "no_hits", hit_count: 0, tier: "tier3_empty", note: "Keine Treffer" },
+            web: { attempted: false, status: "not_requested", hit_count: 0, note: "nur auf Wunsch" },
+          },
+          limitations: ["Live-Websearch wurde nicht automatisch gestartet."],
+          not_for_release_decisions: true,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          medium: "Salzwasser",
+          resolved_medium: "Salzwasser",
+          summary: "Salzwasser ist salzhaltig.",
+          answer_markdown: "### Salzwasser\n\nVertiefung mit explizit gestarteter Websearch.",
+          answer_markdown_source: "medium_composer",
+          composer: {
+            enabled: true,
+            attempted: true,
+            succeeded: true,
+            source: "medium_composer",
+            fallback_reason: null,
+          },
+          sections: [],
+          evidence: [
+            {
+              id: "web-1",
+              source_type: "web",
+              validation_status: "web_retrieved",
+              title: "Live-Websearch zum Medium",
+              source_name: "Live-Websearch",
+              excerpt: "Webhinweis.",
+              confidence: "low",
+            },
+          ],
+          research_status: {
+            rag: { attempted: true, status: "no_hits", hit_count: 0, tier: "tier3_empty", note: "Keine Treffer" },
+            web: { attempted: true, status: "ok", hit_count: 1, note: "Live-Webquelle wurde abgerufen." },
+          },
+          limitations: ["Technische Orientierung, keine Auslegungsfreigabe."],
+          not_for_release_decisions: true,
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SealCockpit data={cockpitData} workspace={workspaceWithMedium()} preferredTab="medium" />);
+
+    const webButton = await screen.findByRole("button", { name: /Websearch starten/ });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/bff/medium-intelligence",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ medium: "Salzwasser", include_web_research: false }),
+      }),
+    );
+
+    fireEvent.click(webButton);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/bff/medium-intelligence",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ medium: "Salzwasser", include_web_research: true }),
+      }),
+    );
+    expect(await screen.findByText(/Web: 1 Treffer/)).toBeInTheDocument();
+    expect(screen.getByText(/Vertiefung mit explizit gestarteter Websearch/)).toBeInTheDocument();
   });
 });

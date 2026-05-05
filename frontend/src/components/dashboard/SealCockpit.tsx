@@ -10,6 +10,7 @@ import {
   Factory,
   FileText,
   Layers,
+  Search,
   ShieldCheck,
 } from "lucide-react";
 
@@ -443,6 +444,9 @@ function researchStatusLabel(attempt: MediumIntelligenceData["research_status"][
     return `${label}: noch nicht geprüft`;
   }
   if (!attempt.attempted) {
+    if (attempt.status === "not_requested") {
+      return `${label}: nur auf Wunsch`;
+    }
     return `${label}: ${attempt.note || "nicht gestartet"}`;
   }
   if (attempt.status === "ok") {
@@ -486,10 +490,16 @@ function MediumDeepDive({
   data,
   loading,
   error,
+  webResearchLoading,
+  webResearchError,
+  onRunWebResearch,
 }: {
   data: MediumIntelligenceData | null;
   loading: boolean;
   error: string | null;
+  webResearchLoading: boolean;
+  webResearchError: string | null;
+  onRunWebResearch: () => void;
 }) {
   if (loading) {
     return (
@@ -532,15 +542,34 @@ function MediumDeepDive({
             Keine Werkstofffreigabe, keine Compliance-Aussage.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 text-[12px] font-semibold">
+        <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold">
           <span className="rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1 text-[#0B57D0]">
             {researchStatusLabel(data.research_status.rag, "RAG")}
           </span>
           <span className="rounded-full border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-1 text-[#4B5563]">
             {researchStatusLabel(data.research_status.web, "Web")}
           </span>
+          <button
+            type="button"
+            onClick={onRunWebResearch}
+            disabled={webResearchLoading}
+            className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-white px-3 py-1 text-[#0B57D0] shadow-sm transition-colors hover:bg-[#EFF6FF] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Search size={13} />
+            {webResearchLoading
+              ? "Websearch läuft"
+              : data.research_status.web.status === "ok"
+                ? "Websearch erneut starten"
+                : "Websearch starten"}
+          </button>
         </div>
       </div>
+
+      {webResearchError ? (
+        <div className="rounded-[12px] border border-[#FDE2B8] bg-[#FFF4E5] px-3 py-2 text-sm leading-relaxed text-[#9A3412]">
+          {webResearchError}
+        </div>
+      ) : null}
 
       {data.answer_markdown ? (
         <div className="rounded-[14px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
@@ -616,6 +645,8 @@ function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
   const setMediumIntelligenceFor = useWorkspaceStore((state) => state.setMediumIntelligenceFor);
   const setMediumIntelligenceResult = useWorkspaceStore((state) => state.setMediumIntelligenceResult);
   const [mediumIntelligenceError, setMediumIntelligenceError] = useState<string | null>(null);
+  const [webResearchLoading, setWebResearchLoading] = useState(false);
+  const [webResearchError, setWebResearchError] = useState<string | null>(null);
   const mediumLabel = normalizeText(
     workspace?.mediumContext.mediumLabel ??
       workspace?.parameters?.medium ??
@@ -638,7 +669,7 @@ function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
     fetch("/api/bff/medium-intelligence", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ medium: mediumLabel }),
+      body: JSON.stringify({ medium: mediumLabel, include_web_research: false }),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -649,6 +680,7 @@ function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
       })
       .then((payload) => {
         setMediumIntelligenceError(null);
+        setWebResearchError(null);
         setMediumIntelligenceResult(mediumLabel, payload);
       })
       .catch((error: unknown) => {
@@ -679,6 +711,37 @@ function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
     setMediumIntelligenceResult,
   ]);
 
+  const handleRunWebResearch = () => {
+    if (!mediumLabel || webResearchLoading) {
+      return;
+    }
+    setWebResearchLoading(true);
+    setWebResearchError(null);
+
+    fetch("/api/bff/medium-intelligence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ medium: mediumLabel, include_web_research: true }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Websearch konnte nicht geladen werden.");
+        }
+        return (await response.json()) as MediumIntelligenceData;
+      })
+      .then((payload) => {
+        setMediumIntelligenceError(null);
+        setWebResearchError(null);
+        setMediumIntelligenceResult(mediumLabel, payload);
+      })
+      .catch((error: unknown) => {
+        setWebResearchError(error instanceof Error ? error.message : "Websearch konnte nicht geladen werden.");
+      })
+      .finally(() => {
+        setWebResearchLoading(false);
+      });
+  };
+
   return (
     <WorkspaceTabShell
       title="Medium"
@@ -699,6 +762,9 @@ function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
         data={mediumIntelligenceFor === mediumLabel ? mediumIntelligence : null}
         loading={mediumIntelligenceLoading}
         error={mediumLabel ? mediumIntelligenceError : null}
+        webResearchLoading={webResearchLoading}
+        webResearchError={webResearchError}
+        onRunWebResearch={handleRunWebResearch}
       />
     </WorkspaceTabShell>
   );

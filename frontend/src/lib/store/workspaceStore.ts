@@ -28,7 +28,14 @@ export type ActivePanel =
 // ── Medium Intelligence types (fetched via BFF) ────────────────────────────
 export interface MediumResearchAttempt {
   attempted: boolean;
-  status: "ok" | "no_hits" | "disabled" | "not_configured" | "error" | "tenant_missing";
+  status:
+    | "ok"
+    | "no_hits"
+    | "not_requested"
+    | "disabled"
+    | "not_configured"
+    | "error"
+    | "tenant_missing";
   hit_count: number;
   tier?: string | null;
   note?: string | null;

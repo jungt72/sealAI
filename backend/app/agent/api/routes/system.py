@@ -15,6 +15,7 @@ async def agent_health() -> dict:
 @router.get("/medium-intelligence")
 async def get_medium_intelligence(
     medium: str = Query(...),
+    include_web_research: bool = Query(False),
     current_user: RequestUser = Depends(get_current_request_user),
 ):
     service = MediumResearchService()
@@ -22,5 +23,6 @@ async def get_medium_intelligence(
         medium,
         tenant_id=current_user.tenant_id,
         user_id=current_user.user_id,
+        include_web_research=include_web_research,
     )
     return result.model_dump()

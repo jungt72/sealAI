@@ -85,12 +85,35 @@ async def test_medium_research_does_not_fake_web_sources_when_disabled(monkeypat
     monkeypatch.delenv("SEALAI_ENABLE_MEDIUM_WEB_RESEARCH", raising=False)
     monkeypatch.setattr("app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant)
 
-    result = await MediumResearchService().build("PFAS-haltiges Medium", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "PFAS-haltiges Medium",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        include_web_research=True,
+    )
 
     assert result.research_status.web.attempted is False
     assert result.research_status.web.status == "disabled"
     assert not any(item.source_type == "web" for item in result.evidence)
     assert any("keine Live-Webaussagen" in limitation for limitation in result.limitations)
+
+
+@pytest.mark.asyncio
+async def test_medium_research_skips_web_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fail_if_web_called(_medium: str):
+        raise AssertionError("default medium intelligence must not start live web research")
+
+    monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_WEB_RESEARCH", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(medium_research, "_retrieve_rag_evidence", _empty_rag)
+    monkeypatch.setattr(medium_research, "_retrieve_web_evidence", fail_if_web_called)
+
+    result = await MediumResearchService().build("Salzwasser", tenant_id="tenant-1", user_id="user-1")
+
+    assert result.research_status.web.attempted is False
+    assert result.research_status.web.status == "not_requested"
+    assert not any(item.source_type == "web" for item in result.evidence)
+    assert any("nicht automatisch gestartet" in limitation for limitation in result.limitations)
 
 
 @pytest.mark.asyncio

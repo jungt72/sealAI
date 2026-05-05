@@ -18,7 +18,7 @@ _log = logging.getLogger(__name__)
 
 SourceType = Literal["deterministic", "rag", "web"]
 ValidationStatus = Literal["system_derived", "documented", "web_retrieved", "not_available"]
-ResearchStatus = Literal["ok", "no_hits", "disabled", "not_configured", "error", "tenant_missing"]
+ResearchStatus = Literal["ok", "no_hits", "not_requested", "disabled", "not_configured", "error", "tenant_missing"]
 AnswerMarkdownSource = Literal["deterministic_sections", "medium_composer", "composer_fallback"]
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
@@ -103,6 +103,7 @@ class MediumResearchService:
         *,
         tenant_id: str | None,
         user_id: str | None = None,
+        include_web_research: bool = False,
     ) -> MediumResearchResult:
         medium_label = _clean_text(medium, limit=120)
         effective_tenant_id = _effective_tenant_id(tenant_id)
@@ -120,7 +121,11 @@ class MediumResearchService:
         )
         evidence.extend(rag_items)
 
-        web_items, web_attempt = await _retrieve_web_evidence(medium_label)
+        web_items, web_attempt = (
+            await _retrieve_web_evidence(medium_label)
+            if include_web_research
+            else _web_research_not_requested()
+        )
         evidence.extend(web_items)
 
         sections = _build_sections(
@@ -538,6 +543,14 @@ async def _retrieve_web_evidence(medium: str) -> tuple[list[MediumEvidenceItem],
     )
 
 
+def _web_research_not_requested() -> tuple[list[MediumEvidenceItem], MediumResearchAttempt]:
+    return [], MediumResearchAttempt(
+        attempted=False,
+        status="not_requested",
+        note="nur auf Wunsch",
+    )
+
+
 def _build_sections(
     *,
     medium_label: str,
@@ -699,7 +712,9 @@ def _limitations(web_attempt: MediumResearchAttempt) -> list[str]:
         "Technische Orientierung fuer die Anfragevorbereitung, keine Auslegungsfreigabe.",
         "Werkstoff-, Norm- und Compliance-Aussagen muessen spaeter durch Hersteller oder qualifizierte Fachstelle bestaetigt werden.",
     ]
-    if web_attempt.status in {"disabled", "not_configured", "error", "no_hits"}:
+    if web_attempt.status == "not_requested":
+        items.append("Live-Websearch wurde nicht automatisch gestartet; sie kann bei Bedarf gezielt nachgeladen werden.")
+    elif web_attempt.status in {"disabled", "not_configured", "error", "no_hits"}:
         items.append("Es werden keine Live-Webaussagen angezeigt, solange keine verwertbare Webquelle erfolgreich abgerufen wurde.")
     return items
 
