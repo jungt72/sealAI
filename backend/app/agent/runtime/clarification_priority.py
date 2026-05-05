@@ -167,6 +167,8 @@ def _observed_confirmation_priority(
     state: GovernedSessionState,
     field_name: str,
 ) -> ClarificationPriority | None:
+    if field_name not in {"pressure_bar"}:
+        return None
     value = _observed_unasserted_value(state, field_name)
     if value is None:
         return None
@@ -186,27 +188,6 @@ def _observed_confirmation_priority(
                 "welcher Druck wirklich an der Dichtung ankommt."
             ),
             open_point_label=f"Druckbezug klaeren ({display} bar erkannt)",
-        )
-    if field_name == "temperature_c":
-        return ClarificationPriority(
-            focus_key=field_name,
-            question=f"Koennen Sie bestaetigen, dass die Betriebstemperatur {display} °C betraegt?",
-            reason="Die Temperatur ist erkannt, aber noch nicht bestaetigt; ohne Bestaetigung bleibt sie release-blocking.",
-            open_point_label=f"Betriebstemperatur bestaetigen ({display} °C erkannt)",
-        )
-    if field_name == "speed_rpm":
-        return ClarificationPriority(
-            focus_key=field_name,
-            question=f"Koennen Sie bestaetigen, dass die Drehzahl {display} rpm betraegt?",
-            reason="Die Drehzahl ist erkannt, aber noch nicht bestaetigt; ohne Bestaetigung bleibt sie release-blocking.",
-            open_point_label=f"Drehzahl bestaetigen ({display} rpm erkannt)",
-        )
-    if field_name == "shaft_diameter_mm":
-        return ClarificationPriority(
-            focus_key=field_name,
-            question=f"Koennen Sie bestaetigen, dass der Wellendurchmesser {display} mm betraegt?",
-            reason="Der Wellendurchmesser ist erkannt, aber noch nicht bestaetigt; ohne Bestaetigung bleibt er release-blocking.",
-            open_point_label=f"Wellendurchmesser bestaetigen ({display} mm erkannt)",
         )
     return None
 
@@ -345,7 +326,14 @@ def select_next_focus_from_known_context(
             if priority is not None:
                 return priority
         if rotary_context_detected:
-            for field_name in ("speed_rpm", "shaft_diameter_mm", "installation", "geometry_context"):
+            for field_name in (
+                "speed_rpm",
+                "shaft_diameter_mm",
+                "pressure_bar",
+                "temperature_c",
+                "installation",
+                "geometry_context",
+            ):
                 if field_name not in known:
                     priority = _priority_from_field(field_name)
                     if priority is not None:
@@ -431,11 +419,12 @@ def select_clarification_priority(
             if confirmation_priority is not None:
                 return confirmation_priority
             if _has_value(state, field_name):
-                if field_name == "pressure_bar" and _pressure_interpretation(state) in {"gauge", "absolute", "differential"}:
-                    continue
-                priority = _priority_from_field(field_name)
-                if priority is not None:
-                    return priority
+                continue
+            if field_name in {"pressure_bar", "temperature_c"}:
+                continue
+            priority = _priority_from_field(field_name)
+            if priority is not None:
+                return priority
 
     for field_name in ("sealing_type", "compliance"):
         if field_name in field_set:

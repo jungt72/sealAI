@@ -20,6 +20,7 @@ SourceType = Literal["deterministic", "rag", "web"]
 ValidationStatus = Literal["system_derived", "documented", "web_retrieved", "not_available"]
 ResearchStatus = Literal["ok", "no_hits", "not_requested", "disabled", "not_configured", "error", "tenant_missing"]
 AnswerMarkdownSource = Literal["deterministic_sections", "medium_composer", "composer_fallback"]
+AnswerDepth = Literal["instant", "deep"]
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
@@ -80,6 +81,7 @@ class MediumAnswerComposerStatus(BaseModel):
 class MediumResearchResult(BaseModel):
     medium: str
     resolved_medium: str | None = None
+    answer_depth: AnswerDepth = "deep"
     summary: str | None = None
     answer_markdown: str | None = None
     answer_markdown_source: AnswerMarkdownSource = "deterministic_sections"
@@ -104,8 +106,12 @@ class MediumResearchService:
         tenant_id: str | None,
         user_id: str | None = None,
         include_web_research: bool = False,
+        answer_depth: AnswerDepth = "deep",
     ) -> MediumResearchResult:
         medium_label = _clean_text(medium, limit=120)
+        depth = _normalize_answer_depth(answer_depth)
+        if include_web_research:
+            depth = "deep"
         effective_tenant_id = _effective_tenant_id(tenant_id)
         context = resolve_medium_context(medium_label)
         evidence: list[MediumEvidenceItem] = []
@@ -113,11 +119,15 @@ class MediumResearchService:
         if context.status == "available":
             evidence.append(_medium_context_evidence(context))
 
-        rag_items, rag_attempt = await _retrieve_rag_evidence(
-            medium_label,
-            tenant_id=effective_tenant_id,
-            user_id=user_id,
-            k=self.rag_k,
+        rag_items, rag_attempt = (
+            await _retrieve_rag_evidence(
+                medium_label,
+                tenant_id=effective_tenant_id,
+                user_id=user_id,
+                k=self.rag_k,
+            )
+            if depth == "deep"
+            else _rag_research_deferred()
         )
         evidence.extend(rag_items)
 
@@ -137,18 +147,38 @@ class MediumResearchService:
         )
         research_status = MediumResearchStatus(rag=rag_attempt, web=web_attempt)
         limitations = _limitations(web_attempt)
-        answer_markdown, answer_source, composer_status = await _compose_medium_answer_markdown(
-            medium_label=medium_label,
-            context=context,
-            sections=sections,
-            evidence=evidence,
-            research_status=research_status,
-            limitations=limitations,
-        )
+        if depth == "instant":
+            limitations = [
+                *limitations,
+                "Der ausfuehrliche RAG-/LLM-Deep-Dive wird separat nachgeladen; Live-Websearch startet nur auf Wunsch.",
+            ]
+            answer_markdown = _instant_answer_markdown(
+                medium_label=medium_label,
+                context=context,
+                sections=sections,
+                limitations=limitations,
+            )
+            answer_source: AnswerMarkdownSource = "deterministic_sections"
+            composer_status = MediumAnswerComposerStatus(
+                enabled=_medium_answer_composer_enabled(),
+                attempted=False,
+                succeeded=False,
+                source="deterministic_sections",
+            )
+        else:
+            answer_markdown, answer_source, composer_status = await _compose_medium_answer_markdown(
+                medium_label=medium_label,
+                context=context,
+                sections=sections,
+                evidence=evidence,
+                research_status=research_status,
+                limitations=limitations,
+            )
 
         return MediumResearchResult(
             medium=medium_label,
             resolved_medium=context.medium_label,
+            answer_depth=depth,
             summary=context.summary if context.status == "available" else None,
             answer_markdown=answer_markdown,
             answer_markdown_source=answer_source,
@@ -230,6 +260,45 @@ async def _compose_medium_answer_markdown(
 
 def _medium_answer_composer_enabled() -> bool:
     return os.getenv("SEALAI_ENABLE_MEDIUM_ANSWER_COMPOSER", "").strip().lower() in _TRUE_VALUES
+
+
+def _normalize_answer_depth(value: AnswerDepth | str | None) -> AnswerDepth:
+    raw = str(value or "").strip().lower()
+    return "instant" if raw == "instant" else "deep"
+
+
+def _rag_research_deferred() -> tuple[list[MediumEvidenceItem], MediumResearchAttempt]:
+    return [], MediumResearchAttempt(
+        attempted=False,
+        status="not_requested",
+        note="Interne RAG-Suche wird fuer die Sofortantwort nicht automatisch gestartet.",
+    )
+
+
+def _instant_answer_markdown(
+    *,
+    medium_label: str,
+    context: MediumContext,
+    sections: list[MediumResearchSection],
+    limitations: list[str],
+) -> str:
+    resolved = context.medium_label or medium_label
+    lines = [
+        f"### Medium-Intelligence: {resolved}",
+        "",
+        context.summary
+        or "SeaLAI behandelt das Medium zunaechst als Arbeitsstand. Fuer eine belastbare Einordnung helfen konkrete Betriebsdaten und Dokumente.",
+    ]
+    for section in sections:
+        if section.id in {"identity", "sealing_relevance", "saltwater_deep_dive", "questions"}:
+            lines.extend(["", f"#### {section.title}", "", section.content])
+            for bullet in section.bullets[:5]:
+                lines.append(f"- {bullet}")
+    if limitations:
+        lines.extend(["", "#### Grenze", ""])
+        for limitation in limitations[:3]:
+            lines.append(f"- {limitation}")
+    return _clean_text("\n".join(lines), limit=3200)
 
 
 async def _create_medium_answer_completion(

@@ -100,7 +100,7 @@ async def test_general_knowledge_routes_to_knowledge_without_governed_case_intak
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
     dispatch = await _resolve_runtime_dispatch(
-        ChatRequest(message="Was ist FKM?"),
+        ChatRequest(message="Was ist FKM?", session_id=None),
         current_user=_user(),
     )
 

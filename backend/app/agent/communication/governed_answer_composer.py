@@ -16,7 +16,7 @@ from app.llm.registry import get_registry_default_model_for_role
 
 log = logging.getLogger(__name__)
 
-GOVERNED_ANSWER_COMPOSER_PROMPT_VERSION = "sealai_governed_answer_composer_v1"
+GOVERNED_ANSWER_COMPOSER_PROMPT_VERSION = "sealai_governed_answer_composer_v2"
 MAX_ANSWER_MARKDOWN_CHARS = 2200
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
@@ -213,31 +213,21 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
         question = _clean_question(item.clarification_question or context.next_best_question)
         if value and question:
             return (
-                f"Danke, ich habe {value} als {label} verstanden. "
-                f"Fuer die technische Einordnung muss ich das noch genauer fassen: {question}"
+                f"{value} ist als {label} im Arbeitsstand. "
+                f"Fuer die technische Einordnung muss ich das genauer fassen: {question}"
             )
         if question:
             return question
 
     if context.accepted_updates:
-        update = context.accepted_updates[0]
-        value = _display_value(update.value)
-        label = _display_label(update.field_key, update.label)
         question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
-        if value and question:
-            return (
-                f"Danke, {value} ist als {label} angekommen. "
-                f"Als Naechstes ist wichtig: {question}"
-            )
-        if value:
-            return (
-                f"Danke, {value} ist als {label} angekommen. "
-                "Ich halte es als aktuellen Arbeitsstand fest und pruefe den naechsten sinnvollen Schritt."
-            )
+        if question:
+            return question
+        return "Ich halte die Angabe als Arbeitsstand fest und pruefe den naechsten sinnvollen Schritt."
 
     question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
     if question:
-        return f"Gern, wir gehen das Schritt fuer Schritt durch. {question}"
+        return question
     return ""
 
 

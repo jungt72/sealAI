@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -18,6 +19,11 @@ from app.agent.communication.governed_answer_composer import (
     GovernedAnswerComposerInput,
     GovernedAnswerComposerOutput,
     parse_governed_answer_composer_output,
+    render_governed_contextual_fallback,
+)
+from app.agent.communication.governed_answer_context import (
+    GovernedAnswerContext,
+    GovernedAnswerUpdate,
 )
 from app.agent.graph import GraphState
 from app.agent.graph import output_contract_assembly as output_assembly
@@ -25,7 +31,15 @@ from app.agent.graph.nodes.assert_node import assert_node
 from app.agent.graph.nodes.governance_node import governance_node
 from app.agent.graph.nodes.governed_answer_composer_node import governed_answer_composer_node
 from app.agent.graph.nodes.normalize_node import normalize_node
-from app.agent.state.models import ConversationMessage, GovernedSessionState, PendingQuestion
+from app.agent.runtime.clarification_priority import select_clarification_priority
+from app.agent.state.models import (
+    AssertedClaim,
+    AssertedState,
+    ContextHintState,
+    ConversationMessage,
+    GovernedSessionState,
+    PendingQuestion,
+)
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.pre_gate_classifier import PreGateClassifier
 
@@ -45,6 +59,10 @@ def _pending_medium_question() -> PendingQuestion:
         ambiguity_policy="clarify_if_broad_or_hazardous",
         status="open",
     )
+
+
+def _claim(field_name: str, value: object) -> AssertedClaim:
+    return AssertedClaim(field_name=field_name, asserted_value=value)
 
 
 async def _run_governed_nodes(state: GraphState) -> GraphState:
@@ -119,6 +137,70 @@ def _interrupted_state(raw: object) -> GraphState:
     return GraphState.model_validate(payload["state"])
 
 
+def test_contextual_fallback_asks_next_best_question_without_routine_confirmation() -> None:
+    context = GovernedAnswerContext(
+        accepted_updates=[
+            GovernedAnswerUpdate(
+                field_key="speed_rpm",
+                label="Drehzahl",
+                value=4000,
+                unit="rpm",
+                source="pending_question",
+                status="accepted",
+            )
+        ],
+        next_best_question="Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?",
+        missing_fields=["pressure_bar", "temperature_c", "installation"],
+    )
+
+    answer = render_governed_contextual_fallback(
+        context,
+        "Betriebsparameter erfasst: Drehzahl: 4000. Als naechstes brauche ich noch genau einen Kernwert.",
+    )
+
+    assert answer == "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?"
+    assert "Danke" not in answer
+    assert "4000" not in answer
+    assert "bestaetig" not in answer.casefold()
+
+
+def test_rotary_context_with_speed_and_shaft_prioritizes_pressure_before_installation() -> None:
+    state = GraphState(
+        asserted=AssertedState(
+            assertions={
+                "medium": _claim("medium", "Salzwasser"),
+                "sealing_type": _claim("sealing_type", "rwdr"),
+                "speed_rpm": _claim("speed_rpm", 4000),
+                "shaft_diameter_mm": _claim("shaft_diameter_mm", 80),
+            },
+            blocking_unknowns=[
+                "pressure_bar",
+                "temperature_c",
+                "installation",
+                "geometry_context",
+            ],
+        ),
+        motion_hint=ContextHintState(label="rotary", confidence="high"),
+        application_hint=ContextHintState(label="shaft_sealing", confidence="high"),
+    )
+
+    priority = select_clarification_priority(state, state.asserted.blocking_unknowns)
+
+    assert priority is not None
+    assert priority.focus_key == "pressure_bar"
+    assert "druck" in priority.question.casefold()
+
+
+def test_governed_answer_composer_prompt_requires_next_best_question_and_no_routine_thanks() -> None:
+    system_prompt = Path(
+        "backend/app/agent/prompts/governed/answer_composer.j2"
+    ).read_text(encoding="utf-8")
+
+    assert "next_best_question" in system_prompt
+    assert "Do not ask the user to confirm a value they just supplied" in system_prompt
+    assert "without thanking or repeating them routinely" in system_prompt
+
+
 async def _run_structured_output_contract(
     message: str = "ich brauche hilfe bei einer dichtungslösung",
 ) -> tuple[dict, GraphState]:
@@ -168,7 +250,7 @@ async def test_composer_success_sets_answer_markdown_without_truth_mutation(monk
         assert request.context.slot_answer_bindings[0].target_field == "medium"
         return GovernedAnswerComposerOutput(
             answer_markdown=(
-                "Danke, ich habe Chlor als Medium verstanden. Fuer die Auslegung muss ich es genauer einordnen: "
+                "Chlor ist als Medium im Arbeitsstand. Fuer die Auslegung muss ich die Form genauer einordnen: "
                 "Geht es um Chlorgas, Chlorwasser, Natriumhypochlorit/Chlorbleichlauge oder ein chlorhaltiges "
                 "Reinigungsmedium?"
             ),
@@ -235,7 +317,7 @@ async def test_composer_retries_registry_default_when_configured_model_is_reject
             class Message:
                 content = json.dumps(
                     {
-                        "answer_markdown": "Danke, ich habe Chlor verstanden. Geht es um Chlorgas oder Chlorwasser?",
+                        "answer_markdown": "Chlor ist im Arbeitsstand. Geht es um Chlorgas oder Chlorwasser?",
                         "confidence_note": None,
                     }
                 )
@@ -270,7 +352,7 @@ async def test_composer_retries_registry_default_when_configured_model_is_reject
         GovernedAnswerComposerInput(context=context, deterministic_reply=state.output_reply)
     )
 
-    assert result.answer_markdown.startswith("Danke")
+    assert result.answer_markdown.startswith("Chlor")
     assert completions.models == ["gpt-5.4-nano", "gpt-4o-mini"]
 
 
@@ -302,7 +384,7 @@ async def test_composer_can_acknowledge_simple_medium_and_ask_next_question(
         supplied = request.context.accepted_updates[0].value
         assert supplied
         return GovernedAnswerComposerOutput(
-            answer_markdown=f"Danke, {supplied} ist angekommen. Als Naechstes ist die Betriebstemperatur wichtig. In welchem Temperaturbereich arbeitet die Dichtstelle?",
+            answer_markdown="In welchem Temperaturbereich arbeitet die Dichtstelle?",
             confidence_note=None,
         )
 
@@ -312,7 +394,6 @@ async def test_composer_can_acknowledge_simple_medium_and_ask_next_question(
     result = await governed_answer_composer_node(state)
 
     assert result.output_answer_markdown_source == "governed_composer"
-    assert "Danke" in result.output_answer_markdown
     assert "Temperatur" in result.output_answer_markdown
     assert "Medium angeben" not in result.output_answer_markdown
 
@@ -325,7 +406,7 @@ async def test_assembly_preserves_deterministic_reply_and_exposes_composer_markd
 
     async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
         return GovernedAnswerComposerOutput(
-            answer_markdown="Danke, ich habe Chlor als Medium verstanden. Um welche Chlorform geht es?",
+            answer_markdown="Chlor ist als Medium im Arbeitsstand. Um welche Chlorform geht es?",
             confidence_note=None,
         )
 

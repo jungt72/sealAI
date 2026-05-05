@@ -297,7 +297,7 @@ class TestConversationStrategyContract:
         assert strategy.primary_question == "Welche Drehzahl liegt ungefähr an?"
         assert "rotierenden Welle" in strategy.primary_question_reason
 
-    def test_known_rotary_context_prioritizes_geometry_before_pressure_temperature(self):
+    def test_known_rotary_context_prioritizes_pressure_before_geometry_after_speed_and_shaft(self):
         strategy = _build_conversation_strategy_contract(
             "Es geht um eine bestehende Wellenabdichtung an einer Pumpe.",
             history=[{"role": "user", "content": "Wir dichten Wasser ab."}],
@@ -306,7 +306,7 @@ class TestConversationStrategyContract:
 
         assert strategy is not None
         assert strategy.conversation_phase == "narrowing"
-        assert strategy.primary_question == "Welche Geometrie oder vorhandene Bauform liegt an der Dichtstelle vor?"
+        assert strategy.primary_question == "Wie hoch ist der Betriebsdruck ungefähr?"
 
     def test_known_geometry_and_pressure_shift_focus_to_gap_and_tolerance(self):
         strategy = _build_conversation_strategy_contract(
