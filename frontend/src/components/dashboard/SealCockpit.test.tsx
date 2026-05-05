@@ -190,6 +190,10 @@ function workspaceWithMaterialIntelligence(): WorkspaceView {
           status: "candidate_to_check",
           statusLabel: "Kandidat im Prueffenster",
           confidence: "medium",
+          plausibilityScore: 78,
+          plausibilityLabel: "hohe Pruefprioritaet",
+          scoreDrivers: ["Oel- oder Hydraulikoelkontakt stuetzt dieses Werkstofffenster."],
+          scoreCautions: ["Druck oder Druckdifferenz bleiben fuer Bauformgrenzen offen."],
           whyConsidered: ["Oelkontakt grenzt das elastomere Prueffenster ein."],
           limits: ["Wasser und Dampf sind fruehe Ausschlussfragen."],
           blockingUnknowns: ["Temperatur"],
@@ -203,6 +207,10 @@ function workspaceWithMaterialIntelligence(): WorkspaceView {
           status: "excluded_by_known_constraint",
           statusLabel: "bekannte Angabe spricht dagegen",
           confidence: "low",
+          plausibilityScore: 18,
+          plausibilityLabel: "niedrige Pruefprioritaet",
+          scoreDrivers: [],
+          scoreCautions: ["Oel- oder Hydraulikoelkontakt spricht deutlich gegen EPDM als fruehe Richtung."],
           whyConsidered: ["Wassernahe Vergleichsfamilie."],
           limits: ["Mineraloel ist eine fruehe Ausschlussfrage."],
           blockingUnknowns: [],
@@ -431,6 +439,10 @@ describe("SealCockpit material intelligence", () => {
 
     expect(screen.getByRole("heading", { name: "Werkstoff" })).toBeInTheDocument();
     expect(screen.getByText("Werkstofffenster")).toBeInTheDocument();
+    expect(screen.getAllByText("Prüfpriorität")[0]).toBeInTheDocument();
+    expect(screen.getByText("78 / 100")).toBeInTheDocument();
+    expect(screen.getAllByText("Score-Treiber")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Warnpunkte")[0]).toBeInTheDocument();
     expect(screen.getByText("NBR")).toBeInTheDocument();
     expect(screen.getByText("EPDM")).toBeInTheDocument();
     expect(screen.getByText(/bekannte Angabe spricht dagegen/)).toBeInTheDocument();

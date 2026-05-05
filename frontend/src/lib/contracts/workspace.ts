@@ -104,6 +104,10 @@ export type WorkspaceMaterialCandidate = {
   status: string;
   statusLabel: string;
   confidence: string;
+  plausibilityScore: number;
+  plausibilityLabel: string;
+  scoreDrivers: string[];
+  scoreCautions: string[];
   whyConsidered: string[];
   limits: string[];
   blockingUnknowns: string[];

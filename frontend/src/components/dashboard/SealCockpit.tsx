@@ -19,7 +19,7 @@ import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
 import { ParameterWorkspaceTab } from "@/components/dashboard/ParameterWorkspaceTab";
 import RfqPane from "@/components/dashboard/RfqPane";
 import type { AgentOverrideItemRequest } from "@/lib/bff/parameterOverride";
-import type { WorkspaceView } from "@/lib/contracts/workspace";
+import type { WorkspaceMaterialCandidate, WorkspaceView } from "@/lib/contracts/workspace";
 import {
   type CalculationEvidenceMetric,
   type CockpitTabId,
@@ -303,6 +303,36 @@ function ItemList({
       ) : (
         <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">{empty}</p>
       )}
+    </div>
+  );
+}
+
+function MaterialScore({ candidate }: { candidate: WorkspaceMaterialCandidate }) {
+  const score = Math.max(0, Math.min(100, Math.round(candidate.plausibilityScore || 0)));
+  return (
+    <div className="mt-3 rounded-[14px] border border-[#D7E5FF] bg-white p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+            Prüfpriorität
+          </div>
+          <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">
+            Orientierung aus bekannten Parametern. Keine Materialentscheidung.
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-lg font-semibold text-[#111827]">{score} / 100</div>
+          <div className="text-[12px] font-semibold text-[#6B7280]">
+            {normalizeText(candidate.plausibilityLabel) || "nicht bewertet"}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 h-2 rounded-full bg-[#E5EAF2]" aria-hidden="true">
+        <div
+          className="h-2 rounded-full bg-[#0B57D0]"
+          style={{ width: `${score}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -837,7 +867,10 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
                   {normalizeText(candidate.statusLabel)}
                 </span>
               </div>
+              <MaterialScore candidate={candidate} />
               <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <ItemList title="Score-Treiber" items={candidate.scoreDrivers} />
+                <ItemList title="Warnpunkte" items={candidate.scoreCautions} />
                 <ItemList title="Warum im Fenster" items={candidate.whyConsidered} />
                 <ItemList title="Grenzen" items={candidate.limits} />
                 <ItemList title="Datenlücken" items={candidate.blockingUnknowns} empty="Keine weiteren Pflichtdaten aus diesem Fenster" />

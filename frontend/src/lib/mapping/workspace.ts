@@ -250,6 +250,10 @@ type RawMaterialIntelligence = {
     status?: string;
     status_label?: string;
     confidence?: string;
+    plausibility_score?: number | string | null;
+    plausibility_label?: string;
+    score_drivers?: string[];
+    score_cautions?: string[];
     why_considered?: string[];
     limits?: string[];
     blocking_unknowns?: string[];
@@ -916,6 +920,10 @@ function mapMaterialIntelligence(raw: RawMaterialIntelligence | null | undefined
         status: String(item.status || "needs_more_data"),
         statusLabel: String(item.status_label || "").trim(),
         confidence: String(item.confidence || "low"),
+        plausibilityScore: Math.max(0, Math.min(100, asNumber(item.plausibility_score) ?? 0)),
+        plausibilityLabel: String(item.plausibility_label || "nicht bewertet").trim(),
+        scoreDrivers: asStrings(item.score_drivers),
+        scoreCautions: asStrings(item.score_cautions),
         whyConsidered: asStrings(item.why_considered),
         limits: asStrings(item.limits),
         blockingUnknowns: asStrings(item.blocking_unknowns),

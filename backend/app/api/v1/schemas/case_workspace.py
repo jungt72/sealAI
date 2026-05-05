@@ -357,6 +357,10 @@ class MaterialCandidateProjection(BaseModel):
     status: str
     status_label: str
     confidence: str = "low"
+    plausibility_score: int = 0
+    plausibility_label: str = "nicht bewertet"
+    score_drivers: List[str] = Field(default_factory=list)
+    score_cautions: List[str] = Field(default_factory=list)
     why_considered: List[str] = Field(default_factory=list)
     limits: List[str] = Field(default_factory=list)
     blocking_unknowns: List[str] = Field(default_factory=list)

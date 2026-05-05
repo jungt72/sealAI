@@ -12,6 +12,8 @@ def _labels(result: dict) -> list[str]:
 def _joined(result: dict) -> str:
     parts: list[str] = []
     for item in result["candidate_materials"]:
+        parts.extend(item.get("score_drivers", []))
+        parts.extend(item.get("score_cautions", []))
         parts.extend(item["why_considered"])
         parts.extend(item["limits"])
         parts.extend(item["blocking_unknowns"])
@@ -19,6 +21,10 @@ def _joined(result: dict) -> str:
     parts.extend(result["missing_field_hints"])
     parts.extend(result["rfq_relevance_notes"])
     return " ".join(parts).casefold()
+
+
+def _by_label(result: dict) -> dict[str, dict]:
+    return {item["label"]: item for item in result["candidate_materials"]}
 
 
 def test_salzwasser_rwdr_material_window_is_read_only_and_on_topic() -> None:
@@ -48,6 +54,9 @@ def test_salzwasser_rwdr_material_window_is_read_only_and_on_topic() -> None:
     }
     assert "EPDM" in _labels(result)
     assert "PTFE" in _labels(result)
+    by_label = _by_label(result)
+    assert by_label["EPDM"]["plausibility_score"] > by_label["NBR"]["plausibility_score"]
+    assert by_label["PTFE"]["score_cautions"]
     assert "Druck oder Druckdifferenz" in result["missing_field_hints"]
     assert "Temperatur" in result["missing_field_hints"]
     joined = _joined(result)
@@ -73,8 +82,12 @@ def test_hydraulic_oil_prioritizes_oil_material_families() -> None:
 
     labels = _labels(result)
     assert labels[:4] == ["NBR", "HNBR", "FKM", "PU"]
+    by_label = _by_label(result)
+    assert by_label["NBR"]["plausibility_score"] > by_label["EPDM"]["plausibility_score"]
+    assert by_label["PU"]["plausibility_score"] > by_label["EPDM"]["plausibility_score"]
     epdm = next(item for item in result["candidate_materials"] if item["label"] == "EPDM")
     assert epdm["status"] == "excluded_by_known_constraint"
+    assert epdm["plausibility_score"] <= 24
     assert "Hydraulikoel" == result["input_summary"]["medium"]
 
 
@@ -92,8 +105,15 @@ def test_steam_keeps_nbr_out_of_the_main_window() -> None:
 
     labels = _labels(result)
     assert labels[:3] == ["EPDM", "PTFE", "FFKM"]
+    by_label = _by_label(result)
+    assert by_label["EPDM"]["plausibility_score"] > by_label["PTFE"]["plausibility_score"]
+    assert by_label["PTFE"]["plausibility_score"] > by_label["NBR"]["plausibility_score"]
+    assert by_label["FKM"]["plausibility_score"] < by_label["EPDM"]["plausibility_score"]
+    assert any("Dampf" in item for item in by_label["FKM"]["score_cautions"])
+    assert any("Kriechen" in item for item in by_label["PTFE"]["score_cautions"])
     nbr = next(item for item in result["candidate_materials"] if item["label"] == "NBR")
     assert nbr["status"] == "excluded_by_known_constraint"
+    assert nbr["plausibility_score"] <= 24
 
 
 def test_known_material_is_carried_as_candidate_without_release_claim() -> None:
@@ -110,6 +130,8 @@ def test_known_material_is_carried_as_candidate_without_release_claim() -> None:
 
     assert _labels(result)[0] == "FKM"
     assert result["candidate_materials"][0]["status"] == "candidate_to_check"
+    assert isinstance(result["candidate_materials"][0]["plausibility_score"], int)
+    assert result["candidate_materials"][0]["score_drivers"]
     joined = _joined(result)
     forbidden = ("geeignet", "freigegeben", "garantiert", "rfq-ready")
     assert not any(word in joined for word in forbidden)
