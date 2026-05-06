@@ -58,6 +58,7 @@ describe("DashboardShell", () => {
     );
 
     expect(screen.getAllByRole("link", { name: "Neue Analyse" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "SEO" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Goal" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Wissensbasis" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dokumente" })).toBeInTheDocument();

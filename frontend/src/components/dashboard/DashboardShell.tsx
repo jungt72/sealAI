@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
+  BarChart3,
   Bell,
   Database,
   MessageSquareText,
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/dashboard/new", icon: MessageSquareText, label: "Neue Analyse" },
+  { href: "/dashboard/seo", icon: BarChart3, label: "SEO" },
   { href: "/goal", icon: Target, label: "Goal" },
   { href: "/rag", icon: Database, label: "Wissensbasis" },
   { href: "/dashboard/new", icon: Bookmark, label: "Merkliste" },
@@ -166,9 +168,13 @@ export default function DashboardShell({
 
         <nav className="flex flex-1 flex-col items-center gap-3 px-3 py-6">
           {NAV_ITEMS.map((item) => {
+            const isAnalysisRoute =
+              pathname === "/dashboard" ||
+              pathname === "/dashboard/new" ||
+              (pathname.startsWith("/dashboard/") && !pathname.startsWith("/dashboard/seo"));
             const isActive =
               item.href === "/dashboard/new"
-                ? pathname.startsWith("/dashboard")
+                ? isAnalysisRoute
                 : pathname.startsWith(item.href);
             return (
               <Link
