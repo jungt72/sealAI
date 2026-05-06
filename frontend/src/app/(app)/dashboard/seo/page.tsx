@@ -309,13 +309,20 @@ async function latestReports(): Promise<ReportSummary[]> {
 }
 
 async function seoStackStatus() {
-  const repoRoot = path.resolve(process.cwd(), "..");
+  const repoRoot = await firstExistingPath([
+    process.env.SEO_REPO_DIR || "",
+    "/home/thorsten/sealai",
+    path.resolve(process.cwd(), ".."),
+    path.resolve(process.cwd(), "../.."),
+    path.resolve(process.cwd(), "../../.."),
+  ].filter(Boolean));
+  const seoRoot = repoRoot ? path.join(repoRoot, "seo") : null;
   const checks = await Promise.all([
-    pathExists(path.join(repoRoot, "seo", "scripts", "run_gsc_sync.sh")),
-    pathExists(path.join(repoRoot, "seo", "scripts", "run_dataforseo_keyword_refresh.sh")),
-    pathExists(path.join(repoRoot, "seo", "systemd", "sealai-seo-gsc-sync.timer")),
-    pathExists(path.join(repoRoot, "seo", "systemd", "sealai-seo-weekly-report.timer")),
-    pathExists(path.join(repoRoot, "seo", "migrations", "001_init.sql")),
+    seoRoot ? pathExists(path.join(seoRoot, "scripts", "run_gsc_sync.sh")) : false,
+    seoRoot ? pathExists(path.join(seoRoot, "scripts", "run_dataforseo_keyword_refresh.sh")) : false,
+    seoRoot ? pathExists(path.join(seoRoot, "systemd", "sealai-seo-gsc-sync.timer")) : false,
+    seoRoot ? pathExists(path.join(seoRoot, "systemd", "sealai-seo-weekly-report.timer")) : false,
+    seoRoot ? pathExists(path.join(seoRoot, "migrations", "001_init.sql")) : false,
   ]);
   return {
     gscScript: checks[0],
