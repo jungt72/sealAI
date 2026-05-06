@@ -16,6 +16,8 @@ import {
   FlaskConical,
   Gauge,
   ListChecks,
+  PanelRightClose,
+  PanelRightOpen,
   Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -1674,6 +1676,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const timelineSteps = useMemo(() => deriveTimelineSteps(cockpit), [cockpit]);
   const contextItems = useMemo(() => deriveContextItems({ cockpit, caseId }), [caseId, cockpit]);
   const [modeOverride, setModeOverride] = useState<WorkspaceMode | null>(null);
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(true);
 
   const displayRequestType =
     (cockpit?.view.requestType && cockpit.view.requestType !== "nicht bestimmt"
@@ -1683,15 +1686,36 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const workspaceMode = modeOverride ?? defaultWorkspaceMode;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F7F9FC]">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F7F9FC]">
       <WorkspaceTimeline steps={timelineSteps} />
 
-      <div className="min-h-0 flex-1 p-4 sm:p-5">
-        <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(360px,0.78fr),minmax(640px,1.22fr)]">
+      <div className="relative min-h-0 flex-1 p-4 sm:p-5">
+        {!isWorkspaceOpen ? (
+          <button
+            type="button"
+            aria-label="Arbeitsbereich einblenden"
+            title="Arbeitsbereich einblenden"
+            onClick={() => setIsWorkspaceOpen(true)}
+            className="absolute right-5 top-5 z-30 inline-flex h-10 items-center gap-2 rounded-full border border-[#CFE0FF] bg-white px-3 text-xs font-semibold text-[#0B5BD3] shadow-[0_12px_30px_rgba(15,23,42,0.10)] transition-colors hover:border-[#AFC7EC] hover:bg-[#F8FBFF]"
+          >
+            <PanelRightOpen size={15} />
+            Arbeitsbereich
+          </button>
+        ) : null}
+
+        <div
+          className={cn(
+            "grid h-full min-h-0 gap-4 transition-[grid-template-columns] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            isWorkspaceOpen
+              ? "xl:grid-cols-[minmax(420px,1fr),minmax(520px,0.95fr)]"
+              : "xl:grid-cols-[minmax(420px,1fr)]",
+          )}
+        >
           <section className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-white shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
             <ChatPane caseId={caseId} initialGoal={initialGoal} />
           </section>
 
+          {isWorkspaceOpen ? (
           <aside className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-[#FBFCFE] shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
             <div className="custom-scrollbar flex h-full min-h-0 flex-col overflow-y-auto">
               <div className="border-b border-[#E7ECF3] bg-white px-5 py-4">
@@ -1707,10 +1731,21 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
                       Parameter, offene Punkte, Vorchecks und Herstellerprüfbedarf in einem ruhigen Arbeitsraum.
                     </p>
                   </div>
-                  <StatusBadge
-                    label={workspaceMode === "knowledge_compare" ? "Vergleich" : titleCase(cockpit?.view.readiness.status || "Anfragebasis")}
-                    variant={workspaceMode === "knowledge_compare" ? "success" : cockpit?.view.readiness.isRfqReady ? "success" : "info"}
-                  />
+                  <div className="flex shrink-0 items-center gap-2">
+                    <StatusBadge
+                      label={workspaceMode === "knowledge_compare" ? "Vergleich" : titleCase(cockpit?.view.readiness.status || "Anfragebasis")}
+                      variant={workspaceMode === "knowledge_compare" ? "success" : cockpit?.view.readiness.isRfqReady ? "success" : "info"}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Arbeitsbereich einklappen"
+                      title="Arbeitsbereich einklappen"
+                      onClick={() => setIsWorkspaceOpen(false)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#DDE6F2] bg-white text-[#526273] transition-colors hover:border-[#B8C9E0] hover:bg-[#F8FBFF] hover:text-[#0F172A]"
+                    >
+                      <PanelRightClose size={16} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -1789,6 +1824,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
               </div>
             </div>
           </aside>
+          ) : null}
         </div>
       </div>
     </div>

@@ -386,6 +386,7 @@ describe("CaseScreen", () => {
     expect(screen.getByRole("heading", { name: "Medium Intelligence" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Calculations" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Open Points / Next Step" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Arbeitsbereich einklappen" })).toBeInTheDocument();
   });
 
   it("keeps /dashboard/new free of legacy mock values while showing the new intake surface", () => {
@@ -438,6 +439,24 @@ describe("CaseScreen", () => {
     await user.click(screen.getByRole("button", { name: "Anfragebasis" }));
     expect(screen.getByRole("button", { name: "Anfragebasis" })).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(screen.getByRole("heading", { name: "Parameter & Application" })).toBeInTheDocument());
+  });
+
+  it("collapses and restores the right workspace column", async () => {
+    const user = userEvent.setup();
+    workspaceHookState.workspace = workspaceFixture();
+
+    render(<CaseScreen caseId="case-42" />);
+
+    expect(screen.getByRole("heading", { name: "RFQ-Qualifikationsraum" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Arbeitsbereich einklappen" }));
+
+    expect(screen.queryByRole("heading", { name: "RFQ-Qualifikationsraum" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
+    expect(screen.getByRole("button", { name: "Arbeitsbereich einblenden" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Arbeitsbereich einblenden" }));
+
+    expect(screen.getByRole("heading", { name: "RFQ-Qualifikationsraum" })).toBeInTheDocument();
   });
 
   it("persists prepared parameter intake values into the case file", async () => {

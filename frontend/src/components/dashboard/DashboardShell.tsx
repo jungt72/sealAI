@@ -7,11 +7,12 @@ import { useSession } from "next-auth/react";
 import {
   Bell,
   Database,
-  LayoutDashboard,
   MessageSquareText,
   Clock3,
   Bookmark,
   FileText,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Settings,
   Target,
@@ -131,6 +132,7 @@ export default function DashboardShell({
   const [historyItems, setHistoryItems] = useState<CaseHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(true);
 
   useEffect(() => {
     let isCurrent = true;
@@ -165,7 +167,7 @@ export default function DashboardShell({
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
-      <aside className="hidden h-full w-[72px] shrink-0 flex-col border-r border-[#E7ECF3] bg-white lg:flex">
+      <aside className="flex h-full w-[72px] shrink-0 flex-col border-r border-[#E7ECF3] bg-white">
         <div className="flex h-[72px] items-center justify-center border-b border-[#E7ECF3]">
           <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0B5BD3] text-base font-semibold text-white shadow-[0_10px_30px_rgba(11,91,211,0.22)]">
             S
@@ -194,6 +196,21 @@ export default function DashboardShell({
               </Link>
             );
           })}
+          <button
+            type="button"
+            aria-label={isHistoryOpen ? "Historie umschalten" : "Historie einblenden"}
+            aria-expanded={isHistoryOpen}
+            title={isHistoryOpen ? "Historie umschalten" : "Historie einblenden"}
+            onClick={() => setIsHistoryOpen((current) => !current)}
+            className={cn(
+              "flex h-11 w-11 items-center justify-center rounded-[14px] border transition-colors",
+              isHistoryOpen
+                ? "border-[#CFE0FF] bg-[#EEF4FF] text-[#0B5BD3]"
+                : "border-transparent text-[#6B7280] hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
+            )}
+          >
+            {isHistoryOpen ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
+          </button>
         </nav>
 
         <div className="flex flex-col items-center gap-3 border-t border-[#E7ECF3] px-3 py-4">
@@ -210,65 +227,76 @@ export default function DashboardShell({
         </div>
       </aside>
 
-      <aside className="flex h-full w-[286px] shrink-0 flex-col border-r border-[#E7ECF3] bg-[#FBFCFE]">
-        <div className="flex h-[72px] items-center border-b border-[#E7ECF3] px-4">
-          <Link
-            href="/dashboard/new"
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[14px] border border-[#DCE7F7] bg-white text-sm font-semibold text-[#111827] shadow-sm transition-colors hover:border-[#CFE0FF] hover:bg-[#F8FBFF]"
-          >
-            <Plus size={16} />
-            Neue Analyse
-          </Link>
-        </div>
-
-        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-4">
-          <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">
-            Verlauf
+      {isHistoryOpen ? (
+        <aside className="flex h-full w-[286px] shrink-0 flex-col border-r border-[#E7ECF3] bg-[#FBFCFE]">
+          <div className="flex h-[72px] items-center gap-2 border-b border-[#E7ECF3] px-4">
+            <Link
+              href="/dashboard/new"
+              className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-[14px] border border-[#DCE7F7] bg-white text-sm font-semibold text-[#111827] shadow-sm transition-colors hover:border-[#CFE0FF] hover:bg-[#F8FBFF]"
+            >
+              <Plus size={16} />
+              Neue Analyse
+            </Link>
+            <button
+              type="button"
+              aria-label="Historie ausblenden"
+              title="Historie ausblenden"
+              onClick={() => setIsHistoryOpen(false)}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#DCE7F7] bg-white text-[#6B7280] shadow-sm transition-colors hover:border-[#CFE0FF] hover:bg-[#F8FBFF] hover:text-[#0B5BD3]"
+            >
+              <PanelLeftClose size={17} />
+            </button>
           </div>
-          {historyLoading ? (
-            <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
-              Lade Gespräche...
-            </div>
-          ) : historyError ? (
-            <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-              {historyError}
-            </div>
-          ) : historyItems.length === 0 ? (
-            <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
-              Noch keine gespeicherten Fälle.
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {historyItems.map((item) => {
-                const href = `/dashboard/${encodeURIComponent(item.id)}`;
-                const isActive = pathname === href;
-                return (
-                  <Link
-                    key={item.id}
-                    href={href}
-                    title={item.title}
-                    className={cn(
-                      "block rounded-[12px] px-3 py-2.5 text-left transition-colors",
-                      isActive
-                        ? "bg-[#EEF4FF] text-[#0B5BD3]"
-                        : "text-[#374151] hover:bg-white hover:text-[#111827]",
-                    )}
-                  >
-                    <div className="truncate text-sm font-medium">{item.title}</div>
-                    <div className="mt-0.5 truncate text-[11px] text-[#8A94A6]">
-                      {item.subtitle}
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        <div className="border-t border-[#E7ECF3] px-4 py-3 text-[11px] leading-4 text-[#8A94A6]">
-          Fälle bleiben über die Case-ID wiederaufrufbar. Aktive Chats wechseln nach dem ersten Turn automatisch auf die Fall-URL.
-        </div>
-      </aside>
+          <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-4">
+            <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">
+              Verlauf
+            </div>
+            {historyLoading ? (
+              <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
+                Lade Gespräche...
+              </div>
+            ) : historyError ? (
+              <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+                {historyError}
+              </div>
+            ) : historyItems.length === 0 ? (
+              <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
+                Noch keine gespeicherten Fälle.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {historyItems.map((item) => {
+                  const href = `/dashboard/${encodeURIComponent(item.id)}`;
+                  const isActive = pathname === href;
+                  return (
+                    <Link
+                      key={item.id}
+                      href={href}
+                      title={item.title}
+                      className={cn(
+                        "block rounded-[12px] px-3 py-2.5 text-left transition-colors",
+                        isActive
+                          ? "bg-[#EEF4FF] text-[#0B5BD3]"
+                          : "text-[#374151] hover:bg-white hover:text-[#111827]",
+                      )}
+                    >
+                      <div className="truncate text-sm font-medium">{item.title}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-[#8A94A6]">
+                        {item.subtitle}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-[#E7ECF3] px-4 py-3 text-[11px] leading-4 text-[#8A94A6]">
+            Fälle bleiben über die Case-ID wiederaufrufbar. Aktive Chats wechseln nach dem ersten Turn automatisch auf die Fall-URL.
+          </div>
+        </aside>
+      ) : null}
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-[#E7ECF3] bg-white px-5 sm:px-7">
@@ -314,11 +342,7 @@ export default function DashboardShell({
             </Link>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F7FB] p-3">
-          <div className="h-full overflow-hidden rounded-[20px] border border-[#E7ECF3] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
-            {children}
-          </div>
-        </div>
+        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F7FB]">{children}</div>
       </main>
     </div>
   );

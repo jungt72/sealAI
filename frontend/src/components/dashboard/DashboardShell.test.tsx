@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import DashboardShell from "./DashboardShell";
@@ -59,6 +60,27 @@ describe("DashboardShell", () => {
     expect(screen.getByRole("link", { name: "Wissensbasis" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dokumente" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Einstellungen" })).toBeInTheDocument();
+    expect(screen.getByText("Verlauf")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
+  });
+
+  it("collapses and restores the left history column", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <DashboardShell>
+        <main>Arbeitsbereich</main>
+      </DashboardShell>,
+    );
+
+    await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Historie ausblenden" }));
+
+    expect(screen.queryByText("Verlauf")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /RWDR Wasser-Glykol/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Historie einblenden" }));
+
     expect(screen.getByText("Verlauf")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
   });
